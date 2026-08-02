@@ -1,4 +1,59 @@
 import { expect, test } from '@playwright/test';
+import { accountPassword, signUpAndOnboard, submitSignup, verifyEmailAndOnboard } from './auth';
+
+test('space settings renders safely when stored timestamps are malformed', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop browser covers malformed legacy timestamps.');
+  test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'This test replaces local API responses with malformed legacy data.');
+
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  await page.route(/\/api\/spaces\/[^/]+\/members(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{
+      id: 'legacy-member', name: 'Legacy member', email: 'legacy-member@example.com', role: 'member', joinedAt: 'not-a-timestamp'
+    }])
+  }));
+  await page.route(/\/api\/spaces\/[^/]+\/invitations(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{
+      id: 'legacy-invitation', email: 'legacy-invitation@example.com', role: 'member', expiresAt: '',
+      acceptedAt: null, revokedAt: null, createdAt: 'not-a-timestamp', invitedBy: 'Legacy owner'
+    }])
+  }));
+  await page.route(/\/api\/subscriptions\/requests(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ requests: [{
+      id: 'legacy-request', requestType: 'change', requestedPlanCode: 'team',
+      requestedPlan: { code: 'team', name: 'Legacy team', description: '', requestable: true, features: {}, limits: {} },
+      requestNote: 'Legacy request', status: 'rejected', reviewNote: '', version: 1,
+      createdAt: 'invalid', decisionAt: 'invalid'
+    }] })
+  }));
+
+  await page.goto('/settings/space');
+  await expect(page.getByRole('heading', { name: 'Space settings' })).toBeVisible();
+
+  const memberRow = page.getByRole('row').filter({ hasText: 'legacy-member@example.com' });
+  await expect(memberRow.getByText('Not recorded', { exact: true })).toBeVisible();
+
+  const invitationRow = page.getByRole('row').filter({ hasText: 'legacy-invitation@example.com' });
+  await expect(invitationRow.getByText('Unavailable', { exact: true })).toBeVisible();
+  await expect(invitationRow.getByText('Not recorded', { exact: true })).toBeVisible();
+
+  const requestRow = page.getByRole('row').filter({ hasText: 'Legacy team' });
+  await expect(requestRow.getByText('Not recorded', { exact: true })).toHaveCount(2);
+  expect(pageErrors.filter((message) => message.includes('Invalid time value'))).toEqual([]);
+});
 
 test('reloads once and recovers when a lazy chunk is stale during deployment', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser project exercises deployment recovery');
@@ -22,7 +77,7 @@ test('reloads once and recovers when a lazy chunk is stale during deployment', a
   });
 
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
   expect(chunkRequests).toBe(2);
   expect(loginDocuments).toBe(2);
 });
@@ -102,19 +157,32 @@ test('sidebar runtime identity stays readable and opens the AI queue', async ({ 
   if (mobile) expect(await page.evaluate(() => window.getComputedStyle(document.body).overflow)).not.toBe('hidden');
 });
 
-test('account signup and forgot-password entry points are complete', async ({ page }, testInfo) => {
+test('account signup, email verification, onboarding, and recovery entry points are complete', async ({ page }, testInfo) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'The deterministic verification-token helper exists only on the local E2E server.');
   const email = `experience-${testInfo.project.name}-${Date.now()}@example.com`;
   await page.goto('/login');
   await expect(page.getByRole('link', { name: 'Create an account' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Forgot password?' })).toBeVisible();
   await page.getByRole('link', { name: 'Create an account' }).click();
   await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
-  await page.getByLabel('Name', { exact: true }).fill('Experience Researcher');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password', { exact: true }).fill('Experience-Account-2026');
-  await page.getByLabel('Confirm password').fill('Experience-Account-2026');
-  await page.getByRole('button', { name: 'Create account' }).click();
-  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  const account = {
+    name: 'Experience Researcher', email, spaceName: 'Experience research',
+    jobTitle: 'Customer insight lead', organizationName: 'Evidence Studio'
+  };
+  await submitSignup(page, account);
+
+  await page.goto('/login');
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(accountPassword);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+
+  await verifyEmailAndOnboard(page, account);
+  await page.goto('/settings/profile');
+  await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
+  await expect(page.getByLabel('Full name', { exact: true })).toHaveValue(account.name);
+  await expect(page.getByLabel('Job title (optional)', { exact: true })).toHaveValue(account.jobTitle);
+  await expect(page.getByLabel('Organisation (optional)', { exact: true })).toHaveValue(account.organizationName);
   await page.evaluate(() => fetch('/api/auth/logout', { method: 'POST' }));
   await page.goto('/forgot-password');
   await page.getByLabel('Email').fill(email);
@@ -304,12 +372,19 @@ test('runs a sequenced survey campaign through completion', async ({ page }, tes
   await expect(page.getByRole('heading', { name: campaignName })).toBeVisible();
 
   await page.getByRole('tab', { name: /Setup/ }).click();
+  const senderName = `Research team ${suffix}`;
+  await expect(page.getByLabel('Sender display name')).toBeEditable();
+  const verifiedSenderEmail = await page.getByLabel('Verified sender email').inputValue();
+  expect(verifiedSenderEmail).toMatch(/^[^@\s]+@[^@\s]+$/);
+  await page.getByLabel('Sender display name').fill(senderName);
   await page.locator('#campaign-settings-survey').selectOption(setup.alternateSurveyId);
   await page.getByRole('tab', { name: /Schedule/ }).click();
   await expect(page.getByText('Start time required')).toBeVisible();
   await page.getByRole('tab', { name: /Setup/ }).click();
   await page.getByRole('button', { name: 'Save setup' }).click();
   await expect(page.locator('.page-description')).toContainText(setup.alternateSurveyTitle);
+  await page.reload();
+  await expect(page.getByLabel('Sender display name')).toHaveValue(senderName);
   await page.locator('#campaign-settings-survey').selectOption(setup.surveyId);
   await page.getByRole('button', { name: 'Save setup' }).click();
   await expect(page.locator('.page-description')).toContainText(setup.surveyTitle);
@@ -361,8 +436,11 @@ test('runs a sequenced survey campaign through completion', async ({ page }, tes
   await expect(page.getByText('Campaign schedule saved')).toBeVisible();
   await page.getByRole('tab', { name: /Review/ }).click();
   await expect(page.getByText('All required steps are complete. Review the campaign before launch.')).toBeVisible();
+  await expect(page.getByText(`From: ${senderName} <${verifiedSenderEmail}>`, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Launch campaign' }).click();
   await expect(page.getByText('active', { exact: true }).first()).toBeVisible();
+  await page.getByRole('tab', { name: /Setup/ }).click();
+  await expect(page.getByLabel('Sender display name')).toBeDisabled();
   await page.getByRole('tab', { name: 'Activity' }).click();
   const deliveryHistory = page.locator('table').filter({ has: page.getByRole('columnheader', { name: 'Lifecycle' }) });
   await expect(deliveryHistory.locator('tbody')).toContainText('accepted', { timeout: 15_000 });
@@ -435,6 +513,169 @@ test('conditional respondent logic skips a page and opens a recovery case', asyn
   await expect(page.getByText(`Follow up: ${setup.sourceTitle}`)).toBeVisible();
 });
 
+test('opens and tracks a manual recovery case from the service recovery workspace', async ({ page }, testInfo) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  const suffix = `${testInfo.project.name}-${Date.now()}`;
+  const surveyTitle = `Recovery source ${suffix}`;
+  const surveyResponse = await page.request.post('/api/surveys', { data: {
+    title: surveyTitle, purpose: 'customer_experience', primaryMetric: 'custom', questions: []
+  } });
+  expect(surveyResponse.status()).toBe(201);
+
+  await page.goto('/tickets');
+  await expect(page.getByRole('heading', { name: 'Service recovery' })).toBeVisible();
+  await page.getByRole('button', { name: 'New recovery case' }).first().click();
+  const createDialog = page.getByRole('dialog', { name: 'New recovery case' });
+  await createDialog.getByLabel('Survey').selectOption({ label: surveyTitle });
+  await createDialog.getByLabel('Case title').fill(`Billing follow-up ${suffix}`);
+  await createDialog.getByLabel('Priority').selectOption('high');
+  await createDialog.getByLabel('Owner (optional)').fill('Customer success');
+  await createDialog.getByLabel('Initial notes (optional)').fill('Confirm the renewal amount with finance.');
+  await createDialog.getByRole('button', { name: 'Open recovery case' }).click();
+
+  const detail = page.getByRole('dialog', { name: `Billing follow-up ${suffix}` });
+  await expect(detail).toBeVisible();
+  await expect(detail.getByText('This case was opened without a source response.')).toBeVisible();
+  await expect(detail.getByText('Created the recovery case')).toBeVisible();
+  await detail.getByRole('button', { name: 'Start work' }).click();
+  await expect(detail.getByRole('button', { name: 'Close case' })).toBeVisible();
+  await detail.getByRole('button', { name: 'Close case' }).click();
+  await expect(detail.getByRole('button', { name: 'Reopen case' })).toBeVisible();
+  await expect(detail.getByText('Closed the recovery case')).toBeVisible();
+  await detail.getByRole('button', { name: 'Reopen case' }).click();
+  await expect(detail.getByRole('button', { name: 'Start work' })).toBeVisible();
+  await expect(detail.getByText('Reopened the recovery case')).toBeVisible();
+  await detail.getByRole('button', { name: 'Close', exact: true }).click();
+
+  await expect(page.getByText(`Billing follow-up ${suffix}`)).toBeVisible();
+  await page.getByLabel('Search recovery cases').fill(`Billing follow-up ${suffix}`);
+  await expect(page.getByRole('row').filter({ hasText: `Billing follow-up ${suffix}` })).toContainText('Open');
+});
+
+test('requests and approves a subscription through the workspace and platform administration', async ({ page }, testInfo) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  const current = await page.evaluate(async () => {
+    const [planResponse, requestsResponse] = await Promise.all([
+      fetch('/api/subscriptions/current'), fetch('/api/subscriptions/requests')
+    ]);
+    const plan = await planResponse.json();
+    const requests = await requestsResponse.json();
+    for (const request of requests.requests.filter((item: { status: string }) => item.status === 'pending')) {
+      await fetch(`/api/subscriptions/requests/${request.id}/cancel`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'Cancelled before the deterministic browser test.', expectedVersion: request.version })
+      });
+    }
+    return plan;
+  });
+  const targetPlan = current.effectivePlan.code === 'team' ? 'enterprise' : 'team';
+  const targetName = targetPlan === 'enterprise' ? 'Enterprise' : 'Team';
+  const suffix = `${testInfo.project.name}-${Date.now()}`;
+
+  await page.goto('/settings/space');
+  await expect(page.getByRole('heading', { name: 'Subscription' })).toBeVisible();
+  await page.getByLabel('Requested plan').selectOption(targetPlan);
+  await page.getByLabel('Reason for the request').fill(`Browser approval test ${suffix}`);
+  await page.getByRole('button', { name: 'Request plan change' }).click();
+  await expect(page.getByText('Pending review', { exact: true })).toBeVisible();
+
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: 'Platform overview' })).toBeVisible();
+  if (testInfo.project.name === 'mobile-chromium') {
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+  }
+  await expect(page.getByRole('link', { name: 'Subscriptions', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Users', exact: true })).toBeVisible();
+  if (testInfo.project.name === 'mobile-chromium') {
+    await page.getByRole('button', { name: 'Close navigation' }).click();
+  }
+  await page.goto('/admin/subscription-requests');
+  const pendingRow = page.getByRole('row').filter({ hasText: targetName }).filter({ hasText: 'Pending' }).first();
+  await expect(pendingRow).toBeVisible();
+  await pendingRow.getByRole('link', { name: 'Review' }).click();
+  await page.getByLabel('Review note').fill(`Approved by browser automation for ${suffix}.`);
+  const breakGlass = page.getByLabel('Use root break-glass approval');
+  if (await breakGlass.isVisible()) await breakGlass.check();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Approve request' }).click();
+  await expect(page.getByRole('region', { name: 'Request' }).getByText('approved', { exact: true })).toBeVisible();
+
+  await page.goto('/admin/subscriptions');
+  await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: targetName }).filter({ hasText: 'Active' }).first()).toBeVisible();
+
+  await page.goto('/settings/space');
+  await expect(page.getByText(targetName, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('No request pending', { exact: true })).toBeVisible();
+});
+
+test('root administration manages a user role and workspace access with an audit reason', async ({ page }, testInfo) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'Account provisioning is isolated to the local E2E runtime.');
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser covers destructive platform access controls.');
+  const suffix = Date.now();
+  const email = `platform-controls-${suffix}@example.com`;
+  await signUpAndOnboard(page, {
+    name: 'Platform Controls User',
+    email,
+    spaceName: `Controls workspace ${suffix}`
+  });
+  await page.request.post('/api/auth/logout');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  await page.goto('/admin/users');
+  await page.getByLabel('Search users').fill(email);
+  const userRow = page.getByRole('row').filter({ hasText: email });
+  await expect(userRow).toBeVisible();
+  await userRow.getByRole('link', { name: 'Open' }).click();
+
+  await page.getByLabel('Role to grant').selectOption('analyst');
+  await page.getByLabel('Required reason for role changes').fill('Temporary analytics access for the browser test.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Grant role' }).click();
+  await expect(page.getByText('analyst', { exact: true }).first()).toBeVisible();
+
+  await page.getByLabel('Required reason for role changes').fill('Remove temporary analytics access after verification.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Revoke analyst role' }).click();
+  await expect(page.getByText('revoked', { exact: true }).first()).toBeVisible();
+
+  await page.getByLabel('Account status').selectOption('suspended');
+  await page.getByLabel('Required reason', { exact: true }).fill('Suspend briefly to verify the platform control.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Apply status' }).click();
+  await expect(page.getByText('suspended', { exact: true }).first()).toBeVisible();
+  await page.getByLabel('Account status').selectOption('active');
+  await page.getByLabel('Required reason', { exact: true }).fill('Restore the test account after access verification.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Apply status' }).click();
+  await expect(page.getByText('active', { exact: true }).first()).toBeVisible();
+
+  await page.getByRole('link', { name: 'Open' }).first().click();
+  await page.getByLabel('New space status').selectOption('suspended');
+  await page.getByLabel('Reason for space status change').fill('Suspend briefly to verify workspace enforcement.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Apply space status' }).click();
+  await expect(page.getByText('suspended', { exact: true }).first()).toBeVisible();
+  await page.getByLabel('New space status').selectOption('active');
+  await page.getByLabel('Reason for space status change').fill('Restore the test workspace after enforcement verification.');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Apply space status' }).click();
+  await expect(page.getByText('active', { exact: true }).first()).toBeVisible();
+});
+
 test('X social listening setup and journey maps remain visible while Terra work waits durably', async ({ page }, testInfo) => {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
@@ -478,7 +719,7 @@ test('X social listening setup and journey maps remain visible while Terra work 
   await expect(page.getByRole('button', { name: 'Add X account' })).toBeEnabled();
   await expect(page.getByText('Pending account')).toBeVisible();
   await expect(page.getByText('pending verification', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sync now' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sync latest 50' })).toBeVisible();
   for (const section of ['Listening (0)', 'Queries (0)', 'Intelligence (0)', 'Reply drafts (0)', 'Sync history', 'Connection']) {
     await expect(page.getByRole('button', { name: section })).toBeVisible();
   }
@@ -491,7 +732,7 @@ test('X social listening setup and journey maps remain visible while Terra work 
   }));
   await page.reload();
   await expect(page.getByText('reauthorization required', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sync now' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Sync latest 50' })).toHaveCount(0);
   await page.evaluate(() => fetch('/api/integrations/x/connection', { method: 'DELETE' }));
   await page.reload();
   await expect(page.getByText('disconnected', { exact: true })).toBeVisible();
@@ -636,4 +877,165 @@ test('journey live refresh never lets an older response overwrite a newer edit',
   const current = await page.request.get(`/api/journeys/${journey.id}`);
   const deleted = await page.request.delete(`/api/journeys/${journey.id}`, { data: { expectedUpdatedAt: (await current.json()).updatedAt } });
   expect(deleted.status()).toBe(204);
+});
+
+test('a completed survey translation opens in saved intelligence and survives a stale history response', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop project exercises the saved-output refresh race');
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+
+  const suffix = `${Date.now()}`;
+  const setup = await page.evaluate(async (value) => {
+    const questionId = `translation-question-${value}`;
+    const response = await fetch('/api/surveys', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+        title: `Translation viewer ${value}`, description: 'A source survey for the saved translation viewer.',
+        purpose: 'customer_experience', primaryMetric: 'custom', thankYouMessage: 'Thank you for responding.',
+        questions: [{ id: questionId, page: 1, position: 0, type: 'single_choice', title: 'How was your visit?', description: 'Choose one answer.', required: true, options: ['Good', 'Poor'], settings: {}, logic: [] }]
+      })
+    });
+    return { survey: await response.json(), questionId };
+  }, suffix);
+
+  const translation = {
+    language: 'Spanish', title: 'Encuesta sobre la experiencia de visita',
+    description: 'Una encuesta sobre la visita del cliente.', thankYouMessage: 'Gracias por responder.',
+    questions: [{ questionId: setup.questionId, title: '¿Cómo fue su visita?', description: 'Elija una respuesta.', options: ['Buena', 'Mala'] }]
+  };
+  const savedInsight = { id: `saved-translation-${suffix}`, kind: 'translation', payload: translation, createdAt: new Date().toISOString() };
+  let insightsRequestCount = 0;
+  let translationQueued = false;
+  let translationSubmissionCount = 0;
+  let jobPollCount = 0;
+  let releaseInitial!: () => void;
+  let markInitialSeen!: () => void;
+  let releaseTranslationPost!: () => void;
+  let markTranslationPostSeen!: () => void;
+  let releaseFirstJobPoll!: () => void;
+  let markFirstJobPollSeen!: () => void;
+  const initialRelease = new Promise<void>((resolve) => { releaseInitial = resolve; });
+  const initialSeen = new Promise<void>((resolve) => { markInitialSeen = resolve; });
+  const translationPostRelease = new Promise<void>((resolve) => { releaseTranslationPost = resolve; });
+  const translationPostSeen = new Promise<void>((resolve) => { markTranslationPostSeen = resolve; });
+  const firstJobPollRelease = new Promise<void>((resolve) => { releaseFirstJobPoll = resolve; });
+  const firstJobPollSeen = new Promise<void>((resolve) => { markFirstJobPollSeen = resolve; });
+
+  await page.route(`**/api/surveys/${setup.survey.id}/insights*`, async (route) => {
+    insightsRequestCount += 1;
+    if (insightsRequestCount === 1) {
+      markInitialSeen();
+      await initialRelease;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(translationQueued ? [savedInsight] : []) });
+    releaseInitial();
+  });
+  await page.route(`**/api/surveys/${setup.survey.id}/ai/translate`, async (route) => {
+    translationSubmissionCount += 1;
+    if (translationSubmissionCount > 1) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Translation test failure.' }) });
+      return;
+    }
+    translationQueued = true;
+    markTranslationPostSeen();
+    await translationPostRelease;
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ jobId: `translation-job-${suffix}`, state: 'queued' }) });
+  });
+  await page.route(`**/api/ai/jobs/translation-job-${suffix}`, async (route) => {
+    jobPollCount += 1;
+    if (jobPollCount === 1) {
+      markFirstJobPollSeen();
+      await firstJobPollRelease;
+    }
+    const completed = jobPollCount > 1;
+    await route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify({
+        id: `translation-job-${suffix}`, kind: 'survey.translate', surveyId: setup.survey.id,
+        state: completed ? 'completed' : 'processing', stage: completed ? 'completed' : 'running_terra', progress: completed ? 100 : 35, attempt: 1,
+        input: { language: 'Spanish' }, result: completed ? { output: translation, runtime: {} } : null, error: null,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), completedAt: completed ? new Date().toISOString() : null
+      })
+    });
+  });
+
+  await page.goto(`/surveys/${setup.survey.id}`);
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  const surveyDetails = page.getByRole('heading', { name: 'Survey details' }).locator('..').locator('..');
+  await surveyDetails.getByRole('textbox').first().fill(`Translation viewer edited ${suffix}`);
+  await page.getByRole('tab', { name: 'Terra AI' }).click();
+  await expect(page.getByText('Save changes before using Terra so it works from the latest survey.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Translate', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Quality review/ })).toBeDisabled();
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(page.getByText('Save changes before using Terra so it works from the latest survey.', { exact: true })).toHaveCount(0);
+  await initialSeen;
+  await page.getByLabel('Translate survey').fill('  Spanish  ');
+  await page.getByRole('button', { name: 'Translate', exact: true }).click();
+  const translationSection = page.getByLabel('Translate survey').locator('..').locator('..');
+  await translationPostSeen;
+  const queuingButton = page.getByRole('button', { name: 'Queuing', exact: true });
+  await expect(queuingButton).toBeVisible();
+  await expect(queuingButton).toBeDisabled();
+  await expect(queuingButton).toHaveAttribute('aria-busy', 'true');
+  await expect(translationSection.getByRole('status')).toContainText('Sending the Spanish translation request.');
+
+  releaseTranslationPost();
+  await firstJobPollSeen;
+  await expect(page.getByRole('button', { name: 'Queued', exact: true })).toBeDisabled();
+  await expect(translationSection.getByRole('status')).toContainText('Spanish translation queued. Waiting for Terra.');
+
+  releaseFirstJobPoll();
+  const translatingButton = page.getByRole('button', { name: 'Translating', exact: true });
+  await expect(translatingButton).toBeVisible();
+  await expect(translatingButton).toBeDisabled();
+  await expect(translatingButton).toHaveAttribute('aria-busy', 'true');
+  await expect(translationSection.getByRole('status')).toContainText('Translating survey into Spanish');
+  await expect(translationSection.getByRole('status')).toContainText('35%');
+
+  const savedRow = page.getByRole('button', { name: /Spanish translation/ });
+  await expect(savedRow).toBeVisible();
+  await expect(savedRow).toHaveAttribute('aria-expanded', 'true');
+  await expect(translationSection.getByRole('status')).toContainText('Spanish translation saved.');
+  const viewSavedTranslation = page.getByRole('button', { name: 'View saved translation', exact: true });
+  await expect(viewSavedTranslation).toBeVisible();
+  await expect(page.getByText(translation.title, { exact: true })).toBeVisible();
+  await expect(page.getByText(translation.questions[0].title, { exact: false })).toBeVisible();
+  await page.waitForTimeout(250);
+  await expect(savedRow).toBeVisible();
+  await expect(page.getByText(translation.title, { exact: true })).toBeVisible();
+  if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('saved-translation-viewer.png'), fullPage: true });
+
+  await savedRow.click();
+  await expect(savedRow).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByText(translation.title, { exact: true })).toHaveCount(0);
+  await viewSavedTranslation.click();
+  await expect(savedRow).toBeFocused();
+  await expect(savedRow).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByText(translation.title, { exact: true })).toBeVisible();
+
+  await page.getByLabel('Translate survey').fill('German');
+  await page.getByRole('button', { name: 'Translate', exact: true }).click();
+  await expect(translationSection.getByRole('alert')).toContainText('Translation test failure.');
+  await expect(page.getByRole('button', { name: 'Translate', exact: true })).toBeEnabled();
+
+  await page.evaluate((surveyId) => fetch(`/api/surveys/${surveyId}`, { method: 'DELETE' }), setup.survey.id);
+
+  const emptySurvey = await page.evaluate(async (value) => {
+    const response = await fetch('/api/surveys', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+        title: `Empty translation guard ${value}`, purpose: 'customer_experience', primaryMetric: 'custom', questions: []
+      })
+    });
+    return response.json();
+  }, suffix);
+  await page.goto(`/surveys/${emptySurvey.id}`);
+  await page.getByRole('tab', { name: 'Terra AI' }).click();
+  await expect(page.getByText('Add at least one question before translating.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Translate', exact: true })).toBeDisabled();
+  await page.evaluate((surveyId) => fetch(`/api/surveys/${surveyId}`, { method: 'DELETE' }), emptySurvey.id);
 });

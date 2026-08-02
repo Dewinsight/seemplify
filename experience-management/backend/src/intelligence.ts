@@ -1,7 +1,24 @@
 import crypto from 'node:crypto';
+import { socialListeningResultFor } from './aiSchemas.js';
 import type { SessionUser } from './auth.js';
-import { createJob, db, getJob, listSocialMentionsByIdsForSpace } from './database.js';
+import {
+  auditKnowledge, createKnowledgeMarkdownDocument, getKnowledgeBase, getKnowledgeContext, getKnowledgeDocument, getKnowledgeJob,
+  listKnowledgeBases,
+  type KnowledgeBaseRef, type KnowledgeDocumentRecord, type KnowledgeJobRecord
+} from './knowledgeRepository.js';
+import { createJob, db, getJob, getJobProviderResult, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
+import './spaces.js';
+
+if (db.provider === 'sqlite') {
+  const intelligenceColumns = new Set((db.prepare('PRAGMA table_info(intelligence_reports)').all() as Array<{ name: string }>).map((column) => column.name));
+  if (!intelligenceColumns.has('knowledge_refs_json')) {
+    db.exec("ALTER TABLE intelligence_reports ADD COLUMN knowledge_refs_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  db.exec(`DROP INDEX IF EXISTS intelligence_reports_one_active_request;
+    CREATE UNIQUE INDEX intelligence_reports_one_active_request
+      ON intelligence_reports(space_id,user_id,title,objective,source_refs_json,knowledge_refs_json) WHERE state='queued'`);
+}
 
 export class IntelligenceError extends Error {
   status: number;
@@ -11,6 +28,45 @@ export class IntelligenceError extends Error {
 const now = () => new Date().toISOString();
 function parseJson<T>(value: unknown, fallback: T): T { try { return value ? JSON.parse(String(value)) as T : fallback; } catch { return fallback; } }
 function cleanText(value: unknown, maximum: number) { return String(value || '').trim().replace(/\s+/gu, ' ').slice(0, maximum); }
+function sha256(value: string) { return crypto.createHash('sha256').update(value, 'utf8').digest('hex'); }
+
+export type SocialObservationWindow = {
+  periodStart: string | null;
+  periodEnd: string | null;
+  asOf: string | null;
+  postCount: number;
+  breakdown: { accountPosts: number; mentions: number; searchResults: number; unclassified: number };
+};
+
+type SocialSnapshotItem = {
+  sourceRef?: unknown; publishedAt?: unknown; streams?: unknown; ingestionKind?: unknown;
+  author?: unknown; content?: unknown; analysis?: unknown;
+};
+
+function validIsoTimestamp(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
+/** Deterministic facts only: no model-generated values participate. */
+export function socialObservationWindow(snapshotValue: unknown): SocialObservationWindow {
+  const snapshot = Array.isArray(snapshotValue) ? snapshotValue as SocialSnapshotItem[] : [];
+  const timestamps = snapshot.map((item) => validIsoTimestamp(item?.publishedAt)).filter((item): item is string => Boolean(item)).sort();
+  let accountPosts = 0; let mentions = 0; let searchResults = 0; let unclassified = 0;
+  for (const item of snapshot) {
+    const supplied = Array.isArray(item?.streams) ? item.streams.map(String) : [];
+    const streams = new Set(supplied.length ? supplied : item?.ingestionKind ? [String(item.ingestionKind)] : []);
+    if (streams.has('account_post')) accountPosts += 1;
+    if (streams.has('mention')) mentions += 1;
+    if (streams.has('search')) searchResults += 1;
+    if (![...streams].some((stream) => ['account_post', 'mention', 'search'].includes(stream))) unclassified += 1;
+  }
+  const periodStart = timestamps[0] || null;
+  const periodEnd = timestamps.at(-1) || null;
+  return { periodStart, periodEnd, asOf: periodEnd, postCount: snapshot.length,
+    breakdown: { accountPosts, mentions, searchResults, unclassified } };
+}
 function preview(payload: unknown) {
   if (payload && typeof payload === 'object') {
     const value = payload as Record<string, unknown>;
@@ -26,8 +82,31 @@ function normalizedEvidence(value: unknown): string {
   return '';
 }
 
+function canonicalSocialEvidence(value: unknown, maximum = 100_000): string {
+  return cleanText(value, maximum)
+    .normalize('NFKC')
+    .toLocaleLowerCase('en-US')
+    .replace(/["'`´‘’‚‛“”„‟«»‹›]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function orderedEllipsisIsGrounded(value: unknown, sourceBody: string): boolean {
+  const raw = cleanText(value, 1000).normalize('NFKC');
+  if (!/(?:…|\.{3,})/u.test(raw)) return false;
+  const fragments = raw.split(/(?:…|\.{3,})/u).map((fragment) => canonicalSocialEvidence(fragment, 1000)).filter(Boolean);
+  if (fragments.length < 2 || fragments.length > 3 || fragments.some((fragment) => fragment.length < 12)) return false;
+  let cursor = 0;
+  for (const fragment of fragments) {
+    const index = sourceBody.indexOf(fragment, cursor);
+    if (index < 0) return false;
+    cursor = index + fragment.length;
+  }
+  return true;
+}
+
 export function validateSocialListeningEvidence(sources: Array<{ sourceRef: string; content: string }>, result: any) {
-  const expected = new Map(sources.map((source) => [String(source.sourceRef), normalizedEvidence(source.content)]));
+  const expected = new Map(sources.map((source) => [String(source.sourceRef), canonicalSocialEvidence(source.content)]));
   const returned = Array.isArray(result?.mentions) ? result.mentions.map((mention: any) => String(mention.mentionId)) : [];
   if (returned.length !== expected.size || new Set(returned).size !== expected.size || returned.some((mentionId: string) => !expected.has(mentionId))) {
     throw new IntelligenceError('Terra did not return exactly one analysis for every saved source.', 400);
@@ -35,12 +114,15 @@ export function validateSocialListeningEvidence(sources: Array<{ sourceRef: stri
   const sentimentTotal = ['negative', 'neutral', 'positive', 'mixed'].reduce((total, key) => total + Number(result?.sentiment?.[key] || 0), 0);
   if (sentimentTotal !== expected.size) throw new IntelligenceError('Terra returned sentiment counts that do not match the saved dataset.', 400);
   const sourceBodies = [...expected.values()];
-  const excerptIsGrounded = (value: unknown, exactSource?: string) => {
-    const excerpt = cleanText(value, 1000).toLocaleLowerCase('en-US');
-    const candidates = exactSource === undefined ? sourceBodies : [exactSource];
+  const evidenceIsGrounded = (value: unknown, exactSourceRef?: string) => {
+    const sourceRef = cleanText(value, 1000);
+    if (expected.has(sourceRef)) return exactSourceRef === undefined || sourceRef === exactSourceRef;
+    const excerpt = canonicalSocialEvidence(value, 1000);
+    const candidates = exactSourceRef === undefined ? sourceBodies : [expected.get(exactSourceRef) || ''];
     return candidates.some((body) => {
       const minimum = Math.min(12, body.length);
-      return minimum > 0 && excerpt.length >= minimum && body.includes(excerpt);
+      if (minimum <= 0 || excerpt.length < minimum) return false;
+      return body.includes(excerpt) || orderedEllipsisIsGrounded(value, body);
     });
   };
   const evidence = [
@@ -50,11 +132,11 @@ export function validateSocialListeningEvidence(sources: Array<{ sourceRef: stri
     ...(result?.opportunities || []).flatMap((item: any) => item.evidence || [])
   ];
   for (const excerpt of evidence) {
-    if (!excerptIsGrounded(excerpt)) throw new IntelligenceError('Terra returned evidence that was not present in the saved sources.', 400);
+    if (!evidenceIsGrounded(excerpt)) throw new IntelligenceError('Terra returned evidence that was not present in the saved sources.', 400);
   }
   for (const mention of result.mentions || []) {
-    const source = expected.get(String(mention.mentionId));
-    if (!source || !excerptIsGrounded(mention.evidence, source)) {
+    const sourceRef = String(mention.mentionId);
+    if (!expected.has(sourceRef) || !evidenceIsGrounded(mention.evidence, sourceRef)) {
       throw new IntelligenceError(`Terra returned ungrounded evidence for ${String(mention.mentionId)}.`, 400);
     }
   }
@@ -160,32 +242,82 @@ export function completeSocialReplyDraft(id: string, output: { reply: string; ra
   return rowReplyDraft(db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id));
 }
 
-function rowSocialReport(row: any) {
+function rowSocialPublication(row: any) {
+  const documentState = String(row.document_state || 'queued');
+  const jobState = String(row.job_state || '');
+  const state = row.document_deleted_at || row.knowledge_base_deleted_at || ['deleted', 'deleting'].includes(documentState) ? 'deleted'
+    : documentState === 'ready' ? 'ready'
+    : documentState === 'failed' || jobState === 'failed' ? 'failed' : 'indexing';
+  return {
+    reportId: row.report_id, knowledgeBaseId: row.knowledge_base_id, knowledgeBaseName: row.knowledge_base_name,
+    documentId: row.document_id, jobId: row.job_id, state, reviewStatus: 'reviewed' as const,
+    sourceRequestedBy: row.source_requested_by, publishedBy: row.published_by, publishedAt: row.created_at,
+    sourceSnapshotSha256: row.source_snapshot_sha256, artifactSha256: row.artifact_sha256
+  };
+}
+
+function socialPublications(spaceId: string, reportId?: string, viewerUserId?: string) {
+  const privacy = viewerUserId ? " AND (b.privacy='space' OR b.created_by=?)" : '';
+  const parameters = [spaceId, ...(reportId ? [reportId] : []), ...(viewerUserId ? [viewerUserId] : [])];
+  const rows = db.prepare(`SELECT p.*,b.name knowledge_base_name,b.deleted_at knowledge_base_deleted_at,
+      d.state document_state,d.deleted_at document_deleted_at,j.state job_state
+    FROM social_intelligence_publications p
+    JOIN knowledge_bases b ON b.id=p.knowledge_base_id AND b.space_id=p.space_id
+    JOIN knowledge_documents d ON d.id=p.document_id AND d.space_id=p.space_id
+    LEFT JOIN knowledge_jobs j ON j.id=p.job_id
+    WHERE p.space_id=?${reportId ? ' AND p.report_id=?' : ''}${privacy}
+    ORDER BY p.created_at DESC`).all(...parameters) as any[];
+  return rows.map(rowSocialPublication);
+}
+
+function rowSocialReport(row: any, suppliedPublications: ReturnType<typeof socialPublications> = []) {
   const job = artifactJob(row);
+  const knowledgeBaseIds = (Array.isArray(job?.input.knowledgeBaseRefs) ? job.input.knowledgeBaseRefs : [])
+    .map((ref: any) => String(ref?.id || '')).filter(Boolean);
+  const sourceSnapshotJson = String(row.source_snapshot_json || '[]');
+  const snapshot = parseJson<SocialSnapshotItem[]>(sourceSnapshotJson, []);
   return { id: row.id, connectionId: row.connection_id, title: row.title, mentionIds: parseJson<string[]>(row.mention_ids_json, []),
+    knowledgeBaseIds, observationWindow: socialObservationWindow(snapshot), sourceSnapshotSha256: sha256(sourceSnapshotJson),
+    publications: suppliedPublications,
     state: job?.state === 'failed' ? 'failed' : row.state, result: parseJson(row.result_json, null), runtime: parseJson(row.runtime_json, null),
     aiJobId: row.ai_job_id, error: job?.error || row.error, createdAt: row.created_at, completedAt: row.completed_at, updatedAt: row.updated_at };
 }
 
-export function listSocialIntelligenceReports(_user: SessionUser, spaceId: string, connectionId?: string) {
+export function listSocialIntelligenceReports(user: SessionUser, spaceId: string, connectionId?: string) {
   const parameters: unknown[] = [spaceId]; let connectionFilter = '';
   if (connectionId) { if (!spaceOwnsConnection(spaceId, connectionId)) throw new IntelligenceError('X connection not found.', 404); parameters.push(connectionId); connectionFilter = ' AND r.connection_id=?'; }
-  return (db.prepare(`SELECT r.* FROM social_intelligence_reports r WHERE r.space_id=?${connectionFilter} ORDER BY r.created_at DESC LIMIT 100`).all(...parameters) as any[]).map(rowSocialReport);
+  const publications = socialPublications(spaceId, undefined, user.id);
+  const byReport = new Map<string, typeof publications>();
+  for (const publication of publications) {
+    const list = byReport.get(publication.reportId) || [];
+    list.push(publication); byReport.set(publication.reportId, list);
+  }
+  return (db.prepare(`SELECT r.* FROM social_intelligence_reports r WHERE r.space_id=?${connectionFilter} ORDER BY r.created_at DESC LIMIT 100`).all(...parameters) as any[])
+    .map((row) => rowSocialReport(row, byReport.get(row.id) || []));
 }
 
-export function createSocialIntelligenceReport(user: SessionUser, spaceId: string, input: { connectionId: string; title: string; mentionIds?: string[]; idempotencyKey?: string }) {
+export function createSocialIntelligenceReport(user: SessionUser, spaceId: string, input: {
+  connectionId: string; title: string; mentionIds?: string[]; knowledgeBaseRefs?: KnowledgeBaseRef[]; idempotencyKey?: string;
+}) {
   if (!spaceOwnsConnection(spaceId, input.connectionId)) throw new IntelligenceError('X connection not found.', 404);
   if ((input.mentionIds || []).length > 200) throw new IntelligenceError('Select no more than 200 X posts for one report.');
   let ids = [...new Set(input.mentionIds || [])].slice(0, 200);
-  if (!ids.length) ids = (db.prepare(`SELECT mention_id id FROM x_connection_mentions WHERE connection_id=? ORDER BY last_seen_at DESC LIMIT 200`)
+  if (!ids.length) ids = (db.prepare(`SELECT cm.mention_id id FROM x_connection_mentions cm
+      JOIN social_mentions m ON m.id=cm.mention_id WHERE cm.connection_id=?
+      ORDER BY m.published_at DESC,m.created_at DESC,m.id DESC LIMIT 50`)
     .all(input.connectionId) as Array<{ id: string }>).map((row) => row.id);
   if (!ids.length) throw new IntelligenceError('Collect at least one X post before generating intelligence.', 409);
   const allowed = new Set((db.prepare(`SELECT mention_id id FROM x_connection_mentions WHERE connection_id=? AND mention_id IN (${ids.map(() => '?').join(',')})`)
     .all(input.connectionId, ...ids) as Array<{ id: string }>).map((row) => row.id));
   if (allowed.size !== ids.length) throw new IntelligenceError('One or more selected X posts do not belong to this account.', 404);
+  const streamRows = db.prepare(`SELECT mention_id,streams_json FROM x_connection_mentions
+    WHERE connection_id=? AND mention_id IN (${ids.map(() => '?').join(',')})`).all(input.connectionId, ...ids) as Array<{ mention_id: string; streams_json: string }>;
+  const streamsByMention = new Map(streamRows.map((row) => [row.mention_id,
+    [...new Set(parseJson<string[]>(row.streams_json, []).filter((stream) => ['account_post', 'mention', 'search'].includes(stream)))].sort()]));
   const mentions = listSocialMentionsByIdsForSpace(ids, spaceId);
   const snapshot = mentions.map((mention) => ({ sourceRef: `x-post:${mention.id}`, author: cleanText(mention.author, 200), content: cleanText(mention.content, 1200),
-    publishedAt: mention.publishedAt, analysis: mention.analysis ? {
+    publishedAt: mention.publishedAt, streams: streamsByMention.get(mention.id) || [], ingestionKind: mention.ingestionKind || null,
+    analysis: mention.analysis ? {
       sentiment: (mention.analysis as any).sentiment, sentimentScore: (mention.analysis as any).sentimentScore,
       emotions: Array.isArray((mention.analysis as any).emotions) ? (mention.analysis as any).emotions.slice(0, 12) : [],
       themes: Array.isArray((mention.analysis as any).themes) ? (mention.analysis as any).themes.slice(0, 12) : [],
@@ -196,6 +328,12 @@ export function createSocialIntelligenceReport(user: SessionUser, spaceId: strin
   ids = [...ids].sort();
   const title = cleanText(input.title, 180) || 'X listening report';
   const idsJson = JSON.stringify(ids); const id = crypto.randomUUID(); const timestamp = now();
+  const knowledgeRefsJson = JSON.stringify((input.knowledgeBaseRefs || []).slice()
+    .sort((left, right) => left.id.localeCompare(right.id)));
+  const jobKnowledgeRefsJson = (job: ReturnType<typeof artifactJob>) => JSON.stringify(
+    (Array.isArray(job?.input.knowledgeBaseRefs) ? job.input.knowledgeBaseRefs : []).slice()
+      .sort((left: any, right: any) => String(left?.id || '').localeCompare(String(right?.id || '')))
+  );
   const created = db.transaction(() => {
     if (input.idempotencyKey) {
       const replay = db.prepare('SELECT * FROM social_intelligence_reports WHERE space_id=? AND user_id=? AND idempotency_key=?').get(spaceId, user.id, input.idempotencyKey) as any;
@@ -203,6 +341,7 @@ export function createSocialIntelligenceReport(user: SessionUser, spaceId: strin
         if (replay.connection_id !== input.connectionId || replay.title !== title || replay.mention_ids_json !== idsJson) throw new IntelligenceError('This idempotency key was already used for a different social report.', 409);
         const job = artifactJob(replay);
         if (!job) throw new IntelligenceError('The original idempotent social report is no longer available.', 409);
+        if (jobKnowledgeRefsJson(job) !== knowledgeRefsJson) throw new IntelligenceError('This idempotency key was already used with a different knowledge selection.', 409);
         return { report: rowSocialReport(replay), job, created: false };
       }
     }
@@ -210,13 +349,18 @@ export function createSocialIntelligenceReport(user: SessionUser, spaceId: strin
       ORDER BY created_at LIMIT 1`).get(spaceId, user.id, input.connectionId, title, idsJson) as any;
     if (existing) {
       const job = artifactJob(existing);
-      if (job && ['queued', 'processing'].includes(job.state)) return { report: rowSocialReport(existing), job, created: false };
+      if (job && ['queued', 'processing'].includes(job.state)) {
+        if (jobKnowledgeRefsJson(job) === knowledgeRefsJson) return { report: rowSocialReport(existing), job, created: false };
+        throw new IntelligenceError('An active report for this post selection uses a different knowledge selection.', 409);
+      }
       db.prepare("UPDATE social_intelligence_reports SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
     db.prepare(`INSERT INTO social_intelligence_reports (id,space_id,user_id,connection_id,title,mention_ids_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, input.connectionId, title, idsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('social.report', { reportId: id }, spaceId, null, null, user.id);
+    const job = createJob('social.report', {
+      reportId: id, ...(input.knowledgeBaseRefs?.length ? { knowledgeBaseRefs: input.knowledgeBaseRefs } : {})
+    }, spaceId, null, null, user.id);
     db.prepare('UPDATE social_intelligence_reports SET ai_job_id=? WHERE id=?').run(job.id, id);
     return { report: rowSocialReport(db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id)), job, created: true };
   })();
@@ -229,8 +373,79 @@ export function socialReportExecutionInput(id: string, spaceId?: string) {
     ? db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any
     : db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id) as any;
   if (!row) throw new IntelligenceError('Social intelligence report was deleted.', 404);
-  return { id: row.id, title: row.title, mentions: parseJson(row.source_snapshot_json, []) };
+  const sourceSnapshotJson = String(row.source_snapshot_json || '[]');
+  const mentions = parseJson<Array<{
+    sourceRef: string; author: string; content: string; publishedAt: string; streams?: string[];
+    ingestionKind?: string | null; analysis: Record<string, unknown> | null;
+  }>>(sourceSnapshotJson, []);
+  return { id: row.id, title: row.title, mentions,
+    observationWindow: socialObservationWindow(mentions), sourceSnapshotSha256: sha256(sourceSnapshotJson) };
 }
+
+export function retrySocialIntelligenceReport(_user: SessionUser, spaceId: string, id: string) {
+  const retried = db.transaction(() => {
+    const lock = db.provider === 'postgres' ? ' FOR UPDATE' : '';
+    const row = db.prepare(`SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?${lock}`).get(id, spaceId) as any;
+    if (!row) throw new IntelligenceError('Social intelligence report not found.', 404);
+    const job = artifactJob(row);
+    if (!job || job.kind !== 'social.report') throw new IntelligenceError('The durable job for this report is unavailable.', 409);
+    if (row.state === 'completed' || job.state === 'completed') throw new IntelligenceError('This report is already complete.', 409);
+    if (row.state === 'queued' && ['queued', 'processing'].includes(job.state)) {
+      return { report: rowSocialReport(row), job, restarted: false, journalReused: false };
+    }
+    if (row.state !== 'failed' || job.state !== 'failed') throw new IntelligenceError('Only a failed report can be retried.', 409);
+
+    const execution = socialReportExecutionInput(id, spaceId);
+    const journaled = getJobProviderResult(job.id);
+    let journalReused = false;
+    let retainedJournal: typeof journaled = null;
+    if (journaled?.activity === 'experience.social_listening' && journaled.schemaName === 'experience_social_listening_report') {
+      const parsed = socialListeningResultFor(execution.mentions.map((mention) => String(mention.sourceRef)))
+        .safeParse(journaled.output);
+      if (parsed.success) {
+        try {
+          validateSocialListeningEvidence(
+            execution.mentions.map((mention) => ({ sourceRef: String(mention.sourceRef), content: String(mention.content || '') })),
+            parsed.data
+          );
+          retainedJournal = { ...journaled, output: parsed.data };
+          journalReused = true;
+        } catch {
+          journalReused = false;
+        }
+      }
+    }
+
+    const recordedGeneration = Number(job.input.terraExecutionGeneration ?? 0);
+    const currentGeneration = Number.isSafeInteger(recordedGeneration) && recordedGeneration >= 0
+      ? recordedGeneration
+      : 0;
+    if (currentGeneration >= Number.MAX_SAFE_INTEGER) {
+      throw new IntelligenceError('This report has exhausted its safe Terra retry identities.', 409);
+    }
+    const nextInput = {
+      ...job.input,
+      terraExecutionGeneration: currentGeneration + 1,
+      terraExecutionReason: 'manual_retry',
+      terraCorrectionRequired: false,
+      terraSemanticCorrectionCount: 0
+    };
+    const timestamp = now();
+    const jobChanged = db.prepare(`UPDATE ai_jobs SET state='queued',stage='queued',progress=0,attempt=0,result_json=NULL,error=NULL,
+      retry_at=NULL,started_at=NULL,completed_at=NULL,provider_result_json=?,input_json=?,updated_at=?
+      WHERE id=? AND space_id=? AND kind='social.report' AND state='failed'`)
+      .run(retainedJournal ? JSON.stringify(retainedJournal) : null, JSON.stringify(nextInput), timestamp, job.id, spaceId).changes;
+    const reportChanged = db.prepare(`UPDATE social_intelligence_reports SET state='queued',result_json=NULL,runtime_json=NULL,error=NULL,
+      completed_at=NULL,updated_at=? WHERE id=? AND space_id=? AND state='failed'`)
+      .run(timestamp, id, spaceId).changes;
+    if (!jobChanged || !reportChanged) throw new IntelligenceError('The report changed while it was being retried.', 409);
+    const refreshed = db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any;
+    return { report: rowSocialReport(refreshed), job: getJob(job.id)!, restarted: true, journalReused };
+  })();
+  publishEvent('data-changed', { reason: 'social-intelligence-report-retried', reportId: id }, spaceId);
+  return retried;
+}
+
 export function completeSocialIntelligenceReport(id: string, output: unknown, runtime: unknown, spaceId?: string) {
   const current = spaceId
     ? db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any
@@ -249,8 +464,218 @@ export function completeSocialIntelligenceReport(id: string, output: unknown, ru
   return rowSocialReport(db.prepare('SELECT * FROM social_intelligence_reports WHERE id=?').get(id));
 }
 
-type IntelligenceSource = { ref: string; type: 'survey' | 'social'; title: string; kind: string; createdAt: string; preview: string; payload?: unknown };
-function availableSources(spaceId: string, withPayload = false): IntelligenceSource[] {
+function markdownList(values: unknown[], render: (value: any) => string) {
+  if (!values.length) return '- None recorded for this bounded snapshot.';
+  return values.map((value) => `- ${render(value)}`).join('\n');
+}
+
+function evidenceRefs(value: unknown, allowed: Set<string>) {
+  // Older completed reports could contain grounded excerpts rather than exact
+  // source references. Never copy those excerpts into a derived KB artifact.
+  const refs = Array.isArray(value)
+    ? [...new Set(value.map((item) => cleanText(item, 300)).filter((item) => allowed.has(item)))] : [];
+  return refs.length ? refs.map((ref) => `\`${ref}\``).join(', ') : 'No source references recorded';
+}
+
+function normalizedWords(value: unknown) {
+  return cleanText(value, 40_000).normalize('NFKC').toLocaleLowerCase('en-US')
+    .match(/[\p{L}\p{N}@#'_’-]+/gu) || [];
+}
+
+function rawSourceNgrams(snapshot: SocialSnapshotItem[]) {
+  const ngrams = new Set<string>();
+  for (const item of snapshot) {
+    const words = normalizedWords(item.content);
+    for (let index = 0; index <= words.length - 6; index += 1) {
+      const phrase = words.slice(index, index + 6).join(' ');
+      if (phrase.length >= 36) ngrams.add(phrase);
+    }
+  }
+  return ngrams;
+}
+
+function derivedText(value: unknown, maximum: number, sourceNgrams: Set<string>) {
+  const text = cleanText(value, maximum);
+  const words = normalizedWords(text);
+  for (let index = 0; index <= words.length - 6; index += 1) {
+    const phrase = words.slice(index, index + 6).join(' ');
+    if (phrase.length >= 36 && sourceNgrams.has(phrase)) {
+      return '[Generated wording withheld because it substantially reproduced source text.]';
+    }
+  }
+  return text;
+}
+
+function socialReportMarkdown(row: any) {
+  const sourceSnapshotJson = String(row.source_snapshot_json || '[]');
+  const snapshot = parseJson<SocialSnapshotItem[]>(sourceSnapshotJson, []);
+  const window = socialObservationWindow(snapshot);
+  const result = parseJson<any>(row.result_json, {});
+  const runtime = parseJson<Record<string, unknown>>(row.runtime_json, {});
+  const sourceRefs = [...new Set(snapshot.map((item) => cleanText(item.sourceRef, 300)).filter(Boolean))].sort();
+  const allowedSourceRefs = new Set(sourceRefs);
+  const sourceNgrams = rawSourceNgrams(snapshot);
+  const sourceSnapshotSha256 = sha256(sourceSnapshotJson);
+  const model = cleanText(runtime.model, 300) || 'Not reported';
+  const provider = cleanText(runtime.providerLabel || runtime.provider, 300) || 'Not reported';
+  const observedRange = window.periodStart && window.periodEnd
+    ? `${window.periodStart} to ${window.periodEnd}` : 'Unavailable in the retained snapshot';
+  const overlapNote = 'Stream counts are independent discovery labels and may overlap; unclassified covers legacy snapshots without retained stream labels.';
+  const markdown = [
+    `# ${cleanText(row.title, 300) || 'Social intelligence report'}`,
+    '',
+    '> **Derived, reviewed intelligence.** This document contains reviewed generated conclusions and provenance, not the retained raw-post snapshot. Substantial exact source-wording overlap is withheld. It is not primary evidence.',
+    '',
+    '## Provenance',
+    '',
+    `- Source report ID: \`${row.id}\``,
+    `- Source snapshot SHA-256: \`${sourceSnapshotSha256}\``,
+    `- Report completed: ${row.completed_at || 'Not reported'}`,
+    `- Observation period: ${observedRange}`,
+    `- As of: ${window.asOf || 'Unavailable'}`,
+    `- Posts in immutable snapshot: ${window.postCount}`,
+    `- Discovery breakdown: ${window.breakdown.accountPosts} account posts; ${window.breakdown.mentions} mentions; ${window.breakdown.searchResults} search results; ${window.breakdown.unclassified} unclassified`,
+    `- Runtime: ${provider} / ${model}`,
+    '',
+    overlapNote,
+    '',
+    '## Source references',
+    '',
+    sourceRefs.length ? sourceRefs.map((ref) => `- \`${ref}\``).join('\n') : '- No source references retained.',
+    '',
+    '## Executive summary',
+    '',
+    derivedText(result.executiveSummary, 20_000, sourceNgrams) || 'No executive summary was generated.',
+    '',
+    '## Model-classified sentiment counts',
+    '',
+    `- Negative: ${Number(result?.sentiment?.negative || 0)}`,
+    `- Neutral: ${Number(result?.sentiment?.neutral || 0)}`,
+    `- Positive: ${Number(result?.sentiment?.positive || 0)}`,
+    `- Mixed: ${Number(result?.sentiment?.mixed || 0)}`,
+    '',
+    '## Themes',
+    '',
+    markdownList(Array.isArray(result.themes) ? result.themes : [], (item) =>
+      `**${derivedText(item?.name, 1000, sourceNgrams)}** — ${Number(item?.mentions || 0)} mentions; sentiment: ${derivedText(item?.sentiment, 300, sourceNgrams) || 'not reported'}; evidence: ${evidenceRefs(item?.evidence, allowedSourceRefs)}`),
+    '',
+    '## Emerging signals',
+    '',
+    markdownList(Array.isArray(result.emergingTrends) ? result.emergingTrends : [], (item) =>
+      `**${derivedText(item?.trend, 1500, sourceNgrams)}** — tentative direction: ${derivedText(item?.direction, 100, sourceNgrams) || 'not reported'}; evidence: ${evidenceRefs(item?.evidence, allowedSourceRefs)}`),
+    '',
+    '## Risks',
+    '',
+    markdownList(Array.isArray(result.risks) ? result.risks : [], (item) =>
+      `**${derivedText(item?.issue, 1500, sourceNgrams)}** — severity: ${derivedText(item?.severity, 100, sourceNgrams) || 'not reported'}; action: ${derivedText(item?.action, 3000, sourceNgrams) || 'none'}; evidence: ${evidenceRefs(item?.evidence, allowedSourceRefs)}`),
+    '',
+    '## Opportunities',
+    '',
+    markdownList(Array.isArray(result.opportunities) ? result.opportunities : [], (item) =>
+      `**${derivedText(item?.opportunity, 1500, sourceNgrams)}** — action: ${derivedText(item?.action, 3000, sourceNgrams) || 'none'}; evidence: ${evidenceRefs(item?.evidence, allowedSourceRefs)}`),
+    '',
+    '## Limitations',
+    '',
+    '- This is a bounded snapshot, not a platform-wide or population-level measurement.',
+    '- Publication records a human review decision; it does not convert generated conclusions into primary facts.',
+    '- A single snapshot does not provide a defensible prior-period baseline. Any rising, stable, or falling direction is tentative until compared with an equivalent earlier window.',
+    '- Source references identify the retained evidence chain. If the underlying retained history is removed, this derived artifact contains no raw post text to recover it.',
+    '',
+    '## Runtime record',
+    '',
+    '```json',
+    JSON.stringify(runtime, null, 2),
+    '```',
+    ''
+  ].join('\n');
+  return { markdown, sourceSnapshotSha256, window, sourceRefs, runtime, model, provider };
+}
+
+export function publishSocialIntelligenceReport(user: SessionUser, spaceId: string, reportId: string, input: {
+  knowledgeBaseId: string; reviewed: true;
+}): {
+  report: ReturnType<typeof rowSocialReport>; publication: ReturnType<typeof rowSocialPublication>;
+  document: KnowledgeDocumentRecord; job: KnowledgeJobRecord | null; deduplicated: boolean;
+} {
+  if (input.reviewed !== true) throw new IntelligenceError('Confirm review before publishing derived intelligence.', 400);
+  const row = db.prepare('SELECT * FROM social_intelligence_reports WHERE id=? AND space_id=?').get(reportId, spaceId) as any;
+  if (!row) throw new IntelligenceError('Social intelligence report not found.', 404);
+  if (row.state !== 'completed' || !row.result_json || !row.completed_at) {
+    throw new IntelligenceError('Only a completed social intelligence report can be reviewed and published.', 409);
+  }
+  const knowledgeBase = getKnowledgeBase(input.knowledgeBaseId, spaceId, false, user.id);
+  if (!knowledgeBase) throw new IntelligenceError('Knowledge base not found in this space.', 404);
+  const existing = socialPublications(spaceId, reportId, user.id).find((item) => item.knowledgeBaseId === knowledgeBase.id);
+  if (existing) {
+    const document = getKnowledgeDocument(existing.documentId, knowledgeBase.id, spaceId, true);
+    if (!document || existing.state === 'deleted') {
+      throw new IntelligenceError('This reviewed report was already published to that knowledge base and the derived document was deleted. Create a new report version before publishing again.', 409);
+    }
+    return { report: rowSocialReport(row, socialPublications(spaceId, reportId, user.id)), publication: existing, document,
+      job: existing.jobId ? getKnowledgeJob(existing.jobId, spaceId) : null, deduplicated: true };
+  }
+
+  const artifact = socialReportMarkdown(row);
+  const created = createKnowledgeMarkdownDocument({
+    spaceId, knowledgeBaseId: knowledgeBase.id, userId: user.id,
+    originalName: `Social intelligence ${row.id}.md`, markdown: artifact.markdown,
+    metadata: {
+      artifactType: 'derived_social_intelligence', trustStatus: 'human_reviewed_derived',
+      sourceReportId: row.id, sourceSnapshotSha256: artifact.sourceSnapshotSha256,
+      periodStart: artifact.window.periodStart, periodEnd: artifact.window.periodEnd, asOf: artifact.window.asOf,
+      sourcePostCount: artifact.window.postCount, accountPostCount: artifact.window.breakdown.accountPosts,
+      mentionCount: artifact.window.breakdown.mentions, searchResultCount: artifact.window.breakdown.searchResults,
+      runtimeProvider: artifact.provider, runtimeModel: artifact.model, reviewedBy: user.id
+    }
+  });
+  const publishedAt = now();
+  const publicationInserted = db.prepare(`INSERT INTO social_intelligence_publications
+    (report_id,space_id,knowledge_base_id,document_id,job_id,source_requested_by,published_by,review_status,source_snapshot_sha256,artifact_sha256,created_at)
+    VALUES (?,?,?,?,?,?,?,'reviewed',?,?,?) ON CONFLICT(report_id,knowledge_base_id) DO NOTHING`)
+    .run(row.id, spaceId, knowledgeBase.id, created.document.id, created.job?.id || null, row.user_id, user.id,
+      artifact.sourceSnapshotSha256, created.sha256, publishedAt).changes === 1;
+  const publication = socialPublications(spaceId, reportId, user.id).find((item) => item.knowledgeBaseId === knowledgeBase.id);
+  if (!publication) throw new IntelligenceError('The reviewed publication could not be recorded.', 500);
+  if (publicationInserted) {
+    auditKnowledge({ spaceId, knowledgeBaseId: knowledgeBase.id, documentId: publication.documentId,
+      jobId: publication.jobId, aiJobId: row.ai_job_id, actorUserId: user.id,
+      action: 'social_intelligence.reviewed_and_published', detail: {
+        reportId: row.id, reviewStatus: 'reviewed', sourceSnapshotSha256: artifact.sourceSnapshotSha256,
+        artifactSha256: publication.artifactSha256, observationWindow: artifact.window,
+        sourceRequestedBy: row.user_id, sourceRefCount: artifact.sourceRefs.length, containsRetainedRawPostSnapshot: false
+      } });
+    publishEvent('data-changed', { reason: 'social-intelligence-report-published', reportId: row.id,
+      knowledgeBaseId: knowledgeBase.id, documentId: publication.documentId }, spaceId);
+  }
+  return { report: rowSocialReport(row, socialPublications(spaceId, reportId, user.id)), publication,
+    document: getKnowledgeDocument(publication.documentId, knowledgeBase.id, spaceId) || created.document,
+    job: publication.jobId ? getKnowledgeJob(publication.jobId, spaceId) : created.job,
+    deduplicated: created.deduplicated || !publicationInserted };
+}
+
+export type HistoricalIntelligenceSource = {
+  ref: string;
+  type: 'survey' | 'social';
+  title: string;
+  kind: string;
+  createdAt: string;
+  preview: string;
+  payload?: unknown;
+};
+export type IntelligenceSource = HistoricalIntelligenceSource | {
+  ref: string;
+  type: 'knowledge';
+  title: string;
+  kind: 'knowledge_base';
+  createdAt: string;
+  preview: string;
+  available?: boolean;
+  disabledReason?: string;
+  knowledgeBaseId?: string;
+  documentCount?: number;
+  terraContextEnabled?: boolean;
+};
+function availableSources(spaceId: string, withPayload = false): HistoricalIntelligenceSource[] {
   const surveys = (db.prepare(`SELECT i.id,i.kind,i.payload_json,i.created_at,s.title survey_title FROM insights i JOIN surveys s ON s.id=i.survey_id
     WHERE s.space_id=? AND i.kind IN ('ai_insights','executive_report') ORDER BY i.created_at DESC LIMIT 200`).all(spaceId) as any[]).map((row) => {
       const payload = parseJson(row.payload_json, {}); return { ref: `survey-insight:${row.id}`, type: 'survey' as const,
@@ -258,16 +683,60 @@ function availableSources(spaceId: string, withPayload = false): IntelligenceSou
         createdAt: row.created_at, preview: preview(payload), ...(withPayload ? { payload } : {}) };
     });
   const social = (db.prepare(`SELECT * FROM social_intelligence_reports WHERE space_id=? AND state='completed' ORDER BY created_at DESC LIMIT 200`).all(spaceId) as any[]).map((row) => {
-    const payload = parseJson(row.result_json, {}); return { ref: `social-report:${row.id}`, type: 'social' as const,
+    const result = parseJson<Record<string, unknown>>(row.result_json, {});
+    const sourceSnapshotJson = String(row.source_snapshot_json || '[]');
+    const payload = { ...result, observationWindow: socialObservationWindow(parseJson(sourceSnapshotJson, [])),
+      sourceSnapshotSha256: sha256(sourceSnapshotJson) };
+    return { ref: `social-report:${row.id}`, type: 'social' as const,
       title: row.title, kind: 'social_report', createdAt: row.completed_at || row.created_at, preview: preview(payload), ...(withPayload ? { payload } : {}) };
   });
   return [...surveys, ...social].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
-export function listIntelligenceSources(_user: SessionUser, spaceId: string) { return availableSources(spaceId, false); }
+export function listIntelligenceSources(user: SessionUser, spaceId: string) {
+  const reports = availableSources(spaceId, false);
+  const knowledge = listKnowledgeBases(spaceId, false, user.id).map((base): IntelligenceSource => {
+    const ready = ['ready', 'indexing', 'degraded'].includes(base.status)
+      && base.currentVersion > 0 && base.readyDocumentCount > 0;
+    const shareable = base.privacy === 'space';
+    const available = ready && shareable && base.allowTerraContext;
+    const disabledReason = !ready
+      ? 'Index at least one document before using this knowledge base.'
+      : !shareable
+        ? 'Private knowledge can be chatted with inside its workspace, but cannot be attached to a shared analysis.'
+        : !base.allowTerraContext
+          ? 'Enable Terra context in knowledge-base settings to use this source.'
+          : undefined;
+    return {
+      ref: `knowledge-base:${base.id}`,
+      type: 'knowledge',
+      kind: 'knowledge_base',
+      title: base.name,
+      createdAt: base.updatedAt,
+      preview: base.description || `${base.readyDocumentCount} ready document${base.readyDocumentCount === 1 ? '' : 's'} with ${base.chunkCount} indexed chunks.`,
+      available,
+      ...(disabledReason ? { disabledReason } : {}),
+      knowledgeBaseId: base.id,
+      documentCount: base.documentCount,
+      terraContextEnabled: base.allowTerraContext
+    };
+  });
+  return [...reports, ...knowledge].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export function resolveIntelligenceSourceSnapshots(spaceId: string, sourceRefs: string[]) {
+  const requested = [...new Set(sourceRefs)];
+  const byRef = new Map(availableSources(spaceId, true).map((source) => [source.ref, source]));
+  const selected = requested.map((ref) => byRef.get(ref));
+  if (selected.some((source) => !source)) throw new IntelligenceError('One or more selected reports are unavailable.', 404);
+  return selected as HistoricalIntelligenceSource[];
+}
 
 function rowIntelligenceReport(row: any) {
   const job = artifactJob(row);
+  const knowledgeBaseIds = parseJson<Array<{ id?: string }>>(row.knowledge_refs_json, [])
+    .map((ref) => String(ref?.id || '')).filter(Boolean);
   return { id: row.id, title: row.title, objective: row.objective, sourceRefs: parseJson<{ survey: string[]; social: string[] }>(row.source_refs_json, { survey: [], social: [] }),
+    knowledgeBaseIds,
     state: job?.state === 'failed' ? 'failed' : row.state, result: parseJson(row.result_json, null), runtime: parseJson(row.runtime_json, null),
     aiJobId: row.ai_job_id, error: job?.error || row.error, createdAt: row.created_at, completedAt: row.completed_at, updatedAt: row.updated_at };
 }
@@ -279,12 +748,18 @@ export function getIntelligenceReport(_user: SessionUser, spaceId: string, id: s
   if (!row) throw new IntelligenceError('Intelligence report not found.', 404);
   return rowIntelligenceReport(row);
 }
-export function createIntelligenceReport(user: SessionUser, spaceId: string, input: { title: string; objective?: string; sourceRefs: string[]; idempotencyKey?: string }) {
+export function createIntelligenceReport(user: SessionUser, spaceId: string, input: {
+  title: string; objective?: string; sourceRefs: string[]; knowledgeBaseRefs?: KnowledgeBaseRef[]; idempotencyKey?: string;
+}) {
   const requested = [...new Set(input.sourceRefs)].slice(0, 12).sort();
-  if (requested.length < 2) throw new IntelligenceError('Select at least two historical reports to synthesize.');
-  const sources = availableSources(spaceId, true); const byRef = new Map(sources.map((source) => [source.ref, source]));
-  const selected = requested.map((ref) => byRef.get(ref));
-  if (selected.some((source) => !source)) throw new IntelligenceError('One or more selected reports are unavailable.', 404);
+  const knowledgeSourceCount = new Set((input.knowledgeBaseRefs || []).map((ref) => ref.id)).size;
+  if (requested.length + knowledgeSourceCount < 2) {
+    throw new IntelligenceError('Select at least two evidence sources to synthesize.');
+  }
+  if (requested.length + knowledgeSourceCount > 12) {
+    throw new IntelligenceError('Choose no more than twelve evidence sources.');
+  }
+  const selected = resolveIntelligenceSourceSnapshots(spaceId, requested);
   const snapshot = selected.map((source) => ({ ref: source!.ref, type: source!.type, title: source!.title, kind: source!.kind,
     createdAt: source!.createdAt, payload: source!.payload }));
   const snapshotJson = JSON.stringify(snapshot);
@@ -292,7 +767,13 @@ export function createIntelligenceReport(user: SessionUser, spaceId: string, inp
   const refs = { survey: snapshot.filter((source) => source.type === 'survey').map((source) => source.ref),
     social: snapshot.filter((source) => source.type === 'social').map((source) => source.ref) };
   const title = cleanText(input.title, 180) || 'Combined intelligence'; const objective = cleanText(input.objective, 1000);
-  const refsJson = JSON.stringify(refs); const id = crypto.randomUUID(); const timestamp = now();
+  const refsJson = JSON.stringify(refs);
+  const knowledgeRefsJson = JSON.stringify((input.knowledgeBaseRefs || []).slice().sort((left, right) => left.id.localeCompare(right.id)));
+  const jobKnowledgeRefsJson = (job: ReturnType<typeof artifactJob>) => JSON.stringify(
+    (Array.isArray(job?.input.knowledgeBaseRefs) ? job.input.knowledgeBaseRefs : []).slice()
+      .sort((left: any, right: any) => String(left?.id || '').localeCompare(String(right?.id || '')))
+  );
+  const id = crypto.randomUUID(); const timestamp = now();
   const created = db.transaction(() => {
     if (input.idempotencyKey) {
       const replay = db.prepare('SELECT * FROM intelligence_reports WHERE space_id=? AND user_id=? AND idempotency_key=?').get(spaceId, user.id, input.idempotencyKey) as any;
@@ -300,20 +781,25 @@ export function createIntelligenceReport(user: SessionUser, spaceId: string, inp
         if (replay.title !== title || replay.objective !== objective || replay.source_refs_json !== refsJson) throw new IntelligenceError('This idempotency key was already used for a different intelligence report.', 409);
         const job = artifactJob(replay);
         if (!job) throw new IntelligenceError('The original idempotent intelligence report is no longer available.', 409);
+        if (jobKnowledgeRefsJson(job) !== knowledgeRefsJson) throw new IntelligenceError('This idempotency key was already used with a different knowledge selection.', 409);
         return { report: rowIntelligenceReport(replay), job, created: false };
       }
     }
-    const existing = db.prepare(`SELECT * FROM intelligence_reports WHERE space_id=? AND user_id=? AND title=? AND objective=? AND source_refs_json=? AND state='queued'
-      ORDER BY created_at LIMIT 1`).get(spaceId, user.id, title, objective, refsJson) as any;
+    const existing = db.prepare(`SELECT * FROM intelligence_reports WHERE space_id=? AND user_id=? AND title=? AND objective=? AND source_refs_json=?
+      AND knowledge_refs_json=? AND state='queued' ORDER BY created_at LIMIT 1`)
+      .get(spaceId, user.id, title, objective, refsJson, knowledgeRefsJson) as any;
     if (existing) {
       const job = artifactJob(existing);
       if (job && ['queued', 'processing'].includes(job.state)) return { report: rowIntelligenceReport(existing), job, created: false };
       db.prepare("UPDATE intelligence_reports SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
-    db.prepare(`INSERT INTO intelligence_reports (id,space_id,user_id,title,objective,source_refs_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, title, objective, refsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('intelligence.synthesize', { reportId: id }, spaceId, null, null, user.id);
+    db.prepare(`INSERT INTO intelligence_reports (id,space_id,user_id,title,objective,source_refs_json,source_snapshot_json,knowledge_refs_json,state,idempotency_key,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, title, objective, refsJson, snapshotJson,
+        knowledgeRefsJson, input.idempotencyKey || null, timestamp, timestamp);
+    const job = createJob('intelligence.synthesize', {
+      reportId: id, ...(input.knowledgeBaseRefs?.length ? { knowledgeBaseRefs: input.knowledgeBaseRefs } : {})
+    }, spaceId, null, null, user.id);
     db.prepare('UPDATE intelligence_reports SET ai_job_id=? WHERE id=?').run(job.id, id);
     return { report: rowIntelligenceReport(db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id)), job, created: true };
   })();
@@ -326,7 +812,14 @@ export function intelligenceExecutionInput(id: string, spaceId?: string) {
     ? db.prepare('SELECT * FROM intelligence_reports WHERE id=? AND space_id=?').get(id, spaceId) as any
     : db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id) as any;
   if (!row) throw new IntelligenceError('Intelligence report was deleted.', 404);
-  return { id: row.id, title: row.title, objective: row.objective, sources: parseJson<Array<{ ref: string; type: string; title: string; payload: unknown }>>(row.source_snapshot_json, []) };
+  return {
+    id: row.id,
+    title: row.title,
+    objective: row.objective,
+    sources: parseJson<Array<{ ref: string; type: string; title: string; payload: unknown }>>(row.source_snapshot_json, []),
+    knowledgeBaseIds: parseJson<Array<{ id?: string }>>(row.knowledge_refs_json, [])
+      .map((ref) => String(ref?.id || '')).filter(Boolean)
+  };
 }
 export function completeIntelligenceReport(id: string, output: any, runtime: unknown, spaceId?: string) {
   const current = spaceId
@@ -334,7 +827,16 @@ export function completeIntelligenceReport(id: string, output: any, runtime: unk
     : db.prepare('SELECT * FROM intelligence_reports WHERE id=?').get(id) as any;
   if (!current) throw new IntelligenceError('Intelligence report was deleted.', 404);
   if (current?.state === 'completed' && current.result_json) return rowIntelligenceReport(current);
-  const input = intelligenceExecutionInput(id, spaceId); const sources = new Map(input.sources.map((source) => [source.ref, { body: normalizedEvidence(source.payload), type: source.type }]));
+  const input = intelligenceExecutionInput(id, spaceId);
+  const sources = new Map(input.sources.map((source) => [source.ref, {
+    body: normalizedEvidence(source.payload), type: source.type, groupRef: source.ref
+  }]));
+  const knowledgeContext = current.ai_job_id ? getKnowledgeContext(String(current.ai_job_id), String(current.space_id)) : null;
+  for (const citation of knowledgeContext?.citations || []) {
+    sources.set(citation.sourceRef, {
+      body: normalizedEvidence(citation.excerpt), type: 'knowledge', groupRef: `knowledge-base:${citation.knowledgeBaseId}`
+    });
+  }
   const findings = [...(output.themes || []), ...(output.convergence || []), ...(output.divergence || []), ...(output.risks || []),
     ...(output.opportunities || []), ...(output.recommendations || [])];
   for (const finding of findings) for (const evidence of finding.evidence || []) {
@@ -345,13 +847,17 @@ export function completeIntelligenceReport(id: string, output: any, runtime: unk
       throw new IntelligenceError(`Terra returned evidence that was not present in ${String(evidence.sourceRef)}.`);
     }
   }
-  const selectedTypes = new Set(input.sources.map((source) => source.type));
+  const selectedTypes = new Set([
+    ...input.sources.map((source) => source.type),
+    ...(input.knowledgeBaseIds.length ? ['knowledge'] : [])
+  ]);
   for (const finding of [...(output.convergence || []), ...(output.divergence || [])]) {
     const references = new Set<string>((finding.evidence || []).map((evidence: any) => String(evidence.sourceRef)));
-    if (references.size < 2) throw new IntelligenceError('Convergence and divergence findings must cite at least two selected reports.');
+    const sourceGroups = new Set([...references].map((reference) => sources.get(reference)?.groupRef).filter(Boolean));
+    if (sourceGroups.size < 2) throw new IntelligenceError('Convergence and divergence findings must cite at least two selected evidence sources.');
     if (selectedTypes.size > 1) {
       const evidenceTypes = new Set([...references].map((reference) => sources.get(reference)?.type).filter(Boolean));
-      if (evidenceTypes.size < 2) throw new IntelligenceError('Cross-source convergence and divergence must cite both survey and social evidence.');
+      if (evidenceTypes.size < 2) throw new IntelligenceError('Cross-source convergence and divergence must cite more than one selected source type.');
     }
   }
   const timestamp = now();

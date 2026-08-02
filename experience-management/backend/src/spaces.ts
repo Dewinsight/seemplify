@@ -4,14 +4,20 @@ import path from 'node:path';
 import type { Request } from 'express';
 import { config } from './config.js';
 import { db } from './database.js';
+import {
+  assertSubscriptionFeature, assertSubscriptionQuota, ensureDefaultSubscriptionForSpace,
+  SubscriptionEntitlementError, type SubscriptionFeature
+} from './subscriptionEntitlements.js';
 
 export type SpaceRole = 'owner' | 'admin' | 'member';
+export type SpaceStatus = 'active' | 'suspended' | 'archived';
 
 export type SpaceSummary = {
   id: string;
   name: string;
   slug: string;
   role: SpaceRole;
+  status: SpaceStatus;
   isPersonal: boolean;
   createdAt: string;
   updatedAt: string;
@@ -87,6 +93,7 @@ function createSpaceRecord(userId: string, name: string, personalForUserId: stri
     VALUES (?,?,?,?,?,?,?)`).run(id, name, uniqueSlug(name), userId, personalForUserId, now, now);
   db.prepare(`INSERT INTO space_memberships (space_id,user_id,role,joined_at,updated_at)
     VALUES (?,?, 'owner', ?, ?)`).run(id, userId, now, now);
+  ensureDefaultSubscriptionForSpace(id, userId);
   return id;
 }
 
@@ -132,6 +139,8 @@ function createSpaceSchema() {
       updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS space_invitations_space ON space_invitations(space_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS space_invitations_account_pending
+      ON space_invitations(LOWER(email),created_at DESC) WHERE accepted_at IS NULL AND revoked_at IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS space_invitations_one_pending_email
       ON space_invitations(space_id,email) WHERE accepted_at IS NULL AND revoked_at IS NULL;
     CREATE TABLE IF NOT EXISTS space_migration_quarantine (
@@ -177,6 +186,9 @@ function createSpaceSchema() {
   if (!uploadColumns.has('response_id')) db.exec('ALTER TABLE uploads ADD COLUMN response_id TEXT REFERENCES responses(id) ON DELETE CASCADE');
   if (!uploadColumns.has('expires_at')) db.exec('ALTER TABLE uploads ADD COLUMN expires_at TEXT');
   if (!uploadColumns.has('claimed_at')) db.exec('ALTER TABLE uploads ADD COLUMN claimed_at TEXT');
+  if (!columns('intelligence_reports').has('knowledge_refs_json')) {
+    db.exec("ALTER TABLE intelligence_reports ADD COLUMN knowledge_refs_json TEXT NOT NULL DEFAULT '[]'");
+  }
   db.exec('CREATE INDEX IF NOT EXISTS uploads_expiry ON uploads(expires_at) WHERE response_id IS NULL');
 }
 
@@ -679,7 +691,7 @@ function backfillExistingArtifacts() {
     CREATE UNIQUE INDEX IF NOT EXISTS social_intelligence_reports_idempotency
       ON social_intelligence_reports(space_id,user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_one_active_request
-      ON intelligence_reports(space_id,user_id,title,objective,source_refs_json) WHERE state='queued';
+      ON intelligence_reports(space_id,user_id,title,objective,source_refs_json,knowledge_refs_json) WHERE state='queued';
     CREATE UNIQUE INDEX IF NOT EXISTS intelligence_reports_idempotency
       ON intelligence_reports(space_id,user_id,idempotency_key) WHERE idempotency_key IS NOT NULL;`);
 
@@ -704,7 +716,7 @@ function initializeSpaces() {
   if (violations.length) throw new Error('Space migration left invalid foreign keys.');
 }
 
-initializeSpaces();
+if (db.provider === 'sqlite') initializeSpaces();
 
 export function ensureDefaultSpaceForUser(user: { id: string; name: string }, requestedName?: unknown) {
   return db.transaction(() => {
@@ -725,6 +737,7 @@ function rowSpace(row: any): SpaceSummary {
     name: row.name,
     slug: row.slug,
     role: row.role,
+    status: String(row.status || 'active') as SpaceStatus,
     isPersonal: row.personal_for_user_id === row.user_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -740,14 +753,67 @@ export function listSpacesForUser(userId: string): SpaceSummary[] {
 export function activeSpaceForUser(userId: string): SpaceSummary {
   let row = db.prepare(`SELECT s.*,m.role,m.user_id FROM users u
     JOIN space_memberships m ON m.space_id=u.active_space_id AND m.user_id=u.id
-    JOIN spaces s ON s.id=m.space_id WHERE u.id=?`).get(userId) as any;
+    JOIN spaces s ON s.id=m.space_id WHERE u.id=? AND COALESCE(s.status,'active')='active'`).get(userId) as any;
   if (!row) {
-    const fallback = listSpacesForUser(userId)[0];
-    if (!fallback) throw new SpaceError('This account does not have a space.', 403, 'SPACE_MEMBERSHIP_REQUIRED');
+    const fallback = listSpacesForUser(userId).find((space) => space.status === 'active');
+    if (!fallback) throw new SpaceError('This account does not have an active space.', 403, 'ACTIVE_SPACE_REQUIRED');
     db.prepare('UPDATE users SET active_space_id=? WHERE id=?').run(fallback.id, userId);
     return fallback;
   }
   return rowSpace(row);
+}
+
+function requestedFeature(request: Request): SubscriptionFeature | null {
+  const path = String(request.originalUrl || request.url || request.path || '').split('?')[0].toLowerCase();
+  if (path.includes('/knowledge-bases')) return 'knowledgeBases';
+  if (path.includes('/social/') || path.includes('/integrations/x')) return 'socialListening';
+  if (path.includes('/esign')) return 'agreements';
+  if (path.includes('/campaigns')) return 'campaigns';
+  if (path.includes('/tickets')) return 'serviceRecovery';
+  if (path.includes('/ai/') || path.endsWith('/ai') || path.includes('/runtime')) return 'terra';
+  if (path.includes('/surveys') || path.includes('/collectors') || path.includes('/responses')) return 'surveys';
+  return null;
+}
+
+function operationalSpace(row: any, request?: Request) {
+  const space = rowSpace(row);
+  if (space.status !== 'active') {
+    throw new SpaceError(
+      space.status === 'archived' ? 'This space is archived.' : 'This space is suspended. Contact platform support.',
+      403,
+      space.status === 'archived' ? 'SPACE_ARCHIVED' : 'SPACE_SUSPENDED'
+    );
+  }
+  const feature = request ? requestedFeature(request) : null;
+  if (feature) {
+    try { assertSubscriptionFeature(space.id, feature); }
+    catch (error) {
+      if (error instanceof SubscriptionEntitlementError) throw new SpaceError(error.message, error.status, error.code);
+      throw error;
+    }
+  }
+  return space;
+}
+
+export function assertSpaceOperationalById(spaceId: string, feature?: SubscriptionFeature) {
+  const row = db.prepare('SELECT id,name,slug,personal_for_user_id,created_at,updated_at,status FROM spaces WHERE id=?').get(spaceId) as any;
+  if (!row) throw new SpaceError('Space not found.', 404, 'SPACE_NOT_FOUND');
+  const status = String(row.status || 'active') as SpaceStatus;
+  if (status !== 'active') {
+    throw new SpaceError(
+      status === 'archived' ? 'This space is archived.' : 'This space is suspended. Contact platform support.',
+      403,
+      status === 'archived' ? 'SPACE_ARCHIVED' : 'SPACE_SUSPENDED'
+    );
+  }
+  if (feature) {
+    try { return assertSubscriptionFeature(spaceId, feature); }
+    catch (error) {
+      if (error instanceof SubscriptionEntitlementError) throw new SpaceError(error.message, error.status, error.code);
+      throw error;
+    }
+  }
+  return status;
 }
 
 export function resolveRequestSpace(request: Request, userId: string): SpaceContext {
@@ -759,20 +825,31 @@ export function resolveRequestSpace(request: Request, userId: string): SpaceCont
     if (!row) throw new SpaceError('You do not have access to this space.', 403, 'SPACE_ACCESS_DENIED');
   } else {
     const active = activeSpaceForUser(userId);
+    const feature = requestedFeature(request);
+    if (feature) {
+      try { assertSubscriptionFeature(active.id, feature); }
+      catch (error) {
+        if (error instanceof SubscriptionEntitlementError) throw new SpaceError(error.message, error.status, error.code);
+        throw error;
+      }
+    }
     return { ...active, userId };
   }
-  return { ...rowSpace(row), userId };
+  return { ...operationalSpace(row, request), userId };
 }
 
 export function getSpaceForUser(userId: string, spaceId: string): SpaceContext | null {
   const row = db.prepare(`SELECT s.*,m.role,m.user_id FROM spaces s
     JOIN space_memberships m ON m.space_id=s.id WHERE s.id=? AND m.user_id=?`).get(spaceId, userId) as any;
-  return row ? { ...rowSpace(row), userId } : null;
+  if (!row || String(row.status || 'active') !== 'active') return null;
+  return { ...rowSpace(row), userId };
 }
 
 export function setActiveSpace(userId: string, spaceId: string) {
-  const space = getSpaceForUser(userId, spaceId);
-  if (!space) throw new SpaceError('You do not have access to this space.', 403, 'SPACE_ACCESS_DENIED');
+  const row = db.prepare(`SELECT s.*,m.role,m.user_id FROM spaces s
+    JOIN space_memberships m ON m.space_id=s.id WHERE s.id=? AND m.user_id=?`).get(spaceId, userId) as any;
+  if (!row) throw new SpaceError('You do not have access to this space.', 403, 'SPACE_ACCESS_DENIED');
+  const space = { ...operationalSpace(row), userId };
   db.prepare('UPDATE users SET active_space_id=?,updated_at=? WHERE id=?').run(spaceId, new Date().toISOString(), userId);
   return space;
 }
@@ -804,8 +881,16 @@ export function renameSpace(context: SpaceContext, nameValue: unknown) {
   return getSpaceForUser(context.userId, context.id)!;
 }
 
+export function renamePersonalSpaceForUser(userId: string, nameValue: unknown) {
+  const row = db.prepare(`SELECT s.*,m.role,m.user_id FROM spaces s
+    JOIN space_memberships m ON m.space_id=s.id
+    WHERE s.personal_for_user_id=? AND m.user_id=?`).get(userId, userId) as any;
+  if (!row) throw new SpaceError('This account does not have a personal space.', 404, 'PERSONAL_SPACE_NOT_FOUND');
+  return renameSpace({ ...operationalSpace(row), userId }, nameValue);
+}
+
 export function listSpaceMembers(context: SpaceContext) {
-  return db.prepare(`SELECT u.id,u.name,u.email,m.role,m.joined_at joinedAt
+  return db.prepare(`SELECT u.id,u.name,u.email,m.role,m.joined_at AS "joinedAt"
     FROM space_memberships m JOIN users u ON u.id=m.user_id
     WHERE m.space_id=? ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,u.name COLLATE NOCASE,u.id`)
     .all(context.id);
@@ -849,6 +934,20 @@ function invitationTokenHash(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+export function pendingSpaceInvitationForSignup(emailValue: string, token: string) {
+  const email = normalizedEmail(emailValue);
+  const tokenHash = invitationTokenHash(String(token || ''));
+  const row = db.prepare(`SELECT id,email,expires_at FROM space_invitations
+    WHERE token_hash=? AND accepted_at IS NULL AND revoked_at IS NULL`).get(tokenHash) as any;
+  if (!row || Date.parse(row.expires_at) <= Date.now()) {
+    throw new SpaceError('This invitation is invalid or has expired.', 404, 'INVITATION_INVALID');
+  }
+  if (String(row.email).toLowerCase() !== email) {
+    throw new SpaceError(`This invitation was sent to ${row.email}. Create the account with that email address.`, 403, 'INVITATION_EMAIL_MISMATCH');
+  }
+  return { id: String(row.id), expiresAt: String(row.expires_at) };
+}
+
 export function createSpaceInvitation(context: SpaceContext, input: { email?: unknown; role?: unknown }) {
   requireSpaceManager(context);
   const email = normalizedEmail(input.email);
@@ -856,6 +955,13 @@ export function createSpaceInvitation(context: SpaceContext, input: { email?: un
   const existingMember = db.prepare(`SELECT 1 FROM space_memberships m JOIN users u ON u.id=m.user_id
     WHERE m.space_id=? AND u.email=?`).get(context.id, email);
   if (existingMember) throw new SpaceError('That person is already a member of this space.', 409, 'ALREADY_A_MEMBER');
+  const memberCount = Number((db.prepare('SELECT COUNT(*) count FROM space_memberships WHERE space_id=?')
+    .get(context.id) as { count?: number } | undefined)?.count || 0);
+  try { assertSubscriptionQuota(context.id, 'seats', memberCount, 1); }
+  catch (error) {
+    if (error instanceof SubscriptionEntitlementError) throw new SpaceError(error.message, error.status, error.code);
+    throw error;
+  }
   const token = crypto.randomBytes(32).toString('base64url');
   const id = crypto.randomUUID();
   const now = new Date();
@@ -872,10 +978,41 @@ export function createSpaceInvitation(context: SpaceContext, input: { email?: un
 
 export function listSpaceInvitations(context: SpaceContext) {
   requireSpaceManager(context);
-  return db.prepare(`SELECT i.id,i.email,i.role,i.expires_at expiresAt,i.accepted_at acceptedAt,i.revoked_at revokedAt,
-      i.created_at createdAt,u.name invitedBy
+  return db.prepare(`SELECT i.id,i.email,i.role,i.expires_at AS "expiresAt",i.accepted_at AS "acceptedAt",i.revoked_at AS "revokedAt",
+      i.created_at AS "createdAt",u.name AS "invitedBy"
     FROM space_invitations i JOIN users u ON u.id=i.invited_by_user_id
     WHERE i.space_id=? ORDER BY i.created_at DESC`).all(context.id);
+}
+
+export function listPendingSpaceInvitationsForAccount(user: { id: string; email: string }) {
+  const now = new Date().toISOString();
+  return (db.prepare(`SELECT i.id,i.role,i.expires_at,i.created_at,
+      s.id space_id,s.name space_name,u.name invited_by
+    FROM space_invitations i
+    JOIN spaces s ON s.id=i.space_id
+    JOIN users u ON u.id=i.invited_by_user_id
+    WHERE LOWER(i.email)=LOWER(?) AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at>?
+      AND COALESCE(s.status,'active')='active'
+      AND NOT EXISTS (SELECT 1 FROM space_memberships m WHERE m.space_id=i.space_id AND m.user_id=?)
+    ORDER BY i.created_at DESC,i.id LIMIT 100`).all(user.email, now, user.id) as any[]).map((row) => ({
+      id: String(row.id),
+      role: row.role as Exclude<SpaceRole, 'owner'>,
+      expiresAt: String(row.expires_at),
+      createdAt: String(row.created_at),
+      invitedBy: String(row.invited_by),
+      space: { id: String(row.space_id), name: String(row.space_name) }
+    }));
+}
+
+export function acceptPendingSpaceInvitationForAccount(user: { id: string; email: string }, invitationId: string) {
+  return db.transaction(() => {
+    const now = new Date().toISOString();
+    const eligible = db.prepare(`SELECT id FROM space_invitations
+      WHERE id=? AND LOWER(email)=LOWER(?) AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?`)
+      .get(invitationId, user.email, now) as { id: string } | undefined;
+    if (!eligible) return null;
+    return acceptPendingSpaceInvitation(user, eligible.id);
+  })();
 }
 
 export function revokeSpaceInvitation(context: SpaceContext, invitationId: string) {
@@ -890,7 +1027,8 @@ export function invitationPreview(token: string) {
   const tokenHash = invitationTokenHash(String(token || ''));
   const row = db.prepare(`SELECT i.id,i.email,i.role,i.expires_at,s.id space_id,s.name space_name,u.name invited_by
     FROM space_invitations i JOIN spaces s ON s.id=i.space_id JOIN users u ON u.id=i.invited_by_user_id
-    WHERE i.token_hash=? AND i.accepted_at IS NULL AND i.revoked_at IS NULL`).get(tokenHash) as any;
+    WHERE i.token_hash=? AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+      AND COALESCE(s.status,'active')='active'`).get(tokenHash) as any;
   if (!row || Date.parse(row.expires_at) <= Date.now()) throw new SpaceError('This invitation is invalid or has expired.', 404, 'INVITATION_INVALID');
   return {
     email: row.email,
@@ -902,21 +1040,50 @@ export function invitationPreview(token: string) {
 }
 
 export function acceptSpaceInvitation(user: { id: string; email: string }, token: string) {
+  const tokenHash = invitationTokenHash(String(token || ''));
+  const row = db.prepare(`SELECT id FROM space_invitations
+    WHERE token_hash=? AND accepted_at IS NULL AND revoked_at IS NULL`).get(tokenHash) as { id: string } | undefined;
+  if (!row) throw new SpaceError('This invitation is invalid or has expired.', 404, 'INVITATION_INVALID');
+  const accepted = acceptPendingSpaceInvitation(user, row.id);
+  if (!accepted) throw new SpaceError('This invitation is invalid or has expired.', 404, 'INVITATION_INVALID');
+  return accepted;
+}
+
+export function acceptPendingSpaceInvitation(user: { id: string; email: string }, invitationId: string) {
   return db.transaction(() => {
-    const tokenHash = invitationTokenHash(String(token || ''));
-    const row = db.prepare(`SELECT * FROM space_invitations
-      WHERE token_hash=? AND accepted_at IS NULL AND revoked_at IS NULL`).get(tokenHash) as any;
-    if (!row || Date.parse(row.expires_at) <= Date.now()) throw new SpaceError('This invitation is invalid or has expired.', 404, 'INVITATION_INVALID');
+    const row = db.prepare(`SELECT i.* FROM space_invitations i JOIN spaces s ON s.id=i.space_id
+      WHERE i.id=? AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+        AND COALESCE(s.status,'active')='active'`).get(invitationId) as any;
+    if (!row || Date.parse(row.expires_at) <= Date.now()) return null;
     if (String(row.email).toLowerCase() !== user.email.toLowerCase()) {
       throw new SpaceError(`This invitation was sent to ${row.email}. Sign in with that email address to accept it.`, 403, 'INVITATION_EMAIL_MISMATCH');
     }
+    const existingMembership = db.prepare('SELECT 1 FROM space_memberships WHERE space_id=? AND user_id=?').get(row.space_id, user.id);
+    if (!existingMembership) {
+      const memberCount = Number((db.prepare('SELECT COUNT(*) count FROM space_memberships WHERE space_id=?')
+        .get(row.space_id) as { count?: number } | undefined)?.count || 0);
+      try { assertSubscriptionQuota(row.space_id, 'seats', memberCount, 1); }
+      catch (error) {
+        if (error instanceof SubscriptionEntitlementError) throw new SpaceError(error.message, error.status, error.code);
+        throw error;
+      }
+    }
     const now = new Date().toISOString();
+    // Claim the invitation before changing membership. The conditional update
+    // makes parallel acceptance attempts deterministic and rolls back with the
+    // surrounding transaction if any subsequent write fails.
+    const claimed = db.prepare(`UPDATE space_invitations SET accepted_at=?,accepted_by_user_id=?,updated_at=?
+      WHERE id=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?`)
+      .run(now, user.id, now, row.id, now).changes;
+    if (claimed !== 1) return null;
     db.prepare(`INSERT INTO space_memberships (space_id,user_id,role,joined_at,updated_at)
       VALUES (?,?,?,?,?) ON CONFLICT(space_id,user_id) DO UPDATE SET
-      role=CASE WHEN space_memberships.role='owner' THEN 'owner' ELSE excluded.role END,updated_at=excluded.updated_at`)
+      role=CASE
+        WHEN space_memberships.role='owner' THEN 'owner'
+        WHEN space_memberships.role='admin' OR excluded.role='admin' THEN 'admin'
+        ELSE 'member'
+      END,updated_at=excluded.updated_at`)
       .run(row.space_id, user.id, row.role, now, now);
-    db.prepare(`UPDATE space_invitations SET accepted_at=?,accepted_by_user_id=?,updated_at=?
-      WHERE id=? AND accepted_at IS NULL AND revoked_at IS NULL`).run(now, user.id, now, row.id);
     db.prepare('UPDATE users SET active_space_id=?,updated_at=? WHERE id=?').run(row.space_id, now, user.id);
     return getSpaceForUser(user.id, row.space_id)!;
   })();
@@ -924,6 +1091,10 @@ export function acceptSpaceInvitation(user: { id: string; email: string }, token
 
 export function spaceSession(userId: string) {
   const spaces = listSpacesForUser(userId);
-  const activeSpace = activeSpaceForUser(userId);
+  let activeSpace: SpaceSummary | null = null;
+  try { activeSpace = activeSpaceForUser(userId); }
+  catch (error) {
+    if (!(error instanceof SpaceError) || error.code !== 'ACTIVE_SPACE_REQUIRED') throw error;
+  }
   return { spaces, activeSpace };
 }

@@ -25,7 +25,21 @@ function SigningField({ field, onLocalChange, onSave, onAdoptSignature }: {
   const base = cn('absolute z-10 min-h-7 overflow-hidden border-2 bg-[#edf3ee] text-[11px] text-foreground focus-within:ring-2 focus-within:ring-ring', complete ? 'border-[#557260]' : 'border-[#a7634d]');
   if (['signature', 'initials'].includes(field.type)) {
     const signature = typeof field.value === 'object' && field.value ? field.value as ESignSignatureValue : null;
-    return <button type="button" data-sign-field-id={field.id} style={style} className={cn(base, 'flex items-center justify-center gap-1.5 px-2 font-semibold')} onClick={onAdoptSignature} aria-label={`${field.label || field.type}${field.required ? ', required' : ''}`}><PenLine className="h-3.5 w-3.5 shrink-0" />{signature ? signature.mode === 'typed' ? signature.value : <><Check className="h-3.5 w-3.5" />Added</> : field.label || (field.type === 'signature' ? 'Sign here' : 'Initial here')}</button>;
+    const signatureText = field.signaturePreview?.displayText || signature?.displayText || (signature?.value === 'Signature saved' ? '' : signature?.value);
+    const signatureImage = field.signaturePreview?.previewUrl || signature?.previewUrl || signature?.dataUrl;
+    return <button
+      type="button"
+      data-sign-field-id={field.id}
+      style={style}
+      className={cn(base, 'flex items-center justify-center gap-1.5 px-2 font-semibold')}
+      onClick={onAdoptSignature}
+      aria-label={`${field.label || field.type}${field.required ? ', required' : ''}${signature ? ', change value' : ''}`}
+    >
+      {signatureImage ? <img src={signatureImage} className="h-full w-full object-contain" alt="Applied signature" />
+        : signatureText ? <span className="truncate font-serif text-[clamp(12px,2.5vw,24px)] italic">{signatureText}</span>
+          : signature ? <><Check className="h-3.5 w-3.5" />Signature saved</>
+            : <><PenLine className="h-3.5 w-3.5 shrink-0" />{field.label || (field.type === 'signature' ? 'Sign here' : 'Initial here')}</>}
+    </button>;
   }
   if (field.type === 'checkbox') return <label data-sign-field-id={field.id} style={style} className={cn(base, 'grid place-items-center')}><span className="sr-only">{field.label}{field.required ? ', required' : ''}</span><input type="checkbox" className="h-4 w-4 rounded border-input text-primary focus:ring-primary" checked={field.value === true} onChange={(event) => { onLocalChange(event.target.checked); onSave(event.target.checked); }} /></label>;
   if (field.type === 'radio') return <fieldset data-sign-field-id={field.id} style={style} className={cn(base, 'flex items-center gap-1 px-1')} aria-label={field.label}>{field.options.map((option) => <label className="flex min-w-0 items-center gap-0.5" key={option}><input type="radio" name={field.id} value={option} checked={field.value === option} onChange={() => { onLocalChange(option); onSave(option); }} /><span className="truncate">{option}</span></label>)}</fieldset>;

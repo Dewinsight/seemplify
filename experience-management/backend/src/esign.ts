@@ -57,11 +57,21 @@ type FieldInput = {
   validation?: Record<string, unknown>;
 };
 
+export type SavedSignatureInput = {
+  mode: 'typed' | 'drawn' | 'uploaded';
+  label?: string;
+  value?: string;
+  dataUrl?: string;
+};
+
+export type EsignSignatureAccount = { userId: string; email: string } | null;
+
 const ACTION_ROLES = new Set(['signer', 'approver']);
 const EDITABLE_ENVELOPE = new Set(['draft']);
 const ACTIVE_RECIPIENT = new Set(['ready', 'sent', 'viewed', 'in_progress']);
 const FINAL_ENVELOPE = new Set(['completed', 'declined', 'voided', 'expired', 'failed']);
 const scryptParameters = { N: 16_384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+const MAX_SAVED_SIGNATURES = 5;
 export const ESIGN_DISCLOSURE_VERSION = '2026-07-29.1';
 export const ESIGN_DISCLOSURE_TEXT = 'By selecting I agree, I consent to use electronic records and signatures for this envelope. I understand that I may decline to sign electronically and may request a paper copy or withdraw consent by contacting the sender. I can download and retain a copy after completion. I confirm that I can access and read the documents presented in this browser and that my electronic signature will have the same effect as my handwritten signature.';
 export const ESIGN_DISCLOSURE_SHA256 = crypto.createHash('sha256').update(ESIGN_DISCLOSURE_TEXT, 'utf8').digest('hex');
@@ -545,6 +555,38 @@ function publicRecipientByToken(token: string) {
     FROM esign_recipients r JOIN esign_envelopes e ON e.id=r.envelope_id WHERE r.access_token_hash=?`).get(hashToken(token)) as any;
 }
 
+function recipientAccountOption(recipient: any, rawToken: string) {
+  const accessCodeSatisfied = !recipient?.access_code_hash || Boolean(recipient?.authenticated_at);
+  const unavailable = ['draft', 'declined', 'voided', 'expired'].includes(String(recipient?.envelope_status || ''));
+  const eligible = accessCodeSatisfied && !unavailable && (recipient?.envelope_status === 'completed' || recipient?.status === 'completed');
+  if (!eligible) return null;
+  const query = `esign=${encodeURIComponent(rawToken)}`;
+  return {
+    recipient: { name: recipient.name, email: recipient.email },
+    envelope: { id: recipient.envelope_id, title: recipient.envelope_title, status: recipient.envelope_status },
+    state: recipient.envelope_status === 'completed' ? 'ready' : 'waiting_for_others',
+    signupPath: `/signup?${query}`,
+    loginPath: `/login?${query}`,
+    documentsPath: '/my-documents'
+  };
+}
+
+function recipientAccountOptionById(recipientId: string) {
+  const recipient = db.prepare(`SELECT r.*,e.status envelope_status,e.title envelope_title,e.id envelope_id
+    FROM esign_recipients r JOIN esign_envelopes e ON e.id=r.envelope_id WHERE r.id=?`).get(recipientId) as any;
+  if (!recipient) return null;
+  const rawToken = openText(recipient.access_token_enc, `esign-recipient-token:${recipient.id}`);
+  return recipientAccountOption(recipient, rawToken);
+}
+
+export function getRecipientAccountInvitation(rawToken: string) {
+  const recipient = publicRecipientByToken(rawToken);
+  if (!recipient) throw new EsignError('This document-account invitation is invalid.', 404, 'ESIGN_ACCOUNT_INVITATION_INVALID');
+  const option = recipientAccountOption(recipient, rawToken);
+  if (!option) throw new EsignError('Finish signing before creating a document account.', 409, 'ESIGN_ACCOUNT_INVITATION_NOT_READY');
+  return option;
+}
+
 export function exchangeSigningToken(token: string, actor: EsignActor) {
   const recipient = publicRecipientByToken(token);
   if (!recipient || ['draft', 'voided', 'declined', 'expired', 'failed'].includes(recipient.envelope_status)) throw new EsignError('This signing link is invalid or no longer available.', 404, 'SIGNING_LINK_UNAVAILABLE');
@@ -554,10 +596,16 @@ export function exchangeSigningToken(token: string, actor: EsignActor) {
   const authenticated = recipient.access_code_hash ? 0 : 1;
   const expiresAt = new Date(Date.now() + config.esignSigningSessionHours * 3_600_000).toISOString();
   db.transaction(() => {
+    const latestSession = db.prepare(`SELECT created_at FROM esign_signing_sessions
+      WHERE recipient_id=? ORDER BY created_at DESC LIMIT 1`).get(recipient.id) as { created_at: string } | undefined;
+    const latestCreatedAt = latestSession ? Date.parse(latestSession.created_at) : Number.NaN;
+    const createdAt = Number.isFinite(latestCreatedAt) && latestCreatedAt >= Date.parse(timestamp)
+      ? new Date(latestCreatedAt + 1).toISOString()
+      : timestamp;
     db.prepare(`INSERT INTO esign_signing_sessions (id,recipient_id,token_hash,authenticated,expires_at,created_at,last_seen_at)
-      VALUES (?,?,?,?,?,?,?)`).run(sessionId, recipient.id, hashToken(rawSession), authenticated, expiresAt, timestamp, timestamp);
-    const surplus = db.prepare(`SELECT id FROM esign_signing_sessions WHERE recipient_id=? AND revoked_at IS NULL AND expires_at>?
-      ORDER BY created_at DESC,id DESC LIMIT -1 OFFSET 10`).all(recipient.id, timestamp) as any[];
+      VALUES (?,?,?,?,?,?,?)`).run(sessionId, recipient.id, hashToken(rawSession), authenticated, expiresAt, createdAt, timestamp);
+    const surplus = db.prepare(`SELECT id FROM esign_signing_sessions WHERE recipient_id=? AND id<>? AND revoked_at IS NULL AND expires_at>?
+      ORDER BY created_at DESC,id DESC LIMIT 2147483647 OFFSET 9`).all(recipient.id, sessionId, timestamp) as any[];
     for (const stale of surplus) db.prepare('UPDATE esign_signing_sessions SET revoked_at=? WHERE id=? AND revoked_at IS NULL').run(timestamp, stale.id);
     if (ACTIVE_RECIPIENT.has(recipient.status)) {
       db.prepare("UPDATE esign_recipients SET status=CASE WHEN status IN ('ready','sent') THEN 'viewed' ELSE status END,viewed_at=COALESCE(viewed_at,?),authenticated_at=CASE WHEN ?=1 THEN COALESCE(authenticated_at,?) ELSE authenticated_at END,updated_at=? WHERE id=?")
@@ -649,12 +697,18 @@ export function getPublicEnvelope(rawToken: string) {
   const session = signingSession(rawToken);
   const mayReadDocuments = Boolean(session.authenticated && session.consented_at);
   const documents = (db.prepare('SELECT * FROM esign_documents WHERE envelope_id=? ORDER BY position').all(session.envelope_id) as any[]).map((row) => ({ ...documentRow(row), contentUrl: mayReadDocuments ? `/api/public/esign/documents/${row.id}/content` : null }));
-  const values = db.prepare('SELECT * FROM esign_field_values WHERE recipient_id=?').all(session.recipient_id) as any[];
+  const values = db.prepare(`SELECT v.*,a.mode signature_mode,a.mime_type signature_mime_type,a.display_text signature_display_text,
+    a.storage_key signature_storage_key FROM esign_field_values v
+    LEFT JOIN esign_signature_assets a ON a.id=v.signature_asset_id WHERE v.recipient_id=?`).all(session.recipient_id) as any[];
   const fields = mayReadDocuments ? (db.prepare('SELECT * FROM esign_fields WHERE envelope_id=? AND recipient_id=? ORDER BY document_id,page,tab_order').all(session.envelope_id, session.recipient_id) as any[]).map((row) => {
     const value = values.find((item) => item.field_id === row.id);
     const saved = openFieldValue(row.id, value?.value_json);
     const automatic = row.type === 'name' ? session.name : row.type === 'email' ? session.email : row.type === 'date_signed' ? now().slice(0, 10) : saved;
-    return { ...fieldRow(row), value: automatic, hasValue: automatic !== null && automatic !== undefined && automatic !== '', completedAt: value?.completed_at || null };
+    return {
+      ...fieldRow(row), value: automatic, hasValue: automatic !== null && automatic !== undefined && automatic !== '',
+      completedAt: value?.completed_at || null,
+      signaturePreview: value?.signature_asset_id ? fieldSignaturePreview(value, row.id) : null
+    };
   }) : [];
   const recipientRows = db.prepare('SELECT * FROM esign_recipients WHERE envelope_id=? ORDER BY routing_order,position').all(session.envelope_id) as any[];
   const recipients = (session.authenticated ? recipientRows : recipientRows.filter((row) => row.id === session.recipient_id)).map((row) => ({ id: row.id, name: row.name, role: row.role, routingOrder: Number(row.routing_order), status: row.status, completedAt: row.completed_at }));
@@ -662,6 +716,7 @@ export function getPublicEnvelope(rawToken: string) {
   return {
     ...signingSessionSummary(rawToken),
     documents, fields, recipients, artifacts,
+    accountOption: session.authenticated ? recipientAccountOptionById(session.recipient_id) : null,
     locked: session.recipient_status === 'waiting',
     canAct: ACTIVE_RECIPIENT.has(session.recipient_status) && ['sent', 'in_progress'].includes(session.envelope_status)
   };
@@ -678,27 +733,294 @@ function parseSignatureDataUrl(dataUrl: string) {
   return { mimeType: match[1].toLowerCase(), bytes };
 }
 
-export async function savePublicField(rawToken: string, fieldId: string, input: { value?: unknown; signature?: { mode: 'typed' | 'drawn' | 'uploaded'; value?: string; dataUrl?: string } }, actor: EsignActor) {
+function signerIdentityHash(email: string) {
+  return auditDigest(`esign-recipient-identity:v1:${normalizedEmail(email)}`);
+}
+
+function matchingSignatureAccount(session: any, account: EsignSignatureAccount) {
+  if (!account) return null;
+  return normalizedEmail(account.email) === normalizedEmail(session.email) ? account.userId : null;
+}
+
+function requireSignatureLibrarySession(rawToken: string, account: EsignSignatureAccount) {
+  const session = signingSession(rawToken);
+  if (!session.authenticated) throw new EsignError('Enter the access code first.', 401, 'ACCESS_CODE_REQUIRED');
+  if (!session.consented_at) throw new EsignError('Consent to electronic signing before accessing saved signatures.', 409, 'CONSENT_REQUIRED');
+  return {
+    session,
+    identityHash: signerIdentityHash(session.email),
+    accountUserId: matchingSignatureAccount(session, account)
+  };
+}
+
+function savedSignaturePreview(row: any, contentBase: string, canManage = true) {
+  const typed = row.mode === 'typed';
+  return {
+    id: row.id,
+    mode: row.mode,
+    label: row.label,
+    mimeType: row.mime_type,
+    displayText: typed ? openText(row.display_text_enc, `esign-saved-signature-text:${row.id}`) : null,
+    previewUrl: typed ? null : `${contentBase}/${row.id}/content`,
+    scope: row.owner_user_id ? 'account' : 'recipient',
+    canManage,
+    updatedAt: row.updated_at
+  };
+}
+
+function findPublicSavedSignature(id: string, identityHash: string, accountUserId: string | null) {
+  return db.prepare(`SELECT * FROM esign_saved_signatures WHERE id=? AND (
+    recipient_identity_hash=?
+    OR (? IS NOT NULL AND owner_user_id=?))`).get(id, identityHash, accountUserId, accountUserId) as any;
+}
+
+function savedSignatureOwner(row: any) {
+  return {
+    userId: row.owner_user_id ? String(row.owner_user_id) : null,
+    identityHash: row.recipient_identity_hash ? String(row.recipient_identity_hash) : null,
+    scope: row.owner_user_id ? 'account' as const : 'recipient' as const
+  };
+}
+
+function canManagePublicSavedSignature(row: any, accountUserId: string | null) {
+  return !row.owner_user_id || Boolean(accountUserId && String(row.owner_user_id) === accountUserId);
+}
+
+function requirePublicSavedSignatureManagement(row: any, accountUserId: string | null) {
+  if (!canManagePublicSavedSignature(row, accountUserId)) {
+    throw new EsignError('Sign in to the matching verified account to change this saved signature.', 403, 'SAVED_SIGNATURE_MANAGEMENT_REQUIRED');
+  }
+}
+
+function recordSavedSignatureEvent(row: any, eventType: string, actor: EsignActor, context: { envelopeId?: string; recipientId?: string; metadata?: Record<string, unknown> } = {}) {
+  const owner = savedSignatureOwner(row);
+  db.prepare(`INSERT INTO esign_saved_signature_events
+    (id,signature_id,owner_user_id,recipient_identity_hash,envelope_id,recipient_id,actor_type,event_type,ip_address,user_agent,metadata_json,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      crypto.randomUUID(), row.id, owner.userId, owner.identityHash, context.envelopeId || null, context.recipientId || null,
+      actor.actorType, eventType, actor.ip || null, actor.userAgent || null,
+      stableJson({ mode: row.mode, scope: owner.scope, ...(context.metadata || {}) }), now()
+    );
+}
+
+async function buildSavedSignatureAsset(id: string, input: SavedSignatureInput) {
+  const label = cleanText(input.label || 'My signature', 80) || 'My signature';
+  if (input.mode === 'typed') {
+    const text = cleanText(input.value, 100);
+    if (!text) throw new EsignError('Enter a typed signature.');
+    return {
+      id, mode: 'typed', label, mimeType: null, displayText: sealText(text, `esign-saved-signature-text:${id}`),
+      storageKey: null, sha256: hashBytes(Buffer.from(text, 'utf8'))
+    };
+  }
+  const image = parseSignatureDataUrl(input.dataUrl || '');
+  const probe = await PDFDocument.create();
+  try { image.mimeType === 'image/png' ? await probe.embedPng(image.bytes) : await probe.embedJpg(image.bytes); }
+  catch { throw new EsignError('The signature image is malformed.'); }
+  const stored = writeProtectedFile(image.bytes, `esign-saved-signature:${id}`);
+  return { id, mode: input.mode, label, mimeType: image.mimeType, displayText: null, storageKey: stored.storageKey, sha256: stored.sha256 };
+}
+
+function signatureOwnerCount(owner: { userId: string | null; identityHash: string | null }) {
+  if (owner.userId && owner.identityHash) {
+    return Number((db.prepare(`SELECT COUNT(*) count FROM esign_saved_signatures
+      WHERE owner_user_id=? OR recipient_identity_hash=?`).get(owner.userId, owner.identityHash) as any).count);
+  }
+  if (owner.identityHash) {
+    return Number((db.prepare('SELECT COUNT(*) count FROM esign_saved_signatures WHERE recipient_identity_hash=?').get(owner.identityHash) as any).count);
+  }
+  return Number((db.prepare('SELECT COUNT(*) count FROM esign_saved_signatures WHERE owner_user_id=?').get(owner.userId) as any).count);
+}
+
+async function createSavedSignature(owner: { userId: string | null; identityHash: string | null }, input: SavedSignatureInput, actor: EsignActor, context?: { envelopeId: string; recipientId: string }) {
+  const id = crypto.randomUUID(); const timestamp = now(); const asset = await buildSavedSignatureAsset(id, input);
+  try {
+    db.transaction(() => {
+      if (signatureOwnerCount(owner) >= MAX_SAVED_SIGNATURES) throw new EsignError(`You can save up to ${MAX_SAVED_SIGNATURES} signatures.`, 409, 'SAVED_SIGNATURE_LIMIT');
+      db.prepare(`INSERT INTO esign_saved_signatures
+        (id,owner_user_id,recipient_identity_hash,mode,label,mime_type,display_text_enc,storage_key,sha256,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(id, owner.userId, owner.identityHash, asset.mode, asset.label, asset.mimeType, asset.displayText, asset.storageKey, asset.sha256, timestamp, timestamp);
+      const row = db.prepare('SELECT * FROM esign_saved_signatures WHERE id=?').get(id) as any;
+      recordSavedSignatureEvent(row, 'signature.saved', actor, context ? { ...context } : {});
+      if (context) recordEsignAudit(context.envelopeId, 'recipient.signature_saved', { ...actor, actorType: 'recipient', recipientId: context.recipientId }, { mode: row.mode, scope: savedSignatureOwner(row).scope });
+    })();
+  } catch (error) { if (asset.storageKey) removeProtectedFile(asset.storageKey); throw error; }
+  return db.prepare('SELECT * FROM esign_saved_signatures WHERE id=?').get(id) as any;
+}
+
+async function replaceSavedSignature(row: any, input: SavedSignatureInput, actor: EsignActor, context?: { envelopeId: string; recipientId: string }) {
+  const asset = await buildSavedSignatureAsset(row.id, input); const timestamp = now();
+  try {
+    db.transaction(() => {
+      const changed = db.prepare(`UPDATE esign_saved_signatures SET mode=?,label=?,mime_type=?,display_text_enc=?,storage_key=?,sha256=?,updated_at=? WHERE id=?`)
+        .run(asset.mode, asset.label, asset.mimeType, asset.displayText, asset.storageKey, asset.sha256, timestamp, row.id).changes;
+      if (changed !== 1) throw new EsignError('Saved signature not found.', 404, 'SAVED_SIGNATURE_NOT_FOUND');
+      const updated = db.prepare('SELECT * FROM esign_saved_signatures WHERE id=?').get(row.id) as any;
+      recordSavedSignatureEvent(updated, 'signature.replaced', actor, context ? { ...context } : {});
+      if (context) recordEsignAudit(context.envelopeId, 'recipient.signature_replaced', { ...actor, actorType: 'recipient', recipientId: context.recipientId }, { mode: updated.mode, scope: savedSignatureOwner(updated).scope });
+    })();
+  } catch (error) { if (asset.storageKey) removeProtectedFile(asset.storageKey); throw error; }
+  if (row.storage_key && row.storage_key !== asset.storageKey) removeProtectedFile(row.storage_key);
+  return db.prepare('SELECT * FROM esign_saved_signatures WHERE id=?').get(row.id) as any;
+}
+
+function deleteSavedSignature(row: any, actor: EsignActor, context?: { envelopeId: string; recipientId: string }) {
+  db.transaction(() => {
+    recordSavedSignatureEvent(row, 'signature.deleted', actor, context ? { ...context } : {});
+    if (context) recordEsignAudit(context.envelopeId, 'recipient.signature_deleted', { ...actor, actorType: 'recipient', recipientId: context.recipientId }, { mode: row.mode, scope: savedSignatureOwner(row).scope });
+    db.prepare('DELETE FROM esign_saved_signatures WHERE id=?').run(row.id);
+  })();
+  if (row.storage_key) removeProtectedFile(row.storage_key);
+}
+
+function savedSignatureContent(row: any) {
+  if (!row.storage_key || !row.mime_type) throw new EsignError('This typed signature has no image content.', 404, 'SAVED_SIGNATURE_CONTENT_NOT_FOUND');
+  const bytes = readProtectedFile(row.storage_key, `esign-saved-signature:${row.id}`);
+  if (hashBytes(bytes) !== row.sha256) throw new EsignError('Saved signature integrity verification failed.', 500, 'SAVED_SIGNATURE_INTEGRITY_FAILED');
+  return { bytes, fileName: `${safeFilename(row.label || 'signature')}.${row.mime_type === 'image/png' ? 'png' : 'jpg'}`, mimeType: row.mime_type, sha256: row.sha256 };
+}
+
+export function listPublicSavedSignatures(rawToken: string, account: EsignSignatureAccount) {
+  const scope = requireSignatureLibrarySession(rawToken, account);
+  const rows = db.prepare(`SELECT * FROM esign_saved_signatures WHERE
+    recipient_identity_hash=?
+    OR (? IS NOT NULL AND owner_user_id=?) ORDER BY updated_at DESC,id`).all(scope.identityHash, scope.accountUserId, scope.accountUserId) as any[];
+  return {
+    signatures: rows.map((row) => savedSignaturePreview(
+      row,
+      '/api/public/esign/signatures',
+      canManagePublicSavedSignature(row, scope.accountUserId)
+    )),
+    identity: { maskedEmail: maskEmail(scope.session.email), accountLinked: Boolean(scope.accountUserId) },
+    maxSignatures: MAX_SAVED_SIGNATURES
+  };
+}
+
+export async function createPublicSavedSignature(rawToken: string, input: SavedSignatureInput, account: EsignSignatureAccount, actor: EsignActor) {
+  const scope = requireSignatureLibrarySession(rawToken, account);
+  const owner = scope.accountUserId
+    ? { userId: scope.accountUserId, identityHash: scope.identityHash }
+    : { userId: null, identityHash: scope.identityHash };
+  const row = await createSavedSignature(owner, input, actor, { envelopeId: scope.session.envelope_id, recipientId: scope.session.recipient_id });
+  return { signature: savedSignaturePreview(row, '/api/public/esign/signatures') };
+}
+
+export async function replacePublicSavedSignature(rawToken: string, id: string, input: SavedSignatureInput, account: EsignSignatureAccount, actor: EsignActor) {
+  const scope = requireSignatureLibrarySession(rawToken, account);
+  const row = findPublicSavedSignature(id, scope.identityHash, scope.accountUserId);
+  if (!row) throw new EsignError('Saved signature not found.', 404, 'SAVED_SIGNATURE_NOT_FOUND');
+  requirePublicSavedSignatureManagement(row, scope.accountUserId);
+  const updated = await replaceSavedSignature(row, input, actor, { envelopeId: scope.session.envelope_id, recipientId: scope.session.recipient_id });
+  return { signature: savedSignaturePreview(updated, '/api/public/esign/signatures') };
+}
+
+export function deletePublicSavedSignature(rawToken: string, id: string, account: EsignSignatureAccount, actor: EsignActor) {
+  const scope = requireSignatureLibrarySession(rawToken, account);
+  const row = findPublicSavedSignature(id, scope.identityHash, scope.accountUserId);
+  if (!row) throw new EsignError('Saved signature not found.', 404, 'SAVED_SIGNATURE_NOT_FOUND');
+  requirePublicSavedSignatureManagement(row, scope.accountUserId);
+  deleteSavedSignature(row, actor, { envelopeId: scope.session.envelope_id, recipientId: scope.session.recipient_id });
+}
+
+export function getPublicSavedSignatureContent(rawToken: string, id: string, account: EsignSignatureAccount) {
+  const scope = requireSignatureLibrarySession(rawToken, account);
+  const row = findPublicSavedSignature(id, scope.identityHash, scope.accountUserId);
+  if (!row) throw new EsignError('Saved signature not found.', 404, 'SAVED_SIGNATURE_NOT_FOUND');
+  return savedSignatureContent(row);
+}
+
+export function listAccountSavedSignatures(userId: string) {
+  const rows = db.prepare('SELECT * FROM esign_saved_signatures WHERE owner_user_id=? ORDER BY updated_at DESC,id').all(userId) as any[];
+  return { signatures: rows.map((row) => savedSignaturePreview(row, '/api/recipient-documents/signatures')), maxSignatures: MAX_SAVED_SIGNATURES };
+}
+
+export async function createAccountSavedSignature(userId: string, email: string, input: SavedSignatureInput, actor: EsignActor) {
+  const row = await createSavedSignature({ userId, identityHash: signerIdentityHash(email) }, input, actor);
+  return { signature: savedSignaturePreview(row, '/api/recipient-documents/signatures') };
+}
+
+export async function replaceAccountSavedSignature(userId: string, id: string, input: SavedSignatureInput, actor: EsignActor) {
+  const row = db.prepare('SELECT * FROM esign_saved_signatures WHERE id=? AND owner_user_id=?').get(id, userId) as any;
+  if (!row) throw new EsignError('Saved signature not found.', 404, 'SAVED_SIGNATURE_NOT_FOUND');
+  const updated = await replaceSavedSignature(row, input, actor);
+  return { signature: savedSignaturePreview(updated, '/api/recipient-documents/signatures') };
+}
+
+export function deleteAccountSavedSignature(userId: string, id: string, actor: EsignActor) {
+  const row = db.prepare('SELECT * FROM esign_saved_signatures WHERE id=? AND owner_user_id=?').get(id, userId) as any;
+  if (!row) throw new EsignError('Saved signature not found.', 404, 'SAVED_SIGNATURE_NOT_FOUND');
+  deleteSavedSignature(row, actor);
+}
+
+export function getAccountSavedSignatureContent(userId: string, id: string) {
+  const row = db.prepare('SELECT * FROM esign_saved_signatures WHERE id=? AND owner_user_id=?').get(id, userId) as any;
+  if (!row) throw new EsignError('Saved signature not found.', 404, 'SAVED_SIGNATURE_NOT_FOUND');
+  return savedSignatureContent(row);
+}
+
+function copySavedSignatureToEnvelope(row: any) {
+  const id = crypto.randomUUID();
+  if (row.mode === 'typed') {
+    const text = openText(row.display_text_enc, `esign-saved-signature-text:${row.id}`);
+    return { id, mode: 'typed', mimeType: null, displayText: sealText(text, `esign-signature-text:${id}`), storageKey: null, sha256: hashBytes(Buffer.from(text, 'utf8')) };
+  }
+  const bytes = readProtectedFile(row.storage_key, `esign-saved-signature:${row.id}`);
+  if (hashBytes(bytes) !== row.sha256) throw new EsignError('Saved signature integrity verification failed.', 500, 'SAVED_SIGNATURE_INTEGRITY_FAILED');
+  const stored = writeProtectedFile(bytes, `esign-signature:${id}`);
+  return { id, mode: row.mode, mimeType: row.mime_type, displayText: null, storageKey: stored.storageKey, sha256: stored.sha256 };
+}
+
+function fieldSignaturePreview(value: any, fieldId: string) {
+  const typed = value.signature_mode === 'typed';
+  return {
+    mode: value.signature_mode,
+    displayText: typed ? openText(value.signature_display_text, `esign-signature-text:${value.signature_asset_id}`) : null,
+    previewUrl: typed ? null : `/api/public/esign/fields/${fieldId}/signature/content`
+  };
+}
+
+export function getPublicFieldSignatureContent(rawToken: string, fieldId: string) {
+  const session = requireSignatureLibrarySession(rawToken, null).session;
+  const row = db.prepare(`SELECT a.* FROM esign_fields f JOIN esign_field_values v ON v.field_id=f.id
+    JOIN esign_signature_assets a ON a.id=v.signature_asset_id
+    WHERE f.id=? AND f.envelope_id=? AND f.recipient_id=?`).get(fieldId, session.envelope_id, session.recipient_id) as any;
+  if (!row || !row.storage_key || !row.mime_type) throw new EsignError('Signature preview not found.', 404, 'SIGNATURE_PREVIEW_NOT_FOUND');
+  const bytes = readProtectedFile(row.storage_key, `esign-signature:${row.id}`);
+  if (hashBytes(bytes) !== row.sha256) throw new EsignError('Signature integrity verification failed.', 500);
+  return { bytes, fileName: `signature.${row.mime_type === 'image/png' ? 'png' : 'jpg'}`, mimeType: row.mime_type, sha256: row.sha256 };
+}
+
+export async function savePublicField(rawToken: string, fieldId: string, input: { value?: unknown; signature?: { mode: 'typed' | 'drawn' | 'uploaded'; value?: string; dataUrl?: string }; savedSignatureId?: string }, actor: EsignActor, account: EsignSignatureAccount = null) {
   const session = requireSigningAction(rawToken);
   const field = db.prepare('SELECT * FROM esign_fields WHERE id=? AND envelope_id=? AND recipient_id=?').get(fieldId, session.envelope_id, session.recipient_id) as any;
   if (!field) throw new EsignError('Field not found.', 404, 'FIELD_NOT_FOUND');
+  if (input.savedSignatureId && !['signature', 'initials'].includes(field.type)) throw new EsignError('Saved signatures can only be applied to signature or initials fields.');
   const timestamp = now(); let value: unknown = input.value; let asset: { id: string; mode: string; mimeType: string | null; displayText: string | null; storageKey: string | null; sha256: string | null } | null = null;
+  let reusedSignature: any = null;
   if (['signature', 'initials'].includes(field.type)) {
-    if (!input.signature) throw new EsignError('A signature value is required.');
-    if (input.signature.mode === 'typed') {
-      const text = cleanText(input.signature.value, field.type === 'initials' ? 12 : 100);
+    const submittedSignature = input.signature;
+    if (Boolean(submittedSignature) === Boolean(input.savedSignatureId)) throw new EsignError('Choose either a new signature or one saved signature.');
+    if (input.savedSignatureId) {
+      const identityHash = signerIdentityHash(session.email);
+      const accountUserId = matchingSignatureAccount(session, account);
+      reusedSignature = findPublicSavedSignature(input.savedSignatureId, identityHash, accountUserId);
+      if (!reusedSignature) throw new EsignError('Saved signature not found.', 404, 'SAVED_SIGNATURE_NOT_FOUND');
+      asset = copySavedSignatureToEnvelope(reusedSignature);
+      value = { mode: reusedSignature.mode, value: 'Signature saved' };
+    } else if (submittedSignature!.mode === 'typed') {
+      const text = cleanText(submittedSignature!.value, field.type === 'initials' ? 12 : 100);
       if (text.length < 1) throw new EsignError('Enter a typed signature.');
       const assetId = crypto.randomUUID();
       asset = { id: assetId, mode: 'typed', mimeType: null, displayText: sealText(text, `esign-signature-text:${assetId}`), storageKey: null, sha256: hashBytes(Buffer.from(text)) };
       value = { mode: 'typed', value: 'Signature saved' };
     } else {
-      const image = parseSignatureDataUrl(input.signature.dataUrl || '');
+      const image = parseSignatureDataUrl(submittedSignature!.dataUrl || '');
       const probe = await PDFDocument.create();
       try { image.mimeType === 'image/png' ? await probe.embedPng(image.bytes) : await probe.embedJpg(image.bytes); }
       catch { throw new EsignError('The signature image is malformed.'); }
       const assetId = crypto.randomUUID(); const stored = writeProtectedFile(image.bytes, `esign-signature:${assetId}`);
-      asset = { id: assetId, mode: input.signature.mode, mimeType: image.mimeType, displayText: null, storageKey: stored.storageKey, sha256: stored.sha256 };
-      value = { mode: input.signature.mode, value: 'Signature saved' };
+      asset = { id: assetId, mode: submittedSignature!.mode, mimeType: image.mimeType, displayText: null, storageKey: stored.storageKey, sha256: stored.sha256 };
+      value = { mode: submittedSignature!.mode, value: 'Signature saved' };
     }
   } else if (field.type === 'checkbox') value = Boolean(value);
   else if (['radio', 'dropdown'].includes(field.type)) {
@@ -727,7 +1049,16 @@ export async function savePublicField(rawToken: string, fieldId: string, input: 
         ON CONFLICT(field_id) DO UPDATE SET value_json=excluded.value_json,signature_asset_id=excluded.signature_asset_id,completed_at=NULL,updated_at=excluded.updated_at`)
         .run(field.id, session.recipient_id, sealFieldValue(field.id, value), asset?.id || null, timestamp);
       if (current.signature_asset_id) db.prepare('DELETE FROM esign_signature_assets WHERE id=?').run(current.signature_asset_id);
-      recordEsignAudit(session.envelope_id, 'field.updated', { ...actor, actorType: 'recipient', recipientId: session.recipient_id }, { fieldId: field.id, fieldType: field.type, hasValue: value !== '' && value !== false && value != null });
+      if (reusedSignature) {
+        db.prepare('UPDATE esign_saved_signatures SET last_used_at=?,updated_at=? WHERE id=?').run(timestamp, timestamp, reusedSignature.id);
+        recordSavedSignatureEvent(reusedSignature, 'signature.reused', actor, {
+          envelopeId: session.envelope_id, recipientId: session.recipient_id, metadata: { fieldType: field.type }
+        });
+      }
+      recordEsignAudit(session.envelope_id, 'field.updated', { ...actor, actorType: 'recipient', recipientId: session.recipient_id }, {
+        fieldId: field.id, fieldType: field.type, hasValue: value !== '' && value !== false && value != null,
+        source: reusedSignature ? 'saved_signature' : 'new_value', signatureMode: asset?.mode || null
+      });
     })();
   } catch (error) { if (asset?.storageKey) removeProtectedFile(asset.storageKey); throw error; }
   if (previousStorageKey) removeProtectedFile(previousStorageKey);
@@ -832,6 +1163,115 @@ export function getPublicArtifactContent(rawToken: string, artifactId: string) {
   if (!row) throw new EsignError('Artifact not found.', 404);
   const bytes = readProtectedFile(row.storage_key, `esign-artifact:${row.id}`);
   if (hashBytes(bytes) !== row.sha256) throw new EsignError('Artifact integrity verification failed.', 500);
+  return { bytes, fileName: row.file_name, mimeType: row.mime_type, sha256: row.sha256 };
+}
+
+function recipientDocumentRows(emailValue: string) {
+  const email = normalizedEmail(emailValue);
+  return db.prepare(`SELECT e.id envelope_id,e.title,e.status envelope_status,e.sent_at,e.completed_at,e.updated_at,
+      r.id recipient_id,r.name recipient_name,r.role recipient_role,r.status recipient_status,r.completed_at recipient_completed_at,
+      u.name sender_name,s.name space_name
+    FROM esign_recipients r
+    JOIN esign_envelopes e ON e.id=r.envelope_id
+    LEFT JOIN users u ON u.id=e.created_by_user_id
+    LEFT JOIN spaces s ON s.id=e.space_id
+    WHERE r.email=? AND (
+      (r.role IN ('signer','approver') AND r.status='completed' AND e.status IN ('in_progress','finalizing','completed','failed'))
+      OR (r.role IN ('cc','viewer') AND e.status='completed')
+    ) AND (r.access_code_hash IS NULL OR r.authenticated_at IS NOT NULL)
+    ORDER BY COALESCE(e.completed_at,r.completed_at,e.updated_at) DESC,e.id DESC,r.position`).all(email) as any[];
+}
+
+export function listRecipientDocuments(emailValue: string, limit = 200) {
+  const maximum = Math.max(1, Math.min(200, Number.isFinite(limit) ? Math.floor(limit) : 200));
+  const rows = recipientDocumentRows(emailValue);
+  const seen = new Set<string>();
+  const documents = [] as any[];
+  for (const row of rows) {
+    if (seen.has(row.envelope_id)) continue;
+    seen.add(row.envelope_id);
+    const artifacts = row.envelope_status === 'completed'
+      ? (db.prepare("SELECT * FROM esign_artifacts WHERE envelope_id=? AND state='ready' ORDER BY CASE kind WHEN 'completed_pdf' THEN 0 ELSE 1 END,created_at,id").all(row.envelope_id) as any[])
+        .map((artifact) => ({ ...artifactRow(artifact), contentUrl: `/api/recipient-documents/envelopes/${row.envelope_id}/artifacts/${artifact.id}/content` }))
+      : [];
+    documents.push({
+      id: row.envelope_id,
+      title: row.title,
+      status: row.envelope_status,
+      accessState: row.envelope_status === 'completed' ? 'ready' : row.envelope_status === 'failed' ? 'finalization_failed' : 'waiting_for_others',
+      sentAt: row.sent_at,
+      signedAt: row.recipient_completed_at,
+      completedAt: row.completed_at,
+      updatedAt: row.updated_at,
+      activityUrl: `/api/recipient-documents/envelopes/${row.envelope_id}/activity`,
+      recipient: { name: row.recipient_name, role: row.recipient_role, status: row.recipient_status },
+      sender: { name: row.sender_name || 'Document sender', spaceName: row.space_name || 'Experience Management' },
+      artifacts
+    });
+    if (documents.length >= maximum) break;
+  }
+  return {
+    documents,
+    summary: {
+      total: documents.length,
+      ready: documents.filter((item) => item.accessState === 'ready').length,
+      waitingForOthers: documents.filter((item) => item.accessState === 'waiting_for_others').length,
+      needsAttention: documents.filter((item) => item.accessState === 'finalization_failed').length
+    }
+  };
+}
+
+const recipientActivityEvents = new Set([
+  'recipient.link_opened', 'recipient.authenticated', 'recipient.access_code_failed', 'recipient.consented',
+  'recipient.signature_saved', 'recipient.signature_replaced', 'recipient.signature_deleted',
+  'field.updated', 'recipient.completed', 'recipient.document_downloaded',
+  'email.invitation_sent', 'email.reminder_sent', 'email.completed_sent'
+]);
+
+function recipientActivityDetail(eventType: string, raw: unknown) {
+  const detail = parseJson<Record<string, unknown>>(raw, {});
+  if (eventType === 'recipient.consented') return { disclosureVersion: detail.disclosureVersion, disclosureSha256: detail.disclosureSha256 };
+  if (eventType === 'recipient.authenticated') return { method: detail.method };
+  if (eventType === 'recipient.access_code_failed') return { locked: Boolean(detail.locked) };
+  if (eventType === 'field.updated') return { fieldType: detail.fieldType, source: detail.source || 'new_value' };
+  if (eventType.startsWith('recipient.signature_')) return { mode: detail.mode, scope: detail.scope };
+  if (eventType === 'recipient.completed') return { fieldCount: detail.fieldCount };
+  if (eventType === 'recipient.document_downloaded') return { artifactKind: detail.artifactKind };
+  return {};
+}
+
+export function listRecipientDocumentActivity(emailValue: string, envelopeId: string, limit = 100) {
+  const row = recipientDocumentRows(emailValue).find((item) => item.envelope_id === envelopeId);
+  if (!row) throw new EsignError('Document not found.', 404, 'RECIPIENT_DOCUMENT_NOT_FOUND');
+  const maximum = Math.max(1, Math.min(200, Number.isFinite(limit) ? Math.floor(limit) : 100));
+  const events = (db.prepare(`SELECT id,event_type,metadata_json,created_at FROM esign_audit_events
+    WHERE envelope_id=? AND recipient_id=? ORDER BY rowid DESC LIMIT ?`).all(envelopeId, row.recipient_id, maximum) as any[])
+    .filter((event) => recipientActivityEvents.has(String(event.event_type)))
+    .map((event) => ({
+      id: event.id, eventType: event.event_type, createdAt: event.created_at,
+      detail: recipientActivityDetail(String(event.event_type), event.metadata_json)
+    }));
+  return { activity: events };
+}
+
+export function getRecipientArtifactContent(
+  emailValue: string,
+  envelopeId: string,
+  artifactId: string,
+  actor: EsignActor
+) {
+  const email = normalizedEmail(emailValue);
+  const entitled = db.prepare(`SELECT e.id,r.id recipient_id FROM esign_envelopes e
+    JOIN esign_recipients r ON r.envelope_id=e.id
+    WHERE e.id=? AND e.status='completed' AND r.email=? AND (
+      (r.role IN ('signer','approver') AND r.status='completed') OR r.role IN ('cc','viewer')
+    ) AND (r.access_code_hash IS NULL OR r.authenticated_at IS NOT NULL) LIMIT 1`).get(envelopeId, email) as { id: string; recipient_id: string } | undefined;
+  if (!entitled) throw new EsignError('Document not found.', 404, 'RECIPIENT_DOCUMENT_NOT_FOUND');
+  const row = db.prepare("SELECT * FROM esign_artifacts WHERE id=? AND envelope_id=? AND state='ready'").get(artifactId, envelopeId) as any;
+  if (!row) throw new EsignError('Document not found.', 404, 'RECIPIENT_DOCUMENT_NOT_FOUND');
+  const bytes = readProtectedFile(row.storage_key, `esign-artifact:${row.id}`);
+  if (hashBytes(bytes) !== row.sha256) throw new EsignError('Document integrity verification failed.', 500);
+  recordEsignAudit(envelopeId, 'recipient.document_downloaded', { ...actor, recipientId: entitled.recipient_id }, { artifactId: row.id, artifactKind: row.kind });
   return { bytes, fileName: row.file_name, mimeType: row.mime_type, sha256: row.sha256 };
 }
 
@@ -1104,11 +1544,36 @@ export function verifyPublicCertificate(publicId: string) {
 
 const claimEmailDelivery = db.transaction(() => {
   const timestamp = now();
-  const row = db.prepare("SELECT * FROM esign_email_deliveries WHERE state='queued' AND scheduled_at<=? ORDER BY scheduled_at,created_at LIMIT 1").get(timestamp) as any;
+  const lock = db.provider === 'postgres' ? ' FOR UPDATE SKIP LOCKED' : '';
+  const row = db.prepare(`SELECT * FROM esign_email_deliveries WHERE state='queued' AND scheduled_at<=?
+    ORDER BY scheduled_at,created_at LIMIT 1${lock}`).get(timestamp) as any;
   if (!row) return null;
   const changed = db.prepare("UPDATE esign_email_deliveries SET state='sending',attempt=attempt+1,updated_at=? WHERE id=? AND state='queued'").run(timestamp, row.id).changes;
   return changed ? db.prepare('SELECT * FROM esign_email_deliveries WHERE id=?').get(row.id) as any : null;
 });
+
+export function renderEsignDeliveryEmail(row: {
+  kind: string; title: string; subject?: string | null; message?: string | null;
+  void_reason?: string | null; name: string;
+}, rawToken: string) {
+  const signerUrl = `${config.publicUrl}/sign?token=${encodeURIComponent(rawToken)}`;
+  const accountSignupUrl = `${config.publicUrl}/signup?esign=${encodeURIComponent(rawToken)}`;
+  const accountLoginUrl = `${config.publicUrl}/login?esign=${encodeURIComponent(rawToken)}`;
+  let subject = row.subject || `Please sign: ${row.title}`; let heading = 'Your signature is requested'; let action = 'Review and sign';
+  let text = `${row.name},\n\n${row.message || `Please review and sign “${row.title}”.`}\n\n${signerUrl}`;
+  if (row.kind === 'reminder') { subject = `Reminder: ${subject}`; heading = 'Signature reminder'; }
+  if (row.kind === 'completed') {
+    subject = `Completed: ${row.title}`; heading = 'Envelope completed'; action = 'View completed documents';
+    text = `${row.name},\n\n“${row.title}” has been completed.\n\nView and download the completed files now:\n${signerUrl}\n\nOptional: create an account with this email to keep your signed documents available at any time:\n${accountSignupUrl}\n\nAlready have an account? Sign in:\n${accountLoginUrl}`;
+  }
+  if (row.kind === 'voided') { subject = `Voided: ${row.title}`; heading = 'Envelope voided'; action = ''; text = `${row.name},\n\n“${row.title}” was voided.${row.void_reason ? ` Reason: ${row.void_reason}` : ''}`; }
+  const actionHtml = action ? `<p><a href="${escapeHtml(signerUrl)}" style="display:inline-block;background:#26352e;color:#fff;text-decoration:none;padding:12px 18px;border-radius:7px;font-weight:600">${escapeHtml(action)}</a></p><p style="font-size:12px;color:#69716c;word-break:break-all">${escapeHtml(signerUrl)}</p>` : '';
+  const accountHtml = row.kind === 'completed'
+    ? `<div style="margin:24px 0 0;padding:18px;border:1px solid #dfe2dd"><p style="margin:0 0 8px;font-weight:600">Keep your signed documents available</p><p style="margin:0 0 12px;color:#59605b;font-size:14px">Creating an account is optional. Use this recipient email to view completed agreements at any time.</p><p style="margin:0"><a href="${escapeHtml(accountSignupUrl)}" style="color:#26352e;font-weight:600">Create an account</a><span style="color:#a0a6a1"> &nbsp;·&nbsp; </span><a href="${escapeHtml(accountLoginUrl)}" style="color:#26352e;font-weight:600">Sign in</a></p></div>`
+    : '';
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#20211f;line-height:1.6;max-width:620px;margin:auto"><h2>${escapeHtml(heading)}</h2><p>Hello ${escapeHtml(row.name)},</p><p>${escapeHtml(row.kind === 'voided' ? `“${row.title}” was voided.${row.void_reason ? ` Reason: ${row.void_reason}` : ''}` : row.kind === 'completed' ? `“${row.title}” has been completed.` : row.message || `Please review and sign “${row.title}”.`)}</p>${actionHtml}${accountHtml}<p style="font-size:12px;color:#69716c">Signing activity is recorded in the envelope audit trail. Do not forward a signing link.</p></div>`;
+  return { subject, html, text, signerUrl, accountSignupUrl, accountLoginUrl, action };
+}
 
 async function processEmailDelivery(delivery: any) {
   const row = db.prepare(`SELECT d.*,e.title,e.subject,e.message,e.status envelope_status,e.void_reason,e.space_id,r.name,r.email,r.role recipient_role,r.access_token_enc,r.status recipient_status
@@ -1118,14 +1583,7 @@ async function processEmailDelivery(delivery: any) {
     db.prepare("UPDATE esign_email_deliveries SET state='cancelled',error='Envelope is no longer active',updated_at=? WHERE id=?").run(now(), row.id); return;
   }
   const rawToken = openText(row.access_token_enc, `esign-recipient-token:${row.recipient_id}`);
-  const signerUrl = `${config.publicUrl}/sign?token=${encodeURIComponent(rawToken)}`;
-  let subject = row.subject || `Please sign: ${row.title}`; let heading = 'Your signature is requested'; let action = 'Review and sign';
-  let text = `${row.name},\n\n${row.message || `Please review and sign “${row.title}”.`}\n\n${signerUrl}`;
-  if (row.kind === 'reminder') { subject = `Reminder: ${subject}`; heading = 'Signature reminder'; }
-  if (row.kind === 'completed') { subject = `Completed: ${row.title}`; heading = 'Envelope completed'; action = 'View completed documents'; text = `${row.name},\n\n“${row.title}” has been completed.\n\n${signerUrl}`; }
-  if (row.kind === 'voided') { subject = `Voided: ${row.title}`; heading = 'Envelope voided'; action = ''; text = `${row.name},\n\n“${row.title}” was voided.${row.void_reason ? ` Reason: ${row.void_reason}` : ''}`; }
-  const actionHtml = action ? `<p><a href="${escapeHtml(signerUrl)}" style="display:inline-block;background:#26352e;color:#fff;text-decoration:none;padding:12px 18px;border-radius:7px;font-weight:600">${escapeHtml(action)}</a></p><p style="font-size:12px;color:#69716c;word-break:break-all">${escapeHtml(signerUrl)}</p>` : '';
-  const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#20211f;line-height:1.6;max-width:620px;margin:auto"><h2>${escapeHtml(heading)}</h2><p>Hello ${escapeHtml(row.name)},</p><p>${escapeHtml(row.kind === 'voided' ? `“${row.title}” was voided.${row.void_reason ? ` Reason: ${row.void_reason}` : ''}` : row.kind === 'completed' ? `“${row.title}” has been completed.` : row.message || `Please review and sign “${row.title}”.`)}</p>${actionHtml}<p style="font-size:12px;color:#69716c">Signing activity is recorded in the envelope audit trail. Do not forward a signing link.</p></div>`;
+  const { subject, html, text, signerUrl, action } = renderEsignDeliveryEmail(row, rawToken);
   try {
     const result = await sendTransactionalEmail({ to: row.email, name: row.name, subject, html, text, idempotencyKey: row.idempotency_key, correlation: `esign_delivery:${row.id}` });
     const timestamp = now(); const debug = config.emailMode === 'log' && action ? sealText(signerUrl, `esign-debug-link:${row.id}`) : null;

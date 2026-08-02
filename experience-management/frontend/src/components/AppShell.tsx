@@ -1,12 +1,14 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, Megaphone, Menu, Plus, Radar, Route, Settings2, Sparkles, X } from 'lucide-react';
+import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import type { AuthSession, SpaceSession } from '@/types';
+import { SectionTutorial } from '@/components/tutorials/SectionTutorial';
+import { tutorialForPath } from '@/lib/tutorials';
+import type { AuthSession, PendingSpaceInvitation, SpaceSession } from '@/types';
 
 const navigation = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
@@ -15,6 +17,8 @@ const navigation = [
   { to: '/agreements', label: 'Agreements', icon: FileSignature },
   { to: '/social-listening', label: 'Social listening', icon: Radar },
   { to: '/intelligence', label: 'Intelligence', icon: BrainCircuit },
+  { to: '/assistant', label: 'Personal assistant', icon: MailCheck },
+  { to: '/knowledge-bases', label: 'Knowledge bases', icon: BookOpenText },
   { to: '/journeys', label: 'Journey maps', icon: Route },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles },
   { to: '/tickets', label: 'Service recovery', icon: Inbox },
@@ -23,9 +27,45 @@ const navigation = [
 
 function Brand() {
   return <Link to="/" className="flex h-16 shrink-0 items-center gap-3 border-b px-5">
-    <div className="grid h-8 w-8 place-items-center rounded-md bg-primary text-sm font-bold text-primary-foreground">S</div>
+    <img src="/brand/experience-mark.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" />
     <div><div className="text-sm font-semibold leading-4">Seemplify</div><div className="text-xs text-muted-foreground">Experience</div></div>
   </Link>;
+}
+
+function PendingInvitationBar({ invitations, acceptingId, error, onAccept }: {
+  invitations: PendingSpaceInvitation[]; acceptingId: string; error: string;
+  onAccept: (invitation: PendingSpaceInvitation) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (!invitations.length) return null;
+  const visibleInvitations = expanded ? invitations : invitations.slice(0, 4);
+  const hiddenCount = invitations.length - visibleInvitations.length;
+  return <section className="border-b bg-card px-4 py-3 sm:px-6" aria-labelledby="pending-space-invitations-heading">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-3 xl:flex-row xl:items-start">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <MailOpen className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <div>
+          <h2 id="pending-space-invitations-heading" className="text-sm font-semibold">Space invitation{invitations.length === 1 ? '' : 's'}</h2>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">Accepting adds and opens the space. Its content remains private until then.</p>
+        </div>
+      </div>
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:w-[720px]">
+        {visibleInvitations.map((invitation) => <div key={invitation.id} className="flex min-w-0 items-center gap-3 border bg-background px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">{invitation.space.name}</div>
+            <div className="mt-0.5 truncate text-xs text-muted-foreground">{invitation.invitedBy} · {invitation.role}</div>
+          </div>
+          <Button size="sm" variant="outline" aria-label={`Accept invitation to ${invitation.space.name} and open it`} disabled={Boolean(acceptingId)} onClick={() => onAccept(invitation)}>
+            {acceptingId === invitation.id ? <LoaderCircle className="animate-spin" /> : null}Accept and open
+          </Button>
+        </div>)}
+        {(hiddenCount > 0 || expanded && invitations.length > 4) && <Button className="sm:col-span-2 sm:justify-self-start" size="sm" variant="ghost" onClick={() => setExpanded((current) => !current)}>
+          {expanded ? 'Show fewer invitations' : `Show ${hiddenCount} more invitation${hiddenCount === 1 ? '' : 's'}`}
+        </Button>}
+      </div>
+    </div>
+    {error && <div className="mx-auto mt-2 w-full max-w-[1440px] text-xs text-destructive" role="alert">{error}</div>}
+  </section>;
 }
 
 type RuntimeState = 'checking' | 'ready' | 'unavailable';
@@ -78,10 +118,12 @@ function SidebarContent({ close, runtimeState, runtimeLabel, session, switching,
       </NavLink>)}
     </nav>
     <div className="relative z-10 shrink-0 border-t bg-card p-3">
-      <div className="mb-2 min-w-0 px-2">
+      {session?.permissions?.platformAdmin && <Link to="/admin" onClick={close} className="mb-1 flex h-9 items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"><ShieldCheck className="h-4 w-4" />Platform administration</Link>}
+      <Link to="/settings/profile" onClick={close} className="mb-2 block min-w-0 rounded-md px-2 py-1.5 hover:bg-muted/60" aria-label="Open your profile">
         <div className="truncate text-xs font-semibold text-foreground">{session?.user?.name || 'Signed in'}</div>
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground" title={session?.user?.email || ''}>{session?.user?.email || 'Loading account…'}</div>
-      </div>
+      </Link>
+      <Link to="/my-documents" onClick={close} className="mb-1 flex h-9 items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"><FileCheck2 className="h-4 w-4" />My signed documents</Link>
       <Link
         to="/ai-queue"
         onClick={close}
@@ -119,7 +161,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [runtime, setRuntime] = useState<any>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [acceptingInvitationId, setAcceptingInvitationId] = useState('');
+  const [invitationError, setInvitationError] = useState('');
   const location = useLocation();
+  const tutorial = tutorialForPath(location.pathname);
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
   useEffect(() => {
     if (!mobileOpen) return;
@@ -135,6 +180,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (!nextSession.authenticated || !nextSession.user || !nextSession.activeSpace) {
         window.location.assign('/login'); return;
       }
+      if (!nextSession.emailVerified) {
+        window.location.assign(`/verify-email?email=${encodeURIComponent(nextSession.user.email)}`); return;
+      }
+      if (nextSession.onboardingRequired) {
+        window.location.assign('/onboarding'); return;
+      }
       const stored = activeSpaceId();
       const storedMembership = stored && nextSession.spaces.some((space) => space.id === stored);
       if (storedMembership && stored !== nextSession.activeSpace.id) {
@@ -147,6 +198,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     }).catch(() => null);
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => {
+    if (!session?.authenticated) return;
+    const timer = window.setInterval(() => {
+      void api<AuthSession>('/api/auth/session').then((next) => {
+        if (!next.authenticated) {
+          storeActiveSpaceId(null);
+          window.location.assign('/login');
+          return;
+        }
+        setSession((current) => current ? { ...current, permissions: next.permissions, pendingSpaceInvitations: next.pendingSpaceInvitations } : current);
+      }).catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [session?.authenticated]);
   useEffect(() => subscribeToSpaceChanges((spaceId) => {
     if (!session?.activeSpace || spaceId === session.activeSpace.id) return;
     if (!confirmDiscardForSpaceSwitch()) return;
@@ -165,8 +230,24 @@ export function AppShell({ children }: { children: ReactNode }) {
       window.location.replace('/');
     } catch { setSwitching(false); }
   }
+  async function acceptInvitation(invitation: PendingSpaceInvitation) {
+    if (acceptingInvitationId || !confirmDiscardForSpaceSwitch()) return;
+    try {
+      setAcceptingInvitationId(invitation.id);
+      setInvitationError('');
+      const accepted = await api<SpaceSession & { pendingSpaceInvitations: PendingSpaceInvitation[] }>(
+        `/api/account/space-invitations/${encodeURIComponent(invitation.id)}/accept`, json('POST', {})
+      );
+      allowConfirmedSpaceSwitchUnload();
+      storeActiveSpaceId(accepted.activeSpace.id, false);
+      window.location.replace('/');
+    } catch (reason) {
+      setInvitationError(reason instanceof Error ? reason.message : 'Could not accept this invitation.');
+      setAcceptingInvitationId('');
+    }
+  }
   const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(location.pathname);
-  const title = location.pathname === '/' ? 'Overview' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : location.pathname.startsWith('/agreements/') ? 'Agreement workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
+  const title = location.pathname === '/' ? 'Overview' : location.pathname === '/settings/profile' ? 'Your profile' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : location.pathname.startsWith('/agreements/') ? 'Agreement workspace' : location.pathname.startsWith('/knowledge-bases/') ? 'Knowledge base workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
   const terraReady = runtime?.terra?.ready === true;
   const runtimeState: RuntimeState = runtime === null ? 'checking' : terraReady ? 'ready' : 'unavailable';
   const runtimeLabel = runtime?.terra?.providerLabel || 'Experience AI';
@@ -175,22 +256,24 @@ export function AppShell({ children }: { children: ReactNode }) {
     : location.pathname === '/' || location.pathname.startsWith('/surveys')
       ? { to: '/surveys/new', label: 'New survey' }
       : null;
-  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex h-[52px] items-center justify-between border-b bg-card px-4"><Link to="/agreements" className="flex items-center gap-2"><div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="text-sm font-semibold">Seemplify Experience</span></Link><span className="text-xs font-medium text-muted-foreground">Agreement field editor</span></header><main>{children}</main></div>;
+  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex min-h-[52px] items-center justify-between gap-3 border-b bg-card px-4 py-2"><Link to="/agreements" className="flex min-w-0 items-center gap-2"><div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="truncate text-sm font-semibold">Seemplify Experience</span></Link><div className="flex shrink-0 items-center gap-2"><span className="hidden text-xs font-medium text-muted-foreground sm:inline">Agreement field editor</span><SectionTutorial tutorial={tutorial} /></div></header><main>{children}</main></div>;
   return <div className="min-h-screen bg-background">
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col overflow-hidden border-r bg-card md:flex"><SidebarContent selectorId="active-space-desktop" runtimeState={runtimeState} runtimeLabel={runtimeLabel} session={session} switching={switching} onSwitch={switchSpace} /></aside>
     {mobileOpen && <div className="fixed inset-0 z-50 md:hidden">
       <button aria-label="Dismiss navigation" className="absolute inset-0 bg-foreground/30" onClick={() => setMobileOpen(false)} />
       <aside className="relative flex h-full w-[278px] flex-col overflow-hidden border-r bg-card shadow-panel"><button aria-label="Close navigation" className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent selectorId="active-space-mobile" close={() => setMobileOpen(false)} runtimeState={runtimeState} runtimeLabel={runtimeLabel} session={session} switching={switching} onSwitch={switchSpace} /></aside>
     </div>}
-    <div className="md:pl-[248px]">
-      <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur sm:px-6">
-        <div className="flex items-center gap-3"><Button className="md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="text-sm font-semibold">{title}</div></div>
-        <div className="flex items-center gap-2">
+    <div className="min-w-0 md:pl-[248px]">
+      <header className="sticky top-0 z-20 flex h-16 min-w-0 items-center justify-between gap-2 overflow-hidden border-b bg-background/95 px-4 backdrop-blur sm:gap-3 sm:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3"><Button className="shrink-0 md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</div></div>
+        <div className="flex shrink-0 items-center gap-2">
+          <SectionTutorial tutorial={tutorial} />
           <Badge variant={runtimeState === 'ready' ? 'success' : runtimeState === 'checking' ? 'outline' : 'warning'} className="hidden sm:inline-flex" title={runtimeLabel}>{runtimeName(runtimeLabel)} {runtimeState}</Badge>
-          {creationAction && <Button asChild size="sm"><Link to={creationAction.to}><Plus />{creationAction.label}</Link></Button>}
+          {creationAction && <Button asChild size="sm" className="max-[439px]:w-8 max-[439px]:px-0"><Link to={creationAction.to} aria-label={creationAction.label} title={creationAction.label}><Plus /><span className="max-[439px]:sr-only">{creationAction.label}</span></Link></Button>}
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <PendingInvitationBar invitations={session?.pendingSpaceInvitations || []} acceptingId={acceptingInvitationId} error={invitationError} onAccept={(invitation) => void acceptInvitation(invitation)} />
+      <main className="mx-auto min-w-0 w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
     </div>
   </div>;
 }

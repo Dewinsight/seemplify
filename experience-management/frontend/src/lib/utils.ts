@@ -25,7 +25,9 @@ export function humanizeActivity(value: string) {
   const names: Record<string, string> = {
     'survey.generate': 'Survey generation', 'survey.improve': 'Survey quality review', 'survey.translate': 'Survey translation',
     'response.analyze': 'Response analysis', 'insights.generate': 'Insight generation', 'analyst.chat': 'Analyst chat', 'report.generate': 'Executive report',
-    'social.analyze': 'Social listening analysis', 'journey.generate': 'Journey generation', 'journey.optimize': 'Journey optimization'
+    'social.analyze': 'Social listening analysis', 'journey.generate': 'Journey generation', 'journey.optimize': 'Journey optimization',
+    'assistant.email_summary': 'Assistant email summary', 'assistant.email_draft': 'Assistant email draft',
+    'assistant.knowledge_answer': 'Assistant knowledge answer'
   };
   return names[value] || value.replaceAll('.', ' ').replaceAll('_', ' ');
 }

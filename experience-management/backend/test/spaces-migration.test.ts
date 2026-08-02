@@ -34,6 +34,12 @@ function runModule(moduleUrl: string) {
 runModule(databaseModule);
 const legacy = new Database(databasePath);
 legacy.pragma('foreign_keys = ON');
+// Recreate the account portion of the schema as it existed before lifecycle
+// migration v3, while retaining the broad legacy fixture built by database.ts.
+legacy.exec(`DELETE FROM schema_migrations WHERE version>=3;
+  DROP TABLE email_verification_tokens;
+  DROP TABLE user_profiles;
+  ALTER TABLE users DROP COLUMN email_verified_at;`);
 fs.mkdirSync(environment.UPLOAD_DIR, { recursive: true });
 fs.writeFileSync(path.join(environment.UPLOAD_DIR, 'legacy-evidence.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
 const first = '2026-07-01T09:00:00.000Z';
@@ -164,6 +170,13 @@ after(() => fs.rmSync(root, { recursive: true, force: true }));
 
 test('assigns legacy global content once, preserves attributable records, and is restart-idempotent', () => {
   const migrated = new Database(databasePath);
+  for (const account of migrated.prepare(`SELECT u.id,u.created_at,u.email_verified_at,p.onboarding_version,p.onboarding_completed_at
+    FROM users u JOIN user_profiles p ON p.user_id=u.id ORDER BY u.id`).all() as any[]) {
+    assert.equal(account.email_verified_at, account.created_at);
+    assert.equal(account.onboarding_version, 1);
+    assert.equal(account.onboarding_completed_at, account.created_at);
+  }
+  assert.ok(migrated.prepare('SELECT 1 FROM schema_migrations WHERE version=3').get());
   const ownerSpace = (migrated.prepare(`SELECT id FROM spaces WHERE personal_for_user_id='legacy-owner'`).get() as any).id;
   const laterSpace = (migrated.prepare(`SELECT id FROM spaces WHERE personal_for_user_id='later-user'`).get() as any).id;
   assert.notEqual(ownerSpace, laterSpace);

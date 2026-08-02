@@ -1,4 +1,13 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+async function dismissFirstVisitTutorial(page: Page) {
+  const dialog = page.getByRole('dialog');
+  if (!await dialog.waitFor({ state: 'visible', timeout: 2000 }).then(() => true).catch(() => false)) return;
+  const dismiss = dialog.getByRole('button', { name: 'Maybe later' });
+  if (await dismiss.isVisible().catch(() => false)) await dismiss.click();
+  else await dialog.getByRole('button', { name: /close/i }).click();
+  await expect(dialog).toBeHidden();
+}
 
 test('public Cloudflare host serves the secured application', async ({ page }, testInfo) => {
   test.skip(!process.env.PLAYWRIGHT_EXTERNAL_URL, 'Runs only against the deployed hostname');
@@ -16,7 +25,7 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   const privacy = await page.goto('/legal/privacy'); expect(privacy?.status()).toBe(200);
   await expect(page.getByRole('heading', { name: 'Privacy Policy' })).toBeVisible();
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Create an account' }).click();
   await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
   await page.getByRole('link', { name: 'Sign in' }).click();
@@ -26,6 +35,7 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   await page.getByLabel('Email').fill('admin@seemplify.local');
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await dismissFirstVisitTutorial(page);
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
   const liveRefresh = await page.evaluate(() => new Promise<{ connected: boolean; readyState: number }>((resolve) => {
     const stream = new EventSource('/api/events');
@@ -48,6 +58,7 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
 
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Agreements' }).click();
+  await dismissFirstVisitTutorial(page);
   await expect(page.getByRole('heading', { name: 'Agreements', exact: true })).toBeVisible();
   await expect(page.getByRole('main').getByRole('link', { name: 'New agreement' }).first()).toBeVisible();
   const envelopes = await page.request.get('/api/esign/envelopes');
@@ -56,11 +67,13 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
 
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Social listening' }).click();
+  await dismissFirstVisitTutorial(page);
   await expect(page.getByRole('heading', { name: 'Social listening' })).toBeVisible();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('public-social-listening.png'), fullPage: true });
 
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Intelligence' }).click();
+  await dismissFirstVisitTutorial(page);
   await expect(page.getByRole('heading', { name: 'Intelligence', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Build an analysis' })).toBeVisible();
   const intelligenceSources = await page.request.get('/api/intelligence/sources');
@@ -73,6 +86,7 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
 
   if (mobile) await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Journey maps' }).click();
+  await dismissFirstVisitTutorial(page);
   await expect(page.getByRole('heading', { name: 'Journey maps', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'How this workspace works' })).toBeVisible();
   const journeys = await page.request.get('/api/journeys');

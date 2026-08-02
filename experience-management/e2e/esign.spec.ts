@@ -6,7 +6,7 @@ type EnvelopeDetail = {
   envelope: { id: string; status: string };
   documents: Array<{ id: string; pageCount: number }>;
   recipients: Array<{ id: string; name: string; email: string; status: string; routingOrder: number }>;
-  fields: Array<{ id: string; recipientId: string; page: number }>;
+  fields: Array<{ id: string; recipientId: string; page: number; type: string }>;
   artifacts: Array<{ id: string; kind: string; name: string; sha256: string; certificateId?: string }>;
   audit: Array<{ action: string }>;
 };
@@ -81,11 +81,12 @@ async function consent(page: Page) {
   await expect(page.getByText(/Signing as /)).toBeVisible();
 }
 
-async function applyTypedSignature(page: Page, name: string) {
+async function applyTypedSignature(page: Page, name: string, options: { save?: boolean; label?: string } = {}) {
   await page.getByRole('button', { name: /Signature, required/i }).click();
-  await expect(page.getByRole('heading', { name: 'Adopt your signature' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose your signature' })).toBeVisible();
   await page.getByLabel('Full name').fill(name);
-  await page.getByRole('button', { name: 'Apply' }).click();
+  if (options.label) await page.getByLabel('Saved signature label').fill(options.label);
+  await page.getByRole('button', { name: options.save ? 'Save and apply' : 'Apply once', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeHidden();
 }
 
@@ -101,7 +102,7 @@ async function applyDrawnSignature(page: Page) {
   await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.7, { steps: 6 });
   await page.mouse.move(box.x + box.width - 30, box.y + box.height * 0.3, { steps: 6 });
   await page.mouse.up();
-  await page.getByRole('button', { name: 'Apply' }).click();
+  await page.getByRole('button', { name: 'Apply once', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeHidden();
 }
 
@@ -111,8 +112,8 @@ async function applyUploadedSignature(page: Page) {
   await page.getByRole('button', { name: /Signature, required/i }).click();
   await page.getByRole('tab', { name: 'Upload' }).click();
   await page.locator('input[type=file][accept*="image/png"]').setInputFiles({ name: 'synthetic-signature.png', mimeType: 'image/png', buffer: png });
-  await expect(page.getByText('Image ready')).toBeVisible();
-  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page.getByRole('img', { name: 'Uploaded signature preview' })).toBeVisible();
+  await page.getByRole('button', { name: 'Apply once', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeHidden();
 }
 
@@ -234,7 +235,13 @@ test('creates, prepares and completes a protected three-signer agreement with or
   await expect(adaSigner.page.getByRole('heading', { name: 'Review and consent' })).toBeVisible();
   expect(await adaSigner.page.evaluate(async (id) => (await fetch(`/api/public/esign/documents/${id}/content`)).status, documentId)).toBe(409);
   await consent(adaSigner.page);
-  await applyTypedSignature(adaSigner.page, 'Ada First');
+  const adaSignatureText = `Ada First ${suffix}`;
+  const adaSignatureLabel = `Ada reusable signature ${suffix}`;
+  const adaSignatureField = detail.fields.find((field) => field.recipientId === ada.id && field.type === 'signature');
+  expect(adaSignatureField).toBeTruthy();
+  const adaSignatureOnDocument = adaSigner.page.locator(`[data-sign-field-id="${adaSignatureField!.id}"]`);
+  await applyTypedSignature(adaSigner.page, adaSignatureText, { save: true, label: adaSignatureLabel });
+  await expect(adaSignatureOnDocument).toContainText(adaSignatureText);
   await adaSigner.page.getByLabel('Text, required').fill('Accepted after careful review.');
   await adaSigner.page.getByRole('checkbox', { name: /Checkbox, required/ }).check();
   await adaSigner.page.getByRole('radio', { name: 'Option 1' }).check();
@@ -243,7 +250,33 @@ test('creates, prepares and completes a protected three-signer agreement with or
   // Reload proves a saved signature remains complete in a resumed ceremony.
   await adaSigner.page.reload();
   await expect(adaSigner.page.getByText('0 required remaining')).toBeVisible({ timeout: 20_000 });
+  await expect(adaSigner.page.locator(`[data-sign-field-id="${adaSignatureField!.id}"]`)).toContainText(adaSignatureText);
+
+  const reusable = await createSentEnvelope(page, testInfo, 'Signature reuse', { name: 'Ada First', email: ada.email });
+  const reusableDetail = await envelopeDetail(page, reusable.envelopeId);
+  const reusableSignatureField = reusableDetail.fields.find((field) => field.type === 'signature');
+  expect(reusableSignatureField).toBeTruthy();
+  const reusableInvite = await waitForInvitation(page, reusable.envelopeId, ada.email);
+  const reusableSigner = await openSigner(browser, reusableInvite.signerUrl!);
+  await consent(reusableSigner.page);
+  await reusableSigner.page.getByRole('button', { name: /Signature, required/i }).click();
+  const reusableDialog = reusableSigner.page.getByRole('dialog');
+  const savedSignatureCard = reusableDialog.locator('article').filter({ hasText: adaSignatureLabel });
+  await expect(savedSignatureCard).toContainText(adaSignatureText);
+  await savedSignatureCard.getByRole('button', { name: 'Use', exact: true }).click();
+  const reusableSignatureOnDocument = reusableSigner.page.locator(`[data-sign-field-id="${reusableSignatureField!.id}"]`);
+  await expect(reusableSignatureOnDocument).toContainText(adaSignatureText);
+  await reusableSigner.page.reload();
+  await expect(reusableSigner.page.locator(`[data-sign-field-id="${reusableSignatureField!.id}"]`)).toContainText(adaSignatureText);
+  await finishSigner(reusableSigner.page);
+  await reusableSigner.context.close();
+
   await finishSigner(adaSigner.page);
+  const waitingState = adaSigner.page.locator('section[aria-labelledby="document-state-heading"]');
+  await expect(waitingState.getByText('Waiting for other recipients', { exact: true })).toBeVisible();
+  const waitingActivity = adaSigner.page.locator('section[aria-labelledby="signing-activity-heading"]');
+  await expect(waitingActivity.getByText('1/3 complete', { exact: true })).toBeVisible();
+  await expect(waitingActivity.getByText('Ada First (you)', { exact: true })).toBeVisible();
 
   const [benInvite, chiInvite] = await Promise.all([
     waitForInvitation(page, envelopeId, ben.email),
@@ -254,6 +287,13 @@ test('creates, prepares and completes a protected three-signer agreement with or
   const benSigner = await openSigner(browser, benInvite.signerUrl!);
   const chiSigner = await openSigner(browser, chiInvite.signerUrl!);
   await Promise.all([consent(benSigner.page), consent(chiSigner.page)]);
+  await expect(benSigner.page.getByText(adaSignatureText, { exact: true })).toHaveCount(0);
+  await benSigner.page.getByRole('button', { name: /Signature, required/i }).click();
+  const benSignatureDialog = benSigner.page.getByRole('dialog');
+  await expect(benSignatureDialog.getByRole('heading', { name: 'Saved signatures' })).toBeVisible();
+  await expect(benSignatureDialog.getByText(adaSignatureText, { exact: true })).toHaveCount(0);
+  await expect(benSignatureDialog.getByText('No saved signatures yet. Create one below and choose Save and apply.')).toBeVisible();
+  await benSigner.page.keyboard.press('Escape');
   await Promise.all([applyDrawnSignature(benSigner.page), applyUploadedSignature(chiSigner.page)]);
   await Promise.all([finishSigner(benSigner.page), finishSigner(chiSigner.page)]);
 
@@ -292,15 +332,116 @@ test('creates, prepares and completes a protected three-signer agreement with or
   await expect(page.getByRole('link', { name: /certificate\.pdf/i })).toBeVisible();
   if (process.env.CAPTURE_VISUALS) await page.screenshot({ path: testInfo.outputPath('completed-agreement.png'), fullPage: true });
 
+  await adaSigner.page.reload();
+  await expect(adaSigner.page.getByRole('heading', { name: 'Signing complete' })).toBeVisible();
+  await expect(adaSigner.page.locator('section[aria-labelledby="document-state-heading"]').getByText('Completed', { exact: true })).toBeVisible();
+  const completedActivity = adaSigner.page.locator('section[aria-labelledby="signing-activity-heading"]');
+  await expect(completedActivity.getByText('3/3 complete', { exact: true })).toBeVisible();
+  for (const participant of ['Ada First (you)', 'Ben Parallel', 'Chi Parallel']) {
+    await expect(completedActivity.getByText(participant, { exact: true })).toBeVisible();
+  }
+  await expect(adaSigner.page.getByRole('heading', { name: 'Keep your signed documents together' })).toBeVisible();
+  await expect(adaSigner.page.getByText('An account is not required')).toBeVisible();
+  await expect(adaSigner.page.getByRole('link', { name: /completed\.pdf/i })).toBeVisible();
+  await adaSigner.page.getByRole('link', { name: 'Create optional account' }).click();
+  await expect(adaSigner.page.getByRole('heading', { name: 'Keep your signed documents' })).toBeVisible();
+  await expect(adaSigner.page.getByLabel('Recipient email')).toHaveValue(ada.email);
+  await expect(adaSigner.page.getByLabel('Recipient email')).toHaveAttribute('readonly', '');
+  await adaSigner.page.getByRole('button', { name: 'Continue' }).click();
+  const portalPassword = 'Ada-Portal-2026!';
+  await adaSigner.page.getByLabel('Password', { exact: true }).fill(portalPassword);
+  await adaSigner.page.getByLabel('Confirm password', { exact: true }).fill(portalPassword);
+  await adaSigner.page.getByRole('button', { name: 'Create account and verify email' }).click();
+  await expect(adaSigner.page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  const verificationRequestId = new URL(adaSigner.page.url()).searchParams.get('request');
+  expect(verificationRequestId).toBeTruthy();
+  const tokenResponse = await adaSigner.page.request.post('/__e2e__/auth/verification-token', { data: { email: ada.email, requestId: verificationRequestId } });
+  expect(tokenResponse.ok()).toBe(true);
+  const verificationToken = (await tokenResponse.json() as { token: string }).token;
+  await adaSigner.page.goto(`/verify-email?token=${encodeURIComponent(verificationToken)}&returnTo=%2Fmy-documents`);
+  await adaSigner.page.getByRole('button', { name: 'Confirm email address' }).click();
+  await expect(adaSigner.page.getByRole('heading', { name: 'Email verified' })).toBeVisible();
+  let activityRequests = 0;
+  adaSigner.page.on('request', (request) => {
+    if (new URL(request.url()).pathname === `/api/recipient-documents/envelopes/${envelopeId}/activity`) activityRequests += 1;
+  });
+  await adaSigner.page.getByRole('link', { name: 'Open My documents' }).click();
+  await expect(adaSigner.page.getByRole('heading', { name: 'My documents' })).toBeVisible();
+  await expect(adaSigner.page.getByRole('heading', { name: title })).toBeVisible();
+  const documentRow = adaSigner.page.getByTestId('recipient-document-row').filter({ hasText: title });
+  await expect(documentRow.getByRole('link', { name: 'Completed document' })).toBeVisible();
+  await expect(documentRow.getByRole('link', { name: 'Completion certificate' })).toBeVisible();
+  const activityDisclosure = documentRow.getByText('Activity and document status', { exact: true });
+  expect(activityRequests).toBe(0);
+  await activityDisclosure.click();
+  await expect.poll(() => activityRequests).toBe(1);
+  await expect(documentRow.getByText('Completed · Files ready', { exact: true })).toBeVisible();
+  await expect(documentRow.getByText('Signature saved for reuse', { exact: true })).toBeVisible();
+  await expect(documentRow.getByText('Signing completed', { exact: true })).toBeVisible();
+  await expect(documentRow.getByText(adaSignatureText, { exact: true })).toHaveCount(0);
+  await activityDisclosure.click();
+  await activityDisclosure.click();
+  await expect.poll(() => activityRequests).toBe(1);
+  const [portalDownload] = await Promise.all([
+    adaSigner.page.waitForEvent('download'),
+    documentRow.getByRole('link', { name: 'Completed document' }).click()
+  ]);
+  expect(await portalDownload.suggestedFilename()).toContain('completed.pdf');
+  await adaSigner.page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(adaSigner.page).toHaveURL(/\/login\?returnTo=%2Fmy-documents$/);
+  await adaSigner.page.getByLabel('Email').fill(ada.email);
+  await adaSigner.page.getByLabel('Password').fill(portalPassword);
+  await adaSigner.page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(adaSigner.page.getByRole('heading', { name: 'My documents' })).toBeVisible();
+  await expect(adaSigner.page.getByRole('heading', { name: title })).toBeVisible();
+
+  const onboarding = await adaSigner.page.request.post('/api/account/onboarding', {
+    data: {
+      name: 'Ada First',
+      email: ada.email,
+      jobTitle: 'Agreement recipient',
+      organizationName: 'Recipient acceptance workspace',
+      timezone: 'UTC',
+      primaryGoal: 'customer_experience',
+      spaceName: `Ada agreements ${suffix}`
+    }
+  });
+  expect(onboarding.status()).toBe(200);
+  const tutorialProgress = await adaSigner.page.request.put('/api/tutorials/progress/agreements', {
+    data: { version: 1, status: 'completed', lastStep: 2 }
+  });
+  expect(tutorialProgress.status()).toBe(200);
+
+  await adaSigner.page.goto('/agreements');
+  await expect(adaSigner.page.getByRole('heading', { name: 'Agreements' })).toBeVisible();
+  const agreementViews = adaSigner.page.getByRole('tablist', { name: 'Agreement views' });
+  const sentBySpace = agreementViews.getByRole('tab', { name: /Sent by this space/ });
+  const signedByMe = agreementViews.getByRole('tab', { name: /Signed by me/ });
+  await expect(sentBySpace).toHaveAttribute('aria-selected', 'true');
+  await expect(signedByMe).toHaveAttribute('aria-selected', 'false');
+  await expect(adaSigner.page.getByRole('heading', { name: title })).toHaveCount(0);
+
+  await signedByMe.click();
+  await expect(signedByMe).toHaveAttribute('aria-selected', 'true');
+  await expect(adaSigner.page.getByText(/across all spaces/i)).toBeVisible();
+  const embeddedDocument = adaSigner.page.getByTestId('recipient-document-row').filter({ hasText: title });
+  await expect(embeddedDocument.getByRole('heading', { name: title })).toBeVisible();
+  await expect(embeddedDocument.getByRole('link', { name: 'Completed document' })).toBeVisible();
+  await expect(embeddedDocument.getByRole('link', { name: 'Completion certificate' })).toBeVisible();
+
+  await adaSigner.page.goto('/my-documents');
+  await expect(adaSigner.page.getByRole('heading', { name: 'My documents' })).toBeVisible();
+  await expect(adaSigner.page.getByTestId('recipient-document-row').filter({ hasText: title })).toBeVisible();
+
   await Promise.all([adaSigner.context.close(), benSigner.context.close(), chiSigner.context.close()]);
 });
 
-async function createSentEnvelope(page: Page, testInfo: TestInfo, label: string) {
+async function createSentEnvelope(page: Page, testInfo: TestInfo, label: string, recipient?: { name: string; email: string }) {
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const pdfPath = testInfo.outputPath(`${label}-${suffix}.pdf`);
   await syntheticPdf(pdfPath, `${label} ${suffix}`, 1);
   const fileBytes = fs.readFileSync(pdfPath).toString('base64');
-  const setup = await page.evaluate(async ({ suffix, label, fileBytes }) => {
+  const setup = await page.evaluate(async ({ suffix, label, fileBytes, recipient: recipientInput }) => {
     const json = (method: string, body: unknown) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     let response = await fetch('/api/esign/envelopes', json('POST', { title: `${label} ${suffix}`, subject: label, message: 'Review this test agreement.', routingMode: 'sequential' }));
     const created = await response.json(); const envelopeId = created.envelope.id;
@@ -308,14 +449,14 @@ async function createSentEnvelope(page: Page, testInfo: TestInfo, label: string)
     const form = new FormData(); form.append('file', new File([bytes], `${label}.pdf`, { type: 'application/pdf' }));
     response = await fetch(`/api/esign/envelopes/${envelopeId}/documents`, { method: 'POST', body: form });
     const uploaded = await response.json(); const documentId = uploaded.documents[0].id;
-    const email = `${label.toLowerCase().replace(/[^a-z]+/g, '-')}-${suffix}@example.com`;
-    response = await fetch(`/api/esign/envelopes/${envelopeId}/recipients`, json('PUT', { recipients: [{ name: `${label} Signer`, email, role: 'signer', routingOrder: 1 }] }));
+    const email = recipientInput?.email || `${label.toLowerCase().replace(/[^a-z]+/g, '-')}-${suffix}@example.com`;
+    response = await fetch(`/api/esign/envelopes/${envelopeId}/recipients`, json('PUT', { recipients: [{ name: recipientInput?.name || `${label} Signer`, email, role: 'signer', routingOrder: 1 }] }));
     const recipient = (await response.json()).recipients[0];
     await fetch(`/api/esign/envelopes/${envelopeId}/fields`, json('PUT', { fields: [{ documentId, recipientId: recipient.id, type: 'signature', page: 1, x: 0.1, y: 0.72, width: 0.34, height: 0.08, required: true, label: 'Signature' }] }));
     response = await fetch(`/api/esign/envelopes/${envelopeId}/send`, json('POST', {}));
     if (!response.ok) throw new Error(`Could not send ${label} fixture: ${response.status}`);
     return { envelopeId, email };
-  }, { suffix, label, fileBytes });
+  }, { suffix, label, fileBytes, recipient });
   return setup;
 }
 
