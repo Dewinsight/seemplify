@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Upload,
+  Download,
   Loader2,
   ListPlus,
 } from "lucide-react"
@@ -48,7 +49,7 @@ import { OwnerChip } from "@/components/owner-chip"
 import { SourceChip } from "@/components/source-chip"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { getAllCandidates, getCandidatesPaginated, deleteCandidate, bulkDeleteCandidates, type CandidateData } from "@/services/candidateService"
+import { getAllCandidates, getCandidatesPaginated, deleteCandidate, bulkDeleteCandidates, bulkDownloadCandidates, type CandidateData } from "@/services/candidateService"
 import { getAllJobs, addCandidateToShortlist, bulkAddToShortlist, type JobData } from "@/services/jobService"
 import candidateShortlistService, { type CandidateShortlistInfo } from "@/services/candidateShortlistService"
 import { AddToCandidateListDialog } from "@/components/candidate-lists/AddToCandidateListDialog"
@@ -441,6 +442,19 @@ export default function CandidatesPage() {
       }
     }
 
+    const [isBulkDownloading, setIsBulkDownloading] = useState(false)
+    const handleBulkDownload = async () => {
+      if (selectedCandidates.length === 0) return
+      try {
+        setIsBulkDownloading(true)
+        await bulkDownloadCandidates(selectedCandidates)
+      } catch (err: any) {
+        toast.error(err.message || 'Bulk download failed')
+      } finally {
+        setIsBulkDownloading(false)
+      }
+    }
+
     const [bulkShortlistMode, setBulkShortlistMode] = useState(false)
 
     const openBulkShortlist = () => {
@@ -665,8 +679,13 @@ export default function CandidatesPage() {
                       {selectedCandidates.length} candidate(s) selected
                     </span>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50">
-                        Export Selected
+                      <Button size="sm" variant="outline" disabled={isBulkDownloading} className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50 disabled:opacity-50" onClick={handleBulkDownload}>
+                        {isBulkDownloading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4 mr-2" />
+                        )}
+                        Download ZIP
                       </Button>
                       <Button size="sm" variant="outline" disabled={isBulkProcessing} className="border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-800/50 disabled:opacity-50" onClick={openBulkShortlist}>
                         Move to Shortlist

@@ -401,11 +401,13 @@ function createCvProcessingJobRepository({
         job.stage = hasResumeText ? 'analyzing' : 'extracting';
         job.progress = hasResumeText ? 50 : 20;
         job.startedAt = job.startedAt || iso(at);
+        delete job.nextAttemptAt;
         if (countInference) job.attempts = Number(job.attempts || 0) + 1;
       });
     }
     const patch = {
       set: { state: 'processing' },
+      unset: ['nextAttemptAt'],
       expressions: {
         stage: {
           $cond: [
@@ -502,7 +504,9 @@ function createCvProcessingJobRepository({
 
   async function recordFailure(publicId, error, {
     unmetered = false,
-    retryState = unmetered ? 'waiting_for_local_runtime' : 'queued'
+    retryState = unmetered ? 'waiting_for_local_runtime' : 'queued',
+    deferred = false,
+    nextAttemptAt = null
   } = {}) {
     const at = operationTime();
     const lastError = {
@@ -526,6 +530,8 @@ function createCvProcessingJobRepository({
           ? Number(current.progress || 20)
           : Math.max(5, Number(current.progress || 5));
         current.lastError = lastError;
+        if (nextAttemptAt) current.nextAttemptAt = iso(nextAttemptAt);
+        if (deferred) current.deferredCycles = Number(current.deferredCycles || 0) + 1;
         if (terminal) current.failedAt = iso(at);
         else delete current.failedAt;
       });
@@ -538,7 +544,11 @@ function createCvProcessingJobRepository({
         ? literal(false)
         : { $gte: [nextFailures, safeMaxFailures] };
       job = await mongoPatch(publicId, {
-        set: { lastError },
+        set: {
+          lastError,
+          ...(nextAttemptAt ? { nextAttemptAt: iso(nextAttemptAt) } : {})
+        },
+        ...(deferred ? { inc: { deferredCycles: 1 } } : {}),
         expressions: {
           failureCount: nextFailures,
           state: { $cond: [terminalExpression, 'failed', retryState] },

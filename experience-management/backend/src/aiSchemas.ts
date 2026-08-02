@@ -1,4 +1,9 @@
 import { z } from 'zod';
+
+export {
+  assistantEmailDraftResult, assistantEmailSummaryResult, assistantJsonSchemas,
+  assistantKnowledgeAnswerResult
+} from './assistantSchemas.js';
 import { QUESTION_TYPES } from './types.js';
 
 const generatedQuestion = z.object({
@@ -96,15 +101,28 @@ const socialMentionAnalysis = z.object({
   evidence: z.string().trim().min(1).max(500)
 });
 const socialEvidence = z.array(z.string().trim().min(1).max(1000)).min(1).max(20);
-export const socialListeningResult = z.object({
+const socialListeningSchema = (evidenceSchema: z.ZodType<string[]>) => z.object({
   executiveSummary: z.string(),
   sentiment: z.object({ negative: z.number().int().nonnegative(), neutral: z.number().int().nonnegative(), positive: z.number().int().nonnegative(), mixed: z.number().int().nonnegative() }),
-  themes: z.array(z.object({ name: z.string(), mentions: z.number().int().nonnegative(), sentiment: z.string(), evidence: socialEvidence })).max(50),
-  emergingTrends: z.array(z.object({ trend: z.string(), direction: z.enum(['rising', 'stable', 'falling']), evidence: socialEvidence })).max(30),
-  risks: z.array(z.object({ issue: z.string(), severity: z.enum(['low', 'medium', 'high', 'critical']), evidence: socialEvidence, action: z.string() })).max(30),
-  opportunities: z.array(z.object({ opportunity: z.string(), evidence: socialEvidence, action: z.string() })).max(30),
+  themes: z.array(z.object({ name: z.string(), mentions: z.number().int().nonnegative(), sentiment: z.string(), evidence: evidenceSchema })).max(50),
+  emergingTrends: z.array(z.object({ trend: z.string(), direction: z.enum(['rising', 'stable', 'falling']), evidence: evidenceSchema })).max(30),
+  risks: z.array(z.object({ issue: z.string(), severity: z.enum(['low', 'medium', 'high', 'critical']), evidence: evidenceSchema, action: z.string() })).max(30),
+  opportunities: z.array(z.object({ opportunity: z.string(), evidence: evidenceSchema, action: z.string() })).max(30),
   mentions: z.array(socialMentionAnalysis).max(200)
 });
+export const socialListeningResult = socialListeningSchema(socialEvidence);
+
+export function socialListeningResultFor(sourceRefs: string[]) {
+  const allowed = new Set(sourceRefs.map((value) => String(value).trim()).filter(Boolean));
+  if (!allowed.size) throw new Error('At least one social source reference is required.');
+  const groundedEvidence = z.preprocess((value) => {
+    if (!Array.isArray(value)) return value;
+    const normalized = value.map((item) => typeof item === 'string' ? item.trim() : item);
+    if (!normalized.every((item) => typeof item === 'string' && allowed.has(item))) return value;
+    return [...new Set(normalized as string[])].slice(0, 20);
+  }, socialEvidence);
+  return socialListeningSchema(groundedEvidence);
+}
 
 export const socialReplyDraftResult = z.object({
   reply: z.string().trim().min(1).max(280),
@@ -149,7 +167,9 @@ const nonNegativeInteger = { type: 'integer', minimum: 0 } as const;
 const boolean = { type: 'boolean' } as const;
 const strings = { type: 'array', items: string } as const;
 const socialEvidenceString = { type: 'string', minLength: 1, maxLength: 1000 } as const;
-const socialEvidenceStrings = { type: 'array', minItems: 1, maxItems: 20, items: socialEvidenceString } as const;
+// The transport accepts verbose grounded citations; the source-aware Zod
+// boundary stores at most 20 distinct references per finding.
+const socialEvidenceStrings = { type: 'array', minItems: 1, maxItems: 200, items: socialEvidenceString } as const;
 const finiteObject = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({
   type: 'object', additionalProperties: false, required, properties
 });
@@ -250,3 +270,18 @@ export const aiJsonSchemas = {
     }) }
   })
 };
+
+export function socialListeningJsonSchemaFor(sourceRefs: string[]): Record<string, unknown> {
+  const references = [...new Set(sourceRefs.map((value) => String(value).trim()).filter(Boolean))];
+  if (!references.length) throw new Error('At least one social source reference is required.');
+  const schema = structuredClone(aiJsonSchemas.socialListening) as any;
+  const referenceSchema = () => ({ type: 'string', enum: references });
+  for (const section of ['themes', 'emergingTrends', 'risks', 'opportunities']) {
+    schema.properties[section].items.properties.evidence.items = referenceSchema();
+  }
+  schema.properties.mentions.minItems = references.length;
+  schema.properties.mentions.maxItems = references.length;
+  schema.properties.mentions.items.properties.mentionId = referenceSchema();
+  schema.properties.mentions.items.properties.evidence = referenceSchema();
+  return schema;
+}

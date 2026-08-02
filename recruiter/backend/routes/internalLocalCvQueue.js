@@ -22,6 +22,26 @@ router.get('/history', historyAuth, async (req, res) => {
   }
 });
 
+router.post('/jobs/:jobId/retry', historyAuth, async (req, res) => {
+  try {
+    const result = await cvAnalysisQueue.retryJobNow(req.params.jobId, {
+      stage: req.body?.stage,
+      requestedBy: { type: 'system', name: 'Local Control Center' }
+    });
+    return res.json({
+      ok: true,
+      jobId: result.job?.publicId || req.params.jobId,
+      state: result.job?.state || 'queued',
+      queueAvailable: result.queueAvailable !== false
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 409).json({
+      code: error.code || 'CV_RETRY_UNAVAILABLE',
+      message: error.message || 'This CV job could not be retried'
+    });
+  }
+});
+
 router.get('/provider-telemetry', historyAuth, async (_req, res) => {
   try {
     return res.json(await getLocalRuntimeProviderTelemetry());

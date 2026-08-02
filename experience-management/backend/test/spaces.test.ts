@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import request from 'supertest';
+import { signupVerifyAndOnboard } from './authTestHelper.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-spaces-'));
 const files = {
@@ -43,6 +44,7 @@ Object.assign(process.env, {
 
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
+const { issueEmailVerificationToken } = await import('../src/auth.js');
 
 after(() => {
   db.close();
@@ -54,22 +56,22 @@ const passwordB = 'Owner-B-Private-Password-2026!';
 
 test('isolates independent accounts, shares only invited spaces, and attributes public work to the owning space', async () => {
   const accountA = request.agent(app);
-  const signupA = await accountA.post('/api/auth/signup').send({
+  const signupA = await signupVerifyAndOnboard(accountA, {
     name: 'Owner Alpha',
     email: 'owner-a@example.test',
     password: passwordA,
     spaceName: 'Alpha research'
-  }).expect(201);
+  });
   const spaceA = signupA.body.activeSpace;
   assert.equal(spaceA.name, 'Alpha research');
   assert.equal(spaceA.role, 'owner');
 
   const accountB = request.agent(app);
-  const signupB = await accountB.post('/api/auth/signup').send({
+  const signupB = await signupVerifyAndOnboard(accountB, {
     name: 'Owner Beta',
     email: 'owner-b@example.test',
     password: passwordB
-  }).expect(201);
+  });
   const spaceB = signupB.body.activeSpace;
   assert.notEqual(spaceB.id, spaceA.id);
   assert.equal(spaceB.role, 'owner');
@@ -113,6 +115,15 @@ test('isolates independent accounts, shares only invited spaces, and attributes 
     role: 'member'
   }).expect(201);
   assert.equal(invitation.body.delivery.state, 'sent');
+  const invitationHistory = await accountA.get(`/api/spaces/${spaceA.id}/invitations`).expect(200);
+  const invitationRecord = invitationHistory.body.find((item: any) => item.id === invitation.body.invitation.id);
+  assert.ok(invitationRecord);
+  assert.equal(Number.isFinite(Date.parse(invitationRecord.expiresAt)), true);
+  assert.equal(Number.isFinite(Date.parse(invitationRecord.createdAt)), true);
+  assert.equal(invitationRecord.invitedBy, 'Owner Alpha');
+  assert.equal(invitationRecord.acceptedAt, null);
+  assert.equal(invitationRecord.revokedAt, null);
+  assert.equal(invitationRecord.expiresat, undefined);
   const token = new URL(invitation.body.inviteUrl).pathname.split('/').at(-1);
   assert.ok(token);
   const preview = await request(app).get(`/api/public/spaces/invitations/${token}`).expect(200);
@@ -180,6 +191,8 @@ test('isolates independent accounts, shares only invited spaces, and attributes 
   const members = await accountA.get(`/api/spaces/${spaceA.id}/members`).expect(200);
   const memberB = members.body.find((member: any) => member.email === 'owner-b@example.test');
   assert.equal(memberB.role, 'member');
+  assert.equal(Number.isFinite(Date.parse(memberB.joinedAt)), true);
+  assert.equal(memberB.joinedat, undefined);
   await accountA.patch(`/api/spaces/${spaceA.id}/members/${memberB.id}`).send({ role: 'admin' }).expect(200);
   await accountA.delete(`/api/spaces/${spaceA.id}/members/${memberB.id}`).expect(204);
 
@@ -187,6 +200,58 @@ test('isolates independent accounts, shares only invited spaces, and attributes 
   await accountB.get(`/api/surveys/${surveyA.id}`).expect(404);
   const sessionB = await accountB.get('/api/auth/session').expect(200);
   assert.equal(sessionB.body.activeSpace.id, spaceB.id);
+});
+
+test('shows every pending account invitation after login and safely accepts one by id', async () => {
+  const firstOwner = request.agent(app);
+  await firstOwner.post('/api/auth/login').send({ email: 'owner-a@example.test', password: passwordA }).expect(200);
+  const firstOwnerSession = await firstOwner.get('/api/auth/session').expect(200);
+  const secondSpace = await firstOwner.post('/api/spaces').send({ name: 'Customer success' }).expect(201);
+  const invitee = request.agent(app);
+  await invitee.post('/api/auth/login').send({ email: 'owner-b@example.test', password: passwordB }).expect(200);
+  const inviteeSession = await invitee.get('/api/auth/session').expect(200);
+
+  const firstInvitation = await firstOwner.post(`/api/spaces/${firstOwnerSession.body.activeSpace.id}/invitations`)
+    .send({ email: 'owner-b@example.test', role: 'member' }).expect(201);
+  const secondInvitation = await firstOwner.post(`/api/spaces/${secondSpace.body.activeSpace.id}/invitations`)
+    .send({ email: 'owner-b@example.test', role: 'admin' }).expect(201);
+  const otherPersonInvitation = await firstOwner.post(`/api/spaces/${firstOwnerSession.body.activeSpace.id}/invitations`)
+    .send({ email: 'different-person@example.test', role: 'member' }).expect(201);
+  await request(app).post(`/api/account/space-invitations/${firstInvitation.body.invitation.id}/accept`)
+    .send({}).expect(401);
+
+  const before = await invitee.get('/api/auth/session').expect(200);
+  assert.equal(before.body.spaces.length, 1);
+  assert.equal(before.body.activeSpace.id, inviteeSession.body.activeSpace.id);
+  assert.deepEqual(
+    before.body.pendingSpaceInvitations.map((invitation: any) => invitation.space.name).sort(),
+    ['Alpha research', 'Customer success']
+  );
+  assert.deepEqual(
+    before.body.pendingSpaceInvitations.map((invitation: any) => invitation.role).sort(),
+    ['admin', 'member']
+  );
+  assert.equal(before.body.pendingSpaceInvitations.some((invitation: any) => 'token' in invitation), false);
+
+  await invitee.post(`/api/account/space-invitations/${otherPersonInvitation.body.invitation.id}/accept`)
+    .send({}).expect(404);
+  assert.equal((db.prepare('SELECT COUNT(*) count FROM space_memberships WHERE space_id=? AND user_id=(SELECT id FROM users WHERE email=?)')
+    .get(firstOwnerSession.body.activeSpace.id, 'owner-b@example.test') as any).count, 0);
+
+  const acceptancePath = `/api/account/space-invitations/${firstInvitation.body.invitation.id}/accept`;
+  const parallelAttempts = await Promise.all([
+    invitee.post(acceptancePath).send({}),
+    invitee.post(acceptancePath).send({})
+  ]);
+  assert.deepEqual(parallelAttempts.map((result) => result.status).sort(), [200, 404]);
+  const accepted = parallelAttempts.find((result) => result.status === 200)!;
+  assert.equal(accepted.body.activeSpace.id, firstOwnerSession.body.activeSpace.id);
+  assert.equal(accepted.body.spaces.length, 2);
+  assert.deepEqual(accepted.body.pendingSpaceInvitations.map((invitation: any) => invitation.id), [secondInvitation.body.invitation.id]);
+
+  const after = await invitee.get('/api/auth/session').expect(200);
+  assert.equal(after.body.pendingSpaceInvitations.length, 1);
+  assert.equal(after.body.pendingSpaceInvitations[0].space.id, secondSpace.body.activeSpace.id);
 });
 
 test('rejects an invitation during signup atomically when its email does not match', async () => {
@@ -207,14 +272,53 @@ test('rejects an invitation during signup atomically when its email does not mat
   }).expect(403);
   assert.equal((db.prepare('SELECT COUNT(*) count FROM users WHERE email=?').get('wrong-recipient@example.test') as any).count, 0);
 
-  const acceptedSignup = await request(app).post('/api/auth/signup').send({
+  const invitedAccount = request.agent(app);
+  const signup = await invitedAccount.post('/api/auth/signup').send({
     name: 'Expected Recipient',
     email: 'expected@example.test',
     password: 'Expected-Recipient-Password-2026!',
     inviteToken: token,
     spaceName: 'Expected private'
-  }).expect(201);
+  }).expect(202);
+  const pendingUser = db.prepare('SELECT id FROM users WHERE email=?').get('expected@example.test') as { id: string };
+  assert.equal((db.prepare('SELECT COUNT(*) count FROM space_memberships WHERE user_id=?').get(pendingUser.id) as any).count, 1);
+  assert.equal((db.prepare('SELECT accepted_at FROM space_invitations WHERE id=?').get(invited.body.invitation.id) as any).accepted_at, null);
+  const verification = issueEmailVerificationToken('expected@example.test', {
+    requestId: signup.body.verificationRequestId
+  });
+  assert.ok(verification);
+  const verifiedSignup = await invitedAccount.post('/api/auth/verify-email').send({ token: verification.token }).expect(200);
+  assert.notEqual(verifiedSignup.body.activeSpace.id, sessionA.body.activeSpace.id);
+  assert.equal(verifiedSignup.body.spaces.length, 1);
+  const acceptedSignup = await invitedAccount.post(`/api/spaces/invitations/${encodeURIComponent(token!)}/accept`).send({}).expect(200);
   assert.equal(acceptedSignup.body.activeSpace.id, sessionA.body.activeSpace.id);
   assert.equal(acceptedSignup.body.spaces.length, 2);
   assert.ok(acceptedSignup.body.spaces.some((space: any) => space.name === 'Expected private' && space.isPersonal));
+});
+
+test('lets a verified invitee join before completing onboarding', async () => {
+  const owner = request.agent(app);
+  await owner.post('/api/auth/login').send({ email: 'owner-a@example.test', password: passwordA }).expect(200);
+  const ownerSession = await owner.get('/api/auth/session').expect(200);
+  const invited = await owner.post(`/api/spaces/${ownerSession.body.activeSpace.id}/invitations`).send({
+    email: 'onboarding-invitee@example.test',
+    role: 'member'
+  }).expect(201);
+  const token = new URL(invited.body.inviteUrl).pathname.split('/').at(-1);
+
+  const invitee = request.agent(app);
+  await invitee.post('/api/auth/signup').send({
+    name: 'Onboarding Invitee',
+    email: 'onboarding-invitee@example.test',
+    password: 'Onboarding-Invitee-Password-2026!'
+  }).expect(202);
+  const verification = issueEmailVerificationToken('onboarding-invitee@example.test');
+  assert.ok(verification);
+  const verified = await invitee.post('/api/auth/verify-email').send({ token: verification.token }).expect(200);
+  assert.equal(verified.body.onboardingRequired, true);
+
+  const accepted = await invitee.post(`/api/spaces/invitations/${token}/accept`).send({}).expect(200);
+  assert.equal(accepted.body.activeSpace.id, ownerSession.body.activeSpace.id);
+  assert.ok(accepted.body.spaces.some((space: any) => space.id === ownerSession.body.activeSpace.id));
+  await invitee.get('/api/bootstrap').expect(428);
 });

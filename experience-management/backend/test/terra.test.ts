@@ -32,6 +32,8 @@ test('Experience schemas constrain confidence and strength to decimal unit value
 
 test('signs Terra requests and supplies durable metering identity', async () => {
   const eventIds: string[] = [];
+  const executionIds: string[] = [];
+  const requestIds: string[] = [];
   const activities: string[] = [];
   globalThis.fetch = async (_url, init) => {
     const body = String(init?.body || ''); const headers = init?.headers as Record<string, string>;
@@ -43,6 +45,9 @@ test('signs Terra requests and supplies durable metering identity', async () => 
     assert.equal(payload.runtimeProfile, 'experience-management');
     assert.match(payload.metering.eventId, /^usage_[a-f0-9]{48}$/);
     eventIds.push(payload.metering.eventId);
+    assert.match(payload.metering.gatewayExecutionId, /^localexec_[a-f0-9]{48}$/);
+    executionIds.push(payload.metering.gatewayExecutionId);
+    requestIds.push(payload.metering.requestId);
     assert.equal(payload.metering.record, true);
     return new Response(JSON.stringify({ data: { answer: 'Grounded' }, runtimeProfile: 'experience-management', provider: 'local-codex', engine: 'codex', model: 'gpt-5.6-terra', usage: { total_tokens: 10 }, metrics: { latencyMs: 50 } }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
@@ -51,9 +56,15 @@ test('signs Terra requests and supplies durable metering identity', async () => 
   assert.equal(result.runtime.model, 'gpt-5.6-terra');
   await completeWithTerra({ activity: 'experience.analyst_chat', requestId: 'job-1', messages: [{ role: 'user', content: 'Question' }] });
   assert.equal(eventIds[0], eventIds[1], 'a retried durable job must keep one metering identity');
+  assert.equal(executionIds[0], executionIds[1], 'automatic attempts must keep one gateway execution identity');
+  await completeWithTerra({ activity: 'experience.analyst_chat', requestId: 'job-1', executionRevision: 1, messages: [{ role: 'user', content: 'Question' }] });
+  assert.notEqual(eventIds[0], eventIds[2], 'an explicit retry must receive a new metering identity');
+  assert.notEqual(executionIds[0], executionIds[2], 'an explicit retry must receive a new gateway execution identity');
+  assert.deepEqual(requestIds.slice(0, 3), ['job-1', 'job-1', 'job-1'],
+    'all provider executions must retain the logical durable job identity');
   await completeWithTerra({ activity: 'experience.social_listening', requestId: 'job-social', messages: [{ role: 'user', content: 'Mentions' }] });
   await completeWithTerra({ activity: 'experience.journey_mapping', requestId: 'job-journey', messages: [{ role: 'user', content: 'Journey brief' }] });
-  assert.deepEqual(activities, ['experience.analyst_chat', 'experience.analyst_chat', 'experience.social_listening', 'experience.journey_mapping']);
+  assert.deepEqual(activities, ['experience.analyst_chat', 'experience.analyst_chat', 'experience.analyst_chat', 'experience.social_listening', 'experience.journey_mapping']);
 });
 
 test('rejects a successful gateway response that did not honor the Experience profile', async () => {
@@ -69,5 +80,20 @@ test('rejects a successful gateway response that did not honor the Experience pr
     (error: unknown) => error instanceof TerraError
       && error.code === 'EXPERIENCE_PROFILE_MISMATCH'
       && error.retryable === true
+  );
+});
+
+test('preserves the gateway code and activity when a Terra route is rejected', async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify({ code: 'ACTIVITY_NOT_ALLOWED', retryable: false }), {
+    status: 403,
+    headers: { 'content-type': 'application/json' }
+  });
+  await assert.rejects(
+    () => completeWithTerra({ activity: 'experience.social_reply_draft', requestId: 'blocked-route', messages: [{ role: 'user', content: 'Draft a reply' }] }),
+    (error: unknown) => error instanceof TerraError
+      && error.code === 'ACTIVITY_NOT_ALLOWED'
+      && error.status === 403
+      && error.retryable === false
+      && error.message === 'Terra rejected experience.social_reply_draft: ACTIVITY_NOT_ALLOWED (HTTP 403)'
   );
 });

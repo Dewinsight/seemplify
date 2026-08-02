@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import request from 'supertest';
+import { signupVerifyAndOnboard } from './authTestHelper.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-x-oauth2-'));
 const files = {
@@ -88,12 +89,12 @@ async function waitForSyncState(connectionId: string, state: string, minimumAtte
 }
 
 test('uses PKCE to connect two OAuth 2 X accounts without exposing stored secrets', async () => {
-  await owner.post('/api/auth/signup').send({
+  await signupVerifyAndOnboard(owner, {
     name: 'X Workspace Owner', email: 'x-owner@example.test', password: 'X-OAuth-Test-Password-2026!'
-  }).expect(201);
-  await member.post('/api/auth/signup').send({
+  });
+  await signupVerifyAndOnboard(member, {
     name: 'X Workspace Member', email: 'x-member@example.test', password: 'X-Member-Test-Password-2026!'
-  }).expect(201);
+  });
 
   const configured = await owner.put('/api/integrations/x/app').send(oauthApp).expect(200);
   assert.equal(configured.body.app.oauth2Configured, true);

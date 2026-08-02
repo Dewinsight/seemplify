@@ -4,19 +4,24 @@ import type { Request, Response } from 'express';
 const emitter = new EventEmitter();
 emitter.setMaxListeners(200);
 
-export function publishEvent(type: string, data: unknown, spaceId?: string | null) {
+export function publishEvent(type: string, data: unknown, spaceId?: string | null, targetUserId?: string | null) {
   const eventData = type === 'ai-job' && data && typeof data === 'object'
     ? ((job: Record<string, unknown>) => ({ id: job.id, kind: job.kind, state: job.state, stage: job.stage, progress: job.progress, updatedAt: job.updatedAt }))(data as Record<string, unknown>)
+    : type === 'knowledge-job' && data && typeof data === 'object'
+      ? ((job: Record<string, unknown>) => ({ id: job.id, state: job.state, stage: job.stage,
+        progress: job.progress, updatedAt: job.updatedAt }))(data as Record<string, unknown>)
     : data;
   const eventSpaceId = spaceId || (data && typeof data === 'object' ? String((data as Record<string, unknown>).spaceId || '') : '') || null;
-  emitter.emit('event', { type, data: eventData, spaceId: eventSpaceId, at: new Date().toISOString() });
+  emitter.emit('event', { type, data: eventData, spaceId: eventSpaceId,
+    targetUserId: targetUserId || null, at: new Date().toISOString() });
 }
 
 export function attachEventStream(
   _request: Request,
   response: Response,
   spaceId: string,
-  isAuthorized: () => boolean = () => true
+  isAuthorized: () => boolean = () => true,
+  viewerUserId?: string | null
 ) {
   response.setHeader('Content-Type', 'text/event-stream');
   response.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -44,8 +49,9 @@ export function attachEventStream(
     return false;
   };
   write(`event: connected\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
-  const listener = (event: { type: string; data: unknown; spaceId: string | null; at: string }) => {
+  const listener = (event: { type: string; data: unknown; spaceId: string | null; targetUserId: string | null; at: string }) => {
     if (event.spaceId !== spaceId) return;
+    if (event.targetUserId && event.targetUserId !== viewerUserId) return;
     if (!verifyAccess()) return;
     write(`event: ${event.type}\ndata: ${JSON.stringify({ ...event })}\n\n`);
   };

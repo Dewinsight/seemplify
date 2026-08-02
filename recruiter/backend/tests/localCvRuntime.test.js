@@ -20,6 +20,24 @@ const { signLocalRequest } = require('../services/aiRuntime/aiRuntimeService');
 const { createLocalRuntimeHistoryAuth, signLocalHistoryRequest } = require('../middleware/localRuntimeHistoryAuth');
 
 const gatewayScript = path.resolve(__dirname, '..', '..', '..', 'tools', 'local-llm', 'gateway.cjs');
+const EXPERIENCE_ASSISTANT_ACTIVITIES = Object.freeze([
+  'experience.assistant.email_summarise',
+  'experience.assistant.email_draft',
+  'experience.assistant.document_summarise',
+  'experience.assistant.document_compare',
+  'experience.assistant.meeting_prepare',
+  'experience.assistant.meeting_minutes',
+  'experience.assistant.action_extract',
+  'experience.assistant.knowledge_answer',
+  'experience.assistant.executive_brief',
+  'experience.assistant.correspondence_draft',
+  'experience.assistant.work_product'
+]);
+const CRM_ACTIVITIES = Object.freeze([
+  'knowledge.ask', 'knowledge.source_ingestion', 'knowledge.draft_generation',
+  'inbox.classification', 'case.recommendation', 'ai.advisory', 'ai.copilot',
+  'summarization', 'action.classification', 'ai.interview.reasoning', 'ai.interview.chat'
+]);
 
 function listen(server, port) {
   return new Promise((resolve, reject) => {
@@ -73,8 +91,67 @@ test('CV extraction is locked local while local question generation has audited 
     assert.equal(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
   }
   for (const [activity, route] of routes) {
-    if (['candidate.cv_parse', 'ai_interview.cv_parse', 'interview.questions', 'ai_interview.question_generation'].includes(activity) || experienceActivities.includes(activity)) continue;
+    if (['candidate.cv_parse', 'ai_interview.cv_parse', 'interview.questions', 'ai_interview.question_generation'].includes(activity) || experienceActivities.includes(activity) || CRM_ACTIVITIES.includes(activity)) continue;
     assert.equal(route.provider, GROQ_PROVIDER, `${activity} must remain on Groq`);
+  }
+  for (const activity of CRM_ACTIVITIES) {
+    assert.equal(routes.get(activity).provider, 'local-claude', activity);
+    assert.equal(routes.get(activity).model, 'sonnet', activity);
+    assert.equal(routes.get(activity).failoverPolicy, 'wait_local', activity);
+  }
+});
+
+test('Experience catalog includes current and assistant activities as locked Terra routes', () => {
+  const routes = new Map(DEFAULT_ROUTES.map((route) => [route.activity, route]));
+  const expected = [
+    'experience.survey_generation',
+    'experience.response_analysis',
+    'experience.insight_generation',
+    'experience.analyst_chat',
+    'experience.report_generation',
+    'experience.translation',
+    'experience.social_listening',
+    'experience.journey_mapping',
+    'experience.knowledge_answer',
+    'experience.knowledge_graph_extract',
+    'experience.social_reply_draft',
+    'experience.cross_source_intelligence',
+    ...EXPERIENCE_ASSISTANT_ACTIVITIES
+  ];
+  assert.equal(expected.length, 23);
+  assert.deepEqual(
+    Object.keys(ACTIVITY_DEFINITIONS).filter((activity) => activity.startsWith('experience.')),
+    expected
+  );
+  assert.equal(DEFAULT_ROUTES.length, routes.size);
+  for (const activity of expected) {
+    const definition = ACTIVITY_DEFINITIONS[activity];
+    const route = routes.get(activity);
+    assert.equal(definition.provider, TERRA_PROVIDER, activity);
+    assert.equal(definition.model, TERRA_MODEL, activity);
+    assert.equal(definition.defaultLocal, true, activity);
+    assert.equal(definition.lockedProvider, true, activity);
+    assert.equal(definition.failoverPolicy, 'wait_local', activity);
+    assert.equal(route.provider, TERRA_PROVIDER, activity);
+    assert.equal(route.model, TERRA_MODEL, activity);
+    assert.equal(route.failoverPolicy, 'wait_local', activity);
+  }
+  assert.equal(Object.keys(ACTIVITY_DEFINITIONS).some((activity) => activity.startsWith('xplorer.')), false);
+});
+
+test('every Experience AI job activity is registered for gateway admission and usage metering', () => {
+  const aiJobsSource = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', '..', 'experience-management', 'backend', 'src', 'aiJobs.ts'),
+    'utf8'
+  );
+  const usedActivities = new Set(
+    [...aiJobsSource.matchAll(/structured\(job,\s*'(experience\.[a-z0-9_.]+)'/g)]
+      .map((match) => match[1])
+  );
+  assert.equal(usedActivities.has('experience.social_reply_draft'), true);
+  assert.equal(usedActivities.has('experience.cross_source_intelligence'), true);
+  for (const activity of usedActivities) {
+    assert.ok(ACTIVITY_DEFINITIONS[activity], `${activity} must be registered in the canonical catalog`);
   }
 });
 
@@ -87,7 +164,7 @@ test('every recruiter CV upload entry point uses the durable local CV queue', ()
   const standaloneParser = fs.readFileSync(path.resolve(sourceRoot, '..', '..', 'ai-interview', 'backend', 'src', 'cvParsingService.js'), 'utf8');
 
   assert.match(candidateRoutes, /queueUpload\('private'\)/);
-  assert.match(candidateRoutes, /queueUpload\('public'\)/);
+  assert.match(candidateRoutes, /queueUpload\('public',\s*undefined,/);
   assert.match(bulkRoutes, /cvAnalysisQueue\.submitBatch\(req\)/);
   assert.match(interviewRoutes, /cvAnalysisQueue\.submitUpload\(req, 'ai-interview'\)/);
   assert.match(queueService, /processingJob\.source === 'ai-interview' \? 'ai_interview\.cv_parse' : 'candidate\.cv_parse'/);
@@ -554,6 +631,11 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
   assert.equal(initialState.requestedConcurrency, 128);
   assert.equal(initialState.approvedConcurrency, 1);
   assert.equal(initialState.concurrency, 1);
+  assert.deepEqual(initialState.applicationDefaults.experienceManagement, {
+    engine: 'codex',
+    model: 'gpt-5.6-terra'
+  });
+  assert.deepEqual(Object.keys(initialState.applicationDefaults), ['experienceManagement', 'xplorerCrm']);
   try {
     for (const concurrency of [64, 128]) {
       const unapproved = await controlRequest('/control/state', {
@@ -671,6 +753,17 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     assert.equal(experienceDefaultResponse.status, 200);
     const experienceDefaultState = (await experienceDefaultResponse.json()).state.applicationDefaults.experienceManagement;
     assert.deepEqual(experienceDefaultState, { engine: 'ollama', model: 'gemma4:26b-a4b-it-qat' });
+    const xplorerDefaultResponse = await controlRequest('/control/state', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        applicationDefaults: {
+          xplorer: { engine: 'ollama', model: 'gemma4:26b-a4b-it-qat' }
+        }
+      })
+    });
+    assert.equal(xplorerDefaultResponse.status, 400);
+    assert.equal((await xplorerDefaultResponse.json()).code, 'INVALID_RUNTIME_PROFILE');
 
     const signedRequest = async (requestBody, { harness = true, targetPort = gatewayPort } = {}) => {
       const parsedBody = JSON.parse(requestBody);
@@ -743,6 +836,135 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     assert.equal(experiencePayload.runtimeProfile, 'experience-management');
     assert.equal(experiencePayload.engine, 'ollama');
     assert.equal(experiencePayload.model, 'gemma4:26b-a4b-it-qat');
+
+    const assistantBody = JSON.stringify({
+      activity: 'experience.assistant.knowledge_answer',
+      executionMode: 'local-only',
+      runtimeProfile: 'experience-management',
+      messages: [{ role: 'user', content: 'Use the governed Experience assistant default.' }]
+    });
+    const assistantCompletion = await signedRequest(assistantBody);
+    assert.equal(assistantCompletion.status, 200);
+    const assistantPayload = await assistantCompletion.json();
+    assert.equal(assistantPayload.runtimeProfile, 'experience-management');
+    assert.equal(assistantPayload.engine, 'ollama');
+    assert.equal(assistantPayload.model, 'gemma4:26b-a4b-it-qat');
+
+    const implicitAssistantBody = JSON.stringify({
+      activity: 'experience.assistant.email_summarise',
+      executionMode: 'local-only',
+      messages: [{ role: 'user', content: 'Infer the Experience runtime from this governed activity.' }]
+    });
+    const implicitAssistantCompletion = await signedRequest(implicitAssistantBody);
+    assert.equal(implicitAssistantCompletion.status, 200);
+    const implicitAssistantPayload = await implicitAssistantCompletion.json();
+    assert.equal(implicitAssistantPayload.runtimeProfile, 'experience-management');
+    assert.equal(implicitAssistantPayload.engine, 'ollama');
+
+    const assistantCvBody = JSON.stringify({
+      activity: 'experience.assistant.email_summarise',
+      messages: [{ role: 'user', content: 'This general activity must never enter the CV endpoint.' }]
+    });
+    const assistantCvSignature = signLocalRequest(secret, assistantCvBody, {
+      method: 'POST',
+      path: '/v1/cv/analyze'
+    });
+    const assistantCvResponse = await fetch(`http://127.0.0.1:${gatewayPort}/v1/cv/analyze`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-seemplify-timestamp': assistantCvSignature.timestamp,
+        'x-seemplify-nonce': assistantCvSignature.nonce,
+        'x-seemplify-signature': assistantCvSignature.signature
+      },
+      body: assistantCvBody
+    });
+    assert.equal(assistantCvResponse.status, 403);
+    assert.equal((await assistantCvResponse.json()).code, 'CV_ACTIVITY_REQUIRED');
+
+    const invalidXplorerProfileBody = JSON.stringify({
+      activity: 'experience.assistant.email_draft',
+      executionMode: 'local-only',
+      runtimeProfile: 'xplorer',
+      messages: [{ role: 'user', content: 'An obsolete product profile must be rejected.' }]
+    });
+    const invalidXplorerProfile = await signedRequest(invalidXplorerProfileBody);
+    assert.equal(invalidXplorerProfile.status, 400);
+    assert.equal(
+      (await invalidXplorerProfile.json()).code,
+      'INVALID_RUNTIME_PROFILE'
+    );
+
+    for (const activity of ['recruiter.general', 'candidate.cv_parse']) {
+      const mismatchedOwnershipBody = JSON.stringify({
+        activity,
+        executionMode: 'local-only',
+        runtimeProfile: 'experience-management',
+        messages: [{ role: 'user', content: 'An Experience profile must not own this activity.' }]
+      });
+      const mismatchedOwnershipResponse = await signedRequest(mismatchedOwnershipBody);
+      assert.equal(mismatchedOwnershipResponse.status, 400, activity);
+      assert.equal(
+        (await mismatchedOwnershipResponse.json()).code,
+        'RUNTIME_PROFILE_ACTIVITY_MISMATCH',
+        activity
+      );
+    }
+
+    const experienceStatusBody = JSON.stringify({
+      operation: 'status',
+      source: 'experience-management',
+      runtimeProfile: 'experience-management'
+    });
+    const experienceStatusSignature = signLocalRequest(secret, experienceStatusBody, {
+      method: 'POST',
+      path: '/v1/status'
+    });
+    const experienceStatusResponse = await fetch(`http://127.0.0.1:${gatewayPort}/v1/status`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-seemplify-timestamp': experienceStatusSignature.timestamp,
+        'x-seemplify-nonce': experienceStatusSignature.nonce,
+        'x-seemplify-signature': experienceStatusSignature.signature
+      },
+      body: experienceStatusBody
+    });
+    assert.equal(experienceStatusResponse.status, 200);
+    const experienceStatus = await experienceStatusResponse.json();
+    assert.equal(experienceStatus.runtimeProfile, 'experience-management');
+    assert.equal(experienceStatus.engine, 'ollama');
+    assert.equal(experienceStatus.model, 'gemma4:26b-a4b-it-qat');
+    assert.deepEqual(
+      experienceStatus.runtimeProfiles,
+      [{
+        id: 'experience-management',
+        engine: 'ollama',
+        model: 'gemma4:26b-a4b-it-qat',
+        provider: 'local-ollama',
+        executionMode: 'local'
+      }, {
+        id: 'xplorer-crm',
+        engine: 'claude',
+        model: 'sonnet',
+        provider: 'local-claude',
+        executionMode: 'local-cloud'
+      }]
+    );
+
+    const obsoleteXplorerBody = JSON.stringify({
+      activity: 'xplorer.assistant.email_summarise',
+      executionMode: 'local-only',
+      messages: [{ role: 'user', content: 'An activity outside the canonical catalog must be rejected.' }]
+    });
+    const obsoleteXplorerCompletion = await signedRequest(obsoleteXplorerBody);
+    assert.equal(obsoleteXplorerCompletion.status, 403);
+    assert.deepEqual(
+      await obsoleteXplorerCompletion.json(),
+      {
+        code: 'ACTIVITY_NOT_ALLOWED'
+      }
+    );
 
     const terraRequiredBody = JSON.stringify({
       activity: 'experience.analyst_chat',
@@ -907,6 +1129,19 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       drainedActivityQueue.activityQueues.find((lane) => lane.activity === 'recruiter.general').completed,
       3
     );
+
+    // Keep this gateway contract test hermetic: the production Xplorer profile is
+    // Claude/Sonnet, but all activity admission checks below must use fake Ollama.
+    const hermeticXplorerDefault = await controlRequest('/control/state', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        applicationDefaults: {
+          xplorerCrm: { engine: 'ollama', model: 'gemma4:26b-a4b-it-qat' }
+        }
+      })
+    });
+    assert.equal(hermeticXplorerDefault.status, 200);
 
     for (const activity of Object.keys(ACTIVITY_DEFINITIONS).filter((item) => !['candidate.cv_parse', 'ai_interview.cv_parse'].includes(item))) {
       const activityBody = JSON.stringify({

@@ -20,6 +20,11 @@ function tokenCount(value) {
   return Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, parsed));
 }
 
+function boundedCost(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(1_000_000, parsed)) : 0;
+}
+
 function sanitizeUsageEvent(input = {}) {
   const eventId = safeText(input.eventId, 200);
   const gatewayExecutionId = safeText(input.gatewayExecutionId, 200);
@@ -38,6 +43,11 @@ function sanitizeUsageEvent(input = {}) {
     gatewayExecutionId,
     requestId: safeText(input.requestId, 200),
     sourceApp: safeText(input.sourceApp || 'recruiter', 64),
+    organizationId: safeText(input.organizationId, 120) || undefined,
+    organizationName: safeText(input.organizationName, 200) || undefined,
+    actorId: safeText(input.actorId, 160) || undefined,
+    actorName: safeText(input.actorName, 200) || undefined,
+    actorEmail: safeText(input.actorEmail, 254) || undefined,
     activity: safeText(input.activity, 100),
     provider: safeText(input.provider, 80),
     model: safeText(input.model, 200),
@@ -48,6 +58,7 @@ function sanitizeUsageEvent(input = {}) {
     latencyMs: Math.max(0, Math.floor(Number(input.latencyMs) || 0)),
     usageReported: input.usageReported === true,
     usageSource: safeText(input.usageSource || (input.usageReported ? 'local-gateway' : 'unreported'), 100),
+    estimatedCostUsd: boundedCost(input.estimatedCostUsd),
     occurredAt: occurredAt.toISOString()
   };
   for (const field of TOKEN_FIELDS) event[field] = tokenCount(input[field]);

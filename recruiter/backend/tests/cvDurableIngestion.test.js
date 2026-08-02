@@ -530,6 +530,46 @@ test('terminal failure retains private CV assets and exposes a retryable audit t
   assert.equal(unchanged.attemptHistory.length, 1);
 });
 
+test('five retryable service failures park the recruiter CV for a later durable cycle', async () => {
+  const result = await cvQueue.submitUpload(requestFor(await fixtureFile()), 'private');
+  cvQueue._setDependenciesForTests({
+    cloudinary: {
+      async uploadFile() {
+        return {
+          success: true,
+          resumeUrl: 'https://example.invalid/private-signed-cv',
+          publicId: `resumes/documents/${result.job.publicId}`,
+          resourceType: 'raw',
+          deliveryType: 'authenticated'
+        };
+      },
+      async deleteFile() { return { success: true, result: 'ok' }; }
+    },
+    cvParser: {
+      async parseCV() { return extractedText; },
+      async analyzeText() {
+        throw Object.assign(new Error('Temporary inference service failure'), {
+          code: 'INFERENCE_UPSTREAM_FAILED', retryable: true, status: 503
+        });
+      }
+    }
+  });
+  for (let failure = 1; failure <= 5; failure += 1) {
+    const delivery = bullJob(result.job, failure - 1);
+    await assert.rejects(() => cvQueue._processJobForTests(delivery), /Temporary inference service failure/);
+    const stored = await CVProcessingJob.findById(result.job._id);
+    assert.equal(stored.state, failure === 5 ? 'waiting_for_local_runtime' : 'queued');
+    assert.equal(stored.boundedFailureAttempts, failure === 5 ? 0 : failure);
+    assert.notEqual(delivery.discarded, true);
+  }
+  const parked = await CVProcessingJob.findById(result.job._id).select('+resumeText');
+  assert.equal(parked.retry.deferredCycles, 1);
+  assert.ok(parked.retry.nextAttemptAt > new Date());
+  assert.ok(parked.resumeText);
+  assert.ok(parked.durableFile.fileId);
+  assert.equal(parked.expiresAt, undefined);
+});
+
 test('retained failed assets are deleted only after retry availability expires', async () => {
   const result = await cvQueue.submitUpload(requestFor(await fixtureFile()), 'private');
   await CVProcessingJob.updateOne(

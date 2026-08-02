@@ -77,6 +77,15 @@ const QUEUE_EVENT_RETRY_MAX_MS = Math.max(
   QUEUE_EVENT_RETRY_BASE_MS,
   Number(process.env.AI_INTERVIEW_CV_EVENT_RETRY_MAX_MS || 5 * 60_000)
 );
+const MAX_FAST_FAILURE_ATTEMPTS = 5;
+const DEFERRED_RETRY_BASE_MS = Math.max(
+  60_000,
+  Number(process.env.AI_INTERVIEW_CV_DEFERRED_RETRY_BASE_MS || process.env.CV_DEFERRED_RETRY_BASE_MS || 30 * 60 * 1000)
+);
+const DEFERRED_RETRY_MAX_MS = Math.max(
+  DEFERRED_RETRY_BASE_MS,
+  Number(process.env.AI_INTERVIEW_CV_DEFERRED_RETRY_MAX_MS || process.env.CV_DEFERRED_RETRY_MAX_MS || 6 * 60 * 60 * 1000)
+);
 
 let queue;
 let worker;
@@ -156,8 +165,27 @@ function isOfflineError(error) {
       .test(String(error?.message || ''));
 }
 
+function isRetryableProcessingError(error) {
+  if (!error || error.permanent === true) return false;
+  const status = Number(error.statusCode || error.status || 0);
+  return isOfflineError(error)
+    || error.retryable === true
+    || status === 408
+    || status === 429
+    || status >= 500;
+}
+
+function deferredRetryDelay(cycles = 0) {
+  const exponent = Math.max(0, Math.min(10, Number(cycles || 0)));
+  return Math.min(DEFERRED_RETRY_MAX_MS, DEFERRED_RETRY_BASE_MS * (2 ** exponent));
+}
+
 function backoffDelay(attemptsMade, error) {
-  const exponent = Math.max(0, Math.min(10, Number(attemptsMade || 1) - 1));
+  const attempt = Math.max(1, Number(attemptsMade || 1));
+  if (!isOfflineError(error) && isRetryableProcessingError(error) && attempt % MAX_FAST_FAILURE_ATTEMPTS === 0) {
+    return deferredRetryDelay(Math.floor((attempt - 1) / MAX_FAST_FAILURE_ATTEMPTS));
+  }
+  const exponent = Math.max(0, Math.min(10, attempt - 1));
   const delay = 30_000 * (2 ** exponent);
   return Math.min(delay, isOfflineError(error) ? 5 * 60_000 : 10 * 60_000);
 }
@@ -175,6 +203,8 @@ function publicState(job) {
     failedAt: job.failedAt || null,
     attempts: Math.max(0, Number(job.attempts || 0)),
     failureCount: Math.max(0, Number(job.failureCount || 0)),
+    deferredCycles: Math.max(0, Number(job.deferredCycles || 0)),
+    nextAttemptAt: job.nextAttemptAt || null,
     candidateId: job.result?.candidate?._id || job.candidateId || null,
     error: job.state === 'failed' ? job.lastError : undefined,
     ...(job.state === 'completed' && job.result ? job.result : {})
@@ -204,6 +234,8 @@ function operationalQueueEvent(job, transition = null, sequence = null) {
     progress: Math.min(100, Math.max(0, Number(transition?.progress ?? job.progress ?? 0))),
     attempts: Math.max(0, Number(transition?.attempts ?? job.attempts ?? 0)),
     failureCount: Math.max(0, Number(transition?.failureCount ?? job.failureCount ?? 0)),
+    deferredCycles: Math.max(0, Number(job.deferredCycles || 0)),
+    nextAttemptAt: job.nextAttemptAt || null,
     organizationId: String(job.organizationId || '').slice(0, 200),
     actorId: String(job.actorId || '').slice(0, 200),
     jobId: String(job.jobId || '').slice(0, 200),
@@ -676,9 +708,17 @@ async function processJob(bullJob, workerToken) {
       throw error;
     }
     const runtimeWait = isOfflineError(error);
+    const retryable = isRetryableProcessingError(error);
+    const nextAttemptNumber = Math.max(1, Number(processingJob.attempts || 0));
+    const deferred = !runtimeWait && retryable && nextAttemptNumber % MAX_FAST_FAILURE_ATTEMPTS === 0;
+    const nextAttemptAt = new Date(Date.now() + (deferred
+      ? deferredRetryDelay(Number(processingJob.deferredCycles || 0))
+      : backoffDelay(nextAttemptNumber, error)));
     const failure = await cvProcessingJobs.recordFailure(processingJob.publicId, error, {
-      unmetered: runtimeWait,
-      retryState: runtimeWait ? 'waiting_for_local_runtime' : 'queued'
+      unmetered: runtimeWait || retryable,
+      retryState: (runtimeWait || deferred) ? 'waiting_for_local_runtime' : 'queued',
+      deferred,
+      nextAttemptAt
     });
     if (failure.job) Object.assign(processingJob, failure.job);
     if (failure.terminal) {
@@ -921,6 +961,8 @@ module.exports = {
   _queuedOperationalEventsForTests: queuedOperationalEvents,
   QUEUE_NAME,
   backoffDelay,
+  deferredRetryDelay,
+  isRetryableProcessingError,
   closeForTests,
   deterministicStatusToken,
   appendTransition: cvProcessingJobs.appendTransition,

@@ -86,7 +86,11 @@ export type AiJobKind =
   | 'social.reply_draft'
   | 'intelligence.synthesize'
   | 'journey.generate'
-  | 'journey.optimize';
+  | 'journey.optimize'
+  | 'assistant.email_summary'
+  | 'assistant.email_draft'
+  | 'assistant.knowledge_answer'
+  | 'assistant.work_product';
 
 export interface SocialMention {
   id: string;
@@ -119,7 +123,7 @@ export interface JourneyStage {
 export interface JourneyProvenance {
   origin: 'workspace' | 'terra' | 'legacy';
   lastModifiedBy: 'workspace' | 'terra' | 'unknown';
-  evidenceBasis: 'workspace_authored' | 'brief_only' | 'unknown';
+  evidenceBasis: 'workspace_authored' | 'brief_only' | 'knowledge_grounded' | 'unknown';
   evidenceLevel: 'hypothesis';
   generatedAt: string | null;
   optimizedAt: string | null;
@@ -192,6 +196,8 @@ export interface Campaign {
   surveyId: string;
   collectorId: string;
   name: string;
+  senderName: string;
+  senderEmail: string;
   status: CampaignStatus;
   stopOnResponse: boolean;
   startAt: string | null;

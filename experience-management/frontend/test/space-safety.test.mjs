@@ -63,12 +63,11 @@ test('uses unique responsive selector ids and keeps invitation acceptance failur
   assert.match(shell, /htmlFor=\{selectorId\}/);
   assert.match(shell, /id=\{selectorId\}/);
 
-  const loginRequest = login.indexOf("'/api/auth/login'");
-  const invitationAcceptance = login.indexOf('/api/spaces/invitations/');
-  assert.ok(loginRequest >= 0 && invitationAcceptance > loginRequest);
-  assert.match(login, /signedIn=1&accept=failed/);
+  assert.match(login, /'\/api\/auth\/login'/);
+  assert.doesNotMatch(login, /api\/spaces\/invitations\/.*accept/);
+  assert.match(login, /You will review the invitation/);
+  assert.match(login, /`\/join\/\$\{encodeURIComponent\(inviteToken\)\}`/);
   assert.match(login, /storeActiveSpaceId\(signedIn\.activeSpace\?\.id \|\| null, false\)/);
-  assert.match(join, /Signed in successfully\./);
-  assert.match(join, /Open my spaces/);
+  assert.match(join, /api\/spaces\/invitations\/.*accept/);
   assert.match(join, /Accept invitation/);
 });

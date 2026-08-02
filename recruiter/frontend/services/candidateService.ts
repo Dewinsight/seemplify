@@ -340,6 +340,31 @@ export const bulkDeleteCandidates = async (candidateIds: string[]): Promise<{
   return response.json();
 };
 
+// Bulk download a ZIP with one folder per candidate (profile.pdf + CV)
+export const bulkDownloadCandidates = async (candidateIds: string[]): Promise<void> => {
+  const response = await apiRequest(`/api/candidates/bulk-download`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ candidateIds })
+  });
+
+  if (!response.ok) {
+    const errorResult: ApiError = await response.json();
+    handleOrganizationError(errorResult);
+    return;
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'candidates.zip';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};
+
 // Get accessible resume URLs for PDFs
 export const getAccessibleResumeUrl = async (candidateId: string): Promise<{
   accessibleUrl: string;
