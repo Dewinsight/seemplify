@@ -23,6 +23,8 @@ const {
   recoverCodexUsage,
   parseStructuredContent,
   prepareInferenceInput,
+  structuredQualityIssue,
+  responseFormatInstruction,
   removeCodexRequestDir,
   runOllama,
   runVllm,
@@ -52,28 +54,32 @@ test('Claude is a managed engine with tool-disabled schema-constrained execution
   assert.ok(args.includes('--strict-mcp-config'));
   assert.ok(args.includes('--safe-mode'));
   assert.ok(args.includes('--json-schema'));
+  assert.equal(args[args.indexOf('--max-turns') + 1], '4');
   assert.match(args[args.indexOf('--system-prompt') + 1], /managed Seemplify Claude local-cloud inference engine/);
   assert.match(claudeSystemPrompt(input), /Extract only CV facts explicitly present/);
   assert.match(claudePrompt(input), /USER:\nJane Doe/);
 });
 
-test('Claude execution profiles enforce activity-shaped context, output, timeout and cost budgets', () => {
+test('Claude execution profiles consume the gateway workload policy and its bounded turn budget', () => {
   assert.deepEqual(
-    claudeExecutionProfile({ messages: [{ role: 'user', content: 'quick' }], reasoningEffort: 'low', maxTokens: 9000 }).id,
-    'fast'
+    claudeExecutionProfile({ activity: 'assistant.title', messages: [{ role: 'user', content: 'quick' }], reasoningEffort: 'low', maxTokens: 9000 }).id,
+    'short-composition'
   );
   const structured = claudeExecutionProfile({
+    activity: 'candidate.cv_parse',
     messages: [{ role: 'user', content: 'structured' }],
     reasoningEffort: 'medium',
     maxTokens: 9000,
     jsonSchema: { type: 'object' }
   });
-  assert.equal(structured.id, 'structured');
+  assert.equal(structured.id, 'structured-extraction');
   assert.equal(structured.maxTokens, 8000);
   assert.equal(structured.timeoutMs, 300000);
-  const deep = claudeExecutionProfile({ messages: [{ role: 'user', content: 'deep' }], reasoningEffort: 'high', maxTokens: 20000 });
+  assert.equal(structured.maxTurns, 4);
+  const deep = claudeExecutionProfile({ activity: 'matching.analysis', messages: [{ role: 'user', content: 'deep' }], reasoningEffort: 'high', maxTokens: 20000 });
   assert.equal(deep.id, 'deep-analysis');
   assert.equal(deep.maxTokens, 12000);
+  assert.equal(deep.maxTurns, 6);
   assert.throws(
     () => claudeExecutionProfile({ messages: [{ role: 'user', content: 'x'.repeat(1_200_001) }] }),
     (error) => error.code === 'LOCAL_LLM_CONTEXT_TOO_LARGE' && error.retryable === false
@@ -100,6 +106,8 @@ test('Claude JSON output preserves structured content, token usage, cache usage,
     result: '{"name":"Jane Doe"}',
     structured_output: { name: 'Jane Doe' },
     total_cost_usd: 0.03125,
+    num_turns: 2,
+    terminal_reason: 'end_turn',
     usage: {
       input_tokens: 10,
       cache_creation_input_tokens: 20,
@@ -114,6 +122,79 @@ test('Claude JSON output preserves structured content, token usage, cache usage,
   assert.equal(parsed.usage.prompt_tokens_details.cached_tokens, 30);
   assert.equal(parsed.usage.prompt_tokens_details.cache_write_tokens, 20);
   assert.equal(parsed.estimatedCostUsd, 0.03125);
+  assert.equal(parsed.numTurns, 2);
+  assert.equal(parsed.terminalReason, 'end_turn');
+});
+
+test('gateway response-format policy distinguishes analysis Markdown from short plain text', () => {
+  const markdownInput = {
+    activity: 'matching.analysis',
+    messages: [{ role: 'user', content: 'Compare candidates' }],
+    executionPlan: claudeExecutionProfile({
+      activity: 'matching.analysis',
+      messages: [{ role: 'user', content: 'Compare candidates' }]
+    })
+  };
+  const plainInput = {
+    activity: 'experience.social_reply_draft',
+    messages: [{ role: 'user', content: 'Reply' }],
+    executionPlan: claudeExecutionProfile({
+      activity: 'experience.social_reply_draft',
+      messages: [{ role: 'user', content: 'Reply' }]
+    })
+  };
+
+  assert.match(responseFormatInstruction(markdownInput), /Markdown/);
+  assert.match(responseFormatInstruction(plainInput), /plain text/);
+  assert.match(codexPrompt(markdownInput), /clean, concise Markdown/);
+  assert.match(claudeSystemPrompt(plainInput), /concise plain text/);
+});
+
+test('Claude max-turn envelopes produce a safe actionable diagnostic with usage', () => {
+  assert.throws(
+    () => parseClaudeJson(JSON.stringify({
+      is_error: true,
+      subtype: 'error_max_turns',
+      terminal_reason: 'max_turns',
+      num_turns: 1,
+      result: 'sensitive supplied content must not leak',
+      errors: ['Reached maximum number of turns (1)'],
+      usage: { input_tokens: 11, output_tokens: 7 }
+    })),
+    (error) => {
+      assert.equal(error.code, 'CLAUDE_MAX_TURNS');
+      assert.equal(error.terminalReason, 'max_turns');
+      assert.equal(error.numTurns, 1);
+      assert.equal(error.claudeUsage.total_tokens, 18);
+      assert.doesNotMatch(error.message, /sensitive supplied content/);
+      return true;
+    }
+  );
+});
+
+test('deep structured analysis rejects placeholder payloads before they reach an app', () => {
+  const input = {
+    jsonSchema: { type: 'object' },
+    executionPlan: { workload: 'deep-analysis' }
+  };
+  const placeholder = {
+    answer: 'test',
+    evidence: [{ excerpt: 'test', relevance: 'test' }],
+    caveats: ['test'],
+    suggestedQuestions: ['test']
+  };
+  assert.match(structuredQualityIssue(placeholder, input), /placeholder/);
+  assert.throws(
+    () => finalizeOutput({ content: JSON.stringify(placeholder), data: placeholder }, input),
+    (error) => error.code === 'LOCAL_LLM_LOW_QUALITY_OUTPUT' && error.status === 502 && error.retryable === true
+  );
+  const paddedPlaceholder = { ...placeholder, answer: 'test '.repeat(30).trim() };
+  assert.match(structuredQualityIssue(paddedPlaceholder, input), /placeholder/);
+  assert.equal(structuredQualityIssue({
+    answer: 'The completed response identifies setup and connectivity friction as the clearest immediate priority.',
+    evidence: [{ excerpt: 'Connection issues', relevance: 'This directly identifies the reported customer problem.' }],
+    caveats: ['Only one completed response is available, so this finding is directional.']
+  }, input), null);
 });
 
 test('Codex child environment keeps runtime/auth settings and excludes unrelated service secrets', () => {

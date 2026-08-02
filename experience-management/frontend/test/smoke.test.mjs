@@ -221,6 +221,15 @@ test('keeps decision-ready Experience AI actions visible without translation con
   for (const action of ['improve', 'insights', 'report', 'ask']) assert.match(ai, new RegExp(`['\"]${action}['\"]`));
   assert.doesNotMatch(ai, /['\"]translate['\"]|Translate survey|surveyTranslationRemoval/);
 });
+test('renders saved research answers as readable intelligence with collapsible source data', () => {
+  const ai = fs.readFileSync(path.join(source, 'components', 'survey', 'AiTab.tsx'), 'utf8');
+  for (const feature of ['ReactMarkdown', 'Supporting evidence', 'Why it matters:', 'Limitations and caveats', 'Suggested follow-up questions', 'View raw data', 'Copy JSON']) {
+    assert.match(ai, new RegExp(feature));
+  }
+  assert.match(ai, /insight\.kind === 'research_answer'.*ResearchAnswerDetails/);
+  assert.match(ai, /answer && .*ResearchAnswerDetails/);
+  assert.doesNotMatch(ai, /insight\.kind === 'research_answer'.*JSON\.stringify/);
+});
 test('ships explicit knowledge grounding with durable indexing, retrieval citations, and graph provenance', () => {
   const app = fs.readFileSync(path.join(source, 'App.tsx'), 'utf8');
   const shell = fs.readFileSync(path.join(source, 'components', 'AppShell.tsx'), 'utf8');

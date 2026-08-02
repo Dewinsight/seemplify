@@ -64,10 +64,14 @@ export const insightResult = z.object({
 });
 
 export const analystChatResult = z.object({
-  answer: z.string(),
-  evidence: z.array(z.object({ responseId: z.string(), excerpt: z.string(), relevance: z.string() })),
-  caveats: z.array(z.string()),
-  suggestedQuestions: z.array(z.string())
+  answer: z.string().trim().min(80).max(12_000),
+  evidence: z.array(z.object({
+    responseId: z.string().trim().min(1).max(200),
+    excerpt: z.string().trim().min(2).max(1000),
+    relevance: z.string().trim().min(20).max(1000)
+  })).max(24),
+  caveats: z.array(z.string().trim().min(12).max(1000)).max(24),
+  suggestedQuestions: z.array(z.string().trim().min(12).max(1000)).max(12)
 });
 
 export const improvementResult = z.object({
@@ -209,9 +213,18 @@ export const aiJsonSchemas = {
     forecast: finiteObject({ direction: { type: 'string', enum: ['improving', 'stable', 'declining', 'insufficient_data'] }, confidence: unitNumber, explanation: string })
   }),
   analystChat: finiteObject({
-    answer: string,
-    evidence: arrayOf(finiteObject({ responseId: string, excerpt: string, relevance: string })),
-    caveats: strings, suggestedQuestions: strings
+    answer: { type: 'string', minLength: 80, maxLength: 12000,
+      description: 'A decision-ready answer grounded in the supplied survey evidence; never placeholder or test text.' },
+    evidence: { type: 'array', maxItems: 24, items: finiteObject({
+      responseId: { type: 'string', minLength: 1, maxLength: 200,
+        description: 'An exact responseId from the supplied Responses array.' },
+      excerpt: { type: 'string', minLength: 2, maxLength: 1000,
+        description: 'A short exact value or excerpt present in that response.' },
+      relevance: { type: 'string', minLength: 20, maxLength: 1000,
+        description: 'Why this response evidence supports the answer.' }
+    }) },
+    caveats: { type: 'array', maxItems: 24, items: { type: 'string', minLength: 12, maxLength: 1000 } },
+    suggestedQuestions: { type: 'array', maxItems: 12, items: { type: 'string', minLength: 12, maxLength: 1000 } }
   }),
   improvement: finiteObject({
     qualityScore: percentageNumber,

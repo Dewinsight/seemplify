@@ -26,6 +26,10 @@ const {
 } = require('./execution-receipt-store.cjs');
 const { LocalUsageMeteringOutbox } = require('./usage-metering-outbox.cjs');
 const {
+  executionPolicyTelemetry,
+  resolveExecutionPolicy
+} = require('./execution-policy.cjs');
+const {
   ACTIVITY_DEFINITIONS,
   localProviderLabel
 } = require('../../recruiter/backend/config/aiRuntimeCatalog');
@@ -1152,7 +1156,17 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   let providerOutcomeMustNotRepeat = false;
   let startedAt = Date.now();
   let executionStatus = 'failed';
+  let executionPlan;
   try {
+    executionPlan = resolveExecutionPolicy({
+      ...input,
+      requestSource,
+      runtimeProfile: runtimeProfile || undefined
+    });
+    const requestedTimeoutMs = Number(input.timeoutMs);
+    const effectiveTimeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
+      ? Math.min(executionPlan.timeoutMs, Math.max(10_000, requestedTimeoutMs))
+      : executionPlan.timeoutMs;
     if (metering) {
       const acquisition = await executionReceiptStore.acquire({
         executionId: metering.gatewayExecutionId,
@@ -1215,6 +1229,10 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
     let providerDispatched = false;
     const data = await analyzeWithEngine({
       ...input,
+      executionPlan,
+      reasoningEffort: executionPlan.reasoningEffort,
+      maxTokens: executionPlan.maxTokens,
+      timeoutMs: effectiveTimeoutMs,
       signal: executionController.signal,
       onProviderDispatch: async () => {
         if (providerDispatched) return;
@@ -1283,6 +1301,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       estimatedCostUsd: data.estimatedCostUsd,
       metrics: {
         ...(data.metrics || {}),
+        executionPolicy: executionPolicyTelemetry(executionPlan),
         queueWaitMs: permit.waitMs,
         latencyMs
       }
@@ -1338,7 +1357,11 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       cachedInputTokens,
       outputTokens,
       reasoningTokens,
-      totalTokens
+      totalTokens,
+      workload: executionPlan.workload,
+      workloadConfidence: executionPlan.confidence,
+      workloadFallback: executionPlan.fallback,
+      maxTurns: executionPlan.maxTurns
     });
     return sendJson(response, 200, responsePayload);
   } catch (error) {
@@ -1349,6 +1372,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       message: failure.message,
       retryable,
       gatewayExecutionId: metering?.gatewayExecutionId,
+      ...(executionPlan ? { metrics: { executionPolicy: executionPolicyTelemetry(executionPlan) } } : {}),
       ...(envelope ? {
         id: envelope.id,
         provider: `local-${envelope.engine || selected.id}`,
@@ -1451,7 +1475,11 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       engine: selected.id,
       model: selected.model,
       errorCode: responseError.code || 'LOCAL_LLM_UNAVAILABLE',
-      error: responseError.message
+      error: responseError.message,
+      workload: executionPlan?.workload,
+      workloadConfidence: executionPlan?.confidence,
+      workloadFallback: executionPlan?.fallback,
+      maxTurns: executionPlan?.maxTurns
     });
     return sendJson(response, responseError.status || 503, responsePayload);
   } finally {

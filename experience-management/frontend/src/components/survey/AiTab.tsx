@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  BookOpenCheck, ChevronDown, ChevronUp, FileText, Lightbulb, Loader2, MessageSquareText, ShieldCheck, WandSparkles
+  BookOpenCheck, Braces, ChevronDown, ChevronUp, Copy, FileText, Lightbulb, Loader2, MessageSquareText, ShieldCheck, WandSparkles
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 import { api, json, waitForJob } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -11,6 +13,21 @@ import { KnowledgeBasePicker } from '@/components/knowledge/KnowledgeBasePicker'
 import type { AiJob, Survey } from '@/types';
 
 type Insight = { id: string; kind: string; payload: any; createdAt: string };
+
+type ResearchEvidence = {
+  responseId?: string;
+  excerpt?: string;
+  relevance?: string;
+};
+
+type ResearchAnswerPayload = {
+  question?: string;
+  answer?: string;
+  evidence?: ResearchEvidence[];
+  caveats?: string[];
+  suggestedQuestions?: string[];
+  [key: string]: unknown;
+};
 
 const savedInsightKind: Record<string, string> = {
   insights: 'ai_insights',
@@ -25,7 +42,96 @@ function insightLabel(insight: Insight) {
   return insight.kind.replaceAll('_', ' ');
 }
 
+function FormattedText({ children }: { children: string }) {
+  return <ReactMarkdown
+    remarkPlugins={[remarkGfm]}
+    components={{
+      h1: ({ children: value }) => <h4 className="mb-2 mt-5 text-base font-semibold first:mt-0">{value}</h4>,
+      h2: ({ children: value }) => <h4 className="mb-2 mt-5 text-base font-semibold first:mt-0">{value}</h4>,
+      h3: ({ children: value }) => <h5 className="mb-2 mt-4 text-sm font-semibold first:mt-0">{value}</h5>,
+      p: ({ children: value }) => <p className="my-3 text-sm leading-6 first:mt-0 last:mb-0">{value}</p>,
+      strong: ({ children: value }) => <strong className="font-semibold text-foreground">{value}</strong>,
+      ol: ({ children: value }) => <ol className="my-3 list-decimal space-y-2 pl-5 text-sm leading-6">{value}</ol>,
+      ul: ({ children: value }) => <ul className="my-3 list-disc space-y-2 pl-5 text-sm leading-6">{value}</ul>,
+      li: ({ children: value }) => <li className="pl-1">{value}</li>,
+      blockquote: ({ children: value }) => <blockquote className="my-3 border-l-2 border-border pl-4 text-muted-foreground">{value}</blockquote>,
+      code: ({ children: value }) => <code className="bg-muted px-1 py-0.5 font-mono text-[0.9em]">{value}</code>,
+      a: ({ children: value, href }) => <a className="font-medium text-primary underline underline-offset-2" href={href} rel="noreferrer" target="_blank">{value}</a>
+    }}
+  >{children}</ReactMarkdown>;
+}
+
+function CollapsibleSection({ title, count, open = false, children }: { title: string; count?: number; open?: boolean; children: React.ReactNode }) {
+  return <details className="border" open={open}>
+    <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold hover:bg-muted/25 [&::-webkit-details-marker]:hidden">
+      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+      <span>{title}</span>
+      {typeof count === 'number' && <span className="font-normal text-muted-foreground">({count})</span>}
+    </summary>
+    <div className="border-t">{children}</div>
+  </details>;
+}
+
+function RawDataDetails({ payload }: { payload: unknown }) {
+  const serialized = JSON.stringify(payload, null, 2);
+  async function copyRawData() {
+    try {
+      await navigator.clipboard.writeText(serialized);
+      toast.success('Raw data copied');
+    } catch {
+      toast.error('Could not copy the raw data.');
+    }
+  }
+  return <details className="border">
+    <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium hover:bg-muted/25 [&::-webkit-details-marker]:hidden">
+      <Braces className="h-4 w-4 text-muted-foreground" />
+      View raw data
+    </summary>
+    <div className="border-t bg-muted/20">
+      <div className="flex justify-end border-b px-3 py-2"><Button type="button" size="sm" variant="ghost" onClick={() => void copyRawData()}><Copy />Copy JSON</Button></div>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap p-4 text-xs leading-5">{serialized}</pre>
+    </div>
+  </details>;
+}
+
+function ResearchAnswerDetails({ payload }: { payload: ResearchAnswerPayload }) {
+  const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
+  const caveats = Array.isArray(payload.caveats) ? payload.caveats.filter(Boolean) : [];
+  const suggestedQuestions = Array.isArray(payload.suggestedQuestions) ? payload.suggestedQuestions.filter(Boolean) : [];
+  return <div className="space-y-4">
+    {payload.question && <div className="border-b pb-4">
+      <div className="text-xs font-medium text-muted-foreground">Question</div>
+      <p className="mt-1 text-sm font-medium leading-6">{payload.question}</p>
+    </div>}
+    <section aria-labelledby="research-answer-heading">
+      <h4 id="research-answer-heading" className="text-sm font-semibold">Answer</h4>
+      <div className="mt-2 border-l-2 border-primary/60 pl-4"><FormattedText>{String(payload.answer || 'No answer was returned.')}</FormattedText></div>
+    </section>
+    {evidence.length > 0 && <CollapsibleSection title="Supporting evidence" count={evidence.length} open>
+      <ol className="divide-y">{evidence.map((citation, index) => {
+        const responseId = String(citation?.responseId || 'Unknown response');
+        return <li className="p-4" key={`${responseId}-${index}`}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-sm font-medium">Evidence {index + 1}</span>
+            <span className="font-mono text-xs text-muted-foreground" title={responseId}>{responseId}</span>
+          </div>
+          {citation?.excerpt && <blockquote className="mt-3 border-l-2 border-border pl-3 text-sm leading-6">“{citation.excerpt}”</blockquote>}
+          {citation?.relevance && <p className="mt-3 text-xs leading-5 text-muted-foreground"><span className="font-medium text-foreground">Why it matters:</span> {citation.relevance}</p>}
+        </li>;
+      })}</ol>
+    </CollapsibleSection>}
+    {caveats.length > 0 && <CollapsibleSection title="Limitations and caveats" count={caveats.length}>
+      <ul className="divide-y">{caveats.map((caveat, index) => <li className="px-4 py-3 text-sm leading-6" key={`${index}-${caveat}`}>{caveat}</li>)}</ul>
+    </CollapsibleSection>}
+    {suggestedQuestions.length > 0 && <CollapsibleSection title="Suggested follow-up questions" count={suggestedQuestions.length}>
+      <ol className="divide-y">{suggestedQuestions.map((suggestion, index) => <li className="flex gap-3 px-4 py-3 text-sm leading-6" key={`${index}-${suggestion}`}><span className="text-muted-foreground">{index + 1}.</span><span>{suggestion}</span></li>)}</ol>
+    </CollapsibleSection>}
+    <RawDataDetails payload={payload} />
+  </div>;
+}
+
 function InsightDetails({ insight }: { insight: Insight }) {
+  if (insight.kind === 'research_answer') return <ResearchAnswerDetails payload={(insight.payload || {}) as ResearchAnswerPayload} />;
   return <pre className="max-h-80 overflow-auto whitespace-pre-wrap border bg-muted/30 p-3 text-xs leading-5">{JSON.stringify(insight.payload, null, 2)}</pre>;
 }
 
@@ -147,7 +253,14 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
   const actionsDisabled = busy || hasUnsavedChanges || knowledgeSelectionLoading || knowledgeSelectionSaving;
   return <><div className="mb-5 border bg-card p-4"><KnowledgeBasePicker value={knowledgeBaseIds || []} onChange={(ids) => void saveKnowledgeSelection(ids)} disabled={actionsDisabled} description={knowledgeBaseIds === null ? 'Loading the survey’s saved knowledge selection.' : knowledgeSelectionSaving ? 'Saving this selection for survey AI and automatic response analysis.' : 'Saved grounding for Ask, quality review, response analysis, survey intelligence, reports, and publishing reviewed answers.'} /></div><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
     <div className="space-y-5">
-      <Card><CardHeader><CardTitle>Ask the research</CardTitle><CardDescription>Terra can query responses, calculated metrics, and prior insights. Answers must cite the supplied evidence.</CardDescription></CardHeader><CardContent className="space-y-3"><Textarea rows={4} value={question} onChange={(event) => setQuestion(event.target.value)} /><Button disabled={actionsDisabled || question.trim().length < 5} onClick={() => run('ask', { question })}>{busy ? <Loader2 className="animate-spin" /> : <MessageSquareText />}Ask Terra</Button>{answer && <div className="border bg-muted/25 p-5"><div className="text-sm font-semibold">Answer</div><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{answer.answer}</p>{answer.evidence?.length > 0 && <div className="mt-4 border-t pt-3"><div className="text-xs font-medium text-muted-foreground">Evidence</div>{answer.evidence.map((citation: any, index: number) => <div className="mt-2 text-xs" key={`${citation.responseId}-${index}`}><span className="font-mono text-muted-foreground">{citation.responseId?.slice(0, 8)}</span> — “{citation.excerpt}”</div>)}</div>}</div>}</CardContent></Card>
+      <Card>
+        <CardHeader><CardTitle>Ask the research</CardTitle><CardDescription>Terra can query responses, calculated metrics, and prior insights. Answers must cite the supplied evidence.</CardDescription></CardHeader>
+        <CardContent className="space-y-3">
+          <Textarea rows={4} value={question} onChange={(event) => setQuestion(event.target.value)} />
+          <Button disabled={actionsDisabled || question.trim().length < 5} onClick={() => run('ask', { question })}>{busy ? <Loader2 className="animate-spin" /> : <MessageSquareText />}Ask Terra</Button>
+          {answer && <div className="border bg-muted/10 p-5"><ResearchAnswerDetails payload={{ question, ...answer }} /></div>}
+        </CardContent>
+      </Card>
       <Card><CardHeader><CardTitle>Saved survey intelligence</CardTitle><CardDescription>Decision-ready findings, research answers, and reports remain attached to this survey.</CardDescription></CardHeader><CardContent className="px-0 pb-0">
         {insightsError && <div className="flex items-center justify-between gap-4 border-t px-5 py-4 text-sm text-destructive"><span>{insightsError}</span><Button size="sm" variant="outline" onClick={() => void loadInsights()}>Retry</Button></div>}
         {!insightsError && insightsLoading && insights.length === 0 && <div className="flex items-center justify-center gap-2 border-t px-5 py-10 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading saved intelligence</div>}

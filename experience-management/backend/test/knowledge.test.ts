@@ -861,8 +861,12 @@ test('grounds every knowledge-aware intelligence activity through GTE plus BGE b
     experience_insights: { executiveSummary: 'Escalation guidance is clear.', healthScore: 85, keyFindings: [], themes: [],
       drivers: [], risks: [], opportunities: [], recommendations: [],
       forecast: { direction: 'stable', confidence: 0.7, explanation: 'The available evidence is bounded.' } },
-    experience_analyst_answer: { answer: 'Keep escalation guidance current.', evidence: [],
-      caveats: ['One response is available.'], suggestedQuestions: [] },
+    experience_analyst_answer: {
+      answer: 'Keep the documented escalation guidance current and verify that customers can consistently find the named owner and 48-hour response window.',
+      evidence: [{ responseId: responseRecord.id, excerpt: 'The documented 48-hour escalation window was clear.',
+        relevance: 'The completed response directly confirms that the current escalation guidance is understandable.' }],
+      caveats: ['Only one completed response is available, so this conclusion is directional.'], suggestedQuestions: []
+    },
     experience_executive_report: { title: 'Escalation report', executiveSummary: 'Guidance is clear.', sections: [],
       recommendations: [], methodology: 'Survey response plus authorized knowledge retrieval.' },
     experience_cross_source_intelligence: { title: 'Combined intelligence', executiveSummary: 'Signals are directionally aligned.',

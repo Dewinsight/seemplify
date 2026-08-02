@@ -790,6 +790,7 @@ test('default catalog keeps CV and question generation local and pins every Expe
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-20b'), true);
   assert.equal(settings.models.some((model) => model.id === LOCAL_CV_MODEL), true);
   assert.equal(settings.models.some((model) => model.id === TERRA_MODEL && model.provider === TERRA_PROVIDER), true);
+  assert.equal(settings.models.some((model) => model.id === CLAUDE_SONNET_MODEL && model.provider === CLAUDE_PROVIDER), true);
   assert.deepEqual(settings.rollout, {
     groqPercent: 100,
     azureBaselineEnabled: false,
