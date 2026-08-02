@@ -126,6 +126,31 @@ test('ingestion maps operational identity but never request content into the aut
   assert.equal(recorded.actorEmail, 'ada@example.test');
 });
 
+test('ingestion accepts Claude Code local-cloud usage metadata', () => {
+  const event = validateLocalUsageEnvelope(envelope({
+    provider: 'local-claude',
+    model: 'sonnet',
+    providerRequestId: 'claude-provider-1',
+    usageSource: 'claude-response'
+  }));
+
+  assert.equal(event.provider, 'local-claude');
+  assert.equal(event.model, 'sonnet');
+  assert.equal(event.usageSource, 'claude-response');
+});
+
+test('ingestion recognises Experience knowledge and assistant activities', () => {
+  for (const activity of [
+    'experience.knowledge_answer',
+    'experience.knowledge_graph_extract',
+    'experience.cross_source_intelligence',
+    'experience.assistant.email_summarise',
+    'experience.assistant.email_draft'
+  ]) {
+    assert.equal(validateLocalUsageEnvelope(envelope({ activity })).activity, activity);
+  }
+});
+
 test('ingestion rejects forged execution IDs and inconsistent token composition', () => {
   assert.throws(
     () => validateLocalUsageEnvelope(envelope({ gatewayExecutionId: `localexec_${'0'.repeat(48)}` })),

@@ -234,6 +234,7 @@ export function PersonalAssistantPage() {
   const activeConnection = useRef('');
   const activeThreadSearch = useRef('');
   const connectedConnectionIds = useRef(new Set<string>());
+  const workspaceRequest = useRef(0);
   const threadRequest = useRef(0);
   const threadDetailRequest = useRef(0);
   const reminderRequest = useRef(0);
@@ -242,7 +243,6 @@ export function PersonalAssistantPage() {
   const runRequest = useRef({ fingerprint: '', key: '' });
   const workProductRequest = useRef({ fingerprint: '', key: '' });
   const sendRequest = useRef({ fingerprint: '', key: '' });
-  const workspaceRequest = useRef(0);
 
   const loadWorkspace = useCallback(async (quiet = false) => {
     const requestId = ++workspaceRequest.current;
@@ -481,7 +481,10 @@ export function PersonalAssistantPage() {
   useLiveRefresh(useCallback(() => {
     void loadWorkspace(true); void loadThreads(false); void loadAssistantOperations();
   }, [loadAssistantOperations, loadWorkspace, loadThreads]));
-  const hasActiveRun = runs.some((run) => run.state === 'queued' || run.state === 'processing');
+  const hasActiveRun = runs.some((run) => run.state === 'queued' || run.state === 'processing'
+    || (run.state === 'completed'
+      && ['assistant.email_draft', 'email_draft', 'assistant.work_product', 'work_product'].includes(run.kind)
+      && (!run.draft?.subject || !run.draft?.body)));
   useEffect(() => {
     if (!hasActiveRun) return;
     const timer = window.setInterval(() => void loadWorkspace(true), 1500);
@@ -500,12 +503,16 @@ export function PersonalAssistantPage() {
     ['assistant.email_summary', 'email_summary'].includes(run.kind)) || null;
   const selectedMailboxDraftRun = mailboxRuns.find((run) =>
     ['assistant.email_draft', 'email_draft'].includes(run.kind)) || null;
+  const mailboxDraftSubject = draftSubject || selectedMailboxDraftRun?.draft?.subject || '';
+  const mailboxDraftBody = draftBody || selectedMailboxDraftRun?.draft?.body || '';
   const workProductRuns = runs.filter((run) => ['assistant.work_product', 'work_product'].includes(run.kind));
   const selectedWorkProductRun = selectedRun && workProductRuns.some((run) => run.id === selectedRun.id)
     ? selectedRun : workProductRuns[0] || null;
   const editableRun = tab === 'mailbox' ? selectedMailboxDraftRun : tab === 'work-products' ? selectedWorkProductRun : selectedRun;
+  const currentDraftSubject = draftSubject || editableRun?.draft?.subject || '';
+  const currentDraftBody = draftBody || editableRun?.draft?.body || '';
   const draftDirty = Boolean(editableRun?.draft && (
-    draftSubject !== (editableRun.draft.subject || '') || draftBody !== (editableRun.draft.body || '')
+    currentDraftSubject !== (editableRun.draft.subject || '') || currentDraftBody !== (editableRun.draft.body || '')
   ));
   useUnsavedChanges(draftDirty);
   useLayoutEffect(() => {
@@ -715,7 +722,7 @@ export function PersonalAssistantPage() {
     setWorking('save-draft');
     try {
       const result = await api<AssistantRun>(`/api/assistant/runs/${editableRun.id}/draft`, json('PATCH', {
-        subject: draftSubject, body: draftBody, revision: draftRevision
+        subject: currentDraftSubject, body: currentDraftBody, revision: draftRevision
       }));
       if (result.draft) setDraftRevision(result.draft.revision);
       await loadWorkspace(true); toast.success('Draft saved. Nothing was sent.');
@@ -895,7 +902,7 @@ export function PersonalAssistantPage() {
             working={working} startRun={startRun} tone={tone} setTone={setTone}
             instructions={instructions} setInstructions={setInstructions}
             question={threadQuestion} setQuestion={setThreadQuestion} askThread={askThread}
-            draftSubject={draftSubject} draftBody={draftBody} setDraftSubject={setDraftSubject}
+            draftSubject={mailboxDraftSubject} draftBody={mailboxDraftBody} setDraftSubject={setDraftSubject}
             setDraftBody={setDraftBody} saveDraft={saveDraft} draftDirty={draftDirty}
             canSend={activeMailboxCanSend} reconnect={() => void connect(activeMailbox?.provider === 'microsoft' ? 'microsoft' : 'google')}
             replyMode={replyMode} setReplyMode={setReplyMode} reviewSend={() => setSendConfirmOpen(true)}

@@ -74,6 +74,9 @@ export function RichEmailEditor({ id, value, onChange, disabled = false, maxLeng
         class: 'tiptap min-h-52 px-4 py-3 text-sm leading-6 outline-none'
       }
     },
+  onCreate: ({ editor: current }) => {
+      current.commands.setContent(emailBodyToHtml(externalValue.current), { emitUpdate: false });
+    },
     onUpdate: ({ editor: current }) => {
       const next = current.getHTML();
       // Tiptap can emit its initial empty document after an asynchronously

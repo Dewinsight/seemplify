@@ -90,25 +90,25 @@ test('default routing keeps CV and questions on managed local inference while Ex
     Object.keys(require('../config/aiRuntimeCatalog').ACTIVITY_DEFINITIONS)
       .filter((activity) => activity.startsWith('experience.'))
   );
-  const crmActivities = new Set(
-    Object.entries(require('../config/aiRuntimeCatalog').ACTIVITY_DEFINITIONS)
-      .filter(([, definition]) => definition.provider === 'local-claude')
+  const claudeActivities = new Set(
+    Object.entries(ACTIVITY_DEFINITIONS)
+      .filter(([, definition]) => definition.provider === CLAUDE_PROVIDER)
       .map(([activity]) => activity)
   );
 
   for (const route of settings.routes) {
     const expectedModel = terraActivities.has(route.activity)
       ? TERRA_MODEL
-      : crmActivities.has(route.activity)
-        ? 'sonnet'
+      : claudeActivities.has(route.activity)
+        ? CLAUDE_SONNET_MODEL
       : localActivities.has(route.activity)
         ? LOCAL_CV_MODEL
         : liveChatActivities.has(route.activity) ? GROQ_20B : GROQ_120B;
     const expectedProvider = terraActivities.has(route.activity)
       ? TERRA_PROVIDER
-      : crmActivities.has(route.activity)
-        ? 'local-claude'
-      : localActivities.has(route.activity) ? LOCAL_PROVIDER : 'groq';
+      : claudeActivities.has(route.activity)
+        ? CLAUDE_PROVIDER
+        : localActivities.has(route.activity) ? LOCAL_PROVIDER : 'groq';
     assert.equal(route.model, expectedModel, route.activity);
     assert.equal(route.provider, expectedProvider, route.activity);
   }
@@ -117,7 +117,7 @@ test('default routing keeps CV and questions on managed local inference while Ex
   assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.chat.clarification').reasoningEffort, 'low');
 });
 
-test('configurable activities can use local inference while CV, Experience, and CRM provider locks remain enforced', () => {
+test('configurable activities can use local inference while CV, CRM, and Experience provider locks remain enforced', () => {
   const settings = createDefaultRuntimeSettings();
   for (const route of settings.routes) {
     if (ACTIVITY_DEFINITIONS[route.activity]?.lockedProvider !== true) {
@@ -783,7 +783,7 @@ test('default catalog keeps CV and question generation local and pins every Expe
   ]);
   assert.equal(terraRoutes.every((route) => route.model === TERRA_MODEL && route.failoverPolicy === 'wait_local'), true);
   const claudeRoutes = settings.routes.filter((route) => route.provider === CLAUDE_PROVIDER);
-  assert.ok(claudeRoutes.length > 0);
+  assert.equal(claudeRoutes.length, 11);
   assert.equal(claudeRoutes.every((route) => route.model === CLAUDE_SONNET_MODEL && route.failoverPolicy === 'wait_local'), true);
   assert.equal(settings.routes.filter((route) => !localRoutes.includes(route) && !terraRoutes.includes(route) && !claudeRoutes.includes(route)).every((route) => route.provider === 'groq'), true);
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-120b'), true);

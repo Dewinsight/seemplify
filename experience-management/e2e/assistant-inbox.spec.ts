@@ -279,7 +279,9 @@ test('desktop inbox searches, paginates, scrolls independently, reads full messa
   await expect(page.getByText('The board paper needs human approval before distribution.')).toBeVisible();
   await page.getByRole('tab', { name: 'Reply' }).click();
   await page.getByRole('button', { name: 'Draft reply' }).click();
-  await expect(page.getByText('Review required')).toBeVisible();
+  await expect(
+    page.getByTestId('assistant-run-detail').getByText('Review required', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByLabel('Reply', { exact: true })).toHaveText('Thank you. I will review the board paper.');
   await page.getByLabel('Reply', { exact: true }).fill('Unsaved executive response.');
 
