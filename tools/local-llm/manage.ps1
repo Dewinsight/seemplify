@@ -3,7 +3,7 @@ param(
     'start', 'stop', 'force-stop', 'restart', 'status', 'load', 'unload',
     'pause', 'resume', 'enable-ingress', 'disable-ingress',
     'enable-auto-start', 'disable-auto-start', 'set-concurrency',
-    'select-engine', 'select-best', 'set-model', 'set-experience-default', 'verify-engine',
+    'select-engine', 'select-best', 'set-model', 'set-experience-default', 'set-xplorer-default', 'verify-engine',
     'install-codex', 'login-codex', 'logout-codex', 'switch-codex-account', 'sync-codex-models',
     'install-claude', 'login-claude', 'logout-claude', 'switch-claude-account',
     'install-vllm', 'vllm-start', 'vllm-stop'
@@ -102,7 +102,8 @@ function New-DefaultState {
     selectionMode = 'automatic'
     selectedEngine = 'codex'
     applicationDefaults = [ordered]@{
-      experienceManagement = [ordered]@{ engine='codex'; model=$DefaultModels.codex }
+      experienceManagement = [ordered]@{ engine='claude'; model=$DefaultModels.claude }
+      xplorerCrm = [ordered]@{ engine='claude'; model=$DefaultModels.claude }
     }
     engines = [ordered]@{
       ollama = [ordered]@{ model=$DefaultModels.ollama; baseUrl='http://127.0.0.1:11434' }
@@ -128,6 +129,15 @@ function Get-SavedState {
         }
         if ($experienceDefault.model) {
           $defaults.applicationDefaults.experienceManagement.model = [string]$experienceDefault.model
+        }
+      }
+      if ($saved.applicationDefaults.xplorerCrm) {
+        $xplorerDefault = $saved.applicationDefaults.xplorerCrm
+        if ($xplorerDefault.engine -in @('ollama', 'vllm', 'codex', 'claude')) {
+          $defaults.applicationDefaults.xplorerCrm.engine = [string]$xplorerDefault.engine
+        }
+        if ($xplorerDefault.model) {
+          $defaults.applicationDefaults.xplorerCrm.model = [string]$xplorerDefault.model
         }
       }
       foreach ($engineId in @('ollama', 'vllm', 'codex', 'claude')) {
@@ -1028,6 +1038,16 @@ switch ($Action) {
     Set-GatewayState @{
       applicationDefaults = [ordered]@{
         experienceManagement = [ordered]@{ engine=$Engine; model=$Model }
+      }
+    } | Out-Null
+    Restore-InterruptedAccountTransition $Engine | Out-Null
+  }
+  'set-xplorer-default' {
+    if (-not $Model) { throw '-Model is required for set-xplorer-default.' }
+    Assert-ModelIdentifier $Model
+    Set-GatewayState @{
+      applicationDefaults = [ordered]@{
+        xplorerCrm = [ordered]@{ engine=$Engine; model=$Model }
       }
     } | Out-Null
     Restore-InterruptedAccountTransition $Engine | Out-Null

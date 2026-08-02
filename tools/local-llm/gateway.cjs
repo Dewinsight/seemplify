@@ -923,6 +923,11 @@ function meteringContext(input = {}, requestSource = '') {
   }
   const requestId = String(metering.requestId || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200);
   const sourceApp = String(metering.sourceApp || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 64);
+  const organizationId = String(metering.organizationId || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 120);
+  const organizationName = String(metering.organizationName || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200);
+  const actorId = String(metering.actorId || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 160);
+  const actorName = String(metering.actorName || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200);
+  const actorEmail = String(metering.actorEmail || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 254);
   if (!requestId || !sourceApp) {
     throw Object.assign(new Error('The local metering request identity is incomplete'), {
       code: 'INVALID_METERING_CONTEXT',
@@ -933,7 +938,12 @@ function meteringContext(input = {}, requestSource = '') {
     eventId: metering.eventId,
     gatewayExecutionId: expectedExecutionId,
     requestId,
-    sourceApp
+    sourceApp,
+    organizationId: organizationId || undefined,
+    organizationName: organizationName || undefined,
+    actorId: actorId || undefined,
+    actorName: actorName || undefined,
+    actorEmail: actorEmail || undefined
   };
 }
 

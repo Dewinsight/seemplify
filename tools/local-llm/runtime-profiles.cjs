@@ -2,8 +2,26 @@ const RUNTIME_PROFILE_DEFINITIONS = Object.freeze({
   'experience-management': Object.freeze({
     stateKey: 'experienceManagement',
     activityPrefix: 'experience.',
-    defaultEngine: 'codex',
-    defaultModel: 'gpt-5.6-terra'
+    defaultEngine: 'claude',
+    defaultModel: 'sonnet'
+  }),
+  'xplorer-crm': Object.freeze({
+    stateKey: 'xplorerCrm',
+    activities: Object.freeze([
+      'knowledge.ask',
+      'knowledge.source_ingestion',
+      'knowledge.draft_generation',
+      'inbox.classification',
+      'case.recommendation',
+      'ai.advisory',
+      'ai.copilot',
+      'summarization',
+      'action.classification',
+      'ai.interview.reasoning',
+      'ai.interview.chat'
+    ]),
+    defaultEngine: 'claude',
+    defaultModel: 'sonnet'
   })
 });
 
@@ -37,9 +55,11 @@ function isRuntimeProfile(value) {
 
 function runtimeProfileForActivity(activity) {
   const normalized = String(activity || '').trim().toLowerCase();
-  return RUNTIME_PROFILE_IDS.find((id) => (
-    normalized.startsWith(RUNTIME_PROFILE_DEFINITIONS[id].activityPrefix)
-  )) || '';
+  return RUNTIME_PROFILE_IDS.find((id) => {
+    const definition = RUNTIME_PROFILE_DEFINITIONS[id];
+    return (definition.activityPrefix && normalized.startsWith(definition.activityPrefix))
+      || definition.activities?.includes(normalized);
+  }) || '';
 }
 
 function runtimeProfileFromStatusInput(input = {}) {

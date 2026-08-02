@@ -21,7 +21,6 @@ const {
 const repositoryRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(repositoryRoot, '.local-runtime', 'llm');
 const gatewayUrl = process.env.LOCAL_LLM_GATEWAY_URL || 'http://127.0.0.1:11435';
-const reportFile = path.join(runtimeDir, 'activity-concurrency-benchmark.json');
 const lockFile = path.join(runtimeDir, 'activity-concurrency-benchmark.lock');
 const defaultActivities = [
   'candidate.cv_parse',
@@ -49,6 +48,11 @@ function numericOption(name, fallback, minimum, maximum) {
 }
 
 const model = String(option('model', 'gpt-5.6-terra')).trim();
+const engine = String(option('engine', 'codex')).trim().toLowerCase();
+const reportFile = path.join(
+  runtimeDir,
+  engine === 'codex' ? 'activity-concurrency-benchmark.json' : `activity-concurrency-benchmark-${engine}.json`
+);
 const levels = [...new Set(String(option('levels', '1,2,4,8,16,32,64,128'))
   .split(',')
   .map(Number)
@@ -74,6 +78,7 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
     '',
     '  --activities=candidate.cv_parse,interview.questions',
     '  --all                              Test every catalog activity',
+    '  --engine=codex|claude',
     '  --model=gpt-5.6-terra',
     '  --levels=1,2,4,8,16,32,64,128',
     '  --sustained-rounds=3',
@@ -122,9 +127,9 @@ function fixturesByActivity(activities) {
 
 function engineState() {
   return {
-    selectedEngine: 'codex',
+    selectedEngine: engine,
     engines: {
-      codex: { model }
+      [engine]: { model }
     }
   };
 }
@@ -373,7 +378,7 @@ async function main() {
     schemaVersion: 1,
     startedAt: new Date().toISOString(),
     completedAt: null,
-    engine: 'codex',
+    engine,
     model,
     activities: requestedActivities,
     levels,
@@ -405,7 +410,7 @@ async function main() {
     report.mixed = await benchmarkWorkload('mixed', mixedFixtures, report);
     checkpoint(report);
     recordApproval({
-      engine: 'codex',
+      engine,
       model,
       concurrency: report.mixed.approvedConcurrency,
       candidateConcurrency: report.mixed.candidateConcurrency,
@@ -416,7 +421,7 @@ async function main() {
     for (const activity of requestedActivities) {
       const result = report.byActivity[activity];
       recordActivityApproval({
-        engine: 'codex',
+        engine,
         model,
         activity,
         concurrency: result.approvedConcurrency,

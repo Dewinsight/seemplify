@@ -51,7 +51,7 @@ afterEach(() => {
   }
 });
 
-test('outbox stores only the approved non-PII usage envelope before delivery', async () => {
+test('outbox stores approved operational identity but never prompt or CV content', async () => {
   let calls = 0;
   const directory = tempDirectory();
   const outbox = new LocalUsageMeteringOutbox({
@@ -67,7 +67,7 @@ test('outbox stores only the approved non-PII usage envelope before delivery', a
   const result = await outbox.enqueue({
     ...usageEvent(),
     candidateName: 'Must not persist',
-    organizationName: 'Must not persist',
+    organizationName: 'Acme Ltd',
     prompt: 'Must not persist'
   });
 
@@ -76,7 +76,7 @@ test('outbox stores only the approved non-PII usage envelope before delivery', a
   const stored = JSON.parse(fs.readFileSync(result.file, 'utf8'));
   assert.equal(stored.event.inputTokens, 100);
   assert.equal(stored.event.candidateName, undefined);
-  assert.equal(stored.event.organizationName, undefined);
+  assert.equal(stored.event.organizationName, 'Acme Ltd');
   assert.equal(stored.event.prompt, undefined);
 });
 

@@ -9,6 +9,8 @@ const {
   claudeChildEnv,
   claudeExecArgs,
   claudePrompt,
+  claudeSystemPrompt,
+  claudeExecutionProfile,
   codexPrompt,
   codexChildEnv,
   codexExecArgs,
@@ -48,9 +50,34 @@ test('Claude is a managed engine with tool-disabled schema-constrained execution
   assert.ok(args.includes('--no-session-persistence'));
   assert.ok(args.includes('--disable-slash-commands'));
   assert.ok(args.includes('--strict-mcp-config'));
+  assert.ok(args.includes('--safe-mode'));
   assert.ok(args.includes('--json-schema'));
-  assert.match(args.at(-1), /managed Seemplify Claude local-cloud inference engine/);
-  assert.match(claudePrompt(input), /Extract only CV facts explicitly present/);
+  assert.match(args[args.indexOf('--system-prompt') + 1], /managed Seemplify Claude local-cloud inference engine/);
+  assert.match(claudeSystemPrompt(input), /Extract only CV facts explicitly present/);
+  assert.match(claudePrompt(input), /USER:\nJane Doe/);
+});
+
+test('Claude execution profiles enforce activity-shaped context, output, timeout and cost budgets', () => {
+  assert.deepEqual(
+    claudeExecutionProfile({ messages: [{ role: 'user', content: 'quick' }], reasoningEffort: 'low', maxTokens: 9000 }).id,
+    'fast'
+  );
+  const structured = claudeExecutionProfile({
+    messages: [{ role: 'user', content: 'structured' }],
+    reasoningEffort: 'medium',
+    maxTokens: 9000,
+    jsonSchema: { type: 'object' }
+  });
+  assert.equal(structured.id, 'structured');
+  assert.equal(structured.maxTokens, 8000);
+  assert.equal(structured.timeoutMs, 300000);
+  const deep = claudeExecutionProfile({ messages: [{ role: 'user', content: 'deep' }], reasoningEffort: 'high', maxTokens: 20000 });
+  assert.equal(deep.id, 'deep-analysis');
+  assert.equal(deep.maxTokens, 12000);
+  assert.throws(
+    () => claudeExecutionProfile({ messages: [{ role: 'user', content: 'x'.repeat(1_200_001) }] }),
+    (error) => error.code === 'LOCAL_LLM_CONTEXT_TOO_LARGE' && error.retryable === false
+  );
 });
 
 test('Claude child environment keeps only authentication/runtime settings', () => {

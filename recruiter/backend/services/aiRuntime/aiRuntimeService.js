@@ -44,6 +44,7 @@ const LOCAL_FAILOVER_ERROR_CODES = new Set([
 ]);
 const STRUCTURED_ACTIVITIES = new Set([
   'candidate.cv_parse',
+  'candidate.insights',
   'job.description',
   'job.requirements',
   'job.normalize',

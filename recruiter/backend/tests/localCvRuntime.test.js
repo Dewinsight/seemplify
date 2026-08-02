@@ -30,7 +30,13 @@ const EXPERIENCE_ASSISTANT_ACTIVITIES = Object.freeze([
   'experience.assistant.action_extract',
   'experience.assistant.knowledge_answer',
   'experience.assistant.executive_brief',
-  'experience.assistant.correspondence_draft'
+  'experience.assistant.correspondence_draft',
+  'experience.assistant.work_product'
+]);
+const CRM_ACTIVITIES = Object.freeze([
+  'knowledge.ask', 'knowledge.source_ingestion', 'knowledge.draft_generation',
+  'inbox.classification', 'case.recommendation', 'ai.advisory', 'ai.copilot',
+  'summarization', 'action.classification', 'ai.interview.reasoning', 'ai.interview.chat'
 ]);
 
 function listen(server, port) {
@@ -85,8 +91,13 @@ test('CV extraction is locked local while local question generation has audited 
     assert.equal(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
   }
   for (const [activity, route] of routes) {
-    if (['candidate.cv_parse', 'ai_interview.cv_parse', 'interview.questions', 'ai_interview.question_generation'].includes(activity) || experienceActivities.includes(activity)) continue;
+    if (['candidate.cv_parse', 'ai_interview.cv_parse', 'interview.questions', 'ai_interview.question_generation'].includes(activity) || experienceActivities.includes(activity) || CRM_ACTIVITIES.includes(activity)) continue;
     assert.equal(route.provider, GROQ_PROVIDER, `${activity} must remain on Groq`);
+  }
+  for (const activity of CRM_ACTIVITIES) {
+    assert.equal(routes.get(activity).provider, 'local-claude', activity);
+    assert.equal(routes.get(activity).model, 'sonnet', activity);
+    assert.equal(routes.get(activity).failoverPolicy, 'wait_local', activity);
   }
 });
 
@@ -101,11 +112,13 @@ test('Experience catalog includes current and assistant activities as locked Ter
     'experience.translation',
     'experience.social_listening',
     'experience.journey_mapping',
+    'experience.knowledge_answer',
+    'experience.knowledge_graph_extract',
     'experience.social_reply_draft',
     'experience.cross_source_intelligence',
     ...EXPERIENCE_ASSISTANT_ACTIVITIES
   ];
-  assert.equal(expected.length, 20);
+  assert.equal(expected.length, 23);
   assert.deepEqual(
     Object.keys(ACTIVITY_DEFINITIONS).filter((activity) => activity.startsWith('experience.')),
     expected
@@ -151,7 +164,7 @@ test('every recruiter CV upload entry point uses the durable local CV queue', ()
   const standaloneParser = fs.readFileSync(path.resolve(sourceRoot, '..', '..', 'ai-interview', 'backend', 'src', 'cvParsingService.js'), 'utf8');
 
   assert.match(candidateRoutes, /queueUpload\('private'\)/);
-  assert.match(candidateRoutes, /queueUpload\('public'\)/);
+  assert.match(candidateRoutes, /queueUpload\('public',\s*undefined,/);
   assert.match(bulkRoutes, /cvAnalysisQueue\.submitBatch\(req\)/);
   assert.match(interviewRoutes, /cvAnalysisQueue\.submitUpload\(req, 'ai-interview'\)/);
   assert.match(queueService, /processingJob\.source === 'ai-interview' \? 'ai_interview\.cv_parse' : 'candidate\.cv_parse'/);
@@ -622,7 +635,7 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
     engine: 'codex',
     model: 'gpt-5.6-terra'
   });
-  assert.deepEqual(Object.keys(initialState.applicationDefaults), ['experienceManagement']);
+  assert.deepEqual(Object.keys(initialState.applicationDefaults), ['experienceManagement', 'xplorerCrm']);
   try {
     for (const concurrency of [64, 128]) {
       const unapproved = await controlRequest('/control/state', {
@@ -930,6 +943,12 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
         model: 'gemma4:26b-a4b-it-qat',
         provider: 'local-ollama',
         executionMode: 'local'
+      }, {
+        id: 'xplorer-crm',
+        engine: 'claude',
+        model: 'sonnet',
+        provider: 'local-claude',
+        executionMode: 'local-cloud'
       }]
     );
 
@@ -1110,6 +1129,19 @@ test('gateway rejects unsigned and replayed requests and enforces the CV activit
       drainedActivityQueue.activityQueues.find((lane) => lane.activity === 'recruiter.general').completed,
       3
     );
+
+    // Keep this gateway contract test hermetic: the production Xplorer profile is
+    // Claude/Sonnet, but all activity admission checks below must use fake Ollama.
+    const hermeticXplorerDefault = await controlRequest('/control/state', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        applicationDefaults: {
+          xplorerCrm: { engine: 'ollama', model: 'gemma4:26b-a4b-it-qat' }
+        }
+      })
+    });
+    assert.equal(hermeticXplorerDefault.status, 200);
 
     for (const activity of Object.keys(ACTIVITY_DEFINITIONS).filter((item) => !['candidate.cv_parse', 'ai_interview.cv_parse'].includes(item))) {
       const activityBody = JSON.stringify({

@@ -94,12 +94,15 @@ test('hosted ingestion rejects expired and tampered requests', () => {
   assert.equal(tampered.code, 'LOCAL_USAGE_SIGNATURE_INVALID');
 });
 
-test('ingestion maps only non-PII metering metadata into the authoritative usage write', async () => {
+test('ingestion maps operational identity but never request content into the authoritative usage write', async () => {
   let recorded;
   const payload = envelope({
     candidateName: 'Must not be copied',
     cvText: 'Must not be copied',
-    organizationName: 'Must not be copied'
+    organizationName: 'Acme Ltd',
+    actorId: 'user-1',
+    actorName: 'Ada User',
+    actorEmail: 'ada@example.test'
   });
   const result = await ingestLocalUsageEnvelope(payload, {
     recordUsageImpl: async (event) => {
@@ -117,7 +120,10 @@ test('ingestion maps only non-PII metering metadata into the authoritative usage
   assert.equal(recorded.usage.completion_tokens_details.reasoning_tokens, 25);
   assert.equal(recorded.candidateName, undefined);
   assert.equal(recorded.cvText, undefined);
-  assert.equal(recorded.organizationName, undefined);
+  assert.equal(recorded.organizationName, 'Acme Ltd');
+  assert.equal(recorded.actorId, 'user-1');
+  assert.equal(recorded.actorName, 'Ada User');
+  assert.equal(recorded.actorEmail, 'ada@example.test');
 });
 
 test('ingestion rejects forged execution IDs and inconsistent token composition', () => {
