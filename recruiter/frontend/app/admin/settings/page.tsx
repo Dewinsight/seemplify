@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAdmin } from '@/context/AdminContext';
 import AdminSidebar from '@/components/AdminSidebar';
 import AdminHeader from '@/components/AdminHeader';
@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from '@/hooks/use-toast';
+import { apiRequest } from '@/services/apiConfig';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { 
   Settings, 
   Palette, 
@@ -20,13 +22,108 @@ import {
   AlertCircle,
   Info,
   Code,
-  Cog
+  Bot,
+  Loader2,
+  Sparkles,
+  Upload,
+  Wand2,
+  Workflow
 } from 'lucide-react';
 import { getThemeConfig } from '@/utils/themeConfig';
 
+interface PlatformFeatureDefinition {
+  key: string;
+  label: string;
+  description: string;
+  defaultEnabled: boolean;
+}
+
+const FEATURE_ICONS = {
+  aiInterviews: Bot,
+  aiAssistant: Sparkles,
+  candidateEnrichment: Wand2,
+  bulkCvUpload: Upload,
+  peopleTransitions: Workflow,
+} as const;
+
 export default function AdminSettingsPage() {
   const { checkPermission } = useAdmin();
-  const [currentConfig, setCurrentConfig] = useState(getThemeConfig());
+  const { refreshFeatures } = useFeatureFlags();
+  const [currentConfig] = useState(getThemeConfig());
+  const [featureDefinitions, setFeatureDefinitions] = useState<PlatformFeatureDefinition[]>([]);
+  const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({});
+  const [featuresLoading, setFeaturesLoading] = useState(true);
+  const [featureError, setFeatureError] = useState<string | null>(null);
+  const [savingFeature, setSavingFeature] = useState<string | null>(null);
+  const [featuresUpdatedAt, setFeaturesUpdatedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (checkPermission('systemSettings')) {
+      loadPlatformFeatures();
+    }
+  }, []);
+
+  const loadPlatformFeatures = async () => {
+    try {
+      setFeaturesLoading(true);
+      setFeatureError(null);
+      const token = localStorage.getItem('adminToken');
+      const response = await apiRequest('/api/admin/system/features', {
+        cache: 'no-store',
+        headers: { 'x-admin-auth-token': token || '' }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.msg || 'Failed to load platform features');
+      }
+
+      setFeatureDefinitions(data.definitions || []);
+      setFeatureFlags(data.features || {});
+      setFeaturesUpdatedAt(data.updatedAt || null);
+    } catch (error: any) {
+      setFeatureError(error.message || 'Failed to load platform features');
+    } finally {
+      setFeaturesLoading(false);
+    }
+  };
+
+  const handleFeatureToggle = async (featureKey: string, enabled: boolean) => {
+    try {
+      setSavingFeature(featureKey);
+      setFeatureError(null);
+      const token = localStorage.getItem('adminToken');
+      const response = await apiRequest('/api/admin/system/features', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-auth-token': token || ''
+        },
+        body: JSON.stringify({ features: { [featureKey]: enabled } })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.msg || 'Failed to update platform feature');
+      }
+
+      setFeatureFlags(data.features || {});
+      setFeaturesUpdatedAt(data.updatedAt || new Date().toISOString());
+      void refreshFeatures();
+      const feature = featureDefinitions.find((item) => item.key === featureKey);
+      toast({
+        title: `${feature?.label || 'Feature'} ${enabled ? 'enabled' : 'disabled'}`,
+        description: 'The platform setting was saved successfully.'
+      });
+    } catch (error: any) {
+      setFeatureError(error.message || 'Failed to update platform feature');
+      toast({
+        title: 'Feature update failed',
+        description: error.message || 'The platform setting could not be saved.',
+        variant: 'destructive'
+      });
+    } finally {
+      setSavingFeature(null);
+    }
+  };
 
   if (!checkPermission('systemSettings')) {
     return (
@@ -173,19 +270,76 @@ export default function AdminSettingsPage() {
               </CardContent>
             </Card>
 
-            {/* Other System Settings */}
+            {/* Platform Features */}
             <Card className="bg-gray-800 border-gray-700">
               <CardHeader>
                 <CardTitle className="text-white flex items-center gap-2">
-                  <Cog className="h-5 w-5" />
-                  Other Settings
+                  <Settings className="h-5 w-5" />
+                  Platform Features
                 </CardTitle>
                 <CardDescription className="text-gray-400">
-                  Additional platform configuration
+                  Global availability for every organization
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <p className="text-gray-300">Additional system settings will be added here.</p>
+              <CardContent className="space-y-4">
+                {featureError && (
+                  <Alert variant="destructive" className="border-red-800 bg-red-950/40 text-red-200">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="flex items-center justify-between gap-4">
+                      <span>{featureError}</span>
+                      <Button type="button" size="sm" variant="outline" onClick={loadPlatformFeatures}>
+                        Retry
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {featuresLoading ? (
+                  <div className="flex items-center justify-center py-10 text-sm text-gray-400">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Loading platform features...
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-700 border-y border-gray-700">
+                    {featureDefinitions.map((feature) => {
+                      const FeatureIcon = FEATURE_ICONS[feature.key as keyof typeof FEATURE_ICONS] || Settings;
+                      const isSaving = savingFeature === feature.key;
+                      const enabled = featureFlags[feature.key] ?? feature.defaultEnabled;
+
+                      return (
+                        <div key={feature.key} className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <FeatureIcon className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" />
+                            <div>
+                              <Label htmlFor={`feature-${feature.key}`} className="text-sm font-medium text-white">
+                                {feature.label}
+                              </Label>
+                              <p className="mt-1 text-sm text-gray-400">{feature.description}</p>
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-3 self-end sm:self-auto">
+                            <span className={`text-xs font-medium ${enabled ? 'text-emerald-400' : 'text-gray-500'}`}>
+                              {isSaving ? 'Saving...' : enabled ? 'On' : 'Off'}
+                            </span>
+                            <Switch
+                              id={`feature-${feature.key}`}
+                              checked={enabled}
+                              disabled={Boolean(savingFeature)}
+                              onCheckedChange={(checked) => handleFeatureToggle(feature.key, checked)}
+                              aria-label={`${enabled ? 'Disable' : 'Enable'} ${feature.label}`}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {featuresUpdatedAt && !featuresLoading && (
+                  <p className="text-xs text-gray-500" role="status" aria-live="polite">
+                    Last saved {new Date(featuresUpdatedAt).toLocaleString()}
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>

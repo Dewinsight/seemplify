@@ -255,7 +255,7 @@ const updateBoilerPlate = () => {
 
 const checkIfUserIsPermitted = (doc: any = null) => {
 	if (!user.data) {
-		window.location.href = `/login?redirect-to=/lms/programming-exercises/${props.exerciseID}/submission/${props.submissionID}`
+		window.location.href = `/lms-login?redirect-to=/lms/programming-exercises/${props.exerciseID}/submission/${props.submissionID}`
 	}
 
 	if (!doc) return

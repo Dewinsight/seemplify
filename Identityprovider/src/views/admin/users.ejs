@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Users - Seemplify Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+
+    .admin-subtitle {
+      margin: 6px 0 0;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card-header h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .badge-info {
+      background: rgba(59, 130, 246, 0.12);
+      color: #60a5fa;
+    }
+
+    .badge-success {
+      background: rgba(34, 197, 94, 0.12);
+      color: #4ade80;
+    }
+
+    .badge-purple {
+      background: rgba(139, 92, 246, 0.14);
+      color: #a78bfa;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .text-muted {
+      color: var(--muted);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 32px 16px;
+      color: var(--muted);
+    }
+
+    .empty-state svg {
+      margin-bottom: 12px;
+      opacity: 0.55;
+    }
+
+    .empty-state p {
+      margin: 0;
+    }
+
+    .alert-info {
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      color: #93c5fd;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .modal.open {
+      display: flex;
+    }
+
+    .modal-content {
+      width: min(100%, 620px);
+      max-height: 90vh;
+      overflow-y: auto;
+      background: var(--panel-solid);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text);
+    }
+
+    .modal-close {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 24px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .modal form {
+      padding: 18px 22px 22px;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .form-group input[type="email"],
+    .form-group input[type="password"],
+    .form-group input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-strong);
+      color: var(--text);
+      font-size: 14px;
+      padding: 10px 12px;
+    }
+
+    .form-hint {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 18px;
+    }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'users' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <div>
+          <h1>Admin Users</h1>
+          <p class="admin-subtitle">Manage system administrators</p>
+        </div>
+        <% if (admin.isSuperAdmin) { %>
+          <button class="btn btn-primary" onclick="showAddAdminModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Add Admin
+          </button>
+        <% } %>
+      </div>
+
+      <% if (!admin.isSuperAdmin) { %>
+        <div class="alert alert-info">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 16v-4M12 8h.01" />
+          </svg>
+          <span>Only Super Admins can manage other administrators.</span>
+        </div>
+      <% } %>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>System Administrators</h2>
+          <span class="badge badge-info"><%= admins.length %> admins</span>
+        </div>
+
+        <% if (admins.length === 0) { %>
+          <div class="empty-state">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <p>No administrators found</p>
+          </div>
+        <% } else { %>
+          <div class="admin-table-container" style="border: none;">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Created</th>
+                  <% if (admin.isSuperAdmin) { %>
+                    <th>Actions</th>
+                  <% } %>
+                </tr>
+              </thead>
+              <tbody>
+                <% admins.forEach(a => { %>
+                  <tr>
+                    <td>
+                      <strong><%= a.email %></strong>
+                      <% if (a._id.toString() === admin.id.toString()) { %>
+                        <span class="badge badge-success" style="margin-left: 8px;">You</span>
+                      <% } %>
+                    </td>
+                    <td><%= a.profile?.name || '-' %></td>
+                    <td>
+                      <% if (a.isSuperAdmin) { %>
+                        <span class="badge badge-purple">Super Admin</span>
+                      <% } else { %>
+                        <span class="badge badge-info">System Admin</span>
+                      <% } %>
+                    </td>
+                    <td><%= new Date(a.createdAt).toLocaleDateString() %></td>
+                    <% if (admin.isSuperAdmin) { %>
+                      <td>
+                        <div class="action-buttons">
+                          <% if (a._id.toString() !== admin.id.toString()) { %>
+                            <button class="btn btn-sm btn-secondary" onclick="editAdmin('<%= a._id %>', '<%= a.email %>', '<%= a.profile?.name || '' %>', <%= a.isSystemAdmin %>, <%= a.isSuperAdmin %>)">
+                              Edit
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="resetPassword('<%= a._id %>', '<%= a.email %>')">
+                              Reset Password
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="removeAdmin('<%= a._id %>', '<%= a.email %>')">
+                              Remove
+                            </button>
+                          <% } else { %>
+                            <span class="text-muted">-</span>
+                          <% } %>
+                        </div>
+                      </td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add/Edit Admin Modal -->
+  <div id="adminModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Add Admin</h3>
+        <button class="modal-close" onclick="closeModal('adminModal')">&times;</button>
+      </div>
+      <form id="adminForm" onsubmit="submitAdminForm(event)">
+        <input type="hidden" id="adminId" name="adminId">
+
+        <div class="form-group">
+          <label for="adminEmail">Email *</label>
+          <input type="email" id="adminEmail" name="email" required>
+          <small class="form-hint">If user exists, they will be promoted to admin</small>
+        </div>
+
+        <div class="form-group" id="passwordGroup">
+          <label for="adminPassword">Password</label>
+          <input type="password" id="adminPassword" name="password" minlength="8">
+          <small class="form-hint">Required for new accounts (min 8 characters)</small>
+        </div>
+
+        <div class="form-group">
+          <label for="adminName">Name</label>
+          <input type="text" id="adminName" name="name">
+        </div>
+
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="isSystemAdmin" name="isSystemAdmin" checked>
+            System Admin
+          </label>
+          <small class="form-hint">Can manage plans, subscriptions, and requests</small>
+        </div>
+
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="isSuperAdmin" name="isSuperAdmin">
+            Super Admin
+          </label>
+          <small class="form-hint">Can manage other administrators</small>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('adminModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="submitBtn">Add Admin</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reset Password Modal -->
+  <div id="resetPasswordModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Reset Password</h3>
+        <button class="modal-close" onclick="closeModal('resetPasswordModal')">&times;</button>
+      </div>
+      <form id="resetPasswordForm" onsubmit="submitResetPassword(event)">
+        <input type="hidden" id="resetUserId" name="userId">
+
+        <p>Reset password for <strong id="resetUserEmail"></strong></p>
+
+        <div class="form-group">
+          <label for="newPassword">New Password *</label>
+          <input type="password" id="newPassword" name="newPassword" required minlength="8">
+          <small class="form-hint">Minimum 8 characters</small>
+        </div>
+
+        <div class="form-group">
+          <label for="confirmPassword">Confirm Password *</label>
+          <input type="password" id="confirmPassword" name="confirmPassword" required minlength="8">
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('resetPasswordModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Reset Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let isEditing = false
+
+    function showAddAdminModal() {
+      isEditing = false
+      document.getElementById('modalTitle').textContent = 'Add Admin'
+      document.getElementById('submitBtn').textContent = 'Add Admin'
+      document.getElementById('adminForm').reset()
+      document.getElementById('adminId').value = ''
+      document.getElementById('passwordGroup').style.display = 'block'
+      document.getElementById('adminEmail').disabled = false
+      document.getElementById('isSystemAdmin').checked = true
+      document.getElementById('isSuperAdmin').checked = false
+      document.getElementById('adminModal').classList.add('open')
+    }
+
+    function editAdmin(id, email, name, isSystemAdmin, isSuperAdmin) {
+      isEditing = true
+      document.getElementById('modalTitle').textContent = 'Edit Admin'
+      document.getElementById('submitBtn').textContent = 'Update Admin'
+      document.getElementById('adminId').value = id
+      document.getElementById('adminEmail').value = email
+      document.getElementById('adminEmail').disabled = true
+      document.getElementById('adminName').value = name
+      document.getElementById('adminPassword').value = ''
+      document.getElementById('passwordGroup').style.display = 'none'
+      document.getElementById('isSystemAdmin').checked = isSystemAdmin
+      document.getElementById('isSuperAdmin').checked = isSuperAdmin
+      document.getElementById('adminModal').classList.add('open')
+    }
+
+    function resetPassword(userId, email) {
+      document.getElementById('resetUserId').value = userId
+      document.getElementById('resetUserEmail').textContent = email
+      document.getElementById('resetPasswordForm').reset()
+      document.getElementById('resetUserId').value = userId
+      document.getElementById('resetPasswordModal').classList.add('open')
+    }
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).classList.remove('open')
+    }
+
+    async function submitAdminForm(e) {
+      e.preventDefault()
+
+      const formData = {
+        email: document.getElementById('adminEmail').value,
+        password: document.getElementById('adminPassword').value,
+        name: document.getElementById('adminName').value,
+        isSystemAdmin: document.getElementById('isSystemAdmin').checked,
+        isSuperAdmin: document.getElementById('isSuperAdmin').checked
+      }
+
+      const adminId = document.getElementById('adminId').value
+
+      try {
+        let response
+        if (isEditing && adminId) {
+          response = await fetch(`/api/admin/users/${adminId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+          })
+        } else {
+          response = await fetch('/api/admin/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+          })
+        }
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to save admin')
+        }
+
+        alert(data.message)
+        window.location.reload()
+      } catch (error) {
+        alert('Error: ' + error.message)
+      }
+    }
+
+    async function submitResetPassword(e) {
+      e.preventDefault()
+
+      const newPassword = document.getElementById('newPassword').value
+      const confirmPassword = document.getElementById('confirmPassword').value
+
+      if (newPassword !== confirmPassword) {
+        alert('Passwords do not match')
+        return
+      }
+
+      const userId = document.getElementById('resetUserId').value
+
+      try {
+        const response = await fetch(`/api/admin/users/${userId}/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newPassword })
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to reset password')
+        }
+
+        alert('Password reset successfully')
+        closeModal('resetPasswordModal')
+      } catch (error) {
+        alert('Error: ' + error.message)
+      }
+    }
+
+    async function removeAdmin(userId, email) {
+      if (!confirm(`Are you sure you want to remove admin privileges from ${email}?`)) {
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/admin/users/${userId}`, {
+          method: 'DELETE'
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to remove admin')
+        }
+
+        alert('Admin privileges removed')
+        window.location.reload()
+      } catch (error) {
+        alert('Error: ' + error.message)
+      }
+    }
+
+    // Close modal when clicking outside
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          modal.classList.remove('open')
+        }
+      })
+    })
+  </script>
+</body>
+
+</html>

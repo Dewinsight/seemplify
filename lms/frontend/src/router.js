@@ -193,10 +193,21 @@ const routes = [
 		component: () => import('@/pages/Programs/Programs.vue'),
 	},
 	{
+		path: '/programs/:programName/analytics',
+		name: 'ProgramAnalytics',
+		component: () => import('@/pages/Programs/ProgramAnalytics.vue'),
+		props: true,
+	},
+	{
 		path: '/programs/:programName',
 		name: 'ProgramDetail',
 		component: () => import('@/pages/Programs/ProgramDetail.vue'),
 		props: true,
+	},
+	{
+		path: '/schools',
+		name: 'Schools',
+		component: () => import('@/pages/Schools.vue'),
 	},
 	{
 		path: '/assignments',
@@ -286,11 +297,11 @@ router.beforeEach(async (to, from, next) => {
 	}
 
 	if (!isLoggedIn) {
-		if (to.name == 'Home') router.push({ name: 'Courses' })
+		if (to.name == 'Home') router.push({ name: 'Programs' })
 
 		await settings.promise
 		if (!settings.data.allow_guest_access) {
-			window.location.href = '/login'
+			window.location.href = '/lms-login'
 			return
 		}
 	}

@@ -1,5 +1,9 @@
 const { getUserInfo } = require('../config/oidc');
 
+function resolveCurrentOrganization(userinfo = {}) {
+  return userinfo.currentOrganization || userinfo.current_organization || null;
+}
+
 // Middleware to require authentication
 const requireAuth = async (req, res, next) => {
   try {
@@ -17,6 +21,7 @@ const requireAuth = async (req, res, next) => {
       try {
         // Verify token with Identity Provider
         const userinfo = await getUserInfo(accessToken);
+        const currentOrganization = resolveCurrentOrganization(userinfo);
 
         req.user = {
           id: userinfo.sub,
@@ -24,7 +29,7 @@ const requireAuth = async (req, res, next) => {
           name: userinfo.name,
           organizations: userinfo.organizations || [],
           teams: userinfo.teams || [],
-          currentOrganization: userinfo.currentOrganization,
+          currentOrganization,
           accessToken,
           userinfo,
         };
@@ -66,13 +71,14 @@ const optionalAuth = async (req, res, next) => {
 
       try {
         const userinfo = await getUserInfo(accessToken);
+        const currentOrganization = resolveCurrentOrganization(userinfo);
         req.user = {
           id: userinfo.sub,
           email: userinfo.email,
           name: userinfo.name,
           organizations: userinfo.organizations || [],
           teams: userinfo.teams || [],
-          currentOrganization: userinfo.currentOrganization,
+          currentOrganization,
           accessToken,
           userinfo,
         };
@@ -97,13 +103,14 @@ const refreshUserInfo = async (req, res, next) => {
     }
 
     const userinfo = await getUserInfo(req.user.accessToken);
+    const currentOrganization = resolveCurrentOrganization(userinfo);
 
     // Update session with fresh userinfo
     req.user = {
       ...req.user,
       organizations: userinfo.organizations || [],
       teams: userinfo.teams || [],
-      currentOrganization: userinfo.currentOrganization,
+      currentOrganization,
       userinfo,
     };
 

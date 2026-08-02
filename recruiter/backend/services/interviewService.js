@@ -1,11 +1,16 @@
 const InterviewQuestion = require('../models/InterviewQuestion');
 const Job = require('../models/Job');
-const AzureOpenAIService = require('./azureOpenAIService');
+const AIModelService = require('./aiModelService');
+const { GROQ_120B } = require('../config/aiRuntimeCatalog');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const {
+  assessQuestionSet,
+  buildQualityRepairInstructions
+} = require('./interviewQuestionQualityService');
 
 class InterviewService {
   constructor() {
-    this.azureOpenAIService = new AzureOpenAIService();
+    this.aiModelService = new AIModelService();
   }
 
   /**
@@ -38,9 +43,12 @@ class InterviewService {
       // Initialize quality metrics with better default values for manually created questions
       const defaultQualityMetrics = {
         difficultyCalibration: this._calculateDifficultyCalibration(cleanedData.difficulty || 'medium'),
-        diversityIndex: 0.8, // Default to high diversity for manually created questions
-        biasScore: 0.0, // Default to no bias (will be updated by analysis)
-        legalCompliance: true,
+        diversityIndex: 0,
+        semanticQualityScore: null,
+        qualityIssues: [],
+        analysisStatus: 'pending',
+        biasScore: null,
+        legalCompliance: null,
         biasAnalysis: {
           age: 0,
           gender: 0,
@@ -50,7 +58,7 @@ class InterviewService {
         },
         aiNeutralityConfidence: 0.0,
         aiRecommendation: 'Manual question - analysis pending',
-        lastAnalyzed: new Date()
+        lastAnalyzed: null
       };
 
       const question = new InterviewQuestion({
@@ -244,14 +252,7 @@ class InterviewService {
         throw new Error('Job not found');
       }
 
-      // Use advanced AI generation if available, fallback to basic generation
-      let questions;
-      try {
-        questions = await this._generateAdvancedQuestionsWithAI(job, options);
-      } catch (aiError) {
-        console.warn('⚠️ AI generation failed, falling back to basic generation:', aiError.message);
-        questions = this._generateBasicQuestions(job, options);
-      }
+      const questions = await this._generateAdvancedQuestionsWithAI(job, options);
       
       // Save the generated questions
       const savedQuestions = await this.bulkCreateQuestions(questions, options.userId);
@@ -287,9 +288,21 @@ class InterviewService {
 
       for (const [type, count] of Object.entries(questionTypes)) {
         if (count > 0) {
-          const questions = await this._generateQuestionsByType(type, count, jobContext, difficulty, focusAreas);
+          const questions = await this._generateQuestionsByType(type, count, jobContext, difficulty, focusAreas, job);
           allQuestions.push(...questions);
         }
+      }
+
+      const setAssessment = assessQuestionSet(allQuestions, {
+        job,
+        expectedCount: questionCount,
+        difficulty
+      });
+      if (!setAssessment.passed) {
+        const error = new Error(`Generated interview questions failed the quality gate: ${setAssessment.issues.join(' ')}`);
+        error.code = 'AI_QUESTION_QUALITY_FAILED';
+        error.statusCode = 503;
+        throw error;
       }
 
       // Validate and enhance questions
@@ -305,38 +318,53 @@ class InterviewService {
   /**
    * Generate questions by specific type using AI
    */
-  async _generateQuestionsByType(type, count, jobContext, difficulty, focusAreas) {
-    const prompt = this._buildPromptForType(type, count, jobContext, difficulty, focusAreas);
-    
-    try {
-      console.log(`🎯 Generating ${count} ${type} questions...`);
-      const response = await this.azureOpenAIService.generateInterviewQuestions(prompt);
+  async _generateQuestionsByType(type, count, jobContext, difficulty, focusAreas, job) {
+    const basePrompt = this._buildPromptForType(type, count, jobContext, difficulty, focusAreas);
+    let prompt = basePrompt;
+    let lastAssessment = null;
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      console.log(`🎯 Generating ${count} ${type} questions (quality attempt ${attempt}/2)...`);
+      const response = await this.aiModelService.generateInterviewQuestions(prompt);
       const parsedQuestions = this._parseAIResponse(response, type, difficulty);
-      
-      if (parsedQuestions.length === 0) {
-        console.warn(`⚠️ No valid questions generated for type ${type}, using fallback`);
-        return this._generateFallbackQuestions(type, count, difficulty);
+      const assessment = assessQuestionSet(parsedQuestions, {
+        job,
+        expectedCount: count,
+        expectedTypes: Array(count).fill(type),
+        difficulty
+      });
+      lastAssessment = assessment;
+
+      if (assessment.passed) {
+        console.log(`✅ Generated ${parsedQuestions.length} ${type} questions at ${Math.round(assessment.score * 100)}% semantic quality`);
+        return parsedQuestions.map((question, index) => ({
+          ...question,
+          qualityMetrics: {
+            ...question.qualityMetrics,
+            semanticQualityScore: assessment.questions[index]?.score ?? assessment.score,
+            qualityIssues: assessment.questions[index]?.issues || [],
+            analysisStatus: 'pending'
+          }
+        }));
       }
-      
-      console.log(`✅ Successfully generated ${parsedQuestions.length} ${type} questions`);
-      return parsedQuestions;
-    } catch (error) {
-      console.error(`❌ Error generating ${type} questions:`, error.message);
-      console.log(`🔄 Using fallback questions for type: ${type}`);
-      return this._generateFallbackQuestions(type, count, difficulty);
+
+      if (attempt === 1) {
+        console.warn(`⚠️ ${type} questions failed semantic quality; regenerating once`, assessment.issues);
+        prompt = basePrompt + buildQualityRepairInstructions(assessment);
+      }
     }
+
+    const error = new Error(`AI returned low-quality ${type} interview questions after one regeneration: ${lastAssessment?.issues?.join(' ') || 'unknown quality failure'}`);
+    error.code = 'AI_QUESTION_QUALITY_FAILED';
+    error.statusCode = 503;
+    throw error;
   }
 
   /**
    * Build specialized prompts for different question types
    */
   _buildPromptForType(type, count, jobContext, difficulty, focusAreas) {
-    const basePrompt = `You are an expert interview designer with 20+ years of experience in talent acquisition and behavioral psychology.
-
-COMPREHENSIVE JOB CONTEXT:
-${jobContext}
-
-IMPORTANT INSTRUCTIONS:
+    const basePrompt = `IMPORTANT INSTRUCTIONS:
 1. Analyze ALL provided job details carefully - including the full description, requirements, and responsibilities
 2. Create questions that specifically assess skills mentioned in the job description
 3. Align questions with the actual responsibilities listed
@@ -344,6 +372,7 @@ IMPORTANT INSTRUCTIONS:
 5. Tailor questions to the company culture and team structure when provided
 6. Focus on real challenges and success metrics mentioned in the job details
 7. DO NOT create generic questions - every question must relate to specific job details provided above
+8. Do not treat the role title alone as job grounding; anchor each question in a named skill, deliverable, stakeholder, metric, system, or responsibility
 
 Generate ${count} ${type} interview questions with ${difficulty} difficulty level.
 ${focusAreas.length > 0 ? `Focus on these areas: ${focusAreas.join(', ')}` : ''}
@@ -354,6 +383,9 @@ You MUST return a JSON object with this EXACT structure:
   "questions": [
     {
       "question": "The interview question text (required)",
+      "type": "${type}",
+      "difficulty": "${difficulty}",
+      "category": "Short job-relevant competency category",
       "expectedAnswer": "Detailed response guidelines (required)",
       "scoringCriteria": [
         {
@@ -376,12 +408,17 @@ You MUST return a JSON object with this EXACT structure:
 
 QUALITY STANDARDS:
 - Questions must be specific, actionable, and measurable
-- Include clear evaluation criteria
+- Include exactly 3 or 4 distinct evaluation criteria whose weights total 100
 - Avoid bias and leading questions
 - Ensure legal compliance
-- Each question must have at least 1 scoring criterion
-- Include 1-2 relevant follow-up questions
+- Include 1-2 relevant follow-up questions with useful conditions
 - Add 2-3 relevant skill tags
+- Every question must mention or unmistakably apply at least one concrete skill, responsibility, outcome, or constraint from the job context
+- Hard questions must involve ambiguity, scale, failure, trade-offs, risk, or competing constraints
+- Make every question materially different from every other question
+- Expected-answer guidance must be unique to the question and identify evidence, decisions, trade-offs, and measurable outcomes
+- Follow-ups must probe missing evidence rather than paraphrase the main question
+- Silently self-check question count, type, difficulty, criteria weights, protected-trait safety, and grounding before returning JSON
 
 `;
 
@@ -445,7 +482,10 @@ EXPERIENCE-BASED QUESTION REQUIREMENTS:
 `
     };
 
-    return basePrompt + (typeSpecificPrompts[type] || typeSpecificPrompts['behavioral']);
+    return `${basePrompt}${typeSpecificPrompts[type] || typeSpecificPrompts['behavioral']}
+
+SOURCE JOB CONTEXT (use only this evidence and do not invent missing facts):
+${jobContext}`;
   }
 
   /**
@@ -546,98 +586,47 @@ ADDITIONAL CONTEXT:
       }
 
       return questions.map((q, index) => {
-        // Ensure scoringCriteria is properly formatted
-        let scoringCriteria = [];
-        if (Array.isArray(q.scoringCriteria)) {
-          scoringCriteria = q.scoringCriteria.map(criterion => {
-            if (typeof criterion === 'string') {
-              return {
-                criterion: decodeHtmlEntities(criterion),
-                weight: 10,
-                description: decodeHtmlEntities(`Evaluate: ${criterion}`)
-              };
-            } else if (typeof criterion === 'object' && criterion.criterion) {
-              return {
-                criterion: decodeHtmlEntities(criterion.criterion),
-                weight: criterion.weight || 10,
-                description: decodeHtmlEntities(criterion.description || `Evaluate: ${criterion.criterion}`)
-              };
-            }
-            return {
-              criterion: 'General Assessment',
-              weight: 10,
-              description: 'Evaluate overall response quality'
-            };
-          });
+        if (!q || typeof q !== 'object' || !q.question || !q.expectedAnswer) {
+          throw new Error(`Question ${index + 1} is missing required content`);
         }
-
-        // Ensure followUpQuestions is properly formatted
-        let followUpQuestions = [];
-        if (Array.isArray(q.followUpQuestions)) {
-          followUpQuestions = q.followUpQuestions.map(followUp => {
-            if (typeof followUp === 'string') {
-              return {
-                question: decodeHtmlEntities(followUp),
-                condition: 'Based on candidate response'
-              };
-            } else if (typeof followUp === 'object' && followUp.question) {
-              return {
-                question: decodeHtmlEntities(followUp.question),
-                condition: followUp.condition || 'Based on candidate response'
-              };
-            }
-            return {
-              question: 'Can you provide more details about your approach?',
-              condition: 'If response needs clarification'
-            };
-          });
-        }
-
-        // Ensure tags is an array of strings
-        let tags = [];
-        if (Array.isArray(q.tags)) {
-          tags = q.tags.filter(tag => typeof tag === 'string');
-        }
-
         return {
-          question: decodeHtmlEntities(q.question || 'Question text not provided'),
+          question: decodeHtmlEntities(q.question),
           type: type,
           difficulty: difficulty,
-          expectedAnswer: decodeHtmlEntities(q.expectedAnswer || 'Look for specific examples and clear reasoning.'),
-          scoringCriteria: scoringCriteria,
-          followUpQuestions: followUpQuestions,
-          tags: tags.map(tag => decodeHtmlEntities(tag)),
-          timeLimit: q.timeLimit || 5,
+          category: decodeHtmlEntities(q.category || ''),
+          expectedAnswer: decodeHtmlEntities(q.expectedAnswer),
+          scoringCriteria: (q.scoringCriteria || []).map((criterion) => ({
+            criterion: decodeHtmlEntities(criterion.criterion),
+            weight: Number(criterion.weight),
+            description: decodeHtmlEntities(criterion.description)
+          })),
+          followUpQuestions: (q.followUpQuestions || []).map((followUp) => ({
+            question: decodeHtmlEntities(followUp.question),
+            condition: decodeHtmlEntities(followUp.condition)
+          })),
+          tags: (q.tags || []).map((tag) => decodeHtmlEntities(tag)),
+          timeLimit: Number(q.timeLimit),
           order: index,
           isAIGenerated: true,
           aiGenerationMetadata: {
             generatedAt: new Date(),
-            model: process.env.azure_openai_model || 'gpt-4.1',
+            model: GROQ_120B,
             confidence: 0.9,
-            questionType: type
+            questionType: type,
+            promptVersion: 'interview-questions-v4'
           },
-          // Initialize quality metrics with realistic values
           qualityMetrics: {
-            difficultyCalibration: difficulty === 'easy' ? 0.8 : difficulty === 'medium' ? 0.7 : 0.9,
-            diversityIndex: 0.8,
-            biasScore: 0.0, // Start with no bias detected
-            legalCompliance: true,
-            biasAnalysis: {
-              age: 0.0,
-              gender: 0.0,
-              nationality: 0.0,
-              familyStatus: 0.0,
-              religious: 0.0
-            },
-            aiNeutralityConfidence: 0.9,
-            aiRecommendation: 'AI-generated question with initial quality assessment',
-            lastAnalyzed: new Date()
+            analysisStatus: 'pending',
+            biasScore: null,
+            legalCompliance: null,
+            aiNeutralityConfidence: null,
+            aiRecommendation: 'Bias analysis pending.'
           }
         };
       });
     } catch (error) {
       console.error('❌ Error parsing AI response:', error);
-      return [];
+      throw error;
     }
   }
 
@@ -647,10 +636,15 @@ ADDITIONAL CONTEXT:
   async _validateAndEnhanceQuestions(questions, job, options) {
     const validQuestions = [];
     const maxBiasScore = options.maxBiasScore !== undefined ? options.maxBiasScore : 0.3;
+    const jobContextForAnalysis = this._prepareJobContext(job);
+    const biasChecks = await this._analyzeBiasBatch(
+      questions.map((question) => question.question),
+      jobContextForAnalysis
+    );
 
     console.log(`🔍 Validating questions with max bias tolerance: ${maxBiasScore}`);
 
-    for (const question of questions) {
+    for (const [questionIndex, question] of questions.entries()) {
       try {
         // Basic validation
         if (!question.question || question.question.trim().length < 10) {
@@ -658,19 +652,21 @@ ADDITIONAL CONTEXT:
           continue;
         }
 
-        // Calculate actual quality metrics
-        // Prepare job context for bias analysis
-        const jobContextForAnalysis = this._prepareJobContext(job);
-        const aiBiasCheckResult = await this._analyzeBias(question.question, jobContextForAnalysis);
+        const aiBiasCheckResult = biasChecks[questionIndex] || this._manualBiasReview(
+          'AI bias analysis did not return a result. Question requires manual review.'
+        );
         
         // Check if question meets bias tolerance based on AI analysis
-        if (aiBiasCheckResult.biasScore > maxBiasScore) {
+        if (aiBiasCheckResult.analysisStatus === 'complete' && aiBiasCheckResult.biasScore > maxBiasScore) {
           console.warn(`⚠️ AI Skipping question due to high bias score (${aiBiasCheckResult.biasScore} > ${maxBiasScore}):`, question.question.substring(0, 100));
           console.warn(`   AI Recommendation: ${aiBiasCheckResult.recommendation}`);
           if (aiBiasCheckResult.detectedBiasFactors && aiBiasCheckResult.detectedBiasFactors.length > 0) {
             console.warn(`   AI Detected Factors: ${aiBiasCheckResult.detectedBiasFactors.map(f => `${f.type} (Score: ${f.score})`).join(', ')}`);
           }
-          continue;
+          const error = new Error(`Generated question exceeded the configured bias threshold: ${aiBiasCheckResult.recommendation}`);
+          error.code = 'AI_QUESTION_BIAS_THRESHOLD';
+          error.statusCode = 422;
+          throw error;
         }
         
         // Calculate diversity based on question uniqueness
@@ -683,20 +679,23 @@ ADDITIONAL CONTEXT:
           category: decodeHtmlEntities(this._determineCategory(question, job)),
           interviewStage: options.stage || 'first_round',
           qualityMetrics: {
+            ...question.qualityMetrics,
             difficultyCalibration: this._calculateDifficultyCalibration(question.difficulty),
             diversityIndex: diversityIndex,
-            biasScore: aiBiasCheckResult.biasScore, // Use AI-determined bias score
-            legalCompliance: !aiBiasCheckResult.hasBias, // Use AI-determined legal compliance
-            biasAnalysis: { // Populate with detailed factors from AI
+            analysisStatus: aiBiasCheckResult.analysisStatus,
+            biasScore: aiBiasCheckResult.analysisStatus === 'complete' ? aiBiasCheckResult.biasScore : null,
+            legalCompliance: aiBiasCheckResult.analysisStatus === 'complete' ? !aiBiasCheckResult.hasBias : null,
+            biasAnalysis: {
               age: aiBiasCheckResult.detectedBiasFactors?.find(f => f.type.toLowerCase() === 'age')?.score || 0,
               gender: aiBiasCheckResult.detectedBiasFactors?.find(f => f.type.toLowerCase() === 'gender')?.score || 0,
               nationality: aiBiasCheckResult.detectedBiasFactors?.find(f => f.type.toLowerCase() === 'nationality')?.score || 0,
               familyStatus: aiBiasCheckResult.detectedBiasFactors?.find(f => f.type.toLowerCase().includes('family'))?.score || 0,
-              religious: aiBiasCheckResult.detectedBiasFactors?.find(f => f.type.toLowerCase() === 'religion')?.score || 0,
-              // Potentially add other factors if the AI returns them
+              religious: aiBiasCheckResult.detectedBiasFactors?.find(f => f.type.toLowerCase() === 'religion')?.score || 0
             },
-            aiNeutralityConfidence: aiBiasCheckResult.neutralityConfidence, // Store AI's confidence
-            aiRecommendation: aiBiasCheckResult.recommendation // Store AI's recommendation
+            detectedBiasFactors: aiBiasCheckResult.detectedBiasFactors || [],
+            aiNeutralityConfidence: aiBiasCheckResult.neutralityConfidence,
+            aiRecommendation: aiBiasCheckResult.recommendation,
+            lastAnalyzed: aiBiasCheckResult.analysisStatus === 'complete' ? new Date() : null
           }
         };
 
@@ -731,7 +730,7 @@ ADDITIONAL CONTEXT:
         validQuestions.push(enhancedQuestion);
       } catch (error) {
         console.error('❌ Error validating question:', error.message);
-        console.error('Question data:', JSON.stringify(question, null, 2));
+        throw error;
       }
     }
 
@@ -743,7 +742,7 @@ ADDITIONAL CONTEXT:
    */
   _determineCategory(question, job) {
     const questionText = question.question.toLowerCase();
-    const jobSkills = (job.skills || '').toLowerCase();
+    const jobSkills = (Array.isArray(job.skills) ? job.skills.join(' ') : job.skills || '').toLowerCase();
 
     // Technical categories
     if (questionText.includes('code') || questionText.includes('algorithm') || questionText.includes('system')) {
@@ -802,14 +801,21 @@ ADDITIONAL CONTEXT:
       const questions = await InterviewQuestion.insertMany(questionsToCreate);
       
       // Log quality metrics summary
-      const avgBias = questions.reduce((sum, q) => sum + (q.qualityMetrics?.biasScore || 0), 0) / questions.length;
+      const analyzedQuestions = questions.filter((question) => question.qualityMetrics?.analysisStatus === 'complete');
+      const avgBias = analyzedQuestions.length
+        ? analyzedQuestions.reduce((sum, q) => sum + Number(q.qualityMetrics?.biasScore || 0), 0) / analyzedQuestions.length
+        : null;
+      const avgSemanticQuality = questions.reduce((sum, q) => sum + Number(q.qualityMetrics?.semanticQualityScore || 0), 0) / questions.length;
       const avgDiversity = questions.reduce((sum, q) => sum + (q.qualityMetrics?.diversityIndex || 0), 0) / questions.length;
-      const complianceRate = questions.filter(q => q.qualityMetrics?.legalCompliance).length / questions.length;
+      const complianceRate = analyzedQuestions.length
+        ? analyzedQuestions.filter(q => q.qualityMetrics?.legalCompliance).length / analyzedQuestions.length
+        : null;
       
       console.log(`✅ Bulk created ${questions.length} interview questions with quality metrics:`, {
-        avgBiasScore: Math.round(avgBias * 100) / 100,
+        avgSemanticQuality: Math.round(avgSemanticQuality * 100) / 100,
+        avgBiasScore: avgBias == null ? 'not analyzed' : Math.round(avgBias * 100) / 100,
         avgDiversityIndex: Math.round(avgDiversity * 100) / 100,
-        legalComplianceRate: Math.round(complianceRate * 100) / 100
+        legalComplianceRate: complianceRate == null ? 'not analyzed' : Math.round(complianceRate * 100) / 100
       });
       
       return questions;
@@ -841,10 +847,15 @@ ADDITIONAL CONTEXT:
         {
           $group: {
             _id: null,
+            avgSemanticQualityScore: { $avg: '$qualityMetrics.semanticQualityScore' },
             avgBiasScore: { $avg: '$qualityMetrics.biasScore' },
             avgDiversityIndex: { $avg: '$qualityMetrics.diversityIndex' },
             avgDifficultyCalibration: { $avg: '$qualityMetrics.difficultyCalibration' },
-            legalComplianceCount: { $sum: { $cond: ['$qualityMetrics.legalCompliance', 1, 0] } },
+            analyzedBiasCount: { $sum: { $cond: [{ $eq: ['$qualityMetrics.analysisStatus', 'complete'] }, 1, 0] } },
+            legalComplianceCount: { $sum: { $cond: [{ $and: [
+              { $eq: ['$qualityMetrics.analysisStatus', 'complete'] },
+              { $eq: ['$qualityMetrics.legalCompliance', true] }
+            ] }, 1, 0] } },
             avgSuccessRate: { $avg: '$usage.successRate' },
             totalUsage: { $sum: '$usage.timesUsed' }
           }
@@ -852,24 +863,34 @@ ADDITIONAL CONTEXT:
       ]);
 
       const stats = qualityMetrics[0];
-      const complianceRate = stats ? (stats.legalComplianceCount / totalQuestions) : 0;
+      const analyzedBiasCount = Number(stats?.analyzedBiasCount || 0);
+      const complianceRate = analyzedBiasCount
+        ? Number(stats.legalComplianceCount || 0) / analyzedBiasCount
+        : null;
+      const roundedOrNull = (value) => value == null ? null : Math.round(Number(value) * 100) / 100;
 
       return {
         totalQuestions,
         typeDistribution,
         stageDistribution,
         qualityMetrics: stats ? {
-          avgBiasScore: Math.round((stats.avgBiasScore || 0) * 100) / 100,
+          avgSemanticQualityScore: roundedOrNull(stats.avgSemanticQualityScore),
+          avgBiasScore: roundedOrNull(stats.avgBiasScore),
           avgDiversityIndex: Math.round((stats.avgDiversityIndex || 0) * 100) / 100,
           avgDifficultyCalibration: Math.round((stats.avgDifficultyCalibration || 0) * 100) / 100,
-          legalComplianceRate: Math.round(complianceRate * 100) / 100,
+          legalComplianceRate: roundedOrNull(complianceRate),
+          analyzedBiasCount,
+          unverifiedBiasCount: Math.max(0, totalQuestions - analyzedBiasCount),
           avgSuccessRate: Math.round((stats.avgSuccessRate || 0) * 100) / 100,
           totalUsage: stats.totalUsage || 0
         } : {
-          avgBiasScore: 0,
+          avgSemanticQualityScore: null,
+          avgBiasScore: null,
           avgDiversityIndex: 0,
           avgDifficultyCalibration: 0,
-          legalComplianceRate: 0,
+          legalComplianceRate: null,
+          analyzedBiasCount: 0,
+          unverifiedBiasCount: totalQuestions,
           avgSuccessRate: 0,
           totalUsage: 0
         }
@@ -894,6 +915,12 @@ ADDITIONAL CONTEXT:
 
       // Perform fresh analysis
       const biasAnalysis = await this._analyzeBias(question.question);
+      const semanticAnalysis = assessQuestionSet([question.toObject ? question.toObject() : question], {
+        job: question.jobId || {},
+        expectedCount: 1,
+        expectedTypes: [question.type],
+        difficulty: question.difficulty
+      });
       
       // Calculate difficulty calibration based on question difficulty
       const difficultyCalibration = this._calculateDifficultyCalibration(question.difficulty);
@@ -904,14 +931,17 @@ ADDITIONAL CONTEXT:
       // Generate recommendations
       const recommendations = [];
       
-      if (biasAnalysis.hasBias || biasAnalysis.isBiased) {
+      if (biasAnalysis.analysisStatus !== 'complete') {
+        recommendations.push('AI bias analysis is unavailable. Complete a manual review before using this question.');
+      } else if (biasAnalysis.hasBias || biasAnalysis.isBiased) {
         recommendations.push('🚨 HIGH PRIORITY: Address bias issues before using this question');
         if (biasAnalysis.detectedBiasFactors && biasAnalysis.detectedBiasFactors.length > 0) {
           recommendations.push(`Detected bias types: ${biasAnalysis.detectedBiasFactors.map(i => i.type).join(', ')}`);
         }
-      } else {
-        recommendations.push('✅ This question meets quality standards and is ready for use');
+      } else if (semanticAnalysis.passed) {
+        recommendations.push('This question passed the semantic quality and bias checks.');
       }
+      recommendations.push(...semanticAnalysis.issues);
 
       if (difficultyCalibration < 0.5) {
         recommendations.push('⚠️ Consider adjusting question difficulty level for better calibration');
@@ -928,14 +958,17 @@ ADDITIONAL CONTEXT:
 
       // Prepare the complete quality metrics update
       const qualityMetricsUpdate = {
-        'qualityMetrics.biasScore': biasAnalysis.overallBiasScore || biasAnalysis.biasScore || 0,
+        'qualityMetrics.semanticQualityScore': semanticAnalysis.score,
+        'qualityMetrics.qualityIssues': semanticAnalysis.issues,
+        'qualityMetrics.analysisStatus': biasAnalysis.analysisStatus,
+        'qualityMetrics.biasScore': biasAnalysis.analysisStatus === 'complete' ? biasAnalysis.biasScore : null,
         'qualityMetrics.diversityIndex': diversityIndex,
         'qualityMetrics.difficultyCalibration': difficultyCalibration,
-        'qualityMetrics.legalCompliance': !(biasAnalysis.hasBias || biasAnalysis.isBiased),
+        'qualityMetrics.legalCompliance': biasAnalysis.analysisStatus === 'complete' ? !biasAnalysis.hasBias : null,
         'qualityMetrics.biasAnalysis': biasBreakdown,
-        'qualityMetrics.aiNeutralityConfidence': biasAnalysis.neutralityConfidence || 0.8,
+        'qualityMetrics.aiNeutralityConfidence': biasAnalysis.neutralityConfidence,
         'qualityMetrics.aiRecommendation': biasAnalysis.recommendation || recommendations[0],
-        'qualityMetrics.lastAnalyzed': new Date()
+        'qualityMetrics.lastAnalyzed': biasAnalysis.analysisStatus === 'complete' ? new Date() : null
       };
 
       // Add detailed bias factors if available
@@ -958,18 +991,22 @@ ADDITIONAL CONTEXT:
       });
       
       console.log(`✅ Quality analysis completed for question ${questionId}:`, {
-        biasScore: biasAnalysis.overallBiasScore || biasAnalysis.biasScore || 0,
+        semanticQualityScore: semanticAnalysis.score,
+        biasScore: biasAnalysis.analysisStatus === 'complete' ? biasAnalysis.biasScore : 'not analyzed',
         diversityIndex: diversityIndex,
         difficultyCalibration: difficultyCalibration,
-        legalCompliance: !(biasAnalysis.hasBias || biasAnalysis.isBiased),
+        legalCompliance: biasAnalysis.analysisStatus === 'complete' ? !biasAnalysis.hasBias : 'not analyzed',
         detectedBiasFactors: biasAnalysis.detectedBiasFactors?.length || 0
       });
       
       return {
-        biasScore: biasAnalysis.overallBiasScore || biasAnalysis.biasScore || 0,
+        semanticQualityScore: semanticAnalysis.score,
+        qualityIssues: semanticAnalysis.issues,
+        analysisStatus: biasAnalysis.analysisStatus,
+        biasScore: biasAnalysis.analysisStatus === 'complete' ? biasAnalysis.biasScore : null,
         diversityIndex: diversityIndex,
         difficultyCalibration: difficultyCalibration,
-        legalCompliance: !(biasAnalysis.hasBias || biasAnalysis.isBiased),
+        legalCompliance: biasAnalysis.analysisStatus === 'complete' ? !biasAnalysis.hasBias : null,
         recommendations,
         biasAnalysis: biasBreakdown,
         // Enhanced fields from AI analysis
@@ -978,7 +1015,7 @@ ADDITIONAL CONTEXT:
         recommendation: biasAnalysis.recommendation,
         overallBiasScore: biasAnalysis.overallBiasScore,
         isBiased: biasAnalysis.isBiased,
-        aiNeutralityConfidence: biasAnalysis.neutralityConfidence || 0.8,
+        aiNeutralityConfidence: biasAnalysis.neutralityConfidence,
         aiRecommendation: biasAnalysis.recommendation || recommendations[0]
       };
     } catch (error) {
@@ -1040,7 +1077,9 @@ ADDITIONAL CONTEXT:
       
       const insights = {
         totalQuestions: questions.length,
-        averageQuality: 0,
+        averageQuality: null,
+        qualityAssessmentCount: 0,
+        biasAnalysisCount: 0,
         biasDistribution: {
           age: 0,
           gender: 0,
@@ -1058,7 +1097,8 @@ ADDITIONAL CONTEXT:
 
       if (questions.length > 0) {
         // Calculate averages
-        let totalQuality = 0;
+        const semanticScores = [];
+        let analyzedBiasCount = 0;
         let totalUsage = 0;
         let totalSuccessRate = 0;
         const typeUsage = {};
@@ -1066,11 +1106,14 @@ ADDITIONAL CONTEXT:
         questions.forEach(q => {
           // Quality metrics
           if (q.qualityMetrics) {
-            const quality = 1 - (q.qualityMetrics.biasScore || 0); // Lower bias = higher quality
-            totalQuality += quality;
+            const semanticQuality = q.qualityMetrics.semanticQualityScore;
+            if (typeof semanticQuality === 'number' && Number.isFinite(semanticQuality)) {
+              semanticScores.push(semanticQuality);
+            }
 
             // Bias distribution
-            if (q.qualityMetrics.biasAnalysis) {
+            if (q.qualityMetrics.analysisStatus === 'complete' && q.qualityMetrics.biasAnalysis) {
+              analyzedBiasCount += 1;
               Object.keys(insights.biasDistribution).forEach(key => {
                 insights.biasDistribution[key] += q.qualityMetrics.biasAnalysis[key] || 0;
               });
@@ -1087,7 +1130,11 @@ ADDITIONAL CONTEXT:
           typeUsage[q.type] = (typeUsage[q.type] || 0) + (q.usage?.timesUsed || 0);
         });
 
-        insights.averageQuality = totalQuality / questions.length;
+        insights.averageQuality = semanticScores.length
+          ? semanticScores.reduce((sum, score) => sum + score, 0) / semanticScores.length
+          : null;
+        insights.qualityAssessmentCount = semanticScores.length;
+        insights.biasAnalysisCount = analyzedBiasCount;
         insights.usageStats.totalUsage = totalUsage;
         insights.usageStats.averageSuccessRate = totalSuccessRate / questions.length;
         
@@ -1099,11 +1146,15 @@ ADDITIONAL CONTEXT:
 
         // Average bias scores
         Object.keys(insights.biasDistribution).forEach(key => {
-          insights.biasDistribution[key] /= questions.length;
+          insights.biasDistribution[key] = analyzedBiasCount
+            ? insights.biasDistribution[key] / analyzedBiasCount
+            : null;
         });
 
         // Generate recommendations
-        if (insights.averageQuality < 0.6) {
+        if (insights.averageQuality == null) {
+          insights.recommendations.push('Question quality has not been semantically assessed yet');
+        } else if (insights.averageQuality < 0.6) {
           insights.recommendations.push('Consider reviewing and improving question quality');
         }
         
@@ -1170,7 +1221,9 @@ ADDITIONAL CONTEXT:
 
       // Filter by quality thresholds
       allQuestions = allQuestions.filter(q => 
-        (q.qualityMetrics?.biasScore || 0) <= maxBiasScore
+        Number(q.qualityMetrics?.semanticQualityScore) >= 0.7
+        && q.qualityMetrics?.analysisStatus === 'complete'
+        && Number(q.qualityMetrics?.biasScore) <= maxBiasScore
       );
 
       // Save optimized questions
@@ -1210,46 +1263,47 @@ ADDITIONAL CONTEXT:
   /**
    * Analyze potential bias in question text
    */
-  async _analyzeBias(questionText, jobContext = null) {
+  _manualBiasReview(recommendation) {
+    return {
+      analysisStatus: 'manual_review',
+      hasBias: null,
+      biasScore: null,
+      detectedBiasFactors: [],
+      recommendation,
+      neutralityConfidence: null
+    };
+  }
+
+  _mapBiasAnalysis(analysis) {
+    return {
+      analysisStatus: 'complete',
+      hasBias: analysis.isBiased,
+      biasScore: analysis.overallBiasScore,
+      detectedBiasFactors: analysis.detectedBiasFactors || [],
+      recommendation: analysis.recommendation,
+      neutralityConfidence: analysis.neutralityConfidence
+    };
+  }
+
+  async _analyzeBiasBatch(questionTexts, jobContext = null) {
     try {
-      console.log(`🔬 Calling AI for bias analysis on: "${questionText.substring(0, 100)}..."`);
-      const aiAnalysisResult = await this.azureOpenAIService.analyzeTextForBias(questionText, jobContext);
-
-      if (aiAnalysisResult.success && aiAnalysisResult.analysis) {
-        const analysis = aiAnalysisResult.analysis;
-        // Map AI response to the structure expected by _validateAndEnhanceQuestions
-        // The AI response has 'detectedBiasFactors' which is an array of objects like { type, score, keywordsFound, explanation }
-        // This is used directly by _validateAndEnhanceQuestions for populating qualityMetrics.biasAnalysis
-        // All code now consistently uses 'detectedBiasFactors' to match the AI response format.
-
-        return {
-          hasBias: analysis.isBiased, // Map AI's 'isBiased' to 'hasBias' for consistency
-          biasScore: analysis.overallBiasScore, // Directly from AI
-          detectedBiasFactors: analysis.detectedBiasFactors || [], // Directly from AI (ensure it's an array)
-          recommendation: analysis.recommendation, // Directly from AI
-          neutralityConfidence: analysis.neutralityConfidence // Store this as well
-        };
-      } else {
-        console.error('❌ AI bias analysis failed or returned invalid data:', aiAnalysisResult.error || 'Unknown error');
-        // Fallback to a default "analysis failed" state
-        return {
-          hasBias: false, // Default to not biased to avoid incorrectly blocking questions on analysis failure
-          biasScore: 0,
-          detectedBiasFactors: [],
-          recommendation: 'AI bias analysis failed. Question requires manual review.',
-          neutralityConfidence: 0.0
-        };
-      }
+      console.log(`🔬 Calling AI bias analysis for ${questionTexts.length} question(s)`);
+      const result = await this.aiModelService.analyzeQuestionsForBias(questionTexts, jobContext);
+      if (result.error) console.warn('AI bias analysis completed with manual-review gaps:', result.error);
+      return questionTexts.map((_, index) => result.analyses?.[index]
+        ? this._mapBiasAnalysis(result.analyses[index])
+        : this._manualBiasReview('AI bias analysis failed. Question requires manual review.'));
     } catch (error) {
-      console.error('❌ Exception in _analyzeBias calling AI:', error);
-      return {
-        hasBias: false,
-        biasScore: 0,
-        detectedBiasFactors: [],
-        recommendation: 'Exception during AI bias analysis. Question requires manual review.',
-        neutralityConfidence: 0.0
-      };
+      console.error('❌ Exception in batched AI bias analysis:', error);
+      return questionTexts.map(() => this._manualBiasReview(
+        'Exception during AI bias analysis. Question requires manual review.'
+      ));
     }
+  }
+
+  async _analyzeBias(questionText, jobContext = null) {
+    const [analysis] = await this._analyzeBiasBatch([questionText], jobContext);
+    return analysis;
   }
 
   /**
@@ -1317,9 +1371,12 @@ ADDITIONAL CONTEXT:
     for (const [type, typeQuestions] of Object.entries(typeGroups)) {
       // Sort by quality and select top questions
       const sortedQuestions = typeQuestions.sort((a, b) => {
-        const aScore = 1 - (a.qualityMetrics?.biasScore || 0); // Lower bias = higher quality
-        const bScore = 1 - (b.qualityMetrics?.biasScore || 0);
-        return bScore - aScore;
+        const semanticDifference = Number(b.qualityMetrics?.semanticQualityScore || 0)
+          - Number(a.qualityMetrics?.semanticQualityScore || 0);
+        if (semanticDifference) return semanticDifference;
+        const aBias = Number.isFinite(Number(a.qualityMetrics?.biasScore)) ? Number(a.qualityMetrics.biasScore) : 1;
+        const bBias = Number.isFinite(Number(b.qualityMetrics?.biasScore)) ? Number(b.qualityMetrics.biasScore) : 1;
+        return aBias - bBias;
       });
 
       optimizedQuestions.push(...sortedQuestions.slice(0, maxPerType));
@@ -1350,207 +1407,35 @@ ADDITIONAL CONTEXT:
   _calculateAverageQuality(questions) {
     if (questions.length === 0) return 0;
 
-    const totalQuality = questions.reduce((sum, q) => {
-      const bias = q.qualityMetrics?.biasScore || 0;
-      return sum + (1 - bias); // Higher quality = lower bias
-    }, 0);
+    const assessedScores = questions
+      .flatMap((question) => {
+        const score = question.qualityMetrics?.semanticQualityScore;
+        return typeof score === 'number' && Number.isFinite(score) ? [score] : [];
+      });
+    if (!assessedScores.length) return 0;
+    const totalQuality = assessedScores.reduce((sum, score) => sum + score, 0);
 
-    return Math.round((totalQuality / questions.length) * 100) / 100;
+    return Math.round((totalQuality / assessedScores.length) * 100) / 100;
   }
 
   /**
    * Generate basic questions for a job (fallback when AI is not available)
    */
   _generateBasicQuestions(job, options = {}) {
-    const {
-      stage = 'first_round',
-      questionCount = 10,
-      difficulty = 'medium'
-    } = options;
-
-    const baseQuestions = [
-      {
-        question: `Tell me about your experience with ${job.title} roles.`,
-        type: 'experience_based',
-        category: 'Experience',
-        expectedAnswer: 'Look for specific examples, years of experience, and relevant accomplishments.'
-      },
-      {
-        question: `What interests you most about working in ${job.department}?`,
-        type: 'general',
-        category: 'Motivation',
-        expectedAnswer: 'Assess genuine interest and knowledge about the department.'
-      },
-      {
-        question: `How do you handle challenging situations in your work?`,
-        type: 'behavioral',
-        category: 'Problem Solving',
-        expectedAnswer: 'Look for specific examples and problem-solving approaches.'
-      },
-      {
-        question: `What do you know about our company and this role?`,
-        type: 'cultural_fit',
-        category: 'Company Knowledge',
-        expectedAnswer: 'Evaluate research skills and genuine interest in the company.'
-      },
-      {
-        question: `Describe a time when you had to learn something new quickly.`,
-        type: 'behavioral',
-        category: 'Learning',
-        expectedAnswer: 'Assess adaptability and learning methodology.'
-      }
-    ];
-
-    // Add job-specific questions based on skills
-    if (job.skills) {
-      const skills = job.skills.split(',').map(s => s.trim()).slice(0, 3);
-      skills.forEach(skill => {
-        baseQuestions.push({
-          question: `How would you apply your ${skill} skills in this role?`,
-          type: 'skills_based',
-          category: 'Technical Skills',
-          expectedAnswer: `Look for specific examples of ${skill} usage and application.`
-        });
-      });
-    }
-
-    return baseQuestions.slice(0, questionCount).map((q, index) => ({
-      jobId: job._id,
-      question: q.question,
-      type: q.type,
-      category: q.category,
-      difficulty,
-      interviewStage: stage,
-      expectedAnswer: q.expectedAnswer,
-      order: index,
-      isAIGenerated: false,
-      aiGenerationMetadata: {
-        generatedAt: new Date(),
-        model: 'template-based',
-        confidence: 0.7
-      }
-    }));
+    const error = new Error('Template-based interview-question fallback is disabled. Retry AI generation instead.');
+    error.code = 'AI_QUESTION_GENERATION_REQUIRED';
+    error.statusCode = 503;
+    throw error;
   }
 
   /**
    * Generate fallback questions when AI generation fails
    */
   _generateFallbackQuestions(type, count, difficulty) {
-    const fallbackQuestions = {
-      'technical': [
-        {
-          question: 'Describe your approach to solving complex technical problems.',
-          expectedAnswer: 'Look for systematic problem-solving methodology and technical depth.',
-          category: 'Technical Skills'
-        },
-        {
-          question: 'How do you stay current with new technologies and best practices?',
-          expectedAnswer: 'Assess continuous learning and professional development habits.',
-          category: 'Learning & Development'
-        }
-      ],
-      'behavioral': [
-        {
-          question: 'Tell me about a time when you had to work with a difficult team member.',
-          expectedAnswer: 'Look for conflict resolution skills and emotional intelligence.',
-          category: 'Teamwork'
-        },
-        {
-          question: 'Describe a situation where you had to adapt to significant changes.',
-          expectedAnswer: 'Assess adaptability and change management skills.',
-          category: 'Adaptability'
-        }
-      ],
-      'situational': [
-        {
-          question: 'How would you handle a situation where you disagree with your manager\'s decision?',
-          expectedAnswer: 'Look for professional communication and conflict resolution.',
-          category: 'Communication'
-        },
-        {
-          question: 'What would you do if you discovered a mistake in your work after it was submitted?',
-          expectedAnswer: 'Assess accountability and problem-solving approach.',
-          category: 'Accountability'
-        }
-      ],
-      'cultural_fit': [
-        {
-          question: 'What type of work environment do you thrive in?',
-          expectedAnswer: 'Assess alignment with company culture and values.',
-          category: 'Culture Fit'
-        },
-        {
-          question: 'How do you handle feedback and criticism?',
-          expectedAnswer: 'Look for growth mindset and professional maturity.',
-          category: 'Professional Development'
-        }
-      ],
-      'skills_based': [
-        {
-          question: 'Describe your experience with the key skills required for this role.',
-          expectedAnswer: 'Assess relevant technical and soft skills.',
-          category: 'Skills Assessment'
-        }
-      ],
-      'experience_based': [
-        {
-          question: 'Walk me through your career progression and key achievements.',
-          expectedAnswer: 'Look for growth trajectory and relevant accomplishments.',
-          category: 'Experience'
-        }
-      ]
-    };
-
-    const questions = fallbackQuestions[type] || fallbackQuestions['behavioral'];
-    return questions.slice(0, count).map((q, index) => ({
-      question: decodeHtmlEntities(q.question),
-      type: type,
-      difficulty: difficulty,
-      expectedAnswer: decodeHtmlEntities(q.expectedAnswer),
-      category: decodeHtmlEntities(q.category),
-      scoringCriteria: [
-        {
-          criterion: decodeHtmlEntities('Response Quality'),
-          weight: 30,
-          description: decodeHtmlEntities('Clarity and depth of response')
-        },
-        {
-          criterion: decodeHtmlEntities('Relevance'),
-          weight: 25,
-          description: decodeHtmlEntities('Relevance to the question and role')
-        },
-        {
-          criterion: decodeHtmlEntities('Examples'),
-          weight: 25,
-          description: decodeHtmlEntities('Use of specific examples and details')
-        },
-        {
-          criterion: decodeHtmlEntities('Communication'),
-          weight: 20,
-          description: decodeHtmlEntities('Clear and professional communication')
-        }
-      ],
-      followUpQuestions: [
-        {
-          question: decodeHtmlEntities('Can you provide more specific details about that situation?'),
-          condition: 'If response lacks detail'
-        },
-        {
-          question: decodeHtmlEntities('What would you do differently if faced with a similar situation?'),
-          condition: 'To assess learning and improvement'
-        }
-      ],
-      tags: [decodeHtmlEntities(type.replace('_', ' ')), 'interview', 'assessment'],
-      timeLimit: 5,
-      order: index,
-      isAIGenerated: false,
-      aiGenerationMetadata: {
-        generatedAt: new Date(),
-        model: 'fallback-template',
-        confidence: 0.6,
-        questionType: type
-      }
-    }));
+    const error = new Error('Generic interview-question fallback is disabled. Retry AI generation instead.');
+    error.code = 'AI_QUESTION_GENERATION_REQUIRED';
+    error.statusCode = 503;
+    throw error;
   }
 }
 

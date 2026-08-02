@@ -1,0 +1,3009 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    :root {
+      --studio-bg: #eef3f8;
+      --studio-surface: #ffffff;
+      --studio-soft: #f7fafd;
+      --studio-border: #d6dfeb;
+      --studio-border-strong: #c7d3e2;
+      --studio-text: #0f172a;
+      --studio-muted: #51627a;
+      --studio-primary: #0e7490;
+      --studio-accent: #ea580c;
+      --studio-shell-width: 1320px;
+      --studio-shadow-soft: 0 18px 42px -34px rgba(15, 23, 42, 0.42);
+      --studio-shadow-card: 0 26px 50px -38px rgba(15, 23, 42, 0.4);
+    }
+    body.public-site.lmsv-course-studio-page {
+      background:
+        radial-gradient(920px 340px at 5% -12%, rgba(14, 116, 144, 0.16), transparent 70%),
+        radial-gradient(760px 280px at 98% 0%, rgba(234, 88, 12, 0.12), transparent 76%),
+        var(--studio-bg);
+      color: var(--studio-text);
+      min-height: 100vh;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    body.lmsv-course-studio-page.studio-admin {
+      background:
+        radial-gradient(780px 320px at 0% -14%, rgba(15, 23, 42, 0.16), transparent 72%),
+        radial-gradient(680px 280px at 100% 0%, rgba(2, 132, 199, 0.12), transparent 76%),
+        #e9eff6;
+    }
+    .studio-shell {
+      width: min(var(--studio-shell-width), 100%);
+      margin: 0 auto;
+      padding: clamp(18px, 2.1vw, 28px) clamp(16px, 2vw, 20px) 34px;
+      display: grid;
+      grid-template-columns: 292px minmax(0, 1fr);
+      gap: clamp(16px, 2vw, 24px);
+      flex: 1 0 auto;
+      align-items: start;
+    }
+    .studio-rail {
+      border: 1px solid var(--studio-border);
+      border-radius: 24px;
+      background:
+        radial-gradient(170% 110% at 0% 0%, rgba(14, 116, 144, 0.07), transparent 68%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 253, 0.96));
+      box-shadow: var(--studio-shadow-card);
+      padding: clamp(16px, 1.4vw, 20px);
+      display: grid;
+      gap: 14px;
+      position: sticky;
+      top: 76px;
+    }
+    body.lmsv-course-studio-page.studio-admin .studio-rail {
+      top: 18px;
+    }
+    .rail-head {
+      display: grid;
+      gap: 8px;
+      border-bottom: 1px solid var(--studio-border);
+      padding-bottom: 14px;
+    }
+    .rail-kicker {
+      margin: 0;
+      color: var(--studio-primary);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      font-weight: 800;
+    }
+    .rail-head h1 {
+      margin: 0;
+      font-size: clamp(30px, 2.3vw, 36px);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+      color: #0b1224;
+    }
+    .rail-head p {
+      margin: 0;
+      color: var(--studio-muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .rail-links {
+      display: grid;
+      gap: 8px;
+    }
+    .rail-link {
+      text-decoration: none;
+      border: 1px solid var(--studio-border);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.9);
+      color: #1e293b;
+      padding: 11px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+    }
+    .rail-link:hover {
+      border-color: var(--studio-border-strong);
+      background: #ffffff;
+      transform: translateY(-1px);
+    }
+    .rail-link.active {
+      border-color: rgba(14, 116, 144, 0.42);
+      background: rgba(14, 116, 144, 0.09);
+      color: #0b5677;
+    }
+    .rail-pills {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+    }
+    .rail-pill {
+      border: 1px solid var(--studio-border);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 9px 10px;
+      display: grid;
+      gap: 4px;
+      box-shadow: var(--studio-shadow-soft);
+    }
+    .rail-pill small {
+      color: #64748b;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 800;
+    }
+    .rail-pill strong {
+      font-size: clamp(20px, 2vw, 24px);
+      line-height: 1;
+      letter-spacing: -0.04em;
+      color: #0b1224;
+    }
+    .studio-main {
+      display: grid;
+      gap: clamp(14px, 1.4vw, 20px);
+      align-content: start;
+    }
+    .studio-card {
+      border: 1px solid var(--studio-border);
+      border-radius: 24px;
+      background: var(--studio-surface);
+      box-shadow: var(--studio-shadow-card);
+      padding: clamp(16px, 1.8vw, 24px);
+      display: grid;
+      gap: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+    .studio-main > .studio-card:first-of-type {
+      background:
+        radial-gradient(150% 140% at 0% 0%, rgba(14, 116, 144, 0.08), transparent 56%),
+        radial-gradient(150% 140% at 100% 100%, rgba(234, 88, 12, 0.08), transparent 64%),
+        #ffffff;
+      border-color: #d0dbe7;
+    }
+    .studio-main > .studio-card:first-of-type::after {
+      content: '';
+      position: absolute;
+      right: -92px;
+      bottom: -122px;
+      width: 250px;
+      height: 250px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 45% 45%, rgba(14, 116, 144, 0.12), rgba(14, 116, 144, 0));
+      pointer-events: none;
+    }
+    .hero-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: end;
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--studio-border);
+    }
+    .hero-head h2 {
+      margin: 0;
+      font-size: clamp(32px, 2.6vw, 46px);
+      letter-spacing: -0.04em;
+      line-height: 0.96;
+      color: #081225;
+      max-width: 20ch;
+    }
+    .section-head h3 {
+      margin: 0;
+      font-size: clamp(28px, 2.2vw, 36px);
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+      color: #0b1224;
+    }
+    .subsection-title {
+      margin: 0;
+      font-size: 21px;
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .hero-head p,
+    .section-head p {
+      margin: 6px 0 0;
+      color: var(--studio-muted);
+      font-size: 13px;
+      line-height: 1.55;
+      max-width: 70ch;
+    }
+    .hero-actions,
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .hero-actions {
+      justify-content: flex-end;
+    }
+    .actions .btn,
+    .hero-actions .btn {
+      border-radius: 11px;
+      padding: 9px 13px;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.2;
+      box-shadow: 0 10px 22px -20px rgba(15, 23, 42, 0.6);
+    }
+    .hero-actions .btn {
+      border-radius: 999px;
+      padding-inline: 15px;
+    }
+    .hero-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .hero-metric {
+      border: 1px solid #d2deeb;
+      border-radius: 14px;
+      padding: 11px 12px;
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+      display: grid;
+      gap: 5px;
+    }
+    .hero-metric small {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #64748b;
+      font-weight: 800;
+    }
+    .hero-metric strong {
+      font-size: clamp(24px, 2.1vw, 30px);
+      line-height: 1;
+      letter-spacing: -0.04em;
+      color: #0b1224;
+    }
+    .pill {
+      border: 1px solid var(--studio-border);
+      border-radius: 999px;
+      background: #ffffff;
+      color: #334155;
+      padding: 5px 9px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .pill.system {
+      border-color: rgba(14, 116, 144, 0.4);
+      color: #0b5677;
+      background: rgba(14, 116, 144, 0.08);
+    }
+    .pill.creator {
+      border-color: rgba(234, 88, 12, 0.36);
+      color: #9a3412;
+      background: rgba(255, 237, 213, 0.72);
+    }
+    .pill.status-published { color: #166534; border-color: rgba(22, 163, 74, 0.32); background: rgba(220, 252, 231, 0.86); }
+    .pill.status-draft { color: #475569; border-color: rgba(148, 163, 184, 0.34); background: rgba(241, 245, 249, 0.9); }
+    .pill.status-archived { color: #7f1d1d; border-color: rgba(220, 38, 38, 0.28); background: rgba(254, 226, 226, 0.86); }
+    .pill.status-pending_public_review { color: #92400e; border-color: rgba(245, 158, 11, 0.35); background: rgba(254, 243, 199, 0.84); }
+    .studio-form {
+      display: grid;
+      gap: 14px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      align-items: start;
+    }
+    .form-grid > label,
+    .form-grid > .banner-upload-section {
+      min-width: 0;
+    }
+    .form-grid > .banner-upload-section {
+      grid-column: span 2;
+      border: 1px solid var(--studio-border);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff, #f7fafd);
+      padding: 12px;
+      margin: 0;
+    }
+    .input,
+    textarea.input,
+    select.input {
+      width: 100%;
+      border: 1px solid var(--studio-border-strong);
+      border-radius: 11px;
+      background: #ffffff;
+      color: #0f172a;
+      min-height: 44px;
+      padding: 10px 12px;
+      font-size: 14px;
+      line-height: 1.35;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .input:focus,
+    textarea.input:focus,
+    select.input:focus {
+      border-color: rgba(14, 116, 144, 0.62);
+      box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.12);
+      outline: none;
+    }
+    textarea.input {
+      min-height: 110px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      color: #344256;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 800;
+    }
+    .subtle-note {
+      margin: 0;
+      color: #5b6b7f;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    /* Banner Upload Styles */
+    .banner-upload-section > label {
+      display: block;
+      font-weight: 800;
+      margin-bottom: 10px;
+      color: #334155;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .banner-upload-area {
+      border: 2px dashed var(--studio-border);
+      border-radius: 14px;
+      min-height: 196px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+      background: #f8fbff;
+      display: grid;
+      place-items: center;
+    }
+    .banner-upload-area:hover {
+      border-color: rgba(14, 116, 144, 0.62);
+      background: rgba(14, 116, 144, 0.06);
+      transform: translateY(-1px);
+    }
+    .banner-upload-area.drag-over {
+      border-color: var(--studio-primary);
+      background: rgba(14, 116, 144, 0.1);
+    }
+    .banner-upload-placeholder svg {
+      width: 44px;
+      height: 44px;
+      color: #6b7c93;
+      margin-bottom: 8px;
+    }
+    .banner-upload-placeholder p {
+      margin: 0 0 6px;
+      color: #1e293b;
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .banner-upload-placeholder span {
+      font-size: 12px;
+      color: #64748b;
+    }
+    .banner-preview {
+      position: relative;
+      width: 100%;
+    }
+    .banner-preview img {
+      width: 100%;
+      max-height: 220px;
+      object-fit: cover;
+      border-radius: 10px;
+    }
+    .banner-remove-btn {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      background: rgba(15, 23, 42, 0.72);
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .banner-remove-btn:hover {
+      background: rgba(15, 23, 42, 0.85);
+    }
+    .banner-remove-btn:focus-visible {
+      outline: 2px solid rgba(14, 116, 144, 0.55);
+      outline-offset: 2px;
+    }
+    .banner-remove-btn svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+      pointer-events: none;
+    }
+    .banner-progress {
+      padding: 16px 0 2px;
+      text-align: center;
+    }
+    .banner-progress-bar {
+      height: 8px;
+      background: linear-gradient(90deg, #0e7490, #0284c7);
+      border-radius: 999px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+    .banner-progress-text {
+      display: block;
+      margin-top: 9px;
+      color: var(--studio-muted);
+      font-size: 12px;
+    }
+    .builder {
+      border: 1px dashed rgba(148, 163, 184, 0.5);
+      border-radius: 16px;
+      background: #f8fbff;
+      padding: 13px;
+      display: grid;
+      gap: 11px;
+    }
+    .builder-chapter {
+      border: 1px solid #d3deea;
+      border-radius: 14px;
+      background: #ffffff;
+      padding: 12px;
+      display: grid;
+      gap: 9px;
+    }
+    .builder-chapter-head,
+    .builder-lesson-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .builder-chapter-head strong,
+    .builder-lesson-head strong {
+      font-size: 16px;
+      letter-spacing: -0.02em;
+      color: #0f172a;
+    }
+    .builder-lessons {
+      display: grid;
+      gap: 9px;
+    }
+    .builder-lesson {
+      border: 1px solid #d9e3ee;
+      border-radius: 12px;
+      background: #f8fbff;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .builder-preview {
+      border: 1px solid #d8e2ed;
+      border-radius: 10px;
+      background: #ffffff;
+      overflow: hidden;
+      min-height: 92px;
+      display: grid;
+      place-items: center;
+      color: #64748b;
+      font-size: 12px;
+      padding: 9px;
+    }
+    .builder-preview iframe,
+    .builder-preview video {
+      width: 100%;
+      min-height: 170px;
+      border: 0;
+      border-radius: 8px;
+    }
+    .builder-preview audio {
+      width: 100%;
+    }
+    .builder-preview-note {
+      margin: 0;
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.45;
+      text-align: center;
+    }
+    .builder-media-panel {
+      display: grid;
+      gap: 8px;
+    }
+    .builder-media-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .builder-media-summary,
+    .builder-media-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .builder-media-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 999px;
+      border: 1px solid #d5ddf7;
+      background: #f6f2ff;
+      color: #5b21b6;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .builder-file-input {
+      display: none;
+    }
+    .builder-legacy-note {
+      margin: 0;
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .studio-lane-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .studio-lane-card {
+      text-decoration: none;
+      color: inherit;
+      border: 1px solid rgba(109, 40, 217, 0.14);
+      border-radius: 16px;
+      background: linear-gradient(155deg, rgba(255, 255, 255, 0.98), rgba(245, 243, 255, 0.92));
+      padding: 16px;
+      display: grid;
+      gap: 8px;
+      transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+      box-shadow: 0 16px 32px -30px rgba(15, 23, 42, 0.38);
+    }
+    .studio-lane-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(109, 40, 217, 0.28);
+      box-shadow: 0 20px 34px -30px rgba(109, 40, 217, 0.52);
+    }
+    .studio-lane-card small {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #7c3aed;
+    }
+    .studio-lane-card strong {
+      font-size: 18px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: #0b1224;
+    }
+    .studio-lane-card span {
+      font-size: 13px;
+      line-height: 1.55;
+      color: #665788;
+    }
+    .course-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px;
+    }
+    .course-item {
+      border: 1px solid var(--studio-border);
+      border-radius: 16px;
+      background:
+        radial-gradient(120% 180% at 100% 100%, rgba(14, 116, 144, 0.05), transparent 62%),
+        #ffffff;
+      padding: 13px;
+      display: grid;
+      gap: 10px;
+    }
+    .course-item-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .course-item-title {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+      color: #0b1224;
+    }
+    .course-item-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 8px 11px;
+      color: #475569;
+      font-size: 12px;
+    }
+    .course-item-meta strong {
+      color: #0f172a;
+      font-weight: 700;
+    }
+    .course-item-stat {
+      border: 1px solid rgba(191, 219, 254, 0.82);
+      border-radius: 12px;
+      background: rgba(248, 250, 252, 0.92);
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+    }
+    .course-item-stat span {
+      color: #7c3aed;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .course-item-stat strong {
+      color: #0f172a;
+      font-size: 14px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .course-item-stat small {
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .course-item-action-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .course-item-action-bar .inline-form {
+      display: inline-flex;
+      margin: 0;
+      width: auto;
+    }
+    .course-item-note {
+      margin: 0;
+      border: 1px solid rgba(109, 40, 217, 0.16);
+      border-radius: 12px;
+      background: rgba(245, 243, 255, 0.84);
+      padding: 10px 12px;
+      color: #5b21b6;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .course-review-feedback {
+      border: 1px solid #d9e4f0;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .course-review-feedback-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .course-review-feedback-head h4 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.15;
+      color: #0f172a;
+    }
+    .course-review-feedback-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .course-review-feedback-note,
+    .course-review-feedback-copy {
+      margin: 0;
+      color: #475569;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-line;
+    }
+    .course-review-feedback.is-pending {
+      border-color: rgba(245, 158, 11, 0.28);
+      background: linear-gradient(180deg, rgba(255, 251, 235, 0.96), #ffffff);
+    }
+    .course-review-feedback.is-approved {
+      border-color: rgba(22, 163, 74, 0.24);
+      background: linear-gradient(180deg, rgba(240, 253, 244, 0.98), #ffffff);
+    }
+    .course-review-feedback.is-changes_requested {
+      border-color: rgba(245, 158, 11, 0.3);
+      background: linear-gradient(180deg, rgba(255, 247, 237, 0.98), #ffffff);
+    }
+    .course-review-feedback.is-denied {
+      border-color: rgba(220, 38, 38, 0.24);
+      background: linear-gradient(180deg, rgba(254, 242, 242, 0.98), #ffffff);
+    }
+    .pill.review-approved {
+      color: #166534;
+      border-color: rgba(22, 163, 74, 0.3);
+      background: rgba(220, 252, 231, 0.86);
+    }
+    .pill.review-changes_requested {
+      color: #92400e;
+      border-color: rgba(245, 158, 11, 0.35);
+      background: rgba(254, 243, 199, 0.88);
+    }
+    .pill.review-denied {
+      color: #991b1b;
+      border-color: rgba(220, 38, 38, 0.3);
+      background: rgba(254, 226, 226, 0.88);
+    }
+    .pill.review-pending {
+      color: #6d28d9;
+      border-color: rgba(124, 58, 237, 0.28);
+      background: rgba(237, 233, 254, 0.9);
+    }
+    .course-feedback-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .course-feedback-list {
+      display: grid;
+      gap: 14px;
+    }
+    .course-feedback-item {
+      border: 1px solid var(--studio-border);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.92);
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+    .course-feedback-item.is-hidden {
+      border-color: rgba(220, 38, 38, 0.2);
+      background: rgba(254, 242, 242, 0.94);
+    }
+    .course-feedback-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .course-feedback-head strong {
+      display: block;
+      font-size: 16px;
+      color: #0b1224;
+      margin-bottom: 3px;
+    }
+    .course-feedback-head span,
+    .course-feedback-meta-note {
+      font-size: 12px;
+      color: var(--studio-muted);
+    }
+    .course-feedback-copy,
+    .course-feedback-reply-copy {
+      margin: 0;
+      color: #334155;
+      font-size: 14px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+    .course-feedback-reply {
+      border: 1px solid rgba(14, 116, 144, 0.18);
+      border-radius: 16px;
+      background: rgba(240, 249, 255, 0.72);
+      padding: 12px 13px;
+      display: grid;
+      gap: 6px;
+    }
+    .course-feedback-reply strong {
+      color: #0f172a;
+      font-size: 13px;
+    }
+    .course-feedback-form {
+      display: grid;
+      gap: 10px;
+    }
+    .course-feedback-form textarea.input {
+      min-height: 110px;
+      resize: vertical;
+    }
+    .course-feedback-form-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .course-feedback-empty {
+      border: 1px dashed var(--studio-border-strong);
+      border-radius: 18px;
+      background: rgba(248, 250, 252, 0.92);
+      padding: 18px;
+      display: grid;
+      gap: 8px;
+    }
+    .course-feedback-empty strong {
+      color: #0b1224;
+      font-size: 15px;
+    }
+    .course-feedback-empty p {
+      margin: 0;
+      color: var(--studio-muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .inline-form {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+      margin: 0;
+    }
+    .assign-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 9px;
+      align-items: end;
+      margin-top: 10px;
+    }
+    details {
+      border-top: 1px solid #e2e8f0;
+      padding-top: 10px;
+    }
+    details summary {
+      cursor: pointer;
+      color: #0f172a;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .empty {
+      border: 1px dashed #c7d2df;
+      border-radius: 14px;
+      background: #f8fbff;
+      color: #64748b;
+      font-size: 13px;
+      padding: 16px;
+      text-align: center;
+    }
+    .wizard-shell {
+      display: grid;
+      gap: 14px;
+      border: 1px solid #d5e0ed;
+      border-radius: 20px;
+      padding: 12px;
+      background:
+        radial-gradient(130% 120% at 100% 0%, rgba(14, 116, 144, 0.08), transparent 70%),
+        #f8fbff;
+    }
+    .wizard-progress-track {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.35);
+      overflow: hidden;
+    }
+    .wizard-progress-track span {
+      display: block;
+      height: 100%;
+      width: 20%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0e7490, #0284c7, #ea580c);
+      transition: width 0.35s ease;
+    }
+    .wizard-steps {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .wizard-step {
+      border: 1px solid #d5e0ed;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 8px 10px;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: left;
+      display: grid;
+      gap: 3px;
+      cursor: pointer;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .wizard-step:hover {
+      border-color: #9ec0db;
+      transform: translateY(-1px);
+    }
+    .wizard-step span {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #e2e8f0;
+      color: #334155;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .wizard-step small {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+    }
+    .wizard-step.active,
+    .wizard-step.complete {
+      border-color: rgba(14, 116, 144, 0.4);
+      box-shadow: 0 10px 20px -16px rgba(14, 116, 144, 0.75);
+    }
+    .wizard-step.active span,
+    .wizard-step.complete span {
+      background: linear-gradient(135deg, #0e7490, #0284c7);
+      color: #ffffff;
+    }
+    .wizard-inline-message {
+      margin: 0;
+      border: 1px solid rgba(220, 38, 38, 0.3);
+      border-radius: 10px;
+      background: rgba(254, 226, 226, 0.7);
+      color: #b91c1c;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .wizard-pane {
+      display: none;
+      gap: 12px;
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    .wizard-pane.active {
+      display: grid;
+      animation: wizard-step-enter 0.26s ease forwards;
+    }
+    .wizard-pane-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: end;
+      flex-wrap: wrap;
+      border-bottom: 1px solid #d7e1eb;
+      padding-bottom: 8px;
+    }
+    .wizard-pane-head h4 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.03em;
+      color: #0b1224;
+    }
+    .wizard-pane-head p {
+      margin: 4px 0 0;
+      color: #5b6b7f;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .wizard-review-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 8px;
+    }
+    .wizard-review-card {
+      border: 1px solid #d8e2ed;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+    }
+    .wizard-review-card small {
+      color: #64748b;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 800;
+    }
+    .wizard-review-card strong {
+      font-size: 16px;
+      color: #0f172a;
+      line-height: 1.25;
+    }
+    .checkbox-field {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 12px 14px;
+      border: 1px solid #d8e2ed;
+      border-radius: 12px;
+      background: #ffffff;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .checkbox-field input {
+      width: 16px;
+      height: 16px;
+    }
+    .wizard-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      border-top: 1px solid #d7e1eb;
+      padding-top: 10px;
+    }
+    .wizard-footer-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    [data-wizard-submit] {
+      display: none;
+    }
+    .wizard-shell.is-final [data-wizard-next] {
+      display: none;
+    }
+    .wizard-shell.is-final [data-wizard-submit] {
+      display: inline-flex;
+    }
+    @keyframes wizard-step-enter {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @media (max-width: 1240px) {
+      .studio-shell {
+        grid-template-columns: 272px minmax(0, 1fr);
+      }
+      .hero-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .form-grid > .banner-upload-section {
+        grid-column: span 2;
+      }
+      .wizard-steps {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 980px) {
+      .studio-shell {
+        grid-template-columns: 1fr;
+        padding: 14px 12px 24px;
+      }
+      .studio-rail {
+        position: static;
+      }
+      .hero-head {
+        grid-template-columns: 1fr;
+      }
+      .hero-actions {
+        justify-content: flex-start;
+      }
+      .studio-lane-grid {
+        grid-template-columns: 1fr;
+      }
+      .section-head h3 {
+        font-size: clamp(24px, 7vw, 30px);
+      }
+    }
+    @media (max-width: 700px) {
+      .studio-card {
+        border-radius: 18px;
+        padding: 14px;
+      }
+      .rail-head h1 {
+        font-size: clamp(26px, 10vw, 34px);
+      }
+      .hero-head h2 {
+        font-size: clamp(28px, 11vw, 40px);
+      }
+      .hero-metrics {
+        grid-template-columns: 1fr;
+      }
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+      .form-grid > .banner-upload-section {
+        grid-column: span 1;
+      }
+      .course-item-title {
+        font-size: 20px;
+      }
+      .wizard-steps {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .wizard-footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .wizard-footer-actions .btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<%
+  const isAdminStudio = studioContext === 'admin'
+  const currentStudioMode = ['create', 'edit'].includes(String(studioMode || '').trim().toLowerCase())
+    ? String(studioMode || '').trim().toLowerCase()
+    : 'overview'
+  const studioOverviewPath = isAdminStudio ? '/admin/courses' : '/simple-lms/studio/courses'
+  const studioCreatePath = isAdminStudio ? '/admin/courses/new' : '#create-course'
+  const buildStudioEditPath = (courseId) => (
+    isAdminStudio
+      ? `/admin/courses/${encodeURIComponent(String(courseId || '').trim())}/edit`
+      : `${studioOverviewPath}?editCourse=${encodeURIComponent(String(courseId || '').trim())}#edit-course`
+  )
+  const studioRecordPath = (courseId) => (
+    isAdminStudio
+      ? `/admin/courses/${encodeURIComponent(String(courseId || '').trim())}`
+      : `${studioOverviewPath}#manage-courses`
+  )
+  const studioPath = currentStudioMode === 'create'
+    ? studioCreatePath
+    : (currentStudioMode === 'edit' && editingCourse ? buildStudioEditPath(editingCourse._id) : studioOverviewPath)
+  const homePath = isAdminStudio ? '/admin' : '/simple-lms'
+  const courses = (managedCourses || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+  const showEditSection = Boolean(editingCourse) && currentStudioMode !== 'create'
+  const showCreateSection = currentStudioMode !== 'edit'
+  const showLibrarySection = currentStudioMode === 'overview'
+  const ownerEditableCount = courses.filter((course) => course?.canEdit).length
+  const moderationOnlyCount = courses.filter((course) => !course?.canEdit).length
+  const systemCourseCount = courses.filter((course) => Boolean(course?.isSystemCourse)).length
+  const creatorCourseCount = Math.max(0, courses.length - systemCourseCount)
+  const publishedCourseCount = courses.filter((course) => String(course?.status || '') === 'published').length
+  const pendingCourseCount = courses.filter((course) => String(course?.status || '') === 'pending_public_review').length
+  const draftCourseCount = courses.filter((course) => String(course?.status || '') === 'draft').length
+  const currencyOptions = Array.isArray(supportedCurrencies) && supportedCurrencies.length > 0
+    ? supportedCurrencies
+    : [{ code: 'NGN', name: 'Nigerian Naira', symbol: 'NGN' }]
+  const currencyCodes = currencyOptions.map((option) => String(option?.code || '').trim().toUpperCase()).filter(Boolean)
+  const selectCurrency = (value, fallback = 'NGN') => {
+    const normalized = String(value || '').trim().toUpperCase()
+    if (currencyCodes.includes(normalized)) return normalized
+    const fallbackCode = String(fallback || '').trim().toUpperCase()
+    if (currencyCodes.includes(fallbackCode)) return fallbackCode
+    return currencyCodes[0] || 'NGN'
+  }
+  const defaultCourseCurrency = selectCurrency(
+    platformSettings?.defaultCurrency || creatorSettings?.defaultCurrency || defaultCurrencyCode || 'NGN',
+    'NGN'
+  )
+  const minCoursePriceMajor = Math.max(0, Number(platformSettings?.minCoursePriceMinor || 0)) / 100
+  const maxCoursePriceMajor = Math.max(minCoursePriceMajor, Number(platformSettings?.maxCoursePriceMinor || 50000000)) / 100
+  const minorToMajorInput = (value) => {
+    const minor = Number(value || 0)
+    const safeMinor = Number.isFinite(minor) ? Math.max(0, minor) : 0
+    const major = safeMinor / 100
+    if (Number.isInteger(major)) return String(major)
+    return major.toFixed(2).replace(/\.?0+$/, '')
+  }
+  const visibilityFormValue = (value) => {
+    if (value === 'system_public') return 'marketplace'
+    if (value === 'organization_public') return 'public'
+    return 'private'
+  }
+  const dateText = (value) => {
+    try {
+      return value ? new Date(value).toLocaleString('en-GB') : '-'
+    } catch {
+      return '-'
+    }
+  }
+  const reviewDecisionClass = (course) => {
+    const decision = String(course?.reviewDecision || '').trim().toLowerCase()
+    if (decision === 'changes_requested') return 'review-changes_requested'
+    if (decision === 'denied') return 'review-denied'
+    if (decision === 'approved') return 'review-approved'
+    if (decision === 'pending') return 'review-pending'
+    return ''
+  }
+  const reviewFeedbackTone = (course) => {
+    const decision = String(course?.reviewDecision || '').trim().toLowerCase()
+    if (['pending', 'approved', 'changes_requested', 'denied'].includes(decision)) return decision
+    return 'pending'
+  }
+  const reviewMessageForCourse = (course) => {
+    const decision = String(course?.reviewDecision || '').trim().toLowerCase()
+    if (decision === 'pending') return 'This course is waiting for admin review. You can keep editing, but any major changes should be followed by a fresh submission.'
+    if (decision === 'approved') return 'This course was approved for publishing. The latest review note is kept here for audit visibility.'
+    if (decision === 'changes_requested') return 'Admin requested specific updates. Make the changes below, then set the course back to published to resubmit it for review.'
+    if (decision === 'denied') return 'This submission was denied. You can still revise the course, address the feedback, and submit it again when it is ready.'
+    return ''
+  }
+  const courseStatusChoices = ['draft', 'published', 'archived', 'pending_public_review']
+  const editingCourseChaptersJson = editingCourse ? JSON.stringify(editingCourse.chapters || [], null, 2) : '[]'
+  const editableCourseReviews = Array.isArray(editingCourseReviews) ? editingCourseReviews : []
+  const editableCourseReviewStats = editingCourseReviewStats || { total: 0, visible: 0, hidden: 0, withComments: 0, withReplies: 0 }
+%>
+<body class="public-site lmsv-course-studio-page <%= isAdminStudio ? 'studio-admin' : 'studio-creator' %>">
+  <% if (!isAdminStudio) { %>
+    <%- include('./partials/nav', { user, activePage, activeLmsView: 'workspace' }) %>
+  <% } %>
+
+  <main class="studio-shell">
+    <aside class="studio-rail">
+      <header class="rail-head">
+        <p class="rail-kicker"><%= isAdminStudio ? 'Platform Control' : 'Creator Workspace' %></p>
+        <h1><%= isAdminStudio ? 'Admin Studio' : 'Course Studio' %></h1>
+        <p><%= isAdminStudio
+          ? 'System-level course authoring and lifecycle management.'
+          : 'Create and manage your own courses with a dedicated studio workflow.' %></p>
+      </header>
+
+      <nav class="rail-links">
+        <a class="rail-link" href="<%= homePath %>"><span><%= isAdminStudio ? 'Admin Dashboard' : 'Learning Workspace' %></span></a>
+        <a class="rail-link active" href="<%= studioOverviewPath %>"><span><%= isAdminStudio ? 'Admin Course Studio' : 'Creator Course Studio' %></span></a>
+        <% if (!isAdminStudio) { %>
+          <a class="rail-link" href="/simple-lms?view=program-studio"><span>Program Studio</span></a>
+          <a class="rail-link" href="/simple-lms?view=settings&settingsTab=creator"><span>Creator Settings</span></a>
+          <% if (canManagePlatform) { %>
+            <a class="rail-link" href="/admin"><span>Open Admin Portal</span></a>
+          <% } %>
+        <% } else { %>
+          <a class="rail-link" href="/admin/courses"><span>Manage Courses</span></a>
+          <a class="rail-link" href="/admin/payments"><span>Payment Tracking</span></a>
+          <a class="rail-link" href="/courses"><span>Public Catalog</span></a>
+        <% } %>
+      </nav>
+
+      <div class="rail-pills">
+        <article class="rail-pill"><small>Total</small><strong><%= courses.length %></strong></article>
+        <article class="rail-pill"><small>Published</small><strong><%= publishedCourseCount %></strong></article>
+        <article class="rail-pill"><small>System</small><strong><%= systemCourseCount %></strong></article>
+        <article class="rail-pill"><small>Creator</small><strong><%= creatorCourseCount %></strong></article>
+      </div>
+    </aside>
+
+    <section class="studio-main">
+      <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+      <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+      <% if (info) { %><div class="alert alert-info"><%= info %></div><% } %>
+
+      <section class="studio-card">
+        <div class="hero-head">
+          <div>
+            <h2><%= isAdminStudio ? 'Admin Course Studio' : 'Creator Course Studio' %></h2>
+            <p><%= isAdminStudio
+              ? 'Create new system courses here, then moderate the wider course library without exposing owner-only editing on creator-owned content.'
+              : 'This studio is separate from the LMS browsing pages. Create new courses here, then manage the courses you own from a cleaner library view.' %></p>
+          </div>
+          <div class="hero-actions">
+            <a class="btn btn-secondary btn-sm" href="<%= studioCreatePath %>">Create New Course</a>
+            <a class="btn btn-secondary btn-sm" href="<%= studioOverviewPath %>">Open Course Library</a>
+            <% if (showEditSection) { %>
+              <a class="btn btn-primary btn-sm" href="<%= buildStudioEditPath(editingCourse._id) %>">Editing: <%= editingCourse.title %></a>
+            <% } %>
+          </div>
+        </div>
+        <div class="hero-metrics">
+          <article class="hero-metric"><small>Draft Courses</small><strong><%= draftCourseCount %></strong></article>
+          <article class="hero-metric"><small>Pending Review</small><strong><%= pendingCourseCount %></strong></article>
+          <article class="hero-metric"><small>Owner Editable</small><strong><%= ownerEditableCount %></strong></article>
+          <article class="hero-metric"><small>Moderation Only</small><strong><%= moderationOnlyCount %></strong></article>
+        </div>
+        <div class="studio-lane-grid">
+          <a class="studio-lane-card" href="<%= studioCreatePath %>">
+            <small>Creation Flow</small>
+            <strong>Create a new course</strong>
+            <span>Open the guided wizard, upload the lesson media, and structure the curriculum without the management list getting in the way.</span>
+          </a>
+          <a class="studio-lane-card" href="<%= studioOverviewPath %>">
+            <small>Course Library</small>
+            <strong>View and manage existing courses</strong>
+            <span>Review ownership, see lifecycle status quickly, and only edit or duplicate courses that belong to you.</span>
+          </a>
+        </div>
+      </section>
+
+        <% if (showEditSection) { %>
+          <section class="studio-card" id="edit-course">
+            <div class="section-head">
+              <div>
+                <h3>Edit Course</h3>
+              <p>Update all fields for <strong><%= editingCourse.title %></strong>.</p>
+            </div>
+            <div class="actions">
+              <span class="pill <%= editingCourse.isSystemCourse ? 'system' : 'creator' %>"><%= editingCourse.isSystemCourse ? 'System Course' : 'Creator Course' %></span>
+                <% if (isAdminStudio) { %>
+                  <a class="btn btn-secondary btn-sm" href="<%= studioRecordPath(editingCourse._id) %>">Open Course Record</a>
+                <% } %>
+                <a class="btn btn-secondary btn-sm" href="<%= studioOverviewPath %>">Close Editor</a>
+              </div>
+            </div>
+            <% if (editingCourse.reviewHasFeedback) { %>
+              <article class="course-review-feedback is-<%= reviewFeedbackTone(editingCourse) %>">
+                <div class="course-review-feedback-head">
+                  <div>
+                    <h4>Review status: <%= editingCourse.reviewDecisionLabel %></h4>
+                    <p class="course-review-feedback-copy"><%= reviewMessageForCourse(editingCourse) %></p>
+                  </div>
+                  <div class="course-review-feedback-meta">
+                    <span class="pill <%= reviewDecisionClass(editingCourse) %>"><%= editingCourse.reviewDecisionLabel %></span>
+                    <% if (editingCourse.reviewedAt) { %><span class="pill">Reviewed <%= dateText(editingCourse.reviewedAt) %></span><% } %>
+                    <% if (editingCourse.reviewedByName) { %><span class="pill">By <%= editingCourse.reviewedByName %></span><% } %>
+                  </div>
+                </div>
+                <% if (String(editingCourse.reviewNotes || '').trim()) { %>
+                  <p class="course-review-feedback-note"><%= editingCourse.reviewNotes %></p>
+                <% } %>
+              </article>
+            <% } %>
+            <form method="post" action="/simple-lms/courses/<%= editingCourse._id %>/update" class="studio-form">
+              <input type="hidden" name="returnTo" value="<%= isAdminStudio ? buildStudioEditPath(editingCourse._id) : studioOverviewPath %>">
+              <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
+              <div class="form-grid">
+              <label>Course Title<input class="input" name="title" value="<%= editingCourse.title || '' %>" required></label>
+              <label>Slug<input class="input" name="slug" value="<%= editingCourse.slug || '' %>" placeholder="course-slug"></label>
+              <label>Category<input class="input" name="category" value="<%= editingCourse.category || '' %>"></label>
+              <label>Level
+                <select class="input" name="level">
+                  <% levels.forEach((levelOption) => { %>
+                    <option value="<%= levelOption %>" <%= editingCourse.level === levelOption ? 'selected' : '' %>><%= levelOption %></option>
+                  <% }) %>
+                </select>
+              </label>
+              <label>Status
+                <select class="input" name="status">
+                  <% courseStatusChoices.forEach((statusOption) => { %>
+                    <option value="<%= statusOption %>" <%= String(editingCourse.status || '') === statusOption ? 'selected' : '' %>><%= statusOption %></option>
+                  <% }) %>
+                </select>
+              </label>
+              <label>Visibility
+                <select class="input" name="visibility">
+                  <option value="private" <%= visibilityFormValue(editingCourse.visibility) === 'private' ? 'selected' : '' %>>private</option>
+                  <option value="public" <%= visibilityFormValue(editingCourse.visibility) === 'public' ? 'selected' : '' %>>public</option>
+                  <% if (canManagePlatform) { %><option value="marketplace" <%= visibilityFormValue(editingCourse.visibility) === 'marketplace' ? 'selected' : '' %>>marketplace</option><% } %>
+                </select>
+              </label>
+              <label>Payment Mode
+                <select class="input" name="paymentMode">
+                  <option value="free" <%= String(editingCourse.pricing?.paymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option>
+                  <option value="paid" <%= String(editingCourse.pricing?.paymentMode || 'free') === 'paid' ? 'selected' : '' %>>paid</option>
+                </select>
+              </label>
+              <label>Price (major units)
+                <input class="input" type="number" step="0.01" inputmode="decimal" name="amount" min="<%= minCoursePriceMajor %>" max="<%= maxCoursePriceMajor %>" value="<%= minorToMajorInput(editingCourse.pricing?.amount || 0) %>">
+              </label>
+              <label>Currency
+                <select class="input" name="currency">
+                  <% const editCurrencyCode = selectCurrency(editingCourse.pricing?.currency || defaultCourseCurrency, defaultCourseCurrency) %>
+                  <% currencyOptions.forEach((currencyOption) => { %>
+                    <% const optionCode = String(currencyOption?.code || '').trim().toUpperCase() %>
+                    <% const optionName = String(currencyOption?.name || optionCode || 'Currency').trim() %>
+                    <option value="<%= optionCode %>" <%= editCurrencyCode === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
+                  <% }) %>
+                </select>
+              </label>
+              <label class="checkbox-field" style="grid-column: 1 / -1;">
+                <input type="checkbox" name="partnerSellingEnabled" value="on" <%= editingCourse.partnerSelling?.enabled ? 'checked' : '' %>>
+                <span>Allow partner organizations to sell this course</span>
+              </label>
+              <label>Creator Share (%)
+                <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingCreatorSharePercent" value="<%= Number.isFinite(Number(editingCourse.partnerSelling?.creatorSharePercent)) ? Number(editingCourse.partnerSelling.creatorSharePercent) : 70 %>">
+              </label>
+              <label>Partner Share (%)
+                <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingPartnerSharePercent" value="<%= Number.isFinite(Number(editingCourse.partnerSelling?.partnerSharePercent)) ? Number(editingCourse.partnerSelling.partnerSharePercent) : 20 %>">
+              </label>
+              <label>Tags (comma-separated)<input class="input" name="tags" value="<%= Array.isArray(editingCourse.tags) ? editingCourse.tags.join(', ') : '' %>"></label>
+              <% if (isAdminStudio && canManagePlatform) { %>
+                <label>Ownership
+                  <select class="input" name="isSystemCourse">
+                    <option value="on" <%= editingCourse.isSystemCourse ? 'selected' : '' %>>system</option>
+                    <option value="off" <%= !editingCourse.isSystemCourse ? 'selected' : '' %>>creator</option>
+                  </select>
+                </label>
+              <% } %>
+              <div class="banner-upload-section">
+                <label>Course Banner</label>
+                <div class="banner-upload-area" id="banner-upload-area">
+                  <% if (editingCourse.banner?.url) { %>
+                    <div class="banner-preview">
+                      <img src="<%= editingCourse.banner.url %>" alt="Current banner">
+                      <button type="button" class="banner-remove-btn" onclick="removeBanner()" aria-label="Remove banner" title="Remove banner">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                          <path d="M3 6h18"/>
+                          <path d="M8 6V4h8v2"/>
+                          <path d="M19 6l-1 14H6L5 6"/>
+                          <path d="M10 11v6M14 11v6"/>
+                        </svg>
+                      </button>
+                    </div>
+                  <% } else { %>
+                    <div class="banner-upload-placeholder">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                      </svg>
+                      <p>Click or drag to upload banner image</p>
+                      <span>Recommended: 1200x630px, max 5MB</span>
+                    </div>
+                  <% } %>
+                  <input type="file" id="banner-file-input" accept="image/*" style="display:none;">
+                </div>
+                <div class="banner-progress" id="banner-progress" style="display:none;">
+                  <div class="banner-progress-bar"></div>
+                  <span class="banner-progress-text">Uploading...</span>
+                </div>
+                <input type="hidden" name="bannerUrl" id="banner-url-input" value="<%= editingCourse.banner?.url || '' %>">
+                <input type="hidden" name="bannerPublicId" id="banner-public-id-input" value="<%= editingCourse.banner?.publicId || '' %>">
+                <input type="hidden" name="bannerWidth" id="banner-width-input" value="<%= editingCourse.banner?.width || '' %>">
+                <input type="hidden" name="bannerHeight" id="banner-height-input" value="<%= editingCourse.banner?.height || '' %>">
+              </div>
+            </div>
+            <label>Summary<textarea class="input" name="summary" rows="2"><%= editingCourse.summary || '' %></textarea></label>
+            <label>Description<textarea class="input" name="description" rows="5"><%= editingCourse.description || '' %></textarea></label>
+
+            <div class="section-head">
+              <div>
+                <h3 class="subsection-title">Curriculum Builder</h3>
+                <p>Structure chapters and lessons, then save the course.</p>
+              </div>
+              <div class="actions">
+                <button class="btn btn-secondary btn-sm" type="button" id="addEditChapter">Add Chapter</button>
+                <button class="btn btn-secondary btn-sm" type="button" id="editBuilderLoadJson">Load From JSON</button>
+              </div>
+            </div>
+            <div id="editCurriculumBuilder" class="builder"></div>
+            <label>Chapters JSON<textarea class="input" name="chaptersJson" id="editChaptersJson" rows="9"><%= editingCourseChaptersJson %></textarea></label>
+
+            <div class="actions"><button class="btn btn-primary" type="submit">Save Course Changes</button></div>
+          </form>
+        </section>
+
+        <section class="studio-card" id="course-feedback">
+          <div class="section-head">
+            <div>
+              <h3>Learner Ratings & Comments</h3>
+              <p>Reply to learner feedback here. Admin moderation still controls what stays visible on the public course page.</p>
+            </div>
+          </div>
+          <div class="course-feedback-summary">
+            <span class="pill"><%= editableCourseReviewStats.total %> total reviews</span>
+            <span class="pill"><%= editableCourseReviewStats.visible %> visible</span>
+            <% if (editableCourseReviewStats.hidden > 0) { %><span class="pill review-denied"><%= editableCourseReviewStats.hidden %> hidden by admin</span><% } %>
+            <span class="pill"><%= editableCourseReviewStats.withReplies %> creator replies</span>
+          </div>
+          <% if (editableCourseReviews.length === 0) { %>
+            <div class="course-feedback-empty">
+              <strong>No learner feedback yet</strong>
+              <p>Ratings and comments will appear here after enrolled learners start reviewing this course.</p>
+            </div>
+          <% } else { %>
+            <div class="course-feedback-list">
+              <% editableCourseReviews.forEach((review) => { %>
+                <article class="course-feedback-item <%= review.moderationStatus === 'hidden' ? 'is-hidden' : '' %>">
+                  <div class="course-feedback-head">
+                    <div>
+                      <strong><%= review.authorName %></strong>
+                      <span><%= review.authorEmail || '' %></span>
+                    </div>
+                    <div class="actions">
+                      <span class="pill"><%= `${Number(review.rating || 0)}/5` %></span>
+                      <span class="pill <%= review.moderationStatus === 'hidden' ? 'review-denied' : 'review-approved' %>"><%= review.moderationStatus === 'hidden' ? 'Hidden by admin' : 'Visible publicly' %></span>
+                      <span class="pill"><%= review.updatedAtLabel || review.createdAtLabel || '-' %></span>
+                    </div>
+                  </div>
+                  <p class="course-feedback-copy"><%= review.comment || 'This learner left a rating without a written comment.' %></p>
+                  <% if (review.hasModerationReason) { %>
+                    <p class="course-feedback-meta-note">Admin note: <%= review.moderationReason %></p>
+                  <% } %>
+                  <% if (review.hasCreatorReply) { %>
+                    <div class="course-feedback-reply">
+                      <strong><%= review.creatorReplyByName || 'Course creator' %></strong>
+                      <span class="course-feedback-meta-note"><%= review.creatorReplyUpdatedAtLabel ? `Responded ${review.creatorReplyUpdatedAtLabel}` : 'Creator response' %></span>
+                      <p class="course-feedback-reply-copy"><%= review.creatorReply %></p>
+                    </div>
+                  <% } %>
+                  <form method="post" action="/simple-lms/courses/<%= editingCourse._id %>/reviews/<%= review._id %>/reply" class="course-feedback-form">
+                    <input type="hidden" name="returnTo" value="<%= buildStudioEditPath(editingCourse._id) %>#course-feedback">
+                    <label>
+                      <span class="lmsv-review-label">Creator response</span>
+                      <textarea class="input" name="creatorReply" rows="4" maxlength="1500" placeholder="Reply to this learner. This response will appear under the review when it is public."><%= review.creatorReply || '' %></textarea>
+                    </label>
+                    <div class="course-feedback-form-foot">
+                      <span class="course-feedback-meta-note">Keep the response focused on the course content and next steps for the learner.</span>
+                      <button class="btn btn-primary btn-sm" type="submit"><%= review.hasCreatorReply ? 'Update Response' : 'Post Response' %></button>
+                    </div>
+                  </form>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+        </section>
+      <% } %>
+
+      <% if (showCreateSection) { %>
+      <section class="studio-card" id="create-course">
+        <div class="section-head">
+          <div>
+            <h3>Create New Course</h3>
+            <p><%= isAdminStudio
+              ? 'Admin studio creates system courses by default.'
+              : 'Creator studio creates personal creator-owned courses.' %></p>
+          </div>
+          <span class="pill <%= isAdminStudio ? 'system' : 'creator' %>"><%= isAdminStudio ? 'System Course Flow' : 'Creator Course Flow' %></span>
+        </div>
+        <form method="post" action="/simple-lms/courses/create" class="studio-form" id="createCourseWizardForm" data-wizard-flow="course-create">
+          <input type="hidden" name="returnTo" value="<%= isAdminStudio ? studioCreatePath : studioOverviewPath %>">
+          <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
+          <% if (isAdminStudio) { %><input type="hidden" name="isSystemCourse" value="on"><% } %>
+
+          <div class="wizard-shell" data-wizard-shell>
+            <div class="wizard-progress-track"><span data-wizard-progress></span></div>
+            <div class="wizard-steps">
+              <button class="wizard-step active" type="button" data-wizard-goto="0"><span>1</span><small>Blueprint</small></button>
+              <button class="wizard-step" type="button" data-wizard-goto="1"><span>2</span><small>Access</small></button>
+              <button class="wizard-step" type="button" data-wizard-goto="2"><span>3</span><small>Story</small></button>
+              <button class="wizard-step" type="button" data-wizard-goto="3"><span>4</span><small>Lessons</small></button>
+              <button class="wizard-step" type="button" data-wizard-goto="4"><span>5</span><small>Review</small></button>
+            </div>
+            <p class="wizard-inline-message" data-wizard-message hidden></p>
+
+            <section class="wizard-pane active" data-wizard-pane="0">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Define the course blueprint</h4>
+                  <p>Start with the essentials learners will see first.</p>
+                </div>
+              </header>
+              <div class="form-grid">
+                <label>Course Title<input class="input" name="title" required></label>
+                <label>Slug<input class="input" name="slug" placeholder="course-slug"></label>
+                <label>Category<input class="input" name="category" value="<%= creatorSettings.defaultCategory || '' %>"></label>
+                <label>Level
+                  <select class="input" name="level">
+                    <% levels.forEach((levelOption) => { %>
+                      <option value="<%= levelOption %>" <%= (creatorSettings.defaultLevel || 'mixed') === levelOption ? 'selected' : '' %>><%= levelOption %></option>
+                    <% }) %>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section class="wizard-pane" data-wizard-pane="1">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Set publishing and pricing rules</h4>
+                  <p>Choose visibility, payment mode, and upload a strong banner.</p>
+                </div>
+              </header>
+              <div class="form-grid">
+                <label>Status
+                  <select class="input" name="status">
+                    <option value="draft" <%= (platformSettings.defaultCourseStatus || 'draft') === 'draft' ? 'selected' : '' %>>draft</option>
+                    <option value="published" <%= platformSettings.defaultCourseStatus === 'published' ? 'selected' : '' %>>published</option>
+                  </select>
+                </label>
+                <label>Visibility
+                  <select class="input" name="visibility">
+                    <option value="private" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option>
+                    <option value="public" <%= (creatorSettings.defaultVisibility || platformSettings.defaultCourseVisibility) === 'public' ? 'selected' : '' %>>public</option>
+                    <% if (canManagePlatform) { %><option value="marketplace" <%= platformSettings.defaultCourseVisibility === 'marketplace' ? 'selected' : '' %>>marketplace</option><% } %>
+                  </select>
+                </label>
+                <label>Payment Mode
+                  <select class="input" name="paymentMode">
+                    <option value="free" <%= (creatorSettings.defaultPaymentMode || platformSettings.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option>
+                    <option value="paid" <%= (creatorSettings.defaultPaymentMode || platformSettings.defaultPaymentMode) === 'paid' ? 'selected' : '' %>>paid</option>
+                  </select>
+                </label>
+                <label>Price (major units)<input class="input" type="number" step="0.01" inputmode="decimal" name="amount" min="<%= minCoursePriceMajor %>" max="<%= maxCoursePriceMajor %>" value="<%= minorToMajorInput(platformSettings.minCoursePriceMinor || 0) %>"></label>
+                <label>Currency
+                  <select class="input" name="currency">
+                    <% const createCurrencyCode = selectCurrency(creatorSettings.defaultCurrency || platformSettings.defaultCurrency || defaultCourseCurrency, defaultCourseCurrency) %>
+                    <% currencyOptions.forEach((currencyOption) => { %>
+                      <% const optionCode = String(currencyOption?.code || '').trim().toUpperCase() %>
+                      <% const optionName = String(currencyOption?.name || optionCode || 'Currency').trim() %>
+                      <option value="<%= optionCode %>" <%= createCurrencyCode === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
+                    <% }) %>
+                  </select>
+                </label>
+                <label class="checkbox-field" style="grid-column: 1 / -1;">
+                  <input type="checkbox" name="partnerSellingEnabled" value="on">
+                  <span>Allow partner organizations to sell this course</span>
+                </label>
+                <label>Creator Share (%)
+                  <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingCreatorSharePercent" value="70">
+                </label>
+                <label>Partner Share (%)
+                  <input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingPartnerSharePercent" value="20">
+                </label>
+                <label>Tags (comma-separated)<input class="input" name="tags" placeholder="productivity, agile"></label>
+                <div class="banner-upload-section">
+                  <label>Course Banner</label>
+                  <div class="banner-upload-area" id="create-banner-upload-area">
+                    <div class="banner-upload-placeholder">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                      </svg>
+                      <p>Click or drag to upload banner image</p>
+                      <span>Recommended: 1200x630px, max 5MB</span>
+                    </div>
+                    <input type="file" id="create-banner-file-input" accept="image/*" style="display:none;">
+                  </div>
+                  <div class="banner-progress" id="create-banner-progress" style="display:none;">
+                    <div class="banner-progress-bar"></div>
+                    <span class="banner-progress-text">Uploading...</span>
+                  </div>
+                  <input type="hidden" name="bannerUrl" id="create-banner-url-input" value="">
+                  <input type="hidden" name="bannerPublicId" id="create-banner-public-id-input" value="">
+                  <input type="hidden" name="bannerWidth" id="create-banner-width-input" value="">
+                  <input type="hidden" name="bannerHeight" id="create-banner-height-input" value="">
+                </div>
+              </div>
+            </section>
+
+            <section class="wizard-pane" data-wizard-pane="2">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Write the course story</h4>
+                  <p>Give learners a concise summary and a richer description.</p>
+                </div>
+              </header>
+              <label>Summary<textarea class="input" name="summary" rows="2"></textarea></label>
+              <label>Description<textarea class="input" name="description" rows="5"></textarea></label>
+            </section>
+
+            <section class="wizard-pane" data-wizard-pane="3">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Build your curriculum</h4>
+                  <p>Add chapters and lessons. This is where the course truly comes alive.</p>
+                </div>
+                <div class="actions">
+                  <button class="btn btn-secondary btn-sm" type="button" id="addCreateChapter">Add Chapter</button>
+                  <button class="btn btn-secondary btn-sm" type="button" id="createBuilderLoadJson">Load From JSON</button>
+                </div>
+              </header>
+              <div id="createCurriculumBuilder" class="builder"></div>
+              <label>Chapters JSON<textarea class="input" name="chaptersJson" id="createChaptersJson" rows="9">[]</textarea></label>
+              <div class="actions">
+                <button class="btn btn-secondary btn-sm" type="button" id="fillCourseTemplate">Load Sample Curriculum</button>
+              </div>
+            </section>
+
+            <section class="wizard-pane" data-wizard-pane="4">
+              <header class="wizard-pane-head">
+                <div>
+                  <h4>Review and launch</h4>
+                  <p>Quick final pass before creating your course.</p>
+                </div>
+              </header>
+              <div class="wizard-review-grid">
+                <article class="wizard-review-card"><small>Title</small><strong id="courseWizardReviewTitle">-</strong></article>
+                <article class="wizard-review-card"><small>Category</small><strong id="courseWizardReviewCategory">-</strong></article>
+                <article class="wizard-review-card"><small>Status</small><strong id="courseWizardReviewStatus">draft</strong></article>
+                <article class="wizard-review-card"><small>Visibility</small><strong id="courseWizardReviewVisibility">private</strong></article>
+                <article class="wizard-review-card"><small>Pricing</small><strong id="courseWizardReviewPricing">free</strong></article>
+                <article class="wizard-review-card"><small>Sell Through</small><strong id="courseWizardReviewSellThrough">Direct creator sale only</strong></article>
+                <article class="wizard-review-card"><small>Curriculum</small><strong id="courseWizardReviewCurriculum">0 chapters / 0 lessons</strong></article>
+              </div>
+              <p class="subtle-note">When you choose <strong>published</strong>, the platform may still send the course for admin approval based on current settings.</p>
+            </section>
+
+            <footer class="wizard-footer">
+              <p class="mini">Step-by-step creation keeps the flow focused and fast.</p>
+              <div class="wizard-footer-actions">
+                <button class="btn btn-secondary btn-sm" type="button" data-wizard-prev>Back</button>
+                <button class="btn btn-primary btn-sm" type="button" data-wizard-next>Continue</button>
+                <button class="btn btn-primary" type="submit" data-wizard-submit>Create Course</button>
+              </div>
+            </footer>
+          </div>
+        </form>
+      </section>
+      <% } %>
+
+      <% if (showLibrarySection) { %>
+      <section class="studio-card" id="manage-courses">
+        <div class="section-head">
+          <div>
+            <h3>Course Library</h3>
+            <p>See ownership clearly, keep editing locked to the owner, and surface moderation actions separately from content authoring.</p>
+          </div>
+        </div>
+        <% if (!courses || courses.length === 0) { %>
+          <div class="empty">No courses available yet.</div>
+        <% } else { %>
+          <div class="course-list">
+            <% courses.forEach((course) => { %>
+              <article class="course-item">
+                <div class="course-item-head">
+                  <div>
+                    <h4 class="course-item-title"><%= course.title %></h4>
+                    <p class="subtle-note"><%= course.summaryText %></p>
+                  </div>
+                    <div class="actions">
+                      <span class="pill <%= course.isSystemCourse ? 'system' : 'creator' %>"><%= course.isSystemCourse ? 'System' : 'Creator' %></span>
+                      <span class="pill status-<%= course.status %>"><%= course.status %></span>
+                      <% if (course.reviewHasFeedback) { %><span class="pill <%= reviewDecisionClass(course) %>"><%= course.reviewDecisionLabel %></span><% } %>
+                      <span class="pill"><%= course.visibilityDisplay %></span>
+                      <span class="pill"><%= course.displayPrice %></span>
+                      <% if (course.isSellThroughEnabled) { %><span class="pill">Partner Sellable</span><% } %>
+                      <% if (course.assignedOrganizationCount) { %><span class="pill"><%= course.assignedOrganizationCount %> assigned orgs</span><% } %>
+                    </div>
+                  </div>
+
+                  <div class="course-item-meta">
+                    <article class="course-item-stat">
+                      <span>Owner</span>
+                      <strong><%= course.createdByName || course.authorName || 'Unknown' %></strong>
+                      <small><%= course.createdByEmail || '-' %></small>
+                    </article>
+                    <article class="course-item-stat">
+                      <span>Sell Through</span>
+                      <strong><%= course.partnerSellingSummary %></strong>
+                      <small><%= course.assignedOrganizationCount %> assigned organizations</small>
+                    </article>
+                    <article class="course-item-stat">
+                      <span>Structure</span>
+                      <strong><%= Number(course.lessonCount || 0) %> lessons</strong>
+                      <small><%= Number(course.estimatedDurationMinutes || 0) %> mins total</small>
+                    </article>
+                    <article class="course-item-stat">
+                      <span>Learners</span>
+                      <strong><%= Number(course.enrollmentCount || 0) %> enrolled</strong>
+                      <small><%= Number(course.completionCount || 0) %> completed</small>
+                    </article>
+                    <article class="course-item-stat">
+                      <span>Updated</span>
+                      <strong><%= dateText(course.updatedAt) %></strong>
+                      <small><%= course.isOwnedByCurrentUser ? 'Owner-controlled' : 'Owner-locked content' %></small>
+                    </article>
+                  </div>
+
+                  <% if (course.reviewHasFeedback) { %>
+                    <article class="course-review-feedback is-<%= reviewFeedbackTone(course) %>">
+                      <div class="course-review-feedback-head">
+                        <div>
+                          <h4>Review status: <%= course.reviewDecisionLabel %></h4>
+                          <p class="course-review-feedback-copy"><%= reviewMessageForCourse(course) %></p>
+                        </div>
+                        <div class="course-review-feedback-meta">
+                          <span class="pill <%= reviewDecisionClass(course) %>"><%= course.reviewDecisionLabel %></span>
+                          <% if (course.reviewedAt) { %><span class="pill">Reviewed <%= dateText(course.reviewedAt) %></span><% } %>
+                          <% if (course.reviewedByName) { %><span class="pill">By <%= course.reviewedByName %></span><% } %>
+                        </div>
+                      </div>
+                      <% if (String(course.reviewNotes || '').trim()) { %>
+                        <p class="course-review-feedback-note"><%= course.reviewNotes %></p>
+                      <% } %>
+                    </article>
+                  <% } %>
+
+                  <% if (!course.canEdit) { %>
+                    <p class="course-item-note">Only the course owner can edit or duplicate this course. This card stays visible so you can still review status, preview the course, and use any moderation tools your role allows.</p>
+                  <% } %>
+
+                  <div class="course-item-action-bar">
+                    <% if (course.canEdit) { %>
+                      <a class="btn btn-secondary btn-sm" href="<%= buildStudioEditPath(course._id) %>">Edit Course</a>
+                    <% } %>
+                    <% if (course.canDuplicate) { %>
+                      <form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" class="inline-form">
+                        <input type="hidden" name="returnTo" value="<%= studioOverviewPath %>">
+                        <input type="hidden" name="studioPath" value="<%= studioOverviewPath %>">
+                        <input type="hidden" name="studioContext" value="<%= isAdminStudio ? 'admin' : 'creator' %>">
+                        <% if (isAdminStudio) { %><input type="hidden" name="isSystemCourse" value="on"><% } %>
+                        <button class="btn btn-secondary btn-sm" type="submit">Duplicate</button>
+                      </form>
+                    <% } %>
+                    <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent(studioOverviewPath) %>" target="_blank" rel="noreferrer">View Course</a>
+                    <% if (course.canArchive) { %>
+                      <form method="post" action="/simple-lms/courses/<%= course._id %>/archive" class="inline-form">
+                        <input type="hidden" name="returnTo" value="<%= studioOverviewPath %>">
+                        <button class="btn btn-danger btn-sm" type="submit">Archive</button>
+                      </form>
+                    <% } %>
+                    <% if (course.canRestore) { %>
+                      <form method="post" action="/simple-lms/courses/<%= course._id %>/restore" class="inline-form">
+                        <input type="hidden" name="returnTo" value="<%= studioOverviewPath %>">
+                        <button class="btn btn-primary btn-sm" type="submit">Restore</button>
+                      </form>
+                    <% } %>
+                  </div>
+
+                  <% if (course.canAssign) { %>
+                    <details>
+                      <summary>Assign to learner</summary>
+                      <form method="post" action="/simple-lms/courses/<%= course._id %>/assign" class="assign-grid" style="margin-top:8px;">
+                        <input type="hidden" name="returnTo" value="<%= studioOverviewPath %>">
+                        <label>Account
+                          <select class="input" name="targetAccountId">
+                            <option value="">Select account</option>
+                            <% (assignableAccounts || []).forEach((account) => { %>
+                              <option value="<%= account._id %>"><%= account.displayName || account.email %> - <%= account.email %></option>
+                            <% }) %>
+                          </select>
+                        </label>
+                        <label>or Email<input class="input" type="email" name="targetEmail" placeholder="learner@email.com"></label>
+                        <div class="actions" style="align-self:end;">
+                          <button class="btn btn-primary btn-sm" type="submit">Assign Course</button>
+                        </div>
+                      </form>
+                    </details>
+                  <% } %>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+      <% } %>
+    </section>
+  </main>
+
+  <% if (!isAdminStudio) { %>
+    <%- include('./partials/public-footer') %>
+  <% } %>
+
+  <script>
+    (() => {
+      const preferredLessonDuration = Number(<%- JSON.stringify(Number(creatorSettings?.preferredLessonDurationMinutes || 12)) %>) || 12
+      const autoLoadSample = <%- JSON.stringify(Boolean(creatorSettings?.autoLoadSampleCurriculum)) %>
+
+      const sanitizeText = (value, max = 40000) => String(value || '').trim().slice(0, max)
+      const sanitizeKey = (value, fallback) => {
+        const normalized = String(value || fallback || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9-_]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 80)
+        return normalized || fallback
+      }
+      const safeParseJson = (value, fallback = []) => {
+        try {
+          const parsed = JSON.parse(String(value || ''))
+          return Array.isArray(parsed) ? parsed : fallback
+        } catch {
+          return fallback
+        }
+      }
+      const escapeHtml = (value) => String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+
+      const lessonMediaUploadEndpoint = '/api/simple-lms/upload/lesson-media'
+
+      const sanitizeLessonMedia = (input) => {
+        if (!input || typeof input !== 'object' || Array.isArray(input)) return null
+        const url = sanitizeText(input.url, 2000)
+        const publicId = sanitizeText(input.publicId, 400)
+        if (!url && !publicId) return null
+        const resourceTypeValue = String(input.resourceType || 'video').trim().toLowerCase()
+        const resourceType = ['audio', 'video', 'raw', 'link'].includes(resourceTypeValue) ? resourceTypeValue : 'video'
+        return {
+          provider: String(input.provider || '').trim().toLowerCase() === 'external' ? 'external' : 'cloudinary',
+          url,
+          publicId,
+          resourceType,
+          format: sanitizeText(input.format, 40).toLowerCase(),
+          bytes: Number.isFinite(Number(input.bytes)) ? Math.max(0, Number(input.bytes)) : 0,
+          width: Number.isFinite(Number(input.width)) ? Math.max(0, Number(input.width)) : 0,
+          height: Number.isFinite(Number(input.height)) ? Math.max(0, Number(input.height)) : 0,
+          durationSeconds: Number.isFinite(Number(input.durationSeconds)) ? Math.max(0, Number(input.durationSeconds)) : 0,
+          sourceLabel: sanitizeText(input.sourceLabel, 120)
+        }
+      }
+
+      const createEmptyLesson = (chapterKey, lessonIndex = 0) => ({
+        key: `${chapterKey}-lesson-${lessonIndex + 1}`,
+        title: '',
+        description: '',
+        durationMinutes: preferredLessonDuration,
+        videoUrl: '',
+        legacyVideoUrl: '',
+        media: null,
+        content: '',
+        resources: [],
+        quizQuestions: []
+      })
+
+      const createEmptyChapter = (chapterIndex = 0) => {
+        const key = `chapter-${chapterIndex + 1}`
+        return {
+          key,
+          title: '',
+          description: '',
+          lessons: [createEmptyLesson(key, 0)]
+        }
+      }
+
+      const buildLessonState = (lesson, chapterKey, lessonIndex) => {
+        const media = sanitizeLessonMedia(lesson?.media)
+        const derivedDurationMinutes = Number(media?.durationSeconds) > 0
+          ? Math.max(1, Math.ceil(Number(media.durationSeconds) / 60))
+          : preferredLessonDuration
+        const legacyVideoUrl = media
+          ? ''
+          : sanitizeText(lesson?.videoUrl || lesson?.mediaUrl || lesson?.audioUrl, 2000)
+        const playbackUrl = media?.url || legacyVideoUrl
+        return {
+          key: sanitizeKey(lesson?.key, `${chapterKey}-lesson-${lessonIndex + 1}`),
+          title: sanitizeText(lesson?.title, 200),
+          description: sanitizeText(lesson?.description, 3000),
+          durationMinutes: Number.isFinite(Number(lesson?.durationMinutes))
+            ? Math.max(0, Math.round(Number(lesson.durationMinutes)))
+            : derivedDurationMinutes,
+          videoUrl: playbackUrl,
+          legacyVideoUrl,
+          media,
+          content: sanitizeText(lesson?.content, 40000),
+          resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
+          quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
+        }
+      }
+
+      const lessonHasContent = (lesson) => Boolean(
+        lesson?.title
+        || lesson?.description
+        || lesson?.videoUrl
+        || lesson?.legacyVideoUrl
+        || lesson?.media?.url
+        || lesson?.content
+      )
+
+      const normalizeChapters = (input = []) => {
+        const chapters = Array.isArray(input) ? input : []
+        const normalized = chapters
+          .map((chapter, chapterIndex) => {
+            const title = sanitizeText(chapter?.title, 200)
+            const chapterKey = sanitizeKey(chapter?.key, `chapter-${chapterIndex + 1}`)
+            const lessons = Array.isArray(chapter?.lessons) ? chapter.lessons : []
+            const normalizedLessons = lessons
+              .map((lesson, lessonIndex) => buildLessonState(lesson, chapterKey, lessonIndex))
+              .filter((lesson) => lessonHasContent(lesson))
+
+            return {
+              key: chapterKey,
+              title,
+              description: sanitizeText(chapter?.description, 3000),
+              lessons: normalizedLessons.length > 0 ? normalizedLessons : [createEmptyLesson(chapterKey, 0)]
+            }
+          })
+          .filter((chapter) => chapter.title || chapter.description || chapter.lessons.some((lesson) => lessonHasContent(lesson)))
+
+        return normalized.length > 0 ? normalized : [createEmptyChapter(0)]
+      }
+
+      const buildSampleCurriculum = () => normalizeChapters([
+        {
+          title: 'Introduction',
+          description: 'Course orientation and expected outcomes.',
+          lessons: [
+            {
+              title: 'Welcome and Learning Outcomes',
+              description: 'Set the context and walk through the curriculum structure.',
+              durationMinutes: preferredLessonDuration,
+              videoUrl: '',
+              legacyVideoUrl: '',
+              media: null,
+              content: 'Welcome to this course. Use this lesson to set context and expected outcomes.'
+            }
+          ]
+        }
+      ])
+
+      const serializeLessonForJson = (lesson) => {
+        const media = sanitizeLessonMedia(lesson?.media)
+        const externalVideoUrl = media
+          ? ''
+          : sanitizeText(lesson?.legacyVideoUrl || lesson?.videoUrl, 2000)
+        return {
+          key: sanitizeKey(lesson?.key, 'lesson'),
+          title: sanitizeText(lesson?.title, 200),
+          description: sanitizeText(lesson?.description, 3000),
+          durationMinutes: Number.isFinite(Number(lesson?.durationMinutes))
+            ? Math.max(0, Math.round(Number(lesson.durationMinutes)))
+            : 0,
+          videoUrl: externalVideoUrl,
+          media,
+          content: sanitizeText(lesson?.content, 40000),
+          resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
+          quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
+        }
+      }
+
+      const serializeChaptersForJson = (chapters) => (Array.isArray(chapters) ? chapters : [])
+        .map((chapter, chapterIndex) => {
+          const chapterKey = sanitizeKey(chapter?.key, `chapter-${chapterIndex + 1}`)
+          const lessons = (Array.isArray(chapter?.lessons) ? chapter.lessons : [])
+            .map((lesson, lessonIndex) => serializeLessonForJson({
+              ...lesson,
+              key: sanitizeKey(lesson?.key, `${chapterKey}-lesson-${lessonIndex + 1}`)
+            }))
+            .filter((lesson) => lessonHasContent(lesson))
+          return {
+            key: chapterKey,
+            title: sanitizeText(chapter?.title, 200),
+            description: sanitizeText(chapter?.description, 3000),
+            lessons
+          }
+        })
+        .filter((chapter) => chapter.title || chapter.description || chapter.lessons.some((lesson) => lessonHasContent(lesson)))
+
+      const getLessonPlaybackUrl = (lesson) => String(
+        lesson?.media?.url
+        || lesson?.videoUrl
+        || lesson?.legacyVideoUrl
+        || ''
+      ).trim()
+
+      const getMediaPreviewDescriptor = (lessonOrUrl) => {
+        const media = sanitizeLessonMedia(
+          lessonOrUrl && typeof lessonOrUrl === 'object' && !Array.isArray(lessonOrUrl)
+            ? lessonOrUrl.media
+            : null
+        )
+        const value = media?.url || String(
+          lessonOrUrl && typeof lessonOrUrl === 'object' && !Array.isArray(lessonOrUrl)
+            ? getLessonPlaybackUrl(lessonOrUrl)
+            : lessonOrUrl || ''
+        ).trim()
+        if (!value) return { kind: 'none', embedUrl: '', directUrl: '', sourceLabel: '' }
+
+        if (media?.provider === 'cloudinary') {
+          return {
+            kind: media.resourceType === 'audio' ? 'audio' : 'video',
+            embedUrl: '',
+            directUrl: value,
+            sourceLabel: media.sourceLabel || (media.resourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+          }
+        }
+
+        let parsed
+        try {
+          parsed = new URL(value)
+        } catch {
+          return { kind: 'link', embedUrl: '', directUrl: value, sourceLabel: 'External Link' }
+        }
+
+        const hostname = parsed.hostname.toLowerCase()
+        const pathname = parsed.pathname.toLowerCase()
+        const extension = pathname.includes('.') ? pathname.slice(pathname.lastIndexOf('.')) : ''
+        const audioExtensions = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.oga', '.flac', '.weba'])
+        const videoExtensions = new Set(['.mp4', '.webm', '.mov', '.m4v', '.ogv', '.m3u8'])
+
+        if (hostname.includes('youtube.com')) {
+          const videoId = parsed.searchParams.get('v')
+          if (videoId) return { kind: 'embed', embedUrl: `https://www.youtube.com/embed/${videoId}`, directUrl: value, sourceLabel: 'YouTube' }
+          if (pathname.includes('/embed/')) return { kind: 'embed', embedUrl: value, directUrl: value, sourceLabel: 'YouTube' }
+        }
+        if (hostname.includes('youtu.be')) {
+          const videoId = parsed.pathname.split('/').filter(Boolean)[0]
+          if (videoId) return { kind: 'embed', embedUrl: `https://www.youtube.com/embed/${videoId}`, directUrl: value, sourceLabel: 'YouTube' }
+        }
+        if (hostname.includes('vimeo.com')) {
+          const vimeoId = parsed.pathname.split('/').filter(Boolean).find((part) => /^\d+$/.test(part))
+          if (vimeoId) return { kind: 'embed', embedUrl: `https://player.vimeo.com/video/${vimeoId}`, directUrl: value, sourceLabel: 'Vimeo' }
+        }
+        if (hostname.includes('player.vimeo.com')) return { kind: 'embed', embedUrl: value, directUrl: value, sourceLabel: 'Vimeo' }
+        if (audioExtensions.has(extension)) return { kind: 'audio', embedUrl: '', directUrl: value, sourceLabel: 'Audio' }
+        if (videoExtensions.has(extension)) return { kind: 'video', embedUrl: '', directUrl: value, sourceLabel: 'Video' }
+        if (pathname.includes('/embed/')) return { kind: 'embed', embedUrl: value, directUrl: value, sourceLabel: hostname }
+        return { kind: 'link', embedUrl: '', directUrl: value, sourceLabel: 'External Link' }
+      }
+
+      const renderMediaPreviewMarkup = (lesson, { allowLegacyExternalMedia = false } = {}) => {
+        const descriptor = getMediaPreviewDescriptor(lesson)
+        if (descriptor.kind === 'none') {
+          return `<p class="builder-preview-note">${allowLegacyExternalMedia ? 'Upload a Cloudinary video or audio file, or keep the existing legacy link for this lesson.' : 'Upload a Cloudinary video or audio file to preview the lesson output.'}</p>`
+        }
+        if (descriptor.kind === 'embed' && descriptor.embedUrl) return `<iframe src="${escapeHtml(descriptor.embedUrl)}" allowfullscreen loading="lazy"></iframe><p class="builder-preview-note">${escapeHtml(descriptor.sourceLabel)} embed preview</p>`
+        if (descriptor.kind === 'video' && descriptor.directUrl) return `<video controls preload="metadata" src="${escapeHtml(descriptor.directUrl)}"></video><p class="builder-preview-note">Direct video preview</p>`
+        if (descriptor.kind === 'audio' && descriptor.directUrl) return `<audio controls preload="metadata" src="${escapeHtml(descriptor.directUrl)}"></audio><p class="builder-preview-note">Direct audio preview</p>`
+        return `<p class="builder-preview-note">Preview unavailable for this link. <a href="${escapeHtml(descriptor.directUrl)}" target="_blank" rel="noreferrer">Open media link</a></p>`
+      }
+
+      const initCurriculumBuilder = ({
+        builderId,
+        chaptersJsonId,
+        addChapterButtonId,
+        loadJsonButtonId,
+        sampleButtonId,
+        allowLegacyExternalMedia = false,
+        allowAutoSample = false
+      }) => {
+        const builderRoot = document.getElementById(builderId)
+        const chaptersJsonField = document.getElementById(chaptersJsonId)
+        if (!builderRoot || !chaptersJsonField) return
+
+        const addChapterButton = document.getElementById(addChapterButtonId)
+        const loadJsonButton = document.getElementById(loadJsonButtonId)
+        const sampleButton = sampleButtonId ? document.getElementById(sampleButtonId) : null
+
+        let builderState = normalizeChapters(safeParseJson(chaptersJsonField.value, []))
+
+        const syncJsonField = () => {
+          chaptersJsonField.value = JSON.stringify(serializeChaptersForJson(builderState), null, 2)
+        }
+
+        const getLesson = (chapterIndex, lessonIndex) => {
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length) return null
+          const chapter = builderState[chapterIndex]
+          if (!chapter || !Array.isArray(chapter.lessons)) return null
+          if (!Number.isInteger(lessonIndex) || lessonIndex < 0 || lessonIndex >= chapter.lessons.length) return null
+          return chapter.lessons[lessonIndex]
+        }
+
+        const renderLessonMediaSummaryMarkup = (lesson) => {
+          const parts = []
+          if (lesson?.media?.url) {
+            parts.push(`<span class="builder-media-pill">${escapeHtml(lesson.media.sourceLabel || 'Cloudinary')}</span>`)
+            parts.push(`<span class="builder-media-pill">${escapeHtml((lesson.media.resourceType || 'video').toUpperCase())}</span>`)
+            if (Number.isFinite(Number(lesson.media.durationSeconds)) && Number(lesson.media.durationSeconds) > 0) {
+              parts.push(`<span class="builder-media-pill">${Math.max(1, Math.ceil(Number(lesson.media.durationSeconds) / 60))} min</span>`)
+            }
+          } else if (allowLegacyExternalMedia && lesson?.legacyVideoUrl) {
+            parts.push('<span class="builder-media-pill">Legacy link</span>')
+          } else {
+            parts.push('<span class="builder-media-pill">Upload required</span>')
+          }
+          return parts.join('')
+        }
+
+        const renderBuilder = () => {
+          builderRoot.innerHTML = builderState.map((chapter, chapterIndex) => `
+            <article class="builder-chapter" data-chapter-index="${chapterIndex}">
+              <div class="builder-chapter-head">
+                <strong>Chapter ${chapterIndex + 1}</strong>
+                <div class="actions">
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="add-lesson" data-chapter-index="${chapterIndex}">Add Lesson</button>
+                  <button type="button" class="btn btn-danger btn-sm" data-action="remove-chapter" data-chapter-index="${chapterIndex}" ${builderState.length <= 1 ? 'disabled' : ''}>Remove Chapter</button>
+                </div>
+              </div>
+              <div class="form-grid">
+                <label>Chapter Title<input class="input" data-kind="chapter" data-field="title" data-chapter-index="${chapterIndex}" value="${escapeHtml(chapter.title)}"></label>
+                <label>Chapter Key<input class="input" data-kind="chapter" data-field="key" data-chapter-index="${chapterIndex}" value="${escapeHtml(chapter.key)}"></label>
+              </div>
+              <label>Chapter Description<textarea class="input" rows="2" data-kind="chapter" data-field="description" data-chapter-index="${chapterIndex}">${escapeHtml(chapter.description)}</textarea></label>
+              <div class="builder-lessons">
+                ${(chapter.lessons || []).map((lesson, lessonIndex) => `
+                  <article class="builder-lesson">
+                    <div class="builder-lesson-head">
+                      <strong>Lesson ${lessonIndex + 1}</strong>
+                      <button type="button" class="btn btn-danger btn-sm" data-action="remove-lesson" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" ${(chapter.lessons || []).length <= 1 ? 'disabled' : ''}>Remove Lesson</button>
+                    </div>
+                    <div class="form-grid">
+                      <label>Lesson Title<input class="input" data-kind="lesson" data-field="title" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.title)}"></label>
+                      <label>Lesson Key<input class="input" data-kind="lesson" data-field="key" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.key)}"></label>
+                      <label>Duration (mins)<input class="input" type="number" min="0" data-kind="lesson" data-field="durationMinutes" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${Number(lesson.durationMinutes || 0)}"></label>
+                    </div>
+                    <section class="builder-media-panel">
+                      <div class="builder-media-toolbar">
+                        <div class="builder-media-summary">${renderLessonMediaSummaryMarkup(lesson)}</div>
+                        <div class="builder-media-actions">
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="upload-media" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">${lesson.media?.url ? 'Replace Media' : 'Upload Media'}</button>
+                          <input class="builder-file-input" type="file" accept="video/*,audio/*" data-action="media-input" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="remove-media" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" ${lesson.media?.url || lesson.legacyVideoUrl ? '' : 'disabled'}>Clear Media</button>
+                        </div>
+                      </div>
+                      ${allowLegacyExternalMedia && lesson.legacyVideoUrl
+                        ? `<label>Legacy Media URL<input class="input" data-kind="lesson" data-field="legacyVideoUrl" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.legacyVideoUrl)}" placeholder="https://youtube.com/..."></label><p class="builder-legacy-note">Legacy lessons can keep external links. New lessons should use Cloudinary uploads.</p>`
+                        : '<p class="builder-legacy-note">Use Cloudinary uploads for lesson playback, duration detection, and auto-progression.</p>'}
+                      <div class="builder-preview">${renderMediaPreviewMarkup(lesson, { allowLegacyExternalMedia })}</div>
+                    </section>
+                    <label>Lesson Description<textarea class="input" rows="2" data-kind="lesson" data-field="description" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">${escapeHtml(lesson.description)}</textarea></label>
+                    <label>Lesson Notes<textarea class="input" rows="4" data-kind="lesson" data-field="content" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">${escapeHtml(lesson.content)}</textarea></label>
+                  </article>
+                `).join('')}
+              </div>
+            </article>
+          `).join('')
+        }
+
+        const updateStateFromInput = (target) => {
+          const chapterIndex = Number.parseInt(target.dataset.chapterIndex || '', 10)
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length) return
+          const kind = target.dataset.kind
+          const field = target.dataset.field
+          if (!field) return
+
+          if (kind === 'chapter') {
+            if (field === 'key') {
+              builderState[chapterIndex][field] = sanitizeKey(target.value, `chapter-${chapterIndex + 1}`)
+            } else {
+              builderState[chapterIndex][field] = sanitizeText(target.value, field === 'title' ? 200 : 3000)
+            }
+            return
+          }
+
+          if (kind === 'lesson') {
+            const lessonIndex = Number.parseInt(target.dataset.lessonIndex || '', 10)
+            if (!Number.isInteger(lessonIndex) || lessonIndex < 0 || lessonIndex >= builderState[chapterIndex].lessons.length) return
+            const lesson = builderState[chapterIndex].lessons[lessonIndex]
+            if (field === 'durationMinutes') {
+              lesson[field] = Number.isFinite(Number(target.value)) ? Math.max(0, Math.round(Number(target.value))) : 0
+            } else if (field === 'key') {
+              lesson[field] = sanitizeKey(target.value, `${builderState[chapterIndex].key || `chapter-${chapterIndex + 1}`}-lesson-${lessonIndex + 1}`)
+            } else if (field === 'legacyVideoUrl') {
+              lesson.legacyVideoUrl = sanitizeText(target.value, 2000)
+              if (!lesson.media?.url) {
+                lesson.videoUrl = lesson.legacyVideoUrl
+              }
+            } else if (field === 'title') {
+              lesson[field] = sanitizeText(target.value, 200)
+            } else if (field === 'description') {
+              lesson[field] = sanitizeText(target.value, 3000)
+            } else if (field === 'content') {
+              lesson[field] = sanitizeText(target.value, 40000)
+            }
+          }
+        }
+
+        const addChapter = () => {
+          builderState.push(createEmptyChapter(builderState.length))
+          syncJsonField()
+          renderBuilder()
+        }
+        const addLesson = (chapterIndex) => {
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length) return
+          const chapter = builderState[chapterIndex]
+          const chapterKey = sanitizeKey(chapter.key, `chapter-${chapterIndex + 1}`)
+          chapter.key = chapterKey
+          chapter.lessons.push(createEmptyLesson(chapterKey, chapter.lessons.length))
+          syncJsonField()
+          renderBuilder()
+        }
+        const removeChapter = (chapterIndex) => {
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length || builderState.length <= 1) return
+          builderState.splice(chapterIndex, 1)
+          syncJsonField()
+          renderBuilder()
+        }
+        const removeLesson = (chapterIndex, lessonIndex) => {
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length) return
+          const chapter = builderState[chapterIndex]
+          if (!Number.isInteger(lessonIndex) || lessonIndex < 0 || lessonIndex >= chapter.lessons.length || chapter.lessons.length <= 1) return
+          chapter.lessons.splice(lessonIndex, 1)
+          syncJsonField()
+          renderBuilder()
+        }
+        const loadBuilderFromJson = () => {
+          builderState = normalizeChapters(safeParseJson(chaptersJsonField.value, []))
+          syncJsonField()
+          renderBuilder()
+        }
+
+        const uploadLessonMedia = async (chapterIndex, lessonIndex, file, lessonNode) => {
+          const lesson = getLesson(chapterIndex, lessonIndex)
+          if (!lesson || !file) return
+
+          const uploadButton = lessonNode?.querySelector('[data-action="upload-media"]')
+          const removeButton = lessonNode?.querySelector('[data-action="remove-media"]')
+          const originalUploadText = uploadButton?.textContent || 'Upload Media'
+
+          try {
+            if (uploadButton) {
+              uploadButton.disabled = true
+              uploadButton.textContent = 'Uploading...'
+            }
+            if (removeButton) removeButton.disabled = true
+
+            const formData = new FormData()
+            formData.append('media', file)
+
+            const response = await fetch(lessonMediaUploadEndpoint, {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json'
+              },
+              body: formData
+            })
+            const payload = await parseMediaUploadResponse(response)
+            const media = sanitizeLessonMedia(payload?.lessonMedia)
+            if (!media?.url) {
+              throw new Error('Lesson media upload did not return a playable URL.')
+            }
+
+            lesson.media = media
+            lesson.videoUrl = media.url
+            lesson.legacyVideoUrl = ''
+            if (Number.isFinite(Number(payload?.durationMinutes)) && Number(payload.durationMinutes) > 0) {
+              lesson.durationMinutes = Math.max(1, Math.round(Number(payload.durationMinutes)))
+            }
+            syncJsonField()
+            renderBuilder()
+          } catch (error) {
+            alert(error && error.message ? error.message : 'Lesson media upload failed. Please try again.')
+            if (uploadButton) {
+              uploadButton.disabled = false
+              uploadButton.textContent = originalUploadText
+            }
+            if (removeButton) removeButton.disabled = false
+          }
+        }
+
+        builderRoot.addEventListener('input', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+          if (!target.dataset || !target.dataset.kind) return
+          const field = target.dataset.field
+          const kind = target.dataset.kind
+          updateStateFromInput(target)
+          syncJsonField()
+          if (kind === 'lesson' && field === 'legacyVideoUrl') {
+            const previewNode = target.closest('.builder-lesson')?.querySelector('.builder-preview')
+            const chapterIndex = Number.parseInt(target.dataset.chapterIndex || '', 10)
+            const lessonIndex = Number.parseInt(target.dataset.lessonIndex || '', 10)
+            const lesson = getLesson(chapterIndex, lessonIndex)
+            if (previewNode && lesson) previewNode.innerHTML = renderMediaPreviewMarkup(lesson, { allowLegacyExternalMedia })
+          }
+        })
+
+        builderRoot.addEventListener('change', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLInputElement)) return
+          if (target.dataset.action !== 'media-input') return
+          const chapterIndex = Number.parseInt(target.dataset.chapterIndex || '', 10)
+          const lessonIndex = Number.parseInt(target.dataset.lessonIndex || '', 10)
+          const file = target.files?.[0]
+          const lessonNode = target.closest('.builder-lesson')
+          void uploadLessonMedia(chapterIndex, lessonIndex, file, lessonNode)
+        })
+
+        builderRoot.addEventListener('click', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+          const button = target.closest('button[data-action]')
+          if (!button) return
+
+          const action = button.dataset.action
+          const chapterIndex = Number.parseInt(button.dataset.chapterIndex || '', 10)
+          const lessonIndex = Number.parseInt(button.dataset.lessonIndex || '', 10)
+          if (action === 'add-lesson') addLesson(chapterIndex)
+          if (action === 'remove-chapter') removeChapter(chapterIndex)
+          if (action === 'remove-lesson') removeLesson(chapterIndex, lessonIndex)
+          if (action === 'upload-media') {
+            const fileInput = button.parentElement?.querySelector('input[data-action="media-input"]')
+            if (fileInput instanceof HTMLInputElement) fileInput.click()
+          }
+          if (action === 'remove-media') {
+            const lesson = getLesson(chapterIndex, lessonIndex)
+            if (!lesson) return
+            lesson.media = null
+            lesson.videoUrl = allowLegacyExternalMedia ? lesson.legacyVideoUrl : ''
+            syncJsonField()
+            renderBuilder()
+          }
+        })
+
+        if (addChapterButton) addChapterButton.addEventListener('click', addChapter)
+        if (loadJsonButton) loadJsonButton.addEventListener('click', loadBuilderFromJson)
+        chaptersJsonField.addEventListener('blur', loadBuilderFromJson)
+        if (sampleButton) {
+          sampleButton.addEventListener('click', () => {
+            builderState = buildSampleCurriculum()
+            syncJsonField()
+            renderBuilder()
+          })
+        }
+
+        const currentChaptersValue = String(chaptersJsonField.value || '').trim()
+        if (allowAutoSample && (!currentChaptersValue || currentChaptersValue === '[]')) {
+          builderState = buildSampleCurriculum()
+        }
+        syncJsonField()
+        renderBuilder()
+      }
+
+      initCurriculumBuilder({
+        builderId: 'createCurriculumBuilder',
+        chaptersJsonId: 'createChaptersJson',
+        addChapterButtonId: 'addCreateChapter',
+        loadJsonButtonId: 'createBuilderLoadJson',
+        sampleButtonId: 'fillCourseTemplate',
+        allowLegacyExternalMedia: false,
+        allowAutoSample: autoLoadSample
+      })
+
+      initCurriculumBuilder({
+        builderId: 'editCurriculumBuilder',
+        chaptersJsonId: 'editChaptersJson',
+        addChapterButtonId: 'addEditChapter',
+        loadJsonButtonId: 'editBuilderLoadJson',
+        sampleButtonId: '',
+        allowLegacyExternalMedia: true,
+        allowAutoSample: false
+      })
+
+      // Banner Upload Handler
+      const bannerUploadArea = document.getElementById('banner-upload-area')
+      const bannerFileInput = document.getElementById('banner-file-input')
+      const bannerProgress = document.getElementById('banner-progress')
+      const bannerProgressBar = bannerProgress?.querySelector('.banner-progress-bar')
+      const bannerProgressText = bannerProgress?.querySelector('.banner-progress-text')
+      const bannerUrlInput = document.getElementById('banner-url-input')
+      const bannerPublicIdInput = document.getElementById('banner-public-id-input')
+      const bannerWidthInput = document.getElementById('banner-width-input')
+      const bannerHeightInput = document.getElementById('banner-height-input')
+      const bannerUploadEndpoint = '/api/simple-lms/upload/banner'
+      const bannerRemoveIcon = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M3 6h18"/>
+          <path d="M8 6V4h8v2"/>
+          <path d="M19 6l-1 14H6L5 6"/>
+          <path d="M10 11v6M14 11v6"/>
+        </svg>
+      `
+
+      if (bannerUploadArea && bannerFileInput) {
+        bannerUploadArea.addEventListener('click', () => bannerFileInput.click())
+        
+        bannerFileInput.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          await uploadBanner(file)
+        })
+
+        // Drag and drop
+        bannerUploadArea.addEventListener('dragover', (e) => {
+          e.preventDefault()
+          bannerUploadArea.classList.add('drag-over')
+        })
+        
+        bannerUploadArea.addEventListener('dragleave', () => {
+          bannerUploadArea.classList.remove('drag-over')
+        })
+        
+        bannerUploadArea.addEventListener('drop', async (e) => {
+          e.preventDefault()
+          bannerUploadArea.classList.remove('drag-over')
+          const file = e.dataTransfer?.files?.[0]
+          if (file && file.type.startsWith('image/')) {
+            await uploadBanner(file)
+          }
+        })
+      }
+
+      async function uploadBanner(file) {
+        if (!bannerUploadArea || !bannerProgress) return
+
+        // Validate file
+        const maxSize = 5 * 1024 * 1024 // 5MB
+        if (file.size > maxSize) {
+          alert('File too large. Maximum size is 5MB.')
+          return
+        }
+
+        // Show progress
+        bannerUploadArea.style.display = 'none'
+        bannerProgress.style.display = 'block'
+        bannerProgressBar.style.width = '0%'
+        bannerProgressText.textContent = 'Uploading...'
+
+        const formData = new FormData()
+        formData.append('banner', file)
+
+        try {
+          const response = await fetch(bannerUploadEndpoint, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json'
+            },
+            body: formData
+          })
+          const data = await parseBannerUploadResponse(response)
+
+          // Update hidden inputs
+          bannerUrlInput.value = data.url
+          bannerPublicIdInput.value = data.publicId
+          bannerWidthInput.value = data.width
+          bannerHeightInput.value = data.height
+
+          // Show preview
+          showBannerPreview(data.url)
+
+          bannerProgressText.textContent = 'Upload complete!'
+          setTimeout(() => {
+            bannerProgress.style.display = 'none'
+          }, 1500)
+
+        } catch (error) {
+          console.error('Banner upload error:', error)
+          alert('Failed to upload banner: ' + error.message)
+          bannerUploadArea.style.display = 'block'
+          bannerProgress.style.display = 'none'
+        }
+      }
+
+      function showBannerPreview(url) {
+        const bannerUploadArea = document.getElementById('banner-upload-area')
+        if (!bannerUploadArea) return
+
+        bannerUploadArea.innerHTML = `
+          <div class="banner-preview">
+            <img src="${url}" alt="Banner preview">
+            <button type="button" class="banner-remove-btn" onclick="removeBanner()" aria-label="Remove banner" title="Remove banner">${bannerRemoveIcon}</button>
+          </div>
+        `
+        bannerUploadArea.style.display = 'block'
+      }
+
+      window.removeBanner = function() {
+        const bannerUploadArea = document.getElementById('banner-upload-area')
+        if (!bannerUploadArea) return
+
+        // Clear hidden inputs
+        if (bannerUrlInput) bannerUrlInput.value = ''
+        if (bannerPublicIdInput) bannerPublicIdInput.value = ''
+        if (bannerWidthInput) bannerWidthInput.value = ''
+        if (bannerHeightInput) bannerHeightInput.value = ''
+
+        // Reset upload area
+        bannerUploadArea.innerHTML = `
+          <div class="banner-upload-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <p>Click or drag to upload banner image</p>
+            <span>Recommended: 1200x630px, max 5MB</span>
+          </div>
+        `
+        bannerUploadArea.style.display = 'block'
+      }
+
+      // Banner Upload Handler for Create Course Form
+      const createBannerUploadArea = document.getElementById('create-banner-upload-area')
+      const createBannerFileInput = document.getElementById('create-banner-file-input')
+      const createBannerProgress = document.getElementById('create-banner-progress')
+      const createBannerProgressBar = createBannerProgress?.querySelector('.banner-progress-bar')
+      const createBannerProgressText = createBannerProgress?.querySelector('.banner-progress-text')
+      const createBannerUrlInput = document.getElementById('create-banner-url-input')
+      const createBannerPublicIdInput = document.getElementById('create-banner-public-id-input')
+      const createBannerWidthInput = document.getElementById('create-banner-width-input')
+      const createBannerHeightInput = document.getElementById('create-banner-height-input')
+
+      if (createBannerUploadArea && createBannerFileInput) {
+        createBannerUploadArea.addEventListener('click', () => createBannerFileInput.click())
+        
+        createBannerFileInput.addEventListener('change', async (e) => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          await uploadCreateBanner(file)
+        })
+
+        createBannerUploadArea.addEventListener('dragover', (e) => {
+          e.preventDefault()
+          createBannerUploadArea.classList.add('drag-over')
+        })
+        
+        createBannerUploadArea.addEventListener('dragleave', () => {
+          createBannerUploadArea.classList.remove('drag-over')
+        })
+        
+        createBannerUploadArea.addEventListener('drop', async (e) => {
+          e.preventDefault()
+          createBannerUploadArea.classList.remove('drag-over')
+          const file = e.dataTransfer?.files?.[0]
+          if (file && file.type.startsWith('image/')) {
+            await uploadCreateBanner(file)
+          }
+        })
+      }
+
+      async function uploadCreateBanner(file) {
+        if (!createBannerUploadArea || !createBannerProgress) return
+
+        const maxSize = 5 * 1024 * 1024
+        if (file.size > maxSize) {
+          alert('File too large. Maximum size is 5MB.')
+          return
+        }
+
+        createBannerUploadArea.style.display = 'none'
+        createBannerProgress.style.display = 'block'
+        if (createBannerProgressBar) createBannerProgressBar.style.width = '0%'
+        if (createBannerProgressText) createBannerProgressText.textContent = 'Uploading...'
+
+        const formData = new FormData()
+        formData.append('banner', file)
+
+        try {
+          const response = await fetch(bannerUploadEndpoint, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json'
+            },
+            body: formData
+          })
+          const data = await parseBannerUploadResponse(response)
+
+          createBannerUrlInput.value = data.url
+          createBannerPublicIdInput.value = data.publicId
+          createBannerWidthInput.value = data.width
+          createBannerHeightInput.value = data.height
+
+          createBannerUploadArea.innerHTML = `
+            <div class="banner-preview">
+              <img src="${data.url}" alt="Banner preview">
+              <button type="button" class="banner-remove-btn" onclick="removeCreateBanner()" aria-label="Remove banner" title="Remove banner">${bannerRemoveIcon}</button>
+            </div>
+          `
+          createBannerUploadArea.style.display = 'block'
+
+          if (createBannerProgressText) createBannerProgressText.textContent = 'Upload complete!'
+          setTimeout(() => {
+            createBannerProgress.style.display = 'none'
+          }, 1500)
+
+        } catch (error) {
+          console.error('Banner upload error:', error)
+          alert('Failed to upload banner: ' + error.message)
+          createBannerUploadArea.style.display = 'block'
+          createBannerProgress.style.display = 'none'
+        }
+      }
+
+      window.removeCreateBanner = function() {
+        if (!createBannerUploadArea) return
+
+        createBannerUrlInput.value = ''
+        createBannerPublicIdInput.value = ''
+        createBannerWidthInput.value = ''
+        createBannerHeightInput.value = ''
+
+        createBannerUploadArea.innerHTML = `
+          <div class="banner-upload-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <p>Click or drag to upload banner image</p>
+            <span>Recommended: 1200x630px, max 5MB</span>
+          </div>
+        `
+        createBannerUploadArea.style.display = 'block'
+      }
+
+      const initCourseCreateWizard = () => {
+        const form = document.getElementById('createCourseWizardForm')
+        if (!form) return
+
+        const shell = form.querySelector('[data-wizard-shell]')
+        const panes = Array.from(form.querySelectorAll('[data-wizard-pane]'))
+        const steps = Array.from(form.querySelectorAll('[data-wizard-goto]'))
+        const progressBar = form.querySelector('[data-wizard-progress]')
+        const messageNode = form.querySelector('[data-wizard-message]')
+        const prevButton = form.querySelector('[data-wizard-prev]')
+        const nextButton = form.querySelector('[data-wizard-next]')
+        const submitButton = form.querySelector('[data-wizard-submit]')
+        if (!shell || panes.length === 0 || !prevButton || !nextButton || !submitButton) return
+
+        const reviewNodes = {
+          title: document.getElementById('courseWizardReviewTitle'),
+          category: document.getElementById('courseWizardReviewCategory'),
+          status: document.getElementById('courseWizardReviewStatus'),
+          visibility: document.getElementById('courseWizardReviewVisibility'),
+          pricing: document.getElementById('courseWizardReviewPricing'),
+          sellThrough: document.getElementById('courseWizardReviewSellThrough'),
+          curriculum: document.getElementById('courseWizardReviewCurriculum')
+        }
+
+        const totalSteps = panes.length
+        const lastStepIndex = totalSteps - 1
+        let currentStep = 0
+
+        const getFieldValue = (name) => {
+          const field = form.elements.namedItem(name)
+          if (!field) return ''
+          if (Array.isArray(field)) return String(field[0]?.value || '').trim()
+          if (field.type === 'checkbox') return field.checked ? 'on' : ''
+          return String(field.value || '').trim()
+        }
+
+        const setMessage = (text = '') => {
+          if (!messageNode) return
+          if (!text) {
+            messageNode.hidden = true
+            messageNode.textContent = ''
+            return
+          }
+          messageNode.hidden = false
+          messageNode.textContent = text
+        }
+
+        const getCurriculumStats = () => {
+          const raw = getFieldValue('chaptersJson')
+          const chapters = safeParseJson(raw, [])
+          const chapterCount = Array.isArray(chapters) ? chapters.length : 0
+          const lessonCount = Array.isArray(chapters)
+            ? chapters.reduce((sum, chapter) => sum + (Array.isArray(chapter?.lessons) ? chapter.lessons.length : 0), 0)
+            : 0
+          return {
+            chapterCount,
+            lessonCount
+          }
+        }
+
+        const refreshReview = () => {
+          const title = getFieldValue('title')
+          const category = getFieldValue('category')
+          const status = getFieldValue('status')
+          const visibility = getFieldValue('visibility')
+          const paymentMode = getFieldValue('paymentMode')
+          const amount = Number(getFieldValue('amount') || 0)
+          const currency = getFieldValue('currency') || 'NGN'
+          const partnerSellingEnabled = getFieldValue('partnerSellingEnabled') === 'on'
+          const creatorSharePercent = Number(getFieldValue('partnerSellingCreatorSharePercent') || 0)
+          const partnerSharePercent = Number(getFieldValue('partnerSellingPartnerSharePercent') || 0)
+          const curriculum = getCurriculumStats()
+
+          if (reviewNodes.title) reviewNodes.title.textContent = title || 'Untitled course'
+          if (reviewNodes.category) reviewNodes.category.textContent = category || 'No category yet'
+          if (reviewNodes.status) reviewNodes.status.textContent = status || 'draft'
+          if (reviewNodes.visibility) reviewNodes.visibility.textContent = visibility || 'private'
+          if (reviewNodes.pricing) {
+            const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0
+            const showDecimal = Math.abs(safeAmount % 1) > 0.000001
+            const amountText = safeAmount.toLocaleString(undefined, {
+              minimumFractionDigits: showDecimal ? 2 : 0,
+              maximumFractionDigits: 2
+            })
+            reviewNodes.pricing.textContent = paymentMode === 'paid'
+              ? `${currency.toUpperCase()} ${amountText}`
+              : 'Free course'
+          }
+          if (reviewNodes.sellThrough) {
+            reviewNodes.sellThrough.textContent = partnerSellingEnabled
+              ? `${Number.isFinite(creatorSharePercent) ? creatorSharePercent : 0}% creator / ${Number.isFinite(partnerSharePercent) ? partnerSharePercent : 0}% partner`
+              : 'Direct creator sale only'
+          }
+          if (reviewNodes.curriculum) {
+            reviewNodes.curriculum.textContent = `${curriculum.chapterCount} chapters / ${curriculum.lessonCount} lessons`
+          }
+        }
+
+        const validateStep = (stepIndex) => {
+          if (stepIndex === 0) {
+            if (!getFieldValue('title')) return 'Add a course title before continuing.'
+            return ''
+          }
+
+          if (stepIndex === 1) {
+            const paymentMode = getFieldValue('paymentMode')
+            const amount = Number(getFieldValue('amount') || 0)
+            const partnerSellingEnabled = getFieldValue('partnerSellingEnabled') === 'on'
+            const creatorSharePercent = Number(getFieldValue('partnerSellingCreatorSharePercent') || 0)
+            const partnerSharePercent = Number(getFieldValue('partnerSellingPartnerSharePercent') || 0)
+            if (paymentMode === 'paid' && (!Number.isFinite(amount) || amount <= 0)) {
+              return 'Paid courses need an amount greater than 0.'
+            }
+            if (partnerSellingEnabled && (!Number.isFinite(creatorSharePercent) || !Number.isFinite(partnerSharePercent) || (creatorSharePercent + partnerSharePercent) > 100)) {
+              return 'Creator share and partner share must be valid and add up to 100% or less.'
+            }
+            return ''
+          }
+
+          if (stepIndex === 2) {
+            return ''
+          }
+
+          if (stepIndex === 3) {
+            const status = getFieldValue('status')
+            if (status !== 'published') return ''
+            const raw = getFieldValue('chaptersJson')
+            const chapters = safeParseJson(raw, [])
+            if (!Array.isArray(chapters) || chapters.length === 0) {
+              return 'Published courses need at least one chapter.'
+            }
+            const lessonTitles = chapters
+              .flatMap((chapter) => Array.isArray(chapter?.lessons) ? chapter.lessons : [])
+              .map((lesson) => String(lesson?.title || '').trim())
+              .filter(Boolean)
+            if (lessonTitles.length === 0) {
+              return 'Published courses need at least one lesson title.'
+            }
+            return ''
+          }
+
+          return ''
+        }
+
+        const updateUI = () => {
+          panes.forEach((pane, index) => {
+            pane.classList.toggle('active', index === currentStep)
+          })
+
+          steps.forEach((step, index) => {
+            step.classList.toggle('active', index === currentStep)
+            step.classList.toggle('complete', index < currentStep)
+          })
+
+          const progressPercent = ((currentStep + 1) / totalSteps) * 100
+          if (progressBar) progressBar.style.width = `${progressPercent}%`
+          prevButton.disabled = currentStep <= 0
+          shell.classList.toggle('is-final', currentStep === lastStepIndex)
+          refreshReview()
+        }
+
+        const goToStep = (nextStep, { skipValidation = false } = {}) => {
+          const targetStep = Math.max(0, Math.min(lastStepIndex, nextStep))
+          if (!skipValidation && targetStep > currentStep) {
+            for (let step = currentStep; step < targetStep; step += 1) {
+              const error = validateStep(step)
+              if (error) {
+                setMessage(error)
+                return false
+              }
+            }
+          }
+          currentStep = targetStep
+          setMessage('')
+          updateUI()
+          return true
+        }
+
+        prevButton.addEventListener('click', () => {
+          goToStep(currentStep - 1, { skipValidation: true })
+        })
+
+        nextButton.addEventListener('click', () => {
+          const error = validateStep(currentStep)
+          if (error) {
+            setMessage(error)
+            return
+          }
+          goToStep(currentStep + 1, { skipValidation: true })
+        })
+
+        steps.forEach((stepButton, stepIndex) => {
+          stepButton.addEventListener('click', () => {
+            if (stepIndex <= currentStep) {
+              goToStep(stepIndex, { skipValidation: true })
+              return
+            }
+            goToStep(stepIndex, { skipValidation: false })
+          })
+        })
+
+        form.addEventListener('input', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+          const watchedNames = new Set([
+            'title',
+            'category',
+            'status',
+            'visibility',
+            'paymentMode',
+            'amount',
+            'currency',
+            'partnerSellingEnabled',
+            'partnerSellingCreatorSharePercent',
+            'partnerSellingPartnerSharePercent',
+            'summary',
+            'description',
+            'chaptersJson'
+          ])
+          const fieldName = target.getAttribute('name') || ''
+          if (watchedNames.has(fieldName)) refreshReview()
+        })
+
+        form.addEventListener('submit', (event) => {
+          for (let step = 0; step < lastStepIndex; step += 1) {
+            const error = validateStep(step)
+            if (error) {
+              event.preventDefault()
+              goToStep(step, { skipValidation: true })
+              setMessage(error)
+              return
+            }
+          }
+          setMessage('')
+        })
+
+        updateUI()
+      }
+
+      initCourseCreateWizard()
+
+      async function parseBannerUploadResponse(response) {
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+        const isJsonResponse = contentType.includes('application/json')
+
+        if (isJsonResponse) {
+          const payload = await response.json()
+          if (!response.ok) {
+            throw new Error(payload?.error || `Upload failed (${response.status}).`)
+          }
+          return payload
+        }
+
+        const textPayload = await response.text()
+        if (!response.ok && response.status === 404) {
+          throw new Error('Banner upload endpoint was not found (404). Please refresh this page and try again.')
+        }
+
+        const snippet = String(textPayload || '').replace(/\s+/g, ' ').trim().slice(0, 120)
+        throw new Error(`Upload failed (${response.status}). ${snippet || 'Unexpected server response.'}`)
+      }
+
+      async function parseMediaUploadResponse(response) {
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+        if (contentType.includes('application/json')) {
+          const payload = await response.json()
+          if (!response.ok) {
+            throw new Error(payload?.error || `Lesson media upload failed (${response.status}).`)
+          }
+          return payload
+        }
+
+        const textPayload = await response.text()
+        if (!response.ok && response.status === 404) {
+          throw new Error('Lesson media upload endpoint was not found (404). Please refresh this page and try again.')
+        }
+
+        const snippet = String(textPayload || '').replace(/\s+/g, ' ').trim().slice(0, 120)
+        throw new Error(`Lesson media upload failed (${response.status}). ${snippet || 'Unexpected server response.'}`)
+      }
+    })()
+  </script>
+</body>
+</html>

@@ -6,6 +6,11 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig(async ({ mode }) => {
 	const isDev = mode === 'development'
 	const frappeui = await importFrappeUIPlugin(isDev)
+	const webserverPort = Number(process.env.FRAPPE_WEB_SERVER_PORT || 8000)
+	const vitePort = Number(
+		process.env.VITE_DEV_SERVER_PORT || 8080 + webserverPort - 8000
+	)
+	const proxySource = '^/(app|login|api|assets|files|private)'
 
 	const config = {
 		define: {
@@ -13,7 +18,7 @@ export default defineConfig(async ({ mode }) => {
 		},
 		plugins: [
 			frappeui({
-				frappeProxy: true,
+				frappeProxy: false,
 				lucideIcons: true,
 				jinjaBootData: true,
 				buildConfig: {
@@ -48,6 +53,17 @@ export default defineConfig(async ({ mode }) => {
 		server: {
 			host: '0.0.0.0', // Accept connections from any network interface
 			allowedHosts: true,
+			port: vitePort,
+			proxy: {
+				[proxySource]: {
+					target: `http://127.0.0.1:${webserverPort}`,
+					ws: true,
+					router: function (req) {
+						const siteName = req.headers.host.split(':')[0]
+						return `http://${siteName}:${webserverPort}`
+					},
+				},
+			},
 		},
 		resolve: {
 			alias: {

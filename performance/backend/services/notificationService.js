@@ -322,6 +322,35 @@ class NotificationService {
     `;
     return this.sendEmail(employee.email, subject, htmlContent);
   }
+
+  // ============== SELF-ASSESSMENT NOTIFICATIONS ==============
+
+  /**
+   * Notify manager that employee submitted their self-assessment (appraisals module).
+   * Note: We link to the appraisals manager view filtered by employee ID.
+   */
+  async notifySelfAssessmentSubmitted(manager, employee) {
+    const subject = `Self-Assessment Submitted: ${employee.name}`;
+    const baseUrl = process.env.FRONTEND_URL || '';
+    const employeeId = encodeURIComponent(employee.userId || '');
+    const appraisalUrl = `${baseUrl}/appraisals${employeeId ? `?employeeId=${employeeId}` : ''}`;
+
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #667eea;">Self-Assessment Submitted</h2>
+        <p>Hi ${manager.name},</p>
+        <p><strong>${employee.name}</strong> has submitted their self-assessment and is ready for your review.</p>
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
+          <p><strong>Employee:</strong> ${employee.name}</p>
+          <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
+        </div>
+        <a href="${appraisalUrl}" style="display: inline-block; background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 10px;">Open Appraisal</a>
+        <p style="color: #666; font-size: 12px; margin-top: 30px;">This is an automated message from SmartHR Performance Management.</p>
+      </div>
+    `;
+
+    return this.sendEmail(manager.email, subject, htmlContent);
+  }
 }
 
 module.exports = new NotificationService();

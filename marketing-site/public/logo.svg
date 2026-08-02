@@ -1,70 +1,33 @@
-<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 520 132" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3b82f6" />
-      <stop offset="50%" stop-color="#8b5cf6" />
-      <stop offset="100%" stop-color="#ec4899" />
+    <linearGradient id="wordmarkGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#b980ff" />
+      <stop offset="42%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#4c1d95" />
     </linearGradient>
-    
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
   </defs>
 
-  <!-- Background circle with subtle glow -->
-  <circle cx="50" cy="50" r="45" fill="url(#logoGradient)" opacity="0.1"/>
+  <text
+    x="10"
+    y="60"
+    fill="url(#wordmarkGradient)"
+    font-family="'Space Grotesk', 'IBM Plex Sans', sans-serif"
+    font-size="72"
+    font-weight="700"
+    letter-spacing="-4"
+  >
+    seemplify
+  </text>
 
-  <!-- Main "S" shape made of connected nodes -->
-  <g filter="url(#glow)">
-    <!-- Top arc of S -->
-    <path
-      d="M 65 25 Q 75 25 75 35 Q 75 45 65 45"
-      stroke="url(#logoGradient)"
-      stroke-width="6"
-      fill="none"
-      stroke-linecap="round"
-    />
-    
-    <!-- Middle curve -->
-    <path
-      d="M 65 45 Q 50 50 35 55"
-      stroke="url(#logoGradient)"
-      stroke-width="6"
-      fill="none"
-      stroke-linecap="round"
-    />
-    
-    <!-- Bottom arc of S -->
-    <path
-      d="M 35 55 Q 25 55 25 65 Q 25 75 35 75"
-      stroke="url(#logoGradient)"
-      stroke-width="6"
-      fill="none"
-      stroke-linecap="round"
-    />
-
-    <!-- Connection nodes -->
-    <circle cx="65" cy="25" r="4" fill="white" />
-    <circle cx="75" cy="35" r="4" fill="white" />
-    <circle cx="65" cy="45" r="4" fill="white" />
-    <circle cx="50" cy="50" r="4" fill="white" />
-    <circle cx="35" cy="55" r="4" fill="white" />
-    <circle cx="25" cy="65" r="4" fill="white" />
-    <circle cx="35" cy="75" r="4" fill="white" />
-
-    <!-- AI indicator accents -->
-    <g opacity="0.7">
-      <!-- Top right accent -->
-      <line x1="78" y1="28" x2="83" y2="23" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" />
-      <line x1="78" y1="32" x2="85" y2="32" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" />
-      
-      <!-- Bottom left accent -->
-      <line x1="22" y1="68" x2="17" y2="73" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" />
-      <line x1="22" y1="72" x2="15" y2="72" stroke="#ec4899" stroke-width="2" stroke-linecap="round" />
-    </g>
-  </g>
+  <text
+    x="115"
+    y="106"
+    fill="#6c6881"
+    font-family="'IBM Plex Sans', system-ui, sans-serif"
+    font-size="25"
+    font-weight="500"
+    letter-spacing="0.4"
+  >
+    Run Simple, Run Smart
+  </text>
 </svg>

@@ -289,6 +289,12 @@ const quizDetails = createDocumentResource({
 	name: props.quizID,
 	auto: false,
 	onSuccess(doc) {
+		if (!doc.passing_percentage) {
+			doc.passing_percentage = 60
+		}
+		if (doc.show_submission_history === undefined || doc.show_submission_history === null) {
+			doc.show_submission_history = 1
+		}
 		if (doc.questions && doc.questions.length > 0) {
 			questions.value = doc.questions.map((question) => question)
 		}

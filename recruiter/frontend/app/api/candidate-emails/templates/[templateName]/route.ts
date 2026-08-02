@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { templateName: string } }
+  { params }: { params: Promise<{ templateName: string }> }
 ) {
   try {
-    const { templateName } = params
+    const { templateName } = await params
     
     // Forward the request to the backend
     const backendResponse = await fetch(
-      `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/candidate-emails/templates/${templateName}`,
+      `${process.env.BACKEND_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:5001' : 'https://api.seemplifyai.com')}/api/candidate-emails/templates/${templateName}`,
       {
         method: 'GET',
+        cache: 'no-store',
       }
     )
 
@@ -29,6 +30,7 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': 'text/html',
+        'Cache-Control': 'no-store, max-age=0',
       },
     })
   } catch (error) {

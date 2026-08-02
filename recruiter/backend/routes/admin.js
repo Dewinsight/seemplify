@@ -2,12 +2,55 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
+const Job = require('../models/Job');
 const { adminAuth, requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
 const crypto = require('crypto');
 const emailService = require('../services/emailService');
+const currencyConversionService = require('../services/currencyConversionService');
+const publicApplicationCapacityService = require('../services/publicApplicationCapacityService');
+const {
+  PLATFORM_FEATURE_DEFINITIONS,
+  PLATFORM_FEATURE_KEYS
+} = require('../config/platformFeatures');
+const {
+  getPlatformFeatureSettings,
+  updatePlatformFeatureSettings
+} = require('../services/platformFeatureService');
+const {
+  consumeIdpAdminSsoToken,
+  upsertAdminFromIdpIdentity,
+  verifyIdpAdminSsoToken
+} = require('../services/idpAdminSsoService');
+
+const buildAdminTokenPayload = (admin) => ({
+  admin: {
+    id: admin.id
+  },
+  isAdmin: true
+});
+
+const issueAdminToken = (admin) => {
+  return jwt.sign(
+    buildAdminTokenPayload(admin),
+    process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET,
+    { expiresIn: '8h' }
+  );
+};
+
+const buildAdminAuthResponse = (admin, token = issueAdminToken(admin)) => ({
+  token,
+  admin: {
+    id: admin.id,
+    email: admin.email,
+    name: admin.name,
+    role: admin.role,
+    permissions: admin.permissions
+  }
+});
 
 // @route   POST /api/admin/auth/login
 // @desc    Admin login
@@ -46,36 +89,45 @@ router.post('/auth/login', async (req, res) => {
     // Reset login attempts on successful login
     await admin.resetLoginAttempts();
 
-    // Create JWT payload
-    const payload = {
-      admin: {
-        id: admin.id
-      },
-      isAdmin: true // Flag to distinguish admin tokens
-    };
-
-    // Sign token
-    jwt.sign(
-      payload,
-      process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET,
-      { expiresIn: '8h' }, // Admin tokens expire in 8 hours
-      (err, token) => {
-        if (err) throw err;
-        res.json({
-          token,
-          admin: {
-            id: admin.id,
-            email: admin.email,
-            name: admin.name,
-            role: admin.role,
-            permissions: admin.permissions
-          }
-        });
-      }
-    );
+    res.json(buildAdminAuthResponse(admin));
   } catch (err) {
     console.error('Admin login error:', err);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// @route   POST /api/admin/auth/idp-exchange
+// @desc    Exchange an IDP admin SSO token for a recruiter admin token
+// @access  Public
+router.post('/auth/idp-exchange', async (req, res) => {
+  try {
+    const { token } = req.body || {};
+
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ msg: 'IDP admin SSO token is required' });
+    }
+
+    const identity = verifyIdpAdminSsoToken(token);
+    consumeIdpAdminSsoToken(identity.jti, identity.exp);
+
+    const admin = await upsertAdminFromIdpIdentity(identity);
+    res.json(buildAdminAuthResponse(admin));
+  } catch (err) {
+    console.error('IDP admin SSO exchange error:', err);
+
+    if (err.code === 'IDP_ADMIN_SSO_NOT_CONFIGURED') {
+      return res.status(500).json({ msg: 'Admin SSO is not configured' });
+    }
+
+    if (err.code === 'INVALID_IDP_ADMIN_SSO_TOKEN' || err.code === 'IDP_ADMIN_SSO_TOKEN_REPLAYED') {
+      return res.status(401).json({ msg: err.message });
+    }
+
+    if (err.code === 'IDP_ADMIN_LINK_MISMATCH') {
+      return res.status(409).json({ msg: err.message });
+    }
+
+    res.status(500).json({ msg: 'Failed to exchange IDP admin SSO token' });
   }
 });
 
@@ -89,6 +141,54 @@ router.get('/auth/me', adminAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// @route   GET /api/admin/system/features
+// @desc    Get platform-wide feature availability
+// @access  Private (Admin with system settings permission)
+router.get('/system/features', adminAuth, requirePermission('systemSettings'), async (req, res) => {
+  try {
+    const settings = await getPlatformFeatureSettings({ forceRefresh: true });
+    res.json({
+      ...settings,
+      definitions: PLATFORM_FEATURE_KEYS.map((key) => ({
+        key,
+        ...PLATFORM_FEATURE_DEFINITIONS[key]
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching platform feature settings:', error);
+    res.status(500).json({ msg: 'Failed to fetch platform feature settings' });
+  }
+});
+
+// @route   PUT /api/admin/system/features
+// @desc    Update one or more platform-wide feature switches
+// @access  Private (Admin with system settings permission)
+router.put('/system/features', adminAuth, requirePermission('systemSettings'), async (req, res) => {
+  try {
+    const settings = await updatePlatformFeatureSettings(
+      req.body?.features,
+      req.admin._id
+    );
+
+    res.json({
+      success: true,
+      message: 'Platform features updated successfully',
+      ...settings,
+      definitions: PLATFORM_FEATURE_KEYS.map((key) => ({
+        key,
+        ...PLATFORM_FEATURE_DEFINITIONS[key]
+      }))
+    });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return res.status(400).json({ msg: error.message });
+    }
+
+    console.error('Error updating platform feature settings:', error);
+    res.status(500).json({ msg: 'Failed to update platform feature settings' });
   }
 });
 
@@ -406,6 +506,95 @@ router.get('/organizations', adminAuth, requirePermission('manageOrganizations')
   }
 });
 
+// @route   GET /api/admin/organizations/:id/jobs
+// @desc    Get jobs belonging to one organization, including public application links
+// @access  Private (Admin with manageOrganizations permission)
+router.get('/organizations/:id/jobs', adminAuth, requirePermission('manageOrganizations'), async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(404).json({ msg: 'Organization not found' });
+    }
+
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(10, Number.parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+    const organizationId = new mongoose.Types.ObjectId(req.params.id);
+    const query = { organization: organizationId };
+
+    const [organization, totalJobs, initialJobs] = await Promise.all([
+      Organization.findById(organizationId).select('name').lean(),
+      Job.countDocuments(query),
+      Job.find(query)
+        .select(
+          'title department location status isPublic publicSlug publicUrl ' +
+          'candidateApplyLimit publicApplicationCount analytics.publicApplications ' +
+          'applicationDeadline createdAt updatedAt'
+        )
+        .populate('department', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    if (!organization) {
+      return res.status(404).json({ msg: 'Organization not found' });
+    }
+
+    const reconciliations = await Promise.all(
+      initialJobs
+        .filter((job) => job.isPublic)
+        .map(async (job) => {
+          try {
+            return await publicApplicationCapacityService.reconcileInflatedCount({
+              jobId: job._id,
+              organizationId
+            });
+          } catch (reconciliationError) {
+            console.warn(`Could not reconcile public application count for job ${job._id}:`, reconciliationError.message);
+            return null;
+          }
+        })
+    );
+    const repairedCount = reconciliations.filter((result) => result?.repaired).length;
+    const jobs = repairedCount > 0
+      ? await Job.find(query)
+        .select(
+          'title department location status isPublic publicSlug publicUrl ' +
+          'candidateApplyLimit publicApplicationCount analytics.publicApplications ' +
+          'applicationDeadline createdAt updatedAt'
+        )
+        .populate('department', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+      : initialJobs;
+
+    return res.json({
+      organization,
+      jobs: jobs.map((job) => ({
+        ...job,
+        publicUrl: job.isPublic
+          ? (job.publicUrl || `/public/jobs/${job.publicSlug || job._id}`)
+          : null,
+        applicationCount: Number(job.publicApplicationCount || 0),
+        submittedApplications: Number(job.analytics?.publicApplications || 0)
+      })),
+      pagination: {
+        total: totalJobs,
+        page,
+        pages: Math.max(1, Math.ceil(totalJobs / limit)),
+        limit
+      },
+      repairedPublicApplicationCounts: repairedCount
+    });
+  } catch (err) {
+    console.error('Error fetching organization jobs:', err);
+    return res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 // @route   GET /api/admin/organizations/:id
 // @desc    Get single organization by ID (fetches from IdP if IdP-linked)
 // @access  Private (Admin with manageOrganizations permission)
@@ -467,6 +656,7 @@ router.put('/organizations/:id/license', adminAuth, requirePermission('manageLic
       memberLimit,
       licenseType,
       licenseEndDate,
+      defaultCurrency,
       generateNewKey
     } = req.body;
 
@@ -492,6 +682,13 @@ router.put('/organizations/:id/license', adminAuth, requirePermission('manageLic
     if (memberLimit) organization.subscription.memberLimit = memberLimit;
     if (licenseType) organization.subscription.licenseType = licenseType;
     if (licenseEndDate) organization.subscription.licenseEndDate = new Date(licenseEndDate);
+    if (defaultCurrency) {
+      if (!currencyConversionService.ALLOWED_CURRENCIES[String(defaultCurrency).trim().toUpperCase()]) {
+        return res.status(400).json({ msg: 'Unsupported default currency' });
+      }
+      if (!organization.settings) organization.settings = {};
+      organization.settings.defaultCurrency = String(defaultCurrency).trim().toUpperCase();
+    }
 
     // Generate new license key if requested
     if (generateNewKey) {
@@ -504,7 +701,7 @@ router.put('/organizations/:id/license', adminAuth, requirePermission('manageLic
 
     // Add admin note
     organization.subscription.adminNotes.push({
-      note: `License updated: Plan ${plan}, Limits: ${memberLimit} members`,
+      note: `License updated: Plan ${plan}, Limits: ${memberLimit} members${defaultCurrency ? `, Currency: ${String(defaultCurrency).trim().toUpperCase()}` : ''}`,
       addedBy: req.admin.id
     });
 

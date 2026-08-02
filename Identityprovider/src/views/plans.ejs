@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Subscription Plans - Seemplify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    body {
+      padding: 28px 18px 48px;
+    }
+
+    .plans-header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .plans-header h1 {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 12px;
+    }
+
+    .plans-header p {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .plans-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .plan-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    .plan-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    .plan-card.featured {
+      border-color: rgba(99, 102, 241, 0.5);
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(45, 212, 191, 0.08), rgba(99, 102, 241, 0.08));
+    }
+
+    .plan-badge {
+      position: absolute;
+      top: -12px;
+      right: 24px;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      color: white;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .plan-name {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 8px;
+    }
+
+    .plan-description {
+      color: var(--muted);
+      font-size: 14px;
+      margin: 0 0 24px;
+      line-height: 1.6;
+    }
+
+    .plan-price {
+      margin-bottom: 24px;
+    }
+
+    .plan-price-amount {
+      font-size: 36px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .plan-price-period {
+      font-size: 16px;
+      color: var(--muted);
+    }
+
+    .plan-price-yearly {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .plan-features {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 24px;
+    }
+
+    .plan-features li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .plan-features li svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .plan-features li.included svg {
+      color: #22c55e;
+    }
+
+    .plan-features li.not-included {
+      color: var(--muted);
+    }
+
+    .plan-features li.not-included svg {
+      color: var(--muted);
+    }
+
+    .plan-limits {
+      background: var(--hover-bg);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+
+    .plan-limits-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0 0 12px;
+    }
+
+    .plan-limit {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      color: var(--text);
+      padding: 4px 0;
+    }
+
+    .plan-limit span:last-child {
+      font-weight: 600;
+    }
+
+    .plan-cta {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .plan-cta-primary {
+      background: #18181b;
+      border-radius: 999px;
+      color: #ffffff;
+      box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .plan-cta-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 40px rgba(15, 23, 42, 0.35);
+    }
+
+    .plan-cta-secondary {
+      background: #ffffff;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      border-radius: 999px;
+      color: #52525b;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .plan-cta-secondary:hover {
+      border-color: rgba(0, 0, 0, 0.3);
+    }
+      background: var(--hover-bg);
+    }
+
+    .plan-cta:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .current-plan-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      border-radius: 20px;
+      color: #22c55e;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    .back-link:hover {
+      color: var(--text);
+    }
+
+    .plans-alert {
+      max-width: 720px;
+      margin: 0 auto 24px;
+      padding: 16px 18px;
+      border-radius: 12px;
+      border: 1px solid rgba(245, 158, 11, 0.28);
+      background: rgba(245, 158, 11, 0.1);
+      color: #f59e0b;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .plan-cta-note {
+      margin-top: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media (max-width: 768px) {
+      .plans-header h1 {
+        font-size: 24px;
+      }
+
+      .plans-header p {
+        font-size: 16px;
+      }
+
+      .plans-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .plan-card {
+        padding: 24px;
+      }
+    }
+  </style>
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <% if (typeof user !== 'undefined' && user) { %>
+    <%- include('partials/nav', { activePage: 'plans' }) %>
+  <% } %>
+
+  <div class="container">
+    <a href="/" class="back-link">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 12H5M12 19l-7-7 7-7" />
+      </svg>
+      Back to Home
+    </a>
+
+    <div class="plans-header">
+      <h1>Choose Your Plan</h1>
+      <p>Select the plan that best fits your organization's needs. All plans include secure single sign-on and organization management.</p>
+    </div>
+
+    <% if (typeof errorMessage !== 'undefined' && errorMessage) { %>
+      <div class="plans-alert"><%= errorMessage %></div>
+    <% } %>
+
+    <% if (typeof currentSubscription !== 'undefined' && currentSubscription) { %>
+      <div style="text-align: center; margin-bottom: 32px;">
+        <div class="current-plan-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+          Current Plan: <%= currentSubscription.plan.name %> (expires <%= new Date(currentSubscription.endDate).toLocaleDateString() %>)
+        </div>
+      </div>
+    <% } %>
+
+    <div class="plans-grid">
+      <% if (plans && plans.length > 0) { %>
+        <% plans.forEach(plan => { %>
+          <div class="plan-card <%= plan.isFeatured ? 'featured' : '' %>">
+            <% if (plan.badgeText) { %>
+              <div class="plan-badge"><%= plan.badgeText %></div>
+            <% } %>
+
+            <% if (currentSubscription && currentSubscription.plan._id.toString() === plan._id.toString()) { %>
+              <div class="current-plan-badge" style="margin-bottom: 16px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                Current Plan
+              </div>
+            <% } %>
+
+            <h2 class="plan-name"><%= plan.name %></h2>
+            <p class="plan-description"><%= plan.description || 'A great plan for your organization.' %></p>
+
+            <div class="plan-price">
+              <span class="plan-price-amount"><%= plan.formattedMonthlyPrice %></span>
+              <span class="plan-price-period">/month</span>
+              <div class="plan-price-yearly"><%= plan.formattedYearlyPrice %>/year (save <%= plan.pricing.yearlyDiscount || 0 %>%)</div>
+            </div>
+
+            <div class="plan-limits">
+              <div class="plan-limits-title">Usage Limits</div>
+              <div class="plan-limit">
+                <span>Team Members</span>
+                <span><%= plan.limits.maxMembers === null ? 'Unlimited' : plan.limits.maxMembers %></span>
+              </div>
+              <div class="plan-limit">
+                <span>Teams</span>
+                <span><%= plan.limits.maxTeams === null ? 'Unlimited' : plan.limits.maxTeams %></span>
+              </div>
+              <% if (plan.limits.maxStorage) { %>
+                <div class="plan-limit">
+                  <span>Storage</span>
+                  <span><%= plan.limits.maxStorage %> GB</span>
+                </div>
+              <% } %>
+            </div>
+
+            <ul class="plan-features">
+              <li class="<%= plan.features.recruiter ? 'included' : 'not-included' %>">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <% if (plan.features.recruiter) { %>
+                    <path d="M20 6L9 17l-5-5" />
+                  <% } else { %>
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  <% } %>
+                </svg>
+                Recruiter (SmartHR)
+              </li>
+              <li class="<%= plan.features.leaveManagement ? 'included' : 'not-included' %>">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <% if (plan.features.leaveManagement) { %>
+                    <path d="M20 6L9 17l-5-5" />
+                  <% } else { %>
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  <% } %>
+                </svg>
+                Leave Management
+              </li>
+              <li class="<%= plan.features.payrollManagement ? 'included' : 'not-included' %>">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <% if (plan.features.payrollManagement) { %>
+                    <path d="M20 6L9 17l-5-5" />
+                  <% } else { %>
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  <% } %>
+                </svg>
+                Payroll Management
+              </li>
+              <li class="<%= plan.features.performanceManagement ? 'included' : 'not-included' %>">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <% if (plan.features.performanceManagement) { %>
+                    <path d="M20 6L9 17l-5-5" />
+                  <% } else { %>
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  <% } %>
+                </svg>
+                Performance Management
+              </li>
+              <li class="<%= plan.features.outlineDocs ? 'included' : 'not-included' %>">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <% if (plan.features.outlineDocs) { %>
+                    <path d="M20 6L9 17l-5-5" />
+                  <% } else { %>
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  <% } %>
+                </svg>
+                Outline Docs
+              </li>
+              <li class="<%= plan.features.aiChat ? 'included' : 'not-included' %>">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <% if (plan.features.aiChat) { %>
+                    <path d="M20 6L9 17l-5-5" />
+                  <% } else { %>
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  <% } %>
+                </svg>
+                AI Chat Assistant
+              </li>
+              <li class="<%= plan.features.lms ? 'included' : 'not-included' %>">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <% if (plan.features.lms) { %>
+                    <path d="M20 6L9 17l-5-5" />
+                  <% } else { %>
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  <% } %>
+                </svg>
+                Learning Management System
+              </li>
+            </ul>
+
+            <% if (currentSubscription && currentSubscription.plan._id.toString() === plan._id.toString()) { %>
+              <button class="plan-cta plan-cta-secondary" disabled>Current Plan</button>
+            <% } else if (plan.isRequestable === false) { %>
+              <button class="plan-cta plan-cta-secondary" disabled>Admin Assigned Only</button>
+              <div class="plan-cta-note">This plan cannot be requested or renewed by organizations directly.</div>
+            <% } else if (typeof user !== 'undefined' && user && typeof organization !== 'undefined' && organization) { %>
+              <a href="/request-plan/<%= plan._id %>" class="plan-cta plan-cta-primary">
+                Request This Plan
+              </a>
+            <% } else if (typeof user !== 'undefined' && user) { %>
+              <a href="/organizations" class="plan-cta plan-cta-secondary">
+                Select an Organization First
+              </a>
+            <% } else { %>
+              <a href="/login?redirect=/plans" class="plan-cta plan-cta-primary">
+                Login to Subscribe
+              </a>
+            <% } %>
+          </div>
+        <% }) %>
+      <% } else { %>
+        <div style="text-align: center; padding: 48px; color: var(--muted);">
+          <p>No plans available at this time. Please check back later.</p>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</body>
+
+</html>

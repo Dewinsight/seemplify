@@ -1,0 +1,2954 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    :root {
+      --lms-surface: #ffffff;
+      --lms-surface-soft: #f8fafc;
+      --lms-media-start: rgba(14, 165, 233, 0.14);
+      --lms-media-end: rgba(226, 232, 240, 0.9);
+      --lms-tab-active: rgba(8, 145, 178, 0.12);
+      --lms-tab-active-border: rgba(8, 145, 178, 0.45);
+      --lms-price: #b45309;
+      --border: #e5e7eb;
+      --text: #0f172a;
+      --muted: #64748b;
+      --panel-solid: #ffffff;
+      --card-bg: #ffffff;
+      --input-bg: #ffffff;
+    }
+    [data-theme="dark"] {
+      --lms-surface: #ffffff;
+      --lms-surface-soft: #f8fafc;
+      --lms-media-start: rgba(14, 165, 233, 0.14);
+      --lms-media-end: rgba(226, 232, 240, 0.9);
+      --lms-tab-active: rgba(8, 145, 178, 0.12);
+      --lms-tab-active-border: rgba(8, 145, 178, 0.45);
+      --lms-price: #b45309;
+      --border: #e5e7eb;
+      --text: #0f172a;
+      --muted: #64748b;
+      --panel-solid: #ffffff;
+      --card-bg: #ffffff;
+      --input-bg: #ffffff;
+    }
+    body.public-site.lmsv-workspace-page {
+      background:
+        radial-gradient(1200px 500px at 18% -6%, rgba(14, 165, 233, 0.08), transparent 68%),
+        radial-gradient(760px 400px at 92% 4%, rgba(14, 165, 233, 0.05), transparent 74%),
+        #f8fafc;
+    }
+    .shell {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 0 24px 56px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+      align-content: start;
+      flex: 1 0 auto;
+    }
+    .shell > * {
+      min-width: 0;
+    }
+    .hero,
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background: #ffffff;
+      box-shadow: 0 10px 28px -18px rgba(15, 23, 42, 0.45);
+      padding: clamp(20px, 2.7vw, 30px);
+      display: grid;
+      gap: 14px;
+    }
+    .hero {
+      margin-top: clamp(18px, 2.7vw, 26px);
+      gap: 18px;
+    }
+    .hero-layout {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      align-items: start;
+    }
+    .hero-main {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .hero-kicker {
+      margin: 0;
+      border: 1px solid rgba(8, 145, 178, 0.25);
+      background: rgba(8, 145, 178, 0.08);
+      color: #0e7490;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+      width: fit-content;
+    }
+    .hero-pulse {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(165deg, #ffffff, #f8fafc);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .hero-pulse h2 {
+      margin: 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--muted);
+    }
+    .hero-pulse-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 8px;
+    }
+    .hero-pulse-list li {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 11px;
+      background: var(--lms-surface-soft);
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .hero-pulse-list span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .hero-pulse-list strong {
+      font-size: 24px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+    .hero-pulse-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .title {
+      margin: 0;
+      font-size: clamp(34px, 4.2vw, 56px);
+      letter-spacing: -.04em;
+      line-height: 0.98;
+      color: var(--text);
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.55;
+      max-width: 62ch;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+    .hero-actions .btn {
+      border-radius: 999px;
+      padding: 10px 16px;
+    }
+    .workspace-view {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .chips {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+    .tabs, .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .chip,
+    .tab {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 700;
+      background: #ffffff;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: #334155;
+      min-height: 36px;
+    }
+    .tab {
+      text-decoration: none;
+      color: #334155;
+      padding: 10px 15px;
+      transition: all 0.2s ease;
+    }
+    .tab:hover {
+      border-color: rgba(8, 145, 178, 0.35);
+      background: rgba(8, 145, 178, 0.08);
+      color: #0e7490;
+    }
+    .tab.active {
+      border-color: var(--lms-tab-active-border);
+      background: var(--lms-tab-active);
+      color: #0369a1;
+    }
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    .head h2 {
+      margin: 0;
+      letter-spacing: -.02em;
+      font-size: clamp(24px, 2.6vw, 34px);
+      line-height: 1.05;
+    }
+    .head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(180px,1fr));
+      gap: 10px;
+    }
+    .kpi {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: #ffffff;
+      box-shadow: 0 8px 20px -16px rgba(15, 23, 42, 0.35);
+    }
+    .kpi small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 6px;
+      font-weight: 800;
+    }
+    .kpi strong {
+      font-size: 30px;
+      line-height: 1;
+      letter-spacing: -.03em;
+    }
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #ffffff;
+      display: grid;
+      align-content: start;
+      box-shadow: 0 12px 30px -20px rgba(15, 23, 42, 0.45);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 20px 36px -24px rgba(15, 23, 42, 0.55);
+    }
+    .media {
+      height: 150px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(140deg, var(--lms-media-start), var(--lms-media-end));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .stanbic-logo-lockup {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: #053c86;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .stanbic-logo-lockup img {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+    .stanbic-hero-card {
+      border: 1px solid rgba(5, 60, 134, 0.16);
+      border-radius: 18px;
+      background: #f8fbff;
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+      min-height: 100%;
+    }
+    .stanbic-hero-card img {
+      max-width: 190px;
+      width: 52%;
+      min-width: 120px;
+      justify-self: end;
+    }
+    .stanbic-track-list {
+      display: grid;
+      gap: 8px;
+    }
+    .stanbic-track-row {
+      border: 1px solid rgba(5, 60, 134, 0.12);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px 11px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .stanbic-track-row span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .stanbic-welcome {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 18px;
+      align-items: center;
+    }
+    .stanbic-welcome-copy {
+      display: grid;
+      gap: 12px;
+      align-content: center;
+    }
+    .stanbic-welcome-copy h2 {
+      margin: 0;
+      color: var(--text);
+      font-size: clamp(28px, 3vw, 42px);
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+    .stanbic-welcome-copy p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .stanbic-welcome-media {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .stanbic-welcome-media img {
+      width: 100%;
+      min-height: 150px;
+      object-fit: cover;
+      border: 1px solid rgba(5, 60, 134, 0.14);
+      border-radius: 16px;
+      background: #05164f;
+    }
+    .stanbic-welcome-media img:first-child {
+      grid-column: 1 / -1;
+      min-height: 190px;
+    }
+    .stanbic-program-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    }
+    .stanbic-program-card {
+      border-color: rgba(5, 60, 134, 0.18);
+    }
+    .stanbic-program-card .media,
+    .stanbic-course-card .media {
+      height: 228px;
+      background: #06175a;
+    }
+    .stanbic-program-card .media img,
+    .stanbic-course-card .media img {
+      object-fit: cover;
+      object-position: center;
+    }
+    .stanbic-track-label {
+      width: fit-content;
+      border-color: rgba(5, 60, 134, 0.18);
+      color: #053c86;
+      background: #edf5ff;
+    }
+    .btn.disabled,
+    .btn:disabled {
+      opacity: 0.58;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+    .body { padding: 12px; display: grid; gap: 8px; }
+    .body h3 { margin: 0; font-size: 18px; letter-spacing: -.02em; line-height: 1.2; }
+    .body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .pill { border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; background: var(--lms-surface); }
+    .price { color: var(--lms-price); font-weight: 800; }
+    .progress { height: 8px; border-radius: 999px; overflow: hidden; background: rgba(148,163,184,.25); }
+    .progress span { display: block; height: 100%; width: var(--progress,0%); background: linear-gradient(90deg,#22d3ee,#14b8a6); }
+    .empty { border: 1px dashed #d1d5db; border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); background: #f8fafc; }
+    .form-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); }
+    .studio { display: grid; gap: 12px; grid-template-columns: minmax(0,1.4fr) minmax(300px,1fr); align-items: start; }
+    .stack { display: grid; gap: 8px; }
+    .mini { font-size: 12px; color: var(--muted); margin: 0; }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #ffffff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 740px; }
+    th, td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left; font-size: 13px; }
+    th { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .06em; }
+    .inline-form { display: inline-flex; gap: 6px; align-items: center; }
+    .inline-form .input { min-width: 90px; }
+    .trend {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: var(--lms-surface-soft);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .trend.up { color: #22c55e; }
+    .trend.down { color: #ef4444; }
+    .trend.flat { color: var(--muted); }
+    .stack-tight { display: grid; gap: 6px; }
+    .analytic-list {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .analytic-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: var(--lms-surface);
+      display: grid;
+      gap: 6px;
+    }
+    .analytic-item h4 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: -.01em;
+    }
+    .analytic-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .cart-list {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    }
+    .cart-item {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--lms-surface);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .cart-item h3 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: -.02em;
+    }
+    .cart-total-chip {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--lms-surface-soft);
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .cart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .cart-summary-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    }
+    .cart-summary-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      background: var(--lms-surface-soft);
+      display: grid;
+      gap: 6px;
+    }
+    .cart-summary-card small {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .cart-summary-card strong {
+      font-size: 24px;
+      line-height: 1;
+      letter-spacing: -.03em;
+    }
+    .builder {
+      display: grid;
+      gap: 10px;
+    }
+    .builder-chapter {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--lms-surface);
+      padding: 10px;
+      display: grid;
+      gap: 9px;
+    }
+    .builder-chapter-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .builder-lessons {
+      display: grid;
+      gap: 8px;
+    }
+    .builder-lesson {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--lms-surface-soft);
+      padding: 9px;
+      display: grid;
+      gap: 7px;
+    }
+    .builder-lesson-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .builder-preview {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(2, 6, 23, 0.35);
+      padding: 8px;
+      display: grid;
+      gap: 8px;
+    }
+    [data-theme="light"] .builder-preview {
+      background: rgba(255, 255, 255, 0.85);
+    }
+    .builder-preview iframe,
+    .builder-preview video {
+      width: 100%;
+      height: 240px;
+      border: 0;
+      border-radius: 8px;
+      background: #000;
+    }
+    .builder-preview audio {
+      width: 100%;
+    }
+    .builder-preview-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .builder-media-panel {
+      display: grid;
+      gap: 8px;
+    }
+    .builder-media-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .builder-media-summary,
+    .builder-media-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .builder-media-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 999px;
+      border: 1px solid rgba(147, 51, 234, 0.2);
+      background: rgba(147, 51, 234, 0.1);
+      color: #9333ea;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .builder-file-input {
+      display: none;
+    }
+    .builder-legacy-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .program-wizard-shell {
+      display: grid;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      background:
+        radial-gradient(120% 120% at 100% 0%, rgba(8, 145, 178, 0.08), transparent 72%),
+        #f8fafc;
+    }
+    .program-wizard-progress {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.35);
+      overflow: hidden;
+    }
+    .program-wizard-progress > span {
+      display: block;
+      height: 100%;
+      width: 25%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0891b2, #0ea5e9, #f59e0b);
+      transition: width 0.32s ease;
+    }
+    .program-wizard-steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .program-wizard-step {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 8px 10px;
+      text-align: left;
+      display: grid;
+      gap: 2px;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+    .program-wizard-step:hover {
+      border-color: rgba(8, 145, 178, 0.4);
+      transform: translateY(-1px);
+    }
+    .program-wizard-step span {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #e2e8f0;
+      color: #334155;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .program-wizard-step small {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .program-wizard-step.active,
+    .program-wizard-step.complete {
+      border-color: rgba(8, 145, 178, 0.42);
+      box-shadow: 0 10px 20px -16px rgba(8, 145, 178, 0.82);
+    }
+    .program-wizard-step.active span,
+    .program-wizard-step.complete span {
+      background: linear-gradient(135deg, #0891b2, #0ea5e9);
+      color: #ffffff;
+    }
+    .program-wizard-message {
+      margin: 0;
+      border: 1px solid rgba(220, 38, 38, 0.3);
+      border-radius: 10px;
+      background: rgba(254, 226, 226, 0.7);
+      color: #b91c1c;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .program-step-pane {
+      display: none;
+      gap: 10px;
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    .program-step-pane.active {
+      display: grid;
+      animation: program-step-enter 0.24s ease forwards;
+    }
+    .program-step-head {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 7px;
+      display: grid;
+      gap: 3px;
+    }
+    .program-step-head h3 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -0.03em;
+    }
+    .program-step-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .program-path-builder {
+      display: grid;
+      gap: 8px;
+    }
+    .program-path-item {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .program-path-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .program-path-head strong {
+      font-size: 14px;
+      letter-spacing: -0.01em;
+    }
+    .program-path-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      align-items: end;
+    }
+    .program-review-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    }
+    .program-review-card {
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: #ffffff;
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+    }
+    .program-review-card small {
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+    .program-review-card strong {
+      font-size: 15px;
+      line-height: 1.25;
+      color: var(--text);
+    }
+    .program-wizard-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+    .program-wizard-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    [data-program-submit] {
+      display: none;
+    }
+    .program-wizard-shell.is-final [data-program-next] {
+      display: none;
+    }
+    .program-wizard-shell.is-final [data-program-submit] {
+      display: inline-flex;
+    }
+    .approval-stack {
+      display: grid;
+      gap: 14px;
+    }
+    .approval-review-card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff, #fcfbff);
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+      box-shadow: 0 14px 28px -24px rgba(124, 58, 237, 0.35);
+    }
+    .approval-review-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+    .approval-review-head h3 {
+      margin: 4px 0 0;
+      font-size: 24px;
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+    }
+    .approval-review-kicker {
+      margin: 0;
+      color: #7c3aed;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 800;
+    }
+    .approval-review-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+    }
+    .approval-review-meta article {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #faf7ff;
+      padding: 10px 11px;
+      display: grid;
+      gap: 4px;
+    }
+    .approval-review-meta span {
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+    .approval-review-meta strong {
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.3;
+    }
+    .approval-review-copy,
+    .approval-history-note {
+      margin: 0;
+      color: #475569;
+      font-size: 14px;
+      line-height: 1.65;
+      white-space: pre-line;
+    }
+    .approval-review-form {
+      display: grid;
+      gap: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+    .approval-review-form label {
+      display: grid;
+      gap: 8px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .approval-review-form textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+    .approval-history-stack {
+      display: grid;
+      gap: 12px;
+    }
+    .approval-history-card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #ffffff;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .review-pill-approved {
+      border-color: rgba(22, 163, 74, 0.28);
+      background: rgba(220, 252, 231, 0.9);
+      color: #166534;
+    }
+    .review-pill-changes_requested {
+      border-color: rgba(245, 158, 11, 0.32);
+      background: rgba(254, 243, 199, 0.92);
+      color: #92400e;
+    }
+    .review-pill-denied {
+      border-color: rgba(220, 38, 38, 0.28);
+      background: rgba(254, 226, 226, 0.92);
+      color: #991b1b;
+    }
+    @keyframes program-step-enter {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (max-width: 1080px) {
+      .hero-layout { grid-template-columns: 1fr; }
+      .stanbic-welcome { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 1040px) { .studio { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) {
+      .shell {
+        gap: 10px;
+        margin-bottom: 0;
+        padding: 0 14px 24px;
+      }
+      .hero, .panel {
+        border-radius: 16px;
+        padding: 14px;
+      }
+      .title { font-size: clamp(26px, 8vw, 36px); }
+      .subtitle { font-size: 13px; }
+      .tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .tab { white-space: nowrap; }
+      .chips {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .hero-pulse-list li strong {
+        font-size: 20px;
+      }
+      .grid { grid-template-columns: 1fr; }
+      .stanbic-welcome-media { grid-template-columns: 1fr; }
+      .stanbic-welcome-media img,
+      .stanbic-welcome-media img:first-child {
+        min-height: 170px;
+      }
+      .stanbic-program-card .media,
+      .stanbic-course-card .media {
+        height: 190px;
+      }
+      .form-grid { grid-template-columns: 1fr; }
+      .actions .btn { flex: 1; min-width: calc(50% - 4px); justify-content: center; }
+      .body h3 { font-size: 17px; }
+      table { min-width: 620px; }
+      .program-wizard-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .program-wizard-footer { flex-direction: column; align-items: stretch; }
+      .program-wizard-actions .btn { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+<body class="public-site lmsv-workspace-page">
+  <%- include('./partials/nav', { user, activePage, activeLmsView: viewMode === 'settings' ? 'settings' : 'workspace' }) %>
+  <% const tab = (mode) => `/simple-lms?view=${mode}` %>
+  <% const learningName = brandLearningName || 'Seemplify Learning' %>
+  <% const roleLabel = String(role || 'learner').replace(/_/g, ' ') %>
+  <% const nice = (value) => String(value || '').replace(/_/g, ' ') %>
+  <% const dateText = (value) => { try { return value ? new Date(value).toLocaleString('en-GB') : '-' } catch { return '-' } } %>
+  <% const creatorDefaults = creatorSettings || {} %>
+  <% const platformDefaults = platformSettings || {} %>
+  <% const currencyOptions = Array.isArray(supportedCurrencies) && supportedCurrencies.length > 0 ? supportedCurrencies : [{ code: 'NGN', name: 'Nigerian Naira', symbol: 'NGN' }] %>
+  <% const currencyCodes = currencyOptions.map((option) => String(option?.code || '').trim().toUpperCase()).filter(Boolean) %>
+  <% const selectCurrency = (value, fallback = 'NGN') => { const normalized = String(value || '').trim().toUpperCase(); if (currencyCodes.includes(normalized)) return normalized; const fallbackCode = String(fallback || '').trim().toUpperCase(); if (currencyCodes.includes(fallbackCode)) return fallbackCode; return currencyCodes[0] || 'NGN' } %>
+  <% const defaultCurrency = selectCurrency(defaultCurrencyCode || platformDefaults.defaultCurrency || 'NGN', 'NGN') %>
+  <% const minorToMajorInput = (value) => { const minor = Number(value || 0); const safeMinor = Number.isFinite(minor) ? Math.max(0, minor) : 0; const major = safeMinor / 100; if (Number.isInteger(major)) return String(major); return major.toFixed(2).replace(/\.?0+$/, '') } %>
+  <% const stanbicTracks = Array.isArray(stanbicProgramCards) ? stanbicProgramCards : [] %>
+  <% const stanbicImage = (key) => { const match = stanbicTracks.find((track) => track.key === key); return match ? match.image : `/images/stanbic/stanbic-stem-${key}.png` } %>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-layout">
+        <div class="hero-main">
+          <div class="stanbic-logo-lockup">
+            <img src="/images/stanbic/stanbic-ibtc-logo.png" alt="Stanbic IBTC logo">
+            <span>Stanbic STEM Learning</span>
+          </div>
+          <p class="hero-kicker">Learner Portal</p>
+          <h1 class="title">Welcome to Stanbic STEM</h1>
+          <p class="subtitle">Start with the right school program, move through guided lessons, and complete each quiz with clear progress feedback.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-sm" href="<%= tab('programs') %>">Start Learning</a>
+            <a class="btn btn-secondary btn-sm" href="<%= tab('my-learning') %>">Continue Learning</a>
+            <a class="btn btn-secondary btn-sm" href="<%= tab('catalog') %>">All Courses</a>
+            <% if (canCreateCourses) { %>
+              <a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses">Open Course Studio</a>
+            <% } %>
+          </div>
+          <div class="chips">
+            <span class="chip">Role: <%= roleLabel %></span>
+            <span class="chip">Courses: <%= stats.publishedCourseCount %></span>
+            <span class="chip">Programs: <%= stats.publishedProgramCount %></span>
+            <span class="chip">Course Authors: <%= stats.creatorCount %></span>
+            <span class="chip">My Enrollments: <%= stats.myEnrollmentCount %></span>
+            <span class="chip">Paid Courses: <%= stats.myPaidCourseCount %></span>
+            <span class="chip">Cart: <%= stats.cartItemCount %></span>
+          </div>
+        </div>
+        <aside class="stanbic-hero-card">
+          <img src="/images/stanbic/stanbic-ibtc-logo.png" alt="Stanbic IBTC">
+          <div class="stanbic-track-list">
+            <% stanbicTracks.forEach((track) => { %>
+              <div class="stanbic-track-row">
+                <strong><%= track.label %></strong>
+                <span><%= track.totalSteps || 0 %> courses</span>
+              </div>
+            <% }) %>
+          </div>
+          <p class="hero-pulse-note">Primary, JSS, and SSS now sit in a focused program selection journey.</p>
+        </aside>
+      </div>
+      <div class="tabs">
+        <a class="tab <%= viewMode === 'overview' ? 'active' : '' %>" href="<%= tab('overview') %>">Overview</a>
+        <a class="tab <%= viewMode === 'programs' ? 'active' : '' %>" href="<%= tab('programs') %>">Programs</a>
+        <a class="tab <%= viewMode === 'catalog' ? 'active' : '' %>" href="<%= tab('catalog') %>">All Courses</a>
+        <a class="tab <%= viewMode === 'cart' ? 'active' : '' %>" href="/simple-lms/cart">Cart <%= stats.cartItemCount > 0 ? `(${stats.cartItemCount})` : '' %></a>
+        <a class="tab <%= viewMode === 'my-learning' ? 'active' : '' %>" href="<%= tab('my-learning') %>">My Learning</a>
+        <% if (canCreateCourses) { %>
+          <a class="tab <%= viewMode === 'course-studio' ? 'active' : '' %>" href="/simple-lms/studio/courses">Course Studio</a>
+          <a class="tab <%= viewMode === 'program-studio' ? 'active' : '' %>" href="<%= tab('program-studio') %>">Program Studio</a>
+        <% } %>
+        <% if (canManagePlatform) { %>
+          <a class="tab" href="/admin">Admin</a>
+        <% } %>
+      </div>
+    </section>
+
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (info) { %><div class="alert"><%= info %></div><% } %>
+    <% if (platformDefaults.maintenanceMode) { %>
+      <div class="alert alert-error">Maintenance mode is active. <%= platformDefaults.maintenanceMessage || 'Learners may face limited actions while updates are in progress.' %></div>
+    <% } %>
+
+    <% if (viewMode === 'overview') { %>
+      <section class="panel">
+        <div class="stanbic-welcome">
+          <div class="stanbic-welcome-copy">
+            <span class="pill stanbic-track-label">Stanbic IBTC STEM Series</span>
+            <h2>Choose your school level and begin the right STEM path.</h2>
+            <p>The learner journey now starts with Primary, JSS, and SSS program selection instead of a mixed catalog. Each program keeps related courses together so students can follow the correct path from first lesson to quiz completion.</p>
+            <div class="actions">
+              <a class="btn btn-primary" href="<%= tab('programs') %>">Start Learning</a>
+              <a class="btn btn-secondary" href="<%= tab('my-learning') %>">Continue Learning</a>
+            </div>
+          </div>
+          <div class="stanbic-welcome-media" aria-label="Stanbic STEM program previews">
+            <img src="<%= stanbicImage('primary') %>" alt="Stanbic Primary STEM banner">
+            <img src="<%= stanbicImage('jss') %>" alt="Stanbic JSS STEM banner">
+            <img src="<%= stanbicImage('sss') %>" alt="Stanbic SSS STEM banner">
+          </div>
+        </div>
+      </section>
+
+    <% } %>
+
+    <% if (viewMode === 'programs') { %>
+      <section class="panel" id="stanbic-programs">
+        <div class="head">
+          <div>
+            <h2>Start Learning</h2>
+            <p>Select the Primary, JSS, or SSS program that matches the learner's school level.</p>
+          </div>
+          <div class="actions">
+            <a class="btn btn-secondary btn-sm" href="<%= tab('catalog') %>">View All Courses</a>
+          </div>
+        </div>
+        <div class="stanbic-program-grid">
+          <% stanbicTracks.forEach((track) => { %>
+            <article class="card stanbic-program-card" id="<%= track.anchor || `stanbic-program-${track.key}` %>">
+              <div class="media">
+                <img src="<%= track.image %>" alt="<%= track.label %> STEM program banner">
+              </div>
+              <div class="body">
+                <span class="pill stanbic-track-label"><%= track.audience %></span>
+                <h3><%= track.program?.name || track.title %></h3>
+                <p><%= track.program?.objective || track.program?.description || track.description %></p>
+                <div class="actions">
+                  <span class="pill"><%= track.totalSteps || 0 %> courses</span>
+                  <span class="pill"><%= track.requiredSteps || 0 %> required</span>
+                  <% if (track.isEnrolled) { %><span class="pill">In progress</span><% } %>
+                </div>
+                <% if (track.isEnrolled && track.progressPercent > 0) { %>
+                  <div class="progress" style="--progress:<%= track.progressPercent %>%"><span></span></div>
+                  <p><strong><%= track.progressPercent %>%</strong> complete</p>
+                <% } %>
+                <div class="actions">
+                  <% if (track.program) { %>
+                    <% if (track.isEnrolled) { %>
+                      <a class="btn btn-primary btn-sm" href="<%= track.continuePath %>">Continue Program</a>
+                      <form method="post" action="/simple-lms/programs/<%= track.programId %>/enroll" style="display:inline-flex;">
+                        <input type="hidden" name="returnTo" value="/simple-lms?view=programs#<%= track.anchor %>">
+                        <button class="btn btn-secondary btn-sm" type="submit">Refresh Enrollment</button>
+                      </form>
+                    <% } else { %>
+                      <form method="post" action="/simple-lms/programs/<%= track.programId %>/enroll" style="display:inline-flex;">
+                        <input type="hidden" name="returnTo" value="/simple-lms?view=programs#<%= track.anchor %>">
+                        <button class="btn btn-primary btn-sm" type="submit">Select Program</button>
+                      </form>
+                    <% } %>
+                  <% } else { %>
+                    <span class="btn btn-secondary btn-sm disabled">Program Pending</span>
+                  <% } %>
+                </div>
+              </div>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+    <% } %>
+
+    <% if (viewMode === 'catalog') { %>
+      <section class="panel">
+        <div class="head">
+          <div><h2>All Courses</h2><p>Browse individual courses after choosing the main Primary, JSS, or SSS program path.</p></div>
+          <div class="actions">
+            <% if (cartSummary && cartSummary.totalsByCurrency && cartSummary.totalsByCurrency.length > 0) { %>
+              <% cartSummary.totalsByCurrency.forEach((entry) => { %>
+                <span class="cart-total-chip"><%= entry.amountDisplay %></span>
+              <% }) %>
+            <% } %>
+            <a class="btn btn-secondary btn-sm" href="/simple-lms/cart">View Cart (<%= stats.cartItemCount %>)</a>
+          </div>
+        </div>
+        <form method="get" action="/simple-lms">
+          <input type="hidden" name="view" value="catalog">
+          <div class="form-grid">
+            <div><label>Search</label><input class="input" type="search" name="q" value="<%= filters.query || '' %>" placeholder="Course title or keyword"></div>
+            <div><label>Category</label><select class="input" name="category"><option value="">All</option><% categories.forEach((c) => { %><option value="<%= c %>" <%= filters.category === c ? 'selected' : '' %>><%= c %></option><% }) %></select></div>
+            <div><label>Level</label><select class="input" name="level"><option value="">All</option><% levels.forEach((l) => { %><option value="<%= l %>" <%= filters.level === l ? 'selected' : '' %>><%= nice(l) %></option><% }) %></select></div>
+            <div><label>Sort</label><select class="input" name="sort"><% sortOptions.forEach((s) => { %><option value="<%= s %>" <%= filters.sort === s ? 'selected' : '' %>><%= nice(s) %></option><% }) %></select></div>
+          </div>
+          <div class="actions" style="margin-top:8px;">
+            <button class="btn btn-primary" type="submit">Apply</button>
+            <a class="btn btn-secondary" href="/simple-lms?view=catalog">Reset</a>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <% if (!catalogCourses || catalogCourses.length === 0) { %>
+          <div class="empty">No courses available for this filter.</div>
+        <% } else { %>
+          <div class="grid">
+            <% catalogCourses.forEach((course) => { %>
+              <article class="card <%= course.stanbicTrack ? 'stanbic-course-card' : '' %>">
+                <div class="media"><% if (course.displayBannerUrl) { %><img src="<%= course.displayBannerUrl %>" alt="<%= course.displayBannerAlt || `${course.title} banner` %>"><% } else { %><span class="pill"><%= course.levelLabel %></span><% } %></div>
+                <div class="body">
+                  <h3><%= course.title %></h3>
+                  <p><%= course.summaryText %></p>
+                  <div class="actions">
+                    <% if (course.stanbicTrack) { %><span class="pill stanbic-track-label"><%= course.stanbicTrack.label %></span><% } %>
+                    <span class="pill"><%= course.levelLabel %></span>
+                    <span class="pill"><%= course.lessonCount %> lessons</span>
+                    <% if (course.requiresPayment) { %><span class="pill">Paid</span><% } %>
+                  </div>
+                  <p><span class="price"><%= course.displayPrice %></span> &middot; <%= course.authorName %></p>
+                  <div class="actions">
+                    <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>">Preview</a>
+                    <% if (course.canStart) { %>
+                      <a class="btn btn-primary btn-sm" href="/simple-lms/take/<%= course._id %>"><%= course.isEnrolled ? 'Continue' : 'Start' %></a>
+                    <% } else { %>
+                      <form method="post" action="/simple-lms/courses/<%= course._id %>/pay" style="display:inline-flex;">
+                        <input type="hidden" name="next" value="/simple-lms/take/<%= course._id %>">
+                        <input type="hidden" name="fallback" value="/simple-lms?view=catalog">
+                        <button class="btn btn-primary btn-sm" type="submit">Purchase Now</button>
+                      </form>
+                      <% if (course.isInCart) { %>
+                        <form method="post" action="/simple-lms/cart/remove/<%= course._id %>" style="display:inline-flex;">
+                          <input type="hidden" name="returnTo" value="/simple-lms?view=catalog">
+                          <button class="btn btn-danger btn-sm" type="submit">Remove from Cart</button>
+                        </form>
+                      <% } else { %>
+                        <form method="post" action="/simple-lms/cart/add" style="display:inline-flex;">
+                          <input type="hidden" name="courseId" value="<%= course._id %>">
+                          <input type="hidden" name="returnTo" value="/simple-lms?view=catalog">
+                          <button class="btn btn-secondary btn-sm" type="submit">Add to Cart</button>
+                        </form>
+                      <% } %>
+                    <% } %>
+                  </div>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Program Library</h2><p>Structured pathways using multiple courses. Primary, JSS, and SSS are highlighted in Start Learning.</p></div></div>
+        <% if (!catalogPrograms || catalogPrograms.length === 0) { %>
+          <div class="empty">No programs published yet.</div>
+        <% } else { %>
+          <div class="grid">
+            <% catalogPrograms.forEach((program) => { %>
+              <article class="card <%= program.stanbicTrack ? 'stanbic-course-card' : '' %>">
+                <div class="media"><% if (program.displayBannerUrl) { %><img src="<%= program.displayBannerUrl %>" alt="<%= program.displayBannerAlt || `${program.name} banner` %>"><% } else { %><span class="pill">Program</span><% } %></div>
+                <div class="body">
+                  <h3><%= program.name %></h3>
+                  <p><%= program.objective || program.description || 'Program pathway' %></p>
+                  <div class="actions"><% if (program.stanbicTrack) { %><span class="pill stanbic-track-label"><%= program.stanbicTrack.label %></span><% } %><span class="pill"><%= program.totalSteps %> courses</span><span class="pill"><%= program.requiredSteps %> required</span></div>
+                  <form method="post" action="/simple-lms/programs/<%= program._id %>/enroll" class="actions">
+                    <input type="hidden" name="returnTo" value="/simple-lms?view=catalog">
+                    <button class="btn btn-primary btn-sm" type="submit"><%= program.isEnrolled ? 'Refresh Enrollment' : 'Enroll Program' %></button>
+                  </form>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+    <% } %>
+
+    <% if (viewMode === 'cart') { %>
+      <section class="panel" id="cart-panel">
+        <div class="head">
+          <div>
+            <h2>My Cart</h2>
+            <p>Review selected paid courses and complete checkout. Catalog content is separated to keep this flow focused.</p>
+          </div>
+          <div class="actions">
+            <a class="btn btn-secondary btn-sm" href="/simple-lms?view=catalog">Continue Browsing</a>
+          </div>
+        </div>
+
+        <div class="cart-summary-grid">
+          <article class="cart-summary-card">
+            <small>Items in Cart</small>
+            <strong><%= cartSummary?.itemCount || 0 %></strong>
+          </article>
+          <article class="cart-summary-card">
+            <small>Paid Courses</small>
+            <strong><%= (cartCourses || []).filter((course) => course.requiresPayment).length %></strong>
+          </article>
+          <article class="cart-summary-card">
+            <small>Checkout Totals</small>
+            <% if (cartSummary && cartSummary.totalsByCurrency && cartSummary.totalsByCurrency.length > 0) { %>
+              <div class="actions">
+                <% cartSummary.totalsByCurrency.forEach((entry) => { %>
+                  <span class="cart-total-chip"><%= entry.amountDisplay %></span>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <strong>0</strong>
+            <% } %>
+          </article>
+        </div>
+
+        <div class="cart-header" style="margin-top: 4px;">
+          <p class="mini">Checkout processes one payable item at a time and automatically keeps remaining items in cart.</p>
+          <div class="actions">
+            <% if (cartSummary && cartSummary.hasItems) { %>
+              <form method="post" action="/simple-lms/cart/checkout" style="display:inline-flex;">
+                <input type="hidden" name="returnTo" value="/simple-lms/cart">
+                <button class="btn btn-primary btn-sm" type="submit">Checkout Now</button>
+              </form>
+              <form method="post" action="/simple-lms/cart/clear" style="display:inline-flex;">
+                <input type="hidden" name="returnTo" value="/simple-lms/cart">
+                <button class="btn btn-danger btn-sm" type="submit">Clear Cart</button>
+              </form>
+            <% } %>
+          </div>
+        </div>
+
+        <% if (!cartSummary || !cartSummary.hasItems) { %>
+          <div class="empty">Your cart is empty. Add paid courses from the catalog.</div>
+        <% } else { %>
+          <div class="cart-list">
+            <% cartCourses.forEach((course) => { %>
+              <article class="cart-item">
+                <h3><%= course.title %></h3>
+                <p class="mini"><%= course.summaryText %></p>
+                <div class="actions">
+                  <span class="pill"><%= course.levelLabel %></span>
+                  <span class="pill"><%= course.lessonCount %> lessons</span>
+                  <span class="pill"><%= course.displayPrice %></span>
+                </div>
+                <div class="actions">
+                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>">Preview</a>
+                  <form method="post" action="/simple-lms/courses/<%= course._id %>/pay" style="display:inline-flex;">
+                    <input type="hidden" name="next" value="/simple-lms/cart">
+                    <input type="hidden" name="fallback" value="/simple-lms/cart">
+                    <input type="hidden" name="checkoutContext" value="cart">
+                    <button class="btn btn-primary btn-sm" type="submit">Purchase Now</button>
+                  </form>
+                  <form method="post" action="/simple-lms/cart/remove/<%= course._id %>" style="display:inline-flex;">
+                    <input type="hidden" name="returnTo" value="/simple-lms/cart">
+                    <button class="btn btn-danger btn-sm" type="submit">Remove</button>
+                  </form>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+    <% } %>
+
+    <% if (viewMode === 'my-learning') { %>
+      <section class="panel">
+        <div class="head"><div><h2>My Learning</h2><p>Progress, payments, and active enrollments.</p></div></div>
+        <% if (!myEnrollments || myEnrollments.length === 0) { %><div class="empty">No enrollments yet.</div><% } else { %>
+          <div class="grid">
+            <% myEnrollments.forEach((item) => { %>
+              <article class="card">
+                <div class="body">
+                  <h3><%= item.course.title %></h3>
+                  <div class="progress" style="--progress:<%= Math.max(0, Math.min(100, Number(item.progressPercent || 0))) %>%"><span></span></div>
+                  <p><strong><%= item.progressPercent %>%</strong> complete &middot; <%= item.completedCount %>/<%= item.lessonCount %> lessons</p>
+                  <div class="actions">
+                    <a class="btn btn-primary btn-sm" href="/simple-lms/learn/<%= item._id %>/<%= encodeURIComponent(item.nextLessonKey || '') %>"><%= item.isCompleted ? 'Review' : 'Continue' %></a>
+                    <a class="btn btn-secondary btn-sm" href="<%= item.course.courseUrl %>">Preview</a>
+                  </div>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>My Payments</h2><p>Successful payment history for paid courses.</p></div></div>
+        <% if (!myPayments || myPayments.length === 0) { %>
+          <div class="empty">No successful payments yet.</div>
+        <% } else { %>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Course</th><th>Amount</th><th>Provider</th><th>Tx Ref</th><th>Provider Tx ID</th></tr></thead>
+              <tbody>
+                <% myPayments.forEach((payment) => { %>
+                  <tr>
+                    <td><%= dateText(payment.paidAt || payment.createdAt) %></td>
+                    <td><%= payment.courseTitle %></td>
+                    <td><%= payment.amountDisplay %></td>
+                    <td><%= payment.providerLabel || 'Gateway' %></td>
+                    <td><%= payment.txRef %></td>
+                    <td><%= payment.providerReference || '-' %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </section>
+    <% } %>
+
+    <% if (viewMode === 'course-studio' && canCreateCourses) { %>
+      <section class="panel studio">
+        <div class="stack">
+          <div class="head"><div><h2>Create Course</h2><p class="mini">Create with your saved defaults. Public publishing follows current admin review policy.</p></div></div>
+          <% if (platformDefaults.creatorSubmissionGuidelines) { %>
+            <div class="alert"><%= platformDefaults.creatorSubmissionGuidelines %></div>
+          <% } %>
+          <form method="post" action="/simple-lms/courses/create" class="stack">
+            <div class="form-grid">
+              <div><label>Title</label><input class="input" name="title" required></div>
+              <div><label>Category</label><input class="input" name="category" value="<%= creatorDefaults.defaultCategory || '' %>"></div>
+              <div><label>Level</label><select class="input" name="level"><% levels.forEach((l) => { %><option value="<%= l %>" <%= (creatorDefaults.defaultLevel || 'mixed') === l ? 'selected' : '' %>><%= nice(l) %></option><% }) %></select></div>
+              <div><label>Status</label><select class="input" name="status"><option value="draft" <%= (platformDefaults.defaultCourseStatus || 'draft') === 'draft' ? 'selected' : '' %>>draft</option><option value="published" <%= platformDefaults.defaultCourseStatus === 'published' ? 'selected' : '' %>>publish</option></select></div>
+              <div><label>Visibility</label><select class="input" name="visibility"><option value="private" <%= (creatorDefaults.defaultVisibility || platformDefaults.defaultCourseVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option><option value="public" <%= (creatorDefaults.defaultVisibility || platformDefaults.defaultCourseVisibility) === 'public' ? 'selected' : '' %>>public</option><% if (canManagePlatform) { %><option value="marketplace" <%= platformDefaults.defaultCourseVisibility === 'marketplace' ? 'selected' : '' %>>marketplace</option><% } %></select></div>
+              <div><label>Tags</label><input class="input" name="tags" placeholder="tag1, tag2"></div>
+              <div><label>Payment Mode</label><select class="input" name="paymentMode"><option value="free" <%= (creatorDefaults.defaultPaymentMode || platformDefaults.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option><option value="paid" <%= (creatorDefaults.defaultPaymentMode || platformDefaults.defaultPaymentMode) === 'paid' ? 'selected' : '' %>>paid</option></select></div>
+              <div><label>Price (major units)</label><input class="input" type="number" step="0.01" inputmode="decimal" name="amount" min="<%= Math.max(0, Number(platformDefaults.minCoursePriceMinor || 0)) / 100 %>" max="<%= Math.max(0, Number(platformDefaults.maxCoursePriceMinor || 50000000)) / 100 %>" value="<%= minorToMajorInput(platformDefaults.minCoursePriceMinor || 0) %>"></div>
+              <div><label>Currency</label><select class="input" name="currency"><% const createCurrency = selectCurrency(creatorDefaults.defaultCurrency || platformDefaults.defaultCurrency || defaultCurrency, defaultCurrency); currencyOptions.forEach((currencyOption) => { const optionCode = String(currencyOption?.code || '').trim().toUpperCase(); const optionName = String(currencyOption?.name || optionCode || 'Currency').trim(); %><option value="<%= optionCode %>" <%= createCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option><% }) %></select></div>
+              <% if (canManagePlatform) { %>
+                <div><label>System Course</label><input type="checkbox" name="isSystemCourse" value="on"></div>
+              <% } %>
+            </div>
+            <div class="form-grid">
+              <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="partnerSellingEnabled" value="on"> Allow partner organizations to sell this course</label>
+              <div><label>Creator Share (%)</label><input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingCreatorSharePercent" value="70"></div>
+              <div><label>Partner Share (%)</label><input class="input" type="number" step="0.01" min="0" max="100" name="partnerSellingPartnerSharePercent" value="20"></div>
+            </div>
+            <p class="mini">For assigned partner sales only. Platform share is calculated automatically from the remaining percentage.</p>
+            <div><label>Summary</label><textarea class="input" name="summary" rows="2"></textarea></div>
+            <div><label>Description</label><textarea class="input" name="description" rows="4"></textarea></div>
+            <div class="stack">
+              <div class="head">
+                <div>
+                  <h2 style="font-size:18px;">Curriculum Builder</h2>
+                  <p class="mini">Add chapters and lessons dynamically. Paste media links to preview instantly.</p>
+                </div>
+                <div class="actions">
+                  <button class="btn btn-secondary btn-sm" type="button" id="addCreateChapter">Add Chapter</button>
+                  <button class="btn btn-secondary btn-sm" type="button" id="createBuilderLoadJson">Load From JSON</button>
+                </div>
+              </div>
+              <div id="createCurriculumBuilder" class="builder"></div>
+              <details>
+                <summary style="cursor:pointer;color:var(--muted);font-size:12px;">Advanced: Raw Chapters JSON</summary>
+                <div style="margin-top:8px;">
+                  <textarea class="input" name="chaptersJson" rows="8" id="createChaptersJson">[]</textarea>
+                </div>
+              </details>
+            </div>
+            <div class="actions"><button class="btn btn-secondary btn-sm" type="button" id="fillCourseTemplate">Load Sample Curriculum</button><button class="btn btn-primary" type="submit">Create Course</button></div>
+          </form>
+        </div>
+
+        <aside class="stack">
+          <div class="head"><div><h2>Course Library</h2><p class="mini">Ownership is explicit here. Edit and duplicate stay owner-only, while lifecycle actions remain separate.</p></div></div>
+          <% if (!managedCourses || managedCourses.length === 0) { %><div class="empty">No managed courses.</div><% } else { %>
+            <% managedCourses.forEach((course) => { %>
+              <article class="card"><div class="body">
+                <h3><%= course.title %></h3>
+                <p><%= course.summaryText %></p>
+                <div class="actions"><span class="pill"><%= course.status %></span><span class="pill"><%= course.visibilityDisplay %></span><span class="pill"><%= course.enrollmentCount || 0 %> enrollments</span><% if (course.isOwnedByCurrentUser) { %><span class="pill">Owned by you</span><% } %><% if (course.isSellThroughEnabled) { %><span class="pill">Partner sellable</span><% } %><% if (course.assignedOrganizationCount) { %><span class="pill"><%= course.assignedOrganizationCount %> assigned orgs</span><% } %></div>
+                <p class="mini">Sell through: <strong><%= course.partnerSellingSummary || 'Direct creator sale only' %></strong></p>
+                <% if (!course.canEdit) { %><p class="mini">Only the course owner can edit or duplicate this course.</p><% } %>
+                <div class="actions">
+                  <% if (course.canEdit) { %><a class="btn btn-secondary btn-sm" href="/simple-lms/studio/courses?editCourse=<%= course._id %>">Edit</a><% } %>
+                  <% if (course.canDuplicate) { %><form method="post" action="/simple-lms/courses/<%= course._id %>/duplicate" style="display:inline-flex;"><input type="hidden" name="returnTo" value="/simple-lms?view=course-studio"><input type="hidden" name="studioPath" value="/simple-lms/studio/courses"><input type="hidden" name="studioContext" value="creator"><button class="btn btn-secondary btn-sm" type="submit">Duplicate</button></form><% } %>
+                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/simple-lms?view=course-studio') %>" target="_blank" rel="noreferrer">View</a>
+                  <% if (course.canArchive) { %><form method="post" action="/simple-lms/courses/<%= course._id %>/archive" style="display:inline-flex;"><input type="hidden" name="returnTo" value="/simple-lms?view=course-studio"><button class="btn btn-danger btn-sm" type="submit">Archive</button></form><% } %>
+                  <% if (course.canRestore) { %><form method="post" action="/simple-lms/courses/<%= course._id %>/restore" style="display:inline-flex;"><input type="hidden" name="returnTo" value="/simple-lms?view=course-studio"><button class="btn btn-primary btn-sm" type="submit">Restore</button></form><% } %>
+                </div>
+              </div></article>
+            <% }) %>
+          <% } %>
+        </aside>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Creator Studio Settings</h2><p class="mini">Personal defaults and workflow behavior for faster publishing.</p></div></div>
+        <form method="post" action="/simple-lms/settings/creator" class="stack">
+          <div class="form-grid">
+            <div><label>Default Category</label><input class="input" name="defaultCategory" value="<%= creatorDefaults.defaultCategory || '' %>" placeholder="e.g. Data Analysis"></div>
+            <div><label>Default Level</label><select class="input" name="defaultLevel"><% levels.forEach((l) => { %><option value="<%= l %>" <%= (creatorDefaults.defaultLevel || 'mixed') === l ? 'selected' : '' %>><%= nice(l) %></option><% }) %></select></div>
+            <div><label>Default Visibility</label><select class="input" name="defaultVisibility"><option value="private" <%= (creatorDefaults.defaultVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option><option value="public" <%= creatorDefaults.defaultVisibility === 'public' ? 'selected' : '' %>>public</option></select></div>
+            <div><label>Default Payment Mode</label><select class="input" name="defaultPaymentMode"><option value="free" <%= (creatorDefaults.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option><option value="paid" <%= creatorDefaults.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option></select></div>
+            <div><label>Default Currency</label><select class="input" name="defaultCurrency"><% const creatorDefaultCurrency = selectCurrency(creatorDefaults.defaultCurrency || defaultCurrency, defaultCurrency); currencyOptions.forEach((currencyOption) => { const optionCode = String(currencyOption?.code || '').trim().toUpperCase(); const optionName = String(currencyOption?.name || optionCode || 'Currency').trim(); %><option value="<%= optionCode %>" <%= creatorDefaultCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option><% }) %></select></div>
+            <div><label>Preferred Lesson Duration (mins)</label><input class="input" type="number" name="preferredLessonDurationMinutes" min="1" max="600" value="<%= creatorDefaults.preferredLessonDurationMinutes || 12 %>"></div>
+            <div><label>Default Lesson Media Type</label><select class="input" name="defaultLessonMediaType"><option value="video" <%= (creatorDefaults.defaultLessonMediaType || 'video') === 'video' ? 'selected' : '' %>>video</option><option value="audio" <%= creatorDefaults.defaultLessonMediaType === 'audio' ? 'selected' : '' %>>audio</option><option value="document" <%= creatorDefaults.defaultLessonMediaType === 'document' ? 'selected' : '' %>>document</option></select></div>
+            <div><label>Auto-save Draft Interval (mins)</label><input class="input" type="number" name="autoSaveDraftMinutes" min="1" max="30" value="<%= creatorDefaults.autoSaveDraftMinutes || 5 %>"></div>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="autoLoadSampleCurriculum" <%= creatorDefaults.autoLoadSampleCurriculum ? 'checked' : '' %>> Auto-load sample curriculum on new course form</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="autoGenerateCourseSlug" <%= creatorDefaults.autoGenerateCourseSlug !== false ? 'checked' : '' %>> Auto-generate slug from title</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="publishNotifyByEmail" <%= creatorDefaults.publishNotifyByEmail !== false ? 'checked' : '' %>> Send creator email when course status changes</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="showSalesDashboard" <%= creatorDefaults.showSalesDashboard !== false ? 'checked' : '' %>> Show creator sales dashboard by default</label>
+            <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="showCreatorTips" <%= creatorDefaults.showCreatorTips !== false ? 'checked' : '' %>> Show creator tips and submission hints</label>
+          </div>
+          <div class="actions"><button class="btn btn-primary" type="submit">Save Creator Settings</button></div>
+        </form>
+      </section>
+
+      <% if (creatorDefaults.showSalesDashboard !== false) { %>
+      <section class="panel">
+        <div class="head"><div><h2>Earnings & Payout</h2><p class="mini">Track your course sales and set payout details for commission settlements.</p></div></div>
+        <div class="kpis">
+          <article class="kpi"><small>Sales</small><strong><%= creatorStats.saleCount %></strong></article>
+          <article class="kpi"><small>Gross Revenue</small><strong><%= creatorStats.grossDisplay %></strong></article>
+          <article class="kpi"><small>Your Commission</small><strong><%= creatorStats.commissionDisplay %></strong></article>
+          <article class="kpi"><small>Active Learners</small><strong><%= creatorStats.enrollmentCount %></strong></article>
+          <article class="kpi"><small>Avg Order Value</small><strong><%= creatorStats.avgOrderDisplay %></strong></article>
+          <article class="kpi"><small>Sales Conversion</small><strong><%= creatorStats.conversionRatePercent %>%</strong></article>
+          <article class="kpi"><small>Completion Rate</small><strong><%= creatorStats.completionRatePercent %>%</strong></article>
+        </div>
+        <div class="studio" style="margin-top:10px;">
+          <div class="stack">
+            <div class="head"><div><h2>Recent Sales</h2><p class="mini">Latest successful payments on your managed courses.</p></div></div>
+            <% if (!myCreatorSales || myCreatorSales.length === 0) { %>
+              <div class="empty">No sales recorded yet.</div>
+            <% } else { %>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Date</th><th>Buyer</th><th>Course</th><th>Amount</th><th>Commission</th><th>Rate</th></tr></thead>
+                  <tbody>
+                    <% myCreatorSales.forEach((sale) => { %>
+                      <tr>
+                        <td><%= dateText(sale.paidAt || sale.createdAt) %></td>
+                        <td><%= sale.buyerName %></td>
+                        <td><%= sale.courseTitle %></td>
+                        <td><%= sale.amountDisplay %></td>
+                        <td><%= sale.creatorCommissionDisplay %></td>
+                        <td><%= sale.creatorCommissionRateDisplay %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            <% } %>
+          </div>
+          <aside class="stack">
+            <div class="head"><div><h2>Payout Profile</h2><p class="mini">Used by admins for creator payout processing.</p></div></div>
+            <form method="post" action="/simple-lms/profile/payout" class="stack">
+              <div class="form-grid">
+                <div><label>Account Name</label><input class="input" name="accountName" value="<%= payoutProfile.accountName || '' %>"></div>
+                <div><label>Account Number</label><input class="input" name="accountNumber" value="<%= payoutProfile.accountNumber || '' %>"></div>
+                <div><label>Bank Name</label><input class="input" name="bankName" value="<%= payoutProfile.bankName || '' %>"></div>
+                <div><label>Bank Code</label><input class="input" name="bankCode" value="<%= payoutProfile.bankCode || '' %>"></div>
+                <div><label>SWIFT Code</label><input class="input" name="swiftCode" value="<%= payoutProfile.swiftCode || '' %>"></div>
+                <div><label>Currency</label><select class="input" name="currency"><% const payoutCurrency = selectCurrency(payoutProfile.currency || defaultCurrency, defaultCurrency); currencyOptions.forEach((currencyOption) => { const optionCode = String(currencyOption?.code || '').trim().toUpperCase(); const optionName = String(currencyOption?.name || optionCode || 'Currency').trim(); %><option value="<%= optionCode %>" <%= payoutCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option><% }) %></select></div>
+                <div><label>Payment Email</label><input class="input" type="email" name="paymentEmail" value="<%= payoutProfile.paymentEmail || '' %>"></div>
+                <div><label>Country</label><input class="input" name="country" value="<%= payoutProfile.country || '' %>"></div>
+              </div>
+              <div><label>Notes</label><textarea class="input" name="notes" rows="3"><%= payoutProfile.notes || '' %></textarea></div>
+              <div class="actions"><button class="btn btn-primary" type="submit">Save Payout Profile</button></div>
+            </form>
+          </aside>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Creator Course Insights</h2><p class="mini">Per-course performance across enrollment, completion, and paid conversion.</p></div></div>
+        <% if (!creatorCourseInsights || creatorCourseInsights.length === 0) { %>
+          <div class="empty">No course analytics yet. Publish and enroll learners to populate this section.</div>
+        <% } else { %>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Course</th><th>Enrollments</th><th>Completions</th><th>Completion Rate</th><th>Paid Sales</th><th>Gross</th><th>Your Commission</th></tr></thead>
+              <tbody>
+                <% creatorCourseInsights.forEach((item) => { %>
+                  <tr>
+                    <td><%= item.title %></td>
+                    <td><%= item.enrollmentCount %></td>
+                    <td><%= item.completionCount %></td>
+                    <td><%= item.completionRate %>%</td>
+                    <td><%= item.saleCount %></td>
+                    <td><%= item.grossDisplay %></td>
+                    <td><%= item.commissionDisplay %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </section>
+      <% } %>
+    <% } %>
+
+    <% if (viewMode === 'program-studio' && canCreateCourses) { %>
+      <section class="panel studio">
+        <div class="stack">
+          <div class="head"><div><h2>Create Program</h2><p class="mini">Build pathways using course IDs in steps JSON.</p></div></div>
+          <form method="post" action="/simple-lms/programs/create" class="stack" id="createProgramWizardForm" data-program-wizard>
+            <div class="program-wizard-shell" data-program-shell>
+              <div class="program-wizard-progress"><span data-program-progress></span></div>
+              <div class="program-wizard-steps">
+                <button class="program-wizard-step active" type="button" data-program-goto="0"><span>1</span><small>Blueprint</small></button>
+                <button class="program-wizard-step" type="button" data-program-goto="1"><span>2</span><small>Access</small></button>
+                <button class="program-wizard-step" type="button" data-program-goto="2"><span>3</span><small>Pathway</small></button>
+                <button class="program-wizard-step" type="button" data-program-goto="3"><span>4</span><small>Review</small></button>
+              </div>
+              <p class="program-wizard-message" data-program-message hidden></p>
+
+              <section class="program-step-pane active" data-program-pane="0">
+                <header class="program-step-head">
+                  <h3>Create your pathway blueprint</h3>
+                  <p>Define the purpose and story for this program.</p>
+                </header>
+                <div class="form-grid">
+                  <div><label>Name</label><input class="input" name="name" required></div>
+                  <div><label>Tags</label><input class="input" name="tags" placeholder="pathway, leadership"></div>
+                </div>
+                <div><label>Objective</label><textarea class="input" name="objective" rows="2"></textarea></div>
+                <div><label>Description</label><textarea class="input" name="description" rows="4"></textarea></div>
+              </section>
+
+              <section class="program-step-pane" data-program-pane="1">
+                <header class="program-step-head">
+                  <h3>Choose release settings</h3>
+                  <p>Control whether this program launches as draft or public.</p>
+                </header>
+                <div class="form-grid">
+                  <div><label>Status</label><select class="input" name="status"><option value="draft">draft</option><option value="published">published</option></select></div>
+                  <div><label>Visibility</label><select class="input" name="visibility"><option value="private">private</option><option value="public">public</option></select></div>
+                </div>
+              </section>
+
+              <section class="program-step-pane" data-program-pane="2">
+                <header class="program-step-head">
+                  <h3>Build the step-by-step pathway</h3>
+                  <p>Select courses in sequence. You can still edit raw JSON if needed.</p>
+                </header>
+                <div class="program-path-builder" id="programPathBuilder"></div>
+                <div class="actions">
+                  <button class="btn btn-secondary btn-sm" type="button" id="addProgramStep">Add Path Step</button>
+                  <button class="btn btn-secondary btn-sm" type="button" id="fillProgramTemplate">Load Sample Pathway</button>
+                  <button class="btn btn-secondary btn-sm" type="button" id="programLoadFromJson">Load From JSON</button>
+                </div>
+                <details>
+                  <summary style="cursor:pointer;color:var(--muted);font-size:12px;">Advanced: Raw Steps JSON</summary>
+                  <div style="margin-top:8px;">
+                    <textarea class="input" name="stepsJson" rows="8" id="createStepsJson">[]</textarea>
+                  </div>
+                </details>
+              </section>
+
+              <section class="program-step-pane" data-program-pane="3">
+                <header class="program-step-head">
+                  <h3>Review and create</h3>
+                  <p>Quick final checks before publishing this learning journey.</p>
+                </header>
+                <div class="program-review-grid">
+                  <article class="program-review-card"><small>Name</small><strong id="programReviewName">-</strong></article>
+                  <article class="program-review-card"><small>Status</small><strong id="programReviewStatus">draft</strong></article>
+                  <article class="program-review-card"><small>Visibility</small><strong id="programReviewVisibility">private</strong></article>
+                  <article class="program-review-card"><small>Path Steps</small><strong id="programReviewStepCount">0 steps</strong></article>
+                  <article class="program-review-card"><small>Required Steps</small><strong id="programReviewRequiredCount">0 required</strong></article>
+                </div>
+                <p class="mini">Tip: Keep the first step practical and easy so learners gain momentum quickly.</p>
+              </section>
+
+              <footer class="program-wizard-footer">
+                <p class="mini">Wizard mode keeps program setup smooth and intuitive.</p>
+                <div class="program-wizard-actions">
+                  <button class="btn btn-secondary btn-sm" type="button" data-program-prev>Back</button>
+                  <button class="btn btn-primary btn-sm" type="button" data-program-next>Continue</button>
+                  <button class="btn btn-primary" type="submit" data-program-submit>Create Program</button>
+                </div>
+              </footer>
+            </div>
+          </form>
+        </div>
+        <aside class="stack">
+          <div class="head"><div><h2>Managed Programs</h2><p class="mini">Edit and assign programs to learners.</p></div></div>
+          <% if (!managedPrograms || managedPrograms.length === 0) { %><div class="empty">No managed programs.</div><% } else { %>
+            <% managedPrograms.forEach((program) => { %>
+              <article class="card"><div class="body">
+                <h3><%= program.name %></h3>
+                <p><%= program.objective || program.description || 'Program pathway' %></p>
+                <div class="actions"><span class="pill"><%= program.status %></span><span class="pill"><%= program.totalSteps %> steps</span></div>
+                <div class="actions"><a class="btn btn-secondary btn-sm" href="/simple-lms?view=program-studio&editProgram=<%= program._id %>">Edit</a></div>
+              </div></article>
+            <% }) %>
+          <% } %>
+        </aside>
+      </section>
+    <% } %>
+
+    <% if (viewMode === 'admin' && canManagePlatform) { %>
+      <section class="panel">
+        <div class="head"><div><h2>Admin Dashboard</h2><p>Users, approval workflow, commission controls, and payment operations.</p></div></div>
+        <div class="kpis">
+          <article class="kpi"><small>Super Admins</small><strong><%= roleBreakdown.super_admin %></strong></article>
+          <article class="kpi"><small>Admins</small><strong><%= roleBreakdown.admin %></strong></article>
+          <article class="kpi"><small>Pending Reviews</small><strong><%= pendingReviewCourses.length %></strong></article>
+          <article class="kpi"><small>Successful Payments</small><strong><%= paymentStats.successfulCount %></strong></article>
+          <article class="kpi"><small>Revenue (Tracked)</small><strong><%= paymentStats.revenueDisplay %></strong></article>
+          <article class="kpi"><small>Creator Payouts</small><strong><%= paymentStats.creatorPayoutDisplay %></strong></article>
+          <article class="kpi"><small>Payment Success Rate</small><strong><%= paymentStats.successRatePercent %>%</strong></article>
+          <article class="kpi"><small>Average Order Value</small><strong><%= paymentStats.averageOrderDisplay %></strong></article>
+          <article class="kpi"><small>Payout Ratio</small><strong><%= paymentStats.creatorPayoutRatePercent %>%</strong></article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Platform Settings & Controls</h2><p>Central controls for creator defaults, moderation policy, and analytics windows.</p></div></div>
+        <form method="post" action="/simple-lms/settings/platform" class="stack">
+          <input type="hidden" name="platformFormComplete" value="1">
+          <div class="form-grid">
+            <div><label>Default Currency</label><select class="input" name="defaultCurrency"><% const platformDefaultCurrency = selectCurrency(platformDefaults.defaultCurrency || defaultCurrency, defaultCurrency); currencyOptions.forEach((currencyOption) => { const optionCode = String(currencyOption?.code || '').trim().toUpperCase(); const optionName = String(currencyOption?.name || optionCode || 'Currency').trim(); %><option value="<%= optionCode %>" <%= platformDefaultCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option><% }) %></select></div>
+            <div><label>Default Payment Mode</label><select class="input" name="defaultPaymentMode"><option value="free" <%= (platformDefaults.defaultPaymentMode || 'free') === 'free' ? 'selected' : '' %>>free</option><option value="paid" <%= platformDefaults.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option></select></div>
+            <div><label>Default Course Visibility</label><select class="input" name="defaultCourseVisibility"><option value="private" <%= (platformDefaults.defaultCourseVisibility || 'private') === 'private' ? 'selected' : '' %>>private</option><option value="public" <%= platformDefaults.defaultCourseVisibility === 'public' ? 'selected' : '' %>>public</option><option value="marketplace" <%= platformDefaults.defaultCourseVisibility === 'marketplace' ? 'selected' : '' %>>marketplace</option></select></div>
+            <div><label>Default Course Status</label><select class="input" name="defaultCourseStatus"><option value="draft" <%= (platformDefaults.defaultCourseStatus || 'draft') === 'draft' ? 'selected' : '' %>>draft</option><option value="published" <%= platformDefaults.defaultCourseStatus === 'published' ? 'selected' : '' %>>published</option></select></div>
+            <div><label>Minimum Course Price (minor)</label><input class="input" type="number" name="minCoursePriceMinor" min="0" value="<%= platformDefaults.minCoursePriceMinor || 0 %>"></div>
+            <div><label>Maximum Course Price (minor)</label><input class="input" type="number" name="maxCoursePriceMinor" min="0" value="<%= platformDefaults.maxCoursePriceMinor || 50000000 %>"></div>
+            <div><label>Analytics Lookback (days)</label><input class="input" type="number" name="analyticsLookbackDays" min="7" max="365" value="<%= platformDefaults.analyticsLookbackDays || 30 %>"></div>
+            <div><label>Cart Expiry (days)</label><input class="input" type="number" name="cartExpiryDays" min="1" max="365" value="<%= platformDefaults.cartExpiryDays || 30 %>"></div>
+            <div><label>Featured Refresh (hours)</label><input class="input" type="number" name="featuredRefreshHours" min="1" max="168" value="<%= platformDefaults.featuredRefreshHours || 24 %>"></div>
+            <div><label>Max Chapters Per Course</label><input class="input" type="number" name="maxChaptersPerCourse" min="1" max="100" value="<%= platformDefaults.maxChaptersPerCourse || 25 %>"></div>
+            <div><label>Max Lessons Per Chapter</label><input class="input" type="number" name="maxLessonsPerChapter" min="1" max="200" value="<%= platformDefaults.maxLessonsPerChapter || 60 %>"></div>
+            <div><label>Homepage Featured Limit</label><input class="input" type="number" name="homepageFeaturedCourseLimit" min="1" max="24" value="<%= platformDefaults.homepageFeaturedCourseLimit || 8 %>"></div>
+            <input type="hidden" name="requirePublicReviewForCreators" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requirePublicReviewForCreators" <%= platformDefaults.requirePublicReviewForCreators !== false ? 'checked' : '' %>> Require admin review before creator public publish</label>
+            <input type="hidden" name="allowExternalMediaEmbeds" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowExternalMediaEmbeds" <%= platformDefaults.allowExternalMediaEmbeds !== false ? 'checked' : '' %>> Allow external media embeds in lessons</label>
+            <input type="hidden" name="allowAudioLessons" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowAudioLessons" <%= platformDefaults.allowAudioLessons !== false ? 'checked' : '' %>> Allow audio lesson links</label>
+            <input type="hidden" name="allowCourseComments" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="allowCourseComments" <%= platformDefaults.allowCourseComments !== false ? 'checked' : '' %>> Enable learner comments/discussion support</label>
+            <input type="hidden" name="requireCourseThumbnail" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="requireCourseThumbnail" <%= platformDefaults.requireCourseThumbnail ? 'checked' : '' %>> Require banner image before publishing</label>
+            <input type="hidden" name="enableWishlist" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="enableWishlist" <%= platformDefaults.enableWishlist !== false ? 'checked' : '' %>> Enable wishlist/favorites features</label>
+            <input type="hidden" name="autoApproveSystemCourses" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="autoApproveSystemCourses" <%= platformDefaults.autoApproveSystemCourses !== false ? 'checked' : '' %>> Auto-approve system-owned courses</label>
+            <input type="hidden" name="maintenanceMode" value="off"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" name="maintenanceMode" <%= platformDefaults.maintenanceMode ? 'checked' : '' %>> Enable maintenance mode banner</label>
+          </div>
+          <div><label>Maintenance Message</label><textarea class="input" name="maintenanceMessage" rows="2"><%= platformDefaults.maintenanceMessage || '' %></textarea></div>
+          <div><label>Creator Submission Guidelines</label><textarea class="input" name="creatorSubmissionGuidelines" rows="4"><%= platformDefaults.creatorSubmissionGuidelines || '' %></textarea></div>
+          <div class="actions"><button class="btn btn-primary" type="submit">Save Platform Settings</button></div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Advanced Analytics</h2><p>Trend intelligence for the last <%= analytics.lookbackDays %> days versus the previous period.</p></div></div>
+        <div class="kpis">
+          <article class="kpi">
+            <small>New Enrollments</small>
+            <strong><%= analytics.enrollmentTrend.current %></strong>
+            <span class="trend <%= analytics.enrollmentTrend.growthPercent > 0 ? 'up' : analytics.enrollmentTrend.growthPercent < 0 ? 'down' : 'flat' %>"><%= analytics.enrollmentTrend.growthPercent >= 0 ? '+' : '' %><%= analytics.enrollmentTrend.growthPercent %>%</span>
+          </article>
+          <article class="kpi">
+            <small>Completions</small>
+            <strong><%= analytics.completionTrend.current %></strong>
+            <span class="trend <%= analytics.completionTrend.growthPercent > 0 ? 'up' : analytics.completionTrend.growthPercent < 0 ? 'down' : 'flat' %>"><%= analytics.completionTrend.growthPercent >= 0 ? '+' : '' %><%= analytics.completionTrend.growthPercent %>%</span>
+          </article>
+          <article class="kpi">
+            <small>Payment Volume</small>
+            <strong><%= analytics.paymentTrend.currentCount %></strong>
+            <span class="trend <%= analytics.paymentTrend.growthPercent > 0 ? 'up' : analytics.paymentTrend.growthPercent < 0 ? 'down' : 'flat' %>"><%= analytics.paymentTrend.growthPercent >= 0 ? '+' : '' %><%= analytics.paymentTrend.growthPercent %>%</span>
+          </article>
+          <article class="kpi">
+            <small>Revenue This Period</small>
+            <strong><%= analytics.paymentTrend.grossDisplay %></strong>
+            <small style="margin-top:6px;">Prev: <%= analytics.paymentTrend.previousGrossDisplay %></small>
+          </article>
+        </div>
+        <div class="analytic-list" style="margin-top:10px;">
+          <article class="analytic-item">
+            <h4>Top Courses by Enrollments</h4>
+            <% if (!analytics.topCoursesByEnrollments || analytics.topCoursesByEnrollments.length === 0) { %>
+              <p class="mini">No enrollment data in this period.</p>
+            <% } else { %>
+              <div class="stack-tight">
+                <% analytics.topCoursesByEnrollments.forEach((entry) => { %>
+                  <div class="analytic-meta"><span class="pill"><%= entry.enrollmentCount %> enrollments</span><span class="pill"><%= entry.completionCount %> completions</span><strong><%= entry.title %></strong></div>
+                <% }) %>
+              </div>
+            <% } %>
+          </article>
+          <article class="analytic-item">
+            <h4>Top Courses by Revenue</h4>
+            <% if (!analytics.topCoursesByRevenue || analytics.topCoursesByRevenue.length === 0) { %>
+              <p class="mini">No payment data in this period.</p>
+            <% } else { %>
+              <div class="stack-tight">
+                <% analytics.topCoursesByRevenue.forEach((entry) => { %>
+                  <div class="analytic-meta"><span class="pill"><%= entry.saleCount %> sales</span><span class="pill"><%= entry.revenueDisplay %></span><strong><%= entry.title %></strong></div>
+                <% }) %>
+              </div>
+            <% } %>
+          </article>
+          <article class="analytic-item">
+            <h4>Top Creators by Revenue</h4>
+            <% if (!analytics.topCreatorsByRevenue || analytics.topCreatorsByRevenue.length === 0) { %>
+              <p class="mini">No creator revenue data in this period.</p>
+            <% } else { %>
+              <div class="stack-tight">
+                <% analytics.topCreatorsByRevenue.forEach((entry) => { %>
+                  <div class="analytic-meta"><span class="pill"><%= entry.saleCount %> sales</span><span class="pill"><%= entry.revenueDisplay %></span><strong><%= entry.creatorName %></strong></div>
+                <% }) %>
+              </div>
+            <% } %>
+          </article>
+          <article class="analytic-item">
+            <h4>Category Performance</h4>
+            <% if (!analytics.categoryInsights || analytics.categoryInsights.length === 0) { %>
+              <p class="mini">No category breakdown available yet.</p>
+            <% } else { %>
+              <div class="stack-tight">
+                <% analytics.categoryInsights.forEach((entry) => { %>
+                  <div class="analytic-meta">
+                    <span class="pill"><%= entry.publishedCourseCount %> courses</span>
+                    <span class="pill"><%= entry.enrollmentCount %> enrollments</span>
+                    <span class="pill"><%= entry.completionRatePercent %>% completion</span>
+                    <strong><%= entry.category %></strong>
+                  </div>
+                <% }) %>
+              </div>
+            <% } %>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Manage Users & Roles</h2><p>All accounts can learn and publish courses. Use role only for admin privileges.</p></div></div>
+        <% if (!adminAccounts || adminAccounts.length === 0) { %>
+          <div class="empty">No accounts found.</div>
+        <% } else { %>
+          <div class="stack">
+            <% adminAccounts.forEach((account) => { %>
+              <form method="post" action="/simple-lms/accounts/<%= account._id %>/role" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+                <div><label>Name</label><input class="input" type="text" value="<%= account.displayName %>" readonly></div>
+                <div><label>Email</label><input class="input" type="text" value="<%= account.email %>" readonly></div>
+                <div><label>Role</label><select class="input" name="role"><option value="learner" <%= (account.resolvedRole === 'learner' || account.resolvedRole === 'creator') ? 'selected' : '' %>>learner</option><option value="admin" <%= account.resolvedRole === 'admin' ? 'selected' : '' %>>admin</option><option value="super_admin" <%= account.resolvedRole === 'super_admin' ? 'selected' : '' %>>super_admin</option></select></div>
+                <div style="align-self:end;"><button class="btn btn-primary btn-sm" type="submit">Update Role</button></div>
+              </form>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Course Approval Queue</h2><p>Review pending public submissions with approval, change-request, and denial actions.</p></div></div>
+        <% if (!pendingReviewCourses || pendingReviewCourses.length === 0) { %>
+          <div class="empty">No courses pending public approval.</div>
+        <% } else { %>
+          <div class="approval-stack">
+            <% pendingReviewCourses.forEach((course) => { %>
+              <article class="approval-review-card">
+                <div class="approval-review-head">
+                  <div>
+                    <p class="approval-review-kicker">Submitted <%= dateText(course.submittedAt) %></p>
+                    <h3><%= course.title %></h3>
+                    <p class="mini"><strong><%= course.creatorName %></strong><%= course.creatorEmail ? ` • ${course.creatorEmail}` : '' %></p>
+                  </div>
+                  <div class="actions">
+                    <span class="pill"><%= course.visibilityDisplay %></span>
+                    <span class="pill"><%= course.displayPrice %></span>
+                  </div>
+                </div>
+                <div class="approval-review-meta">
+                  <article><span>Status</span><strong><%= course.status %></strong></article>
+                  <article><span>Lessons</span><strong><%= Number(course.lessonCount || 0) %></strong></article>
+                  <article><span>Duration</span><strong><%= Number(course.estimatedDurationMinutes || 0) %> mins</strong></article>
+                  <article><span>Category</span><strong><%= course.category || 'Uncategorized' %></strong></article>
+                </div>
+                <p class="approval-review-copy"><%= course.summaryText %></p>
+                <div class="actions">
+                  <a class="btn btn-secondary btn-sm" href="<%= course.courseUrl %>?returnTo=<%= encodeURIComponent('/simple-lms?view=admin') %>" target="_blank" rel="noreferrer">Preview</a>
+                  <a class="btn btn-secondary btn-sm" href="/admin/courses?editCourse=<%= course._id %>#edit-course">Open Editor</a>
+                </div>
+                <form method="post" action="/simple-lms/courses/<%= course._id %>/review-public" class="approval-review-form" data-course-review-form>
+                  <input type="hidden" name="returnTo" value="/simple-lms?view=admin">
+                  <input type="hidden" name="decision" value="changes_requested" data-review-decision-input>
+                  <label>
+                    <span>Creator-facing feedback</span>
+                    <textarea class="input" name="reviewNotes" rows="5" data-review-notes placeholder="Explain the changes required or why the submission is denied."></textarea>
+                  </label>
+                  <div class="actions">
+                    <button class="btn btn-primary btn-sm" type="submit" formaction="/simple-lms/courses/<%= course._id %>/approve-public" data-review-submit="approved">Approve & Publish</button>
+                    <button class="btn btn-secondary btn-sm" type="submit" data-review-submit="changes_requested">Request Changes</button>
+                    <button class="btn btn-danger btn-sm" type="submit" data-review-submit="denied">Deny</button>
+                  </div>
+                </form>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+
+        <% if (recentCourseReviewDecisions && recentCourseReviewDecisions.length > 0) { %>
+          <div class="head" style="margin-top:8px;"><div><h2>Recent Decisions</h2><p>Latest completed review actions across creator submissions.</p></div></div>
+          <div class="approval-history-stack">
+            <% recentCourseReviewDecisions.forEach((course) => { %>
+              <article class="approval-history-card">
+                <div class="approval-review-head">
+                  <div>
+                    <p class="approval-review-kicker">Reviewed <%= dateText(course.reviewedAt) %></p>
+                    <h3><%= course.title %></h3>
+                    <p class="mini"><strong><%= course.creatorName %></strong><%= course.creatorEmail ? ` • ${course.creatorEmail}` : '' %></p>
+                  </div>
+                  <span class="pill review-pill-<%= course.reviewDecision %>"><%= course.reviewDecisionLabel %></span>
+                </div>
+                <p class="approval-history-note"><%= course.reviewNotes || 'No written review note stored.' %></p>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Commission Management</h2><p>Set global commission plus per-account and per-course overrides.</p></div></div>
+        <div class="studio">
+          <div class="stack">
+            <form method="post" action="/simple-lms/commission/global" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+              <div><label>Global Creator Commission (%)</label><input class="input" type="number" name="globalRatePercent" min="0" max="100" step="0.01" value="<%= commissionSettings.globalRatePercent %>" required></div>
+              <div style="align-self:end;"><button class="btn btn-primary btn-sm" type="submit">Save Global Rate</button></div>
+            </form>
+
+            <form method="post" action="/simple-lms/commission/account" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+              <div>
+                <label>Account Override</label>
+                <select class="input" name="accountId" required>
+                  <option value="">Select account</option>
+                  <% adminAccounts.forEach((account) => { %>
+                    <option value="<%= account._id %>"><%= account.displayName %> - <%= account.email %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div><label>Commission Rate (%)</label><input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" required></div>
+              <div style="align-self:end;"><button class="btn btn-primary btn-sm" type="submit">Save Account Override</button></div>
+            </form>
+
+            <form method="post" action="/simple-lms/commission/course" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+              <div>
+                <label>Course Override</label>
+                <select class="input" name="courseId" required>
+                  <option value="">Select course</option>
+                  <% managedCourses.forEach((course) => { %>
+                    <option value="<%= course._id %>"><%= course.title %></option>
+                  <% }) %>
+                </select>
+              </div>
+              <div><label>Commission Rate (%)</label><input class="input" type="number" name="ratePercent" min="0" max="100" step="0.01" required></div>
+              <div style="align-self:end;"><button class="btn btn-primary btn-sm" type="submit">Save Course Override</button></div>
+            </form>
+          </div>
+          <aside class="stack">
+            <article class="panel" style="padding:10px;">
+              <div class="head"><div><h2>Account Overrides</h2></div></div>
+              <% if (!commissionSettings.accountOverrides || commissionSettings.accountOverrides.length === 0) { %>
+                <div class="empty">No account overrides.</div>
+              <% } else { %>
+                <div class="stack">
+                  <% commissionSettings.accountOverrides.forEach((item) => { %>
+                    <form method="post" action="/simple-lms/commission/account/remove" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+                      <input type="hidden" name="accountId" value="<%= item.accountId %>">
+                      <div><label>Account</label><input class="input" value="<%= item.accountName %>" readonly></div>
+                      <div><label>Rate</label><input class="input" value="<%= item.ratePercent %>%" readonly></div>
+                      <div style="align-self:end;"><button class="btn btn-danger btn-sm" type="submit">Remove</button></div>
+                    </form>
+                  <% }) %>
+                </div>
+              <% } %>
+            </article>
+            <article class="panel" style="padding:10px;">
+              <div class="head"><div><h2>Course Overrides</h2></div></div>
+              <% if (!commissionSettings.courseOverrides || commissionSettings.courseOverrides.length === 0) { %>
+                <div class="empty">No course overrides.</div>
+              <% } else { %>
+                <div class="stack">
+                  <% commissionSettings.courseOverrides.forEach((item) => { %>
+                    <form method="post" action="/simple-lms/commission/course/remove" class="form-grid" style="border:1px solid var(--border);border-radius:10px;padding:10px;">
+                      <input type="hidden" name="courseId" value="<%= item.courseId %>">
+                      <div><label>Course</label><input class="input" value="<%= item.courseTitle %>" readonly></div>
+                      <div><label>Rate</label><input class="input" value="<%= item.ratePercent %>%" readonly></div>
+                      <div style="align-self:end;"><button class="btn btn-danger btn-sm" type="submit">Remove</button></div>
+                    </form>
+                  <% }) %>
+                </div>
+              <% } %>
+            </article>
+          </aside>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="head"><div><h2>Payment Tracking</h2><p>Recent transactions across all learners.</p></div></div>
+        <div class="kpis">
+          <article class="kpi"><small>Total Records</small><strong><%= paymentStats.totalCount %></strong></article>
+          <article class="kpi"><small>Pending</small><strong><%= paymentStats.pendingCount %></strong></article>
+          <article class="kpi"><small>Failed/Cancelled</small><strong><%= paymentStats.failedCount %></strong></article>
+          <article class="kpi"><small>Flutterwave</small><strong><%= flutterwave.enabled ? 'Configured' : 'Not Set' %></strong></article>
+        </div>
+        <form method="get" action="/simple-lms" class="form-grid" style="margin-top:10px;">
+          <input type="hidden" name="view" value="admin">
+          <div>
+            <label>Status</label>
+            <select class="input" name="paymentStatus">
+              <option value="all" <%= adminPaymentFilters.status === 'all' ? 'selected' : '' %>>all</option>
+              <% paymentStatuses.forEach((statusOption) => { %>
+                <option value="<%= statusOption %>" <%= adminPaymentFilters.status === statusOption ? 'selected' : '' %>><%= statusOption.replace(/_/g, ' ') %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div>
+            <label>Currency</label>
+            <select class="input" name="paymentCurrency">
+              <option value="all" <%= adminPaymentFilters.currency === 'all' ? 'selected' : '' %>>all</option>
+              <% paymentCurrencies.forEach((currencyOption) => { %>
+                <option value="<%= currencyOption %>" <%= adminPaymentFilters.currency === currencyOption ? 'selected' : '' %>><%= currencyOption %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div><label>From</label><input class="input" type="date" name="paymentFrom" value="<%= adminPaymentFilters.dateFrom || '' %>"></div>
+          <div><label>To</label><input class="input" type="date" name="paymentTo" value="<%= adminPaymentFilters.dateTo || '' %>"></div>
+          <div><label>Search</label><input class="input" type="text" name="paymentSearch" value="<%= adminPaymentFilters.search || '' %>" placeholder="tx ref, learner, course"></div>
+          <div style="align-self:end;display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+            <a class="btn btn-secondary btn-sm" href="/simple-lms?view=admin">Reset</a>
+          </div>
+        </form>
+        <% if (!adminPayments || adminPayments.length === 0) { %>
+          <div class="empty">No payment records yet.</div>
+        <% } else { %>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Learner</th><th>Course</th><th>Amount</th><th>Creator Commission</th><th>Platform Share</th><th>Status</th><th>Provider</th><th>Tx Ref</th><th>Provider Tx</th><th>Actions</th></tr></thead>
+              <tbody>
+                <% adminPayments.forEach((payment) => { %>
+                  <tr>
+                    <td><%= dateText(payment.createdAt) %></td>
+                    <td><%= payment.learnerName %><br><span style="color:var(--muted);font-size:12px;"><%= payment.learnerEmail %></span></td>
+                    <td><%= payment.courseTitle %></td>
+                    <td><%= payment.amountDisplay %></td>
+                    <td><%= payment.creatorCommissionDisplay %></td>
+                    <td><%= payment.platformShareDisplay %></td>
+                    <td><span class="pill"><%= payment.statusLabel %></span></td>
+                    <td><%= payment.providerLabel || '-' %></td>
+                    <td><%= payment.txRef %></td>
+                    <td><%= payment.providerReference || '-' %></td>
+                    <td>
+                      <% if (['pending', 'initiated', 'failed', 'cancelled'].includes(payment.status)) { %>
+                        <form method="post" action="/simple-lms/admin/payments/<%= payment._id %>/reverify" style="display:grid;gap:6px;min-width:180px;">
+                          <input class="input" type="text" name="transactionId" value="<%= payment.providerReference || '' %>" placeholder="<%= payment.provider === 'paystack' ? 'Paystack reference' : 'Provider tx id' %>">
+                          <input type="hidden" name="returnTo" value="<%= adminPaymentFilters.returnTo || '/simple-lms?view=admin' %>">
+                          <button class="btn btn-secondary btn-sm" type="submit">Re-verify</button>
+                        </form>
+                      <% } else { %>
+                        <span class="mini">No action</span>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </section>
+    <% } %>
+  </main>
+  <%- include('./partials/public-footer') %>
+
+  <script>
+    (() => {
+      const preferredLessonDuration = Number(<%- JSON.stringify(Number(creatorDefaults.preferredLessonDurationMinutes || 12)) %>) || 12
+      const autoLoadSample = <%- JSON.stringify(Boolean(creatorDefaults.autoLoadSampleCurriculum)) %>
+      const fillCourseTemplate = document.getElementById('fillCourseTemplate')
+      const createChaptersJson = document.getElementById('createChaptersJson')
+      const createCurriculumBuilder = document.getElementById('createCurriculumBuilder')
+      const addCreateChapterButton = document.getElementById('addCreateChapter')
+      const createBuilderLoadJsonButton = document.getElementById('createBuilderLoadJson')
+
+      const sanitizeText = (value, max = 40000) => String(value || '').trim().slice(0, max)
+      const sanitizeKey = (value, fallback) => {
+        const normalized = String(value || fallback || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9-_]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 80)
+        return normalized || fallback
+      }
+      const safeParseJson = (value, fallback = []) => {
+        try {
+          const parsed = JSON.parse(String(value || ''))
+          return Array.isArray(parsed) ? parsed : fallback
+        } catch {
+          return fallback
+        }
+      }
+      const escapeHtml = (value) => String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+
+      const lessonMediaUploadEndpoint = '/api/simple-lms/upload/lesson-media'
+
+      const sanitizeLessonMedia = (input) => {
+        if (!input || typeof input !== 'object' || Array.isArray(input)) return null
+        const url = sanitizeText(input.url, 2000)
+        const publicId = sanitizeText(input.publicId, 400)
+        if (!url && !publicId) return null
+        const resourceTypeValue = String(input.resourceType || 'video').trim().toLowerCase()
+        const resourceType = ['audio', 'video', 'raw', 'link'].includes(resourceTypeValue) ? resourceTypeValue : 'video'
+        return {
+          provider: String(input.provider || '').trim().toLowerCase() === 'external' ? 'external' : 'cloudinary',
+          url,
+          publicId,
+          resourceType,
+          format: sanitizeText(input.format, 40).toLowerCase(),
+          bytes: Number.isFinite(Number(input.bytes)) ? Math.max(0, Number(input.bytes)) : 0,
+          width: Number.isFinite(Number(input.width)) ? Math.max(0, Number(input.width)) : 0,
+          height: Number.isFinite(Number(input.height)) ? Math.max(0, Number(input.height)) : 0,
+          durationSeconds: Number.isFinite(Number(input.durationSeconds)) ? Math.max(0, Number(input.durationSeconds)) : 0,
+          sourceLabel: sanitizeText(input.sourceLabel, 120)
+        }
+      }
+
+      const createEmptyLesson = (chapterKey, lessonIndex = 0) => ({
+        key: `${chapterKey}-lesson-${lessonIndex + 1}`,
+        title: '',
+        description: '',
+        durationMinutes: preferredLessonDuration,
+        videoUrl: '',
+        legacyVideoUrl: '',
+        media: null,
+        content: '',
+        resources: [],
+        quizQuestions: []
+      })
+
+      const createEmptyChapter = (chapterIndex = 0) => {
+        const key = `chapter-${chapterIndex + 1}`
+        return {
+          key,
+          title: '',
+          description: '',
+          lessons: [createEmptyLesson(key, 0)]
+        }
+      }
+
+      const buildLessonState = (lesson, chapterKey, lessonIndex) => {
+        const media = sanitizeLessonMedia(lesson?.media)
+        const derivedDurationMinutes = Number(media?.durationSeconds) > 0
+          ? Math.max(1, Math.ceil(Number(media.durationSeconds) / 60))
+          : preferredLessonDuration
+        const legacyVideoUrl = media
+          ? ''
+          : sanitizeText(lesson?.videoUrl || lesson?.mediaUrl || lesson?.audioUrl, 2000)
+        const playbackUrl = media?.url || legacyVideoUrl
+        return {
+          key: sanitizeKey(lesson?.key, `${chapterKey}-lesson-${lessonIndex + 1}`),
+          title: sanitizeText(lesson?.title, 200),
+          description: sanitizeText(lesson?.description, 3000),
+          durationMinutes: Number.isFinite(Number(lesson?.durationMinutes))
+            ? Math.max(0, Math.round(Number(lesson.durationMinutes)))
+            : derivedDurationMinutes,
+          videoUrl: playbackUrl,
+          legacyVideoUrl,
+          media,
+          content: sanitizeText(lesson?.content, 40000),
+          resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
+          quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
+        }
+      }
+
+      const lessonHasContent = (lesson) => Boolean(
+        lesson?.title
+        || lesson?.description
+        || lesson?.videoUrl
+        || lesson?.legacyVideoUrl
+        || lesson?.media?.url
+        || lesson?.content
+      )
+
+      const normalizeChapters = (input = []) => {
+        const chapters = Array.isArray(input) ? input : []
+        const normalized = chapters
+          .map((chapter, chapterIndex) => {
+            const title = sanitizeText(chapter?.title, 200)
+            const chapterKey = sanitizeKey(chapter?.key, `chapter-${chapterIndex + 1}`)
+            const lessons = Array.isArray(chapter?.lessons) ? chapter.lessons : []
+            const normalizedLessons = lessons
+              .map((lesson, lessonIndex) => buildLessonState(lesson, chapterKey, lessonIndex))
+              .filter((lesson) => lessonHasContent(lesson))
+
+            return {
+              key: chapterKey,
+              title,
+              description: sanitizeText(chapter?.description, 3000),
+              lessons: normalizedLessons.length > 0 ? normalizedLessons : [createEmptyLesson(chapterKey, 0)]
+            }
+          })
+          .filter((chapter) => chapter.title || chapter.description || chapter.lessons.some((lesson) => lessonHasContent(lesson)))
+
+        return normalized.length > 0 ? normalized : [createEmptyChapter(0)]
+      }
+
+      const buildSampleCurriculum = () => normalizeChapters([
+        {
+          title: 'Introduction',
+          description: 'Course orientation and expected outcomes.',
+          lessons: [
+            {
+              title: 'Welcome and Learning Outcomes',
+              description: 'Set the context and walk through the curriculum structure.',
+              durationMinutes: preferredLessonDuration,
+              videoUrl: '',
+              legacyVideoUrl: '',
+              media: null,
+              content: 'Welcome to this course. Use this lesson to set context and expected outcomes.'
+            }
+          ]
+        }
+      ])
+
+      const serializeLessonForJson = (lesson) => {
+        const media = sanitizeLessonMedia(lesson?.media)
+        const externalVideoUrl = media
+          ? ''
+          : sanitizeText(lesson?.legacyVideoUrl || lesson?.videoUrl, 2000)
+        return {
+          key: sanitizeKey(lesson?.key, 'lesson'),
+          title: sanitizeText(lesson?.title, 200),
+          description: sanitizeText(lesson?.description, 3000),
+          durationMinutes: Number.isFinite(Number(lesson?.durationMinutes))
+            ? Math.max(0, Math.round(Number(lesson.durationMinutes)))
+            : 0,
+          videoUrl: externalVideoUrl,
+          media,
+          content: sanitizeText(lesson?.content, 40000),
+          resources: Array.isArray(lesson?.resources) ? lesson.resources : [],
+          quizQuestions: Array.isArray(lesson?.quizQuestions) ? lesson.quizQuestions : []
+        }
+      }
+
+      const serializeChaptersForJson = (chapters) => (Array.isArray(chapters) ? chapters : [])
+        .map((chapter, chapterIndex) => {
+          const chapterKey = sanitizeKey(chapter?.key, `chapter-${chapterIndex + 1}`)
+          const lessons = (Array.isArray(chapter?.lessons) ? chapter.lessons : [])
+            .map((lesson, lessonIndex) => serializeLessonForJson({
+              ...lesson,
+              key: sanitizeKey(lesson?.key, `${chapterKey}-lesson-${lessonIndex + 1}`)
+            }))
+            .filter((lesson) => lessonHasContent(lesson))
+          return {
+            key: chapterKey,
+            title: sanitizeText(chapter?.title, 200),
+            description: sanitizeText(chapter?.description, 3000),
+            lessons
+          }
+        })
+        .filter((chapter) => chapter.title || chapter.description || chapter.lessons.some((lesson) => lessonHasContent(lesson)))
+
+      const getLessonPlaybackUrl = (lesson) => String(
+        lesson?.media?.url
+        || lesson?.videoUrl
+        || lesson?.legacyVideoUrl
+        || ''
+      ).trim()
+
+      const getMediaPreviewDescriptor = (lessonOrUrl) => {
+        const media = sanitizeLessonMedia(
+          lessonOrUrl && typeof lessonOrUrl === 'object' && !Array.isArray(lessonOrUrl)
+            ? lessonOrUrl.media
+            : null
+        )
+        const value = media?.url || String(
+          lessonOrUrl && typeof lessonOrUrl === 'object' && !Array.isArray(lessonOrUrl)
+            ? getLessonPlaybackUrl(lessonOrUrl)
+            : lessonOrUrl || ''
+        ).trim()
+        if (!value) return { kind: 'none', embedUrl: '', directUrl: '', sourceLabel: '' }
+
+        if (media?.provider === 'cloudinary') {
+          return {
+            kind: media.resourceType === 'audio' ? 'audio' : 'video',
+            embedUrl: '',
+            directUrl: value,
+            sourceLabel: media.sourceLabel || (media.resourceType === 'audio' ? 'Cloudinary Audio' : 'Cloudinary Video')
+          }
+        }
+
+        let parsed
+        try {
+          parsed = new URL(value)
+        } catch {
+          return { kind: 'link', embedUrl: '', directUrl: value, sourceLabel: 'External Link' }
+        }
+
+        const hostname = parsed.hostname.toLowerCase()
+        const pathname = parsed.pathname.toLowerCase()
+        const extension = pathname.includes('.') ? pathname.slice(pathname.lastIndexOf('.')) : ''
+        const audioExtensions = new Set(['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.oga', '.flac', '.weba'])
+        const videoExtensions = new Set(['.mp4', '.webm', '.mov', '.m4v', '.ogv', '.m3u8'])
+
+        if (hostname.includes('youtube.com')) {
+          const videoId = parsed.searchParams.get('v')
+          if (videoId) return { kind: 'embed', embedUrl: `https://www.youtube.com/embed/${videoId}`, directUrl: value, sourceLabel: 'YouTube' }
+          if (pathname.includes('/embed/')) return { kind: 'embed', embedUrl: value, directUrl: value, sourceLabel: 'YouTube' }
+        }
+
+        if (hostname.includes('youtu.be')) {
+          const videoId = parsed.pathname.split('/').filter(Boolean)[0]
+          if (videoId) return { kind: 'embed', embedUrl: `https://www.youtube.com/embed/${videoId}`, directUrl: value, sourceLabel: 'YouTube' }
+        }
+
+        if (hostname.includes('vimeo.com')) {
+          const vimeoId = parsed.pathname.split('/').filter(Boolean).find((part) => /^\d+$/.test(part))
+          if (vimeoId) return { kind: 'embed', embedUrl: `https://player.vimeo.com/video/${vimeoId}`, directUrl: value, sourceLabel: 'Vimeo' }
+        }
+        if (hostname.includes('player.vimeo.com')) return { kind: 'embed', embedUrl: value, directUrl: value, sourceLabel: 'Vimeo' }
+
+        if (hostname.includes('drive.google.com')) {
+          const pathParts = parsed.pathname.split('/')
+          const fileIndex = pathParts.findIndex((part) => part === 'd')
+          if (fileIndex >= 0 && pathParts[fileIndex + 1]) {
+            return { kind: 'embed', embedUrl: `https://drive.google.com/file/d/${pathParts[fileIndex + 1]}/preview`, directUrl: value, sourceLabel: 'Google Drive' }
+          }
+          const idParam = parsed.searchParams.get('id')
+          if (idParam) return { kind: 'embed', embedUrl: `https://drive.google.com/file/d/${idParam}/preview`, directUrl: value, sourceLabel: 'Google Drive' }
+        }
+
+        if (hostname.includes('docs.google.com')) return { kind: 'embed', embedUrl: value, directUrl: value, sourceLabel: 'Google' }
+        if (hostname.includes('loom.com')) {
+          const parts = parsed.pathname.split('/').filter(Boolean)
+          const shareIndex = parts.findIndex((part) => part === 'share')
+          const embedIndex = parts.findIndex((part) => part === 'embed')
+          const loomId = (shareIndex >= 0 && parts[shareIndex + 1])
+            ? parts[shareIndex + 1]
+            : ((embedIndex >= 0 && parts[embedIndex + 1]) ? parts[embedIndex + 1] : '')
+          if (loomId) return { kind: 'embed', embedUrl: `https://www.loom.com/embed/${loomId}`, directUrl: value, sourceLabel: 'Loom' }
+        }
+        if (hostname.includes('dropbox.com')) {
+          const directDropboxUrl = (() => {
+            try {
+              const copy = new URL(parsed.toString())
+              copy.searchParams.delete('dl')
+              copy.searchParams.set('raw', '1')
+              return copy.toString()
+            } catch {
+              return value
+            }
+          })()
+          if (audioExtensions.has(extension)) return { kind: 'audio', embedUrl: '', directUrl: directDropboxUrl, sourceLabel: 'Dropbox Audio' }
+          if (videoExtensions.has(extension)) return { kind: 'video', embedUrl: '', directUrl: directDropboxUrl, sourceLabel: 'Dropbox Video' }
+          return { kind: 'link', embedUrl: '', directUrl: directDropboxUrl, sourceLabel: 'Dropbox' }
+        }
+        if (audioExtensions.has(extension)) return { kind: 'audio', embedUrl: '', directUrl: value, sourceLabel: 'Audio' }
+        if (videoExtensions.has(extension)) return { kind: 'video', embedUrl: '', directUrl: value, sourceLabel: 'Video' }
+        if (pathname.includes('/embed/')) return { kind: 'embed', embedUrl: value, directUrl: value, sourceLabel: hostname }
+
+        return { kind: 'link', embedUrl: '', directUrl: value, sourceLabel: 'External Link' }
+      }
+
+      const renderMediaPreviewMarkup = (lesson) => {
+        const descriptor = getMediaPreviewDescriptor(lesson)
+        if (descriptor.kind === 'none') {
+          return '<p class="builder-preview-note">Upload a Cloudinary video or audio file to preview the lesson player output.</p>'
+        }
+        if (descriptor.kind === 'embed' && descriptor.embedUrl) {
+          return `<iframe src="${escapeHtml(descriptor.embedUrl)}" allowfullscreen loading="lazy"></iframe><p class="builder-preview-note">${escapeHtml(descriptor.sourceLabel)} embed preview</p>`
+        }
+        if (descriptor.kind === 'video' && descriptor.directUrl) {
+          return `<video controls preload="metadata" src="${escapeHtml(descriptor.directUrl)}"></video><p class="builder-preview-note">Direct video preview</p>`
+        }
+        if (descriptor.kind === 'audio' && descriptor.directUrl) {
+          return `<audio controls preload="metadata" src="${escapeHtml(descriptor.directUrl)}"></audio><p class="builder-preview-note">Direct audio preview</p>`
+        }
+        return `<p class="builder-preview-note">Preview unavailable for this link. <a href="${escapeHtml(descriptor.directUrl)}" target="_blank" rel="noreferrer">Open media link</a></p>`
+      }
+
+      if (createCurriculumBuilder && createChaptersJson) {
+        let builderState = normalizeChapters(safeParseJson(createChaptersJson.value, []))
+
+        const syncJsonField = () => {
+          createChaptersJson.value = JSON.stringify(serializeChaptersForJson(builderState), null, 2)
+        }
+
+        const getLesson = (chapterIndex, lessonIndex) => {
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length) return null
+          const chapter = builderState[chapterIndex]
+          if (!chapter || !Array.isArray(chapter.lessons)) return null
+          if (!Number.isInteger(lessonIndex) || lessonIndex < 0 || lessonIndex >= chapter.lessons.length) return null
+          return chapter.lessons[lessonIndex]
+        }
+
+        const renderLessonMediaSummaryMarkup = (lesson) => {
+          const parts = []
+          if (lesson?.media?.url) {
+            parts.push(`<span class="builder-media-pill">${escapeHtml(lesson.media.sourceLabel || 'Cloudinary')}</span>`)
+            parts.push(`<span class="builder-media-pill">${escapeHtml((lesson.media.resourceType || 'video').toUpperCase())}</span>`)
+            if (Number.isFinite(Number(lesson.media.durationSeconds)) && Number(lesson.media.durationSeconds) > 0) {
+              parts.push(`<span class="builder-media-pill">${Math.max(1, Math.ceil(Number(lesson.media.durationSeconds) / 60))} min</span>`)
+            }
+          } else {
+            parts.push('<span class="builder-media-pill">Upload required</span>')
+          }
+          return parts.join('')
+        }
+
+        const renderBuilder = () => {
+          createCurriculumBuilder.innerHTML = builderState.map((chapter, chapterIndex) => `
+            <article class="builder-chapter" data-chapter-index="${chapterIndex}">
+              <div class="builder-chapter-head">
+                <strong>Chapter ${chapterIndex + 1}</strong>
+                <div class="actions">
+                  <button type="button" class="btn btn-secondary btn-sm" data-action="add-lesson" data-chapter-index="${chapterIndex}">Add Lesson</button>
+                  <button type="button" class="btn btn-danger btn-sm" data-action="remove-chapter" data-chapter-index="${chapterIndex}" ${builderState.length <= 1 ? 'disabled' : ''}>Remove Chapter</button>
+                </div>
+              </div>
+              <div class="form-grid">
+                <div><label>Chapter Title</label><input class="input" data-kind="chapter" data-field="title" data-chapter-index="${chapterIndex}" value="${escapeHtml(chapter.title)}" placeholder="Chapter title"></div>
+                <div><label>Chapter Key</label><input class="input" data-kind="chapter" data-field="key" data-chapter-index="${chapterIndex}" value="${escapeHtml(chapter.key)}" placeholder="chapter-key"></div>
+              </div>
+              <div><label>Chapter Description</label><textarea class="input" rows="2" data-kind="chapter" data-field="description" data-chapter-index="${chapterIndex}" placeholder="What this chapter covers">${escapeHtml(chapter.description)}</textarea></div>
+              <div class="builder-lessons">
+                ${(chapter.lessons || []).map((lesson, lessonIndex) => `
+                  <article class="builder-lesson" data-lesson-index="${lessonIndex}">
+                    <div class="builder-lesson-head">
+                      <strong>Lesson ${lessonIndex + 1}</strong>
+                      <button type="button" class="btn btn-danger btn-sm" data-action="remove-lesson" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" ${(chapter.lessons || []).length <= 1 ? 'disabled' : ''}>Remove Lesson</button>
+                    </div>
+                    <div class="form-grid">
+                      <div><label>Lesson Title</label><input class="input" data-kind="lesson" data-field="title" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.title)}" placeholder="Lesson title"></div>
+                      <div><label>Lesson Key</label><input class="input" data-kind="lesson" data-field="key" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${escapeHtml(lesson.key)}" placeholder="lesson-key"></div>
+                      <div><label>Duration (mins)</label><input class="input" type="number" min="0" data-kind="lesson" data-field="durationMinutes" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" value="${Number(lesson.durationMinutes || 0)}"></div>
+                    </div>
+                    <section class="builder-media-panel">
+                      <div class="builder-media-toolbar">
+                        <div class="builder-media-summary">${renderLessonMediaSummaryMarkup(lesson)}</div>
+                        <div class="builder-media-actions">
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="upload-media" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">${lesson.media?.url ? 'Replace Media' : 'Upload Media'}</button>
+                          <input class="builder-file-input" type="file" accept="video/*,audio/*" data-action="media-input" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}">
+                          <button type="button" class="btn btn-secondary btn-sm" data-action="remove-media" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" ${lesson.media?.url ? '' : 'disabled'}>Clear Media</button>
+                        </div>
+                      </div>
+                      <p class="builder-legacy-note">New lessons use Cloudinary uploads so playback, duration detection, and auto-progression stay consistent.</p>
+                      <div class="builder-preview">${renderMediaPreviewMarkup(lesson)}</div>
+                    </section>
+                    <div><label>Lesson Description</label><textarea class="input" rows="2" data-kind="lesson" data-field="description" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" placeholder="Lesson description">${escapeHtml(lesson.description)}</textarea></div>
+                    <div><label>Lesson Notes / Content</label><textarea class="input" rows="4" data-kind="lesson" data-field="content" data-chapter-index="${chapterIndex}" data-lesson-index="${lessonIndex}" placeholder="Lesson notes, transcript, and guidance for learners">${escapeHtml(lesson.content)}</textarea></div>
+                  </article>
+                `).join('')}
+              </div>
+            </article>
+          `).join('')
+        }
+
+        const updateBuilderStateFromInput = (target) => {
+          const chapterIndex = Number.parseInt(target.dataset.chapterIndex || '', 10)
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length) return
+
+          const kind = target.dataset.kind
+          const field = target.dataset.field
+          if (!field) return
+
+          if (kind === 'chapter') {
+            if (field === 'key') {
+              builderState[chapterIndex][field] = sanitizeKey(target.value, `chapter-${chapterIndex + 1}`)
+            } else {
+              builderState[chapterIndex][field] = sanitizeText(target.value, field === 'title' ? 200 : 3000)
+            }
+          }
+
+          if (kind === 'lesson') {
+            const lessonIndex = Number.parseInt(target.dataset.lessonIndex || '', 10)
+            if (!Number.isInteger(lessonIndex) || lessonIndex < 0 || lessonIndex >= builderState[chapterIndex].lessons.length) return
+
+            const lesson = builderState[chapterIndex].lessons[lessonIndex]
+            if (field === 'durationMinutes') {
+              lesson[field] = Number.isFinite(Number(target.value)) ? Math.max(0, Math.round(Number(target.value))) : 0
+            } else if (field === 'key') {
+              lesson[field] = sanitizeKey(target.value, `${builderState[chapterIndex].key || `chapter-${chapterIndex + 1}`}-lesson-${lessonIndex + 1}`)
+            } else if (field === 'title') {
+              lesson[field] = sanitizeText(target.value, 200)
+            } else if (field === 'description') {
+              lesson[field] = sanitizeText(target.value, 3000)
+            } else if (field === 'content') {
+              lesson[field] = sanitizeText(target.value, 40000)
+            }
+          }
+        }
+
+        const addChapter = () => {
+          const nextChapter = createEmptyChapter(builderState.length)
+          builderState.push(nextChapter)
+          syncJsonField()
+          renderBuilder()
+        }
+
+        const addLesson = (chapterIndex) => {
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length) return
+          const chapter = builderState[chapterIndex]
+          const chapterKey = sanitizeKey(chapter.key, `chapter-${chapterIndex + 1}`)
+          chapter.key = chapterKey
+          chapter.lessons.push(createEmptyLesson(chapterKey, chapter.lessons.length))
+          syncJsonField()
+          renderBuilder()
+        }
+
+        const removeChapter = (chapterIndex) => {
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length || builderState.length <= 1) return
+          builderState.splice(chapterIndex, 1)
+          syncJsonField()
+          renderBuilder()
+        }
+
+        const removeLesson = (chapterIndex, lessonIndex) => {
+          if (!Number.isInteger(chapterIndex) || chapterIndex < 0 || chapterIndex >= builderState.length) return
+          const chapter = builderState[chapterIndex]
+          if (!Number.isInteger(lessonIndex) || lessonIndex < 0 || lessonIndex >= chapter.lessons.length || chapter.lessons.length <= 1) return
+          chapter.lessons.splice(lessonIndex, 1)
+          syncJsonField()
+          renderBuilder()
+        }
+
+        const loadBuilderFromJson = () => {
+          builderState = normalizeChapters(safeParseJson(createChaptersJson.value, []))
+          syncJsonField()
+          renderBuilder()
+        }
+
+        const uploadLessonMedia = async (chapterIndex, lessonIndex, file, lessonNode) => {
+          const lesson = getLesson(chapterIndex, lessonIndex)
+          if (!lesson || !file) return
+
+          const uploadButton = lessonNode?.querySelector('[data-action="upload-media"]')
+          const removeButton = lessonNode?.querySelector('[data-action="remove-media"]')
+          const originalUploadText = uploadButton?.textContent || 'Upload Media'
+
+          try {
+            if (uploadButton) {
+              uploadButton.disabled = true
+              uploadButton.textContent = 'Uploading...'
+            }
+            if (removeButton) removeButton.disabled = true
+
+            const formData = new FormData()
+            formData.append('media', file)
+
+            const response = await fetch(lessonMediaUploadEndpoint, {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json'
+              },
+              body: formData
+            })
+            const payload = await parseMediaUploadResponse(response)
+            const media = sanitizeLessonMedia(payload?.lessonMedia)
+            if (!media?.url) {
+              throw new Error('Lesson media upload did not return a playable URL.')
+            }
+
+            lesson.media = media
+            lesson.videoUrl = media.url
+            lesson.legacyVideoUrl = ''
+            if (Number.isFinite(Number(payload?.durationMinutes)) && Number(payload.durationMinutes) > 0) {
+              lesson.durationMinutes = Math.max(1, Math.round(Number(payload.durationMinutes)))
+            }
+            syncJsonField()
+            renderBuilder()
+          } catch (error) {
+            alert(error && error.message ? error.message : 'Lesson media upload failed. Please try again.')
+            if (uploadButton) {
+              uploadButton.disabled = false
+              uploadButton.textContent = originalUploadText
+            }
+            if (removeButton) removeButton.disabled = false
+          }
+        }
+
+        createCurriculumBuilder.addEventListener('input', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+          if (!target.dataset || !target.dataset.kind) return
+          const kind = target.dataset.kind
+          const field = target.dataset.field
+          updateBuilderStateFromInput(target)
+          syncJsonField()
+        })
+
+        createCurriculumBuilder.addEventListener('change', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLInputElement)) return
+          if (target.dataset.action !== 'media-input') return
+          const chapterIndex = Number.parseInt(target.dataset.chapterIndex || '', 10)
+          const lessonIndex = Number.parseInt(target.dataset.lessonIndex || '', 10)
+          const file = target.files?.[0]
+          const lessonNode = target.closest('.builder-lesson')
+          void uploadLessonMedia(chapterIndex, lessonIndex, file, lessonNode)
+        })
+
+        createCurriculumBuilder.addEventListener('click', (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+          const button = target.closest('button[data-action]')
+          if (!button) return
+
+          const action = button.dataset.action
+          const chapterIndex = Number.parseInt(button.dataset.chapterIndex || '', 10)
+          const lessonIndex = Number.parseInt(button.dataset.lessonIndex || '', 10)
+
+          if (action === 'add-lesson') addLesson(chapterIndex)
+          if (action === 'remove-chapter') removeChapter(chapterIndex)
+          if (action === 'remove-lesson') removeLesson(chapterIndex, lessonIndex)
+          if (action === 'upload-media') {
+            const fileInput = button.parentElement?.querySelector('input[data-action="media-input"]')
+            if (fileInput instanceof HTMLInputElement) fileInput.click()
+          }
+          if (action === 'remove-media') {
+            const lesson = getLesson(chapterIndex, lessonIndex)
+            if (!lesson) return
+            lesson.media = null
+            lesson.videoUrl = ''
+            lesson.legacyVideoUrl = ''
+            syncJsonField()
+            renderBuilder()
+          }
+        })
+
+        if (addCreateChapterButton) {
+          addCreateChapterButton.addEventListener('click', addChapter)
+        }
+        if (createBuilderLoadJsonButton) {
+          createBuilderLoadJsonButton.addEventListener('click', loadBuilderFromJson)
+        }
+        if (createChaptersJson) {
+          createChaptersJson.addEventListener('blur', loadBuilderFromJson)
+        }
+
+        if (fillCourseTemplate) {
+          fillCourseTemplate.addEventListener('click', () => {
+            builderState = buildSampleCurriculum()
+            syncJsonField()
+            renderBuilder()
+          })
+        }
+
+        const currentChaptersValue = String(createChaptersJson.value || '').trim()
+        if (autoLoadSample && (!currentChaptersValue || currentChaptersValue === '[]')) {
+          builderState = buildSampleCurriculum()
+        }
+        syncJsonField()
+        renderBuilder()
+      } else if (fillCourseTemplate && createChaptersJson) {
+        fillCourseTemplate.addEventListener('click', () => {
+          createChaptersJson.value = JSON.stringify(buildSampleCurriculum(), null, 2)
+        })
+      }
+
+      async function parseMediaUploadResponse(response) {
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase()
+        if (contentType.includes('application/json')) {
+          const payload = await response.json()
+          if (!response.ok) {
+            throw new Error(payload?.error || `Lesson media upload failed (${response.status}).`)
+          }
+          return payload
+        }
+
+        const textPayload = await response.text()
+        if (!response.ok && response.status === 404) {
+          throw new Error('Lesson media upload endpoint was not found (404). Please refresh this page and try again.')
+        }
+
+        const snippet = String(textPayload || '').replace(/\s+/g, ' ').trim().slice(0, 120)
+        throw new Error(`Lesson media upload failed (${response.status}). ${snippet || 'Unexpected server response.'}`)
+      }
+
+      const createProgramWizardForm = document.getElementById('createProgramWizardForm')
+      if (createProgramWizardForm) {
+        const programCourseOptionsRaw = <%- JSON.stringify((studioCourses || []).map((course) => ({ id: String(course._id || ''), title: String(course.title || 'Untitled Course') }))) %>
+        const courseMap = new Map()
+        ;(Array.isArray(programCourseOptionsRaw) ? programCourseOptionsRaw : []).forEach((entry) => {
+          const id = String(entry?.id || '').trim()
+          const title = String(entry?.title || 'Untitled Course').trim() || 'Untitled Course'
+          if (!id || courseMap.has(id)) return
+          courseMap.set(id, title)
+        })
+        const availableCourses = Array.from(courseMap.entries()).map(([id, title]) => ({ id, title }))
+
+        const shell = createProgramWizardForm.querySelector('[data-program-shell]')
+        const panes = Array.from(createProgramWizardForm.querySelectorAll('[data-program-pane]'))
+        const stepButtons = Array.from(createProgramWizardForm.querySelectorAll('[data-program-goto]'))
+        const progressBar = createProgramWizardForm.querySelector('[data-program-progress]')
+        const messageNode = createProgramWizardForm.querySelector('[data-program-message]')
+        const prevButton = createProgramWizardForm.querySelector('[data-program-prev]')
+        const nextButton = createProgramWizardForm.querySelector('[data-program-next]')
+        const submitButton = createProgramWizardForm.querySelector('[data-program-submit]')
+        const stepsJsonField = document.getElementById('createStepsJson')
+        const builderRoot = document.getElementById('programPathBuilder')
+        const addProgramStep = document.getElementById('addProgramStep')
+        const fillProgramTemplate = document.getElementById('fillProgramTemplate')
+        const loadFromJsonButton = document.getElementById('programLoadFromJson')
+
+        if (shell && panes.length > 0 && prevButton && nextButton && submitButton && stepsJsonField && builderRoot) {
+          const reviewNodes = {
+            name: document.getElementById('programReviewName'),
+            status: document.getElementById('programReviewStatus'),
+            visibility: document.getElementById('programReviewVisibility'),
+            stepCount: document.getElementById('programReviewStepCount'),
+            requiredCount: document.getElementById('programReviewRequiredCount')
+          }
+
+          const totalSteps = panes.length
+          const lastStepIndex = totalSteps - 1
+          let currentStep = 0
+
+          const normalizePathSteps = (input) => {
+            const list = Array.isArray(input) ? input : []
+            const normalized = list.map((entry) => ({
+              courseId: String(entry?.courseId || entry?.course || '').trim(),
+              required: entry?.required !== false && entry?.required !== 'false'
+            }))
+            if (normalized.length === 0) {
+              normalized.push({ courseId: '', required: true })
+            }
+            return normalized
+          }
+
+          let pathSteps = normalizePathSteps(safeParseJson(stepsJsonField.value, []))
+
+          const setProgramMessage = (message = '') => {
+            if (!messageNode) return
+            if (!message) {
+              messageNode.hidden = true
+              messageNode.textContent = ''
+              return
+            }
+            messageNode.hidden = false
+            messageNode.textContent = message
+          }
+
+          const syncStepsJson = () => {
+            stepsJsonField.value = JSON.stringify(pathSteps.map((step) => ({
+              courseId: String(step.courseId || '').trim(),
+              required: step.required !== false
+            })), null, 2)
+          }
+
+          const renderPathBuilder = () => {
+            builderRoot.innerHTML = pathSteps.map((step, index) => `
+              <article class="program-path-item" data-path-index="${index}">
+                <div class="program-path-head">
+                  <strong>Step ${index + 1}</strong>
+                  <button class="btn btn-danger btn-sm" type="button" data-path-action="remove" data-path-index="${index}" ${pathSteps.length <= 1 ? 'disabled' : ''}>Remove</button>
+                </div>
+                <div class="program-path-grid">
+                  <label>Course
+                    <select class="input" data-path-field="courseId" data-path-index="${index}">
+                      <option value="">Select course</option>
+                      ${availableCourses.map((course) => `<option value="${escapeHtml(course.id)}" ${course.id === step.courseId ? 'selected' : ''}>${escapeHtml(course.title)}</option>`).join('')}
+                    </select>
+                  </label>
+                  <label style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" data-path-field="required" data-path-index="${index}" ${step.required ? 'checked' : ''}>
+                    Required step
+                  </label>
+                </div>
+              </article>
+            `).join('')
+          }
+
+          const refreshProgramReview = () => {
+            const name = String(createProgramWizardForm.elements.namedItem('name')?.value || '').trim()
+            const status = String(createProgramWizardForm.elements.namedItem('status')?.value || 'draft').trim()
+            const visibility = String(createProgramWizardForm.elements.namedItem('visibility')?.value || 'private').trim()
+            const selectedSteps = pathSteps.filter((step) => step.courseId)
+            const requiredCount = selectedSteps.filter((step) => step.required).length
+
+            if (reviewNodes.name) reviewNodes.name.textContent = name || 'Untitled program'
+            if (reviewNodes.status) reviewNodes.status.textContent = status
+            if (reviewNodes.visibility) reviewNodes.visibility.textContent = visibility
+            if (reviewNodes.stepCount) reviewNodes.stepCount.textContent = `${selectedSteps.length} steps`
+            if (reviewNodes.requiredCount) reviewNodes.requiredCount.textContent = `${requiredCount} required`
+          }
+
+          const validateProgramStep = (stepIndex) => {
+            if (stepIndex === 0) {
+              const name = String(createProgramWizardForm.elements.namedItem('name')?.value || '').trim()
+              if (!name) return 'Program name is required before continuing.'
+              return ''
+            }
+            if (stepIndex === 2) {
+              const selected = pathSteps
+                .map((step) => String(step.courseId || '').trim())
+                .filter(Boolean)
+              if (selected.length === 0) {
+                return 'Add at least one course step to build a valid pathway.'
+              }
+              if (new Set(selected).size !== selected.length) {
+                return 'Each pathway step must use a different course.'
+              }
+              return ''
+            }
+            return ''
+          }
+
+          const updateProgramUI = () => {
+            panes.forEach((pane, index) => {
+              pane.classList.toggle('active', index === currentStep)
+            })
+            stepButtons.forEach((button, index) => {
+              button.classList.toggle('active', index === currentStep)
+              button.classList.toggle('complete', index < currentStep)
+            })
+            if (progressBar) progressBar.style.width = `${((currentStep + 1) / totalSteps) * 100}%`
+            prevButton.disabled = currentStep <= 0
+            shell.classList.toggle('is-final', currentStep === lastStepIndex)
+            refreshProgramReview()
+          }
+
+          const goToProgramStep = (nextStep, { skipValidation = false } = {}) => {
+            const target = Math.max(0, Math.min(lastStepIndex, nextStep))
+            if (!skipValidation && target > currentStep) {
+              for (let step = currentStep; step < target; step += 1) {
+                const error = validateProgramStep(step)
+                if (error) {
+                  setProgramMessage(error)
+                  return false
+                }
+              }
+            }
+            currentStep = target
+            setProgramMessage('')
+            updateProgramUI()
+            return true
+          }
+
+          builderRoot.addEventListener('change', (event) => {
+            const target = event.target
+            if (!(target instanceof HTMLElement)) return
+            const field = target.dataset.pathField
+            const index = Number.parseInt(target.dataset.pathIndex || '', 10)
+            if (!Number.isInteger(index) || index < 0 || index >= pathSteps.length) return
+
+            if (field === 'courseId' && target instanceof HTMLSelectElement) {
+              pathSteps[index].courseId = String(target.value || '').trim()
+            }
+            if (field === 'required' && target instanceof HTMLInputElement) {
+              pathSteps[index].required = target.checked
+            }
+            syncStepsJson()
+            refreshProgramReview()
+          })
+
+          builderRoot.addEventListener('click', (event) => {
+            const target = event.target
+            if (!(target instanceof HTMLElement)) return
+            const button = target.closest('button[data-path-action]')
+            if (!button) return
+            const action = button.dataset.pathAction
+            const index = Number.parseInt(button.dataset.pathIndex || '', 10)
+            if (action === 'remove' && Number.isInteger(index) && pathSteps.length > 1) {
+              pathSteps.splice(index, 1)
+              syncStepsJson()
+              renderPathBuilder()
+              refreshProgramReview()
+            }
+          })
+
+          if (addProgramStep) {
+            addProgramStep.addEventListener('click', () => {
+              pathSteps.push({ courseId: '', required: true })
+              syncStepsJson()
+              renderPathBuilder()
+            })
+          }
+
+          if (fillProgramTemplate) {
+            fillProgramTemplate.addEventListener('click', () => {
+              const firstCourse = availableCourses[0]?.id || ''
+              const secondCourse = availableCourses[1]?.id || firstCourse
+              pathSteps = normalizePathSteps([
+                { courseId: firstCourse, required: true },
+                { courseId: secondCourse, required: false }
+              ])
+              syncStepsJson()
+              renderPathBuilder()
+              refreshProgramReview()
+            })
+          }
+
+          const loadStepsFromJson = () => {
+            pathSteps = normalizePathSteps(safeParseJson(stepsJsonField.value, []))
+            syncStepsJson()
+            renderPathBuilder()
+            refreshProgramReview()
+          }
+
+          if (loadFromJsonButton) loadFromJsonButton.addEventListener('click', loadStepsFromJson)
+          stepsJsonField.addEventListener('blur', loadStepsFromJson)
+
+          prevButton.addEventListener('click', () => {
+            goToProgramStep(currentStep - 1, { skipValidation: true })
+          })
+
+          nextButton.addEventListener('click', () => {
+            const error = validateProgramStep(currentStep)
+            if (error) {
+              setProgramMessage(error)
+              return
+            }
+            goToProgramStep(currentStep + 1, { skipValidation: true })
+          })
+
+          stepButtons.forEach((button, index) => {
+            button.addEventListener('click', () => {
+              if (index <= currentStep) {
+                goToProgramStep(index, { skipValidation: true })
+                return
+              }
+              goToProgramStep(index, { skipValidation: false })
+            })
+          })
+
+          createProgramWizardForm.addEventListener('input', () => {
+            refreshProgramReview()
+          })
+
+          createProgramWizardForm.addEventListener('submit', (event) => {
+            for (let step = 0; step < lastStepIndex; step += 1) {
+              const error = validateProgramStep(step)
+              if (error) {
+                event.preventDefault()
+                goToProgramStep(step, { skipValidation: true })
+                setProgramMessage(error)
+                return
+              }
+            }
+            syncStepsJson()
+            setProgramMessage('')
+          })
+
+          syncStepsJson()
+          renderPathBuilder()
+          updateProgramUI()
+        }
+      }
+    })()
+  </script>
+  <script>
+    (() => {
+      const reviewForms = document.querySelectorAll('[data-course-review-form]')
+      if (!reviewForms.length) return
+
+      reviewForms.forEach((form) => {
+        const decisionInput = form.querySelector('[data-review-decision-input]')
+        const notesInput = form.querySelector('[data-review-notes]')
+        form.querySelectorAll('[data-review-submit]').forEach((button) => {
+          button.addEventListener('click', (event) => {
+            const decision = String(button.getAttribute('data-review-submit') || '').trim().toLowerCase()
+            if (decisionInput) decisionInput.value = decision
+            if (!notesInput) return
+
+            const requiresNotes = decision !== 'approved'
+            notesInput.required = requiresNotes
+            if (requiresNotes && !String(notesInput.value || '').trim()) {
+              event.preventDefault()
+              notesInput.reportValidity()
+              notesInput.focus()
+            }
+          })
+        })
+      })
+    })()
+  </script>
+</body>
+</html>
+
+

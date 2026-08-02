@@ -1,4 +1,5 @@
 const creditsService = require('../services/creditsService');
+const mongoose = require('mongoose');
 
 /**
  * Helper function to extract entity ID and details from various response structures
@@ -20,6 +21,10 @@ const extractEntityDetails = (data) => {
   
   // Check for jobId field (used by AI matching endpoint)
   if (data.jobId) {
+    if (!mongoose.isValidObjectId(data.jobId)) {
+      console.warn('Ignoring non-Mongo jobId for credit attribution');
+      return null;
+    }
     console.log('   Found jobId field in response');
     // Convert ObjectId to string if needed
     const jobId = data.jobId.toString ? data.jobId.toString() : data.jobId;
@@ -227,14 +232,23 @@ const deductCredits = (req, res, next) => {
     });
     
     if (req.creditsAction && statusCode >= 200 && statusCode < 300) {
-      // Skip credit deduction if result is from cache (no AI computation cost)
-      // This applies to both basic matching and matching reports with insights
-      // Check for fromCache === true (strict equality to avoid type coercion issues)
-      if (req.creditsAction.action === 'aiMatching' && data?.fromCache === true) {
-        console.log(`💳 ✅ SKIPPING credit deduction for ${req.creditsAction.action} - result from cache (no AI computation)`);
-        if (data.insights) {
-          console.log(`   ✅ Includes cached GPT insights - no credits charged`);
-        }
+      if (data?.idempotentReplay === true) {
+        console.log(`Skipping credit deduction for idempotent replay of ${req.creditsAction.action}`);
+        return originalJson(data);
+      }
+
+      // aiMatching: `fromCache` only means vector similarity was served from cache.
+      // findMatchingCandidatesWithExplanation still runs GPT on those matches — that must be charged.
+      // Skip only when we did not run the explanation/GPT pass (vector-only response).
+      const skipAiMatchingForVectorCacheOnly =
+        req.creditsAction.action === 'aiMatching' &&
+        data?.fromCache === true &&
+        data?.explanationsIncluded !== true;
+
+      if (skipAiMatchingForVectorCacheOnly) {
+        console.log(
+          `💳 ✅ SKIPPING credit deduction for ${req.creditsAction.action} — vector matches from cache, no GPT explanation pass (explanationsIncluded=${data?.explanationsIncluded})`
+        );
         return originalJson(data);
       }
       

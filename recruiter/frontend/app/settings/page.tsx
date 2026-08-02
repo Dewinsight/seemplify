@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardFooter
+import { 
+  Card, 
+  CardContent, 
+  CardHeader, 
+  CardTitle, 
+  CardDescription, 
+  CardFooter 
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,11 +20,11 @@ import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  User,
-  Settings as SettingsIcon,
-  Upload,
-  Save,
+import { 
+  User, 
+  Settings as SettingsIcon, 
+  Upload, 
+  Save, 
   AlertCircle,
   Camera,
   Mail,
@@ -52,6 +52,7 @@ import { PageLoader, LoadingOverlay, LoadingButton } from "@/components/ui/loadi
 import { InactivitySettings } from "@/components/InactivitySettings";
 import UserPendingInvitationsSection from "@/components/UserPendingInvitationsSection";
 import { TrustedDevices } from "@/components/settings/trusted-devices";
+import { useFeatureFlags } from "@/context/FeatureFlagsContext";
 
 
 
@@ -67,8 +68,10 @@ const TIMEZONES = [
 
 export default function SettingsPage() {
   const { state, updateProfile, uploadAvatar, changePassword, updatePreferences } = useUser();
+  const { isFeatureEnabled } = useFeatureFlags();
+  const aiAssistantEnabled = isFeatureEnabled('aiAssistant');
   const { user, isLoading } = state;
-
+  
   const [activeTab, setActiveTab] = useState('profile');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -102,7 +105,7 @@ export default function SettingsPage() {
       },
     },
   });
-
+  
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -177,22 +180,22 @@ export default function SettingsPage() {
 
   const handleSaveProfile = async () => {
     if (!user) return;
-
+    
     // Client-side validation
     const errors = [];
-
+    
     if (!formData.profile.firstName || formData.profile.firstName.trim().length < 2) {
       errors.push("First name must be at least 2 characters");
     }
-
+    
     if (!formData.profile.lastName || formData.profile.lastName.trim().length < 2) {
       errors.push("Last name must be at least 2 characters");
     }
-
+    
     if (formData.profile.phone && formData.profile.phone.trim().length > 0 && formData.profile.phone.trim().length < 10) {
       errors.push("Phone number must be at least 10 characters");
     }
-
+    
     if (errors.length > 0) {
       toast({
         title: "Validation Error",
@@ -201,7 +204,7 @@ export default function SettingsPage() {
       });
       return;
     }
-
+    
     setSaving(true);
     try {
       await updateProfile({
@@ -213,14 +216,14 @@ export default function SettingsPage() {
           language: formData.profile.language || 'en'
         }
       });
-
+      
       toast({
         title: "Profile updated",
         description: "Your profile has been successfully updated.",
       });
     } catch (error: any) {
       console.error("Profile update error:", error);
-
+      
       // Handle validation errors from backend
       if (error.errors && typeof error.errors === 'object') {
         const errorMessages = Object.values(error.errors).join(", ");
@@ -230,11 +233,11 @@ export default function SettingsPage() {
           variant: "destructive",
         });
       } else {
-        toast({
-          title: "Error",
+      toast({
+        title: "Error",
           description: error.message || "Failed to update profile. Please try again.",
-          variant: "destructive",
-        });
+        variant: "destructive",
+      });
       }
     } finally {
       setSaving(false);
@@ -245,7 +248,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await updatePreferences(formData.preferences);
-
+      
       toast({
         title: "Preferences updated",
         description: "Your preferences have been successfully updated.",
@@ -288,7 +291,7 @@ export default function SettingsPage() {
     setUploading(true);
     try {
       await uploadAvatar(file);
-
+      
       toast({
         title: "Avatar updated",
         description: "Your profile picture has been successfully updated.",
@@ -335,13 +338,13 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await changePassword(passwordData.currentPassword, passwordData.newPassword);
-
+      
       setPasswordData({
         currentPassword: '',
         newPassword: '',
         confirmPassword: '',
       });
-
+      
       toast({
         title: "Password changed",
         description: "Your password has been successfully updated.",
@@ -378,8 +381,8 @@ export default function SettingsPage() {
             <p className="text-muted-foreground">
               Your profile is being set up. Please wait a moment and refresh the page.
             </p>
-            <Button
-              onClick={() => window.location.reload()}
+            <Button 
+              onClick={() => window.location.reload()} 
               className="mt-4"
             >
               Refresh Page
@@ -398,27 +401,27 @@ export default function SettingsPage() {
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Account Settings</h1>
           <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
         </div>
-
+        
         {/* Profile Completion - Mobile Optimized */}
         <div className="w-full sm:w-auto">
           <Card className="bg-white dark:bg-gray-800 shadow-sm border">
             <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className={`h-4 w-4 ${user.profileCompletion?.percentage === 100 ? 'text-emerald-500' : 'text-primary'}`} />
+                  <CheckCircle className={`h-4 w-4 ${user.profileCompletion?.percentage === 100 ? 'text-emerald-500' : 'text-blue-500'}`} />
                   <span className="text-sm font-medium">Profile Completion</span>
                 </div>
-                <span className={`text-sm font-bold ${user.profileCompletion?.percentage === 100 ? 'text-emerald-600' : 'text-primary'}`}>
+                <span className={`text-sm font-bold ${user.profileCompletion?.percentage === 100 ? 'text-emerald-600' : 'text-blue-600'}`}>
                   {user.profileCompletion?.percentage || 0}%
                 </span>
               </div>
-              <Progress
-                value={user.profileCompletion?.percentage || 0}
-                className={`h-2 ${user.profileCompletion?.percentage === 100 ? 'bg-emerald-100' : 'bg-primary/20'}`}
+              <Progress 
+                value={user.profileCompletion?.percentage || 0} 
+                className={`h-2 ${user.profileCompletion?.percentage === 100 ? 'bg-emerald-100' : 'bg-blue-100'}`}
               />
               <p className="text-xs text-muted-foreground mt-2">
-                {user.profileCompletion?.percentage === 100
-                  ? "All features unlocked!"
+                {user.profileCompletion?.percentage === 100 
+                  ? "All features unlocked!" 
                   : "Complete your profile to unlock all features"}
               </p>
             </CardContent>
@@ -431,42 +434,42 @@ export default function SettingsPage() {
         <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm">
           <div className="overflow-x-auto">
             <TabsList className="flex w-full overflow-x-auto pb-px mb-0 sm:grid sm:grid-cols-5 gap-0">
-              <TabsTrigger
-                value="profile"
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-primary"
+              <TabsTrigger 
+                value="profile" 
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
               >
                 <User className="h-4 w-4" />
                 <span>Profile</span>
               </TabsTrigger>
-
-              <TabsTrigger
-                value="preferences"
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-primary"
+              
+              <TabsTrigger 
+                value="preferences" 
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
               >
                 <SettingsIcon className="h-4 w-4" />
                 <span>Preferences</span>
               </TabsTrigger>
-
-              <TabsTrigger
-                value="security"
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-primary"
+              
+              <TabsTrigger 
+                value="security" 
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
               >
                 <Shield className="h-4 w-4" />
                 <span>Security</span>
               </TabsTrigger>
 
-              <TabsTrigger
-                value="tutorial"
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-primary"
+              <TabsTrigger 
+                value="tutorial" 
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
               >
                 <GraduationCap className="h-4 w-4" />
                 <span className="hidden xs:inline">Getting Started</span>
                 <span className="xs:hidden">Tutorial</span>
               </TabsTrigger>
-
-              <TabsTrigger
-                value="embeddings"
-                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-primary"
+              
+              <TabsTrigger 
+                value="embeddings" 
+                className="flex items-center justify-center gap-2 py-3 px-4 flex-shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
               >
                 <Database className="h-4 w-4" />
                 <span className="hidden xs:inline">AI Embeddings</span>
@@ -585,48 +588,48 @@ export default function SettingsPage() {
                       placeholder="+1 (555) 123-4567"
                       className="h-10"
                     />
-                  </div>
-                  <div>
-                    <Label htmlFor="timezone" className="text-sm font-medium">Timezone</Label>
-                    <Select
-                      value={formData.profile.timezone}
-                      onValueChange={(value) => handleInputChange('profile', 'timezone', value)}
-                    >
-                      <SelectTrigger className="h-10">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TIMEZONES.map((tz) => (
-                          <SelectItem key={tz} value={tz}>
-                            {tz.replace('_', ' ')}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
-
                 <div>
-                  <Label htmlFor="bio">Bio</Label>
-                  <Textarea
-                    id="bio"
-                    value={formData.profile.bio}
-                    onChange={(e) => handleInputChange('profile', 'bio', e.target.value)}
-                    placeholder="Tell us about yourself..."
-                    rows={3}
-                    maxLength={500}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formData.profile.bio.length}/500 characters
-                  </p>
+                  <Label htmlFor="timezone" className="text-sm font-medium">Timezone</Label>
+                  <Select 
+                    value={formData.profile.timezone}
+                    onValueChange={(value) => handleInputChange('profile', 'timezone', value)}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TIMEZONES.map((tz) => (
+                        <SelectItem key={tz} value={tz}>
+                          {tz.replace('_', ' ')}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  </div>
                 </div>
 
-                <div className="flex justify-end">
-                  <LoadingButton onClick={handleSaveProfile} loading={saving} className="w-full sm:w-auto">
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Changes
-                  </LoadingButton>
-                </div>
+              <div>
+                <Label htmlFor="bio">Bio</Label>
+                <Textarea
+                  id="bio"
+                  value={formData.profile.bio}
+                  onChange={(e) => handleInputChange('profile', 'bio', e.target.value)}
+                  placeholder="Tell us about yourself..."
+                  rows={3}
+                  maxLength={500}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formData.profile.bio.length}/500 characters
+                </p>
+              </div>
+
+              <div className="flex justify-end">
+                <LoadingButton onClick={handleSaveProfile} loading={saving} className="w-full sm:w-auto">
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Changes
+                </LoadingButton>
+              </div>
               </div> {/* Close space-y-5 div */}
             </CardContent>
             <CardFooter className="p-4 sm:p-6 border-t bg-muted/30 flex justify-end">
@@ -660,48 +663,48 @@ export default function SettingsPage() {
                     <Label>New Applications</Label>
                     <p className="text-sm text-muted-foreground">Get notified when new candidates apply</p>
                   </div>
-                  <Switch
+                  <Switch 
                     checked={formData.preferences.emailNotifications.newApplications}
-                    onCheckedChange={(checked) =>
+                    onCheckedChange={(checked) => 
                       handleNestedInputChange('preferences', 'emailNotifications', 'newApplications', checked)
                     }
                   />
                 </div>
-
+                
                 <div className="flex items-center justify-between">
                   <div>
                     <Label>Interview Reminders</Label>
                     <p className="text-sm text-muted-foreground">Reminders for upcoming interviews</p>
                   </div>
-                  <Switch
+                  <Switch 
                     checked={formData.preferences.emailNotifications.interviews}
-                    onCheckedChange={(checked) =>
+                    onCheckedChange={(checked) => 
                       handleNestedInputChange('preferences', 'emailNotifications', 'interviews', checked)
                     }
                   />
                 </div>
-
+                
                 <div className="flex items-center justify-between">
                   <div>
                     <Label>Deadline Alerts</Label>
                     <p className="text-sm text-muted-foreground">Alerts for approaching deadlines</p>
                   </div>
-                  <Switch
+                  <Switch 
                     checked={formData.preferences.emailNotifications.deadlines}
-                    onCheckedChange={(checked) =>
+                    onCheckedChange={(checked) => 
                       handleNestedInputChange('preferences', 'emailNotifications', 'deadlines', checked)
                     }
                   />
                 </div>
-
+                
                 <div className="flex items-center justify-between">
                   <div>
                     <Label>System Updates</Label>
                     <p className="text-sm text-muted-foreground">Updates about new features and changes</p>
                   </div>
-                  <Switch
+                  <Switch 
                     checked={formData.preferences.emailNotifications.systemUpdates}
-                    onCheckedChange={(checked) =>
+                    onCheckedChange={(checked) => 
                       handleNestedInputChange('preferences', 'emailNotifications', 'systemUpdates', checked)
                     }
                   />
@@ -723,9 +726,9 @@ export default function SettingsPage() {
               <CardContent className="space-y-4">
                 <div>
                   <Label>Default View</Label>
-                  <Select
+                  <Select 
                     value={formData.preferences.dashboardConfig.defaultView}
-                    onValueChange={(value) =>
+                    onValueChange={(value) => 
                       handleNestedInputChange('preferences', 'dashboardConfig', 'defaultView', value)
                     }
                   >
@@ -743,9 +746,9 @@ export default function SettingsPage() {
 
                 <div>
                   <Label>Preferred Chart Type</Label>
-                  <Select
+                  <Select 
                     value={formData.preferences.dashboardConfig.preferredChartType}
-                    onValueChange={(value) =>
+                    onValueChange={(value) => 
                       handleNestedInputChange('preferences', 'dashboardConfig', 'preferredChartType', value)
                     }
                   >
@@ -765,9 +768,9 @@ export default function SettingsPage() {
                     <Label>Show Quick Stats</Label>
                     <p className="text-sm text-muted-foreground">Display overview statistics on dashboard</p>
                   </div>
-                  <Switch
+                  <Switch 
                     checked={formData.preferences.dashboardConfig.showQuickStats}
-                    onCheckedChange={(checked) =>
+                    onCheckedChange={(checked) => 
                       handleNestedInputChange('preferences', 'dashboardConfig', 'showQuickStats', checked)
                     }
                   />
@@ -903,7 +906,7 @@ export default function SettingsPage() {
                 Getting Started with Smart HR
               </CardTitle>
               <CardDescription>
-                Welcome to Smart HR! This comprehensive tutorial will guide you through all the features
+                Welcome to Smart HR! This comprehensive tutorial will guide you through all the features 
                 and help you get the most out of your HR management platform.
               </CardDescription>
             </CardHeader>
@@ -943,7 +946,7 @@ export default function SettingsPage() {
                     icon: <Users className="w-6 h-6" />,
                     title: "Add Candidates",
                     description: "Import or add candidates to your talent pool",
-                    action: "Add Candidates",
+                    action: "Add Candidates", 
                     href: "/candidates"
                   },
                   {
@@ -1012,12 +1015,14 @@ export default function SettingsPage() {
                         Dashboard Overview
                       </a>
                     </Button>
-                    <Button variant="outline" size="sm" className="w-full justify-start" asChild>
-                      <a href="/assistant" target="_blank">
-                        <MessageSquare className="h-4 w-4 mr-2" />
-                        AI Assistant Help
-                      </a>
-                    </Button>
+                    {aiAssistantEnabled && (
+                      <Button variant="outline" size="sm" className="w-full justify-start" asChild>
+                        <a href="/assistant" target="_blank">
+                          <MessageSquare className="h-4 w-4 mr-2" />
+                          AI Assistant Help
+                        </a>
+                      </Button>
+                    )}
                   </div>
                 </Card>
               </div>
@@ -1034,7 +1039,7 @@ export default function SettingsPage() {
                 AI Embedding Management
               </CardTitle>
               <CardDescription>
-                Advanced embedding management and monitoring for the AI system.
+                Advanced embedding management and monitoring for the AI system. 
                 This manages the vector embeddings used for candidate matching and search.
               </CardDescription>
             </CardHeader>
@@ -1042,20 +1047,20 @@ export default function SettingsPage() {
               <Alert className="border-blue-200 bg-blue-50">
                 <CheckCircle className="h-4 w-4" />
                 <AlertDescription>
-                  <strong>Skills Matching Fix Available:</strong> A critical fix has been implemented to resolve the "skills match 0%" issue.
+                  <strong>Skills Matching Fix Available:</strong> A critical fix has been implemented to resolve the "skills match 0%" issue. 
                   Use the full embedding management interface for detailed control and monitoring.
                 </AlertDescription>
               </Alert>
-
+              
               <div className="flex flex-col sm:flex-row gap-4">
-                <Button
+                <Button 
                   onClick={() => window.open('/settings/embeddings', '_blank')}
                   className="flex-1"
                 >
                   <Database className="h-4 w-4 mr-2" />
                   Open Embedding Management
                 </Button>
-                <Button
+                <Button 
                   variant="outline"
                   onClick={() => window.location.href = '/settings/embeddings'}
                   className="flex-1"
@@ -1065,17 +1070,17 @@ export default function SettingsPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-                <div className="p-4 bg-muted/30 rounded-lg">
+                <div className="p-4 bg-gray-50 rounded-lg">
                   <h4 className="font-medium mb-2">What are AI Embeddings?</h4>
                   <p className="text-sm text-muted-foreground">
-                    Vector representations of job descriptions and candidate profiles that enable
+                    Vector representations of job descriptions and candidate profiles that enable 
                     intelligent matching, semantic search, and AI-powered recommendations.
                   </p>
                 </div>
-                <div className="p-4 bg-muted/30 rounded-lg">
+                <div className="p-4 bg-gray-50 rounded-lg">
                   <h4 className="font-medium mb-2">Why Manage Embeddings?</h4>
                   <p className="text-sm text-muted-foreground">
-                    Regular maintenance ensures accurate matching results, fixes parsing issues,
+                    Regular maintenance ensures accurate matching results, fixes parsing issues, 
                     and improves overall system performance for candidate recommendations.
                   </p>
                 </div>

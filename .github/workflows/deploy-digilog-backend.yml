@@ -1,0 +1,62 @@
+name: Deploy diGiLog backend (Azure VM)
+
+# Auto-deploys digilog-recruiter/backend to the self-hosted Azure VM
+# (vm-seemplify-budget, PM2 process "digilog-backend") on push to main.
+# Runtime state on the VM is preserved: .env, uploads, node_modules are never overwritten/deleted.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'digilog-recruiter/backend/**'
+      - '.github/workflows/deploy-digilog-backend.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-digilog-backend
+  cancel-in-progress: false
+
+env:
+  VM_HOST: 172.182.227.84
+  VM_USER: seemplify
+  VM_PATH: /home/seemplify/digilog-backend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$VM_SSH_KEY" > ~/.ssh/id_vm
+          chmod 600 ~/.ssh/id_vm
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Rsync backend to VM (preserve .env / uploads / node_modules)
+        run: |
+          rsync -az --delete \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude 'node_modules' \
+            --exclude 'uploads' \
+            --exclude '*.log' \
+            --exclude '.vercel' \
+            --exclude '.git' \
+            -e "ssh -i ~/.ssh/id_vm -o StrictHostKeyChecking=no" \
+            digilog-recruiter/backend/ "$VM_USER@$VM_HOST:$VM_PATH/"
+
+      - name: Install deps and reload PM2
+        run: |
+          ssh -i ~/.ssh/id_vm -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" \
+            "cd $VM_PATH && npm install --omit=dev --no-audit --no-fund && (pm2 reload digilog-backend --update-env || pm2 start server.js --name digilog-backend) && pm2 save"
+
+      - name: Health check
+        run: |
+          sleep 5
+          ssh -i ~/.ssh/id_vm -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" \
+            "pm2 describe digilog-backend | grep -E 'status|restarts' | head -2"

@@ -1,0 +1,18 @@
+export { default as Dashboard } from './Dashboard';
+export { default as Analyze } from './Analyze';
+export { default as Rules } from './Rules';
+export { default as ScoringPolicy } from './ScoringPolicy';
+export { default as AdminUsers } from './AdminUsers';
+export { default as ProjectDetail } from './ProjectDetail';
+export { default as Profile } from './Profile';
+export { default as OnboardingPage } from './OnboardingPage';
+export { default as InvitesPage } from './InvitesPage';
+export { default as Help } from './Help';
+// export { default as Departments } from './Departments';
+export { default as Login } from './auth/Login';
+export { default as Register } from './auth/Register';
+export { default as VerifyOtp } from './auth/VerifyOtp';
+export { default as ForgotPassword } from './auth/ForgotPassword';
+export { default as ResetPassword } from './auth/ResetPassword';
+export { default as PublicHelp } from './auth/PublicHelp';
+export { default as PublicHelpFull } from './auth/PublicHelpFull';

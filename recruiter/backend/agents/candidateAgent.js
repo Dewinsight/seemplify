@@ -4,7 +4,23 @@
 // intelligence for data processing, generation, and user interaction.
 
 const AiCandidateServiceClass = require('../services/aiCandidateService');
-const { getOpenAIModel } = require('../services/langchainAgentService');
+const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
+
+const CANDIDATE_INTENT_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['type', 'confidence', 'reasoning', 'query', 'context_signals'],
+    properties: {
+        type: {
+            type: 'string',
+            enum: ['get_all_candidates', 'search_candidates', 'create_candidate', 'discuss_candidate', 'update_candidate', 'analyze_candidate', 'unknown']
+        },
+        confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+        reasoning: { type: 'string' },
+        query: { type: ['string', 'null'] },
+        context_signals: { type: 'array', items: { type: 'string' } }
+    }
+};
 
 class CandidateAgent {
     constructor(langchainAgentServiceInstance) {
@@ -76,8 +92,6 @@ class CandidateAgent {
         console.log(`🧠 CandidateAgent AI Intent Detection: "${userInput}"`);
         
         try {
-            const model = getOpenAIModel();
-            
             const candidateIntentPrompt = `You are an expert AI assistant for candidate management operations. Analyze the user's input and determine their exact intent for candidate-related tasks.
 
 USER INPUT:
@@ -137,25 +151,26 @@ If unclear, return: {"type": "unknown", "confidence": "low", "reasoning": "Inten
 
 Return only the JSON object:`;
 
-            const response = await model.invoke([
-                { role: 'system', content: 'You are an expert candidate management intent detection AI. Analyze user input and return only valid JSON.' },
-                { role: 'user', content: candidateIntentPrompt }
-            ]);
-            
-            // Parse AI response
-            let aiIntent;
-            try {
-                const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    aiIntent = JSON.parse(jsonMatch[0]);
-                } else {
-                    aiIntent = JSON.parse(response.content);
-                }
-            } catch (parseError) {
+            const response = await aiRuntimeService.structuredComplete('assistant.tool_selection', {
+                promptVersion: 'candidate-intent-v2',
+                messages: [
+                    { role: 'system', content: 'Classify candidate-management intent using only the supplied user input.' },
+                    { role: 'user', content: candidateIntentPrompt }
+                ],
+                jsonSchema: CANDIDATE_INTENT_SCHEMA,
+                schemaName: 'candidate_intent',
+                schemaStrict: true,
+                temperature: 0.1,
+                max_tokens: 500
+            });
+
+            const aiIntent = response.data;
+            if (!aiIntent) {
+                const parseError = new Error('AI returned no intent data');
                 console.warn('🟡 AI candidate intent parsing failed, using fallback:', parseError.message);
                 return this._fallbackCandidateIntentDetection(userInput);
             }
-            
+
             console.log(`🤖 CandidateAgent AI Intent Result:`, {
                 type: aiIntent.type,
                 confidence: aiIntent.confidence,

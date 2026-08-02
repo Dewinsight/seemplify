@@ -1,0 +1,7 @@
+# QUICK FIX - Copy and paste this on the server
+
+# SSH to server first:
+# ssh seemplify@4.180.153.209
+
+# Then run this one-liner to fix the issue:
+POSTGRES_CONTAINER=$(docker ps --filter "name=dokploy-postgres" --format "{{.Names}}" | head -1) && docker exec $POSTGRES_CONTAINER psql -U dokploy -d dokploy -c "UPDATE application SET \"createEnvFile\" = false WHERE \"applicationId\" IN ('72cc56e8-1123-4e22-beeb-04c8184405e4', '063229c9-ed49-49be-a331-92c8c47422bc');" && echo "✅ Fixed! Now redeploy in Dokploy UI"

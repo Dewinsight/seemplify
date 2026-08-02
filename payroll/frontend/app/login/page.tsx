@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { handleAuthCallback, isAuthenticated, authApi } from '@/lib/api';
+import PageGuide from '@/components/PageGuide';
+import { resolveIdpUrl } from '@/lib/runtimeConfig';
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hubUrl = resolveIdpUrl();
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -88,6 +91,7 @@ export default function LoginPage() {
             100% { transform: translateX(350%); }
           }
         `}</style>
+        <PageGuide />
       </div>
     );
   }
@@ -294,7 +298,7 @@ export default function LoginPage() {
 
             {/* App Hub Link */}
             <a
-              href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+              href={hubUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="group mt-6 flex items-center gap-4 w-full rounded-2xl border border-white/[0.06] bg-white/[0.02] px-5 py-4 transition-all hover:bg-white/[0.04] hover:border-white/[0.1]"
@@ -339,6 +343,7 @@ export default function LoginPage() {
           50% { transform: translate(-50%, -50%) scale(1.1); }
         }
       `}</style>
+      <PageGuide />
     </div>
   );
 }

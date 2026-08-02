@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Demo Requests - Admin - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+    .admin-search-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    .admin-search-input {
+      min-width: 280px;
+      flex: 1;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--panel-strong);
+      color: var(--text);
+    }
+    .admin-inline-form {
+      display: contents;
+    }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'demo-requests' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <h1>Demo Requests</h1>
+      </div>
+
+      <div class="admin-stats-grid">
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Total</div>
+          <div class="admin-stat-value"><%= stats.total %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">New</div>
+          <div class="admin-stat-value" style="color: #f59e0b;"><%= stats.new %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Contacted</div>
+          <div class="admin-stat-value"><%= stats.contacted %></div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label">Scheduled</div>
+          <div class="admin-stat-value" style="color: #22c55e;"><%= stats.scheduled %></div>
+        </div>
+      </div>
+
+      <form method="GET" action="/admin/demo-requests" class="admin-search-row">
+        <input class="admin-search-input" type="text" name="q" value="<%= currentSearch || '' %>" placeholder="Search by name, email, company, or role">
+        <% if (currentFilter && currentFilter !== 'all') { %>
+          <input type="hidden" name="status" value="<%= currentFilter %>">
+        <% } %>
+        <button type="submit" class="btn btn-secondary">Search</button>
+      </form>
+
+      <div class="admin-filters">
+        <button class="admin-filter-btn <%= !currentFilter || currentFilter === 'all' ? 'active' : '' %>" onclick="location.href='/admin/demo-requests'">All</button>
+        <button class="admin-filter-btn <%= currentFilter === 'new' ? 'active' : '' %>" onclick="location.href='/admin/demo-requests?status=new'">New</button>
+        <button class="admin-filter-btn <%= currentFilter === 'contacted' ? 'active' : '' %>" onclick="location.href='/admin/demo-requests?status=contacted'">Contacted</button>
+        <button class="admin-filter-btn <%= currentFilter === 'scheduled' ? 'active' : '' %>" onclick="location.href='/admin/demo-requests?status=scheduled'">Scheduled</button>
+        <button class="admin-filter-btn <%= currentFilter === 'closed' ? 'active' : '' %>" onclick="location.href='/admin/demo-requests?status=closed'">Closed</button>
+        <button class="admin-filter-btn <%= currentFilter === 'spam' ? 'active' : '' %>" onclick="location.href='/admin/demo-requests?status=spam'">Spam</button>
+      </div>
+
+      <% if (requests && requests.length > 0) { %>
+        <div class="admin-table-container">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Contact</th>
+                <th>Company</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Submitted</th>
+                <th>Processed By</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% requests.forEach(request => { %>
+                <tr>
+                  <td>
+                    <div style="font-weight: 600;"><%= request.name %></div>
+                    <div style="font-size: 12px; color: var(--muted);"><%= request.email %></div>
+                    <% if (request.phone) { %>
+                      <div style="font-size: 12px; color: var(--muted);"><%= request.phone %></div>
+                    <% } %>
+                  </td>
+                  <td><%= request.company || 'N/A' %></td>
+                  <td><%= request.role || 'N/A' %></td>
+                  <td><span class="status-badge status-badge--<%= request.status === 'new' ? 'pending' : request.status %>"><%= request.status %></span></td>
+                  <td>
+                    <div><%= new Date(request.createdAt).toLocaleDateString('en-GB') %></div>
+                    <div style="font-size: 12px; color: var(--muted);"><%= new Date(request.createdAt).toLocaleTimeString('en-GB') %></div>
+                  </td>
+                  <td><%= request.processedBy ? (request.processedBy.profile?.name || request.processedBy.email) : 'Pending' %></td>
+                  <td>
+                    <a href="/admin/demo-requests/<%= request._id %>" class="btn btn-sm btn-secondary">View</a>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } else { %>
+        <div class="admin-card">
+          <div class="admin-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <h3>No demo requests found</h3>
+            <p>New public demo bookings will appear here once users submit them.</p>
+          </div>
+        </div>
+      <% } %>
+    </main>
+  </div>
+</body>
+</html>

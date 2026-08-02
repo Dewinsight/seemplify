@@ -1,5 +1,43 @@
 const { MemoryClient } = require('mem0ai');
 const dotenv = require('dotenv');
+const AIModelService = require('./aiModelService');
+
+const MEMORY_CLASSIFICATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['type', 'confidence', 'reasoning', 'personalityInsights', 'chatInsights'],
+  properties: {
+    type: { type: 'string', enum: ['mixed', 'personality', 'chat'] },
+    confidence: { type: 'number', minimum: 0, maximum: 1 },
+    reasoning: { type: 'string' },
+    personalityInsights: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['category', 'content', 'confidence'],
+        properties: {
+          category: { type: 'string' },
+          content: { type: 'string' },
+          confidence: { type: 'number', minimum: 0, maximum: 1 }
+        }
+      }
+    },
+    chatInsights: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['category', 'content', 'confidence'],
+        properties: {
+          category: { type: 'string' },
+          content: { type: 'string' },
+          confidence: { type: 'number', minimum: 0, maximum: 1 }
+        }
+      }
+    }
+  }
+};
 
 // Load environment variables
 dotenv.config();
@@ -7,6 +45,7 @@ dotenv.config();
 class MemoryService {
   constructor() {
     this.client = null;
+    this.aiModelService = new AIModelService();
     this.initialized = false;
     this.initializeClient();
   }
@@ -1112,10 +1151,6 @@ class MemoryService {
   async classifyMemoryType(conversationData) {
     const { userMessage, assistantResponse, intent, extractedEntities, confidence } = conversationData;
     
-    // Import Azure OpenAI service for classification
-    const AzureOpenAIService = require('./azureOpenAIService');
-    const azureOpenAI = new AzureOpenAIService();
-
     const classificationPrompt = `Analyze this conversation and determine what should be stored as:
 1. PERSONALITY MEMORY (persistent across all chats - user preferences, behavior patterns, expertise level, communication style, PERSONAL INFORMATION)
 2. CHAT MEMORY (specific to this conversation - temporary context, specific queries, session-based information)
@@ -1173,22 +1208,22 @@ Respond in JSON format:
 }`;
 
     try {
-      const result = await azureOpenAI.generateChatResponse(classificationPrompt);
-      
-      if (result.success) {
-        // Try to parse JSON response
-        const jsonMatch = result.response.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const classification = JSON.parse(jsonMatch[0]);
-          return {
-            type: classification.type || 'mixed',
-            confidence: classification.confidence || 0.5,
-            reasoning: classification.reasoning || 'AI classification',
-            personalityInsights: classification.personalityInsights || [],
-            chatInsights: classification.chatInsights || []
-          };
-        }
-      }
+      const classification = await this.aiModelService.generateStructuredObject(classificationPrompt, {
+        activity: 'assistant.memory',
+        promptVersion: 'assistant-memory-v2',
+        temperature: 0.2,
+        maxTokens: 1200,
+        jsonSchema: MEMORY_CLASSIFICATION_SCHEMA,
+        schemaName: 'assistant_memory_classification',
+        schemaStrict: true
+      });
+      return {
+        type: classification.type,
+        confidence: classification.confidence,
+        reasoning: classification.reasoning,
+        personalityInsights: classification.personalityInsights,
+        chatInsights: classification.chatInsights
+      };
     } catch (error) {
       console.error('❌ Error in AI memory classification:', error);
     }
@@ -2187,4 +2222,4 @@ Respond in JSON format:
 }
 
 // Export singleton instance
-module.exports = new MemoryService(); 
+module.exports = new MemoryService();

@@ -1,0 +1,2064 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title><%= workspaceMode ? 'My Documents' : 'My Onboarding' %> - Seemplify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <%- include('partials/nav', { activePage: (typeof activePage !== 'undefined' ? activePage : 'documents') }) %>
+  <% const personalDocumentBackUrl = workspaceMode ? '/documents/my' : '/onboarding'; %>
+
+  <div class="container">
+    <% if (workspaceMode) { %>
+      <a href="/documents" class="back-link">&larr; Back to Documents</a>
+    <% } %>
+    <div class="header">
+      <div>
+        <h1><%= workspaceMode ? 'My Documents' : 'My Onboarding' %></h1>
+        <div class="header-subtitle"><%= workspaceMode ? 'Track and complete all assigned document workflows.' : 'Complete required steps to finish setup.' %></div>
+      </div>
+    </div>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <% if (!assignments || assignments.length === 0) { %>
+      <div class="empty-state">
+        <h3><%= workspaceMode ? 'No document tasks' : 'No onboarding tasks' %></h3>
+        <p>You are all set.</p>
+      </div>
+    <% } else { %>
+      <div class="assignment-board-status" style="margin-bottom: 10px;" role="tablist" aria-label="<%= workspaceMode ? 'Filter document assignments by status' : 'Filter onboarding assignments' %>">
+        <button type="button" class="assignment-status-chip active" data-personal-status-filter="current" aria-selected="true">Current</button>
+        <button type="button" class="assignment-status-chip" data-personal-status-filter="history" aria-selected="false">History</button>
+        <button type="button" class="assignment-status-chip" data-personal-status-filter="all" aria-selected="false">All</button>
+      </div>
+      <% if (workspaceMode) { %>
+        <div class="assignment-board-status" style="margin-bottom: 12px;" role="tablist" aria-label="Filter by workflow">
+          <button type="button" class="assignment-status-chip active" data-workflow-filter="all" aria-selected="true">All Workflows</button>
+          <% (workflowTypes || ['onboarding', 'agreement', 'policy', 'general']).forEach(workflowType => { %>
+            <% const workflowLabel = (workflowLabels && workflowLabels[workflowType]) || workflowType; %>
+            <button type="button" class="assignment-status-chip" data-workflow-filter="<%= workflowType %>" aria-selected="false"><%= workflowLabel %></button>
+          <% }) %>
+        </div>
+      <% } %>
+      <% assignments.forEach(assignment => { %>
+        <% const assignmentMemberId = (assignment.member?._id || assignment.member).toString(); %>
+        <% const currentUserId = user._id.toString(); %>
+        <% const isAssignee = assignmentMemberId === currentUserId; %>
+        <% const assignmentWorkflowType = assignment.workflowType || 'onboarding'; %>
+        <% const assignmentWorkflowLabel = (workflowLabels && workflowLabels[assignmentWorkflowType]) || 'Onboarding'; %>
+        <div
+          class="card onboarding-assignment-card onboarding-assignment-card--<%= assignment.status %>"
+          data-personal-assignment
+          data-personal-status="<%= assignment.status %>"
+          data-personal-workflow="<%= assignmentWorkflowType %>"
+          data-assignment-id="<%= assignment._id %>"
+        >
+          <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+            <div>
+              <div style="font-weight:700; font-size:16px;">
+                <%= assignment.organization?.name || 'Organization' %>
+              </div>
+              <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">
+                Assigned <%= new Date(assignment.createdAt).toLocaleDateString() %>
+              </div>
+            </div>
+            <div style="display:flex; gap: 8px; flex-wrap: wrap; align-items:center;">
+              <span class="role-badge onboarding-badge onboarding-<%= assignment.status %>">
+                <%= assignment.status.replace('_', ' ') %>
+              </span>
+              <span class="role-badge workflow-type-badge workflow-type-badge--<%= assignmentWorkflowType %>">
+                <%= assignmentWorkflowLabel %>
+              </span>
+            </div>
+          </div>
+
+          <% if (assignment.status === 'cancelled') { %>
+            <div class="onboarding-flow">
+              <div class="alert alert-error" style="margin:0;">This onboarding assignment was cancelled.</div>
+            </div>
+          <% } else { %>
+            <% const visibleItems = []; %>
+            <% assignment.items.forEach(item => { %>
+              <% const signerConfigList = item.config?.signers || []; %>
+              <% const signerStatusList = item.data?.esign?.signers || []; %>
+              <% const signerMatch = signerConfigList.some(signer => String(signer.member || signer.memberId || signer.key || signer) === currentUserId); %>
+              <% const signerStatusMatch = signerStatusList.some(signer => String(signer.member) === currentUserId); %>
+              <% const canViewItem = isAssignee || (item.type === 'esign' && (signerMatch || signerStatusMatch)); %>
+              <% if (canViewItem) visibleItems.push(item); %>
+            <% }) %>
+
+            <% if (visibleItems.length === 0) { %>
+              <div class="empty-state" style="padding: 18px 0;">
+                <h3><%= workspaceMode ? 'No workflow steps' : 'No onboarding steps' %></h3>
+                <p><%= workspaceMode ? 'No items are assigned to you in this workflow.' : 'No items are assigned to you on this onboarding.' %></p>
+              </div>
+            <% } else { %>
+              <div class="onboarding-flow" data-onboarding-flow data-assignment="<%= assignment._id %>">
+                <div class="onboarding-flow-meta">
+                  <div class="onboarding-step-indicator" data-step-indicator>Step 1 of <%= visibleItems.length %></div>
+                  <div class="onboarding-progress-track" role="progressbar" aria-label="Progress">
+                    <div class="onboarding-progress-bar" data-progress-bar></div>
+                  </div>
+                  <div class="onboarding-step-indicator" data-progress-label></div>
+                </div>
+
+                <div class="onboarding-stepper">
+                  <div class="onboarding-steps" role="tablist" aria-label="Onboarding steps">
+                    <% visibleItems.forEach((item, index) => { %>
+                      <% const isRequired = item.required !== false; %>
+                      <% const isCompleted = item.status === 'completed'; %>
+                      <% let userActionable = false; %>
+                      <% let userDone = false; %>
+                      <% let statusText = isCompleted ? 'Completed' : 'Pending'; %>
+                      <% const typeText = item.type === 'form' ? 'Form' : (item.type === 'upload' ? 'Upload' : 'E-sign'); %>
+
+                      <% if (item.type === 'form' || item.type === 'upload') { %>
+                        <% userActionable = !isCompleted; %>
+                        <% userDone = isCompleted; %>
+                        <% statusText = isCompleted ? 'Completed' : 'Action needed'; %>
+                      <% } %>
+
+                      <% if (item.type === 'esign') { %>
+                        <% const signerConfigList = item.config?.signers || []; %>
+                        <% const signerStatusList = item.data?.esign?.signers || []; %>
+                        <% const signerConfigIds = signerConfigList.map(signer => String(signer.member || signer.memberId || signer.key || signer)); %>
+                        <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
+                        <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
+                        <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
+                        <% userActionable = !isCompleted && canSign && !hasSigned; %>
+                        <% userDone = isCompleted || hasSigned; %>
+                        <% statusText = isCompleted ? 'Completed' : (hasSigned ? 'Signed' : (userActionable ? 'Action needed' : 'Waiting')); %>
+                      <% } %>
+
+                      <% const stepClass = 'onboarding-step-link'
+                        + (index === 0 ? ' active' : '')
+                        + (userDone ? ' completed' : '')
+                        + (userActionable ? ' actionable' : '')
+                        + (!userActionable && !userDone ? ' waiting' : ''); %>
+
+                      <button type="button" class="<%= stepClass %>" data-step-link data-step="<%= index %>" role="tab">
+                        <span class="onboarding-step-index"><%= index + 1 %></span>
+                        <span class="onboarding-step-body">
+                          <span class="onboarding-step-title"><%= item.title %></span>
+                          <span class="onboarding-step-meta">
+                            <span class="onboarding-step-chip"><%= typeText %></span>
+                            <span class="onboarding-step-chip"><%= isRequired ? 'Required' : 'Optional' %></span>
+                            <span class="onboarding-step-chip status"><%= statusText %></span>
+                          </span>
+                        </span>
+                      </button>
+                    <% }) %>
+                  </div>
+
+                  <div>
+                    <% visibleItems.forEach((item, index) => { %>
+                      <% const isRequired = item.required !== false; %>
+                      <% const isCompleted = item.status === 'completed'; %>
+                      <% let userActionable = false; %>
+                      <% let userDone = false; %>
+
+                      <% if (item.type === 'form' || item.type === 'upload') { %>
+                        <% userActionable = !isCompleted; %>
+                        <% userDone = isCompleted; %>
+                      <% } %>
+
+                      <% if (item.type === 'esign') { %>
+                        <% const signerConfigList = item.config?.signers || []; %>
+                        <% const signerStatusList = item.data?.esign?.signers || []; %>
+                        <% const signerConfigIds = signerConfigList.map(signer => String(signer.member || signer.memberId || signer.key || signer)); %>
+                        <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
+                        <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
+                        <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
+                        <% userActionable = !isCompleted && canSign && !hasSigned; %>
+                        <% userDone = isCompleted || hasSigned; %>
+                      <% } %>
+
+                      <section
+                        class="onboarding-step-panel<%= index === 0 ? ' active' : '' %>"
+                        data-step-panel
+                        data-step="<%= index %>"
+                        data-step-item-id="<%= item._id %>"
+                        data-step-item-type="<%= item.type %>"
+                        data-step-required="<%= isRequired ? 1 : 0 %>"
+                        data-step-actionable="<%= userActionable ? 1 : 0 %>"
+                        data-step-userdone="<%= userDone ? 1 : 0 %>"
+                      >
+                        <div class="onboarding-step-panel-header">
+                          <div>
+                            <div class="onboarding-step-panel-title">Step <%= index + 1 %>: <%= item.title %></div>
+                            <% if (item.description) { %>
+                              <div class="onboarding-step-panel-subtitle"><%= item.description %></div>
+                            <% } %>
+                          </div>
+                          <div class="onboarding-step-panel-badges">
+                            <span class="role-badge onboarding-badge onboarding-<%= isRequired ? 'pending' : 'not_started' %>"><%= isRequired ? 'required' : 'optional' %></span>
+                            <span class="role-badge onboarding-badge onboarding-<%= isCompleted ? 'completed' : 'pending' %>"><%= isCompleted ? 'Completed' : 'Pending' %></span>
+                          </div>
+                        </div>
+
+                        <% if (item.type === 'form') { %>
+                          <% if (item.status !== 'completed') { %>
+                            <form data-form-item data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" style="margin-top: 12px;">
+                              <% if (item.config?.fields && item.config.fields.length > 0) { %>
+                                <% item.config.fields.forEach(field => { %>
+                                  <div class="form-group">
+                                    <label for="field-<%= item._id %>-<%= field.key %>"><%= field.label %></label>
+                                    <% if (field.type === 'textarea') { %>
+                                      <textarea id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>></textarea>
+                                    <% } else if (field.type === 'select') { %>
+                                      <select id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %>>
+                                        <option value="">Select...</option>
+                                        <% (field.options || []).forEach(option => { %>
+                                          <option value="<%= option %>"><%= option %></option>
+                                        <% }) %>
+                                      </select>
+                                    <% } else { %>
+                                      <input type="<%= field.type || 'text' %>" id="field-<%= item._id %>-<%= field.key %>" name="<%= field.key %>" <%= field.required ? 'required' : '' %> />
+                                    <% } %>
+                                  </div>
+                                <% }) %>
+                              <% } else { %>
+                                <div class="form-group">
+                                  <label for="field-<%= item._id %>-notes">Details</label>
+                                  <textarea id="field-<%= item._id %>-notes" name="details"></textarea>
+                                </div>
+                              <% } %>
+                              <div class="form-actions">
+                                <button class="btn btn-primary" type="submit">Submit</button>
+                              </div>
+                            </form>
+                          <% } else { %>
+                            <div class="alert alert-success" style="margin:0;">Submitted.</div>
+                            <% const submitted = item.data?.form || {}; %>
+                            <% const submittedKeys = Object.keys(submitted || {}); %>
+                            <% const fields = item.config?.fields || []; %>
+                            <% if (fields.length || submittedKeys.length) { %>
+                              <div class="onboarding-submitted-grid">
+                                <% if (fields.length) { %>
+                                  <% fields.forEach(field => { %>
+                                    <div class="onboarding-submitted-row">
+                                      <div class="onboarding-submitted-key"><%= field.label %></div>
+                                      <div class="onboarding-submitted-value"><%= submitted[field.key] ?? '' %></div>
+                                    </div>
+                                  <% }) %>
+                                <% } else { %>
+                                  <% submittedKeys.forEach(key => { %>
+                                    <div class="onboarding-submitted-row">
+                                      <div class="onboarding-submitted-key"><%= key %></div>
+                                      <div class="onboarding-submitted-value"><%= submitted[key] ?? '' %></div>
+                                    </div>
+                                  <% }) %>
+                                <% } %>
+                              </div>
+                            <% } %>
+                          <% } %>
+                        <% } %>
+
+                        <% if (item.type === 'upload') { %>
+                          <% if (item.status !== 'completed') { %>
+                            <div style="margin-top: 12px;">
+                              <input type="file" data-upload-input data-assignment="<%= assignment._id %>" data-item="<%= item._id %>" accept="<%= item.config?.accept || '.pdf,.jpg,.jpeg,.png' %>" />
+                              <button class="btn btn-secondary" type="button" style="margin-top: 8px;" onclick="uploadOnboardingFile('<%= assignment._id %>', '<%= item._id %>')">Upload</button>
+                            </div>
+                          <% } else { %>
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+                              <div class="alert alert-success" style="margin:0;">Uploaded.</div>
+                              <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document" target="_blank" rel="noreferrer">View uploaded</a>
+                            </div>
+                            <% if (item.data?.upload?.fileName) { %>
+                              <div style="margin-top: 8px; color: var(--muted); font-size: 12px;">
+                                <%= item.data.upload.fileName %>
+                              </div>
+                            <% } %>
+                          <% } %>
+                        <% } %>
+
+                        <% if (item.type === 'esign') { %>
+                          <% const signerConfigList = item.config?.signers || []; %>
+                          <% const signerStatusList = item.data?.esign?.signers || []; %>
+                          <% const signerConfigIds = signerConfigList.map(signer => String(signer.member || signer.memberId || signer.key || signer)); %>
+                          <% const signerEntry = signerStatusList.find(signer => String(signer.member) === currentUserId); %>
+                          <% const hasSigned = signerEntry && signerEntry.status === 'signed'; %>
+                          <% const canSign = signerEntry || signerConfigIds.includes(currentUserId) || (!signerConfigIds.length && assignmentMemberId === currentUserId); %>
+                          <% const originalDocumentInlineUrl = `/onboarding/assignments/${assignment._id}/items/${item._id}/document/file?version=original`; %>
+                          <% const signedDocumentInlineUrl = `/onboarding/assignments/${assignment._id}/items/${item._id}/document/file?version=signed`; %>
+                          <div style="margin-top: 12px; display:flex; gap: 10px; flex-wrap: wrap; align-items:center;">
+                            <span style="color: var(--muted); font-size: 13px;">
+                              Document: <%= item.config?.document?.fileName || 'Contract' %>
+                            </span>
+                            <% if (item.config?.document?.url) { %>
+                              <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=original&back=<%= encodeURIComponent(personalDocumentBackUrl) %>" target="_blank" rel="noreferrer">View</a>
+                            <% } %>
+                            <% if (item.status !== 'completed' && canSign && !hasSigned) { %>
+                              <button
+                                class="btn btn-primary btn-sm"
+                                type="button"
+                                data-esign-button
+                                data-assignment="<%= assignment._id %>"
+                                data-item="<%= item._id %>"
+                                data-assignee-id="<%= assignmentMemberId %>"
+                                data-doc-name="<%= item.config?.document?.fileName || 'Contract' %>"
+                                data-doc-url="<%= item.config?.document?.url ? originalDocumentInlineUrl : '' %>"
+                                data-preview-url="<%= item.data?.esign?.signedUrl ? signedDocumentInlineUrl : (item.config?.document?.url ? originalDocumentInlineUrl : '') %>"
+                                data-doc-source-url="<%= item.config?.document?.url || '' %>"
+                                data-preview-source-url="<%= item.data?.esign?.signedUrl || item.config?.document?.url || '' %>"
+                                data-fields="<%= encodeURIComponent(JSON.stringify(item.config?.signatureFields || [])) %>"
+                              >Sign document</button>
+                            <% } else if (item.data?.esign?.signedUrl) { %>
+                              <a class="btn btn-secondary btn-sm" href="/onboarding/assignments/<%= assignment._id %>/items/<%= item._id %>/document?version=signed&back=<%= encodeURIComponent(personalDocumentBackUrl) %>" target="_blank" rel="noreferrer">Signed document</a>
+                            <% } %>
+                          </div>
+
+                          <% if (!canSign && item.status !== 'completed') { %>
+                            <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">You are not assigned to sign this document.</div>
+                          <% } %>
+
+                          <% const displaySigners = signerStatusList.length
+                            ? signerStatusList
+                            : signerConfigList.map(signer => ({
+                                name: signer.name || signer.label,
+                                email: signer.email,
+                                status: 'pending'
+                              })); %>
+                          <% if (displaySigners.length) { %>
+                            <div style="margin-top: 8px; font-size: 12px; color: var(--muted);">
+                              <% displaySigners.forEach((signer, idx) => { %>
+                                <span>
+                                  <%= signer.name || signer.email %>: <%= signer.status === 'signed' ? 'Signed' : 'Pending' %>
+                                </span>
+                                <% if (idx < displaySigners.length - 1) { %>
+                                  <span> | </span>
+                                <% } %>
+                              <% }) %>
+                            </div>
+                          <% } %>
+                          <% if (hasSigned && item.status !== 'completed') { %>
+                            <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">You have signed. Waiting on others.</div>
+                          <% } %>
+                        <% } %>
+                      </section>
+                    <% }) %>
+
+                    <div class="onboarding-step-controls">
+                      <button class="btn btn-secondary" type="button" data-step-prev>Previous</button>
+                      <div class="onboarding-step-indicator" data-step-indicator-inline></div>
+                      <button class="btn btn-secondary" type="button" data-step-next>Next</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            <% } %>
+          <% } %>
+        </div>
+      <% }) %>
+      <div class="empty-state assignment-board-empty" data-personal-empty hidden>
+        <h3>No assignments in this view</h3>
+        <p><%= workspaceMode ? 'Try another status or workflow filter.' : 'Switch filter to view current or historical onboarding tasks.' %></p>
+      </div>
+    <% } %>
+  </div>
+
+  <div class="modal" id="esignModal">
+    <div class="modal-content modal-xl">
+      <div class="modal-header">
+        <h2>Sign Document</h2>
+        <button class="modal-close" onclick="closeESignModal()">&times;</button>
+      </div>
+
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap: 12px; flex-wrap: wrap;">
+        <div style="min-width: 240px;">
+          <div id="esign-document-name" style="font-weight:800;">Document</div>
+          <div id="esign-document-subtitle" style="color: var(--muted); font-size: 12px; margin-top: 4px;"></div>
+        </div>
+        <a class="btn btn-secondary btn-sm" id="esign-document-link" target="_blank" rel="noreferrer" style="display:none;">Open document</a>
+      </div>
+
+      <div class="esign-modal-layout" style="margin-top: 14px;">
+        <div>
+          <div class="pdf-viewer" id="esign-pdf-viewer" style="display:none; margin-top: 0;">
+            <div class="pdf-toolbar">
+              <div style="display:flex; gap: 6px; align-items:center; flex-wrap: wrap;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(-1)">Prev</button>
+                <span id="esign-pdf-page-label" style="font-size: 12px; color: var(--muted);">Page 1 / 1</span>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignPdfPage(1)">Next</button>
+                <input class="pdf-page-range" type="range" min="1" max="1" value="1" id="esign-pdf-page-range" aria-label="Page slider" />
+              </div>
+              <div style="display:flex; gap: 6px; align-items:center;">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignZoom(-0.15)">-</button>
+                <span id="esign-pdf-zoom-label" style="font-size: 12px; color: var(--muted);">100%</span>
+                <button class="btn btn-secondary btn-sm" type="button" onclick="changeEsignZoom(0.15)">+</button>
+              </div>
+            </div>
+            <div class="pdf-canvas-wrap" id="esign-pdf-canvas-wrap">
+              <div class="pdf-stage" id="esign-pdf-stage">
+                <canvas id="esign-pdf-canvas"></canvas>
+                <div class="pdf-overlay" id="esign-pdf-overlay"></div>
+              </div>
+            </div>
+            <div class="pdf-hint">Tip: drag to pan. Use the field list to jump fast.</div>
+          </div>
+        </div>
+
+        <div class="esign-modal-sidebar">
+          <div class="esign-panel" id="esign-active-field-panel">
+            <div class="esign-panel-header">
+              <div class="esign-panel-title">Selected Field</div>
+              <div id="esign-active-field-kind" style="color: var(--muted); font-size: 12px;"></div>
+            </div>
+            <div id="esign-active-field-empty" class="form-hint">Select a field to type directly into the document.</div>
+            <div id="esign-active-field-editor" hidden>
+              <div class="esign-active-field-label" id="esign-active-field-label"></div>
+              <div class="esign-active-field-toolbar" id="esign-active-field-toolbar" hidden>
+                <div class="esign-active-field-toolbar-group" role="group" aria-label="Text style">
+                  <button type="button" class="esign-format-btn" data-esign-style-toggle="bold" aria-label="Bold">B</button>
+                  <button type="button" class="esign-format-btn" data-esign-style-toggle="italic" aria-label="Italic"><span style="font-style: italic;">I</span></button>
+                  <button type="button" class="esign-format-btn" data-esign-style-toggle="underline" aria-label="Underline"><span style="text-decoration: underline;">U</span></button>
+                </div>
+                <div class="esign-active-field-toolbar-group" role="group" aria-label="Text alignment">
+                  <button type="button" class="esign-format-btn" data-esign-style-align="left" aria-label="Align left">Left</button>
+                  <button type="button" class="esign-format-btn" data-esign-style-align="center" aria-label="Align center">Center</button>
+                  <button type="button" class="esign-format-btn" data-esign-style-align="right" aria-label="Align right">Right</button>
+                </div>
+                <label class="esign-style-select" for="esign-font-size-select">
+                  <span>Size</span>
+                  <select id="esign-font-size-select" aria-label="Text size">
+                    <option value="10">Small</option>
+                    <option value="12">Medium</option>
+                    <option value="14">Large</option>
+                    <option value="16">XL</option>
+                  </select>
+                </label>
+                <button type="button" class="esign-format-btn esign-format-btn--ghost" id="esign-style-reset-btn">Reset</button>
+              </div>
+              <input type="text" id="esign-active-field-input" class="esign-active-field-input" hidden />
+              <textarea id="esign-active-field-textarea" class="esign-active-field-textarea" hidden></textarea>
+              <div id="esign-active-field-toolbar-note" class="form-hint" style="margin-top: 8px;" hidden>Formatting applies to the whole field and final PDF.</div>
+              <div id="esign-active-field-hint" class="form-hint" style="margin-top: 8px;"></div>
+            </div>
+          </div>
+
+          <div class="esign-panel">
+            <div class="esign-panel-header">
+              <div class="esign-panel-title">Your Fields</div>
+              <div id="esign-fields-count" style="color: var(--muted); font-size: 12px;"></div>
+            </div>
+            <div id="esign-fields-list" class="esign-fields-list"></div>
+            <div style="display:flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+              <button class="btn btn-secondary btn-sm" type="button" onclick="jumpEsignField(-1)">Prev field</button>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="jumpEsignField(1)">Next field</button>
+            </div>
+          </div>
+
+          <div class="esign-panel">
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="esign-signer-name">Your name (optional)</label>
+              <input type="text" id="esign-signer-name" placeholder="Type your name" />
+            </div>
+          </div>
+
+          <div class="esign-panel" id="esign-signature-group">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Signature</label>
+              <div style="border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 8px;">
+                <canvas id="esign-canvas" style="width: 100%; height: 180px; border-radius: 10px; touch-action: none;"></canvas>
+              </div>
+              <div style="display:flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+                <button class="btn btn-secondary btn-sm" id="esign-clear-signature-btn" type="button" onclick="clearSignature()">Clear</button>
+                <button class="btn btn-primary btn-sm" id="esign-submit-btn" type="button" onclick="submitESignature()">Finish & Generate Signed PDF</button>
+              </div>
+              <div class="form-hint" id="esign-signature-hint" style="margin-top: 8px;">Your signature will be applied to all fields assigned to you.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/vendor/pdfjs/pdf.min.js"></script>
+  <script>
+    const workflowLabels = <%- JSON.stringify(workflowLabels || {
+      onboarding: 'Onboarding',
+      agreement: 'Agreement Signing',
+      policy: 'Policy Acknowledgement',
+      general: 'General Document Workflow'
+    }) %>;
+    const workflowOptions = <%- JSON.stringify(workflowTypes || ['onboarding', 'agreement', 'policy', 'general']) %>;
+    const workspaceModeEnabled = <%= workspaceMode ? 'true' : 'false' %>;
+    const workflowFilterState = { active: '<%= activeWorkflow || (workspaceMode ? "all" : "onboarding") %>' };
+    const documentViewerBackUrl = <%- JSON.stringify(personalDocumentBackUrl) %>;
+
+    function setWorkflowFilter(scope = 'all') {
+      const normalized = scope === 'all' || workflowOptions.includes(scope)
+        ? scope
+        : (workspaceModeEnabled ? 'all' : 'onboarding');
+      workflowFilterState.active = normalized;
+
+      document.querySelectorAll('[data-workflow-filter]').forEach(button => {
+        const isActive = button.dataset.workflowFilter === normalized;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      const activeScopeChip = document.querySelector('[data-personal-status-filter].active');
+      filterPersonalAssignments(activeScopeChip?.dataset.personalStatusFilter || 'current');
+    }
+
+    function setNextStepAfterAction(assignmentId, triggerElement, itemId) {
+      if (!assignmentId) return;
+      const flow = triggerElement?.closest('[data-onboarding-flow]')
+        || document.querySelector(`[data-onboarding-flow][data-assignment="${assignmentId}"]`);
+      if (!flow) return;
+
+      const panels = Array.from(flow.querySelectorAll('[data-step-panel]'));
+      if (!panels.length) return;
+      let currentPanel = triggerElement?.closest('[data-step-panel]');
+      if (!currentPanel && itemId) {
+        currentPanel = flow
+          .querySelector(`[data-step-panel] [data-item="${itemId}"]`)
+          ?.closest('[data-step-panel]');
+      }
+      if (!currentPanel) return;
+
+      const currentIndex = Number(currentPanel.dataset.step || 0);
+      currentPanel.dataset.stepUserdone = '1';
+      currentPanel.dataset.stepActionable = '0';
+
+      const findNextIndex = (start) => panels.findIndex((panel, index) => (
+        index >= start &&
+        panel.dataset.stepActionable === '1' &&
+        panel.dataset.stepUserdone !== '1'
+      ));
+
+      let nextIndex = findNextIndex(currentIndex + 1);
+      if (nextIndex < 0) {
+        nextIndex = findNextIndex(0);
+      }
+      if (nextIndex < 0) {
+        nextIndex = currentIndex;
+      }
+
+      const storageKey = `onboardingFlow:${assignmentId}:step`;
+      try {
+        localStorage.setItem(storageKey, String(nextIndex));
+      } catch (error) {}
+    }
+
+    function redirectWithSuccess(message) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('success', message || 'Task completed');
+      url.searchParams.delete('error');
+      window.location.assign(`${url.pathname}${url.search}${url.hash}`);
+    }
+
+    async function submitForm(form) {
+      const assignmentId = form.dataset.assignment;
+      const itemId = form.dataset.item;
+      const data = {};
+      new FormData(form).forEach((value, key) => {
+        data[key] = value;
+      });
+
+      const response = await fetch(`/api/onboarding/${assignmentId}/items/${itemId}/form`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      if (response.ok) {
+        setNextStepAfterAction(assignmentId, form, itemId);
+        redirectWithSuccess('Form submitted. Continuing to your next step.');
+      } else {
+        const result = await response.json();
+        alert(result.error || 'Failed to submit form');
+      }
+    }
+
+    document.querySelectorAll('[data-form-item]').forEach(form => {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitForm(form);
+      });
+    });
+
+    async function uploadOnboardingFile(assignmentId, itemId) {
+      const input = document.querySelector(`[data-upload-input][data-assignment="${assignmentId}"][data-item="${itemId}"]`);
+      if (!input || !input.files.length) {
+        alert('Please select a file');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', input.files[0]);
+
+      const response = await fetch(`/api/onboarding/${assignmentId}/items/${itemId}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        setNextStepAfterAction(assignmentId, input, itemId);
+        redirectWithSuccess('File uploaded. Continuing to your next step.');
+      } else {
+        const result = await response.json();
+        alert(result.error || 'Failed to upload file');
+      }
+    }
+
+    function filterPersonalAssignments(scope = 'current') {
+      const chips = Array.from(document.querySelectorAll('[data-personal-status-filter]'));
+      const cards = Array.from(document.querySelectorAll('[data-personal-assignment]'));
+      const empty = document.querySelector('[data-personal-empty]');
+      if (!cards.length || !chips.length) return;
+      const workflow = workflowFilterState.active || 'all';
+
+      chips.forEach(chip => {
+        const isActive = chip.dataset.personalStatusFilter === scope;
+        chip.classList.toggle('active', isActive);
+        chip.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+
+      let visible = 0;
+      cards.forEach(card => {
+        const status = String(card.dataset.personalStatus || '').toLowerCase();
+        const workflowType = String(card.dataset.personalWorkflow || 'onboarding').toLowerCase();
+        const isCurrent = status === 'pending' || status === 'in_progress';
+        const isHistory = status === 'completed' || status === 'cancelled';
+        const scopeMatches = scope === 'all'
+          ? true
+          : (scope === 'history' ? isHistory : isCurrent);
+        const workflowMatches = workflow === 'all' || workflowType === workflow;
+        const show = scopeMatches && workflowMatches;
+
+        card.hidden = !show;
+        if (show) visible += 1;
+      });
+
+      if (empty) {
+        empty.hidden = visible !== 0;
+      }
+    }
+
+    document.querySelectorAll('[data-personal-status-filter]').forEach(button => {
+      button.addEventListener('click', () => {
+        filterPersonalAssignments(button.dataset.personalStatusFilter || 'current');
+      });
+    });
+
+    document.querySelectorAll('[data-workflow-filter]').forEach(button => {
+      button.addEventListener('click', () => {
+        setWorkflowFilter(button.dataset.workflowFilter || 'all');
+      });
+    });
+
+    const esignModal = document.getElementById('esignModal');
+    const esignDocumentName = document.getElementById('esign-document-name');
+    const esignDocumentSubtitle = document.getElementById('esign-document-subtitle');
+    const esignDocumentLink = document.getElementById('esign-document-link');
+    const esignPdfViewer = document.getElementById('esign-pdf-viewer');
+    const esignPdfCanvasWrap = document.getElementById('esign-pdf-canvas-wrap');
+    const esignPdfStage = document.getElementById('esign-pdf-stage');
+    const esignPdfCanvas = document.getElementById('esign-pdf-canvas');
+    const esignPdfOverlay = document.getElementById('esign-pdf-overlay');
+    const esignPdfPageLabel = document.getElementById('esign-pdf-page-label');
+    const esignPdfPageRange = document.getElementById('esign-pdf-page-range');
+    const esignPdfZoomLabel = document.getElementById('esign-pdf-zoom-label');
+    const esignSignerName = document.getElementById('esign-signer-name');
+    const esignFieldsList = document.getElementById('esign-fields-list');
+    const esignFieldsCount = document.getElementById('esign-fields-count');
+    const esignActiveFieldPanel = document.getElementById('esign-active-field-panel');
+    const esignActiveFieldKind = document.getElementById('esign-active-field-kind');
+    const esignActiveFieldEmpty = document.getElementById('esign-active-field-empty');
+    const esignActiveFieldEditor = document.getElementById('esign-active-field-editor');
+    const esignActiveFieldLabel = document.getElementById('esign-active-field-label');
+    const esignActiveFieldInput = document.getElementById('esign-active-field-input');
+    const esignActiveFieldTextarea = document.getElementById('esign-active-field-textarea');
+    const esignActiveFieldToolbar = document.getElementById('esign-active-field-toolbar');
+    const esignActiveFieldToolbarNote = document.getElementById('esign-active-field-toolbar-note');
+    const esignActiveFieldHint = document.getElementById('esign-active-field-hint');
+    const esignFontSizeSelect = document.getElementById('esign-font-size-select');
+    const esignStyleResetBtn = document.getElementById('esign-style-reset-btn');
+    const esignStyleToggleButtons = Array.from(document.querySelectorAll('[data-esign-style-toggle]'));
+    const esignStyleAlignButtons = Array.from(document.querySelectorAll('[data-esign-style-align]'));
+    const esignSignatureGroup = document.getElementById('esign-signature-group');
+    const esignSignatureHint = document.getElementById('esign-signature-hint');
+    const esignSubmitBtn = document.getElementById('esign-submit-btn');
+    const signatureCanvas = document.getElementById('esign-canvas');
+    const signatureCtx = signatureCanvas.getContext('2d');
+    const currentUserId = '<%= user._id %>';
+    let activeAssignmentId = null;
+    let activeItemId = null;
+    let activeFields = [];
+    let esignFieldValues = {};
+    let selectedEsignFieldIndex = -1;
+    let signaturePreviewUrl = null;
+    let esignPdfUrl = null;
+    let isDrawing = false;
+    let hasSignature = false;
+    let lastSignaturePoint = null;
+    let lastSignatureMidPoint = null;
+    const esignPdfState = { pdf: null, page: 1, totalPages: 0, scale: 1, zoom: 1, viewport: null };
+    let activeAssigneeId = null;
+    const ESIGN_COLOR = '#6366f1';
+    const DEFAULT_ESIGN_TEXT_STYLE = Object.freeze({
+      fontSize: 12,
+      align: 'left',
+      bold: false,
+      italic: false,
+      underline: false
+    });
+
+    function normalizeEsignFontSize(value) {
+      const size = Number(value);
+      if (!Number.isFinite(size)) return DEFAULT_ESIGN_TEXT_STYLE.fontSize;
+      if (size <= 10) return 10;
+      if (size <= 12) return 12;
+      if (size <= 14) return 14;
+      return 16;
+    }
+
+    function normalizeEsignTextStyle(style = {}) {
+      const safeStyle = style && typeof style === 'object' && !Array.isArray(style) ? style : {};
+      const align = String(safeStyle.align || '').trim().toLowerCase();
+      return {
+        fontSize: normalizeEsignFontSize(safeStyle.fontSize || safeStyle.size || DEFAULT_ESIGN_TEXT_STYLE.fontSize),
+        align: ['left', 'center', 'right'].includes(align) ? align : DEFAULT_ESIGN_TEXT_STYLE.align,
+        bold: safeStyle.bold === true || safeStyle.bold === 'true' || safeStyle.fontWeight === 'bold',
+        italic: safeStyle.italic === true || safeStyle.italic === 'true' || safeStyle.fontStyle === 'italic',
+        underline: safeStyle.underline === true || safeStyle.underline === 'true'
+      };
+    }
+
+    function getDefaultEsignTextFieldState(field) {
+      return {
+        text: String(field?.text || ''),
+        style: normalizeEsignTextStyle(field?.style || field?.editorStyle || {})
+      };
+    }
+
+    function getEsignFieldStyleCss(style = {}) {
+      const normalizedStyle = normalizeEsignTextStyle(style);
+      return {
+        fontWeight: normalizedStyle.bold ? '700' : '500',
+        fontStyle: normalizedStyle.italic ? 'italic' : 'normal',
+        textDecoration: normalizedStyle.underline ? 'underline' : 'none',
+        textAlign: normalizedStyle.align,
+        fontSize: `${normalizedStyle.fontSize}px`,
+        lineHeight: normalizedStyle.fontSize >= 16 ? '1.5' : '1.4'
+      };
+    }
+
+    function applyEsignTextStyleToElement(element, field) {
+      if (!element) return;
+      const css = field?.type === 'text'
+        ? getEsignFieldStyleCss(getEsignFieldStyle(field))
+        : {
+            fontWeight: '',
+            fontStyle: '',
+            textDecoration: '',
+            textAlign: '',
+            fontSize: '',
+            lineHeight: ''
+          };
+
+      Object.entries(css).forEach(([key, value]) => {
+        element.style[key] = value;
+      });
+    }
+
+    function syncEsignToolbarState(field) {
+      const isTextField = field?.type === 'text';
+      if (esignActiveFieldToolbar) {
+        esignActiveFieldToolbar.hidden = !isTextField;
+      }
+      if (esignActiveFieldToolbarNote) {
+        esignActiveFieldToolbarNote.hidden = !isTextField;
+      }
+
+      const style = isTextField ? getEsignFieldStyle(field) : normalizeEsignTextStyle();
+      if (esignFontSizeSelect) {
+        esignFontSizeSelect.value = String(style.fontSize);
+      }
+
+      esignStyleToggleButtons.forEach(button => {
+        const styleKey = button.dataset.esignStyleToggle;
+        const isActive = isTextField && Boolean(style[styleKey]);
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
+      });
+
+      esignStyleAlignButtons.forEach(button => {
+        const alignValue = button.dataset.esignStyleAlign;
+        const isActive = isTextField && style.align === alignValue;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
+      });
+    }
+
+    function normalizeId(value) {
+      if (!value) return '';
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed || trimmed === 'undefined' || trimmed === 'null' || trimmed === '[object Object]') return '';
+        const m = trimmed.match(/^[Oo]bject[Ii]d\(['"]([0-9a-fA-F]{24})['"]\)$/);
+        if (m) return m[1];
+        return trimmed;
+      }
+      if (typeof value === 'number') return String(value);
+      if (typeof value === 'object') {
+        if (typeof value.$oid === 'string') return value.$oid;
+        if (value.key) return normalizeId(value.key);
+        if (value.value) return normalizeId(value.value);
+        if (value._id) return normalizeId(value._id);
+        if (value.id) return normalizeId(value.id);
+        if (value.member) return normalizeId(value.member);
+        if (value.memberId) return normalizeId(value.memberId);
+      }
+      try {
+        return String(value);
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function fieldAssignedToUser(field, userId, assigneeId) {
+      // Prefer signerKey because signerId can sometimes be a nested object (or coerces poorly).
+      const raw = normalizeId(field.signerKey || field.signerId || field.signer);
+      if (!raw) return true; // Unassigned fields can be signed by any allowed signer.
+      const resolved = raw === 'assignee' ? normalizeId(assigneeId) : raw;
+      return resolved === userId;
+    }
+
+    function clampNumber(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function getWrapInnerWidth(el) {
+      if (!el) return 600;
+      const styles = window.getComputedStyle(el);
+      const padLeft = parseFloat(styles.paddingLeft) || 0;
+      const padRight = parseFloat(styles.paddingRight) || 0;
+      const width = (el.clientWidth || 0) - padLeft - padRight;
+      return width > 0 ? width : (el.clientWidth || 600);
+    }
+
+    function getFieldDisplayTitle(field, index) {
+      const label = (field.label || '').trim();
+      if (label) return `${index + 1}. ${label}`;
+      if (field.type === 'date') return `${index + 1}. Date`;
+      if (field.type === 'text') return `${index + 1}. Text`;
+      return `${index + 1}. Signature`;
+    }
+
+    function roundEsignFieldNumber(value) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? Math.round(numeric * 1000) / 1000 : 0;
+    }
+
+    function getEsignFieldIdentity(field) {
+      const signerRef = String(field.signerKey || field.signerId || field.signer || 'all').trim().toLowerCase() || 'all';
+      return [
+        String(field.type || 'signature').trim().toLowerCase(),
+        String(field.label || '').trim().toLowerCase(),
+        Number(field.page) || 1,
+        roundEsignFieldNumber(field.x),
+        roundEsignFieldNumber(field.y),
+        roundEsignFieldNumber(field.width),
+        roundEsignFieldNumber(field.height),
+        String(field.origin || 'top-left').trim().toLowerCase(),
+        signerRef
+      ].join('|');
+    }
+
+    function getTodayEsignInputValue() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function getDefaultEsignFieldValue(field) {
+      if (!field || field.type === 'signature') return '';
+      if (field.type === 'date') {
+        return String(field.text || '').trim() || getTodayEsignInputValue();
+      }
+      return getDefaultEsignTextFieldState(field);
+    }
+
+    function normalizeEsignFieldValue(field, value) {
+      if (!field || field.type === 'signature') return '';
+      if (typeof value === 'undefined') {
+        return getDefaultEsignFieldValue(field);
+      }
+      if (field.type === 'date') {
+        return String(typeof value === 'object' && value ? (value.text ?? '') : (value ?? ''));
+      }
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return {
+          text: String(value.text ?? ''),
+          style: normalizeEsignTextStyle(value.style || value)
+        };
+      }
+      return {
+        text: String(value ?? ''),
+        style: normalizeEsignTextStyle(field?.style || field?.editorStyle || {})
+      };
+    }
+
+    function ensureEsignFieldValue(field) {
+      const fieldKey = getEsignFieldIdentity(field);
+      const rawValue = Object.prototype.hasOwnProperty.call(esignFieldValues, fieldKey)
+        ? esignFieldValues[fieldKey]
+        : undefined;
+      const normalizedValue = normalizeEsignFieldValue(field, rawValue);
+      esignFieldValues[fieldKey] = normalizedValue;
+      return normalizedValue;
+    }
+
+    function getEsignFieldValue(field) {
+      if (!field || field.type === 'signature') return '';
+      const storedValue = ensureEsignFieldValue(field);
+      if (field.type === 'text') {
+        return String(storedValue?.text ?? '');
+      }
+      return String(storedValue ?? '');
+    }
+
+    function getEsignFieldStyle(field) {
+      if (!field || field.type !== 'text') {
+        return normalizeEsignTextStyle();
+      }
+      const storedValue = ensureEsignFieldValue(field);
+      return normalizeEsignTextStyle(storedValue?.style || {});
+    }
+
+    function getEsignFieldPayload(field) {
+      if (!field || field.type === 'signature') return '';
+      const storedValue = ensureEsignFieldValue(field);
+      if (field.type === 'text') {
+        return {
+          text: String(storedValue?.text ?? ''),
+          style: getEsignFieldStyle(field)
+        };
+      }
+      return String(storedValue ?? '');
+    }
+
+    function isEsignFieldComplete(field) {
+      if (!field) return false;
+      if (field.type === 'signature') return hasSignature;
+      return Boolean(String(getEsignFieldValue(field) || '').trim());
+    }
+
+    function activeEsignRequiresSignature() {
+      return activeFields.some(field => field.type === 'signature');
+    }
+
+    function shouldUseEsignTextarea(field) {
+      if (!field || field.type !== 'text') return false;
+      return Number(field.height) >= 44 || Number(field.width) >= 280;
+    }
+
+    function focusEsignOverlayField(index) {
+      const fieldEl = esignPdfOverlay?.querySelector(`.esign-field-preview[data-index="${index}"]`);
+      const input = fieldEl?.querySelector('.esign-field-input');
+      if (input) {
+        requestAnimationFrame(() => input.focus({ preventScroll: true }));
+      }
+    }
+
+    function syncEsignSubmitUi() {
+      const requiresSignature = activeEsignRequiresSignature();
+      if (esignSignatureGroup) {
+        esignSignatureGroup.hidden = !requiresSignature;
+      }
+      if (esignSignatureHint) {
+        esignSignatureHint.textContent = requiresSignature
+          ? 'Your signature will be applied to all signature fields assigned to you.'
+          : 'This document only needs typed values. No drawn signature is required.';
+      }
+      if (esignSubmitBtn) {
+        esignSubmitBtn.textContent = requiresSignature
+          ? 'Finish & Generate Signed PDF'
+          : 'Generate Completed PDF';
+      }
+      if (esignActiveFieldPanel) {
+        esignActiveFieldPanel.classList.toggle('is-signature-selected', requiresSignature && activeFields[selectedEsignFieldIndex]?.type === 'signature');
+      }
+    }
+
+    function updateEsignFieldStyle(field, patch = {}) {
+      if (!field || field.type !== 'text') return;
+      const fieldKey = getEsignFieldIdentity(field);
+      const currentValue = ensureEsignFieldValue(field);
+      esignFieldValues[fieldKey] = {
+        text: String(currentValue?.text ?? ''),
+        style: normalizeEsignTextStyle({
+          ...currentValue?.style,
+          ...patch
+        })
+      };
+      renderEsignActiveFieldEditor();
+      renderEsignOverlay();
+    }
+
+    function updateEsignFieldValue(field, value, source = 'overlay') {
+      if (!field || field.type === 'signature') return;
+      const fieldKey = getEsignFieldIdentity(field);
+      const nextValue = String(value ?? '');
+
+      if (field.type === 'text') {
+        const currentValue = ensureEsignFieldValue(field);
+        esignFieldValues[fieldKey] = {
+          text: nextValue,
+          style: normalizeEsignTextStyle(currentValue?.style || {})
+        };
+      } else {
+        esignFieldValues[fieldKey] = nextValue;
+      }
+
+      renderEsignFieldsList();
+
+      if (source !== 'overlay') {
+        const overlayInput = esignPdfOverlay?.querySelector(`.esign-field-preview[data-index="${selectedEsignFieldIndex}"] .esign-field-input`);
+        if (overlayInput) {
+          if (overlayInput.value !== nextValue) {
+            overlayInput.value = nextValue;
+          }
+          applyEsignTextStyleToElement(overlayInput, field);
+        }
+      }
+
+      if (source !== 'sidebar') {
+        const activeInput = shouldUseEsignTextarea(field) ? esignActiveFieldTextarea : esignActiveFieldInput;
+        if (activeInput && !activeInput.hidden) {
+          if (activeInput.value !== nextValue) {
+            activeInput.value = nextValue;
+          }
+          applyEsignTextStyleToElement(activeInput, field);
+        }
+      }
+
+      syncEsignToolbarState(field);
+    }
+
+    function renderEsignActiveFieldEditor() {
+      if (!esignActiveFieldEditor || !esignActiveFieldEmpty || !esignActiveFieldLabel || !esignActiveFieldKind) {
+        return;
+      }
+
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field) {
+        esignActiveFieldEmpty.hidden = false;
+        esignActiveFieldEditor.hidden = true;
+        esignActiveFieldKind.textContent = '';
+        esignActiveFieldEmpty.textContent = 'Select a field to type directly into the document.';
+        syncEsignToolbarState(null);
+        return;
+      }
+
+      const typeLabel = field.type === 'signature'
+        ? 'Signature'
+        : (field.type === 'date' ? 'Date field' : 'Text field');
+      esignActiveFieldKind.textContent = typeLabel;
+      esignActiveFieldLabel.textContent = field.label || typeLabel;
+
+      if (field.type === 'signature') {
+        esignActiveFieldEmpty.hidden = false;
+        esignActiveFieldEditor.hidden = true;
+        esignActiveFieldEmpty.textContent = 'This field requires your drawn signature in the signature box below.';
+        if (esignActiveFieldHint) {
+          esignActiveFieldHint.textContent = '';
+        }
+        syncEsignToolbarState(field);
+        return;
+      }
+
+      const fieldValue = getEsignFieldValue(field);
+      const useTextarea = shouldUseEsignTextarea(field);
+      esignActiveFieldEmpty.hidden = true;
+      esignActiveFieldEditor.hidden = false;
+      esignActiveFieldInput.hidden = useTextarea;
+      esignActiveFieldTextarea.hidden = !useTextarea;
+
+      const activeInput = useTextarea ? esignActiveFieldTextarea : esignActiveFieldInput;
+      const inactiveInput = useTextarea ? esignActiveFieldInput : esignActiveFieldTextarea;
+      activeInput.value = fieldValue;
+      inactiveInput.value = '';
+      applyEsignTextStyleToElement(esignActiveFieldInput, field);
+      applyEsignTextStyleToElement(esignActiveFieldTextarea, field);
+      syncEsignToolbarState(field);
+
+      if (field.type === 'date') {
+        esignActiveFieldInput.type = 'date';
+        esignActiveFieldInput.placeholder = '';
+        if (esignActiveFieldHint) {
+          esignActiveFieldHint.textContent = 'Pick the date that should be written into the PDF.';
+        }
+      } else {
+        esignActiveFieldInput.type = 'text';
+        esignActiveFieldInput.placeholder = 'Type the value for this field';
+        esignActiveFieldTextarea.placeholder = 'Type the value for this field';
+        if (esignActiveFieldHint) {
+          esignActiveFieldHint.textContent = useTextarea
+            ? 'Use the tools above to style the whole field before it is written into the PDF.'
+            : 'Use the tools above to style the whole field before it is written into the PDF.';
+        }
+      }
+    }
+
+    function renderEsignFieldsList() {
+      if (!esignFieldsList) return;
+      esignFieldsList.innerHTML = '';
+
+      if (esignFieldsCount) {
+        const n = activeFields.length;
+        esignFieldsCount.textContent = `${n} field${n === 1 ? '' : 's'}`;
+      }
+
+      activeFields.forEach((field, index) => {
+        const row = document.createElement('div');
+        row.className = 'esign-field-row' + (index === selectedEsignFieldIndex ? ' active' : '');
+        row.style.setProperty('--esign-color', ESIGN_COLOR);
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-label', `Jump to field ${index + 1}`);
+
+        const dot = document.createElement('div');
+        dot.className = 'esign-field-dot';
+        dot.style.background = ESIGN_COLOR;
+
+        const body = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'esign-field-row-title';
+        title.textContent = getFieldDisplayTitle(field, index);
+
+        const meta = document.createElement('div');
+        meta.className = 'esign-field-row-meta';
+        const stateLabel = isEsignFieldComplete(field)
+          ? 'Filled'
+          : (field.type === 'signature' ? 'Needs signature' : 'Needs value');
+        meta.textContent = `Page ${field.page || 1} - ${field.type || 'signature'} - ${stateLabel}`;
+
+        body.appendChild(title);
+        body.appendChild(meta);
+
+        row.appendChild(dot);
+        row.appendChild(body);
+
+        row.addEventListener('click', () => selectEsignField(index, { scroll: true }));
+        row.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            selectEsignField(index, { scroll: true });
+          }
+        });
+
+        esignFieldsList.appendChild(row);
+      });
+    }
+
+    function scrollToEsignField(field) {
+      if (!field || !esignPdfCanvasWrap || !esignPdfState.viewport) return;
+      const stage = esignPdfStage || esignPdfOverlay?.parentElement;
+      const stageOffsetLeft = stage?.offsetLeft || 0;
+      const stageOffsetTop = stage?.offsetTop || 0;
+      const scale = esignPdfState.scale || 1;
+      const pdfHeight = esignPdfState.viewport.viewBox[3] - esignPdfState.viewport.viewBox[1];
+      const topLeftY = field.origin === 'bottom-left'
+        ? (pdfHeight - field.y - field.height)
+        : field.y;
+
+      const targetLeft = stageOffsetLeft + (field.x * scale) + ((field.width || 0) * scale) / 2;
+      const targetTop = stageOffsetTop + (topLeftY * scale) + ((field.height || 0) * scale) / 2;
+
+      const nextLeft = clampNumber(targetLeft - (esignPdfCanvasWrap.clientWidth / 2), 0, esignPdfCanvasWrap.scrollWidth);
+      const nextTop = clampNumber(targetTop - (esignPdfCanvasWrap.clientHeight / 2), 0, esignPdfCanvasWrap.scrollHeight);
+
+      esignPdfCanvasWrap.scrollTo({ left: nextLeft, top: nextTop, behavior: 'smooth' });
+    }
+
+    function selectEsignField(index, options = {}) {
+      if (!activeFields.length) return;
+      const safeIndex = clampNumber(Number(index) || 0, 0, activeFields.length - 1);
+      selectedEsignFieldIndex = safeIndex;
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
+
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field) return;
+
+      const desiredPage = Number(field.page) || 1;
+      if (esignPdfState.page !== desiredPage) {
+        esignPdfState.page = desiredPage;
+        renderEsignPdfPage().then(() => {
+          if (options.scroll !== false) scrollToEsignField(field);
+        });
+        return;
+      }
+
+      renderEsignOverlay();
+      if (options.scroll !== false) scrollToEsignField(field);
+      if (field.type !== 'signature') {
+        focusEsignOverlayField(selectedEsignFieldIndex);
+      }
+    }
+
+    function jumpEsignField(delta) {
+      if (!activeFields.length) return;
+      const base = selectedEsignFieldIndex >= 0 ? selectedEsignFieldIndex : 0;
+      selectEsignField(base + delta, { scroll: true });
+    }
+
+    function changeEsignZoom(delta) {
+      if (!esignPdfState.pdf) return;
+      const next = clampNumber((esignPdfState.zoom || 1) + Number(delta || 0), 0.6, 2.25);
+      if (Math.abs(next - (esignPdfState.zoom || 1)) < 0.001) return;
+      esignPdfState.zoom = next;
+      renderEsignPdfPage().then(() => {
+        const field = activeFields[selectedEsignFieldIndex];
+        if (field && Number(field.page) === esignPdfState.page) {
+          scrollToEsignField(field);
+        }
+      });
+    }
+
+    function resizeSignatureCanvas() {
+      const ratio = window.devicePixelRatio || 1;
+      const rect = signatureCanvas.getBoundingClientRect();
+      signatureCanvas.width = Math.max(1, Math.round(rect.width * ratio));
+      signatureCanvas.height = Math.max(1, Math.round(rect.height * ratio));
+      signatureCtx.setTransform(1, 0, 0, 1, 0, 0);
+      signatureCtx.lineCap = 'round';
+      signatureCtx.lineJoin = 'round';
+      signatureCtx.strokeStyle = '#09090b';
+      signatureCtx.lineWidth = 2 * (signatureCanvas.width / Math.max(rect.width, 1));
+    }
+
+    function clearSignature(reset = true, preserveStored = false) {
+      signatureCtx.save();
+      signatureCtx.setTransform(1, 0, 0, 1, 0, 0);
+      signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+      signatureCtx.restore();
+      if (reset) {
+        hasSignature = false;
+        signaturePreviewUrl = null;
+        if (!preserveStored) {
+          localStorage.removeItem('esignSignatureDataUrl');
+        }
+      }
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
+      renderEsignOverlay();
+    }
+
+    function loadSignatureDataUrl(dataUrl) {
+      if (!dataUrl) return;
+      const image = new Image();
+      image.onload = () => {
+        clearSignature(false);
+        signatureCtx.drawImage(image, 0, 0, signatureCanvas.width, signatureCanvas.height);
+        hasSignature = true;
+        signaturePreviewUrl = dataUrl;
+        renderEsignFieldsList();
+        renderEsignActiveFieldEditor();
+        syncEsignSubmitUi();
+        renderEsignOverlay();
+      };
+      image.src = dataUrl;
+    }
+
+    function storeSignatureToLocal() {
+      if (!hasSignature) return;
+      const dataUrl = signatureCanvas.toDataURL('image/png');
+      signaturePreviewUrl = dataUrl;
+      localStorage.setItem('esignSignatureDataUrl', dataUrl);
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
+      renderEsignOverlay();
+    }
+
+    async function fetchEsignPdfBytes(url, options = {}) {
+      if (!url) {
+        throw new Error('Missing PDF URL');
+      }
+
+      const normalizedUrl = String(url || '');
+      const isAbsoluteUrl = /^https?:\/\//i.test(normalizedUrl);
+      const isSameOriginAbsolute = isAbsoluteUrl && normalizedUrl.startsWith(window.location.origin);
+      const credentials = options.credentials || ((isAbsoluteUrl && !isSameOriginAbsolute) ? 'omit' : 'same-origin');
+      const response = await fetch(url, {
+        credentials,
+        headers: { Accept: 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8' }
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to load PDF preview (${response.status})`);
+      }
+
+      return new Uint8Array(await response.arrayBuffer());
+    }
+
+    async function loadEsignPdf(url, fallbackUrl = '') {
+      if ((!url && !fallbackUrl) || !window.pdfjsLib) {
+        return;
+      }
+
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.js';
+      let pdfBytes;
+      const primaryUrl = fallbackUrl || url;
+      const secondaryUrl = fallbackUrl && fallbackUrl !== url ? url : '';
+
+      try {
+        pdfBytes = await fetchEsignPdfBytes(primaryUrl);
+      } catch (primaryError) {
+        if (!secondaryUrl || secondaryUrl === primaryUrl) {
+          throw primaryError;
+        }
+        console.warn('Primary PDF preview source failed, retrying with alternate asset URL.', primaryError);
+        pdfBytes = await fetchEsignPdfBytes(secondaryUrl);
+      }
+
+      const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+      const pdf = await loadingTask.promise;
+      esignPdfState.pdf = pdf;
+      esignPdfState.totalPages = pdf.numPages;
+      if (typeof esignPdfState.zoom !== 'number' || !Number.isFinite(esignPdfState.zoom)) {
+        esignPdfState.zoom = 1;
+      }
+      esignPdfState.page = clampNumber(esignPdfState.page || 1, 1, esignPdfState.totalPages || 1);
+      if (esignPdfViewer) {
+        esignPdfViewer.style.display = 'block';
+      }
+      if (esignPdfPageRange) {
+        esignPdfPageRange.min = '1';
+        esignPdfPageRange.max = String(esignPdfState.totalPages || 1);
+        esignPdfPageRange.value = String(esignPdfState.page || 1);
+        esignPdfPageRange.style.display = (esignPdfState.totalPages || 1) > 1 ? 'inline-block' : 'none';
+      }
+      await renderEsignPdfPage();
+      const selectedField = activeFields[selectedEsignFieldIndex];
+      if (selectedField && Number(selectedField.page || 1) === Number(esignPdfState.page || 1)) {
+        scrollToEsignField(selectedField);
+      }
+    }
+
+    async function renderEsignPdfPage() {
+      if (!esignPdfState.pdf) return;
+      const page = await esignPdfState.pdf.getPage(esignPdfState.page);
+      const unscaledViewport = page.getViewport({ scale: 1 });
+      const wrapWidth = getWrapInnerWidth(esignPdfCanvasWrap) || esignPdfCanvas.parentElement?.clientWidth || 600;
+      const zoom = esignPdfState.zoom || 1;
+      const scale = (wrapWidth / unscaledViewport.width) * zoom;
+      const viewport = page.getViewport({ scale });
+
+      const ratio = window.devicePixelRatio || 1;
+      esignPdfCanvas.width = Math.floor(viewport.width * ratio);
+      esignPdfCanvas.height = Math.floor(viewport.height * ratio);
+      esignPdfCanvas.style.width = `${Math.floor(viewport.width)}px`;
+      esignPdfCanvas.style.height = `${Math.floor(viewport.height)}px`;
+      const ctx = esignPdfCanvas.getContext('2d');
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, viewport.width, viewport.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      esignPdfOverlay.style.width = `${viewport.width}px`;
+      esignPdfOverlay.style.height = `${viewport.height}px`;
+      esignPdfOverlay.innerHTML = '';
+
+      esignPdfState.scale = scale;
+      esignPdfState.viewport = viewport;
+
+      if (esignPdfPageLabel) {
+        esignPdfPageLabel.textContent = `Page ${esignPdfState.page} / ${esignPdfState.totalPages}`;
+      }
+
+      if (esignPdfPageRange) {
+        esignPdfPageRange.value = String(esignPdfState.page || 1);
+      }
+
+      if (esignPdfZoomLabel) {
+        esignPdfZoomLabel.textContent = `${Math.round((esignPdfState.zoom || 1) * 100)}%`;
+      }
+
+      renderEsignOverlay();
+    }
+
+    function changeEsignPdfPage(delta) {
+      if (!esignPdfState.pdf) return;
+      const nextPage = Math.min(esignPdfState.totalPages, Math.max(1, esignPdfState.page + delta));
+      if (nextPage === esignPdfState.page) return;
+      esignPdfState.page = nextPage;
+      renderEsignPdfPage();
+    }
+
+    function bindPdfPanScroll(wrapEl, options = {}) {
+      if (!wrapEl) return;
+      const ignoreSelector = options.ignoreSelector || null;
+      const isEnabled = typeof options.isEnabled === 'function' ? options.isEnabled : (() => true);
+      const threshold = typeof options.threshold === 'number' ? options.threshold : 4;
+
+      let isDown = false;
+      let moved = false;
+      let pointerId = null;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+
+      wrapEl.classList.add('can-pan');
+
+      wrapEl.addEventListener('pointerdown', (event) => {
+        if (!isEnabled()) return;
+        if (event.pointerType !== 'mouse') return;
+        if (event.button !== 0) return;
+        if (ignoreSelector && event.target.closest(ignoreSelector)) return;
+
+        isDown = true;
+        moved = false;
+        pointerId = event.pointerId;
+        startX = event.clientX;
+        startY = event.clientY;
+        startLeft = wrapEl.scrollLeft;
+        startTop = wrapEl.scrollTop;
+
+        wrapEl.classList.add('is-pan-ready');
+        wrapEl.setPointerCapture(pointerId);
+      });
+
+      wrapEl.addEventListener('pointermove', (event) => {
+        if (!isDown) return;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) < threshold) return;
+        moved = true;
+        wrapEl.classList.add('is-panning');
+        wrapEl.scrollLeft = startLeft - dx;
+        wrapEl.scrollTop = startTop - dy;
+      });
+
+      const endPan = () => {
+        if (!isDown) return;
+        isDown = false;
+        wrapEl.classList.remove('is-panning');
+        wrapEl.classList.remove('is-pan-ready');
+        if (pointerId != null) {
+          try { wrapEl.releasePointerCapture(pointerId); } catch (e) {}
+        }
+        pointerId = null;
+      };
+
+      wrapEl.addEventListener('pointerup', endPan);
+      wrapEl.addEventListener('pointercancel', endPan);
+
+      wrapEl.addEventListener('click', (event) => {
+        // Prevent accidental click-through after a drag-pan.
+        if (moved) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, true);
+    }
+
+    function renderEsignOverlay() {
+      if (!esignPdfState.viewport || !esignPdfOverlay) return;
+      esignPdfOverlay.innerHTML = '';
+      const scale = esignPdfState.scale || 1;
+      const pdfHeight = esignPdfState.viewport.viewBox[3] - esignPdfState.viewport.viewBox[1];
+
+      activeFields.forEach((field, index) => {
+        if ((field.page || 1) !== esignPdfState.page) return;
+        const fieldEl = document.createElement('div');
+        fieldEl.className = 'esign-field esign-field-preview';
+        fieldEl.dataset.index = String(index);
+        fieldEl.style.setProperty('--esign-color', ESIGN_COLOR);
+        fieldEl.style.borderColor = ESIGN_COLOR;
+
+        const topLeftY = field.origin === 'bottom-left'
+          ? (pdfHeight - field.y - field.height)
+          : field.y;
+        fieldEl.style.left = `${field.x * scale}px`;
+        fieldEl.style.top = `${topLeftY * scale}px`;
+        fieldEl.style.width = `${field.width * scale}px`;
+        fieldEl.style.height = `${field.height * scale}px`;
+
+        if (index === selectedEsignFieldIndex) {
+          fieldEl.classList.add('selected');
+        }
+
+        const numberBadge = document.createElement('div');
+        numberBadge.className = 'esign-field-number';
+        numberBadge.textContent = String(index + 1);
+        fieldEl.appendChild(numberBadge);
+
+        if (field.type === 'signature') {
+          if (signaturePreviewUrl) {
+            const img = document.createElement('img');
+            img.src = signaturePreviewUrl;
+            fieldEl.appendChild(img);
+          } else {
+            const label = document.createElement('div');
+            label.className = 'esign-field-title';
+            label.textContent = field.label || 'Signature';
+            fieldEl.appendChild(label);
+          }
+        } else {
+          fieldEl.classList.add('has-input');
+          const fieldInput = document.createElement(shouldUseEsignTextarea(field) ? 'textarea' : 'input');
+          fieldInput.className = 'esign-field-input' + (shouldUseEsignTextarea(field) ? ' esign-field-input--multiline' : '');
+          fieldInput.value = getEsignFieldValue(field);
+          fieldInput.placeholder = field.label || (field.type === 'date' ? 'Select date' : 'Type here');
+          fieldInput.setAttribute('aria-label', field.label || (field.type === 'date' ? 'Date field' : 'Text field'));
+
+          if (field.type === 'date') {
+            fieldInput.type = 'date';
+          } else if (fieldInput.tagName === 'INPUT') {
+            fieldInput.type = 'text';
+          }
+
+          fieldInput.addEventListener('pointerdown', (event) => {
+            event.stopPropagation();
+            selectEsignField(index, { scroll: false });
+          });
+          fieldInput.addEventListener('click', (event) => {
+            event.stopPropagation();
+            selectEsignField(index, { scroll: false });
+          });
+          fieldInput.addEventListener('input', (event) => {
+            updateEsignFieldValue(field, event.target.value, 'overlay');
+          });
+          applyEsignTextStyleToElement(fieldInput, field);
+
+          fieldEl.appendChild(fieldInput);
+        }
+
+        fieldEl.addEventListener('click', () => {
+          selectEsignField(index, { scroll: true });
+          if (field.type === 'signature' && !hasSignature) {
+            signatureCanvas?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } else if (field.type !== 'signature') {
+            focusEsignOverlayField(index);
+          }
+        });
+
+        esignPdfOverlay.appendChild(fieldEl);
+      });
+    }
+
+    function getCanvasPoint(event) {
+      const rect = signatureCanvas.getBoundingClientRect();
+      const scaleX = signatureCanvas.width / Math.max(rect.width, 1);
+      const scaleY = signatureCanvas.height / Math.max(rect.height, 1);
+      return {
+        x: clampNumber((event.clientX - rect.left) * scaleX, 0, signatureCanvas.width),
+        y: clampNumber((event.clientY - rect.top) * scaleY, 0, signatureCanvas.height)
+      };
+    }
+
+    signatureCanvas.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      isDrawing = true;
+      hasSignature = true;
+      const point = getCanvasPoint(event);
+      lastSignaturePoint = point;
+      lastSignatureMidPoint = point;
+
+      // Draw a tiny dot so taps still create a visible mark.
+      signatureCtx.beginPath();
+      signatureCtx.moveTo(point.x, point.y);
+      signatureCtx.lineTo(point.x + 0.01, point.y + 0.01);
+      signatureCtx.stroke();
+      signatureCanvas.setPointerCapture(event.pointerId);
+    });
+
+    signatureCanvas.addEventListener('pointermove', (event) => {
+      if (!isDrawing) return;
+      const events = typeof event.getCoalescedEvents === 'function'
+        ? event.getCoalescedEvents()
+        : [event];
+
+      for (const e of events) {
+        const point = getCanvasPoint(e);
+        if (!lastSignaturePoint) {
+          lastSignaturePoint = point;
+          lastSignatureMidPoint = point;
+          continue;
+        }
+
+        const midPoint = {
+          x: (lastSignaturePoint.x + point.x) / 2,
+          y: (lastSignaturePoint.y + point.y) / 2
+        };
+
+        signatureCtx.beginPath();
+        signatureCtx.moveTo(lastSignatureMidPoint.x, lastSignatureMidPoint.y);
+        signatureCtx.quadraticCurveTo(lastSignaturePoint.x, lastSignaturePoint.y, midPoint.x, midPoint.y);
+        signatureCtx.stroke();
+
+        lastSignaturePoint = point;
+        lastSignatureMidPoint = midPoint;
+      }
+    });
+
+    signatureCanvas.addEventListener('pointerup', (event) => {
+      isDrawing = false;
+      lastSignaturePoint = null;
+      lastSignatureMidPoint = null;
+      signatureCtx.closePath();
+      if (signatureCanvas.hasPointerCapture(event.pointerId)) {
+        signatureCanvas.releasePointerCapture(event.pointerId);
+      }
+      storeSignatureToLocal();
+    });
+
+    signatureCanvas.addEventListener('pointerleave', () => {
+      isDrawing = false;
+      lastSignaturePoint = null;
+      lastSignatureMidPoint = null;
+    });
+
+    signatureCanvas.addEventListener('pointercancel', () => {
+      isDrawing = false;
+      lastSignaturePoint = null;
+      lastSignatureMidPoint = null;
+    });
+
+    function openESignModal(button) {
+      const assignmentId = button.dataset.assignment;
+      const itemId = button.dataset.item;
+      const assigneeId = button.dataset.assigneeId || '';
+      const docName = button.dataset.docName;
+      const docUrl = button.dataset.docUrl;
+      const docSourceUrl = button.dataset.docSourceUrl || '';
+      const previewUrl = button.dataset.previewUrl || docUrl;
+      const previewSourceUrl = button.dataset.previewSourceUrl || docSourceUrl || previewUrl;
+      const fieldsRaw = button.dataset.fields ? decodeURIComponent(button.dataset.fields) : '[]';
+      let fields = [];
+
+      try {
+        fields = JSON.parse(fieldsRaw) || [];
+      } catch (error) {
+        console.error('Failed to parse signature fields:', error);
+      }
+
+      activeFields = fields
+        .map(field => ({
+          ...field,
+          page: Number(field.page) || 1,
+          x: Number(field.x) || 0,
+          y: Number(field.y) || 0,
+          width: Number(field.width) || 180,
+          height: Number(field.height) || 60
+        }))
+        .filter(field => fieldAssignedToUser(field, currentUserId, assigneeId))
+        .sort((a, b) => (a.page || 1) - (b.page || 1) || (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0));
+
+      if (!previewUrl) {
+        alert('Document is not available for signing');
+        return;
+      }
+      if (!activeFields.length) {
+        console.warn('No signature fields assigned to current signer', { currentUserId, assigneeId, fields });
+        alert('No signature fields assigned to you');
+        return;
+      }
+      activeAssignmentId = assignmentId;
+      activeItemId = itemId;
+      activeAssigneeId = assigneeId;
+      esignFieldValues = {};
+      activeFields.forEach(field => {
+        if (field.type !== 'signature') {
+          ensureEsignFieldValue(field);
+        }
+      });
+      selectedEsignFieldIndex = 0;
+      esignDocumentName.textContent = docName || 'Document';
+      if (esignDocumentSubtitle) {
+        esignDocumentSubtitle.textContent = `You have ${activeFields.length} field${activeFields.length === 1 ? '' : 's'} to complete.`;
+      }
+      const viewerVersion = (previewUrl && docUrl && previewUrl !== docUrl) ? 'signed' : 'original';
+      esignDocumentLink.href = `/onboarding/assignments/${assignmentId}/items/${itemId}/document?version=${viewerVersion}&back=${encodeURIComponent(documentViewerBackUrl)}`;
+      esignDocumentLink.style.display = (docUrl || previewUrl) ? 'inline-flex' : 'none';
+      esignSignerName.value = '';
+      esignModal.classList.add('active');
+      esignPdfUrl = previewUrl;
+      esignPdfState.zoom = 1;
+      setTimeout(() => {
+        resizeSignatureCanvas();
+        clearSignature(true, true);
+        const storedSignature = localStorage.getItem('esignSignatureDataUrl');
+        if (storedSignature) {
+          loadSignatureDataUrl(storedSignature);
+        }
+        syncEsignSubmitUi();
+        renderEsignFieldsList();
+        renderEsignActiveFieldEditor();
+        loadEsignPdf(previewUrl, previewSourceUrl);
+        selectEsignField(0, { scroll: false });
+      }, 50);
+    }
+
+    function closeESignModal() {
+      esignModal.classList.remove('active');
+      activeAssignmentId = null;
+      activeItemId = null;
+      activeFields = [];
+      esignFieldValues = {};
+      selectedEsignFieldIndex = -1;
+      esignPdfState.pdf = null;
+      esignPdfState.page = 1;
+      esignPdfState.totalPages = 0;
+      esignPdfState.zoom = 1;
+      esignPdfState.viewport = null;
+      if (esignPdfViewer) {
+        esignPdfViewer.style.display = 'none';
+      }
+      if (esignPdfOverlay) {
+        esignPdfOverlay.innerHTML = '';
+      }
+      renderEsignFieldsList();
+      renderEsignActiveFieldEditor();
+      syncEsignSubmitUi();
+    }
+
+    esignModal.addEventListener('click', (event) => {
+      if (event.target === esignModal) {
+        closeESignModal();
+      }
+    });
+
+    esignSignerName.addEventListener('input', () => {
+      renderEsignOverlay();
+    });
+
+    esignActiveFieldInput?.addEventListener('input', (event) => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type === 'signature') return;
+      updateEsignFieldValue(field, event.target.value, 'sidebar');
+    });
+
+    esignActiveFieldTextarea?.addEventListener('input', (event) => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type === 'signature') return;
+      updateEsignFieldValue(field, event.target.value, 'sidebar');
+    });
+
+    esignStyleToggleButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const field = activeFields[selectedEsignFieldIndex];
+        if (!field || field.type !== 'text') return;
+        const styleKey = button.dataset.esignStyleToggle;
+        const currentStyle = getEsignFieldStyle(field);
+        updateEsignFieldStyle(field, { [styleKey]: !currentStyle[styleKey] });
+      });
+    });
+
+    esignStyleAlignButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const field = activeFields[selectedEsignFieldIndex];
+        if (!field || field.type !== 'text') return;
+        updateEsignFieldStyle(field, { align: button.dataset.esignStyleAlign || 'left' });
+      });
+    });
+
+    esignFontSizeSelect?.addEventListener('change', () => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type !== 'text') return;
+      updateEsignFieldStyle(field, { fontSize: Number(esignFontSizeSelect.value) || DEFAULT_ESIGN_TEXT_STYLE.fontSize });
+    });
+
+    esignStyleResetBtn?.addEventListener('click', () => {
+      const field = activeFields[selectedEsignFieldIndex];
+      if (!field || field.type !== 'text') return;
+      updateEsignFieldStyle(field, DEFAULT_ESIGN_TEXT_STYLE);
+    });
+
+    let esignPageScrubTimer = null;
+    esignPdfPageRange?.addEventListener('input', () => {
+      if (!esignPdfState.pdf) return;
+      const next = clampNumber(Number(esignPdfPageRange.value), 1, esignPdfState.totalPages || 1);
+      if (esignPdfPageLabel) {
+        esignPdfPageLabel.textContent = `Page ${next} / ${esignPdfState.totalPages}`;
+      }
+      clearTimeout(esignPageScrubTimer);
+      esignPageScrubTimer = setTimeout(() => {
+        esignPdfState.page = next;
+        renderEsignPdfPage();
+      }, 120);
+    });
+
+    document.querySelectorAll('[data-esign-button]').forEach(button => {
+      button.addEventListener('click', () => {
+        openESignModal(button);
+      });
+    });
+
+    bindPdfPanScroll(esignPdfCanvasWrap, { ignoreSelector: '.esign-field-preview' });
+
+    let esignResizeTimer = null;
+    window.addEventListener('resize', () => {
+      if (!esignPdfState.pdf) return;
+      clearTimeout(esignResizeTimer);
+      esignResizeTimer = setTimeout(() => {
+        renderEsignPdfPage();
+      }, 150);
+    });
+
+    async function submitESignature() {
+      if (!activeAssignmentId || !activeItemId) return;
+      const requiresSignature = activeEsignRequiresSignature();
+      if (requiresSignature && !hasSignature) {
+        alert('Please add your signature before submitting');
+        return;
+      }
+
+      const payload = { fieldValues: {} };
+      const missingField = activeFields.find(field => {
+        if (field.type === 'signature') {
+          return false;
+        }
+        const payloadValue = getEsignFieldPayload(field);
+        const value = field.type === 'text'
+          ? String(payloadValue?.text ?? '').trim()
+          : String(payloadValue ?? '').trim();
+        if (value) {
+          payload.fieldValues[getEsignFieldIdentity(field)] = payloadValue;
+        }
+        return !value;
+      });
+
+      if (missingField) {
+        selectEsignField(activeFields.indexOf(missingField), { scroll: true });
+        alert(`Please complete "${missingField.label || (missingField.type === 'date' ? 'Date' : 'Text')}" before submitting`);
+        return;
+      }
+
+      if (requiresSignature) {
+        payload.signatureDataUrl = signatureCanvas.toDataURL('image/png');
+      }
+      const signerName = esignSignerName.value.trim();
+      if (signerName) {
+        payload.signerName = signerName;
+      }
+
+      const response = await fetch(`/api/onboarding/${activeAssignmentId}/items/${activeItemId}/esign/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const triggerButton = document.querySelector(
+          `[data-esign-button][data-assignment="${activeAssignmentId}"][data-item="${activeItemId}"]`
+        );
+        setNextStepAfterAction(activeAssignmentId, triggerButton, activeItemId);
+        redirectWithSuccess('Document signed. Continuing to your next step.');
+      } else {
+        const result = await response.json();
+        alert(result.error || 'Failed to submit signature');
+      }
+    }
+
+    function initOnboardingFlows() {
+      const flows = document.querySelectorAll('[data-onboarding-flow]');
+      flows.forEach(flow => {
+        const assignmentId = (flow.dataset.assignment || '').toString();
+        const links = Array.from(flow.querySelectorAll('[data-step-link]'));
+        const panels = Array.from(flow.querySelectorAll('[data-step-panel]'));
+        const prevBtn = flow.querySelector('[data-step-prev]');
+        const nextBtn = flow.querySelector('[data-step-next]');
+        const indicator = flow.querySelector('[data-step-indicator]');
+        const indicatorInline = flow.querySelector('[data-step-indicator-inline]');
+        const progressBar = flow.querySelector('[data-progress-bar]');
+        const progressLabel = flow.querySelector('[data-progress-label]');
+
+        if (!links.length || !panels.length) return;
+
+        let currentIndex = 0;
+        const storageKey = assignmentId ? `onboardingFlow:${assignmentId}:step` : null;
+
+        const clampIndex = (value) => {
+          const n = Number(value);
+          if (!Number.isFinite(n)) return 0;
+          return Math.min(panels.length - 1, Math.max(0, Math.floor(n)));
+        };
+
+        const metaFor = (panel) => ({
+          required: panel?.dataset?.stepRequired === '1',
+          actionable: panel?.dataset?.stepActionable === '1',
+          userDone: panel?.dataset?.stepUserdone === '1'
+        });
+
+        const computeProgress = () => {
+          const actionableRequired = panels.filter(p => {
+            const m = metaFor(p);
+            return m.actionable && m.required;
+          });
+          const doneRequired = actionableRequired.filter(p => metaFor(p).userDone);
+
+          const total = actionableRequired.length;
+          const done = doneRequired.length;
+          const pct = total ? Math.round((done / total) * 100) : 100;
+
+          if (progressBar) {
+            progressBar.style.width = `${pct}%`;
+            progressBar.setAttribute('aria-valuenow', String(pct));
+          }
+          if (progressLabel) {
+            progressLabel.textContent = total ? `${done} / ${total} required done` : 'No required actions';
+          }
+        };
+
+        const updateIndicator = () => {
+          const label = `Step ${currentIndex + 1} of ${panels.length}`;
+          if (indicator) indicator.textContent = label;
+          if (indicatorInline) indicatorInline.textContent = label;
+        };
+
+        const setButtonState = () => {
+          if (prevBtn) prevBtn.disabled = currentIndex <= 0;
+          if (nextBtn) nextBtn.disabled = currentIndex >= panels.length - 1;
+        };
+
+        const selectStep = (index, opts = {}) => {
+          const options = {
+            persist: opts.persist !== false,
+            scroll: opts.scroll === true
+          };
+          currentIndex = clampIndex(index);
+
+          links.forEach(link => {
+            const isActive = clampIndex(link.dataset.step) === currentIndex;
+            link.classList.toggle('active', isActive);
+            link.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            link.tabIndex = isActive ? 0 : -1;
+          });
+
+          panels.forEach(panel => {
+            const isActive = clampIndex(panel.dataset.step) === currentIndex;
+            panel.classList.toggle('active', isActive);
+            if (isActive) {
+              panel.removeAttribute('hidden');
+            } else {
+              panel.setAttribute('hidden', '');
+            }
+          });
+
+          updateIndicator();
+          setButtonState();
+          computeProgress();
+
+          if (storageKey && options.persist) {
+            try { localStorage.setItem(storageKey, String(currentIndex)); } catch (e) {}
+          }
+
+          if (options.scroll) {
+            try { flow.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+          }
+        };
+
+        const pickInitialIndex = (savedIndex) => {
+          const safeSaved = clampIndex(savedIndex);
+          const savedPanel = panels[safeSaved];
+          if (savedPanel) {
+            const m = metaFor(savedPanel);
+            if (m.actionable && !m.userDone) return safeSaved;
+          }
+
+          let idx = panels.findIndex(p => {
+            const m = metaFor(p);
+            return m.actionable && m.required && !m.userDone;
+          });
+          if (idx >= 0) return idx;
+
+          idx = panels.findIndex(p => {
+            const m = metaFor(p);
+            return m.actionable && !m.userDone;
+          });
+          if (idx >= 0) return idx;
+
+          return safeSaved;
+        };
+
+        links.forEach(link => {
+          link.addEventListener('click', () => {
+            selectStep(link.dataset.step, { scroll: false });
+          });
+        });
+
+        if (prevBtn) {
+          prevBtn.addEventListener('click', () => {
+            selectStep(currentIndex - 1, { scroll: true });
+          });
+        }
+
+        if (nextBtn) {
+          nextBtn.addEventListener('click', () => {
+            selectStep(currentIndex + 1, { scroll: true });
+          });
+        }
+
+        const saved = storageKey ? localStorage.getItem(storageKey) : null;
+        selectStep(pickInitialIndex(saved), { persist: false, scroll: false });
+        flow.__selectStep = selectStep;
+      });
+    }
+
+    setWorkflowFilter(workflowFilterState.active || (workspaceModeEnabled ? 'all' : 'onboarding'));
+
+    if (document.querySelector('[data-personal-status-filter]')) {
+      filterPersonalAssignments('current');
+    }
+
+    initOnboardingFlows();
+
+    const workspaceParams = new URLSearchParams(window.location.search);
+    const focusAssignmentId = workspaceParams.get('focusAssignment');
+    const focusItemId = workspaceParams.get('focusItem');
+    const requestedAction = workspaceParams.get('action');
+    if (focusAssignmentId) {
+      const assignmentCard = document.querySelector(`[data-personal-assignment][data-assignment-id="${focusAssignmentId}"]`);
+      if (assignmentCard) {
+        const targetFlow = assignmentCard.querySelector(`[data-onboarding-flow][data-assignment="${focusAssignmentId}"]`);
+        const targetPanel = focusItemId && targetFlow
+          ? targetFlow.querySelector(`[data-step-panel][data-step-item-id="${focusItemId}"]`)
+          : null;
+
+        if (targetFlow && targetPanel && typeof targetFlow.__selectStep === 'function') {
+          targetFlow.__selectStep(targetPanel.dataset.step || 0, { persist: true, scroll: false });
+        }
+
+        assignmentCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        if (requestedAction === 'sign' && targetPanel) {
+          const signButton = targetPanel.querySelector('[data-esign-button]');
+          if (signButton) {
+            window.setTimeout(() => {
+              signButton.click();
+            }, 180);
+          }
+        }
+      }
+    }
+  </script>
+
+  <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

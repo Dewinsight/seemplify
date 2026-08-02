@@ -1,7 +1,8 @@
 const fs = require('fs');
 const Tesseract = require('tesseract.js');
 const mammoth = require('mammoth');
-const AzureOpenAIService = require('./azureOpenAIService');
+const AIModelService = require('./aiModelService');
+const { normalizeCvExtractedFields } = require('../utils/normalizeCvExtraction');
 
 // ✅ UPGRADED: Using PDF.js instead of pdf-parse for better text extraction
 // Note: pdfjs-dist uses ES modules, so we need dynamic import
@@ -9,7 +10,7 @@ let pdfjsLib = null;
 
 class CVParsingService {
   constructor() {
-    this.azureOpenAIService = new AzureOpenAIService();
+    this.aiModelService = new AIModelService();
   }
 
   /**
@@ -37,7 +38,7 @@ class CVParsingService {
       if (fileType === 'application/pdf') {
         // ✅ UPGRADED: Using PDF.js for better text extraction
         const pdfjs = await this.loadPdfJs();
-        const dataBuffer = fs.readFileSync(filePath);
+        const dataBuffer = await fs.promises.readFile(filePath);
         
         // Load the PDF document
         const loadingTask = pdfjs.getDocument({
@@ -97,11 +98,65 @@ class CVParsingService {
   }
 
   /**
-   * Parse CV and analyze with Azure OpenAI
+   * Parse a CV and analyze it with the managed AI runtime.
    * @param {string} filePath - Path to the uploaded file
    * @param {string} fileType - MIME type of the file
    * @returns {Promise<Object>} - Combined parsing and AI analysis result
    */
+  async analyzeText(resumeText, activity = 'candidate.cv_parse', options = {}) {
+    try {
+      if (!resumeText || resumeText.trim().length < 50) {
+        return {
+          success: false,
+          error: 'IMAGE_BASED_CV: Could not extract enough readable text from this CV.',
+          resumeText: resumeText || '',
+          aiAnalysis: { summary: '', strengths: [], potentialFlags: [] },
+          extractedFields: {},
+          parseSuccess: false,
+          aiSuccess: false
+        };
+      }
+      const aiAnalysisResult = await this.aiModelService.analyzeCV(resumeText, activity, options);
+      if (!aiAnalysisResult.success) {
+        return {
+          success: false,
+          error: aiAnalysisResult.error || 'AI CV analysis is temporarily unavailable.',
+          code: aiAnalysisResult.code,
+          retryable: aiAnalysisResult.retryable === true,
+          resumeText,
+          aiAnalysis: { summary: '', strengths: [], potentialFlags: [] },
+          extractedFields: {},
+          parseSuccess: true,
+          aiSuccess: false
+        };
+      }
+      const extractedFields = normalizeCvExtractedFields(aiAnalysisResult.extractedFields || {});
+      return {
+        success: true,
+        resumeText,
+        aiAnalysis: {
+          summary: aiAnalysisResult.summary || 'N/A',
+          strengths: aiAnalysisResult.strengths || [],
+          potentialFlags: aiAnalysisResult.potentialFlags || []
+        },
+        workExperience: extractedFields.workExperience || null,
+        extractedFields,
+        parseSuccess: true,
+        aiSuccess: true
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message || 'AI CV analysis is temporarily unavailable.',
+        resumeText: resumeText || '',
+        aiAnalysis: { summary: '', strengths: [], potentialFlags: [] },
+        extractedFields: {},
+        parseSuccess: Boolean(resumeText),
+        aiSuccess: false
+      };
+    }
+  }
+
   async parseAndAnalyze(filePath, fileType) {
     try {
       console.log('🔍 Starting CV parsing and AI analysis...');
@@ -117,7 +172,7 @@ class CVParsingService {
         
         return {
           success: false,
-          error: 'Could not extract readable text from CV. The file may be:\n- A scanned image/photo (not text-based PDF)\n- Corrupted or password-protected\n- An unsupported format\n\nPlease try uploading a text-based PDF or DOCX file, or enter candidate information manually.',
+          error: 'IMAGE_BASED_CV: Do NOT use image-based or scanned CVs — we cannot extract text from them. Please upload a text-based PDF or DOCX file with selectable text, or enter your information manually. Ensure the email in your CV is correct — a wrong email can cause issues.',
           resumeText: resumeText || '',
           aiAnalysis: {
             summary: "Text extraction failed - manual review required",
@@ -132,8 +187,20 @@ class CVParsingService {
       
       console.log(`✅ CV text extracted successfully (${resumeText.length} characters). Proceeding with AI analysis...`);
       
-      // Step 2: Analyze with Azure OpenAI
-      const aiAnalysisResult = await this.azureOpenAIService.analyzeCV(resumeText);
+      // Step 2: analyze only the text extracted from the uploaded document.
+      const aiAnalysisResult = await this.aiModelService.analyzeCV(resumeText);
+      if (!aiAnalysisResult.success) {
+        return {
+          success: false,
+          error: aiAnalysisResult.error || 'AI CV analysis is temporarily unavailable. Please retry the upload.',
+          resumeText,
+          aiAnalysis: { summary: '', strengths: [], potentialFlags: [] },
+          extractedFields: {},
+          parseSuccess: true,
+          aiSuccess: false
+        };
+      }
+      const extractedFields = normalizeCvExtractedFields(aiAnalysisResult.extractedFields || {});
       
       console.log('✅ CV parsing and AI analysis completed');
       
@@ -145,8 +212,8 @@ class CVParsingService {
           strengths: aiAnalysisResult.strengths || [],
           potentialFlags: aiAnalysisResult.potentialFlags || [],
         },
-        workExperience: aiAnalysisResult.extractedFields?.workExperience || null,
-        extractedFields: aiAnalysisResult.extractedFields || {},
+        workExperience: extractedFields.workExperience || null,
+        extractedFields,
         parseSuccess: resumeText.length > 0,
         aiSuccess: aiAnalysisResult.success
       };
@@ -172,4 +239,4 @@ class CVParsingService {
   }
 }
 
-module.exports = CVParsingService; 
+module.exports = CVParsingService;

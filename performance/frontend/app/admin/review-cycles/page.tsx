@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import { useUserContext, useReviewCycles } from '@/lib/hooks';
+import api from '@/lib/api';
 import {
   Box, Typography, Card, CardContent, Alert, Button,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -18,6 +19,8 @@ export default function ReviewCyclesPage() {
   const { cycles, isLoading: cyclesLoading, mutate } = useReviewCycles();
   
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
   const [newCycle, setNewCycle] = useState({
     title: '',
     type: 'manager-only',
@@ -51,22 +54,32 @@ export default function ReviewCyclesPage() {
   }
 
   const handleCreateCycle = async () => {
+    setErrorMessage('');
+    setActionLoading('create');
     try {
-      // Call API to create cycle
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006'}/api/reviews/cycles`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(newCycle)
-      });
-      
-      if (response.ok) {
-        mutate(); // Refresh cycles list
-        setCreateDialogOpen(false);
-        setNewCycle({ title: '', type: 'manager-only', startDate: '', endDate: '' });
-      }
-    } catch (error) {
+      await api.post('/reviews/cycles', { ...newCycle, autoActivate: true });
+      mutate(); // Refresh cycles list
+      setCreateDialogOpen(false);
+      setNewCycle({ title: '', type: 'manager-only', startDate: '', endDate: '' });
+    } catch (error: any) {
       console.error('Error creating cycle:', error);
+      setErrorMessage(error.response?.data?.error || 'Failed to create and activate review cycle');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleActivateCycle = async (cycleId: string) => {
+    setErrorMessage('');
+    setActionLoading(cycleId);
+    try {
+      await api.post(`/reviews/cycles/${cycleId}/activate`);
+      mutate();
+    } catch (error: any) {
+      console.error('Error activating cycle:', error);
+      setErrorMessage(error.response?.data?.error || 'Failed to activate review cycle');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -112,6 +125,12 @@ export default function ReviewCyclesPage() {
       </Box>
 
       {/* Summary Cards */}
+      {errorMessage && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {errorMessage}
+        </Alert>
+      )}
+
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid size={{ xs: 12, sm: 4 }}>
           <Card>
@@ -205,7 +224,12 @@ export default function ReviewCyclesPage() {
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Activate">
-                              <IconButton size="small" color="success">
+                              <IconButton
+                                size="small"
+                                color="success"
+                                onClick={() => handleActivateCycle(cycle._id)}
+                                disabled={actionLoading === cycle._id}
+                              >
                                 <PlayArrow fontSize="small" />
                               </IconButton>
                             </Tooltip>
@@ -279,9 +303,9 @@ export default function ReviewCyclesPage() {
           <Button 
             onClick={handleCreateCycle} 
             variant="contained"
-            disabled={!newCycle.title || !newCycle.startDate || !newCycle.endDate}
+            disabled={!newCycle.title || !newCycle.startDate || !newCycle.endDate || actionLoading === 'create'}
           >
-            Create Cycle
+            {actionLoading === 'create' ? 'Creating...' : 'Create & Activate'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -11,7 +11,7 @@ import {
   AccountTree, ExpandMore, ExpandLess, Business, Groups, Person,
   ArrowForward, CheckCircle, Warning, Link as LinkIcon
 } from '@mui/icons-material';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 
 interface OKRNode {
@@ -40,7 +40,7 @@ interface HierarchyData {
 }
 
 export default function OKRAlignmentPage() {
-  const { data: session, status } = useSession();
+  const { isLoading: authLoading } = useAuth();
   const { isManager, isHRAdmin, isLoading: userLoading } = useUserContext();
   const [hierarchy, setHierarchy] = useState<HierarchyData | null>(null);
   const [summary, setSummary] = useState<any>(null);
@@ -63,7 +63,7 @@ export default function OKRAlignmentPage() {
     fetchHierarchy();
   }, []);
 
-  if (status === 'loading' || userLoading || loading) {
+  if (authLoading || userLoading || loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
         <CircularProgress />
@@ -119,21 +119,21 @@ export default function OKRAlignmentPage() {
               </IconButton>
             )}
             {!hasChildren && <Box sx={{ width: 32 }} />}
-            
+
             {getTypeIcon(okr.type)}
-            
+
             <Box flex={1}>
               <Box display="flex" alignItems="center" gap={1}>
                 <Typography variant="subtitle1" fontWeight="bold">
                   {okr.objectives?.[0]?.title || 'Untitled OKR'}
                 </Typography>
-                <Chip 
-                  size="small" 
+                <Chip
+                  size="small"
                   label={okr.type}
                   color={getTypeColor(okr.type) as any}
                 />
-                <Chip 
-                  size="small" 
+                <Chip
+                  size="small"
                   label={okr.status}
                   variant="outlined"
                 />
@@ -142,23 +142,23 @@ export default function OKRAlignmentPage() {
                 {okr.period} • Owner: {okr.ownerId}
               </Typography>
             </Box>
-            
+
             <Box sx={{ minWidth: 150 }}>
               <Box display="flex" justifyContent="space-between" mb={0.5}>
                 <Typography variant="caption">Progress</Typography>
                 <Typography variant="caption" fontWeight="bold">{okr.progress || 0}%</Typography>
               </Box>
-              <LinearProgress 
-                variant="determinate" 
+              <LinearProgress
+                variant="determinate"
                 value={okr.progress || 0}
                 sx={{ height: 6, borderRadius: 1 }}
                 color={okr.progress >= 70 ? 'success' : okr.progress >= 40 ? 'warning' : 'error'}
               />
             </Box>
-            
+
             {hasChildren && (
-              <Chip 
-                size="small" 
+              <Chip
+                size="small"
                 label={`${okr.children?.length} aligned`}
                 icon={<LinkIcon />}
                 variant="outlined"
@@ -166,7 +166,7 @@ export default function OKRAlignmentPage() {
               />
             )}
           </Box>
-          
+
           {/* Key Results Preview */}
           {isExpanded && okr.objectives?.[0]?.keyResults && (
             <Box mt={2} pl={5}>
@@ -175,8 +175,8 @@ export default function OKRAlignmentPage() {
               </Typography>
               {okr.objectives[0].keyResults.map((kr, idx) => (
                 <Box key={idx} display="flex" alignItems="center" gap={2} mt={0.5}>
-                  <CheckCircle 
-                    sx={{ fontSize: 14 }} 
+                  <CheckCircle
+                    sx={{ fontSize: 14 }}
                     color={kr.currentValue >= kr.targetValue ? 'success' : 'action'}
                   />
                   <Typography variant="body2" sx={{ flex: 1 }}>
@@ -190,7 +190,7 @@ export default function OKRAlignmentPage() {
             </Box>
           )}
         </Paper>
-        
+
         {/* Children */}
         {hasChildren && (
           <Collapse in={isExpanded}>
@@ -276,7 +276,7 @@ export default function OKRAlignmentPage() {
             OKR Hierarchy
           </Typography>
           <Divider sx={{ my: 2 }} />
-          
+
           {hierarchy?.organization && hierarchy.organization.length > 0 ? (
             hierarchy.organization.map(okr => renderOKRNode(okr))
           ) : (
@@ -299,7 +299,7 @@ export default function OKRAlignmentPage() {
               These OKRs are not connected to a parent objective. Consider aligning them to improve goal coherence.
             </Typography>
             <Divider sx={{ my: 2 }} />
-            
+
             {hierarchy?.unalignedTeam?.map(okr => (
               <Box key={okr._id} sx={{ mb: 1 }}>
                 <Paper variant="outlined" sx={{ p: 2, borderColor: 'warning.main' }}>
@@ -318,7 +318,7 @@ export default function OKRAlignmentPage() {
                 </Paper>
               </Box>
             ))}
-            
+
             {hierarchy?.unalignedIndividual?.map(okr => (
               <Box key={okr._id} sx={{ mb: 1 }}>
                 <Paper variant="outlined" sx={{ p: 2, borderColor: 'warning.light' }}>

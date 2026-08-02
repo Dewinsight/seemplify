@@ -222,7 +222,7 @@ export default function SubscriptionPage() {
               ) : !currentOrgPlan ? (
                 <div className="text-center py-6 sm:py-8">
                   <div className="text-yellow-600 mb-2 text-sm">⚠️ No plan details available</div>
-                  <p className="text-xs text-muted-foreground">Plan: {currentOrganization?.subscription?.plan || 'None'}</p>
+                  <p className="text-xs text-gray-600">Plan: {currentOrganization?.subscription?.plan || 'None'}</p>
                 </div>
               ) : (
                 <div className="mt-2">
@@ -242,7 +242,7 @@ export default function SubscriptionPage() {
                       {orgMemberLimit !== 0 && orgMemberLimit !== 'unlimited' && (
                         <Progress value={(currentMembers / (orgMemberLimit as number)) * 100} className="h-1.5 sm:h-2" />
                       )}
-                      <p className="text-xs text-muted-foreground dark:text-gray-400 mt-1.5 text-center">
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1.5 text-center">
                         {orgMemberLimit === 0 || orgMemberLimit === 'unlimited' ? 'Unlimited members' : 
                          `${(orgMemberLimit as number) - currentMembers} slots available`}
                       </p>
@@ -313,7 +313,7 @@ export default function SubscriptionPage() {
                         <CardTitle className="text-2xl font-bold text-gray-900">{plan.name}</CardTitle>
                         <div className="flex items-baseline justify-center gap-1">
                           <span className="text-4xl font-black text-gray-900">${plan.price}</span>
-                          <span className="text-sm font-medium text-muted-foreground">/{plan.billingCycle}</span>
+                          <span className="text-sm font-medium text-gray-600">/{plan.billingCycle}</span>
                         </div>
                         <CardDescription className="text-base font-medium text-blue-700">
                           {plan.limits?.memberLimit === 0 || plan.limits?.memberLimit === 'unlimited' 
@@ -331,14 +331,14 @@ export default function SubscriptionPage() {
                           <h4 className="font-semibold text-sm text-gray-800">Plan Limits</h4>
                           <div className="grid grid-cols-1 gap-2 text-sm">
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">Members:</span>
+                              <span className="text-gray-600">Members:</span>
                               <span className="font-semibold">
                                 {plan.limits?.memberLimit === 0 || plan.limits?.memberLimit === 'unlimited' 
                                   ? '∞' : plan.limits?.memberLimit}
                               </span>
                             </div>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-2">Jobs and candidates managed by credits</p>
+                          <p className="text-xs text-gray-500 mt-2">Jobs and candidates managed by credits</p>
                         </div>
                         
                         {/* Plan Features */}
@@ -355,7 +355,7 @@ export default function SubscriptionPage() {
                                 </li>
                               ))}
                               {plan.features.length > 4 && (
-                                <li className="text-xs text-muted-foreground pl-6">
+                                <li className="text-xs text-gray-500 pl-6">
                                   +{plan.features.length - 4} more features
                                 </li>
                               )}
@@ -399,7 +399,7 @@ export default function SubscriptionPage() {
                     <CardContent className="flex flex-col justify-center items-center py-12">
                       <CreditCard className="w-16 h-16 text-gray-400 mb-4" />
                       <h3 className="text-lg font-semibold text-gray-700 mb-2">No Plans Available</h3>
-                      <p className="text-muted-foreground text-center max-w-md">
+                      <p className="text-gray-500 text-center max-w-md">
                         No organization plans are currently available for upgrade. Check back later or contact support.
                       </p>
                     </CardContent>
@@ -434,7 +434,7 @@ export default function SubscriptionPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">
+            <p className="text-gray-600">
               Go to your organization settings to create a new organization or switch to an existing one.
             </p>
           </CardContent>

@@ -44,7 +44,7 @@ class BackgroundServiceManager {
   /**
    * Stop all registered services (for graceful shutdown)
    */
-  stopAll() {
+  async stopAll() {
     if (this.isShuttingDown) {
       console.log('⏭️ Already shutting down...');
       return;
@@ -56,7 +56,7 @@ class BackgroundServiceManager {
     for (const [name, service] of this.services) {
       try {
         if (typeof service.stop === 'function') {
-          service.stop();
+          await service.stop();
           console.log(`✅ Stopped service: ${name}`);
         }
       } catch (error) {
@@ -102,17 +102,20 @@ class BackgroundServiceManager {
 
 // Create singleton instance
 const backgroundServiceManager = new BackgroundServiceManager();
+let processShutdownPromise = null;
 
 // Handle graceful shutdown
-process.on('SIGTERM', () => {
+process.once('SIGTERM', async () => {
   console.log('📨 SIGTERM received, shutting down gracefully...');
-  backgroundServiceManager.stopAll();
+  processShutdownPromise ||= backgroundServiceManager.stopAll();
+  await processShutdownPromise;
   process.exit(0);
 });
 
-process.on('SIGINT', () => {
+process.once('SIGINT', async () => {
   console.log('📨 SIGINT received, shutting down gracefully...');
-  backgroundServiceManager.stopAll();
+  processShutdownPromise ||= backgroundServiceManager.stopAll();
+  await processShutdownPromise;
   process.exit(0);
 });
 

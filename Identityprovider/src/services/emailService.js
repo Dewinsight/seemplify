@@ -376,6 +376,67 @@ Need help? Contact us at support@aiinidentity.com
   }
 
   /**
+   * Send notification email with custom content
+   * @param {Object} options
+   * @param {String} options.to - Recipient email
+   * @param {String} options.toName - Recipient name
+   * @param {String} options.subject - Email subject
+   * @param {String} options.html - Custom HTML content
+   * @param {String} options.text - Plain text fallback
+   * @returns {Promise}
+   */
+  async sendNotificationEmail({ to, toName, subject, html, text }) {
+    const displayName = toName || to.split('@')[0]
+
+    // Wrap custom HTML in branded template
+    const wrappedHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5;">
+        <div style="max-width: 600px; margin: 40px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <!-- Header with gradient -->
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; text-align: center;">
+            <h1 style="margin: 0; color: white; font-size: 20px; font-weight: 600;">AIIN Identity</h1>
+          </div>
+
+          <!-- Content -->
+          <div style="padding: 32px 24px; color: #333;">
+            <p style="font-size: 16px; margin: 0 0 16px;">Hi ${displayName},</p>
+            <div style="font-size: 16px; line-height: 1.6; color: #333;">
+              ${html}
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div style="background: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0 0 8px; font-size: 14px; color: #666;">
+              This notification was sent via AIIN Identity
+            </p>
+            <p style="margin: 0; font-size: 12px; color: #999;">
+              &copy; ${new Date().getFullYear()} AIIN Identity. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+
+    // Generate plain text from HTML if not provided
+    const plainText = text || `Hi ${displayName},\n\n${html.replace(/<[^>]*>/g, '').trim()}\n\n---\nThis notification was sent via AIIN Identity`
+
+    return this.sendEmail({
+      to,
+      subject,
+      html: wrappedHtml,
+      text: plainText
+    })
+  }
+
+  /**
    * Send password reset OTP (alternative to token-based reset)
    * @param {String} to - Recipient email
    * @param {String} otp - 6-digit OTP code

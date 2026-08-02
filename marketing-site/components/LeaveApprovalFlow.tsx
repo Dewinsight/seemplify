@@ -45,12 +45,12 @@ const LeaveNode = ({ data }: { data: { label: string; sublabel: string; color: s
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className={`px-5 py-3.5 rounded-xl border ${data.color} ${data.active ? 'ring-1 ring-emerald-500/50 ring-offset-1 ring-offset-zinc-950' : ''} bg-zinc-900/90 backdrop-blur transition-all duration-300`}
+      className={`px-5 py-3.5 rounded-xl border ${data.color} ${data.active ? 'ring-1 ring-violet-500/50 ring-offset-1 ring-offset-white dark:ring-offset-zinc-950' : ''} bg-white dark:bg-zinc-900/90 backdrop-blur transition-all duration-300 shadow-sm dark:shadow-none`}
     >
       <div className="flex items-center gap-3">
-        <div className={`${data.active ? 'text-emerald-400' : 'text-zinc-400'} transition-colors duration-300`}>{data.icon}</div>
+        <div className={`${data.active ? 'text-violet-500 dark:text-violet-400' : 'text-zinc-500 dark:text-zinc-400'} transition-colors duration-300`}>{data.icon}</div>
         <div>
-          <div className="font-medium text-white text-sm">{data.label}</div>
+          <div className="font-medium text-zinc-900 dark:text-white text-sm">{data.label}</div>
           <div className="text-xs text-zinc-500">{data.sublabel}</div>
         </div>
       </div>
@@ -77,25 +77,25 @@ export default function LeaveApprovalFlow() {
       id: '1',
       type: 'leave',
       position: { x: 0, y: 50 },
-      data: { label: 'Request', sublabel: 'Submit Leave', color: 'border-zinc-700', icon: <PencilIcon />, active: activeStep === 0 },
+      data: { label: 'Request', sublabel: 'Submit Leave', color: 'border-zinc-200 dark:border-zinc-700', icon: <PencilIcon />, active: activeStep === 0 },
     },
     {
       id: '2',
       type: 'leave',
       position: { x: 170, y: 50 },
-      data: { label: 'Review', sublabel: 'Manager', color: 'border-zinc-700', icon: <EyeIcon />, active: activeStep === 1 },
+      data: { label: 'Review', sublabel: 'Manager', color: 'border-zinc-200 dark:border-zinc-700', icon: <EyeIcon />, active: activeStep === 1 },
     },
     {
       id: '3',
       type: 'leave',
       position: { x: 340, y: 50 },
-      data: { label: 'Approve', sublabel: 'One Click', color: 'border-zinc-700', icon: <CheckIcon />, active: activeStep === 2 },
+      data: { label: 'Approve', sublabel: 'One Click', color: 'border-zinc-200 dark:border-zinc-700', icon: <CheckIcon />, active: activeStep === 2 },
     },
     {
       id: '4',
       type: 'leave',
       position: { x: 510, y: 50 },
-      data: { label: 'Synced', sublabel: 'Calendar Updated', color: 'border-zinc-700', icon: <CalendarIcon />, active: activeStep === 3 },
+      data: { label: 'Synced', sublabel: 'Calendar Updated', color: 'border-zinc-200 dark:border-zinc-700', icon: <CalendarIcon />, active: activeStep === 3 },
     },
   ]
 
@@ -104,27 +104,27 @@ export default function LeaveApprovalFlow() {
       id: 'e1-2',
       source: '1',
       target: '2',
-      style: { stroke: activeStep >= 1 ? '#10b981' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 1 ? '#10b981' : '#3f3f46', width: 16, height: 16 }
+      style: { stroke: activeStep >= 1 ? '#8b5cf6' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 1 ? '#8b5cf6' : '#3f3f46', width: 16, height: 16 }
     },
     {
       id: 'e2-3',
       source: '2',
       target: '3',
-      style: { stroke: activeStep >= 2 ? '#10b981' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 2 ? '#10b981' : '#3f3f46', width: 16, height: 16 }
+      style: { stroke: activeStep >= 2 ? '#8b5cf6' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 2 ? '#8b5cf6' : '#3f3f46', width: 16, height: 16 }
     },
     {
       id: 'e3-4',
       source: '3',
       target: '4',
-      style: { stroke: activeStep >= 3 ? '#10b981' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
-      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 3 ? '#10b981' : '#3f3f46', width: 16, height: 16 }
+      style: { stroke: activeStep >= 3 ? '#8b5cf6' : '#3f3f46', strokeWidth: 1.5, transition: 'stroke 0.3s ease' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: activeStep >= 3 ? '#8b5cf6' : '#3f3f46', width: 16, height: 16 }
     },
   ]
 
   return (
-    <div className="w-full h-[160px] rounded-xl overflow-hidden bg-zinc-900/40 border border-zinc-800/60">
+    <div className="w-full h-[160px] rounded-xl overflow-hidden bg-white/80 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800/60">
       <ReactFlow
         nodes={nodes}
         edges={edges}

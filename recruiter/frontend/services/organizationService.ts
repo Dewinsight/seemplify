@@ -1,4 +1,5 @@
 import { apiRequest } from './apiConfig';
+import { getIdpBaseUrl } from '@/utils/env';
 
 interface Organization {
   _id: string;
@@ -174,38 +175,34 @@ class OrganizationService {
   private orgCache = {
     data: null as Organization[] | null,
     timestamp: 0,
-    ttl: 5000 // 5 seconds cache TTL (reduced from 10s for faster updates)
+    ttl: 10000 // 10 seconds cache TTL
   };
 
-  // Clear organization cache - call this when you need fresh data
   clearCache() {
-    console.log('🧹 Clearing organization cache');
     this.orgCache.data = null;
     this.orgCache.timestamp = 0;
   }
-  
+
   async getUserOrganizations(forceRefresh = false): Promise<Organization[]> {
-    console.log('🔍 OrganizationService.getUserOrganizations called', { forceRefresh });
-    
-    // Check if we have valid cached data (skip cache if forceRefresh is true)
+    console.log('OrganizationService.getUserOrganizations called', { forceRefresh });
+
     const now = Date.now();
     if (!forceRefresh && this.orgCache.data && (now - this.orgCache.timestamp < this.orgCache.ttl)) {
-      console.log(`🏢 Using cached organization data (${Math.round((now - this.orgCache.timestamp)/1000)}s old)`);
+      console.log(`Using cached organization data (${Math.round((now - this.orgCache.timestamp) / 1000)}s old)`);
       return this.orgCache.data;
     }
-    
-    // Clear cache if force refresh
+
     if (forceRefresh) {
       this.clearCache();
     }
-    
-    const requestUrl = `/api/organizations/user`;
-    console.log('📡 Request URL:', requestUrl);
-    
+
+    const requestUrl = '/api/organizations/user';
+    console.log('Request URL:', requestUrl);
+
     try {
-      console.log('🚀 Making API request...');
+      console.log('Making organization API request...');
       const response = await apiRequest(requestUrl);
-      console.log('📡 getUserOrganizations response:', {
+      console.log('getUserOrganizations response:', {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
@@ -213,48 +210,44 @@ class OrganizationService {
       });
 
       if (!response.ok) {
-        console.log('❌ Response not OK, parsing error...');
-        let error;
+        let error: any = {};
         try {
           error = await response.json();
         } catch (parseError) {
-          console.error('❌ Failed to parse error response:', parseError);
-          // If we can't parse the response, create a generic error
-          error = { msg: 'Failed to fetch organizations', requiresOrganizationSetup: true };
+          console.error('Failed to parse organization error response:', parseError);
         }
-        
-        console.error('❌ getUserOrganizations error response:', error);
-        
-        // Handle empty error object
-        if (!error || Object.keys(error).length === 0) {
-          error = { msg: 'Organization setup required', requiresOrganizationSetup: true };
-        }
-        
-        if (error.requiresOrganizationSetup || error.msg?.includes('Organization required')) {
-          const setupError = new Error(error.msg || 'Organization setup required');
+
+        const message = error?.msg || error?.message || 'Failed to fetch organizations';
+        const isSetupRequired = Boolean(
+          error?.requiresOrganizationSetup || message.includes('Organization required')
+        );
+
+        if (isSetupRequired) {
+          const setupError = new Error(message);
           (setupError as any).requiresOrganizationSetup = true;
-          console.log('🏢 Throwing organization setup error');
+          (setupError as any).status = response.status;
+          (setupError as any).code = error?.code;
           throw setupError;
         }
-        throw new Error(error.msg || 'Failed to fetch organizations');
+
+        const requestError = new Error(message);
+        (requestError as any).status = response.status;
+        (requestError as any).code = error?.code;
+        throw requestError;
       }
 
-      console.log('✅ Response OK, parsing JSON...');
       const result = await response.json();
-      console.log('📋 getUserOrganizations result:', result);
-      
-      // Debug each organization's role (keeping minimal logging)
-      if (Array.isArray(result) && result.length > 0) {
-        console.log('📋 Loaded organizations with roles:', result.map(org => `${org.name}: ${org.userRole}`));
-      }
-      
-      // Handle case where result is empty or not an array
+      console.log('getUserOrganizations result:', result);
+
       if (!result || !Array.isArray(result)) {
-        console.log('⚠️ No organizations found or invalid response format');
+        console.log('No organizations found or invalid response format');
         return [];
       }
-      
-      // Prefer IdP-linked organizations when available (avoid showing legacy-only orgs)
+
+      if (result.length > 0) {
+        console.log('Loaded organizations with roles:', result.map((org: any) => `${org.name}: ${org.userRole}`));
+      }
+
       const hasIdpLinked = result.some((org: any) => org.idpOrganizationId);
       let filtered = result;
       if (hasIdpLinked) {
@@ -269,25 +262,24 @@ class OrganizationService {
           });
       }
 
-      // Update cache with new data
       this.orgCache.data = filtered;
       this.orgCache.timestamp = Date.now();
-      
+
       return filtered;
     } catch (error) {
-      console.error('❌ OrganizationService.getUserOrganizations error:', error);
-      console.log('🔍 Error type:', typeof error);
-      console.log('🔍 Error constructor:', error?.constructor?.name);
-      console.log('🔍 Error message:', (error as any)?.message);
-      
-      // If it's a network error or other issue, treat as organization setup required
-      if (!(error as any).requiresOrganizationSetup) {
-        const setupError = new Error('Organization setup required');
-        (setupError as any).requiresOrganizationSetup = true;
-        throw setupError;
+      console.error('OrganizationService.getUserOrganizations error:', error);
+
+      if ((error as any)?.requiresOrganizationSetup) {
+        throw error;
       }
-      
-      throw error;
+
+      if ((error as any)?.message) {
+        throw error;
+      }
+
+      const unknownError = new Error('Failed to fetch organizations');
+      (unknownError as any).code = 'organizations_fetch_failed';
+      throw unknownError;
     }
   }
 
@@ -937,7 +929,7 @@ class OrganizationService {
    * @param orgId - Optional organization ID for specific org management
    */
   getIdpManagementUrl(section: string = 'organizations', orgId?: string): string {
-    const baseUrl = process.env.NEXT_PUBLIC_IDP_URL || process.env.NEXT_PUBLIC_OIDC_ISSUER || '';
+    const baseUrl = getIdpBaseUrl();
 
     if (!baseUrl) {
       console.warn('⚠️ No IDP URL configured');
@@ -978,3 +970,4 @@ class OrganizationService {
 
 export type { Organization, PendingInvitation, UserPendingInvitation };
 export default new OrganizationService(); 
+

@@ -18,7 +18,10 @@ export async function POST(request: NextRequest) {
     const backendFormData = new FormData()
     backendFormData.append('cv', file)
 
-    const backendResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:5000'}/api/cv/parse`, {
+    const backendBaseUrl =
+      process.env.BACKEND_URL ||
+      (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com');
+    const backendResponse = await fetch(`${backendBaseUrl}/api/cv/parse`, {
       method: 'POST',
       body: backendFormData,
     })

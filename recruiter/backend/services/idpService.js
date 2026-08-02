@@ -8,6 +8,10 @@
 const { createIdpClient, refreshIdpToken, checkIdpHealth } = require('../config/idpClient');
 const User = require('../models/User');
 
+const DEFAULT_IDP_HUB_URL = process.env.NODE_ENV === 'development'
+  ? 'http://localhost:4000'
+  : 'https://auth.seemplifyai.com';
+
 /**
  * Execute an IdP API call with automatic token refresh on 401
  * @param {string} userId - SmartHR user ID
@@ -180,7 +184,7 @@ const isIdpAvailable = async () => {
  * @returns {string} - IdP management URL
  */
 const getIdpManagementUrl = (idpOrganizationId = null, section = 'members') => {
-  const baseUrl = process.env.IDP_HUB_URL || process.env.OIDC_ISSUER || 'http://localhost:4000';
+  const baseUrl = process.env.IDP_HUB_URL || process.env.OIDC_ISSUER || DEFAULT_IDP_HUB_URL;
 
   // Map section names to correct IdP routes
   // IdP routes follow pattern: /organizations/:orgId/{section}

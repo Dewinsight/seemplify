@@ -2,6 +2,7 @@ import express from 'express'
 import { Team } from '../models/Team.js'
 import { Organization } from '../models/Organization.js'
 import { Account } from '../models/Account.js'
+import { getDerivedManagerInfo, hasLineManagerRole } from '../utils/teamManager.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -13,6 +14,27 @@ import webhookService from '../services/webhookService.js'
 
 const router = express.Router()
 
+async function findCrossDepartmentTeamMembership(organizationId, accountId, departmentId, excludedTeamId = null) {
+  if (!departmentId) return null
+
+  const query = {
+    organization: organizationId,
+    department: { $ne: departmentId },
+    members: {
+      $elemMatch: {
+        account: accountId,
+        status: 'active'
+      }
+    }
+  }
+
+  if (excludedTeamId) {
+    query._id = { $ne: excludedTeamId }
+  }
+
+  return Team.findOne(query).select('name department').lean()
+}
+
 /**
  * Get teams for an organization
  * GET /api/organizations/:orgId/teams
@@ -22,6 +44,7 @@ router.get('/organizations/:orgId/teams',
   requireOrganizationMember,
   async (req, res) => {
     try {
+      await req.organization.save()
       const { tree } = req.query
 
       if (tree === 'true') {
@@ -41,15 +64,15 @@ router.get('/organizations/:orgId/teams',
         id: team._id,
         name: team.name,
         description: team.description,
+        department: team.department ? {
+          id: team.department,
+          name: req.organization.getDepartmentById(team.department)?.name || 'General'
+        } : null,
         parentTeam: team.parentTeam ? {
           id: team.parentTeam._id,
           name: team.parentTeam.name
         } : null,
-        manager: team.manager ? {
-          id: team.manager._id,
-          email: team.manager.email,
-          name: team.manager.profile?.name
-        } : null,
+        manager: getDerivedManagerInfo(team),
         memberCount: team.memberCount,
         createdAt: team.createdAt
       })))
@@ -71,7 +94,8 @@ router.post('/organizations/:orgId/teams',
   requireOrganizationAdmin,
   async (req, res) => {
     try {
-      const { name, description, parentTeamId, managerId } = req.body
+      await req.organization.save()
+      const { name, description, parentTeamId, departmentId } = req.body
 
       if (!name || name.trim().length === 0) {
         return res.status(400).json({ error: 'Team name is required' })
@@ -81,11 +105,23 @@ router.post('/organizations/:orgId/teams',
         return res.status(400).json({ error: 'Team name must be 100 characters or less' })
       }
 
+      if (!departmentId) {
+        return res.status(400).json({ error: 'Department is required' })
+      }
+
+      const department = req.organization.getDepartmentById(departmentId)
+      if (!department) {
+        return res.status(400).json({ error: 'Invalid department' })
+      }
+
       // Verify parent team belongs to same organization
       if (parentTeamId) {
         const parentTeam = await Team.findById(parentTeamId)
         if (!parentTeam || parentTeam.organization.toString() !== req.params.orgId) {
           return res.status(400).json({ error: 'Invalid parent team' })
+        }
+        if (parentTeam.department?.toString() !== departmentId.toString()) {
+          return res.status(400).json({ error: 'Parent team must belong to the same department' })
         }
       }
 
@@ -93,8 +129,9 @@ router.post('/organizations/:orgId/teams',
         organization: req.params.orgId,
         name: name.trim(),
         description: description?.trim(),
+        department: departmentId,
         parentTeam: parentTeamId || null,
-        manager: null, // Manager must be set separately with line_manager role
+        manager: null,
         members: []
       })
 
@@ -104,6 +141,7 @@ router.post('/organizations/:orgId/teams',
         id: team._id,
         name: team.name,
         description: team.description,
+        departmentId: team.department,
         parentTeamId: team.parentTeam,
         message: 'Team created successfully'
       })
@@ -134,6 +172,7 @@ router.get('/:teamId',
 
       // Verify user is member of organization
       const organization = await Organization.findById(team.organization._id)
+      await organization.save()
       if (!organization.isMember(req.user._id)) {
         return res.status(403).json({ error: 'Not a member of this organization' })
       }
@@ -149,6 +188,10 @@ router.get('/:teamId',
         id: team._id,
         name: team.name,
         description: team.description,
+        department: team.department ? {
+          id: team.department,
+          name: organization.getDepartmentById(team.department)?.name || 'General'
+        } : null,
         organization: {
           id: team.organization._id,
           name: team.organization.name
@@ -158,11 +201,7 @@ router.get('/:teamId',
           name: team.parentTeam.name
         } : null,
         hierarchyPath,
-        manager: team.manager ? {
-          id: team.manager._id,
-          email: team.manager.email,
-          name: team.manager.profile?.name
-        } : null,
+        manager: getDerivedManagerInfo(team),
         members: team.members
           .filter(m => m.status === 'active')
           .map(m => ({
@@ -171,7 +210,7 @@ router.get('/:teamId',
             name: m.account.profile?.name,
             role: m.role,
             joinedAt: m.joinedAt,
-            isManager: team.manager?.toString() === m.account._id.toString()
+            isManager: m.role === 'line_manager'
           })),
         subTeams: subTeams.map(st => ({
           id: st._id,
@@ -198,7 +237,8 @@ router.put('/:teamId',
   requireTeamAdminOrManager,
   async (req, res) => {
     try {
-      const { name, description, parentTeamId } = req.body
+      await req.organization.save()
+      const { name, description, parentTeamId, departmentId } = req.body
 
       const updates = {}
       if (name !== undefined) {
@@ -213,12 +253,46 @@ router.put('/:teamId',
       if (description !== undefined) {
         updates.description = description?.trim()
       }
+      if (departmentId !== undefined) {
+        if (!departmentId) {
+          return res.status(400).json({ error: 'Department is required' })
+        }
+        const department = req.organization.getDepartmentById(departmentId)
+        if (!department) {
+          return res.status(400).json({ error: 'Invalid department' })
+        }
+
+        const activeMemberIds = req.team.members
+          .filter(member => member.status === 'active')
+          .map(member => member.account.toString())
+
+        for (const memberId of activeMemberIds) {
+          const conflictingTeam = await findCrossDepartmentTeamMembership(
+            req.team.organization,
+            memberId,
+            departmentId,
+            req.team._id
+          )
+
+          if (conflictingTeam) {
+            return res.status(400).json({
+              error: 'Cannot move this team to another department while members belong to teams in a different department'
+            })
+          }
+        }
+
+        updates.department = departmentId
+      }
       if (parentTeamId !== undefined) {
         // Verify parent team belongs to same organization
         if (parentTeamId) {
           const parentTeam = await Team.findById(parentTeamId)
           if (!parentTeam || parentTeam.organization.toString() !== req.team.organization.toString()) {
             return res.status(400).json({ error: 'Invalid parent team' })
+          }
+          const effectiveDepartmentId = (updates.department || req.team.department || '').toString()
+          if (parentTeam.department?.toString() !== effectiveDepartmentId) {
+            return res.status(400).json({ error: 'Parent team must belong to the same department' })
           }
           // Prevent circular reference
           if (parentTeamId === req.team._id.toString()) {
@@ -234,12 +308,27 @@ router.put('/:teamId',
         { new: true }
       )
 
+      if (Object.prototype.hasOwnProperty.call(updates, 'department')) {
+        const activeMemberIds = req.team.members
+          .filter(member => member.status === 'active')
+          .map(member => member.account.toString())
+
+        await Account.updateMany(
+          { 'teams.team': team._id },
+          { $set: { 'teams.$[membership].department': team.department || null } },
+          { arrayFilters: [{ 'membership.team': team._id }] }
+        )
+
+        await req.organization.syncMemberDepartmentsFromTeams(activeMemberIds)
+      }
+
       console.log('✅ Team updated:', team.name, 'by', req.user.email)
 
       res.json({
         id: team._id,
         name: team.name,
         description: team.description,
+        departmentId: team.department,
         parentTeamId: team.parentTeam
       })
     } catch (error) {
@@ -265,6 +354,7 @@ router.delete('/:teamId',
 
       // Verify org admin
       const organization = await Organization.findById(team.organization)
+      await organization.save()
       const member = organization.members.find(
         m => m.account.toString() === req.user._id.toString() && m.status === 'active'
       )
@@ -289,6 +379,7 @@ router.delete('/:teamId',
       )
 
       await Team.findByIdAndDelete(req.params.teamId)
+      await organization.syncMemberDepartmentsFromTeams(memberIds)
 
       console.log('✅ Team deleted:', team.name, 'by', req.user.email)
 
@@ -332,6 +423,24 @@ router.post('/:teamId/members',
         return res.status(400).json({ error: 'Account must be a member of the organization' })
       }
 
+      const orgMember = req.organization.members.find(
+        m => m.account.toString() === accountId.toString() && m.status === 'active'
+      )
+      if (!orgMember) {
+        return res.status(400).json({ error: 'Account must be an active member of the organization' })
+      }
+
+      const conflictingTeam = await findCrossDepartmentTeamMembership(
+        req.team.organization,
+        accountId,
+        req.team.department,
+        req.team._id
+      )
+
+      if (conflictingTeam) {
+        return res.status(400).json({ error: 'Member already belongs to a team in a different department' })
+      }
+
       await req.team.addMember(accountId, role)
 
       console.log('✅ Member added to team:', req.team.name, 'by', req.user.email)
@@ -343,7 +452,7 @@ router.post('/:teamId/members',
         role: role
       }
       webhookService.notifyTeamMemberAdded(
-        accountId,
+        account.sub,
         req.team._id.toString(),
         teamData,
         req.team.organization.toString()
@@ -356,7 +465,8 @@ router.post('/:teamId/members',
       })
     } catch (error) {
       console.error('Add team member error:', error)
-      res.status(500).json({ error: 'Failed to add member to team' })
+      const isValidationError = String(error?.message || '').includes('line manager')
+      res.status(isValidationError ? 400 : 500).json({ error: error?.message || 'Failed to add member to team' })
     }
   }
 )
@@ -382,8 +492,9 @@ router.delete('/:teamId/members/:memberId',
       console.log('✅ Member removed from team:', req.team.name, 'by', req.user.email)
 
       // Send webhook notification for team member removal
+      const removedAccount = await Account.findById(memberId).select('sub').lean()
       webhookService.notifyTeamMemberRemoved(
-        memberId,
+        removedAccount?.sub || memberId,
         req.team._id.toString(),
         req.team.organization.toString()
       ).catch(err => console.error('Webhook notification failed:', err))
@@ -434,8 +545,9 @@ router.put('/:teamId/members/:memberId',
       console.log('✅ Team member role updated to', role, 'in', req.team.name, 'by', req.user.email)
 
       // Send webhook notification for role change
+      const targetAccount = await Account.findById(memberId).select('sub').lean()
       webhookService.notifyTeamRoleChanged(
-        memberId,
+        targetAccount?.sub || memberId,
         req.team._id.toString(),
         oldRole,
         role,
@@ -449,61 +561,26 @@ router.put('/:teamId/members/:memberId',
       })
     } catch (error) {
       console.error('Update team member role error:', error)
-      res.status(500).json({ error: 'Failed to update team member role' })
+      const isValidationError = String(error?.message || '').includes('line manager')
+      res.status(isValidationError ? 400 : 500).json({ error: error?.message || 'Failed to update team member role' })
     }
   }
 )
 
 /**
- * Set team manager
- * POST /api/teams/:teamId/manager
- * CRITICAL: Account must have line_manager role in team
- * Requires org admin
+ * Team manager is derived from the member with the line_manager role.
+ * Manual manager assignment is deprecated.
  */
 router.post('/:teamId/manager',
   requireAuth,
   async (req, res) => {
-    try {
-      const { accountId } = req.body
-      const team = await Team.findById(req.params.teamId)
+    return res.status(410).json({
+      error: 'Team manager is derived from the member with the line_manager role'
+    })
 
-      if (!team) {
-        return res.status(404).json({ error: 'Team not found' })
-      }
-
-      // Verify org admin
-      const organization = await Organization.findById(team.organization)
-      const member = organization.members.find(
-        m => m.account.toString() === req.user._id.toString() && m.status === 'active'
-      )
-
-      if (!member || !['owner', 'admin'].includes(member.role)) {
-        return res.status(403).json({ error: 'Organization admin or owner role required' })
-      }
-
-      // Clear manager if accountId is null
-      if (accountId === null) {
-        team.manager = null
-        await team.save()
-        return res.json({ message: 'Team manager cleared' })
-      }
-
-      try {
-        await team.setManager(accountId)
-      } catch (err) {
-        return res.status(400).json({ error: err.message })
-      }
+    // Team manager is derived from the line_manager role.
 
       console.log('✅ Team manager set for', team.name, 'by', req.user.email)
-
-      res.json({
-        message: 'Team manager set successfully',
-        managerId: accountId
-      })
-    } catch (error) {
-      console.error('Set team manager error:', error)
-      res.status(500).json({ error: 'Failed to set team manager' })
-    }
   }
 )
 
@@ -567,16 +644,7 @@ router.get('/:teamId/reports',
         return res.status(404).json({ error: 'Team not found' })
       }
 
-      // Verify user is team manager with line_manager role
-      if (!team.manager || team.manager.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ error: 'Only team manager can view direct reports' })
-      }
-
-      const teamMember = team.members.find(
-        m => m.account.toString() === req.user._id.toString() && m.status === 'active'
-      )
-
-      if (!teamMember || teamMember.role !== 'line_manager') {
+      if (!hasLineManagerRole(team, req.user._id)) {
         return res.status(403).json({ error: 'Line manager role required' })
       }
 

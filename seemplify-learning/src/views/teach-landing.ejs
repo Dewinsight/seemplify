@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>
+    <%= title %>
+  </title>
+  <style>
+    <%- include('../public/css/idp-theme.css') %>
+  </style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body class="public-site">
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
+
+    <main class="lmsv-shell">
+      <% if (error) { %>
+        <div class="alert alert-error">
+          <%= error %>
+        </div>
+        <% } %>
+          <% if (success) { %>
+            <div class="alert alert-success">
+              <%= success %>
+            </div>
+            <% } %>
+              <% if (info) { %>
+                <div class="alert">
+                  <%= info %>
+                </div>
+                <% } %>
+
+                  <section class="lmsv-teach-hero">
+                    <div class="lmsv-teach-hero-content">
+                      <p class="lmsv-kicker">
+                        <%= teachLabel %>
+                      </p>
+                      <h1>Create courses that help people build real skills.</h1>
+                      <p>
+                        Publish lessons, upload banners, structure chapters, and grow your audience on <%= teachBrand %>
+                          .
+                          One account does everything: learn, buy courses, and publish your own courses.
+                      </p>
+                      <div class="lmsv-actions">
+                        <% if (user) { %>
+                          <a href="<%= getStartedHref %>" class="btn btn-primary">
+                            <%= canOpenWorkspace ? 'Open Course Setup' : 'Start Course Setup' %>
+                          </a>
+                          <a href="/simple-lms/studio/courses" class="btn btn-secondary">Open Course Studio</a>
+                          <% } else { %>
+                            <a href="<%= registerHref %>" class="btn btn-primary">Create Account to Teach</a>
+                            <a href="<%= loginHref %>" class="btn btn-secondary">Sign In to Continue</a>
+                            <% } %>
+                      </div>
+                    </div>
+                    <aside class="lmsv-teach-hero-media">
+                      <img src="/images/teach-hero-main.svg" alt="Instructor creating online courses">
+                    </aside>
+                  </section>
+
+                  <section class="lmsv-section">
+                    <header class="lmsv-section-head lmsv-section-head-center">
+                      <h2>How Teaching Works</h2>
+                    </header>
+                    <p style="text-align:center; color:var(--lmsv-text-muted); font-size:15px; margin:-8px 0 0;">A
+                      practical path from first draft to approved public course.</p>
+                    <div class="lmsv-teach-feature-grid">
+                      <article class="lmsv-teach-feature-card">
+                        <img src="/images/teach-feature-build.svg" alt="Build course curriculum illustration">
+                        <div class="lmsv-teach-feature-body">
+                          <h3>Build Structured Courses</h3>
+                          <p>Create chapters, lessons, quizzes, and resources. Draft first, then publish when you are
+                            ready.</p>
+                        </div>
+                      </article>
+                      <article class="lmsv-teach-feature-card">
+                        <img src="/images/teach-feature-brand.svg" alt="Course branding illustration">
+                        <div class="lmsv-teach-feature-body">
+                          <h3>Brand Your Content</h3>
+                          <p>Upload course banners, add clear summaries, and make your catalog cards stand out for
+                            learners.</p>
+                        </div>
+                      </article>
+                      <article class="lmsv-teach-feature-card">
+                        <img src="/images/teach-feature-grow.svg" alt="Grow audience illustration">
+                        <div class="lmsv-teach-feature-body">
+                          <h3>Track and Improve</h3>
+                          <p>Use workspace insights to monitor learners, sales, and earnings from your approved paid
+                            courses.</p>
+                        </div>
+                      </article>
+                    </div>
+                  </section>
+
+                  <section class="lmsv-section">
+                    <header class="lmsv-section-head lmsv-section-head-center">
+                      <h2>Course Setup Steps</h2>
+                    </header>
+                    <p style="text-align:center; color:var(--lmsv-text-muted); font-size:15px; margin:-8px 0 0;">Exactly
+                      what happens after signup and before publishing publicly.</p>
+                    <div class="lmsv-teach-step-grid">
+                      <article class="lmsv-teach-step-card">
+                        <span class="lmsv-teach-step-number">1</span>
+                        <h3>Create your account</h3>
+                        <p>Use the same account flow for learning and publishing courses.</p>
+                      </article>
+                      <article class="lmsv-teach-step-card">
+                        <span class="lmsv-teach-step-number">2</span>
+                        <h3>Run the onboarding wizard</h3>
+                        <p>Fill your first-course details in a guided flow and generate a starter course draft.</p>
+                      </article>
+                      <article class="lmsv-teach-step-card">
+                        <span class="lmsv-teach-step-number">3</span>
+                        <h3>Submit for admin approval</h3>
+                        <p>Add videos, banners, and quizzes, then submit for review before public publishing.</p>
+                      </article>
+                    </div>
+                    <div class="lmsv-actions" style="justify-content:center;">
+                      <% if (user) { %>
+                        <a href="<%= getStartedHref %>" class="btn btn-primary">Continue to Wizard</a>
+                        <% } else { %>
+                          <a href="<%= registerHref %>" class="btn btn-primary">Create Account</a>
+                          <% } %>
+                            <a href="<%= browseHref %>" class="btn btn-secondary">Browse Courses Instead</a>
+                    </div>
+                  </section>
+    </main>
+
+    <%- include('./partials/public-footer') %>
+</body>
+
+</html>
+
+

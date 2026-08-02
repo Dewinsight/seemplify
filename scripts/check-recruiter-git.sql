@@ -1,0 +1,1 @@
+SELECT name, "sourceType", "customGitUrl", "customGitBranch", "customGitBuildPath", "buildPath", "dockerContextPath", "githubId", repository, owner, branch FROM application WHERE name LIKE '%recruiter%';

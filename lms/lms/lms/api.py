@@ -326,9 +326,12 @@ def get_certification_query(filters):
 	if filters:
 		for field, value in filters.items():
 			if field == "category":
-				query = query.where(
-					Certificate.course_title.like(f"%{value}%") | Certificate.batch_title.like(f"%{value}%")
-				)
+				category_filter = Certificate.course_title.like(
+					f"%{value}%"
+				) | Certificate.batch_title.like(f"%{value}%")
+				if frappe.db.has_column("LMS Certificate", "program_title"):
+					category_filter = category_filter | Certificate.program_title.like(f"%{value}%")
+				query = query.where(category_filter)
 			if field == "member_name":
 				query = query.where(Certificate.member_name.like(value[1]))
 			if field == "open_to_opportunities":
@@ -349,16 +352,20 @@ def get_count_of_certified_members(filters=None):
 def get_certification_categories():
 	categories = []
 	seen = set()
+	fields = ["course_title", "batch_title"]
+	if frappe.db.has_column("LMS Certificate", "program_title"):
+		fields.append("program_title")
+
 	docs = frappe.get_all(
 		"LMS Certificate",
 		filters={
 			"published": 1,
 		},
-		fields=["course_title", "batch_title"],
+		fields=fields,
 	)
 
 	for doc in docs:
-		category = doc.course_title if doc.course_title else doc.batch_title
+		category = doc.course_title or doc.get("program_title") or doc.batch_title
 		if not category or category in seen:
 			continue
 

@@ -1,465 +1,358 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import {
-  Upload,
-  FileText,
-  File,
-  CheckCircle,
-  AlertCircle,
-  X,
-  Download,
-  ArrowRight,
-  Loader2,
-  Users,
-  Briefcase,
-  Plus,
-  Eye,
+  Upload, FileText, CheckCircle, AlertCircle, X, Loader2,
+  Users, Plus, Eye, Zap, BarChart3, Clock, RefreshCw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useToast } from "@/hooks/use-toast"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
-import { uploadCV } from "@/services/candidateService"
-import { useCreditError } from "@/hooks/useCreditError"
-import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
+import {
+  bulkUploadCVs,
+  getBulkUploadStatus,
+  type BulkUploadStatus,
+} from "@/services/candidateService"
 
-// File upload state
-type FileStatus = "uploading" | "processing" | "success" | "error"
-
-interface UploadedFile {
-  id: string
-  name: string
-  size: number
-  type: string
-  status: FileStatus
-  progress: number
-  errorMessage?: string
-  candidateId?: string
-  candidateName?: string
-  extractedFields?: number
-}
+type PageState = "idle" | "uploading" | "processing" | "completed"
 
 export default function BulkUploadPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [files, setFiles] = useState<UploadedFile[]>([])
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [processingComplete, setProcessingComplete] = useState(false)
-  const [processingStats, setProcessingStats] = useState({
-    total: 0,
-    success: 0,
-    errors: 0,
-    warnings: 0,
-  })
+  const pollRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Handle file selection
+  const [pageState, setPageState] = useState<PageState>("idle")
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [batchId, setBatchId] = useState<string | null>(null)
+  const [status, setStatus] = useState<BulkUploadStatus | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+
+  const progressPercent = status
+    ? Math.round((status.completed / status.totalFiles) * 100)
+    : 0
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newFiles: UploadedFile[] = Array.from(e.target.files)
-        .filter(file => {
-          // Only allow CV file types
-          const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-          const allowedExtensions = ['.pdf', '.doc', '.docx'];
-          return allowedTypes.includes(file.type) || allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
-        })
-        .map((file) => ({
-          id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          status: "uploading" as FileStatus,
-          progress: 0,
-        }))
+    if (!e.target.files) return
+    const newFiles = Array.from(e.target.files).filter((f) => {
+      const ext = f.name.toLowerCase()
+      return ext.endsWith('.pdf') || ext.endsWith('.doc') || ext.endsWith('.docx')
+    })
+    if (newFiles.length === 0) {
+      toast({ title: "Invalid files", description: "Only PDF, DOC, DOCX files are accepted.", variant: "destructive" })
+      return
+    }
+    setSelectedFiles((prev) => [...prev, ...newFiles])
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
 
-      if (newFiles.length === 0) {
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation() }
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    if (e.dataTransfer.files) {
+      const input = fileInputRef.current
+      if (input) { input.files = e.dataTransfer.files; handleFileSelect({ target: input } as any) }
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const startUpload = async () => {
+    if (selectedFiles.length === 0) return
+    setPageState("uploading")
+    setUploadError(null)
+    setElapsedSeconds(0)
+
+    try {
+      const result = await bulkUploadCVs(selectedFiles)
+      setBatchId(result.batchId)
+      setPageState("processing")
+      toast({ title: "Upload accepted", description: `${result.totalFiles} CVs queued for processing.` })
+    } catch (err: any) {
+      setUploadError(err.message)
+      setPageState("idle")
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" })
+    }
+  }
+
+  // Poll for status updates
+  const pollStatus = useCallback(async () => {
+    if (!batchId) return
+    try {
+      const s = await getBulkUploadStatus(batchId)
+      setStatus(s)
+      if (s.state === 'completed') {
+        setPageState("completed")
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
         toast({
-          title: "Invalid file types",
-          description: "Please select only PDF, DOC, or DOCX files.",
-          variant: "destructive",
-        });
-        return;
+          title: "Bulk processing complete",
+          description: `${s.successful} candidates created, ${s.failed} failed out of ${s.totalFiles} CVs.`,
+        })
       }
+    } catch { /* silently retry */ }
+  }, [batchId, toast])
 
-      setFiles([...files, ...newFiles])
-      processFiles(newFiles);
+  useEffect(() => {
+    if (pageState === "processing" && batchId) {
+      pollStatus()
+      pollRef.current = setInterval(pollStatus, 2000)
+      return () => { if (pollRef.current) clearInterval(pollRef.current) }
     }
-  }
+  }, [pageState, batchId, pollStatus])
 
-  // Process uploaded files
-  const processFiles = async (filesToProcess: UploadedFile[]) => {
-    setIsProcessing(true);
-    
-    for (const fileData of filesToProcess) {
-      try {
-        // Update file status to processing
-        setFiles(prevFiles => 
-          prevFiles.map(f => 
-            f.id === fileData.id 
-              ? { ...f, status: "processing", progress: 50 }
-              : f
-          )
-        );
-
-        // Get the actual file from the file input
-        const fileInput = fileInputRef.current;
-        if (!fileInput?.files) continue;
-        
-        const actualFile = Array.from(fileInput.files).find(f => 
-          f.name === fileData.name && f.size === fileData.size
-        );
-        
-        if (!actualFile) continue;
-
-        // Create FormData and upload
-        const formData = new FormData();
-        formData.append("resume", actualFile);
-        
-        const result = await uploadCV(formData);
-        
-        // Update file status to success
-        setFiles(prevFiles => 
-          prevFiles.map(f => 
-            f.id === fileData.id 
-              ? { 
-                  ...f, 
-                  status: "success", 
-                  progress: 100,
-                  candidateId: result.candidate._id,
-                  candidateName: `${result.candidate.firstName} ${result.candidate.lastName}`,
-                  extractedFields: result.processingResults?.fieldsExtracted || 0
-                }
-              : f
-          )
-        );
-
-      } catch (error: any) {
-        // Check if it's a credit error
-        const isCreditError = handleError(error)
-        
-        // ✅ Improved error messages for parsing failures
-        let errorMessage = error.message || "Failed to process CV";
-        
-        if (isCreditError) {
-          errorMessage = "Insufficient credits";
-        } else if (error.message?.includes('Could not extract readable text') || 
-                   error.message?.includes('insufficient information') ||
-                   error.message?.includes('CV parsing failed')) {
-          errorMessage = "Unable to read file (scanned PDF or corrupted). Try text-based PDF/DOCX.";
-        }
-        
-        // Update file status to error
-        setFiles(prevFiles => 
-          prevFiles.map(f => 
-            f.id === fileData.id 
-              ? { 
-                  ...f, 
-                  status: "error", 
-                  progress: 0,
-                  errorMessage: errorMessage
-                }
-              : f
-          )
-        );
-      }
+  // Elapsed time counter
+  useEffect(() => {
+    if (pageState === "processing" || pageState === "uploading") {
+      const timer = setInterval(() => setElapsedSeconds((s) => s + 1), 1000)
+      return () => clearInterval(timer)
     }
+  }, [pageState])
 
-    // Update processing stats
-    setFiles(prevFiles => {
-      const successCount = prevFiles.filter(f => f.status === "success").length;
-      const errorCount = prevFiles.filter(f => f.status === "error").length;
-      
-      setProcessingStats({
-        total: prevFiles.length,
-        success: successCount,
-        errors: errorCount,
-        warnings: 0,
-      });
-      
-      setIsProcessing(false);
-      setProcessingComplete(true);
-      
-      toast({
-        title: "Bulk processing complete",
-        description: `Successfully created ${successCount} candidates from ${prevFiles.length} CVs.`,
-      });
-      
-      return prevFiles;
-    });
-  };
-
-  // Handle file removal
-  const handleRemoveFile = (fileId: string) => {
-    setFiles(files.filter((file) => file.id !== fileId))
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    return m > 0 ? `${m}m ${s}s` : `${s}s`
   }
 
-  // Handle drag and drop
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const input = fileInputRef.current;
-      if (input) {
-        input.files = e.dataTransfer.files;
-        handleFileSelect({ target: input } as React.ChangeEvent<HTMLInputElement>);
-      }
-    }
-  }
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes"
+  const formatSize = (bytes: number) => {
+    if (bytes === 0) return "0 B"
     const k = 1024
-    const sizes = ["Bytes", "KB", "MB", "GB"]
+    const sizes = ["B", "KB", "MB"]
     const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`
   }
+
+  const totalSize = selectedFiles.reduce((sum, f) => sum + f.size, 0)
 
   const handleReset = () => {
-    setFiles([])
-    setIsProcessing(false)
-    setProcessingComplete(false)
-    setProcessingStats({ total: 0, success: 0, errors: 0, warnings: 0 })
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
+    setPageState("idle")
+    setSelectedFiles([])
+    setBatchId(null)
+    setStatus(null)
+    setUploadError(null)
+    setElapsedSeconds(0)
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
   }
 
-  const getStatusIcon = (status: FileStatus) => {
-    switch (status) {
-      case "uploading":
-      case "processing":
-        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-      case "success":
-        return <CheckCircle className="h-4 w-4 text-green-500" />
-      case "error":
-        return <AlertCircle className="h-4 w-4 text-red-500" />
-      default:
-        return <File className="h-4 w-4 text-muted-foreground" />
-    }
-  }
-
-  const getStatusText = (file: UploadedFile) => {
-    switch (file.status) {
-      case "uploading":
-        return "Uploading..."
-      case "processing":
-        return "Creating candidate..."
-      case "success":
-        return `Candidate created: ${file.candidateName}`
-      case "error":
-        return `Error: ${file.errorMessage}`
-      default:
-        return "Pending"
-    }
-  }
+  const rate = status && elapsedSeconds > 0
+    ? (status.completed / elapsedSeconds * 60).toFixed(1)
+    : null
+  const eta = status && rate && parseFloat(rate) > 0
+    ? Math.ceil((status.totalFiles - status.completed) / (parseFloat(rate) / 60))
+    : null
 
   return (
-    <div className="container mx-auto py-6">
+    <div className="container mx-auto py-6 max-w-4xl">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Bulk CV Upload</h1>
-          <p className="text-muted-foreground">
-            Upload multiple CVs to automatically create candidate profiles with AI-powered data extraction.
-          </p>
+          <p className="text-muted-foreground">Upload up to 10,000 CVs at once. AI processes each CV in parallel.</p>
         </div>
         <Button variant="outline" onClick={() => router.push("/candidates")}>
-          <Users className="mr-2 h-4 w-4" />
-          View All Candidates
+          <Users className="mr-2 h-4 w-4" /> View Candidates
         </Button>
       </div>
 
-      <div className="grid gap-6">
-        {/* Upload Section */}
+      {/* File Selection */}
+      {(pageState === "idle") && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Upload CVs
-            </CardTitle>
+            <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" /> Select CV Files</CardTitle>
             <CardDescription>
-              Select multiple CV files (PDF, DOC, DOCX) to automatically create candidate profiles.
-              Each CV will be processed with AI to extract candidate information.
+              Drag & drop or browse for PDF, DOC, DOCX files. Text-based CVs only (no scanned images).
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <div
-              className="relative rounded-lg border-2 border-dashed border-gray-300 p-12 text-center hover:border-gray-400 transition-colors"
+              className="rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-400 transition-colors p-12 text-center cursor-pointer"
               onDragOver={handleDragOver}
               onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
             >
-              <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
-                <div className="flex items-center justify-center w-12 h-12 mx-auto bg-gray-100 rounded-lg mb-4">
-                  <Upload className="w-6 h-6 text-muted-foreground" />
-                </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">
-                  {files.length === 0 ? "Upload CV Files" : "Add More CVs"}
-                </h3>
-                <p className="text-sm text-muted-foreground mb-6">
-                  Drag and drop your CV files here, or click to browse.
-                  <br />
-                  Supports PDF, DOC, DOCX files up to 5MB each.
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isProcessing}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Select CV Files
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".pdf,.doc,.docx"
-                  className="hidden"
-                  onChange={handleFileSelect}
-                />
-              </div>
+              <Upload className="mx-auto h-10 w-10 text-gray-400 mb-4" />
+              <p className="text-lg font-medium mb-1">Drop CV files here or click to browse</p>
+              <p className="text-sm text-muted-foreground">PDF, DOC, DOCX &middot; up to 10MB each &middot; up to 10,000 files</p>
+              <input ref={fileInputRef} type="file" multiple accept=".pdf,.doc,.docx" className="hidden" onChange={handleFileSelect} />
             </div>
+
+            {selectedFiles.length > 0 && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Badge variant="secondary" className="text-base px-3 py-1">
+                      {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">{formatSize(totalSize)} total</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                      <Plus className="h-4 w-4 mr-1" /> Add More
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedFiles([])}>
+                      Clear All
+                    </Button>
+                  </div>
+                </div>
+
+                <ScrollArea className="h-[240px] border rounded-lg">
+                  <div className="p-2 space-y-1">
+                    {selectedFiles.map((file, i) => (
+                      <div key={`${file.name}-${i}`} className="flex items-center justify-between py-1.5 px-3 rounded hover:bg-muted/50 text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="h-4 w-4 text-blue-500 shrink-0" />
+                          <span className="truncate">{file.name}</span>
+                          <span className="text-muted-foreground shrink-0">{formatSize(file.size)}</span>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => removeFile(i)}>
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+
+                {uploadError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0" /> {uploadError}
+                  </div>
+                )}
+
+                <Button className="w-full h-12 text-base" onClick={startUpload}>
+                  <Zap className="h-5 w-5 mr-2" />
+                  Start Processing {selectedFiles.length} CV{selectedFiles.length !== 1 ? 's' : ''}
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
+      )}
 
-        {/* Progress and Results */}
-        {files.length > 0 && (
+      {/* Uploading spinner */}
+      {pageState === "uploading" && (
+        <Card>
+          <CardContent className="py-16 text-center space-y-4">
+            <Loader2 className="h-12 w-12 animate-spin mx-auto text-blue-500" />
+            <h2 className="text-xl font-semibold">Uploading {selectedFiles.length} files...</h2>
+            <p className="text-muted-foreground">Sending files to the server. This may take a moment for large batches.</p>
+            <p className="text-sm text-muted-foreground"><Clock className="inline h-3 w-3 mr-1" />{formatTime(elapsedSeconds)}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Processing progress */}
+      {(pageState === "processing" || pageState === "completed") && status && (
+        <div className="space-y-4">
+          {/* Stats bar */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <Card className="p-4 text-center">
+              <div className="text-2xl font-bold">{status.totalFiles}</div>
+              <div className="text-xs text-muted-foreground">Total CVs</div>
+            </Card>
+            <Card className="p-4 text-center">
+              <div className="text-2xl font-bold text-green-600">{status.successful}</div>
+              <div className="text-xs text-muted-foreground">Created</div>
+            </Card>
+            <Card className="p-4 text-center">
+              <div className="text-2xl font-bold text-red-600">{status.failed}</div>
+              <div className="text-xs text-muted-foreground">Failed</div>
+            </Card>
+            <Card className="p-4 text-center">
+              <div className="text-2xl font-bold text-blue-600">{status.processing}</div>
+              <div className="text-xs text-muted-foreground">Processing</div>
+            </Card>
+            <Card className="p-4 text-center">
+              <div className="text-2xl font-bold">{status.queued}</div>
+              <div className="text-xs text-muted-foreground">Waiting</div>
+            </Card>
+            <Card className="p-4 text-center">
+              <div className="text-2xl font-bold">{formatTime(elapsedSeconds)}</div>
+              <div className="text-xs text-muted-foreground">Elapsed</div>
+            </Card>
+          </div>
+
+          {status.state === "waiting_for_local_runtime" && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Local CV analysis is offline. All {status.queued} waiting CVs are saved and will resume automatically.
+            </div>
+          )}
+
+          {/* Progress */}
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Processing Results
+                  {pageState === "processing" ? (
+                    <><Loader2 className="h-5 w-5 animate-spin text-blue-500" /> {status.state === "waiting_for_local_runtime" ? "Waiting for local CV analysis" : "Processing CVs..."}</>
+                  ) : (
+                    <><CheckCircle className="h-5 w-5 text-green-500" /> Processing Complete</>
+                  )}
                 </CardTitle>
-                <div className="flex gap-2">
-                  {processingComplete && (
-                    <Button variant="outline" onClick={handleReset}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Upload More CVs
-                    </Button>
+                <div className="text-sm text-muted-foreground">
+                  {status.completed} / {status.totalFiles}
+                  {rate && <span className="ml-3"><BarChart3 className="inline h-3 w-3 mr-1" />{rate}/min</span>}
+                  {eta !== null && pageState === "processing" && (
+                    <span className="ml-3"><Clock className="inline h-3 w-3 mr-1" />~{formatTime(eta)} left</span>
                   )}
                 </div>
               </div>
-              {processingComplete && (
-                <div className="flex gap-4 text-sm">
-                  <Badge variant="outline" className="text-green-600">
-                    {processingStats.success} Successful
-                  </Badge>
-                  {processingStats.errors > 0 && (
-                    <Badge variant="outline" className="text-red-600">
-                      {processingStats.errors} Failed
-                    </Badge>
-                  )}
-                </div>
-              )}
             </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px]">
-                <div className="space-y-3">
-                  {files.map((file) => (
-                    <div
-                      key={file.id}
-                      className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-gray-50"
-                    >
-                      <div className="flex items-center gap-3 flex-1">
-                        {getStatusIcon(file.status)}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{file.name}</p>
-                          <p className="text-sm text-muted-foreground">{formatFileSize(file.size)}</p>
-                          <p className="text-xs text-gray-400">{getStatusText(file)}</p>
-                          {file.status === "processing" && (
-                            <Progress value={file.progress} className="w-full mt-2" />
-                          )}
-                        </div>
+            <CardContent className="space-y-4">
+              <Progress value={progressPercent} className="h-3" />
+
+              <ScrollArea className="h-[350px] border rounded-lg">
+                <div className="p-2 space-y-1">
+                  {/* Show recent successes */}
+                  {[...status.results].reverse().slice(0, 200).map((r, i) => (
+                    <div key={`s-${i}`} className="flex items-center justify-between py-1.5 px-3 rounded hover:bg-muted/50 text-sm">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                        <span className="truncate font-medium">{r.candidateName}</span>
+                        <span className="text-muted-foreground truncate">{r.fileName}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {file.status === "success" && file.candidateId && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => router.push(`/candidates/${file.candidateId}`)}
-                          >
-                            <Eye className="h-4 w-4 mr-1" />
-                            View
-                          </Button>
-                        )}
-                        {file.status !== "processing" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveFile(file.id)}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
+                      <Button variant="ghost" size="sm" className="h-7 shrink-0" onClick={() => router.push(`/candidates/${r.candidateId}`)}>
+                        <Eye className="h-3 w-3 mr-1" /> View
+                      </Button>
                     </div>
                   ))}
+                  {/* Show errors */}
+                  {status.errors.map((e, i) => (
+                    <div key={`e-${i}`} className="flex items-center gap-2 py-1.5 px-3 rounded text-sm text-red-600 bg-red-50/50">
+                      <AlertCircle className="h-4 w-4 shrink-0" />
+                      <span className="truncate font-medium">{e.fileName}</span>
+                      <span className="text-red-500 truncate text-xs">{e.error}</span>
+                    </div>
+                  ))}
+                  {status.completed === 0 && (
+                    <div className="py-8 text-center text-muted-foreground">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                      Starting CV processing...
+                    </div>
+                  )}
                 </div>
               </ScrollArea>
+
+              {pageState === "completed" && (
+                <div className="flex justify-center gap-3 pt-2">
+                  <Button onClick={() => router.push("/candidates")}>
+                    <Users className="mr-2 h-4 w-4" /> View All Candidates
+                  </Button>
+                  <Button variant="outline" onClick={handleReset}>
+                    <RefreshCw className="mr-2 h-4 w-4" /> Upload More
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
-        )}
-
-        {/* Summary Section */}
-        {processingComplete && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Processing Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="text-center p-4 rounded-lg bg-green-50">
-                  <div className="text-2xl font-bold text-green-600">{processingStats.success}</div>
-                  <div className="text-sm text-green-600">Candidates Created</div>
-                </div>
-                <div className="text-center p-4 rounded-lg bg-red-50">
-                  <div className="text-2xl font-bold text-red-600">{processingStats.errors}</div>
-                  <div className="text-sm text-red-600">Processing Errors</div>
-                </div>
-                <div className="text-center p-4 rounded-lg bg-blue-50">
-                  <div className="text-2xl font-bold text-blue-600">{processingStats.total}</div>
-                  <div className="text-sm text-blue-600">Total Files</div>
-                </div>
-              </div>
-              <div className="mt-6 flex justify-center gap-4">
-                <Button onClick={() => router.push("/candidates")}>
-                  <Users className="mr-2 h-4 w-4" />
-                  View All Candidates
-                </Button>
-                <Button variant="outline" onClick={handleReset}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Upload More CVs
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Credit Error Dialog */}
-      <CreditErrorDialog 
-        open={showCreditDialog} 
-        onOpenChange={setShowCreditDialog} 
-        error={creditError} 
-      />
+        </div>
+      )}
     </div>
   )
 }

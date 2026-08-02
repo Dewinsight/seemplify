@@ -133,20 +133,23 @@ export default function CreditsSettingsPage() {
     }
   };
 
-  const getCreditsColor = (percentage: number) => {
-    if (percentage >= 80) return 'text-red-600 dark:text-red-400';
+  const getCreditsColor = (percentage: number, isLowCredit = false) => {
+    if (isLowCredit) return 'text-red-600 dark:text-red-400';
+    if (percentage >= 80) return 'text-amber-600 dark:text-amber-400';
     if (percentage >= 50) return 'text-yellow-600 dark:text-yellow-400';
     return 'text-green-600 dark:text-green-400';
   };
 
-  const getCreditsProgressColor = (percentage: number) => {
-    if (percentage >= 80) return 'bg-red-500 dark:bg-red-400';
+  const getCreditsProgressColor = (percentage: number, isLowCredit = false) => {
+    if (isLowCredit) return 'bg-red-500 dark:bg-red-400';
+    if (percentage >= 80) return 'bg-amber-500 dark:bg-amber-400';
     if (percentage >= 50) return 'bg-yellow-500 dark:bg-yellow-400';
     return 'bg-green-500 dark:bg-green-400';
   };
 
-  const getCreditsBackgroundColor = (percentage: number) => {
-    if (percentage >= 80) return 'bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-800';
+  const getCreditsBackgroundColor = (percentage: number, isLowCredit = false) => {
+    if (isLowCredit) return 'bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-800';
+    if (percentage >= 80) return 'bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800';
     if (percentage >= 50) return 'bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800';
     return 'bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800';
   };
@@ -159,6 +162,7 @@ export default function CreditsSettingsPage() {
       aiMatching: 'AI Matching',
       generateQuestions: 'Generate Questions',
       aiAnalysis: 'AI Analysis',
+      aiInterviewCandidate: 'AI Interview Candidate',
       bulkUpload: 'Bulk Upload',
       reEmbed: 'Re-embed',
       creditPurchase: 'Credit Purchase',
@@ -178,12 +182,17 @@ export default function CreditsSettingsPage() {
     });
   };
 
+  const formatMoneyPerCredit = (n: number) => {
+    if (!Number.isFinite(n) || n <= 0) return '0.00';
+    return n >= 0.01 ? n.toFixed(2) : n.toFixed(4);
+  };
+
   if (!currentOrganization) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Card className="max-w-md bg-white dark:bg-gray-800">
           <CardHeader>
-            <CardTitle className="text-foreground dark:text-white">No Organization Selected</CardTitle>
+            <CardTitle className="text-gray-900 dark:text-white">No Organization Selected</CardTitle>
             <CardDescription className="dark:text-gray-400">
               Please select an organization to view credits information.
             </CardDescription>
@@ -198,7 +207,7 @@ export default function CreditsSettingsPage() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-600 dark:border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground dark:text-gray-400">Loading credits information...</p>
+          <p className="text-gray-500 dark:text-gray-400">Loading credits information...</p>
         </div>
       </div>
     );
@@ -209,7 +218,7 @@ export default function CreditsSettingsPage() {
       <div className="flex items-center justify-center min-h-[400px]">
         <Card className="max-w-md bg-white dark:bg-gray-800">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-foreground dark:text-white">
+            <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
               <AlertTriangle className="w-5 h-5 text-red-500 dark:text-red-400" />
               Credits Not Available
             </CardTitle>
@@ -233,8 +242,8 @@ export default function CreditsSettingsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground dark:text-white">Credits Management</h1>
-          <p className="text-muted-foreground dark:text-gray-400 mt-1">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Credits Management</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
             Manage your organization's credit usage and purchases
           </p>
         </div>
@@ -278,16 +287,16 @@ export default function CreditsSettingsPage() {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className={getCreditsBackgroundColor(credits.percentageUsed)}>
+        <Card className={getCreditsBackgroundColor(credits.percentageUsed, credits.warnings.lowCredit)}>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground dark:text-gray-400 mb-1">Remaining</p>
-                <p className={`text-3xl font-bold ${getCreditsColor(credits.percentageUsed)}`}>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Remaining</p>
+                <p className={`text-3xl font-bold ${getCreditsColor(credits.percentageUsed, credits.warnings.lowCredit)}`}>
                   {credits.remainingCredits}
                 </p>
               </div>
-              <Coins className={`w-10 h-10 ${getCreditsColor(credits.percentageUsed)}`} />
+              <Coins className={`w-10 h-10 ${getCreditsColor(credits.percentageUsed, credits.warnings.lowCredit)}`} />
             </div>
           </CardContent>
         </Card>
@@ -296,8 +305,8 @@ export default function CreditsSettingsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground dark:text-gray-400 mb-1">Total</p>
-                <p className="text-3xl font-bold text-foreground dark:text-white">{credits.totalCredits}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{credits.totalCredits}</p>
               </div>
               <BarChart3 className="w-10 h-10 text-blue-600 dark:text-blue-400" />
             </div>
@@ -308,8 +317,8 @@ export default function CreditsSettingsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground dark:text-gray-400 mb-1">Used</p>
-                <p className="text-3xl font-bold text-foreground dark:text-white">{credits.usedCredits}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Used</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{credits.usedCredits}</p>
               </div>
               <TrendingDown className="w-10 h-10 text-purple-600 dark:text-purple-400" />
             </div>
@@ -320,8 +329,8 @@ export default function CreditsSettingsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground dark:text-gray-400 mb-1">Days Until Reset</p>
-                <p className="text-3xl font-bold text-foreground dark:text-white">{credits.daysUntilReset}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Days Until Reset</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{Math.max(0, credits.daysUntilReset)}</p>
               </div>
               <Clock className="w-10 h-10 text-orange-600 dark:text-orange-400" />
             </div>
@@ -354,7 +363,7 @@ export default function CreditsSettingsPage() {
         <TabsContent value="overview" className="space-y-6">
           <Card className="bg-white dark:bg-gray-800">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground dark:text-white">
+              <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
                 <TrendingUp className="w-5 h-5" />
                 Credit Usage Overview
               </CardTitle>
@@ -367,7 +376,7 @@ export default function CreditsSettingsPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="font-medium text-gray-700 dark:text-gray-300">Usage Progress</span>
-                  <span className={`font-bold ${getCreditsColor(credits.percentageUsed)}`}>
+                  <span className={`font-bold ${getCreditsColor(credits.percentageUsed, credits.warnings.lowCredit)}`}>
                     {credits.percentageUsed.toFixed(1)}%
                   </span>
                 </div>
@@ -375,7 +384,7 @@ export default function CreditsSettingsPage() {
                   value={credits.percentageUsed} 
                   className="h-3"
                 />
-                <div className="flex items-center justify-between text-xs text-muted-foreground dark:text-gray-400">
+                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                   <span>{credits.usedCredits} used</span>
                   <span>{credits.remainingCredits} remaining</span>
                 </div>
@@ -384,16 +393,16 @@ export default function CreditsSettingsPage() {
               {/* Usage Breakdown */}
               {credits.usageBreakdown && Object.keys(credits.usageBreakdown).length > 0 && (
                 <div>
-                  <h4 className="font-semibold mb-3 text-foreground dark:text-white">Usage Breakdown</h4>
+                  <h4 className="font-semibold mb-3 text-gray-900 dark:text-white">Usage Breakdown</h4>
                   <div className="space-y-2">
                     {Object.entries(credits.usageBreakdown).map(([action, data]: [string, any]) => (
-                      <div key={action} className="flex items-center justify-between p-3 bg-muted/30 dark:bg-gray-700 rounded-lg">
+                      <div key={action} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                         <div className="flex items-center gap-3">
                           <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                          <span className="font-medium text-foreground dark:text-white">{formatActionName(action)}</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{formatActionName(action)}</span>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
-                          <span className="text-muted-foreground dark:text-gray-400">{data.count} times</span>
+                          <span className="text-gray-600 dark:text-gray-400">{data.count} times</span>
                           <Badge variant="secondary">{data.credits} credits</Badge>
                         </div>
                       </div>
@@ -407,15 +416,15 @@ export default function CreditsSettingsPage() {
                 <div className="flex items-start gap-3">
                   <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
                   <div>
-                    <p className="font-medium text-sm text-foreground dark:text-white">Rollover Credits</p>
-                    <p className="text-sm text-muted-foreground dark:text-gray-400">{credits.rolloverCredits} credits from previous cycle</p>
+                    <p className="font-medium text-sm text-gray-900 dark:text-white">Rollover Credits</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{credits.rolloverCredits} credits from previous cycle</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <ShoppingCart className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5" />
                   <div>
-                    <p className="font-medium text-sm text-foreground dark:text-white">Purchased Credits</p>
-                    <p className="text-sm text-muted-foreground dark:text-gray-400">{credits.purchasedCredits} additional credits</p>
+                    <p className="font-medium text-sm text-gray-900 dark:text-white">Purchased Credits</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{credits.purchasedCredits} additional credits</p>
                   </div>
                 </div>
               </div>
@@ -427,7 +436,7 @@ export default function CreditsSettingsPage() {
         <TabsContent value="transactions" className="space-y-6">
           <Card className="bg-white dark:bg-gray-800">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground dark:text-white">
+              <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
                 <History className="w-5 h-5" />
                 Transaction History
               </CardTitle>
@@ -438,28 +447,28 @@ export default function CreditsSettingsPage() {
             <CardContent>
               {transactions.length === 0 ? (
                 <div className="text-center py-12">
-                  <History className="w-12 h-12 text-gray-400 dark:text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground dark:text-gray-400">No transactions yet</p>
+                  <History className="w-12 h-12 text-gray-400 dark:text-gray-500 mx-auto mb-3" />
+                  <p className="text-gray-500 dark:text-gray-400">No transactions yet</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {transactions.map((transaction, index) => (
                     <div 
                       key={index} 
-                      className="flex items-center justify-between p-4 bg-muted/30 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                      className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
                     >
                       <div className="flex items-center gap-4">
                         <div className={`w-2 h-2 rounded-full ${transaction.credits > 0 ? 'bg-green-500' : 'bg-red-500'}`} />
                         <div>
-                          <p className="font-medium text-foreground dark:text-white">{formatActionName(transaction.action)}</p>
-                          <p className="text-sm text-muted-foreground dark:text-gray-400">{formatDate(transaction.timestamp)}</p>
+                          <p className="font-medium text-gray-900 dark:text-white">{formatActionName(transaction.action)}</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{formatDate(transaction.timestamp)}</p>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className={`font-bold ${transaction.credits > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                           {transaction.credits > 0 ? '+' : ''}{transaction.credits}
                         </p>
-                        <p className="text-xs text-muted-foreground dark:text-gray-400">Balance: {transaction.balanceAfter}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Balance: {transaction.balanceAfter}</p>
                       </div>
                     </div>
                   ))}
@@ -473,7 +482,7 @@ export default function CreditsSettingsPage() {
         <TabsContent value="costs" className="space-y-6">
           <Card className="bg-white dark:bg-gray-800">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground dark:text-white">
+              <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
                 <DollarSign className="w-5 h-5" />
                 Credit Costs
               </CardTitle>
@@ -490,7 +499,7 @@ export default function CreditsSettingsPage() {
                         <Coins className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                       </div>
                       <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mb-1">{cost}</p>
-                      <p className="text-sm text-muted-foreground dark:text-gray-400">{formatActionName(action)}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{formatActionName(action)}</p>
                     </CardContent>
                   </Card>
                 ))}
@@ -503,7 +512,7 @@ export default function CreditsSettingsPage() {
         <TabsContent value="purchase" className="space-y-6">
           <Card className="bg-white dark:bg-gray-800">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground dark:text-white">
+              <CardTitle className="flex items-center gap-2 text-gray-900 dark:text-white">
                 <ShoppingCart className="w-5 h-5" />
                 Purchase Additional Credits
               </CardTitle>
@@ -519,23 +528,28 @@ export default function CreditsSettingsPage() {
                       {pack.popular && (
                         <Badge className="w-fit mb-2 bg-blue-600 dark:bg-blue-500">Most Popular</Badge>
                       )}
-                      <CardTitle className="text-foreground dark:text-white">{pack.name}</CardTitle>
+                      <CardTitle className="text-gray-900 dark:text-white">{pack.name}</CardTitle>
                       <CardDescription className="dark:text-gray-400">{pack.bestFor}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-bold text-foreground dark:text-white">${pack.price}</span>
-                        <span className="text-muted-foreground dark:text-gray-400">for {pack.credits} credits</span>
+                        <span className="text-3xl font-bold text-gray-900 dark:text-white">${pack.price}</span>
+                        <span className="text-gray-600 dark:text-gray-300">
+                          for {pack.credits} credits
+                          {pack.bonusCredits ? ` (${pack.credits - pack.bonusCredits} + ${pack.bonusCredits} bonus)` : ''}
+                        </span>
                       </div>
-                      <div className="space-y-2 text-sm text-muted-foreground dark:text-gray-400">
+                      <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
                         <div className="flex justify-between">
                           <span>Price per credit:</span>
-                          <span className="font-medium">${pack.pricePerCredit.toFixed(2)}</span>
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
+                            ${formatMoneyPerCredit(pack.pricePerCredit)}
+                          </span>
                         </div>
-                        {pack.savings > 0 && (
-                          <div className="flex justify-between text-green-600 dark:text-green-400">
-                            <span>You save:</span>
-                            <span className="font-medium">${pack.savings}</span>
+                        {(pack.bonusCredits || 0) > 0 && (
+                          <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                            <span>Bonus credits:</span>
+                            <span className="font-medium">+{pack.bonusCredits}</span>
                           </div>
                         )}
                       </div>
@@ -561,7 +575,7 @@ export default function CreditsSettingsPage() {
                 ))}
               </div>
               <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <h4 className="font-semibold mb-2 flex items-center gap-2 text-foreground dark:text-white">
+                <h4 className="font-semibold mb-2 flex items-center gap-2 text-gray-900 dark:text-white">
                   <Info className="w-4 h-4" />
                   About Purchased Credits
                 </h4>
@@ -583,8 +597,8 @@ export default function CreditsSettingsPage() {
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-lg mb-1 text-foreground dark:text-white">Need more detailed analytics?</h3>
-              <p className="text-sm text-muted-foreground dark:text-gray-400">
+              <h3 className="font-semibold text-lg mb-1 text-gray-900 dark:text-white">Need more detailed analytics?</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 View comprehensive charts, projections, and insights in the Credits Analytics dashboard
               </p>
             </div>

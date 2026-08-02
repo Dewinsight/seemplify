@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const currencyService = require('../services/CurrencyService');
+const exchangeRateSyncService = require('../services/ExchangeRateSyncService');
 const ExchangeRate = require('../models/ExchangeRate');
 const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
 
@@ -17,8 +18,60 @@ const getUserInfo = (req) => ({
  */
 router.get('/', requireAuth, (req, res) => {
     res.json({
-        currencies: currencyService.getSupportedCurrencies()
+        currencies: currencyService.getSupportedCurrencies(),
+        provider: exchangeRateSyncService.getProviderInfo()
     });
+});
+
+/**
+ * GET /api/payroll/currencies/settings
+ * Get exchange-rate sync settings for the current organization
+ */
+router.get('/settings', requireHRAdmin, async (req, res) => {
+    try {
+        const { organizationId, userId, name } = getUserInfo(req);
+        const settings = await exchangeRateSyncService.getSettings(organizationId, {
+            userId,
+            name
+        });
+        const activeRateCount = await ExchangeRate.countDocuments({
+            organizationId,
+            isActive: true
+        });
+
+        res.json({
+            settings,
+            provider: exchangeRateSyncService.getProviderInfo(),
+            activeRateCount
+        });
+    } catch (err) {
+        console.error('Get Currency Settings Error:', err);
+        res.status(500).json({ error: 'Failed to fetch currency sync settings' });
+    }
+});
+
+/**
+ * PUT /api/payroll/currencies/settings
+ * Update exchange-rate sync settings
+ */
+router.put('/settings', requireHRAdmin, async (req, res) => {
+    try {
+        const { organizationId, userId, name } = getUserInfo(req);
+        const settings = await exchangeRateSyncService.updateSettings(
+            organizationId,
+            req.body || {},
+            { userId, name }
+        );
+
+        res.json({
+            success: true,
+            settings,
+            provider: exchangeRateSyncService.getProviderInfo()
+        });
+    } catch (err) {
+        console.error('Update Currency Settings Error:', err);
+        res.status(500).json({ error: 'Failed to update currency sync settings' });
+    }
 });
 
 /**
@@ -83,6 +136,64 @@ router.post('/rates', requireHRAdmin, async (req, res) => {
     } catch (err) {
         console.error('Set Rate Error:', err);
         res.status(500).json({ error: 'Failed to set exchange rate' });
+    }
+});
+
+/**
+ * POST /api/payroll/currencies/rates/sync
+ * Fetch latest provider rates and seed/update the organization's active rates
+ */
+router.post('/rates/sync', requireHRAdmin, async (req, res) => {
+    try {
+        const { organizationId, userId, name } = getUserInfo(req);
+        const { baseCurrency, preserveManualOverrides } = req.body || {};
+
+        const result = await exchangeRateSyncService.syncOrganizationRates(
+            organizationId,
+            {
+                baseCurrency,
+                preserveManualOverrides,
+                createdBy: userId,
+                createdByName: name || 'HR Admin'
+            }
+        );
+
+        res.json({
+            success: true,
+            ...result
+        });
+    } catch (err) {
+        console.error('Sync Rates Error:', err);
+        res.status(500).json({
+            error: 'Failed to sync live exchange rates',
+            details: err.message
+        });
+    }
+});
+
+/**
+ * POST /api/payroll/currencies/rates/seed
+ * Seed rates for organizations that have not configured any rates yet
+ */
+router.post('/rates/seed', requireHRAdmin, async (req, res) => {
+    try {
+        const { organizationId, userId, name } = getUserInfo(req);
+        const result = await exchangeRateSyncService.syncIfEmpty(organizationId, {
+            ...req.body,
+            userId,
+            name
+        });
+
+        res.json({
+            success: true,
+            ...result
+        });
+    } catch (err) {
+        console.error('Seed Rates Error:', err);
+        res.status(500).json({
+            error: 'Failed to seed live exchange rates',
+            details: err.message
+        });
     }
 });
 

@@ -9,8 +9,13 @@ const { authLimiter } = require('../middleware/rateLimiter');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { logUserLogin } = require('../services/auditService');
 const { requireAuth } = require('../middleware/auth');
+const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
 
 const isProduction = process.env.NODE_ENV === 'production';
+
+function resolveCurrentOrganization(userinfo = {}) {
+  return userinfo.currentOrganization || userinfo.current_organization || null;
+}
 
 // =============================================================================
 // OIDC ISSUER CACHING - Avoid expensive discovery on every request
@@ -269,6 +274,7 @@ router.get('/oidc/callback', authLimiter, asyncHandler(async (req, res) => {
 
     const tokenSet = await client.callback(redirectUri, params, checks);
     const userinfo = await client.userinfo(tokenSet);
+    const currentOrganization = resolveCurrentOrganization(userinfo);
 
     console.log('✅ OIDC tokens received for:', userinfo.email);
     console.log('📊 Organization claims:', userinfo.organizations ? userinfo.organizations.length : 0, 'organizations');
@@ -285,7 +291,7 @@ router.get('/oidc/callback', authLimiter, asyncHandler(async (req, res) => {
       name: userinfo.name,
       organizations: userinfo.organizations || [],
       teams: userinfo.teams || [],
-      currentOrganization: userinfo.currentOrganization,
+      currentOrganization,
       accessToken: tokenSet.access_token,
       refreshToken: tokenSet.refresh_token,
       idToken: tokenSet.id_token,
@@ -301,8 +307,8 @@ router.get('/oidc/callback', authLimiter, asyncHandler(async (req, res) => {
     delete req.session.oidcCodeVerifier;
 
     // Set current organization if available
-    if (userinfo.currentOrganization) {
-      req.session.currentOrganizationId = userinfo.currentOrganization.id;
+    if (currentOrganization) {
+      req.session.currentOrganizationId = currentOrganization.id;
     } else if (userinfo.organizations?.length > 0) {
       req.session.currentOrganizationId = userinfo.organizations[0].id;
     }
@@ -316,6 +322,33 @@ router.get('/oidc/callback', authLimiter, asyncHandler(async (req, res) => {
       );
     } else {
       console.warn('⚠️ User logged in but has no organizations:', userinfo.email);
+    }
+
+    // Verify subscription access for the current organization
+    if (req.session.currentOrganizationId) {
+      console.log('🔒 Verifying subscription access for org:', req.session.currentOrganizationId);
+      const subscriptionCheck = await verifySubscriptionAccess(
+        req.session.currentOrganizationId,
+        tokenSet.access_token
+      );
+
+      if (!subscriptionCheck.allowed) {
+        console.log('❌ Subscription access denied:', subscriptionCheck.reason);
+        // Save organization ID before destroying session
+        const orgId = req.session.currentOrganizationId;
+        // Clear session since we're not allowing access
+        req.session.destroy((err) => {
+          if (err) console.error('Session destroy error:', err);
+        });
+        // Redirect to IDP subscription required page
+        const subscriptionUrl = getSubscriptionRequiredUrl(
+          'leave-management',
+          orgId,
+          subscriptionCheck.reason
+        );
+        return res.redirect(subscriptionUrl);
+      }
+      console.log('✅ Subscription access verified for leave-management');
     }
 
     // Redirect to dashboard or return URL
@@ -396,10 +429,14 @@ router.post('/refresh', asyncHandler(async (req, res) => {
 
     // Get fresh userinfo
     const userinfo = await getUserInfo(tokenSet.access_token);
+    const currentOrganization = resolveCurrentOrganization(userinfo);
     req.session.user.userinfo = userinfo;
     req.session.user.organizations = userinfo.organizations || [];
     req.session.user.teams = userinfo.teams || [];
-    req.session.user.currentOrganization = userinfo.currentOrganization;
+    req.session.user.currentOrganization = currentOrganization;
+    if (currentOrganization?.id) {
+      req.session.currentOrganizationId = currentOrganization.id;
+    }
 
     res.json({
       success: true,
@@ -426,6 +463,22 @@ router.post('/switch-organization', requireAuth, asyncHandler(async (req, res) =
     return res.status(403).json({
       error: 'You are not a member of this organization',
       code: 'ORG_ACCESS_DENIED',
+    });
+  }
+
+  // Verify subscription access for the target organization
+  const subscriptionCheck = await verifySubscriptionAccess(
+    organizationId,
+    req.user.accessToken
+  );
+
+  if (!subscriptionCheck.allowed) {
+    console.log('❌ Organization switch denied - no subscription:', subscriptionCheck.reason);
+    return res.status(403).json({
+      error: 'This organization does not have access to Leave Management',
+      code: 'SUBSCRIPTION_REQUIRED',
+      reason: subscriptionCheck.reason,
+      subscribeUrl: subscriptionCheck.subscribeUrl || `${process.env.IDP_URL || 'http://localhost:4000'}/plans`
     });
   }
 

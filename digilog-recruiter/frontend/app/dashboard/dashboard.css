@@ -1,0 +1,198 @@
+.metro-grid .shine {
+	position: absolute;
+	top: -10%;
+	left: -30%;
+	height: 120%;
+	width: 40%;
+	background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.28) 50%, transparent 100%);
+	filter: blur(2px);
+	transition: transform 700ms ease;
+}
+
+/* Animation for staggered loading */
+.metro-grid > * {
+	animation: slideInUp 0.6s ease-out forwards;
+	opacity: 0;
+	transform: translateY(20px);
+}
+
+.metro-grid > *:nth-child(1) { animation-delay: 0.05s; }
+.metro-grid > *:nth-child(2) { animation-delay: 0.1s; }
+.metro-grid > *:nth-child(3) { animation-delay: 0.15s; }
+.metro-grid > *:nth-child(4) { animation-delay: 0.2s; }
+.metro-grid > *:nth-child(5) { animation-delay: 0.25s; }
+.metro-grid > *:nth-child(6) { animation-delay: 0.3s; }
+.metro-grid > *:nth-child(7) { animation-delay: 0.35s; }
+.metro-grid > *:nth-child(8) { animation-delay: 0.4s; }
+.metro-grid > *:nth-child(9) { animation-delay: 0.45s; }
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes metro-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-metro-in {
+  animation: metro-in 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+.metro-section-title { 
+	font-size: 0.875rem;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: rgb(51,65,85); /* slate-600 - darker for better visibility */
+	font-weight: 600; /* increased weight */
+	margin-bottom: 0.5rem;
+}
+
+/* Dark theme support for section title */
+:root.dark .metro-section-title {
+	color: rgb(148,163,184); /* slate-400 */
+}
+
+.metro-chart-card {
+	border-radius: 0.75rem;
+	border: 1px solid #d1d5db; /* gray-300 - more pronounced */
+	box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); /* stronger shadow */
+	background: #ffffff;
+	overflow: hidden;
+	transition: all 0.2s ease;
+}
+
+.metro-chart-card:hover {
+	box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+	border-color: #754BE5; /* diGiLog purple */
+}
+
+/* Dark theme support for chart card */
+:root.dark .metro-chart-card {
+	border: 1px solid rgb(71,85,105); /* slate-500 */
+	background: rgb(30,41,59); /* slate-800 */
+	box-shadow: 0 4px 6px -1px rgba(0,0,0,0.6), 0 2px 4px -1px rgba(0,0,0,0.4);
+}
+
+.metro-chart-header {
+	padding: 0.75rem 1rem;
+	border-bottom: 1px solid #d1d5db; /* gray-300 - more pronounced */
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	background: linear-gradient(to right, #f1f5f9, #f8fafc); /* slate-100 to slate-50 - more pronounced */
+}
+
+/* Dark theme support for chart header */
+:root.dark .metro-chart-header {
+	border-bottom: 1px solid rgb(71,85,105); /* slate-500 */
+	background: linear-gradient(to right, rgb(51,65,85), rgb(30,41,59)); /* slate-600 to slate-800 */
+}
+
+/* Enhanced dark theme card styling */
+.dark [class*="bg-gray-50"] {
+	background-color: rgb(30,41,59) !important; /* slate-800 */
+}
+
+.dark [class*="border-gray-200"] {
+	border-color: rgb(71,85,105) !important; /* slate-500 */
+}
+
+.dark [class*="bg-white"] {
+	background-color: rgb(30,41,59) !important; /* slate-800 */
+}
+
+/* Improve dark mode text contrast */
+.dark .text-gray-900 {
+	color: rgb(248,250,252) !important; /* slate-50 */
+}
+
+.dark .text-gray-600 {
+	color: rgb(148,163,184) !important; /* slate-400 */
+}
+
+.dark .text-gray-500 {
+	color: rgb(148,163,184) !important; /* slate-400 */
+}
+
+/* Better dark mode card backgrounds */
+.dark .bg-card {
+	background-color: rgb(30,41,59) !important; /* slate-800 */
+}
+
+/* Dashboard specific dark mode improvements */
+.dark .dashboard-container {
+	background-color: rgb(15,23,42); /* slate-900 */
+}
+
+/* Mobile optimization for dashboard - targeting screens below 768px */
+@media (max-width: 767px) {
+  /* Fix container padding to prevent horizontal overflow */
+  .dashboard-container {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    overflow-x: hidden;
+  }
+  
+  /* Adjust card spacing for mobile */
+  .dashboard-container .space-y-6,
+  .dashboard-container .space-y-7,
+  .dashboard-container .space-y-8 {
+    margin-top: 0.75rem !important;
+  }
+  
+  /* Ensure proper chart scaling */
+  .recharts-responsive-container {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+/* Activity feed dark mode */
+.dark [class*="bg-gray-800"] {
+	background-color: rgb(51,65,85) !important; /* slate-600 */
+}
+
+/* Profile completion alert dark mode */
+.dark .bg-muted\/50 {
+	background-color: rgb(51,65,85,0.5) !important; /* slate-600 with opacity */
+}
+
+.metro-chart-body { 
+	padding: 1rem; 
+}
+
+/* Additional dark mode chart improvements */
+.dark .recharts-cartesian-grid line {
+	stroke: rgb(71,85,105); /* slate-500 */
+}
+
+.dark .recharts-text {
+	fill: rgb(148,163,184) !important; /* slate-400 */
+}
+
+.dark .recharts-legend-item-text {
+	color: rgb(148,163,184) !important; /* slate-400 */
+}
+
+/* Grid span classes to ensure Tailwind includes them */
+.metro-grid .col-span-1 { grid-column: span 1 / span 1; }
+.metro-grid .col-span-2 { grid-column: span 2 / span 2; }
+.metro-grid .col-span-3 { grid-column: span 3 / span 3; }
+.metro-grid .row-span-1 { grid-row: span 1 / span 1; }
+.metro-grid .row-span-2 { grid-row: span 2 / span 2; }
+.metro-grid .row-span-3 { grid-row: span 3 / span 3; }

@@ -1,9 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from '@/components/ui/button';
+import { useBrandConfig } from '@/context/BrandContext';
 
 type StickyHeaderProps = {
   children: React.ReactNode;
@@ -11,7 +10,11 @@ type StickyHeaderProps = {
 
 const StickyHeader = ({ children }: StickyHeaderProps) => {
   const [isScrolled, setIsScrolled] = useState(false);
-  const router = useRouter();
+  const brand = useBrandConfig();
+  const scrolledBg =
+    brand.id === 'jetstone'
+      ? 'py-3 bg-white/90 backdrop-blur-md shadow-md border-b border-green-200/60'
+      : 'py-3 bg-slate-900/90 backdrop-blur-md shadow-lg';
 
   useEffect(() => {
     const handleScroll = () => {
@@ -32,9 +35,7 @@ const StickyHeader = ({ children }: StickyHeaderProps) => {
     <AnimatePresence>
       <motion.header
         className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${
-          isScrolled 
-            ? 'py-3 bg-slate-900/90 backdrop-blur-md shadow-lg' 
-            : 'py-6 bg-transparent'
+          isScrolled ? scrolledBg : 'py-6 bg-transparent'
         }`}
         initial={{ y: -100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}

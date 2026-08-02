@@ -1,0 +1,27 @@
+{
+  "name": "seemplify-experience-management",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c yellow,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace frontend && npm run build --workspace backend",
+    "start": "npm run start --workspace backend",
+    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend",
+    "test": "npm run test --workspace backend && npm run test --workspace frontend",
+    "test:e2e": "playwright test",
+    "test:e2e:postgres": "node scripts/test-postgres-e2e.mjs",
+    "test:all": "npm run typecheck && npm run test && npm run build && npm run test:e2e",
+    "test:knowledge:live": "node scripts/knowledge-live-benchmark.mjs",
+    "test:knowledge:ann": "node ../tools/local-knowledge/ann-benchmark.cjs --live"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.1",
+    "concurrently": "^9.2.0"
+  }
+}

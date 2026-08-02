@@ -279,11 +279,13 @@ export function useTeamCompensationRequests(filters?: { status?: string; type?: 
  * Get pending approvals (manager/admin view)
  */
 export function usePendingApprovals() {
-  const { data, error, isLoading, mutate } = useSWR('/compensation/approvals', fetcher, defaultConfig);
+  const { data, error, isLoading, mutate } = useSWR('/compensation/approvals?status=pending', fetcher, defaultConfig);
+
+  const approvals = Array.isArray(data) ? data : data?.requests || data || [];
 
   return {
-    approvals: data || [],
-    count: data?.length || 0,
+    approvals,
+    count: approvals.length,
     isLoading,
     isError: error,
     mutate,
@@ -315,7 +317,7 @@ export function usePayrollRuns(filters?: { year?: number; status?: string }) {
  * Get payroll run by ID
  */
 export function usePayrollRun(runId?: string) {
-  const url = runId ? `/payroll/run/${runId}` : null;
+  const url = runId ? `/payroll/runs/${runId}` : null;
   const { data, error, isLoading } = useSWR(url, fetcher, defaultConfig);
 
   return {

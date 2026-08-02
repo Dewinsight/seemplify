@@ -1,0 +1,51 @@
+# Coturn (STUN/TURN) + TURN Credentials API for WebRTC (Mediasoup, etc.)
+# Deploy in Dokploy as Docker Compose application.
+# TURN traffic (UDP/TCP 3478, relay ports) must reach the host; API is behind Traefik.
+
+services:
+  coturn:
+    image: coturn/coturn:latest
+    container_name: coturn
+    network_mode: host
+    # Use host network so TURN UDP/TCP ports are directly on the server (required for NAT traversal).
+    environment:
+      - TURN_AUTH_SECRET=${TURN_AUTH_SECRET}
+      - COTURN_EXTERNAL_IP=${COTURN_EXTERNAL_IP:-}
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    restart: unless-stopped
+    # With host network, coturn binds to 3478 (UDP/TCP) and relay range on host. Ensure Azure NSG and UFW allow UDP 3478, UDP 49152-49252.
+
+  turn-api:
+    image: ${TURN_API_IMAGE:-turn-api:latest}
+    build:
+      context: ./turn-api
+      dockerfile: Dockerfile
+    container_name: turn-api
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TURN_AUTH_SECRET=${TURN_AUTH_SECRET}
+      - TURN_HOST=${TURN_HOST:-turn.seemplifyai.com}
+      - TURN_PORT=3478
+      - TURN_TTL=86400
+    networks:
+      - dokploy-network
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.turn-api-web.rule=Host(`turn.seemplifyai.com`)
+      - traefik.http.routers.turn-api-web.entrypoints=web
+      - traefik.http.services.turn-api.loadbalancer.server.port=3000
+      - traefik.http.routers.turn-api-web.service=turn-api
+      - traefik.http.routers.turn-api-websecure.rule=Host(`turn.seemplifyai.com`)
+      - traefik.http.routers.turn-api-websecure.entrypoints=websecure
+      - traefik.http.routers.turn-api-websecure.service=turn-api
+      - traefik.http.routers.turn-api-websecure.tls=true
+      - traefik.http.routers.turn-api-websecure.tls.certresolver=letsencrypt
+
+networks:
+  dokploy-network:
+    external: true

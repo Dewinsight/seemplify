@@ -1,20 +1,20 @@
 <template>
-	<div v-if="course.data">
+	<div v-if="course.data" class="lms-course-detail-page">
 		<header
-			class="sticky top-0 z-10 flex items-center justify-between border-b bg-surface-white px-3 py-2.5 sm:px-5"
+			class="lms-course-detail-header sticky top-0 z-10 flex items-center justify-between border-b bg-surface-white px-3 py-2.5 sm:px-5"
 		>
 			<Breadcrumbs class="h-7" :items="breadcrumbs" />
 		</header>
-		<div class="m-5">
-			<div class="flex justify-between w-full space-x-5">
-				<div class="md:w-2/3">
-					<div class="text-3xl font-semibold text-ink-gray-9">
+		<div class="lms-course-detail-content m-5">
+			<div class="lms-course-detail-grid flex justify-between w-full space-x-5">
+				<div class="lms-course-detail-main md:w-2/3">
+					<div class="lms-course-detail-title text-3xl font-semibold text-ink-gray-9">
 						{{ course.data.title }}
 					</div>
-					<div class="my-3 leading-6 text-ink-gray-7">
+					<div class="lms-course-detail-intro my-3 leading-6 text-ink-gray-7">
 						{{ course.data.short_introduction }}
 					</div>
-					<div class="flex items-center">
+					<div class="lms-course-detail-meta flex items-center">
 						<Tooltip
 							v-if="parseInt(course.data.rating) > 0"
 							:text="__('Average Rating')"
@@ -56,7 +56,7 @@
 							<CourseInstructors :instructors="course.data.instructors" />
 						</div>
 					</div>
-					<div v-if="course.data.tags" class="flex my-4 w-fit">
+					<div v-if="course.data.tags" class="lms-course-detail-tags flex my-4 w-fit">
 						<Badge
 							theme="gray"
 							size="lg"
@@ -66,14 +66,14 @@
 							{{ tag }}
 						</Badge>
 					</div>
-					<div class="md:hidden my-4">
+					<div class="lms-course-detail-overlay-mobile md:hidden my-4">
 						<CourseCardOverlay :course="course" />
 					</div>
 					<div
 						v-html="course.data.description"
-						class="ProseMirror prose prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:border-outline-gray-2 prose-th:border-outline-gray-2 prose-td:relative prose-th:relative prose-th:bg-surface-gray-2 prose-sm max-w-none !whitespace-normal mt-10"
+						class="lms-course-detail-description ProseMirror prose prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:border-outline-gray-2 prose-th:border-outline-gray-2 prose-td:relative prose-th:relative prose-th:bg-surface-gray-2 prose-sm max-w-none !whitespace-normal mt-10"
 					></div>
-					<div class="mt-10">
+					<div class="lms-course-detail-outline mt-10">
 						<CourseOutline
 							:title="__('Course Outline')"
 							:courseName="course.data.name"
@@ -82,16 +82,17 @@
 						/>
 					</div>
 					<CourseReviews
+						class="lms-course-detail-reviews"
 						:courseName="course.data.name"
 						:avg_rating="course.data.rating"
 						:membership="course.data.membership"
 					/>
 				</div>
-				<div class="hidden md:block">
+				<div class="lms-course-detail-side hidden md:block">
 					<CourseCardOverlay :course="course" />
 				</div>
 			</div>
-			<RelatedCourses :courseName="course.data.name" />
+			<RelatedCourses class="lms-course-detail-related" :courseName="course.data.name" />
 		</div>
 	</div>
 </template>

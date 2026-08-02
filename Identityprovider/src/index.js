@@ -8,9 +8,17 @@ import { MongoAdapter } from './adapter/mongoAdapter.js'
 import { Account } from './models/Account.js'
 import { Organization } from './models/Organization.js'
 import { OrganizationInvite } from './models/OrganizationInvite.js'
+import SubscriptionRequest from './models/SubscriptionRequest.js'
 import { Team } from './models/Team.js'
-import { getHubApps, getAppById, getAppApiUrl } from './config/hubApps.js'
-import bcrypt from 'bcrypt'
+import { Notification } from './models/Notification.js'
+import { OnboardingTemplate } from './models/OnboardingTemplate.js'
+import { OnboardingAssignment } from './models/OnboardingAssignment.js'
+import { OnboardingActivity } from './models/OnboardingActivity.js'
+import PerformanceEvaluation from './models/PerformanceEvaluation.js'
+import SimplePerformanceEvaluationConfig from './models/SimplePerformanceEvaluationConfig.js'
+import AppLaunchActivity from './models/AppLaunchActivity.js'
+import { getHubApps, getAppById, getAppApiUrl, getComingSoonCards } from './config/hubApps.js'
+import bcrypt from 'bcryptjs'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -18,13 +26,47 @@ import crypto from 'crypto'
 import { SignJWT, jwtVerify } from 'jose'
 import { emailService } from './services/emailService.js'
 import { otpService } from './services/otpService.js'
+import MarketingVisit from './models/MarketingVisit.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
 import { getTeamClaims } from './utils/teams.js'
+import { buildMemberStructureMap, getMemberStructure } from './utils/memberStructure.js'
+import { buildOnboardingStateMap, getMemberOnboardingState } from './utils/onboardingStatus.js'
+import { getDerivedManagerInfo } from './utils/teamManager.js'
+import {
+  SIMPLE_PERFORMANCE_DEFAULT_FIELDS,
+  PERFORMANCE_RATING_SCALE,
+  TEAM_ROLE_LABELS,
+  buildSimplePerformanceFieldKey,
+  normalizeSimplePerformanceFieldLabel,
+  calculateAverageRating,
+  getEvaluableMembersForEvaluator
+} from './utils/performanceEvaluation.js'
+import {
+  APP_ACCESS_MODE_SELECTED,
+  buildValidAppIdSet,
+  memberCanAccessApp,
+  normalizeAppAccess
+} from './utils/appAccess.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
+import { startCampaignWorker } from './jobs/campaignWorker.js'
+import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
+import { getProfileCompletion, getProfileCompletionForAccount } from './utils/profileCompletion.js'
+import {
+  PAYROLL_BANK_JURISDICTIONS,
+  NIGERIAN_BANK_OPTIONS
+} from './config/payrollBankJurisdictions.js'
 
 // SAML 2.0 Support
 import samlRoutes, { setClaimsFunction, setSessionFunction } from './routes/samlRoutes.js'
+import {
+  ATTRIBUTION_QUERY_PARAM,
+  buildAttributionTouch,
+  resolveRequestAttribution
+} from './services/campaignAttributionService.js'
+import { registerCampaignConversion, resolveVisitorTouches } from './services/marketingConversionService.js'
 import { samlIdPService as samlService } from './services/samlService.js'
+import { subscriptionService } from './services/subscriptionService.js'
+import cloudinary, { isCloudinaryConfigured } from './services/cloudinaryService.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -34,6 +76,7 @@ const __dirname = dirname(__filename)
 // =============================================================================
 const claimsCache = new Map()
 const CLAIMS_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const DAY_IN_MS = 24 * 60 * 60 * 1000
 
 /**
  * Get cached claims or build new ones
@@ -60,10 +103,35 @@ async function getCachedClaims(acc) {
   console.log(`🔨 [PERF] Building claims for ${acc.email}...`)
 
   // Build claims in PARALLEL for performance
-  const [organizationClaims, teamClaims] = await Promise.all([
+  const [organizationClaims, teamClaims, subscriptionClaims] = await Promise.all([
     buildOrganizationClaims(acc),
-    getTeamClaims(acc)
+    getTeamClaims(acc),
+    buildSubscriptionClaims(acc)
   ])
+
+  const currentOrganizationId =
+    acc.currentOrganization?._id?.toString() ||
+    acc.currentOrganization?.toString() ||
+    null
+  const currentOrganizationClaim = currentOrganizationId
+    ? organizationClaims.find((organization) => organization.id === currentOrganizationId) || null
+    : null
+  const currentOrganization = currentOrganizationClaim
+    ? {
+      id: currentOrganizationClaim.id,
+      name: currentOrganizationClaim.name,
+      role: currentOrganizationClaim.role,
+      departmentId: currentOrganizationClaim.departmentId || null,
+      departmentName: currentOrganizationClaim.departmentName || null,
+      designation: currentOrganizationClaim.designation || null,
+      employeeId: currentOrganizationClaim.employeeId || null
+    }
+    : (acc.currentOrganization
+      ? {
+        id: acc.currentOrganization._id?.toString() || acc.currentOrganization.toString(),
+        name: acc.currentOrganization.name
+      }
+      : null)
 
   const claims = {
     sub: acc.sub,
@@ -73,10 +141,10 @@ async function getCachedClaims(acc) {
     preferred_username: acc.profile?.preferred_username,
     // Organization claims (with permissions)
     organizations: organizationClaims,
-    current_organization: acc.currentOrganization ? {
-      id: acc.currentOrganization._id?.toString() || acc.currentOrganization.toString(),
-      name: acc.currentOrganization.name
-    } : null,
+    current_organization: currentOrganization,
+    currentOrganization: currentOrganization,
+    // Subscription claims (for current organization)
+    subscription: subscriptionClaims,
     // Team claims (with hierarchy)
     teams: teamClaims,
     // Team-based permissions across all organizations
@@ -107,6 +175,233 @@ async function getCachedClaims(acc) {
   console.log(`✅ [PERF] Claims built for ${acc.email} in ${Date.now() - startTime}ms (orgs: ${organizationClaims.length}, teams: ${teamClaims.length})`)
 
   return claims
+}
+
+/**
+ * Build subscription claims for the current organization
+ * Returns subscription status, features, and limits for apps to verify access
+ */
+async function buildSubscriptionClaims(acc) {
+  // No current organization = no subscription claims
+  if (!acc.currentOrganization) {
+    return {
+      status: 'none',
+      planId: null,
+      planName: null,
+      features: {
+        recruiter: false,
+        leaveManagement: false,
+        payrollManagement: false,
+        performanceManagement: false,
+        outlineDocs: false,
+        aiChat: false,
+        lms: false
+      },
+      limits: {
+        maxMembers: 0,
+        maxTeams: 0,
+        maxSystemCourses: null
+      },
+      expiresAt: null,
+      isInGracePeriod: false
+    }
+  }
+
+  try {
+    const orgId = acc.currentOrganization._id?.toString() || acc.currentOrganization.toString()
+
+    // Get subscription info from service
+    const subscription = await subscriptionService.getSubscriptionForOrg(orgId)
+
+    if (!subscription) {
+      return {
+        status: 'none',
+        planId: null,
+        planName: null,
+        features: {
+          recruiter: false,
+          leaveManagement: false,
+          payrollManagement: false,
+          performanceManagement: false,
+          outlineDocs: false,
+          aiChat: false,
+          lms: false
+        },
+        limits: {
+          maxMembers: 0,
+          maxTeams: 0,
+          maxSystemCourses: null
+        },
+        expiresAt: null,
+        isInGracePeriod: false
+      }
+    }
+
+    // Get effective features and limits (merges plan + custom overrides)
+    const [features, limits] = await Promise.all([
+      subscriptionService.getEffectiveFeatures(orgId),
+      subscriptionService.getEffectiveLimits(orgId)
+    ])
+
+    // Determine effective status
+    let effectiveStatus = subscription.status
+    if (subscription.status === 'expired' && subscription.isInGracePeriod) {
+      effectiveStatus = 'grace_period'
+    }
+
+    return {
+      status: effectiveStatus,
+      planId: subscription.plan?._id?.toString() || null,
+      planName: subscription.plan?.name || null,
+      features: {
+        recruiter: features.recruiter || false,
+        leaveManagement: features.leaveManagement || false,
+        payrollManagement: features.payrollManagement || false,
+        performanceManagement: features.performanceManagement || false,
+        outlineDocs: features.outlineDocs || false,
+        aiChat: features.aiChat || false,
+        lms: features.lms || false
+      },
+      limits: {
+        maxMembers: limits.maxMembers,
+        maxTeams: limits.maxTeams,
+        maxSystemCourses: Object.prototype.hasOwnProperty.call(limits || {}, 'maxSystemCourses')
+          ? limits.maxSystemCourses
+          : null
+      },
+      expiresAt: subscription.endDate?.toISOString() || null,
+      isInGracePeriod: subscription.isInGracePeriod || false
+    }
+  } catch (error) {
+    console.error('Error building subscription claims:', error)
+    // Return safe defaults on error
+    return {
+      status: 'error',
+      planId: null,
+      planName: null,
+      features: {
+        recruiter: false,
+        leaveManagement: false,
+        payrollManagement: false,
+        performanceManagement: false,
+        outlineDocs: false,
+        aiChat: false,
+        lms: false
+      },
+      limits: {
+        maxMembers: 0,
+        maxTeams: 0,
+        maxSystemCourses: null
+      },
+      expiresAt: null,
+      isInGracePeriod: false
+    }
+  }
+}
+
+async function getCurrentOrganizationSubscriptionAccessState(user, options = {}) {
+  const { includePendingRequest = false } = options
+  const organizationId =
+    user?.currentOrganization?._id?.toString() ||
+    user?.currentOrganization?.toString() ||
+    null
+
+  if (!organizationId) {
+    return null
+  }
+
+  const now = new Date()
+  const [organization, subscription, pendingRequest] = await Promise.all([
+    Organization.findById(organizationId)
+      .select('name subscriptionStatus subscriptionExpiresAt currentPlan')
+      .populate('currentPlan', 'name')
+      .lean(),
+    subscriptionService.getSubscriptionForOrg(organizationId),
+    includePendingRequest
+      ? SubscriptionRequest.findOne({
+        organization: organizationId,
+        status: 'pending',
+        expiresAt: { $gte: now }
+      })
+        .populate('plan', 'name slug')
+        .sort({ createdAt: -1 })
+        .lean()
+      : Promise.resolve(null)
+  ])
+
+  if (!organization) {
+    return null
+  }
+
+  const hasActiveAccess = Boolean(
+    subscription &&
+    subscription.status === 'active' &&
+    subscription.endDate &&
+    new Date(subscription.endDate).getTime() >= now.getTime()
+  )
+  const daysUntilExpiry = hasActiveAccess && subscription?.endDate
+    ? Math.max(0, Math.ceil((new Date(subscription.endDate).getTime() - now.getTime()) / DAY_IN_MS))
+    : null
+
+  const status = hasActiveAccess
+    ? 'active'
+    : (
+      organization.subscriptionStatus ||
+      (subscription?.isInGracePeriod ? 'grace_period' : 'none')
+    )
+
+  return {
+    organizationId,
+    organizationName: organization.name || 'Organization',
+    status,
+    hasActiveAccess,
+    isLocked: !hasActiveAccess,
+    planName: subscription?.plan?.name || organization.currentPlan?.name || null,
+    expiresAt: subscription?.endDate || organization.subscriptionExpiresAt || null,
+    gracePeriodEnd: subscription?.gracePeriodEnd || null,
+    daysUntilExpiry,
+    showExpiryReminder: Boolean(hasActiveAccess && daysUntilExpiry !== null && daysUntilExpiry <= 7),
+    pendingRequest: pendingRequest
+      ? {
+        id: pendingRequest._id?.toString?.() || '',
+        planName: pendingRequest.plan?.name || 'Requested plan',
+        status: pendingRequest.status,
+        createdAt: pendingRequest.createdAt
+      }
+      : null
+  }
+}
+
+function respondToSubscriptionLock(req, res, accessState) {
+  const message = accessState?.pendingRequest
+    ? `Access is locked for ${accessState.organizationName}. A plan request is already pending approval.`
+    : `Access is locked for ${accessState?.organizationName || 'this organization'}. Request another plan to continue.`
+
+  const acceptsJson = String(req.get('accept') || '').includes('application/json') || req.xhr
+  if (req.method !== 'GET' || acceptsJson) {
+    return res.status(403).json({
+      error: message,
+      subscriptionStatus: accessState?.status || 'none',
+      requiresPlanRequest: true
+    })
+  }
+
+  return res.redirect('/?subscription=locked')
+}
+
+const requireCurrentOrganizationActiveSubscription = async (req, res, next) => {
+  if (!req.user) return next()
+
+  const accessState = await getCurrentOrganizationSubscriptionAccessState(req.user, {
+    includePendingRequest: true
+  })
+
+  req.currentSubscriptionAccess = accessState
+  if (!accessState || accessState.hasActiveAccess) {
+    return next()
+  }
+
+  return respondToSubscriptionLock(req, res, accessState)
 }
 
 // =============================================================================
@@ -164,26 +459,198 @@ import organizationsRouter from './routes/organizations.js'
 import invitationsRouter from './routes/invitations.js'
 import membersRouter from './routes/members.js'
 import teamsRouter from './routes/teams.js'
+import notificationsRouter from './routes/notifications.js'
+import onboardingRouter from './routes/onboarding.js'
+// Subscription Management Routes
+import adminPlansRouter from './routes/adminPlans.js'
+import adminSubscriptionRequestsRouter from './routes/adminSubscriptionRequests.js'
+import adminSubscriptionsRouter from './routes/adminSubscriptions.js'
+import adminCampaignApiRouter from './routes/adminCampaignApi.js'
+import adminCampaignViewsRouter from './routes/adminCampaignViews.js'
+import adminViewsRouter from './routes/adminViews.js'
+import publicPlansRouter from './routes/publicPlans.js'
+import publicMarketingRoutesRouter from './routes/publicMarketingRoutes.js'
+import publicRoutesRouter from './routes/publicRoutes.js'
+import organizationSubscriptionRouter from './routes/organizationSubscription.js'
+import adminUsersRouter from './routes/adminUsers.js'
+import profileRouter from './routes/profile.js'
 
 dotenv.config()
 
 // Shared UI theme for IdP pages (marketing-site aesthetic)
 const themeCss = readFileSync(join(__dirname, 'public/css/idp-theme.css'), 'utf-8')
+const seemplifyLogoUrl = 'https://seemplifyai.com/images/seemplifylogo.png'
 const seemplifyMarkSvg = `
-  <svg viewBox="0 0 100 100" aria-hidden="true">
-    <defs>
-      <linearGradient id="seemplifyGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#3b82f6" />
-        <stop offset="50%" stop-color="#8b5cf6" />
-        <stop offset="100%" stop-color="#ec4899" />
-      </linearGradient>
-    </defs>
-    <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75" stroke="url(#seemplifyGradient)" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="65" cy="25" r="6" fill="#fff" />
-    <circle cx="50" cy="50" r="6" fill="#fff" />
-    <circle cx="35" cy="75" r="6" fill="#fff" />
-  </svg>
+  <img
+    src="${seemplifyLogoUrl}"
+    alt="Seemplify"
+    width="148"
+    height="62"
+    loading="eager"
+    decoding="async"
+    class="seemplify-wordmark"
+    style="display:block;width:auto;max-width:100%;height:40px;"
+  />
 `
+const seemplifyNavLogoImg = `
+  <img
+    src="${seemplifyLogoUrl}"
+    alt="Seemplify"
+    width="148"
+    height="62"
+    loading="eager"
+    decoding="async"
+    class="seemplify-wordmark seemplify-wordmark--nav"
+    style="display:block;width:auto;max-width:100%;height:34px;"
+  />
+`
+
+function getIdpBrand(req) {
+  const host = (req.headers['x-forwarded-host'] || req.hostname || '').toLowerCase()
+  if (host.includes('akwa') || host.includes('ibom')) {
+    const logoUrl = 'https://akwaibom.aiinnigeria.com/logoakwa.png'
+    const logoHtml = `
+      <img
+        src="${logoUrl}"
+        alt="Akwa Ibom State"
+        width="148"
+        height="62"
+        loading="eager"
+        decoding="async"
+        class="seemplify-wordmark"
+        style="display:block;width:auto;max-width:100%;height:40px;"
+      />
+    `
+    const navLogoHtml = `
+      <img
+        src="${logoUrl}"
+        alt="Akwa Ibom State"
+        width="148"
+        height="62"
+        loading="eager"
+        decoding="async"
+        class="seemplify-wordmark seemplify-wordmark--nav"
+        style="display:block;width:auto;max-width:100%;height:34px;"
+      />
+    `
+    return {
+      name: 'Akwa Ibom State',
+      logoHtml,
+      navLogoHtml,
+      themeClass: 'jetstone-light-theme',
+      cssVars: `
+        :root {
+          --brand: #15803d;
+          --brand-2: #d97706;
+          --brand-hover: #166534;
+        }
+        .jetstone-light-theme .login-brand {
+          align-items: center;
+        }
+        .jetstone-light-theme .login-brand .brand-mark img {
+          height: 48px !important;
+        }
+        .jetstone-light-theme .login-brand-name {
+          display: none !important;
+        }
+        .jetstone-light-theme .marketing-pill {
+          background: rgba(21, 128, 61, 0.1) !important;
+          color: #15803d !important;
+          border-color: rgba(21, 128, 61, 0.2) !important;
+        }
+        .jetstone-light-theme .status-dot {
+          background: #15803d !important;
+          box-shadow: 0 0 0 4px rgba(21, 128, 61, 0.2) !important;
+        }
+        .jetstone-light-theme .marketing-heading .highlight {
+          background: linear-gradient(135deg, #15803d, #b45309, #854d0e) !important;
+          -webkit-background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
+          background-clip: text !important;
+          background-size: 200% 200% !important;
+        }
+        .jetstone-light-theme .feature-icon--green {
+          background: rgba(21, 128, 61, 0.1) !important;
+          color: #15803d !important;
+        }
+        .jetstone-light-theme .feature-icon--amber {
+          background: rgba(217, 119, 6, 0.1) !important;
+          color: #d97706 !important;
+        }
+        .jetstone-light-theme .feature-icon--teal {
+          background: rgba(13, 148, 136, 0.1) !important;
+          color: #0d9488 !important;
+        }
+        .jetstone-light-theme .feature-card:hover .feature-icon--green {
+          background: rgba(21, 128, 61, 0.15) !important;
+        }
+        .jetstone-light-theme .feature-card:hover .feature-icon--amber {
+          background: rgba(217, 119, 6, 0.15) !important;
+        }
+        .jetstone-light-theme .feature-card:hover .feature-icon--teal {
+          background: rgba(13, 148, 136, 0.15) !important;
+        }
+      `,
+      marketing: {
+        pill: 'Official State Government Portal',
+        heading: 'ARISE WORKFORCE,<br/><span class="highlight">Golden Era.</span>',
+        desc: 'Akwa Ibom State provides a unified platform to manage human resources, recruitment, and public service administration efficiently.',
+        features: [
+          {
+            title: 'Centralized Identity',
+            desc: 'One secure digital identity for HR, learning, and public service administration.',
+            icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+            color: 'green'
+          },
+          {
+            title: 'Transparent Access',
+            desc: 'Secure role-based access for all state ministries, departments, and agencies.',
+            icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+            color: 'amber'
+          },
+          {
+            title: 'Accountability',
+            desc: 'Audit-ready security and transparency at every step of public service management.',
+            icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>',
+            color: 'teal'
+          }
+        ]
+      }
+    }
+  }
+  return {
+    name: 'Seemplify',
+    logoHtml: seemplifyMarkSvg,
+    navLogoHtml: seemplifyNavLogoImg,
+    themeClass: '',
+    cssVars: '',
+    marketing: {
+      pill: 'Enterprise-ready &bull; SOC 2 Ready',
+      heading: 'Your Workforce,<br/><span class="highlight">Supercharged.</span>',
+      desc: 'Seemplify gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.',
+      features: [
+        {
+          title: 'Single Sign-On',
+          desc: 'One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.',
+          icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+          color: 'blue'
+        },
+        {
+          title: 'Instant Access',
+          desc: 'Adaptive MFA and session continuity for seamless, secure access across your tools.',
+          icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+          color: 'purple'
+        },
+        {
+          title: 'Enterprise Security',
+          desc: 'SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.',
+          icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>',
+          color: 'accent'
+        }
+      ]
+    }
+  }
+}
 
 // Production environment detection
 const isProduction = process.env.NODE_ENV === 'production'
@@ -216,6 +683,106 @@ function validateOrigin(origin, allowedOrigins) {
   })
 }
 
+const SIGNUP_ATTRIBUTION_FIELDS = [
+  ATTRIBUTION_QUERY_PARAM,
+  'visitorId',
+  'sessionId',
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content'
+]
+
+function escapeAttribute(value = '') {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function collectSignupAttribution(source = {}) {
+  const values = {}
+  for (const field of SIGNUP_ATTRIBUTION_FIELDS) {
+    const value = String(source?.[field] ?? '').trim()
+    if (value) {
+      values[field] = value
+    }
+  }
+  return values
+}
+
+function buildHiddenAttributionInputs(source = {}) {
+  return Object.entries(collectSignupAttribution(source))
+    .map(([field, value]) => `<input type="hidden" name="${field}" value="${escapeAttribute(value)}" />`)
+    .join('\n')
+}
+
+function buildPathWithQuery(pathname, source = {}, extra = {}) {
+  const params = new URLSearchParams()
+  for (const [field, value] of Object.entries(collectSignupAttribution(source))) {
+    params.set(field, value)
+  }
+  for (const [field, value] of Object.entries(extra)) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      params.set(field, String(value))
+    }
+  }
+  const query = params.toString()
+  return query ? `${pathname}?${query}` : pathname
+}
+
+async function buildSignupAttributionState(req, email = '') {
+  const resolved = await resolveRequestAttribution(req, req.body || {})
+  const occurredAt = new Date()
+  const websiteTouch = buildAttributionTouch({
+    sourceType: resolved.verifiedToken ? 'campaign_click' : 'website_visit',
+    source: String(req.body?.source || req.query?.source || 'website'),
+    channel: 'web',
+    campaignId: resolved.verifiedToken?.campaignId || null,
+    batchId: resolved.verifiedToken?.batchId || null,
+    recipientId: resolved.verifiedToken?.recipientId || null,
+    campaignName: resolved.verifiedToken?.campaignName || '',
+    signedToken: resolved.signedToken,
+    visitorId: resolved.visitorId,
+    sessionId: resolved.sessionId,
+    email: String(email || '').trim().toLowerCase(),
+    landingPage: String(req.body?.landingPage || req.query?.landingPage || req.headers.referer || ''),
+    referrer: String(req.body?.referrer || req.headers.referer || ''),
+    utm: resolved.utm,
+    occurredAt
+  })
+  const { firstTouch, lastTouch } = await resolveVisitorTouches({
+    visitorId: resolved.visitorId,
+    fallbackTouch: websiteTouch
+  })
+  const signupTouch = buildAttributionTouch({
+    sourceType: 'signup',
+    source: 'identityprovider',
+    channel: 'web',
+    campaignId: lastTouch?.campaignId || resolved.verifiedToken?.campaignId || null,
+    batchId: lastTouch?.batchId || resolved.verifiedToken?.batchId || null,
+    recipientId: lastTouch?.recipientId || resolved.verifiedToken?.recipientId || null,
+    campaignName: lastTouch?.campaignName || resolved.verifiedToken?.campaignName || '',
+    signedToken: resolved.signedToken,
+    visitorId: resolved.visitorId,
+    sessionId: resolved.sessionId,
+    email: String(email || '').trim().toLowerCase(),
+    landingPage: String(req.body?.landingPage || req.query?.landingPage || req.originalUrl || ''),
+    referrer: String(req.body?.referrer || req.headers.referer || ''),
+    utm: resolved.utm,
+    occurredAt
+  })
+
+  return {
+    resolved,
+    firstTouch,
+    lastTouch,
+    signupTouch
+  }
+}
+
 // Store clients metadata for later use (CORS, validation)
 const clientsMetadata = new Map()
 clientsData.clients.forEach(client => {
@@ -236,6 +803,16 @@ if (!ISSUER_URL) {
 }
 
 const PORT = process.env.PORT || 4000
+const SIMPLE_LMS_EXTERNAL_BASE_URL = String(
+  process.env.SEEMPLIFY_LEARNING_URL ||
+  process.env.SIMPLE_LMS_EXTERNAL_URL ||
+  (isProduction ? 'https://learning.seemplifyai.com' : 'http://localhost:5012')
+)
+  .trim()
+  .replace(/\/+$/, '')
+const SIMPLE_LMS_EXTERNAL_WORKSPACE_URL = SIMPLE_LMS_EXTERNAL_BASE_URL.endsWith('/simple-lms')
+  ? SIMPLE_LMS_EXTERNAL_BASE_URL
+  : `${SIMPLE_LMS_EXTERNAL_BASE_URL}/simple-lms`
 
 // Connect to MongoDB with error handling
 try {
@@ -285,11 +862,11 @@ const config = {
     introspection: { enabled: true },
     userinfo: { enabled: true }
   },
-  // Make PKCE optional for clients that don't support it (like Outline)
+  // Make PKCE optional for clients that don't support it (like Outline, Zulip)
   pkce: {
     required: (ctx, client) => {
       // List of clients that don't support PKCE
-      const noPkceClients = ['outline', 'openwebui'];
+      const noPkceClients = ['outline', 'openwebui', 'zulip'];
       return !noPkceClients.includes(client.clientId);
     }
   },
@@ -318,7 +895,7 @@ const config = {
 
       // Grant all requested scopes
       grant.addOIDCScope('openid email profile offline_access');
-      grant.addOIDCClaims(['email', 'email_verified', 'name', 'preferred_username', 'organizations', 'teams', 'team_permissions']);
+      grant.addOIDCClaims(['email', 'email_verified', 'name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization', 'currentOrganization']);
 
       await grant.save();
       return grant;
@@ -330,13 +907,13 @@ const config = {
   claims: {
     openid: ['sub'],
     email: ['email', 'email_verified'],
-    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization']
+    profile: ['name', 'preferred_username', 'organizations', 'teams', 'team_permissions', 'current_organization', 'currentOrganization']
   },
   findAccount: async (ctx, id) => {
     const findAccountStart = Date.now()
     // Use lean() for read-only query - significantly faster
     const acc = await Account.findOne({ sub: id })
-      .populate('organizations.organization', 'name')
+      .populate('organizations.organization', 'name departments')
       .populate('currentOrganization', 'name')
       .lean()
     console.log(`⏱️ [PERF] findAccount query: ${Date.now() - findAccountStart}ms`)
@@ -391,11 +968,11 @@ provider.on('interaction.ended', (ctx) => {
 provider.on('grant.success', async (ctx) => {
   const clientId = ctx.oidc.client?.clientId
   // Account ID can be in session, grant, or entities.Account
-  const accountId = ctx.oidc.session?.accountId || 
-                    ctx.oidc.account?.accountId ||
-                    ctx.oidc.entities?.Account?.accountId ||
-                    ctx.oidc.grant?.accountId
-  
+  const accountId = ctx.oidc.session?.accountId ||
+    ctx.oidc.account?.accountId ||
+    ctx.oidc.entities?.Account?.accountId ||
+    ctx.oidc.grant?.accountId
+
   console.log('✅ Grant success:', {
     client_id: clientId,
     grant_type: ctx.oidc.params?.grant_type,
@@ -433,7 +1010,7 @@ provider.on('server_error', (ctx, err) => {
 provider.on('userinfo.success', async (ctx) => {
   const clientId = ctx.oidc.client?.clientId
   const account = ctx.oidc.account
-  
+
   console.log('✅ Userinfo success for:', account?.accountId, 'client:', clientId)
 })
 
@@ -512,7 +1089,7 @@ app.use((req, res, next) => {
   if (skipBodyParsingRoutes.some(route => req.path.startsWith(route))) {
     return next()
   }
-  express.json()(req, res, next)
+  express.json({ limit: '5mb' })(req, res, next)
 })
 
 app.use((req, res, next) => {
@@ -520,13 +1097,20 @@ app.use((req, res, next) => {
   if (skipBodyParsingRoutes.some(route => req.path.startsWith(route))) {
     return next()
   }
-  express.urlencoded({ extended: false })(req, res, next)
+  express.urlencoded({ extended: false, limit: '5mb' })(req, res, next)
 })
 
 // Static assets (shared theme, icons)
 app.use(express.static(join(__dirname, 'public'), {
   maxAge: isProduction ? '7d' : 0
 }))
+
+// Make brand info available to all EJS templates
+app.use((req, res, next) => {
+  res.locals.brand = getIdpBrand(req)
+  next()
+})
+app.use('/vendor/pdfjs', express.static(join(__dirname, '..', 'node_modules', 'pdfjs-dist', 'build')))
 
 // Session middleware for organization management routes
 app.use(session({
@@ -663,366 +1247,167 @@ app.get('/interaction/:uid', async (req, res) => {
       session_expired: 'Session expired. Please try again.'
     }
     const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
+    const brand = getIdpBrand(req)
 
     // Return HTML login form
     res.send(`
       <!DOCTYPE html>
       <html>
       <head>
-        <title>AIIN Identity - Sign in</title>
+        <title>${brand.name} - Sign in</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+        <link rel="stylesheet" href="/css/login.css?v=6">
+        <script src="/js/theme.js?v=5"></script>
         <style>
-          :root {
-            --brand: #60a5fa;
-            --brand-2: #a855f7;
-            --surface: #0b1224;
-            --surface-2: #0f172a;
-            --line: #1f2a44;
-            --text: #e2e8f0;
-            --muted: #94a3b8;
-            --glow1: rgba(59,130,246,0.16);
-            --glow2: rgba(168,85,247,0.18);
-            --shadow: 0 25px 70px rgba(0,0,0,0.35);
-          }
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-            background:
-              radial-gradient(circle at 20% 20%, var(--glow1), transparent 32%),
-              radial-gradient(circle at 80% 12%, var(--glow2), transparent 36%),
-              linear-gradient(135deg, #0b1224 0%, #0f172a 55%, #0b1224 100%);
-            min-height: 100vh;
-            color: var(--text);
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 32px 16px;
-          }
-          .grid-overlay {
-            position: fixed;
-            inset: 0;
-            background-image:
-              linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-            background-size: 42px 42px;
-            opacity: 0.35;
-            pointer-events: none;
-          }
-          .page {
-            max-width: 1080px;
-            width: 100%;
-            margin: 0 auto;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 26px;
-            align-items: center;
-            position: relative;
-            z-index: 1;
-          }
-          .hero {
-            padding: 12px 8px;
-          }
-          .pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 14px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.06);
-            color: #c7d2fe;
-            font-weight: 700;
-            font-size: 13px;
-            letter-spacing: 0.01em;
-            border: 1px solid rgba(255,255,255,0.14);
-          }
-          .hero h1 {
-            margin: 14px 0 8px;
-            font-size: clamp(28px, 4vw, 38px);
-            letter-spacing: -0.02em;
-            color: #f8fafc;
-          }
-          .hero p {
-            color: var(--muted);
-            max-width: 520px;
-            line-height: 1.6;
-            font-size: 15px;
-          }
-          .chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 16px;
-          }
-          .chip {
-            padding: 8px 12px;
-            background: rgba(255,255,255,0.06);
-            color: #c7d2fe;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.1);
-            font-weight: 600;
-            font-size: 13px;
-          }
-          .card {
-            background: linear-gradient(160deg, rgba(16,24,40,0.88), rgba(11,18,36,0.92));
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 18px;
-            padding: 26px;
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(16px);
-            width: 100%;
-            max-width: 460px;
-            margin-left: auto;
-            margin-right: auto;
-          }
-          .brand {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 8px;
-          }
-          .brand-mark {
-            width: 48px;
-            height: 48px;
-            border-radius: 14px;
-            background: linear-gradient(135deg, var(--brand), var(--brand-2));
-            display: grid;
-            place-items: center;
-            color: #fff;
-            box-shadow: 0 10px 26px rgba(59,130,246,0.35);
-          }
-          .brand h2 {
-            margin: 0;
-            font-size: 22px;
-            letter-spacing: -0.01em;
-            color: #f8fafc;
-          }
-          .muted {
-            color: var(--muted);
-            font-size: 14px;
-          }
-          .error {
-            background: rgba(239,68,68,0.14);
-            border: 1px solid rgba(239,68,68,0.35);
-            color: #fecdd3;
-            padding: 12px;
-            border-radius: 12px;
-            font-size: 14px;
-            margin-bottom: 12px;
-            display: none;
-          }
-          .error.show { display: block; }
-          .form-group { margin-bottom: 14px; }
-          label {
-            display: block;
-            margin-bottom: 6px;
-            color: var(--muted);
-            font-weight: 700;
-            font-size: 13px;
-            letter-spacing: 0.01em;
-          }
-          input[type="email"],
-          input[type="password"] {
-            width: 100%;
-            padding: 14px;
-            border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(255,255,255,0.06);
-            color: #e5e7eb;
-            font-size: 15px;
-            transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-          }
-          input::placeholder { color: #94a3b8; }
-          input:focus {
-            outline: none;
-            border-color: rgba(59,130,246,0.6);
-            box-shadow: 0 0 0 3px rgba(59,130,246,0.25);
-            background: rgba(255,255,255,0.1);
-          }
-          .muted-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin: 8px 0 14px;
-            color: var(--muted);
-            font-size: 14px;
-          }
-          .muted-row label {
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #cbd5e1;
-            cursor: pointer;
-            font-weight: 600;
-          }
-          .muted-row input[type="checkbox"] { width: auto; }
-          .link {
-            color: #a5b4fc;
-            text-decoration: none;
-            font-weight: 700;
-          }
-          .link:hover { text-decoration: underline; }
-          button {
-            width: 100%;
-            padding: 14px;
-            border: none;
-            border-radius: 12px;
-            background: linear-gradient(135deg, var(--brand), var(--brand-2));
-            color: #fff;
-            font-weight: 700;
-            font-size: 16px;
-            cursor: pointer;
-            transition: transform 0.15s ease, box-shadow 0.2s ease;
-            margin-top: 6px;
-          }
-          button:hover { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(59,130,246,0.35); }
-          button:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
-          .secondary {
-            background: transparent;
-            border: 1px solid rgba(255,255,255,0.16);
-            color: #cbd5e1;
-          }
-          .divider {
-            text-align: center;
-            margin: 20px 0 10px;
-            position: relative;
-            color: var(--muted);
-            font-size: 13px;
-          }
-          .divider::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background: rgba(255,255,255,0.08);
-          }
-          .divider span {
-            background: linear-gradient(135deg, rgba(15,23,42,0.85), rgba(11,18,36,0.9));
-            padding: 0 12px;
-            position: relative;
-          }
-          .signup-link {
-            text-align: center;
-            font-size: 14px;
-            color: var(--muted);
-            margin-top: 8px;
-          }
-          .spinner {
-            border: 2px solid rgba(255, 255, 255, 0.28);
-            border-top: 2px solid #fff;
-            border-radius: 50%;
-            width: 16px;
-            height: 16px;
-            animation: spin 0.6s linear infinite;
-            display: inline-block;
-            vertical-align: middle;
-            margin-right: 8px;
-          }
-          @keyframes spin { to { transform: rotate(360deg); } }
-          @media (max-width: 1024px) {
-            body { padding: 24px 16px; }
-            .page { grid-template-columns: 1fr; gap: 20px; }
-            .hero { text-align: center; }
-            .chips { justify-content: center; }
-          }
-          @media (max-width: 640px) {
-            .page { gap: 16px; }
-            .card { padding: 20px; }
-            .hero h1 { font-size: 26px; }
-            .hero p { font-size: 14px; }
-          }
+          body { visibility: hidden; }
+          body.light, body.dark, [data-theme] body { visibility: visible; }
+          ${brand.cssVars}
         </style>
       </head>
-      <body>
+      <body class="${brand.themeClass}">
         <div class="grid-overlay"></div>
-        <div class="page">
-          <div class="hero">
-            <div class="pill">AIIN Identity</div>
-            <h1>Sign in to SmartHR</h1>
-            <p>Same identity look and feel as the SmartHR app login, with a focused sign-in experience.</p>
-            <div class="chips">
-              <span class="chip">SSO ready</span>
-              <span class="chip">Adaptive MFA</span>
-              <span class="chip">Session continuity</span>
+
+        <!-- Theme Toggle -->
+        <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+
+        <div class="login-split">
+          <!-- LEFT: Form Panel -->
+          <div class="login-form-panel">
+            <a href="/" class="login-back-link">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+              Back to home
+            </a>
+
+            <div class="login-form-inner">
+              <div class="login-brand">
+                <div class="brand-mark">${brand.logoHtml}</div>
+                <span class="login-brand-name">${brand.name}</span>
+              </div>
+
+              <h1 class="login-heading">Welcome back</h1>
+              <p class="login-subheading">Sign in to access your AIIN workspace.</p>
+
+              ${lastLoggedInEmail ? `
+              <div id="quickLogin">
+                <div class="error" id="errorQuick"></div>
+                <div style="background: var(--surface-2, rgba(30,41,59,0.4)); border:1px solid var(--border); padding: 16px; border-radius: 14px; margin-bottom: 14px;">
+                  <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                    <div style="width: 44px; height: 44px; background: linear-gradient(135deg, #b980ff, #8b5cf6, #4c1d95); border-radius: 12px; display: grid; place-items: center; color: white; font-size: 18px; font-weight: bold; margin-right: 12px;">
+                      ${lastLoggedInEmail.charAt(0).toUpperCase()}
+                    </div>
+                    <div style="flex: 1;">
+                      <div style="font-weight: 700; color: var(--text); margin-bottom: 2px; font-size: 14px;">${lastLoggedInEmail}</div>
+                      <div style="font-size: 13px; color: var(--muted);">Continue with this account</div>
+                    </div>
+                    <a href="/interaction/${uid}/logout" class="link" style="font-size: 12px;">Not you?</a>
+                  </div>
+                  <button type="button" id="continueBtn">
+                    Continue as ${lastLoggedInEmail.split('@')[0]}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                  </button>
+                </div>
+                <button type="button" id="useDifferentAccount" class="secondary">
+                  Use a different account
+                </button>
+              </div>
+              ` : ''}
+
+              <form id="loginForm" style="${lastLoggedInEmail ? 'display: none;' : ''}">
+                <div class="error" id="error"></div>
+
+                <div class="form-group">
+                  <label for="email">Email address</label>
+                  <input type="email" id="email" name="email" placeholder="name@example.com" required ${!lastLoggedInEmail ? 'autofocus' : ''} />
+                </div>
+
+                <div class="form-group">
+                  <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <label for="password">Password</label>
+                    <a href="/forgot-password" class="link">Forgot password?</a>
+                  </div>
+                  <input type="password" id="password" name="password" placeholder="••••••••" required />
+                </div>
+
+                <div class="muted-row">
+                  <label>
+                    <input type="checkbox" id="remember" name="remember" />
+                    Remember me
+                  </label>
+                </div>
+
+                <button type="submit" id="submitBtn">
+                  <span id="btnText">Sign in</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </button>
+
+                ${lastLoggedInEmail ? `
+                <button type="button" id="backToQuick" class="secondary">
+                  Back to quick login
+                </button>
+                ` : ''}
+              </form>
+
+              <div class="divider"><span>or</span></div>
+
+              <div class="signup-link">
+                Don't have an account? <a class="link" href="/signup/${uid}">Create free account</a>
+              </div>
             </div>
           </div>
 
-          <div class="card">
-            <div class="brand">
-            <div class="brand-mark">
-              ${seemplifyMarkSvg}
-            </div>
-              <div>
-                <h2>Sign in</h2>
-                <div class="muted">Use your AIIN credentials to continue</div>
+          <!-- RIGHT: Marketing Panel -->
+          <div class="login-marketing-panel">
+            <div class="marketing-inner">
+              <div class="marketing-pill">
+                <span class="status-dot"></span>
+                ${brand.marketing ? brand.marketing.pill : 'Enterprise-ready &bull; SOC 2 Ready'}
               </div>
-            </div>
 
-            ${lastLoggedInEmail ? `
-            <div id="quickLogin">
-              <div class="error" id="errorQuick"></div>
-              <div style="background: var(--surface-2); border:1px solid var(--line); padding: 16px; border-radius: 14px; margin-bottom: 14px;">
-                <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                  <div style="width: 48px; height: 48px; background: linear-gradient(135deg, var(--brand), var(--brand-2)); border-radius: 12px; display: grid; place-items: center; color: white; font-size: 20px; font-weight: bold; margin-right: 12px;">
-                    ${lastLoggedInEmail.charAt(0).toUpperCase()}
+              <h2 class="marketing-heading">
+                ${brand.marketing ? brand.marketing.heading : 'Your Workforce,<br/><span class="highlight">Supercharged.</span>'}
+              </h2>
+
+              <p class="marketing-desc">
+                ${brand.marketing ? brand.marketing.desc : `${brand.name} gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.`}
+              </p>
+
+              <div class="feature-cards">
+                ${(brand.marketing ? brand.marketing.features : [
+                  { title: 'Single Sign-On', desc: 'One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>', color: 'blue' },
+                  { title: 'Instant Access', desc: 'Adaptive MFA and session continuity for seamless, secure access across your tools.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>', color: 'purple' },
+                  { title: 'Enterprise Security', desc: 'SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>', color: 'accent' }
+                ]).map(f => `
+                <div class="feature-card">
+                  <div class="feature-icon feature-icon--${f.color}">
+                    ${f.icon}
                   </div>
-                  <div style="flex: 1;">
-                    <div style="font-weight: 700; color: var(--text); margin-bottom: 2px;">${lastLoggedInEmail}</div>
-                    <div style="font-size: 13px; color: var(--muted);">Continue with this account</div>
+                  <div>
+                    <div class="feature-title">${f.title}</div>
+                    <div class="feature-desc">${f.desc}</div>
                   </div>
-                  <a href="/interaction/${uid}/logout" class="link" style="font-size: 12px; font-weight: 700;">Not you?</a>
                 </div>
-                <button type="button" id="continueBtn">
-                  Continue as ${lastLoggedInEmail.split('@')[0]}
-                </button>
+                `).join('')}
               </div>
-              <button type="button" id="useDifferentAccount" class="secondary" style="margin-bottom: 12px;">
-                Use a different account
-              </button>
-            </div>
-            ` : ''}
-
-            <form id="loginForm" style="${lastLoggedInEmail ? 'display: none;' : ''}">
-              <div class="error" id="error"></div>
-
-              <div class="form-group">
-                <label for="email">Work email</label>
-                <input type="email" id="email" name="email" placeholder="you@company.com" required ${!lastLoggedInEmail ? 'autofocus' : ''} />
-              </div>
-
-              <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" placeholder="Enter your password" required />
-              </div>
-
-              <div class="muted-row">
-                <label>
-                  <input type="checkbox" id="remember" name="remember" />
-                  Remember my email
-                </label>
-                <a href="/forgot-password" class="link">Forgot password?</a>
-              </div>
-
-              <button type="submit" id="submitBtn">
-                <span id="btnText">Sign in</span>
-              </button>
-
-              ${lastLoggedInEmail ? `
-              <button type="button" id="backToQuick" class="secondary">
-                Back to quick login
-              </button>
-              ` : ''}
-            </form>
-
-            <div class="divider"><span>or</span></div>
-
-            <div class="signup-link">
-              Don't have an account? <a class="link" href="/signup/${uid}">Create one now</a>
             </div>
           </div>
         </div>
@@ -1086,6 +1471,10 @@ app.get('/interaction/:uid', async (req, res) => {
               errorDiv.textContent = errorMsgSafe;
               errorDiv.classList.add('show');
             }
+
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('error');
+            window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
           }
           
           form.addEventListener('submit', (e) => {
@@ -1125,8 +1514,35 @@ app.get('/interaction/:uid', async (req, res) => {
             rememberInput.value = rememberCheckbox && rememberCheckbox.checked ? 'true' : 'false';
             hiddenForm.appendChild(rememberInput);
             
+
             document.body.appendChild(hiddenForm);
             hiddenForm.submit();
+          });
+
+          // Theme Toggle Logic
+          function toggleTheme() {
+            const current = window.ThemeManager?.getTheme() || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            window.ThemeManager?.setTheme(next);
+            updateThemeIcon(next);
+          }
+
+          function updateThemeIcon(theme) {
+            const sunIcon = document.querySelector('.theme-icon-sun');
+            const moonIcon = document.querySelector('.theme-icon-moon');
+            if (theme === 'light') {
+              sunIcon.style.display = 'none';
+              moonIcon.style.display = 'block';
+            } else {
+              sunIcon.style.display = 'block';
+              moonIcon.style.display = 'none';
+            }
+          }
+
+          // Initialize theme icon on load
+          window.addEventListener('DOMContentLoaded', () => {
+            const currentTheme = window.ThemeManager?.getTheme() || 'dark';
+            updateThemeIcon(currentTheme);
           });
         </script>
       </body>
@@ -1141,45 +1557,46 @@ app.get('/interaction/:uid', async (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
-          <title>Session Expired - AIIN Identity</title>
+          <title>Session Expired - Seemplify Identity</title>
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+          <script src="/js/theme.js?v=5"></script>
           <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
             body { 
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              min-height: 100vh;
               display: flex;
               align-items: center;
               justify-content: center;
               padding: 20px;
             }
             .container { 
-              background: white;
+              background: var(--panel);
+              backdrop-filter: blur(16px);
               padding: 48px;
-              border-radius: 16px;
-              box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+              border-radius: 24px;
+              border: 1px solid var(--border);
+              box-shadow: var(--card-shadow);
               max-width: 440px;
               width: 100%;
               text-align: center;
             }
             .icon { font-size: 64px; margin-bottom: 24px; }
-            h1 { font-size: 24px; color: #1a1a1a; margin-bottom: 16px; }
-            p { color: #666; margin-bottom: 32px; line-height: 1.6; }
+            h1 { font-size: 24px; color: var(--text); margin-bottom: 16px; font-family: "Space Grotesk", system-ui, sans-serif; }
+            p { color: var(--muted); margin-bottom: 32px; line-height: 1.6; }
             button { 
               padding: 14px 32px;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              color: white;
+              background: #18181b;
+              color: #ffffff;
               border: none;
-              border-radius: 8px;
+              border-radius: 999px;
               font-size: 16px;
               font-weight: 600;
               cursor: pointer;
-              transition: all 0.2s;
+              transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+              box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
             }
             button:hover { 
-              transform: translateY(-1px);
-              box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+              transform: translateY(-2px);
+              box-shadow: 0 0 40px rgba(15, 23, 42, 0.35);
             }
           </style>
         </head>
@@ -1210,352 +1627,220 @@ app.get('/signup/:uid', async (req, res) => {
     passwords_mismatch: 'Passwords do not match.'
   }
   const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
+  const hiddenAttributionInputs = buildHiddenAttributionInputs(req.query)
+  const brand = getIdpBrand(req)
 
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Create Account - AIIN Identity</title>
+      <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=6">
+      <script src="/js/theme.js?v=5"></script>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 20px;
-        }
-        .container { 
-          background: white;
-          padding: 48px;
-          border-radius: 16px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-          max-width: 440px;
-          width: 100%;
-          animation: slideIn 0.3s ease-out;
-        }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateY(-20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .logo {
-          text-align: center;
-          margin-bottom: 32px;
-        }
-        .logo-icon {
-          width: 60px;
-          height: 60px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 12px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 32px;
-          margin-bottom: 16px;
-        }
-        h1 { 
-          font-size: 28px;
-          color: #1a1a1a;
-          margin-bottom: 8px;
-          font-weight: 700;
-          text-align: center;
-        }
-        p { 
-          color: #666;
-          margin-bottom: 32px;
-          font-size: 15px;
-          text-align: center;
-        }
-        .form-group {
-          margin-bottom: 20px;
-        }
-        label {
-          display: block;
-          margin-bottom: 8px;
-          font-size: 14px;
-          font-weight: 500;
-          color: #333;
-        }
-        input[type="email"],
-        input[type="password"],
-        input[type="text"] { 
-          width: 100%;
-          padding: 14px 16px;
-          border: 2px solid #e0e0e0;
-          border-radius: 8px;
-          font-size: 15px;
-          transition: all 0.2s;
-        }
-        input[type="email"]:focus,
-        input[type="password"]:focus,
-        input[type="text"]:focus { 
-          outline: none;
-          border-color: #667eea;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        .password-strength {
-          height: 4px;
-          background: #e0e0e0;
-          border-radius: 2px;
-          margin-top: 8px;
-          overflow: hidden;
-        }
-        .password-strength-bar {
-          height: 100%;
-          width: 0%;
-          transition: all 0.3s;
-          border-radius: 2px;
-        }
-        .strength-weak { width: 33%; background: #f44336; }
-        .strength-medium { width: 66%; background: #ff9800; }
-        .strength-strong { width: 100%; background: #4caf50; }
-        .password-hint {
-          font-size: 12px;
-          color: #999;
-          margin-top: 6px;
-        }
-        button { 
-          width: 100%;
-          padding: 14px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-size: 16px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          margin-top: 8px;
-        }
-        button:hover { 
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-        button:active {
-          transform: translateY(0);
-        }
-        button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-          transform: none;
-        }
-        .error { 
-          background: #fee;
-          color: #c33;
-          padding: 12px;
-          border-radius: 8px;
-          font-size: 14px;
-          margin-bottom: 16px;
-          border: 1px solid #fcc;
-          display: none;
-        }
-        .error.show {
-          display: block;
-        }
-        .success {
-          background: #e8f5e9;
-          color: #2e7d32;
-          padding: 12px;
-          border-radius: 8px;
-          font-size: 14px;
-          margin-bottom: 16px;
-          border: 1px solid #a5d6a7;
-          display: none;
-        }
-        .success.show {
-          display: block;
-        }
-        .divider {
-          text-align: center;
-          margin: 24px 0;
-          position: relative;
-        }
-        .divider::before {
-          content: '';
-          position: absolute;
-          top: 50%;
-          left: 0;
-          right: 0;
-          height: 1px;
-          background: #e0e0e0;
-        }
-        .divider span {
-          background: white;
-          padding: 0 16px;
-          position: relative;
-          color: #999;
-          font-size: 14px;
-        }
-        .login-link {
-          text-align: center;
-          margin-top: 24px;
-          font-size: 14px;
-          color: #666;
-        }
-        .login-link a {
-          color: #667eea;
-          text-decoration: none;
-          font-weight: 600;
-        }
-        .login-link a:hover {
-          text-decoration: underline;
-        }
-        .spinner {
-          border: 2px solid rgba(255,255,255,0.3);
-          border-top: 2px solid white;
-          border-radius: 50%;
-          width: 16px;
-          height: 16px;
-          animation: spin 0.6s linear infinite;
-          display: inline-block;
-          margin-right: 8px;
-          vertical-align: middle;
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
+        body { visibility: hidden; }
+        body.light, body.dark, [data-theme] body { visibility: visible; }
+        ${brand.cssVars}
       </style>
     </head>
-    <body>
-      <div class="container">
-        <div class="logo">
-          <div class="logo-icon">✨</div>
-          <h1>Create Your Account</h1>
-          <p>Join AIIN Identity to get started</p>
-        </div>
-        
-        <form id="signupForm">
-          <div class="error" id="error"></div>
-          <div class="success" id="success"></div>
-          
-          <div class="form-group">
-            <label for="name">Full Name (Optional)</label>
-            <input type="text" id="name" name="name" placeholder="John Doe" />
-          </div>
-          
-          <div class="form-group">
-            <label for="email">Email Address</label>
-            <input type="email" id="email" name="email" placeholder="you@example.com" required autofocus />
-          </div>
-          
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" placeholder="Create a strong password" required minlength="8" />
-            <div class="password-strength">
-              <div class="password-strength-bar" id="strengthBar"></div>
+    <body class="${brand.themeClass}">
+      <div class="grid-overlay"></div>
+
+      <!-- Theme Toggle -->
+      <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+
+      <div class="login-split">
+        <!-- LEFT: Form Panel -->
+        <div class="login-form-panel">
+          <a href="/interaction/${uid}" class="login-back-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Back to sign in
+          </a>
+
+          <div class="login-form-inner">
+            <div class="login-brand">
+              <div class="brand-mark">${seemplifyMarkSvg}</div>
+              <span class="login-brand-name">Seemplify</span>
             </div>
-            <div class="password-hint" id="strengthText">Use 8+ characters with letters and numbers</div>
+
+            <h1 class="login-heading">Create your account</h1>
+            <p class="login-subheading">One identity for the hub and all connected apps.</p>
+
+            <div class="error" id="error"></div>
+
+            <form id="signupForm" action="/interaction/${uid}/signup" method="POST">
+              ${hiddenAttributionInputs}
+              <div class="form-group">
+                <label for="name">Full name (optional)</label>
+                <input type="text" id="name" name="name" placeholder="Jordan Harper" autocomplete="name" />
+              </div>
+
+              <div class="form-group">
+                <label for="email">Work email</label>
+                <input type="email" id="email" name="email" placeholder="you@company.com" required autofocus autocomplete="email" />
+              </div>
+
+              <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Create a strong password" required minlength="8" autocomplete="new-password" />
+                <div class="password-strength">
+                  <div class="password-strength-bar" id="strengthBar"></div>
+                </div>
+                <div class="password-hint" id="strengthText">Use 8+ characters with letters, numbers, and symbols.</div>
+              </div>
+
+              <div class="form-group">
+                <label for="confirmPassword">Confirm password</label>
+                <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" required autocomplete="new-password" />
+              </div>
+
+              <button type="submit" id="submitBtn">
+                <span id="btnText">Create account</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
+            </form>
+
+            <div class="divider"><span>or</span></div>
+
+            <div class="signup-link">
+              Already have an account? <a class="link" href="/interaction/${uid}">Sign in</a>
+            </div>
           </div>
-          
-          <div class="form-group">
-            <label for="confirmPassword">Confirm Password</label>
-            <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" required />
+        </div>
+
+        <!-- RIGHT: Marketing Panel -->
+        <div class="login-marketing-panel">
+          <div class="marketing-inner">
+            <div class="marketing-pill">
+              <span class="status-dot"></span>
+              ${brand.marketing ? brand.marketing.pill : 'Enterprise-ready &bull; SOC 2 Ready'}
+            </div>
+
+            <h2 class="marketing-heading">
+              ${brand.marketing ? brand.marketing.heading : 'Start in minutes,<br/><span class="highlight">scale for years.</span>'}
+            </h2>
+
+            <p class="marketing-desc">
+              ${brand.marketing ? brand.marketing.desc : 'Create your identity once. Launch SmartHR, LMS, Chat, and more via single sign-on with org-level controls.'}
+            </p>
+
+            <div class="feature-cards">
+              ${(brand.marketing ? brand.marketing.features : [
+                { title: 'SSO-Ready', desc: 'One account for the hub and all connected apps.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>', color: 'blue' },
+                { title: 'Fast Onboarding', desc: 'Create teams, invite members, and control access from one place.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>', color: 'purple' },
+                { title: 'Secure by Design', desc: 'Email verification + modern session handling across apps.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>', color: 'accent' }
+              ]).map(f => `
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--${f.color}">
+                  ${f.icon}
+                </div>
+                <div>
+                  <div class="feature-title">${f.title}</div>
+                  <div class="feature-desc">${f.desc}</div>
+                </div>
+              </div>
+              `).join('')}
+            </div>
           </div>
-          
-          <button type="submit" id="submitBtn">
-            <span id="btnText">Create Account</span>
-          </button>
-        </form>
-        
-        <div class="divider"><span>or</span></div>
-        
-        <div class="login-link">
-          Already have an account? <a href="/interaction/${uid}">Sign in</a>
         </div>
       </div>
-      
+
       <script>
         const form = document.getElementById('signupForm');
         const errorDiv = document.getElementById('error');
-        const successDiv = document.getElementById('success');
         const submitBtn = document.getElementById('submitBtn');
         const btnText = document.getElementById('btnText');
         const passwordInput = document.getElementById('password');
         const confirmPasswordInput = document.getElementById('confirmPassword');
         const strengthBar = document.getElementById('strengthBar');
         const strengthText = document.getElementById('strengthText');
-        
-        // Show error message if present
-        const urlParams = new URLSearchParams(window.location.search);
-        const errorParam = urlParams.get('error');
-        if (errorParam) {
-          errorDiv.textContent = '${errorMsg}';
+
+        const errorMsgSafe = ${JSON.stringify(errorMsg || '')};
+        if (errorMsgSafe && errorDiv) {
+          errorDiv.textContent = errorMsgSafe;
           errorDiv.classList.add('show');
+
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('error');
+          window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
         }
-        
-        // Password strength checker
+
         passwordInput.addEventListener('input', () => {
           const password = passwordInput.value;
           let strength = 0;
-          
+
           if (password.length >= 8) strength++;
           if (password.length >= 12) strength++;
           if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
           if (/[0-9]/.test(password)) strength++;
           if (/[^a-zA-Z0-9]/.test(password)) strength++;
-          
+
           strengthBar.className = 'password-strength-bar';
           if (strength <= 2) {
-            strengthBar.classList.add('strength-weak');
             strengthText.textContent = 'Weak password';
-            strengthText.style.color = '#f44336';
           } else if (strength <= 3) {
             strengthBar.classList.add('strength-medium');
             strengthText.textContent = 'Medium strength';
-            strengthText.style.color = '#ff9800';
           } else {
             strengthBar.classList.add('strength-strong');
             strengthText.textContent = 'Strong password!';
-            strengthText.style.color = '#4caf50';
           }
         });
-        
-        form.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          
-          // Validate passwords match
+
+        form.addEventListener('submit', (e) => {
           if (passwordInput.value !== confirmPasswordInput.value) {
+            e.preventDefault();
             errorDiv.textContent = 'Passwords do not match';
             errorDiv.classList.add('show');
             return;
           }
-          
-          // Show loading state
           submitBtn.disabled = true;
           btnText.innerHTML = '<span class="spinner"></span>Creating account...';
-          errorDiv.classList.remove('show');
-          successDiv.classList.remove('show');
-          
-          const formData = new FormData(e.target);
-          
-          // Create hidden form to allow browser to follow redirects
-          const hiddenForm = document.createElement('form');
-          hiddenForm.method = 'POST';
-          hiddenForm.action = '/interaction/${uid}/signup';
-          
-          const emailInput = document.createElement('input');
-          emailInput.type = 'hidden';
-          emailInput.name = 'email';
-          emailInput.value = formData.get('email');
-          hiddenForm.appendChild(emailInput);
-          
-          const passwordInputField = document.createElement('input');
-          passwordInputField.type = 'hidden';
-          passwordInputField.name = 'password';
-          passwordInputField.value = formData.get('password');
-          hiddenForm.appendChild(passwordInputField);
-          
-          const nameInput = document.createElement('input');
-          nameInput.type = 'hidden';
-          nameInput.name = 'name';
-          nameInput.value = formData.get('name') || '';
-          hiddenForm.appendChild(nameInput);
-          
-          document.body.appendChild(hiddenForm);
-          hiddenForm.submit();
+        });
+
+        function toggleTheme() {
+          const current = window.ThemeManager?.getTheme() || 'dark';
+          const next = current === 'dark' ? 'light' : 'dark';
+          window.ThemeManager?.setTheme(next);
+          updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+          const sunIcon = document.querySelector('.theme-icon-sun');
+          const moonIcon = document.querySelector('.theme-icon-moon');
+          if (theme === 'light') {
+            sunIcon.style.display = 'none';
+            moonIcon.style.display = 'block';
+          } else {
+            sunIcon.style.display = 'block';
+            moonIcon.style.display = 'none';
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+          const currentTheme = window.ThemeManager?.getTheme() || 'dark';
+          updateThemeIcon(currentTheme);
         });
       </script>
     </body>
@@ -1638,15 +1923,30 @@ app.post('/interaction/:uid/login', async (req, res) => {
 
 app.post('/interaction/:uid/signup', async (req, res) => {
   try {
-    console.log('📝 Signup attempt for:', req.body.email)
-    const { email, password, name } = req.body
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const password = String(req.body?.password || '')
+    const confirmPassword = String(req.body?.confirmPassword || '')
+    const name = String(req.body?.name || '').trim()
+    const attributionQuery = collectSignupAttribution(req.body)
+
+    console.log('📝 Signup attempt for:', email)
+
+    if (password !== confirmPassword) {
+      return res.redirect(buildPathWithQuery(`/signup/${req.params.uid}`, attributionQuery, {
+        error: 'passwords_mismatch'
+      }))
+    }
 
     // Check if user already exists
     const existing = await Account.findOne({ email })
     if (existing) {
       console.log('❌ Account already exists:', email)
-      return res.redirect(`/signup/${req.params.uid}?error=account_exists`)
+      return res.redirect(buildPathWithQuery(`/signup/${req.params.uid}`, attributionQuery, {
+        error: 'account_exists'
+      }))
     }
+
+    const attributionState = await buildSignupAttributionState(req, email)
 
     // Create new account (NOT verified yet)
     const sub = new mongoose.Types.ObjectId().toString()
@@ -1661,10 +1961,54 @@ app.post('/interaction/:uid/signup', async (req, res) => {
         name: name || email.split('@')[0],
         preferred_username: email.split('@')[0]
       },
-      security: {}
+      security: {},
+      acquisition: {
+        firstTouch: attributionState.firstTouch,
+        lastTouch: attributionState.lastTouch,
+        conversionSource: attributionState.resolved.verifiedToken ? 'campaign' : 'website',
+        visitorId: attributionState.resolved.visitorId,
+        attributionSnapshot: {
+          signupTouch: attributionState.signupTouch
+        }
+      }
     })
 
     console.log(`✅ New account created (unverified): ${email}`)
+
+    const signupTrackingResults = await Promise.allSettled([
+      MarketingVisit.create({
+        visitorId: attributionState.resolved.visitorId,
+        sessionId: attributionState.resolved.sessionId,
+        eventType: 'signup_complete',
+        sourceApp: 'identityprovider',
+        pageUrl: String(req.body?.landingPage || ''),
+        path: req.originalUrl,
+        referrer: String(req.body?.referrer || req.headers.referer || ''),
+        ipAddress: req.ip || req.connection?.remoteAddress || '',
+        userAgent: String(req.headers['user-agent'] || ''),
+        utm: attributionState.resolved.utm,
+        attribution: attributionState.signupTouch,
+        account: acc._id,
+        metadata: {
+          route: 'interaction_signup'
+        },
+        occurredAt: attributionState.signupTouch.occurredAt
+      }),
+      registerCampaignConversion({
+        conversionType: 'signup',
+        campaignId: attributionState.resolved.verifiedToken?.campaignId || attributionState.lastTouch?.campaignId || null,
+        recipientId: attributionState.resolved.verifiedToken?.recipientId || attributionState.lastTouch?.recipientId || null,
+        email,
+        visitorId: attributionState.resolved.visitorId,
+        occurredAt: attributionState.signupTouch.occurredAt,
+        accountId: acc._id
+      })
+    ])
+    signupTrackingResults.forEach((result) => {
+      if (result.status === 'rejected') {
+        console.error('Interaction signup tracking error:', result.reason)
+      }
+    })
 
     // Generate and send verification OTP
     const otp = otpService.generateOTP()
@@ -1690,7 +2034,9 @@ app.post('/interaction/:uid/signup', async (req, res) => {
     console.error('💥 Signup error:', err)
     console.error('💥 Error stack:', err.stack)
     if (!res.headersSent) {
-      res.redirect(`/signup/${req.params.uid}?error=signup_failed`)
+      res.redirect(buildPathWithQuery(`/signup/${req.params.uid}`, req.body, {
+        error: 'signup_failed'
+      }))
     }
   }
 })
@@ -1718,38 +2064,41 @@ app.get('/verify-email/:accountId', async (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Verify Email - AIIN Identity</title>
+      <title>Verify Email - Seemplify Identity</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <script src="/js/theme.js?v=5"></script>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 20px;
         }
         .container {
-          background: white;
+          background: var(--panel);
+          backdrop-filter: blur(16px);
           padding: 48px;
-          border-radius: 16px;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+          border-radius: 24px;
+          border: 1px solid var(--border);
+          box-shadow: var(--card-shadow);
           width: 100%;
           max-width: 480px;
         }
         .logo { text-align: center; margin-bottom: 32px; }
         .logo-icon { font-size: 64px; margin-bottom: 16px; }
-        h1 { font-size: 28px; color: #1a202c; margin-bottom: 8px; }
-        p { color: #718096; font-size: 16px; line-height: 1.5; margin-bottom: 24px; }
+        h1 { font-size: 28px; color: var(--text); margin-bottom: 8px; font-family: "Space Grotesk", system-ui, sans-serif; }
+        p { color: var(--muted); font-size: 16px; line-height: 1.5; margin-bottom: 24px; }
+        p strong { color: var(--text); }
         .form-group { margin-bottom: 24px; }
-        label { display: block; color: #4a5568; font-weight: 500; margin-bottom: 8px; }
+        label { display: block; color: var(--text-secondary); font-weight: 500; margin-bottom: 8px; }
         input {
           width: 100%;
           padding: 14px;
-          border: 2px solid #e2e8f0;
-          border-radius: 8px;
+          border: 2px solid var(--border);
+          border-radius: 12px;
+          background: var(--input-bg);
+          color: var(--text);
           font-size: 16px;
           transition: all 0.2s;
           text-align: center;
@@ -1759,39 +2108,43 @@ app.get('/verify-email/:accountId', async (req, res) => {
         }
         input:focus {
           outline: none;
-          border-color: #667eea;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+          border-color: var(--brand);
+          box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
         }
         button {
           width: 100%;
           padding: 14px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
+          background: #18181b;
+          color: #ffffff;
           border: none;
-          border-radius: 8px;
+          border-radius: 999px;
           font-size: 16px;
           font-weight: 600;
           cursor: pointer;
-          transition: opacity 0.2s;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
         }
-        button:hover:not(:disabled) { opacity: 0.9; }
+        button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 40px rgba(15, 23, 42, 0.35); }
         button:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+          transform: none;
         }
         .error {
-          background: #fee;
-          color: #c33;
+          background: var(--badge-error-bg);
+          border: 2px solid var(--badge-error-text);
+          color: var(--badge-error-text);
           padding: 12px;
-          border-radius: 8px;
+          border-radius: 12px;
           margin-bottom: 16px;
           font-size: 14px;
         }
         .success {
-          background: #efe;
-          color: #3c3;
+          background: var(--badge-success-bg);
+          border: 2px solid var(--badge-success-text);
+          color: var(--badge-success-text);
           padding: 12px;
-          border-radius: 8px;
+          border-radius: 12px;
           margin-bottom: 16px;
           font-size: 14px;
           display: none;
@@ -1801,10 +2154,10 @@ app.get('/verify-email/:accountId', async (req, res) => {
           text-align: center;
           margin-top: 16px;
           font-size: 14px;
-          color: #718096;
+          color: var(--muted);
         }
         .resend-link a {
-          color: #667eea;
+          color: var(--brand);
           text-decoration: none;
           font-weight: 500;
         }
@@ -2075,24 +2428,24 @@ app.get('/forgot-password', async (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Forgot Password - AIIN Identity</title>
+      <title>Forgot Password - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <script src="/js/theme.js?v=5"></script>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 20px;
         }
         .container { 
-          background: white;
+          background: var(--panel);
+          backdrop-filter: blur(16px);
           padding: 48px;
-          border-radius: 16px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+          border-radius: 24px;
+          border: 1px solid var(--border);
+          box-shadow: var(--card-shadow);
           max-width: 440px;
           width: 100%;
           animation: slideIn 0.3s ease-out;
@@ -2108,8 +2461,8 @@ app.get('/forgot-password', async (req, res) => {
         .logo-icon {
           width: 60px;
           height: 60px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 12px;
+          background: linear-gradient(135deg, #b980ff, #8b5cf6, #4c1d95);
+          border-radius: 14px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -2118,13 +2471,14 @@ app.get('/forgot-password', async (req, res) => {
         }
         h1 { 
           font-size: 28px;
-          color: #1a1a1a;
+          color: var(--text);
           margin-bottom: 8px;
           font-weight: 700;
           text-align: center;
+          font-family: "Space Grotesk", system-ui, sans-serif;
         }
         p { 
-          color: #666;
+          color: var(--muted);
           margin-bottom: 32px;
           font-size: 15px;
           text-align: center;
@@ -2138,37 +2492,40 @@ app.get('/forgot-password', async (req, res) => {
           margin-bottom: 8px;
           font-size: 14px;
           font-weight: 500;
-          color: #333;
+          color: var(--text-secondary);
         }
         input[type="email"] { 
           width: 100%;
           padding: 14px 16px;
-          border: 2px solid #e0e0e0;
-          border-radius: 8px;
+          border: 2px solid var(--border);
+          border-radius: 12px;
+          background: var(--input-bg);
+          color: var(--text);
           font-size: 15px;
           transition: all 0.2s;
         }
         input[type="email"]:focus { 
           outline: none;
-          border-color: #667eea;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+          border-color: var(--brand);
+          box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
         }
         button { 
           width: 100%;
           padding: 14px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
+          background: #18181b;
+          color: #ffffff;
           border: none;
-          border-radius: 8px;
+          border-radius: 999px;
           font-size: 16px;
           font-weight: 600;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
           margin-top: 8px;
+          box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
         }
         button:hover { 
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+          transform: translateY(-2px);
+          box-shadow: 0 0 40px rgba(15, 23, 42, 0.35);
         }
         button:disabled {
           opacity: 0.6;
@@ -2176,13 +2533,13 @@ app.get('/forgot-password', async (req, res) => {
           transform: none;
         }
         .success { 
-          background: #e8f5e9;
-          color: #2e7d32;
+          background: var(--badge-success-bg);
+          color: var(--badge-success-text);
           padding: 12px;
-          border-radius: 8px;
+          border-radius: 12px;
           font-size: 14px;
           margin-bottom: 16px;
-          border: 1px solid #a5d6a7;
+          border: 2px solid var(--badge-success-text);
           display: none;
         }
         .success.show {
@@ -2193,7 +2550,7 @@ app.get('/forgot-password', async (req, res) => {
           margin-top: 24px;
         }
         .back-link a {
-          color: #667eea;
+          color: var(--brand);
           text-decoration: none;
           font-size: 14px;
           font-weight: 600;
@@ -2382,13 +2739,13 @@ app.get('/reset-password/:token/success', async (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Password Reset Successful - AIIN Identity</title>
+      <title>Password Reset Successful - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           min-height: 100vh;
           display: flex;
           align-items: center;
@@ -2414,7 +2771,7 @@ app.get('/reset-password/:token/success', async (req, res) => {
         p { color: #666; margin-bottom: 32px; line-height: 1.6; }
         button { 
           padding: 14px 32px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           color: white;
           border: none;
           border-radius: 8px;
@@ -2427,7 +2784,7 @@ app.get('/reset-password/:token/success', async (req, res) => {
         }
         button:hover { 
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
         }
       </style>
     </head>
@@ -2436,7 +2793,7 @@ app.get('/reset-password/:token/success', async (req, res) => {
         <div class="icon">✅</div>
         <h1>Password Reset Successful!</h1>
         <p>Your password has been changed successfully. You can now sign in with your new password.</p>
-        <a href="${ISSUER_URL}" style="padding: 14px 32px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-block;">
+        <a href="${ISSUER_URL}" style="padding: 14px 32px; background: #18181b; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-block;">
           Go to Login
         </a>
       </div>
@@ -2462,13 +2819,13 @@ app.get('/reset-password/:token', async (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Reset Password - AIIN Identity</title>
+      <title>Reset Password - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           min-height: 100vh;
           display: flex;
           align-items: center;
@@ -2495,7 +2852,7 @@ app.get('/reset-password/:token', async (req, res) => {
         .logo-icon {
           width: 60px;
           height: 60px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           border-radius: 12px;
           display: inline-flex;
           align-items: center;
@@ -2536,13 +2893,13 @@ app.get('/reset-password/:token', async (req, res) => {
         }
         input[type="password"]:focus { 
           outline: none;
-          border-color: #667eea;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+          border-color: var(--brand, #6366f1);
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
         }
         button { 
           width: 100%;
           padding: 14px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: #18181b;
           color: white;
           border: none;
           border-radius: 8px;
@@ -2554,7 +2911,7 @@ app.get('/reset-password/:token', async (req, res) => {
         }
         button:hover { 
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
         }
         button:disabled {
           opacity: 0.6;
@@ -2600,7 +2957,7 @@ app.get('/reset-password/:token', async (req, res) => {
           margin-top: 24px;
         }
         .back-link a {
-          color: #667eea;
+          color: var(--brand, #6366f1);
           text-decoration: none;
           font-size: 14px;
           font-weight: 600;
@@ -2870,7 +3227,12 @@ async function getSessionFromCookies(req) {
 
     if (sessionData && sessionData.accountId) {
       const accountLookupStart = Date.now()
+      // IMPORTANT: Populate currentOrganization to ensure organization context is available
+      // This is critical for tenant isolation - apps like Zulip use currentOrganization.name
+      // to determine which organization subdomain to redirect to
       const account = await Account.findOne({ sub: sessionData.accountId })
+        .populate('currentOrganization', 'name')
+        .populate('organizations.organization', 'name')
       console.log(`⏱️ Account.findOne took ${Date.now() - accountLookupStart}ms`)
       return account
     }
@@ -2880,6 +3242,322 @@ async function getSessionFromCookies(req) {
     return null
   }
 }
+
+function getHubAppMetadata() {
+  const apps = getHubApps().map(app => ({
+    appId: app.appId,
+    name: app.name,
+    description: app.description || ''
+  }))
+
+  return {
+    apps,
+    appIdSet: buildValidAppIdSet(apps),
+    appNameById: new Map(apps.map(app => [app.appId, app.name]))
+  }
+}
+
+function getMemberAppAccessForOrganization(organizations, currentOrgId, accountId, validAppIds) {
+  if (!currentOrgId || !Array.isArray(organizations)) {
+    return normalizeAppAccess(null, validAppIds)
+  }
+
+  const org = organizations.find(item => item?._id?.toString() === currentOrgId.toString())
+  const member = org?.members?.find(
+    m => m?.status === 'active' && m?.account?.toString() === accountId.toString()
+  )
+
+  return normalizeAppAccess(member?.appAccess, validAppIds)
+}
+
+function getInvitationAccessSummary(invite, appNameById = new Map(), validAppIds = null) {
+  const appAccess = normalizeAppAccess(invite?.appAccess, validAppIds)
+  if (appAccess.mode !== APP_ACCESS_MODE_SELECTED) {
+    return {
+      appAccess,
+      appAccessLabel: 'All apps',
+      appAccessAppNames: []
+    }
+  }
+
+  const appAccessAppNames = appAccess.appIds.map(appId => appNameById.get(appId) || appId)
+
+  return {
+    appAccess,
+    appAccessLabel: appAccessAppNames.length === 1
+      ? '1 selected app'
+      : `${appAccessAppNames.length} selected apps`,
+    appAccessAppNames
+  }
+}
+
+async function logAppLaunchActivity({ req, account = null, app = null, appId = null, status, details = {} }) {
+  try {
+    const orgId =
+      account?.currentOrganization?._id?.toString() ||
+      account?.currentOrganization?.toString() ||
+      details.organizationId ||
+      null
+
+    const userAgent = typeof req.headers['user-agent'] === 'string'
+      ? req.headers['user-agent'].slice(0, 512)
+      : null
+
+    const errorMessage = typeof details.error === 'string'
+      ? details.error.slice(0, 512)
+      : undefined
+
+    await AppLaunchActivity.create({
+      organization: orgId || undefined,
+      account: account?._id,
+      appId: app?.appId || appId || 'unknown',
+      appName: app?.name || details.appName || null,
+      status,
+      source: 'hub',
+      details: {
+        ...details,
+        error: errorMessage
+      },
+      ipAddress: req.ip || req.connection?.remoteAddress || null,
+      userAgent
+    })
+  } catch (error) {
+    console.error('Failed to log app launch activity:', error.message)
+  }
+}
+
+// Public Plans Page - View available subscription plans
+app.get('/plans', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+    const plans = await subscriptionService.getPublicPlans()
+    const planPageErrorMessages = {
+      plan_not_found: 'The requested plan could not be found.',
+      plan_not_requestable: 'That plan is admin-assigned only and cannot be requested or renewed from here.'
+    }
+
+    // If user is logged in, get their organization subscription info
+    let currentSubscription = null
+    let organization = null
+
+    if (sessionAccount) {
+      const account = await Account.findOne({ sub: sessionAccount.sub })
+        .populate('currentOrganization')
+
+      if (account?.currentOrganization) {
+        organization = account.currentOrganization
+        currentSubscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+      }
+    }
+
+    res.render('plans', {
+      user: sessionAccount,
+      plans,
+      currentSubscription,
+      organization,
+      errorMessage: planPageErrorMessages[req.query?.error] || null,
+      activePage: 'plans'
+    })
+  } catch (err) {
+    console.error('Plans page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// Subscription Required Page - Redirect destination when app denies access due to subscription
+app.get('/subscription-required', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+    const { app: appName, org: orgId, reason } = req.query
+
+    // App name display mapping
+    const appDisplayNames = {
+      'recruiter': 'SmartHR Recruiter',
+      'smarthr': 'SmartHR Recruiter',
+      'leave-management': 'Leave Management',
+      'payroll-management': 'Payroll Management',
+      'performance-management': 'Performance Management',
+      'time-attendance': 'Time & Attendance'
+    }
+
+    // Reason display mapping
+    const reasonMessages = {
+      'no_subscription': 'Your organization does not have an active subscription.',
+      'subscription_inactive': 'Your organization\'s subscription has expired or been cancelled.',
+      'feature_not_included': 'Your current plan does not include access to this application.',
+      'verification_failed': 'We could not verify your subscription status. Please try again.',
+      'verification_error': 'There was an error checking your subscription. Please try again later.',
+      'no_organization': 'You need to be part of an organization to access this application.'
+    }
+
+    let organization = null
+    let subscription = null
+    let plans = []
+
+    // Get plans for the user to see upgrade options
+    plans = await subscriptionService.getPublicPlans()
+
+    if (sessionAccount && orgId) {
+      // Try to get organization info
+      try {
+        organization = await Organization.findById(orgId).lean()
+
+        if (organization) {
+          subscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+        }
+      } catch (e) {
+        console.error('Error fetching org for subscription-required:', e.message)
+      }
+    }
+
+    res.render('subscription-required', {
+      user: sessionAccount,
+      appName: appDisplayNames[appName] || appName || 'the application',
+      appKey: appName,
+      organization,
+      subscription,
+      reason,
+      reasonMessage: reasonMessages[reason] || reasonMessages['no_subscription'],
+      plans,
+      plansUrl: '/plans',
+      subscriptionUrl: '/subscription',
+      hubUrl: '/',
+      activePage: null
+    })
+  } catch (err) {
+    console.error('Subscription required page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// Subscription Status Page - View current subscription and requests
+app.get('/subscription', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+
+    if (!sessionAccount) {
+      return res.redirect('/login?redirect=/subscription')
+    }
+
+    const account = await Account.findOne({ sub: sessionAccount.sub })
+      .populate('currentOrganization')
+
+    if (!account) {
+      return res.redirect('/login')
+    }
+
+    // Get user's organizations for the org selector
+    const userOrganizations = await Organization.find({
+      'members.account': account._id,
+      'members.status': 'active'
+    }).lean()
+
+    // Determine which organization to show
+    let organization = null
+    const orgIdParam = req.query.org
+
+    if (orgIdParam) {
+      // Check if user is member of requested org
+      organization = userOrganizations.find(o => o._id.toString() === orgIdParam)
+    }
+
+    if (!organization && account.currentOrganization) {
+      organization = userOrganizations.find(o => o._id.toString() === account.currentOrganization._id.toString())
+    }
+
+    if (!organization && userOrganizations.length > 0) {
+      organization = userOrganizations[0]
+    }
+
+    let subscription = null
+    let features = null
+    let limits = null
+    let requests = []
+    let isAdmin = false
+
+    if (organization) {
+      // Get subscription info
+      subscription = await subscriptionService.getSubscriptionForOrg(organization._id)
+      features = await subscriptionService.getEffectiveFeatures(organization._id)
+      limits = await subscriptionService.getEffectiveLimits(organization._id)
+
+      // Get subscription requests
+      const SubscriptionRequest = (await import('./models/SubscriptionRequest.js')).default
+      requests = await SubscriptionRequest.findAllForOrg(organization._id)
+
+      // Check if user is admin of this org
+      const member = organization.members?.find(m => m.account.toString() === account._id.toString())
+      isAdmin = member?.role === 'admin' || member?.role === 'owner'
+    }
+
+    res.render('subscription', {
+      user: sessionAccount,
+      organization,
+      organizations: userOrganizations,
+      subscription,
+      features,
+      limits,
+      requests,
+      isAdmin,
+      requested: req.query.requested === 'true',
+      activePage: 'subscription'
+    })
+  } catch (err) {
+    console.error('Subscription page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
+
+// Request Plan Page - Form to request a subscription
+app.get('/request-plan/:planId', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+
+    if (!sessionAccount) {
+      return res.redirect('/login?redirect=/request-plan/' + req.params.planId)
+    }
+
+    const account = await Account.findOne({ sub: sessionAccount.sub })
+      .populate('currentOrganization')
+
+    if (!account) {
+      return res.redirect('/login')
+    }
+
+    if (!account.currentOrganization) {
+      return res.redirect('/organizations?error=select_org_first')
+    }
+
+    // Get the plan
+    const Plan = (await import('./models/Plan.js')).default
+    const plan = await Plan.findById(req.params.planId)
+
+    if (!plan || !plan.isActive || !plan.isPublic) {
+      return res.redirect('/plans?error=plan_not_found')
+    }
+    if (plan.isRequestable === false) {
+      return res.redirect('/plans?error=plan_not_requestable')
+    }
+
+    // Check if there's already a pending request
+    const SubscriptionRequest = (await import('./models/SubscriptionRequest.js')).default
+    const pendingRequest = await SubscriptionRequest.findOne({
+      organization: account.currentOrganization._id,
+      status: 'pending'
+    })
+
+    res.render('request-plan', {
+      user: sessionAccount,
+      plan,
+      organization: account.currentOrganization,
+      hasPendingRequest: !!pendingRequest,
+      activePage: 'subscription'
+    })
+  } catch (err) {
+    console.error('Request plan page error:', err)
+    res.status(500).send('Internal server error')
+  }
+})
 
 // Hub Homepage - Main app launcher (root route)
 app.get('/', async (req, res) => {
@@ -2917,11 +3595,117 @@ app.get('/', async (req, res) => {
       }
     })
 
-    // Get all active apps
-    const apps = getHubApps()
+    const { appIdSet, appNameById } = getHubAppMetadata()
+    const hasOrganizations = organizations.length > 0
+    const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString()
+    const currentSubscriptionAccess = await getCurrentOrganizationSubscriptionAccessState(account, {
+      includePendingRequest: true
+    })
+    const memberAppAccess = getMemberAppAccessForOrganization(
+      userOrganizations,
+      currentOrgId,
+      account._id,
+      appIdSet
+    )
 
-    // Render the hub homepage
-    res.send(renderHubPage(account, apps, organizations))
+    const hubBrand = getIdpBrand(req)
+    const isAkwaIbomHub = hubBrand.name === 'Akwa Ibom State'
+    let apps = getHubApps({ isAkwaIbom: isAkwaIbomHub }).map(app => ({
+      ...app,
+      iconSvg: getAppIcon(app.icon)
+    }))
+
+    // Filter hub cards by per-member access scope
+    if (memberAppAccess.mode === APP_ACCESS_MODE_SELECTED) {
+      const allowedAppIds = new Set(memberAppAccess.appIds)
+      apps = apps.filter(app => allowedAppIds.has(app.appId))
+    }
+
+    // Filter hub cards by plan's hideHubCards (dynamically hide cards per plan)
+    // Get coming soon cards for this plan (toggleable per plan, default off)
+    let comingSoonCards = []
+    if (currentOrgId) {
+      const subscription = await subscriptionService.getSubscriptionForOrg(currentOrgId)
+      const hideHubCards = subscription?.plan?.hideHubCards
+      if (hideHubCards && Array.isArray(hideHubCards) && hideHubCards.length > 0) {
+        const hideSet = new Set(hideHubCards.map(id => String(id).trim()).filter(Boolean))
+        apps = apps.filter(app => !hideSet.has(app.appId))
+      }
+      const showComingSoonCards = subscription?.plan?.showComingSoonCards
+      if (showComingSoonCards && Array.isArray(showComingSoonCards) && showComingSoonCards.length > 0) {
+        comingSoonCards = getComingSoonCards(showComingSoonCards).map(card => ({
+          ...card,
+          iconSvg: getAppIcon(card.icon)
+        }))
+      }
+    }
+
+    const pendingInvites = await OrganizationInvite.find({
+      email: account.email.toLowerCase(),
+      status: 'pending',
+      expiresAt: { $gt: new Date() }
+    })
+      .populate('organization', 'name description')
+      .populate('invitedBy', 'email profile.name')
+      .sort({ createdAt: -1 })
+      .lean()
+
+    const pendingInvitations = pendingInvites.map(invite => ({
+      id: invite._id.toString(),
+      organization: {
+        id: invite.organization?._id?.toString?.() || '',
+        name: invite.organization?.name || 'Organization',
+        description: invite.organization?.description || ''
+      },
+      role: invite.role,
+      invitedBy: {
+        email: invite.invitedBy?.email || '',
+        name: invite.invitedBy?.profile?.name || ''
+      },
+      expiresAt: invite.expiresAt,
+      createdAt: invite.createdAt,
+      ...getInvitationAccessSummary(invite, appNameById, appIdSet)
+    }))
+
+    if (!hasOrganizations || currentSubscriptionAccess?.isLocked) {
+      apps = []
+      comingSoonCards = []
+    }
+
+    const notificationSummary = await buildNotificationCenterData(account, {
+      maxTasks: 12
+    })
+    const unreadPendingOnboardingAssignments = notificationSummary.unreadDocumentAssignments || []
+    const latestReceivedEvaluationsWithMetrics = (notificationSummary.unreadPerformanceEvaluations || []).slice(0, 3)
+    const receivedEvaluationCount = notificationSummary.counts?.simplePerformance || 0
+    const profileCompletion = await getProfileCompletionForAccount(account, {
+      organizationId: account.currentOrganization?._id?.toString?.() || account.currentOrganization?.toString?.() || null
+    })
+
+    // Render the hub homepage using EJS template
+    res.render('home', {
+      user: account,
+      apps,
+      comingSoonCards,
+      organizations,
+      hasOrganizations,
+      currentSubscriptionAccess,
+      pendingInvitations,
+      pendingInvitationsCount: pendingInvitations.length,
+      accessError: req.query?.error === 'app_not_assigned'
+        ? `${req.query?.app || 'This app'} is not assigned to your account for the current organization.`
+        : null,
+      pendingOnboardingCount: notificationSummary.counts?.documents || unreadPendingOnboardingAssignments.length,
+      pendingOnboardingAssignments: unreadPendingOnboardingAssignments,
+      receivedEvaluationCount,
+      latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
+      notificationSummary,
+      simpleLmsExternalWorkspaceUrl: SIMPLE_LMS_EXTERNAL_WORKSPACE_URL,
+      profileCompletion,
+      currentProfileSection: '',
+      profileCompletionEnforced: !profileCompletion.complete,
+      activePage: 'home'
+    })
   } catch (err) {
     console.error('Hub error:', err)
     res.status(500).send('Internal server error')
@@ -2971,7 +3755,7 @@ app.get('/login', async (req, res) => {
     }
   }
 
-  res.send(renderHubLoginPage(errorMsg, returnTo, pendingInviteInfo))
+  res.send(renderHubLoginPage(req, errorMsg, returnTo, pendingInviteInfo))
 })
 
 // Hub Login Handler
@@ -3017,12 +3801,22 @@ app.post('/login', async (req, res) => {
       maxAge: expiresIn * 1000
     })
 
-    // Redirect to return_to URL if provided (e.g., for invitation acceptance), otherwise home
+    const currentOrgId = account.currentOrganization?._id?.toString?.()
+      || account.currentOrganization?.toString?.()
+      || null
+    const profileCompletion = await getProfileCompletionForAccount(account, {
+      organizationId: currentOrgId
+    })
+    const profileSetupRoute = profileCompletion?.complete
+      ? '/'
+      : `${profileCompletion?.nextIncompleteStep?.route || '/profile/personal'}?wizard=1`
+
+    // Redirect to return_to URL if provided (e.g., for invitation acceptance), otherwise profile setup or home
     if (return_to && return_to.startsWith('/')) {
       console.log('Redirecting to return_to:', return_to)
       res.redirect(return_to)
     } else {
-      res.redirect('/')
+      res.redirect(profileSetupRoute)
     }
   } catch (err) {
     console.error('Hub login error:', err)
@@ -3039,19 +3833,33 @@ app.get('/signup', async (req, res) => {
   }
   const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
 
-  res.send(renderHubSignupPage(errorMsg))
+  res.send(renderHubSignupPage(req, errorMsg, req.query))
 })
 
 // Hub Signup Handler
 app.post('/signup', async (req, res) => {
   try {
-    const { email, password, name } = req.body
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const password = String(req.body?.password || '')
+    const confirmPassword = String(req.body?.confirmPassword || '')
+    const name = String(req.body?.name || '').trim()
+    const attributionQuery = collectSignupAttribution(req.body)
+
+    if (password !== confirmPassword) {
+      return res.redirect(buildPathWithQuery('/signup', attributionQuery, {
+        error: 'passwords_mismatch'
+      }))
+    }
 
     // Check if account exists
     const existing = await Account.findOne({ email })
     if (existing) {
-      return res.redirect('/signup?error=account_exists')
+      return res.redirect(buildPathWithQuery('/signup', attributionQuery, {
+        error: 'account_exists'
+      }))
     }
+
+    const attributionState = await buildSignupAttributionState(req, email)
 
     // Create account (NOT verified yet)
     const sub = new mongoose.Types.ObjectId().toString()
@@ -3066,10 +3874,54 @@ app.post('/signup', async (req, res) => {
         name: name || email.split('@')[0],
         preferred_username: email.split('@')[0]
       },
-      security: {}
+      security: {},
+      acquisition: {
+        firstTouch: attributionState.firstTouch,
+        lastTouch: attributionState.lastTouch,
+        conversionSource: attributionState.resolved.verifiedToken ? 'campaign' : 'website',
+        visitorId: attributionState.resolved.visitorId,
+        attributionSnapshot: {
+          signupTouch: attributionState.signupTouch
+        }
+      }
     })
 
     console.log('Hub signup successful (unverified):', email)
+
+    const hubSignupTrackingResults = await Promise.allSettled([
+      MarketingVisit.create({
+        visitorId: attributionState.resolved.visitorId,
+        sessionId: attributionState.resolved.sessionId,
+        eventType: 'signup_complete',
+        sourceApp: 'identityprovider',
+        pageUrl: String(req.body?.landingPage || ''),
+        path: req.originalUrl,
+        referrer: String(req.body?.referrer || req.headers.referer || ''),
+        ipAddress: req.ip || req.connection?.remoteAddress || '',
+        userAgent: String(req.headers['user-agent'] || ''),
+        utm: attributionState.resolved.utm,
+        attribution: attributionState.signupTouch,
+        account: acc._id,
+        metadata: {
+          route: 'hub_signup'
+        },
+        occurredAt: attributionState.signupTouch.occurredAt
+      }),
+      registerCampaignConversion({
+        conversionType: 'signup',
+        campaignId: attributionState.resolved.verifiedToken?.campaignId || attributionState.lastTouch?.campaignId || null,
+        recipientId: attributionState.resolved.verifiedToken?.recipientId || attributionState.lastTouch?.recipientId || null,
+        email,
+        visitorId: attributionState.resolved.visitorId,
+        occurredAt: attributionState.signupTouch.occurredAt,
+        accountId: acc._id
+      })
+    ])
+    hubSignupTrackingResults.forEach((result) => {
+      if (result.status === 'rejected') {
+        console.error('Hub signup tracking error:', result.reason)
+      }
+    })
 
     // Generate and send verification OTP
     const otp = otpService.generateOTP()
@@ -3092,7 +3944,9 @@ app.post('/signup', async (req, res) => {
 
   } catch (err) {
     console.error('Hub signup error:', err)
-    res.redirect('/signup?error=signup_failed')
+    res.redirect(buildPathWithQuery('/signup', req.body, {
+      error: 'signup_failed'
+    }))
   }
 })
 
@@ -3113,28 +3967,184 @@ app.get('/logout', async (req, res) => {
   }
 })
 
+app.get('/simple-lms', async (req, res) => {
+  try {
+    const account = await getSessionFromCookies(req)
+    if (account) {
+      const organizationIds = getOrganizationIdsFromAccount(account)
+      if (organizationIds.length === 0) {
+        return res.redirect('/')
+      }
+
+      const accessState = await getCurrentOrganizationSubscriptionAccessState(account)
+      if (!accessState) {
+        return res.redirect('/')
+      }
+      if (accessState.isLocked) {
+        return res.redirect('/?subscription=locked')
+      }
+    }
+
+    const params = new URLSearchParams(req.query || {})
+    const targetUrl = params.toString()
+      ? `${SIMPLE_LMS_EXTERNAL_WORKSPACE_URL}?${params.toString()}`
+      : SIMPLE_LMS_EXTERNAL_WORKSPACE_URL
+    return res.redirect(targetUrl)
+  } catch (error) {
+    console.error('Simple LMS redirect failed:', error)
+    return res.redirect('/')
+  }
+})
+
 
 // Hub App Launch - Creates SSO token and redirects to app's auth endpoint
 // Supports both OIDC and SAML based on app.authType
 app.get('/launch/:appId', async (req, res) => {
   const launchStartTime = Date.now()
+  let account = null
+  let app = null
+
   try {
     const { appId } = req.params
 
     const sessionStart = Date.now()
-    const account = await getSessionFromCookies(req)
-    console.log(`⏱️ Hub session lookup took ${Date.now() - sessionStart}ms`)
+    account = await getSessionFromCookies(req)
+    console.log(`Hub session lookup took ${Date.now() - sessionStart}ms`)
 
     if (!account) {
+      await logAppLaunchActivity({
+        req,
+        appId,
+        status: 'no_session'
+      })
       return res.redirect('/login')
     }
 
-    const app = getAppById(appId)
+    app = getAppById(appId)
     if (!app) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        appId,
+        status: 'app_not_found'
+      })
       return res.status(404).send('App not found')
     }
 
-    console.log('🚀 Launching app from hub:')
+    const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || null
+    if (!currentOrgId) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'blocked_no_organization',
+        details: {
+          appId
+        }
+      })
+      return res.redirect('/')
+    }
+
+    const currentSubscriptionAccess = await getCurrentOrganizationSubscriptionAccessState(account)
+    if (!currentSubscriptionAccess || currentSubscriptionAccess.isLocked) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'blocked_subscription',
+        details: {
+          organizationId: currentOrgId,
+          subscriptionStatus: currentSubscriptionAccess?.status || 'none'
+        }
+      })
+      return res.redirect('/?subscription=locked')
+    }
+
+    const { appIdSet } = getHubAppMetadata()
+    const currentOrganization = await Organization.findById(currentOrgId)
+      .select('members.account members.status members.appAccess')
+      .lean()
+
+    const currentMember = currentOrganization?.members?.find(
+      m => m?.status === 'active' && m?.account?.toString() === account._id.toString()
+    )
+
+    if (!currentMember) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'blocked_no_membership',
+        details: {
+          organizationId: currentOrgId
+        }
+      })
+      return res.redirect('/')
+    }
+
+    const currentMemberAppAccess = normalizeAppAccess(currentMember.appAccess, appIdSet)
+
+    if (!memberCanAccessApp(currentMemberAppAccess, appId)) {
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'blocked_member_scope',
+        details: {
+          organizationId: currentOrgId,
+          appAccessMode: currentMemberAppAccess.mode,
+          assignedApps: currentMemberAppAccess.appIds
+        }
+      })
+
+      const redirectMessage = encodeURIComponent(app.name || appId)
+      return res.redirect(`/?error=app_not_assigned&app=${redirectMessage}`)
+    }
+
+    // Check subscription access for apps that require it
+    // Map app IDs to subscription feature keys
+    const appFeatureMap = {
+      'smarthr': 'recruiter',
+      'recruiter': 'recruiter',
+      'leave-management': 'leaveManagement',
+      'payroll-management': 'payrollManagement',
+      'performance-management': 'performanceManagement',
+      'time-attendance': 'timeAttendance',
+      'outline': 'outlineDocs',
+      'openwebui': 'aiChat',
+      'lms': 'lms'
+    }
+
+    const featureKey = appFeatureMap[appId]
+    if (!featureKey) {
+      console.warn(`No subscription feature mapping for appId: ${appId} - subscription check skipped`)
+    }
+
+    if (featureKey && currentOrgId) {
+      const canAccess = await subscriptionService.canAccessApp(currentOrgId, featureKey)
+
+      if (!canAccess) {
+        console.log(`Subscription check failed for ${account.email} - ${appId} (feature: ${featureKey})`)
+        await logAppLaunchActivity({
+          req,
+          account,
+          app,
+          status: 'blocked_subscription',
+          details: {
+            organizationId: currentOrgId,
+            featureKey
+          }
+        })
+
+        return res.render('subscription-required', {
+          appName: app.name,
+          organization: account.currentOrganization,
+          user: account
+        })
+      }
+    }
+
+    console.log('Launching app from hub:')
     console.log('  App ID:', app.appId)
     console.log('  App Name:', app.name)
     console.log('  Auth Type:', app.authType || 'oidc')
@@ -3142,48 +4152,93 @@ app.get('/launch/:appId', async (req, res) => {
 
     // Check if app uses SAML authentication
     if (app.authType === 'saml') {
-      // For SAML apps, redirect directly to the SAML SSO endpoint
-      // The user is already authenticated (we have their session), so SAML will generate assertion
       const samlSsoUrl = `/saml/sso?sp=${app.appId}`
-      console.log('  📍 SAML SSO REDIRECT TO:', samlSsoUrl)
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_saml',
+        details: {
+          redirectUrl: samlSsoUrl,
+          authType: 'saml',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
       return res.redirect(samlSsoUrl)
     }
 
     // Check if app uses direct link (no SSO)
     if (app.authType === 'direct') {
-      // For direct apps, just redirect to the app URL - no SSO integration
-      console.log('  📍 DIRECT REDIRECT TO:', app.url)
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_direct',
+        details: {
+          redirectUrl: app.url,
+          authType: 'direct',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
       return res.redirect(app.url)
     }
 
     // Special handling for Outline - it uses direct OIDC, not backend-initiated
     if (app.appId === 'outline') {
-      // Outline handles OIDC at /auth/oidc - redirect there directly
       const outlineAuthUrl = `${app.url}/auth/oidc`
-      console.log('  📍 OUTLINE OIDC REDIRECT TO:', outlineAuthUrl)
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_outline',
+        details: {
+          redirectUrl: outlineAuthUrl,
+          authType: 'oidc',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
       return res.redirect(outlineAuthUrl)
     }
 
     // Special handling for Open WebUI - it uses direct OIDC, not backend-initiated
     if (app.appId === 'openwebui') {
-      // Open WebUI handles OIDC at /oauth/oidc/login - redirect there directly
       const openwebuiAuthUrl = `${app.url}/oauth/oidc/login`
-      console.log('  📍 OPEN WEBUI OIDC REDIRECT TO:', openwebuiAuthUrl)
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_openwebui',
+        details: {
+          redirectUrl: openwebuiAuthUrl,
+          authType: 'oidc',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
       return res.redirect(openwebuiAuthUrl)
     }
 
+    // Zulip uses a single realm instance with multi-org support via OIDC claims
+    if (app.appId === 'zulip') {
+      const zulipUrl = 'https://chat.seemplifyai.com/login/oidc/?next=/'
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_zulip',
+        details: {
+          redirectUrl: zulipUrl,
+          authType: 'oidc',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
+      return res.redirect(zulipUrl)
+    }
+
     // Special handling for LMS - Frappe uses Social Login Key for OIDC
-    // We need to redirect to the IDP's OAuth authorization endpoint with proper parameters
-    // Frappe will handle the callback at /api/method/frappe.integrations.oauth2_logins.custom/Seemplify
     if (app.appId === 'lms') {
-      // Generate SSO token to enable auto-login from hub session
       const ssoSecret = process.env.OIDC_COOKIE_SECRET || 'dev-cookie-secret'
       const secretKey = new TextEncoder().encode(ssoSecret)
-      
+
       const hubToken = await new SignJWT({
         sub: account.sub,
         email: account.email,
@@ -3192,30 +4247,39 @@ app.get('/launch/:appId', async (req, res) => {
       })
         .setProtectedHeader({ alg: 'HS256' })
         .setIssuedAt()
-        .setExpirationTime('5m') // Short-lived token
+        .setExpirationTime('5m')
         .sign(secretKey)
-      
-      // Build the OAuth authorization URL with proper parameters
+
       const state = Buffer.from(JSON.stringify({
         site: app.url,
         token: crypto.randomBytes(16).toString('hex'),
         redirect_to: '/lms'
       })).toString('base64')
-      
+
       const redirectUri = `${app.url}/api/method/frappe.integrations.oauth2_logins.custom/Seemplify`
       const authParams = new URLSearchParams({
         client_id: 'lms',
         redirect_uri: redirectUri,
         response_type: 'code',
         scope: 'openid email profile',
-        state: state,
-        hub_token: hubToken // Include SSO token for auto-login
+        state,
+        hub_token: hubToken
       })
-      
+
       const lmsAuthUrl = `${process.env.ISSUER_BASE_URL || 'https://auth.seemplifyai.com'}/auth?${authParams.toString()}`
-      console.log('  📍 LMS OAUTH REDIRECT TO:', lmsAuthUrl)
-      console.log('  🔑 Hub SSO token included for auto-login')
-      console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+
+      await logAppLaunchActivity({
+        req,
+        account,
+        app,
+        status: 'launched_lms',
+        details: {
+          redirectUrl: lmsAuthUrl,
+          authType: 'oidc',
+          launchDurationMs: Date.now() - launchStartTime
+        }
+      })
+
       return res.redirect(lmsAuthUrl)
     }
 
@@ -3231,49 +4295,71 @@ app.get('/launch/:appId', async (req, res) => {
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
-      .setExpirationTime('5m') // Short-lived token
+      .setExpirationTime('5m')
       .sign(secretKey)
 
     // Build the redirect URL to the app's backend OIDC start
-    // Use app-specific API URL based on appId
-    let apiUrl;
+    let apiUrl
     switch (app.appId) {
       case 'smarthr':
-        apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001';
-        break;
+        apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001'
+        break
       case 'leave-management':
-        apiUrl = process.env.LEAVE_MANAGEMENT_API_URL || 'http://localhost:5002';
-        break;
+        apiUrl = process.env.LEAVE_MANAGEMENT_API_URL || 'http://localhost:5002'
+        break
       case 'performance-management':
-        apiUrl = process.env.PERFORMANCE_MANAGEMENT_API_URL || 'http://localhost:5004';
-        break;
+        apiUrl = process.env.PERFORMANCE_MANAGEMENT_API_URL || 'http://localhost:5004'
+        break
       case 'payroll-management':
-        apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006';
-        break;
+        apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006'
+        break
+      case 'time-attendance':
+        apiUrl = process.env.TIME_ATTENDANCE_API_URL || 'https://api-time.seemplifyai.com'
+        break
       default:
-        // Fallback to smarthr API URL for unknown apps
-        apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001';
+        apiUrl = process.env.SMARTHR_API_URL || 'http://localhost:5001'
     }
 
-    const frontendUrl = app.url
-
-    // Construct the OIDC start URL with SSO token
+    const launchBrand = getIdpBrand(req)
+    let frontendUrl = app.url
+    if (launchBrand.name === 'Akwa Ibom State' && app.appId === 'smarthr') {
+      frontendUrl = 'https://ibom.aiinnigeria.com'
+    }
     const redirectUrl = `${apiUrl}/api/auth/oidc/start?` + new URLSearchParams({
       idp_initiated: 'true',
       hub_token: ssoToken,
       returnTo: frontendUrl
     }).toString()
 
-    console.log('  📍 OIDC REDIRECT TO:', redirectUrl)
-    console.log(`⏱️ Total hub launch time: ${Date.now() - launchStartTime}ms`)
+    await logAppLaunchActivity({
+      req,
+      account,
+      app,
+      status: 'launched_oidc',
+      details: {
+        redirectUrl,
+        authType: 'oidc',
+        launchDurationMs: Date.now() - launchStartTime
+      }
+    })
 
     res.redirect(redirectUrl)
   } catch (err) {
     console.error('App launch error:', err)
+    await logAppLaunchActivity({
+      req,
+      account,
+      app,
+      appId: req.params?.appId,
+      status: 'launch_error',
+      details: {
+        error: err.message,
+        launchDurationMs: Date.now() - launchStartTime
+      }
+    })
     res.status(500).send('Failed to launch app')
   }
 })
-
 // API: Get all apps (for potential SPA usage)
 app.get('/api/apps', async (req, res) => {
   try {
@@ -3290,6 +4376,29 @@ app.get('/api/apps', async (req, res) => {
 
 // Helper middleware to check session and get current user
 const getSessionUser = async (req, res, next) => {
+  const attachProfileCompletionLocals = async (account) => {
+    const profileCompletion = await getProfileCompletionForAccount(account, {
+      organizationId: account?.currentOrganization?._id?.toString?.() || account?.currentOrganization?.toString?.() || req.session?.currentOrganization || null
+    })
+    const nextIncompleteStepKey = String(profileCompletion?.nextIncompleteStep?.key || '').trim().toLowerCase()
+    const isProfileRoute = req.path.startsWith('/profile')
+    const isDocumentWorkspaceRoute = req.path === '/documents'
+      || req.path.startsWith('/documents/')
+      || req.path === '/onboarding'
+      || req.path.startsWith('/onboarding/')
+    const isCurrentCompletionRoute = isProfileRoute
+      || (nextIncompleteStepKey === 'documents' && isDocumentWorkspaceRoute)
+
+    req.profileCompletion = profileCompletion
+    res.locals.user = account
+    res.locals.profileCompletion = profileCompletion
+    res.locals.currentProfileSection = nextIncompleteStepKey === 'documents' && isDocumentWorkspaceRoute
+      ? 'documents'
+      : ''
+    res.locals.activeProfileSection = res.locals.activeProfileSection || ''
+    res.locals.profileCompletionEnforced = !profileCompletion.complete && !isCurrentCompletionRoute
+  }
+
   // Check if user has a session (set during login)
   const sessionAccountId = req.session?.accountId
   if (!sessionAccountId) {
@@ -3300,6 +4409,7 @@ const getSessionUser = async (req, res, next) => {
       req.user = await Account.findOne({ sub: cookieAccount.sub })
         .populate('organizations.organization', 'name')
         .populate('currentOrganization', 'name')
+      await attachProfileCompletionLocals(req.user)
       return next()
     }
 
@@ -3315,7 +4425,10 @@ const getSessionUser = async (req, res, next) => {
           req.user = await Account.findOne({ sub: payload.sub })
             .populate('organizations.organization', 'name')
             .populate('currentOrganization', 'name')
-          if (req.user) return next()
+          if (req.user) {
+            await attachProfileCompletionLocals(req.user)
+            return next()
+          }
         }
       } catch (e) {
         console.log('Session token invalid:', e.message)
@@ -3333,7 +4446,1139 @@ const getSessionUser = async (req, res, next) => {
   }
 
   req.user = account
+  await attachProfileCompletionLocals(account)
   next()
+}
+
+const getCurrentOrganizationContext = async (user) => {
+  const organizationId =
+    user?.currentOrganization?._id?.toString() ||
+    user?.currentOrganization?.toString() ||
+    null
+
+  if (!organizationId) {
+    return { error: 'Select an organization first.' }
+  }
+
+  const organization = await Organization.findById(organizationId)
+    .select('name members')
+    .lean()
+
+  if (!organization) {
+    return { error: 'Organization not found.' }
+  }
+
+  const memberRecord = organization.members?.find(
+    member => (
+      member.status === 'active' &&
+      member.account?.toString() === user._id.toString()
+    )
+  )
+
+  if (!memberRecord) {
+    return { error: 'You are not an active member of the current organization.' }
+  }
+
+  return {
+    organizationId,
+    organizationName: organization.name,
+    memberRole: memberRecord.role
+  }
+}
+
+const DASHBOARD_NOTIFICATION_VIEW_PATHS = Object.freeze({
+  documents: 'notificationViews.documentsByOrganization',
+  simplePerformance: 'notificationViews.simplePerformanceByOrganization',
+  simpleLms: 'notificationViews.simpleLmsByOrganization'
+})
+
+const NOTIFICATION_READ_PATHS = Object.freeze({
+  documents: 'notificationReads.documentsAssignments',
+  simplePerformance: 'notificationReads.simplePerformanceEvaluations'
+})
+
+const getOrganizationIdsFromAccount = (account) => {
+  if (!account || !Array.isArray(account.organizations)) {
+    return []
+  }
+
+  const organizationIds = new Set()
+  for (const membership of account.organizations) {
+    if (membership?.isActive === false) continue
+    const organizationId =
+      membership?.organization?._id?.toString() ||
+      membership?.organization?.toString() ||
+      ''
+    if (organizationId) {
+      organizationIds.add(organizationId)
+    }
+  }
+
+  return Array.from(organizationIds)
+}
+
+const readNotificationViewDate = (mapLike, organizationId) => {
+  const key = String(organizationId || '').trim()
+  if (!key || !mapLike) {
+    return null
+  }
+
+  let rawValue = null
+  if (typeof mapLike.get === 'function') {
+    rawValue = mapLike.get(key)
+  } else if (typeof mapLike === 'object') {
+    rawValue = mapLike[key]
+  }
+
+  if (!rawValue) {
+    return null
+  }
+
+  const parsedDate = new Date(rawValue)
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
+}
+
+const readNotificationEntityDate = (mapLike, entityId) => {
+  const key = String(entityId || '').trim()
+  if (!key || !mapLike) {
+    return null
+  }
+
+  let rawValue = null
+  if (typeof mapLike.get === 'function') {
+    rawValue = mapLike.get(key)
+  } else if (typeof mapLike === 'object') {
+    rawValue = mapLike[key]
+  }
+
+  if (!rawValue) {
+    return null
+  }
+
+  const parsedDate = new Date(rawValue)
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
+}
+
+const getDashboardNotificationViewedAt = (account, type, organizationId) => {
+  const orgId = String(organizationId || '').trim()
+  if (!orgId) {
+    return null
+  }
+
+  if (type === 'documents') {
+    return readNotificationViewDate(account?.notificationViews?.documentsByOrganization, orgId)
+  }
+  if (type === 'simplePerformance') {
+    return readNotificationViewDate(account?.notificationViews?.simplePerformanceByOrganization, orgId)
+  }
+  if (type === 'simpleLms') {
+    return readNotificationViewDate(account?.notificationViews?.simpleLmsByOrganization, orgId)
+  }
+  return null
+}
+
+const getNotificationEntityReadAt = (account, type, entityId) => {
+  const id = String(entityId || '').trim()
+  if (!id) {
+    return null
+  }
+
+  if (type === NOTIFICATION_CATEGORY.documents) {
+    return readNotificationEntityDate(account?.notificationReads?.documentsAssignments, id)
+  }
+  if (type === NOTIFICATION_CATEGORY.simplePerformance) {
+    return readNotificationEntityDate(account?.notificationReads?.simplePerformanceEvaluations, id)
+  }
+  return null
+}
+
+const getNotificationReferenceFromTask = (task = {}) => {
+  const idValue = String(task.id || '').trim()
+  const [category, rawEntityId] = idValue.split(':')
+  const entityId = String(rawEntityId || '').trim()
+  const normalizedCategory = getNotificationCategory(category, '')
+  if (!normalizedCategory || !entityId) {
+    return null
+  }
+  return {
+    category: normalizedCategory,
+    entityId,
+    organizationId: task.organizationId ? String(task.organizationId) : ''
+  }
+}
+
+const markNotificationReferencesAsRead = async ({ accountId, references = [] }) => {
+  if (!accountId) {
+    return
+  }
+
+  const now = new Date()
+  const updateSet = {}
+
+  for (const reference of references) {
+    if (!reference) continue
+    const category = getNotificationCategory(reference.category, '')
+    const entityId = String(reference.entityId || '').trim()
+    const organizationId = String(reference.organizationId || '').trim()
+    if (!category || !entityId) continue
+
+    const readPath = NOTIFICATION_READ_PATHS[category]
+    if (readPath) {
+      updateSet[`${readPath}.${entityId}`] = now
+    }
+
+    const viewPath = DASHBOARD_NOTIFICATION_VIEW_PATHS[category]
+    if (viewPath && organizationId) {
+      updateSet[`${viewPath}.${organizationId}`] = now
+    }
+  }
+
+  if (Object.keys(updateSet).length === 0) {
+    return
+  }
+
+  await Account.updateOne(
+    { _id: accountId },
+    { $set: updateSet }
+  )
+}
+
+const markDashboardNotificationViewed = async ({ accountId, type, organizationIds }) => {
+  const basePath = DASHBOARD_NOTIFICATION_VIEW_PATHS[type]
+  if (!basePath || !accountId) {
+    return
+  }
+
+  const normalizedOrgIds = Array.from(new Set(
+    (Array.isArray(organizationIds) ? organizationIds : [])
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+  ))
+
+  if (normalizedOrgIds.length === 0) {
+    return
+  }
+
+  const now = new Date()
+  const updateSet = {}
+  for (const orgId of normalizedOrgIds) {
+    updateSet[`${basePath}.${orgId}`] = now
+  }
+
+  await Account.updateOne(
+    { _id: accountId },
+    { $set: updateSet }
+  )
+}
+
+const NOTIFICATION_CATEGORY = Object.freeze({
+  all: 'all',
+  documents: 'documents',
+  simplePerformance: 'simplePerformance'
+})
+
+const getNotificationCategory = (value, fallback = NOTIFICATION_CATEGORY.all) => {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === NOTIFICATION_CATEGORY.documents) return NOTIFICATION_CATEGORY.documents
+  if (raw === NOTIFICATION_CATEGORY.simplePerformance || raw === 'performance') {
+    return NOTIFICATION_CATEGORY.simplePerformance
+  }
+  if (raw === NOTIFICATION_CATEGORY.all) return NOTIFICATION_CATEGORY.all
+  return fallback
+}
+
+const buildNotificationActionUrl = ({
+  type,
+  organizationId,
+  assignmentId,
+  workflowType,
+  evaluationId,
+  itemId,
+  action
+}) => {
+  const params = new URLSearchParams()
+  params.set('type', type)
+  if (organizationId) params.set('org', String(organizationId))
+  if (assignmentId) params.set('assignment', String(assignmentId))
+  if (evaluationId) params.set('evaluation', String(evaluationId))
+  if (itemId) params.set('item', String(itemId))
+  if (action) params.set('action', String(action))
+  if (workflowType && WORKFLOW_TYPES.includes(String(workflowType))) {
+    params.set('workflow', String(workflowType))
+  }
+  return `/notifications/open?${params.toString()}`
+}
+
+const buildNotificationCenterData = async (account, options = {}) => {
+  if (!account?._id) {
+    return {
+      totalUnread: 0,
+      counts: {
+        documents: 0,
+        simplePerformance: 0
+      },
+      tasks: [],
+      pendingSignatureCount: 0,
+      pendingSignatureDocuments: [],
+      unreadDocumentAssignments: [],
+      unreadPerformanceEvaluations: []
+    }
+  }
+
+  const maxTasks = Number.isFinite(Number(options.maxTasks))
+    ? Math.max(1, Math.min(200, Number(options.maxTasks)))
+    : 50
+  const includeAllTasks = options.includeAllTasks === true
+  const performanceQueryLimit = Math.max(80, maxTasks * 4)
+
+  const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString() || ''
+  const organizationIds = getOrganizationIdsFromAccount(account)
+  if (currentOrgId && !organizationIds.includes(currentOrgId)) {
+    organizationIds.push(currentOrgId)
+  }
+
+  const organizationNameById = new Map()
+  if (organizationIds.length > 0) {
+    const organizations = await Organization.find({ _id: { $in: organizationIds } })
+      .select('name')
+      .lean()
+    organizations.forEach(org => {
+      organizationNameById.set(org._id.toString(), org.name || 'Organization')
+    })
+  }
+
+  const pendingOnboardingAssignments = await OnboardingAssignment.find({
+    $or: buildOnboardingParticipantMatchClauses(account._id),
+    status: { $nin: ['completed', 'cancelled'] }
+  })
+    .select([
+      'organization',
+      'member',
+      'workflowType',
+      'status',
+      'dueAt',
+      'completedAt',
+      'createdAt',
+      'updatedAt',
+      'items._id',
+      'items.type',
+      'items.title',
+      'items.description',
+      'items.status',
+      'items.config.document',
+      'items.config.signers',
+      'items.config.signatureFields',
+      'items.data.esign.status',
+      'items.data.esign.signedAt',
+      'items.data.esign.signedUrl',
+      'items.data.esign.signedFileName',
+      'items.data.esign.signers'
+    ].join(' '))
+    .populate('organization', 'name')
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .lean()
+
+  const pendingSignatureDocuments = buildProfileDocumentEntries(pendingOnboardingAssignments, account)
+    .filter(document => document.requiresSignature)
+
+  const pendingSignatureDocumentsByAssignmentId = new Map()
+  pendingSignatureDocuments.forEach(document => {
+    const assignmentId = String(document?.assignmentId || '').trim()
+    if (!assignmentId) return
+
+    const documentsForAssignment = pendingSignatureDocumentsByAssignmentId.get(assignmentId) || []
+    documentsForAssignment.push(document)
+    pendingSignatureDocumentsByAssignmentId.set(assignmentId, documentsForAssignment)
+  })
+
+  // Documents notifications represent pending work until explicitly read.
+  // A pending assignment reappears if it is updated after it was marked as read.
+  const unreadDocumentAssignments = pendingOnboardingAssignments.filter(assignment => {
+    const assignmentId = assignment?._id?.toString()
+    if (!assignmentId) return true
+
+    const signatureDocuments = pendingSignatureDocumentsByAssignmentId.get(assignmentId) || []
+    if (signatureDocuments.length > 0) {
+      return true
+    }
+
+    const assignmentOrganizationId =
+      assignment?.organization?._id?.toString() ||
+      assignment?.organization?.toString() ||
+      ''
+    const referenceTimestamp = assignment?.updatedAt || assignment?.createdAt
+      ? new Date(assignment.updatedAt || assignment.createdAt).getTime()
+      : 0
+
+    const entityReadAt = getNotificationEntityReadAt(
+      account,
+      NOTIFICATION_CATEGORY.documents,
+      assignmentId
+    )
+    if (entityReadAt && (!referenceTimestamp || entityReadAt.getTime() >= referenceTimestamp)) {
+      return false
+    }
+
+    // Backward compatibility: respect older category-level viewed checkpoints.
+    const categoryViewedAt = getDashboardNotificationViewedAt(
+      account,
+      NOTIFICATION_CATEGORY.documents,
+      assignmentOrganizationId
+    )
+    if (categoryViewedAt && referenceTimestamp && categoryViewedAt.getTime() >= referenceTimestamp) {
+      return false
+    }
+
+    return true
+  })
+
+  const unreadPerformanceEvaluations = organizationIds.length === 0
+      ? []
+    : (await PerformanceEvaluation.find({
+        organization: { $in: organizationIds },
+        evaluatedMember: account._id
+      })
+        .select('organization evaluationDate createdAt evaluatorName evaluatorEmail ratings')
+        .sort({ evaluationDate: -1, createdAt: -1 })
+        .limit(performanceQueryLimit)
+        .lean())
+      .filter(evaluation => {
+        const evaluationId = evaluation?._id?.toString()
+        const evaluationTimestamp = evaluation?.createdAt || evaluation?.evaluationDate
+        const evaluationTime = evaluationTimestamp ? new Date(evaluationTimestamp).getTime() : 0
+        if (evaluationId) {
+          const entityReadAt = getNotificationEntityReadAt(
+            account,
+            NOTIFICATION_CATEGORY.simplePerformance,
+            evaluationId
+          )
+          if (entityReadAt && (!evaluationTime || entityReadAt.getTime() >= evaluationTime)) {
+            return false
+          }
+        }
+
+        const evaluationOrganizationId =
+          evaluation?.organization?._id?.toString() ||
+          evaluation?.organization?.toString() ||
+          ''
+        if (!evaluationOrganizationId) return true
+
+        const lastViewedAt = getDashboardNotificationViewedAt(
+          account,
+          NOTIFICATION_CATEGORY.simplePerformance,
+          evaluationOrganizationId
+        )
+        if (!lastViewedAt) return true
+
+        if (!evaluationTimestamp) return true
+
+        return new Date(evaluationTimestamp).getTime() > lastViewedAt.getTime()
+      })
+      .map(entry => ({
+        ...entry,
+        averageRating: calculateAverageRating(entry.ratings)
+      }))
+
+  const documentTasks = unreadDocumentAssignments.map(assignment => {
+    const organizationId =
+      assignment?.organization?._id?.toString() ||
+      assignment?.organization?.toString() ||
+      currentOrgId
+    const workflowType = normalizeWorkflowType(assignment.workflowType, { allowAll: false, fallback: 'onboarding' })
+    const workflowLabel = WORKFLOW_LABELS[workflowType] || WORKFLOW_LABELS.onboarding
+    const createdAt = assignment.updatedAt || assignment.createdAt || new Date()
+    const assignmentId = assignment?._id?.toString?.() || ''
+    const signatureDocuments = pendingSignatureDocumentsByAssignmentId.get(assignmentId) || []
+    const pendingSignatureCount = signatureDocuments.length
+    const primarySignatureDocument = signatureDocuments[0] || null
+    const organizationName = assignment?.organization?.name || organizationNameById.get(organizationId) || 'your organization'
+
+    return {
+      id: `documents:${assignment._id}`,
+      category: NOTIFICATION_CATEGORY.documents,
+      title: pendingSignatureCount === 1
+        ? 'Document signature pending'
+        : (pendingSignatureCount > 1 ? `${pendingSignatureCount} documents pending signature` : `${workflowLabel} task pending`),
+      message: pendingSignatureCount === 1
+        ? `${primarySignatureDocument?.title || 'A document'} is waiting for your signature for ${organizationName}.`
+        : (pendingSignatureCount > 1
+            ? `${pendingSignatureCount} documents are waiting for your signature in ${workflowLabel.toLowerCase()} for ${organizationName}.`
+            : `Complete your ${workflowLabel.toLowerCase()} step for ${organizationName}.`),
+      organizationId,
+      organizationName: assignment?.organization?.name || organizationNameById.get(organizationId) || 'Organization',
+      createdAt,
+      actionLabel: pendingSignatureCount > 0 ? 'Review & Sign' : 'Open task',
+      actionUrl: buildNotificationActionUrl(
+        pendingSignatureCount > 0
+          ? {
+              type: NOTIFICATION_CATEGORY.documents,
+              organizationId,
+              assignmentId: assignment._id,
+              workflowType,
+              itemId: primarySignatureDocument?.itemId,
+              action: 'sign'
+            }
+          : {
+              type: NOTIFICATION_CATEGORY.documents,
+              organizationId,
+              assignmentId: assignment._id,
+              workflowType
+            }
+      ),
+      pendingSignatureCount,
+      workflowType
+    }
+  })
+
+  const performanceTasks = unreadPerformanceEvaluations.map(evaluation => {
+    const organizationId =
+      evaluation?.organization?._id?.toString() ||
+      evaluation?.organization?.toString() ||
+      currentOrgId
+    const createdAt = evaluation.createdAt || evaluation.evaluationDate || new Date()
+    const evaluatorLabel = evaluation.evaluatorName || evaluation.evaluatorEmail || 'Your manager'
+    const dateLabel = new Date(evaluation.evaluationDate || createdAt).toLocaleDateString()
+
+    return {
+      id: `simplePerformance:${evaluation._id}`,
+      category: NOTIFICATION_CATEGORY.simplePerformance,
+      title: 'New simple evaluation available',
+      message: `${evaluatorLabel} submitted feedback on ${dateLabel}.`,
+      organizationId,
+      organizationName: organizationNameById.get(organizationId) || 'Organization',
+      createdAt,
+      actionLabel: 'Review evaluation',
+      actionUrl: buildNotificationActionUrl({
+        type: NOTIFICATION_CATEGORY.simplePerformance,
+        organizationId,
+        evaluationId: evaluation._id
+      }),
+      averageRating: evaluation.averageRating
+    }
+  })
+
+  const sortedTasks = [...documentTasks, ...performanceTasks]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  const tasks = includeAllTasks
+    ? sortedTasks
+    : sortedTasks.slice(0, maxTasks)
+
+  return {
+    totalUnread: documentTasks.length + performanceTasks.length,
+    counts: {
+      documents: documentTasks.length,
+      simplePerformance: performanceTasks.length
+    },
+    tasks,
+    pendingSignatureCount: pendingSignatureDocuments.length,
+    pendingSignatureDocuments,
+    unreadDocumentAssignments,
+    unreadPerformanceEvaluations
+  }
+}
+
+const getQueryStringValue = (value) => {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (Array.isArray(value) && value.length > 0) {
+    return String(value[0])
+  }
+  return ''
+}
+
+const parseIsoDateFilterValue = (value) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    return null
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return null
+  }
+
+  const [year, month, day] = normalized.split('-').map(part => Number.parseInt(part, 10))
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null
+  }
+
+  const start = new Date(Date.UTC(year, month - 1, day))
+  if (
+    start.getUTCFullYear() !== year ||
+    start.getUTCMonth() !== month - 1 ||
+    start.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 1)
+
+  return {
+    normalized,
+    start,
+    end
+  }
+}
+
+const parseIsoMonthFilterValue = (value) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    return null
+  }
+  if (!/^\d{4}-\d{2}$/.test(normalized)) {
+    return null
+  }
+
+  const [year, month] = normalized.split('-').map(part => Number.parseInt(part, 10))
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return null
+  }
+
+  const start = new Date(Date.UTC(year, month - 1, 1))
+  const end = new Date(Date.UTC(year, month, 1))
+
+  return {
+    normalized,
+    start,
+    end
+  }
+}
+
+const escapeEmailHtml = (value) => (
+  String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+)
+
+const getIdentityBaseUrl = () => (
+  String(process.env.ISSUER_URL || 'http://localhost:4000')
+    .trim()
+    .replace(/\/+$/, '')
+)
+
+const sendReviewedMemberEvaluationNotification = async ({
+  reviewedMemberEmail,
+  reviewedMemberName,
+  evaluatorName,
+  organizationName,
+  evaluationDate
+}) => {
+  if (!reviewedMemberEmail) return
+
+  const reviewUrl = `${getIdentityBaseUrl()}/notifications?category=${encodeURIComponent(NOTIFICATION_CATEGORY.simplePerformance)}`
+  const safeEvaluatorName = escapeEmailHtml(evaluatorName || 'Your manager')
+  const safeOrganizationName = escapeEmailHtml(organizationName || 'your organization')
+  const subjectName = String(reviewedMemberName || reviewedMemberEmail || 'you').trim()
+  const formattedDate = new Date(evaluationDate || new Date()).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+
+  const subject = `New simple evaluation for ${subjectName}`
+  const html = `
+    <p>A new <strong>Simple Evaluation</strong> has been submitted for you in <strong>${safeOrganizationName}</strong>.</p>
+    <p><strong>Evaluator:</strong> ${safeEvaluatorName}<br><strong>Date:</strong> ${formattedDate}</p>
+    <p><a href="${reviewUrl}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;">Open notifications</a></p>
+    <p style="margin-top:14px;color:#64748b;font-size:13px;">Open Notifications in your dashboard to review this task and any other pending items.</p>
+  `
+  const text = [
+    'A new Simple Evaluation has been submitted for you.',
+    `Organization: ${organizationName || 'Your organization'}`,
+    `Evaluator: ${evaluatorName || 'Your manager'}`,
+    `Date: ${formattedDate}`,
+    '',
+    `Open notifications: ${reviewUrl}`
+  ].join('\n')
+
+  await emailService.sendNotificationEmail({
+    to: reviewedMemberEmail,
+    toName: reviewedMemberName,
+    subject,
+    html,
+    text
+  })
+}
+
+const redirectToPerformanceEvaluations = (res, query = {}) => {
+  const params = new URLSearchParams()
+
+  Object.entries(query).forEach(([key, rawValue]) => {
+    if (rawValue === undefined || rawValue === null) return
+    const normalized = String(rawValue).trim()
+    if (!normalized) return
+    params.set(key, normalized)
+  })
+
+  const queryString = params.toString()
+  const location = queryString
+    ? `/performance-evaluations?${queryString}`
+    : '/performance-evaluations'
+
+  return res.redirect(location)
+}
+
+const SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES = ['owner', 'admin', 'hr_manager']
+
+const buildDefaultSimplePerformanceFields = () => (
+  SIMPLE_PERFORMANCE_DEFAULT_FIELDS.map(field => ({
+    key: field.key,
+    label: field.label
+  }))
+)
+
+const normalizeSimplePerformanceFields = (fields = []) => {
+  const normalized = []
+  const existingKeys = new Set()
+
+  for (const field of fields) {
+    const label = normalizeSimplePerformanceFieldLabel(field?.label || field)
+    if (!label) continue
+
+    let key = String(field?.key || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48)
+
+    if (!key || existingKeys.has(key)) {
+      key = buildSimplePerformanceFieldKey(label, existingKeys)
+    }
+
+    existingKeys.add(key)
+    normalized.push({
+      key,
+      label
+    })
+  }
+
+  return normalized
+}
+
+const getComparableSimplePerformanceFields = (fields = []) => (
+  fields.map(field => ({
+    key: String(field?.key || ''),
+    label: String(field?.label || '')
+  }))
+)
+
+const ensureSimplePerformanceFieldConfig = async (organizationId, user = null) => {
+  let config = await SimplePerformanceEvaluationConfig.findOne({ organization: organizationId })
+
+  if (!config) {
+    config = await SimplePerformanceEvaluationConfig.create({
+      organization: organizationId,
+      fields: buildDefaultSimplePerformanceFields(),
+      updatedBy: user?._id || undefined,
+      updatedByName: user?.profile?.name || user?.email || undefined
+    })
+    return config
+  }
+
+  const normalizedFields = normalizeSimplePerformanceFields(config.fields)
+  const fallbackFields = normalizedFields.length > 0
+    ? normalizedFields
+    : buildDefaultSimplePerformanceFields()
+
+  const beforeFields = JSON.stringify(getComparableSimplePerformanceFields(config.fields))
+  const afterFields = JSON.stringify(getComparableSimplePerformanceFields(fallbackFields))
+  if (beforeFields !== afterFields) {
+    config.fields = fallbackFields
+    config.updatedBy = user?._id || config.updatedBy
+    config.updatedByName = user?.profile?.name || user?.email || config.updatedByName
+    await config.save()
+  }
+
+  return config
+}
+
+const canManageSimplePerformanceFields = ({ memberRole, canEvaluate }) => (
+  Boolean(canEvaluate) || SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES.includes(memberRole)
+)
+
+const normalizeEvaluationRatingsForHistory = (ratings = []) => {
+  if (Array.isArray(ratings)) {
+    return ratings
+      .filter(entry => entry && entry.fieldKey && entry.fieldLabel)
+      .map(entry => ({
+        fieldKey: String(entry.fieldKey),
+        fieldLabel: String(entry.fieldLabel),
+        value: Number(entry.value)
+      }))
+  }
+
+  if (ratings && typeof ratings === 'object') {
+    return Object.entries(ratings)
+      .filter(([, value]) => Number.isFinite(Number(value)))
+      .map(([fieldKey, value]) => ({
+        fieldKey: String(fieldKey),
+        fieldLabel: String(fieldKey),
+        value: Number(value)
+      }))
+  }
+
+  return []
+}
+
+const parsePerformanceRating = (value) => {
+  const parsed = Number.parseInt(String(value || ''), 10)
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 5) {
+    return null
+  }
+  return parsed
+}
+
+const buildTeamHierarchyMaps = (teams = []) => {
+  const teamById = new Map()
+  const childrenByParent = new Map()
+
+  for (const team of teams) {
+    const teamId = String(team?._id || '').trim()
+    if (!teamId) continue
+    teamById.set(teamId, team)
+  }
+
+  for (const team of teams) {
+    const teamId = String(team?._id || '').trim()
+    if (!teamId) continue
+    const parentId = String(team?.parentTeam || '').trim()
+    if (!parentId) continue
+    if (!childrenByParent.has(parentId)) {
+      childrenByParent.set(parentId, [])
+    }
+    childrenByParent.get(parentId).push(teamId)
+  }
+
+  return { teamById, childrenByParent }
+}
+
+const collectTeamAndDescendantIds = (rootTeamId, childrenByParent) => {
+  const rootId = String(rootTeamId || '').trim()
+  if (!rootId) return new Set()
+
+  const collected = new Set()
+  const stack = [rootId]
+  while (stack.length > 0) {
+    const teamId = stack.pop()
+    if (!teamId || collected.has(teamId)) continue
+    collected.add(teamId)
+    const children = childrenByParent.get(teamId) || []
+    for (const childId of children) {
+      if (!collected.has(childId)) {
+        stack.push(childId)
+      }
+    }
+  }
+
+  return collected
+}
+
+const resolveTeamPath = (teamId, teamById) => {
+  const rootId = String(teamId || '').trim()
+  if (!rootId) return []
+
+  const path = []
+  const seen = new Set()
+  let cursor = rootId
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor)
+    const team = teamById.get(cursor)
+    if (!team) break
+    path.unshift(team.name || 'Team')
+    cursor = String(team.parentTeam || '').trim()
+  }
+  return path
+}
+
+const updateOnboardingAssignmentStatus = (assignment) => {
+  if (assignment.status === 'cancelled') return
+  const requiredItems = assignment.items.filter(item => item.required !== false)
+  const completedRequired = requiredItems.length === 0
+    ? assignment.items.every(item => item.status === 'completed')
+    : requiredItems.every(item => item.status === 'completed')
+
+  if (completedRequired) {
+    assignment.status = 'completed'
+    assignment.completedAt = new Date()
+  } else if (assignment.items.some(item => item.status !== 'pending')) {
+    assignment.status = 'in_progress'
+  } else {
+    assignment.status = 'pending'
+  }
+}
+
+const ONBOARDING_MANAGER_ROLES = ['owner', 'admin', 'hr_manager']
+const WORKFLOW_TYPES = ['onboarding', 'agreement', 'policy', 'general']
+const WORKFLOW_LABELS = {
+  onboarding: 'Onboarding',
+  agreement: 'Agreement Signing',
+  policy: 'Policy Acknowledgement',
+  general: 'General Document Workflow'
+}
+
+const normalizeWorkflowType = (value, options = {}) => {
+  const allowAll = options.allowAll === true
+  const fallback = options.fallback || 'onboarding'
+  const raw = String(value || '').trim().toLowerCase()
+
+  if (allowAll && raw === 'all') {
+    return 'all'
+  }
+
+  return WORKFLOW_TYPES.includes(raw) ? raw : fallback
+}
+
+const withWorkflowType = (entry) => {
+  if (!entry) return entry
+  const current = typeof entry.toObject === 'function' ? entry.toObject() : entry
+  return {
+    ...current,
+    workflowType: normalizeWorkflowType(current.workflowType, { fallback: 'onboarding' })
+  }
+}
+
+const buildWorkflowSummary = ({ templates = [], assignments = [] } = {}) => {
+  const summary = {}
+  WORKFLOW_TYPES.forEach(type => {
+    summary[type] = {
+      type,
+      label: WORKFLOW_LABELS[type],
+      templates: 0,
+      assignments: 0,
+      active: 0,
+      completed: 0
+    }
+  })
+
+  templates.forEach(template => {
+    const type = normalizeWorkflowType(template.workflowType)
+    summary[type].templates += 1
+  })
+
+  assignments.forEach(assignment => {
+    const type = normalizeWorkflowType(assignment.workflowType)
+    summary[type].assignments += 1
+    if (assignment.status === 'completed') {
+      summary[type].completed += 1
+    } else if (assignment.status !== 'cancelled') {
+      summary[type].active += 1
+    }
+  })
+
+  return summary
+}
+
+const buildOnboardingParticipantMatchClauses = (userId) => {
+  if (!userId) {
+    return []
+  }
+
+  const userIdStr = String(userId?.toString?.() || userId || '').trim()
+  const clauses = [
+    { member: userId },
+    { 'items.config.signers.member': userId },
+    { 'items.data.esign.signers.member': userId },
+    { 'items.config.signatureFields.signerId': userId }
+  ]
+
+  if (!userIdStr) {
+    return clauses
+  }
+
+  clauses.push(
+    { 'items.config.signatureFields.signer': userIdStr },
+    { 'items.config.signatureFields.signerKey': userIdStr },
+    {
+      $and: [
+        { member: userId },
+        {
+          $or: [
+            { 'items.config.signatureFields.signer': 'assignee' },
+            { 'items.config.signatureFields.signerKey': 'assignee' }
+          ]
+        }
+      ]
+    }
+  )
+
+  return clauses
+}
+
+const buildPersonalOnboardingQuery = (userId, organizationId, options = {}) => {
+  const workflowType = normalizeWorkflowType(options.workflowType, {
+    allowAll: true,
+    fallback: 'all'
+  })
+  const base = {
+    $or: buildOnboardingParticipantMatchClauses(userId)
+  }
+
+  if (organizationId) {
+    base.organization = organizationId
+  }
+  if (workflowType !== 'all') {
+    base.workflowType = workflowType
+  }
+
+  return base
+}
+
+const getPersonalOnboardingAssignments = async (userId, organizationId, options = {}) => {
+  const assignments = await OnboardingAssignment.find(buildPersonalOnboardingQuery(userId, organizationId, options))
+    .populate('organization', 'name')
+    .sort({ createdAt: -1 })
+
+  return assignments.map(withWorkflowType)
+}
+
+const loadOnboardingAdminContext = async (req, organizationId, options = {}) => {
+  const workflowTypeFilter = normalizeWorkflowType(options.workflowType, {
+    allowAll: true,
+    fallback: 'all'
+  })
+  const organization = await Organization.findById(organizationId)
+    .populate('members.account', 'email profile.name')
+
+  if (!organization) {
+    throw new Error('Organization not found')
+  }
+
+  const member = organization.members.find(
+    m => (m.account?._id || m.account).toString() === req.user._id.toString() && m.status === 'active'
+  )
+
+  if (!member || !ONBOARDING_MANAGER_ROLES.includes(member.role)) {
+    throw new Error('Admin, owner, or HR manager role required')
+  }
+
+  const templateQuery = { organization: organizationId }
+  const assignmentQuery = { organization: organizationId }
+  if (workflowTypeFilter !== 'all') {
+    templateQuery.workflowType = workflowTypeFilter
+    assignmentQuery.workflowType = workflowTypeFilter
+  }
+
+  const [rawTemplates, rawAssignments] = await Promise.all([
+    OnboardingTemplate.find(templateQuery).sort({ createdAt: -1 }),
+    OnboardingAssignment.find(assignmentQuery)
+      .populate('member', 'email profile.name')
+      .populate('createdBy', 'email profile.name')
+      .populate('template', 'name')
+      .sort({ createdAt: -1 })
+  ])
+  const templates = rawTemplates.map(withWorkflowType)
+  const assignments = rawAssignments.map(withWorkflowType)
+  const workflowSummary = buildWorkflowSummary({ templates, assignments })
+  const assignmentIds = assignments.map(assignment => assignment._id).filter(Boolean)
+  const onboardingActivities = assignmentIds.length
+    ? await OnboardingActivity.find({
+      organization: organizationId,
+      assignment: { $in: assignmentIds }
+    })
+      .populate('member', 'email profile.name')
+      .populate('actor', 'email profile.name')
+      .sort({ createdAt: -1 })
+      .limit(40)
+    : []
+
+  const members = organization.members
+    .filter(m => m.status === 'active')
+    .map(m => ({
+      id: m.account?._id || m.account,
+      name: m.account?.profile?.name || m.account?.email?.split('@')[0] || 'Unknown',
+      email: m.account?.email || '',
+      role: m.role
+    }))
+
+  const onboardingStateByMember = buildOnboardingStateMap({
+    members: organization.members.filter(m => m.status === 'active'),
+    assignments,
+    workflowType: 'onboarding'
+  })
+
+  const statusSortOrder = {
+    in_progress: 1,
+    pending: 2,
+    not_started: 3,
+    completed: 4,
+    cancelled: 5
+  }
+
+  const memberOnboardingRows = members
+    .map(m => {
+      const memberId = m.id?.toString ? m.id.toString() : String(m.id || '')
+      const onboardingState = getMemberOnboardingState(memberId, onboardingStateByMember)
+      const latestAssignment = onboardingState.latestAssignment || null
+      const onboardingStatus = onboardingState.status || 'not_started'
+
+      return {
+        ...m,
+        onboardingStatus,
+        onboardingStatusSource: onboardingState.source,
+        latestAssignment: latestAssignment
+          ? {
+              id: latestAssignment._id,
+              status: latestAssignment.status,
+              createdAt: latestAssignment.createdAt,
+              dueAt: latestAssignment.dueAt,
+              completedAt: latestAssignment.completedAt,
+              templateName: latestAssignment.template?.name || null
+            }
+          : null
+      }
+    })
+    .sort((a, b) => {
+      const aOrder = statusSortOrder[a.onboardingStatus] || 999
+      const bOrder = statusSortOrder[b.onboardingStatus] || 999
+      if (aOrder !== bOrder) return aOrder - bOrder
+      return String(a.name || '').localeCompare(String(b.name || ''))
+    })
+
+  const memberOnboardingSummary = memberOnboardingRows.reduce((acc, row) => {
+    const status = row.onboardingStatus || 'not_started'
+    if (status === 'completed') acc.completedMembers += 1
+    else if (status === 'in_progress') acc.inProgressMembers += 1
+    else if (status === 'pending') acc.pendingMembers += 1
+    else if (status === 'cancelled') acc.cancelledMembers += 1
+    else acc.notStartedMembers += 1
+    return acc
+  }, {
+    totalMembers: memberOnboardingRows.length,
+    completedMembers: 0,
+    inProgressMembers: 0,
+    pendingMembers: 0,
+    notStartedMembers: 0,
+    cancelledMembers: 0,
+    assignedMembers: 0,
+    completionRate: 0
+  })
+
+  memberOnboardingSummary.assignedMembers = memberOnboardingSummary.totalMembers - memberOnboardingSummary.notStartedMembers
+  memberOnboardingSummary.completionRate = memberOnboardingSummary.totalMembers > 0
+    ? Math.round((memberOnboardingSummary.completedMembers / memberOnboardingSummary.totalMembers) * 100)
+    : 0
+
+  return {
+    organization,
+    templates,
+    assignments,
+    onboardingActivities,
+    members,
+    onboardingStatusByMember: Object.fromEntries(
+      Array.from(onboardingStateByMember.entries()).map(([memberId, state]) => [memberId, state.status])
+    ),
+    memberOnboardingRows,
+    memberOnboardingSummary,
+    workflowSummary,
+    workflowLabels: WORKFLOW_LABELS,
+    workflowTypes: WORKFLOW_TYPES,
+    workflowTypeFilter,
+    yourRole: member.role
+  }
 }
 
 // API Routes (JSON responses)
@@ -3341,6 +5586,94 @@ app.use('/api/organizations', organizationsRouter)
 app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations/:orgId/invitations routes
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
+app.use('/api/organizations', notificationsRouter) // Notification routes for /api/organizations/:orgId/notifications
+app.use('/api', onboardingRouter)
+
+// Subscription Management API Routes
+app.use('/api/admin', adminCampaignApiRouter)
+app.use('/api/admin/plans', adminPlansRouter)
+app.use('/api/admin/subscription-requests', adminSubscriptionRequestsRouter)
+app.use('/api/admin/subscriptions', adminSubscriptionsRouter)
+app.use('/api/admin/users', adminUsersRouter)
+app.use('/api/plans', publicPlansRouter)
+app.use('/api/organizations', organizationSubscriptionRouter)
+app.use('/api/public', publicMarketingRoutesRouter)
+app.use('/', publicRoutesRouter)
+
+// Admin Login Routes (must come before admin views router)
+app.get('/admin/login', (req, res) => {
+  const errorMessages = {
+    auth_required: 'Authentication required. Please login.',
+    account_not_found: 'Account not found or does not have admin privileges.',
+    invalid_password: 'Invalid password. Please try again.',
+    login_failed: 'Login failed. Please try again.',
+    admin_access_required: 'Admin access required. You must be a system or super admin.'
+  }
+
+  const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
+  const message = req.query.message || ''
+
+  res.render('admin/login', { error: errorMsg, message })
+})
+
+app.post('/admin/login', async (req, res) => {
+  try {
+    const { email, password, remember, redirect } = req.body
+
+    // Find account by email
+    const account = await Account.findOne({ email: email.toLowerCase() })
+
+    if (!account) {
+      return res.redirect('/admin/login?error=account_not_found')
+    }
+
+    // Verify password
+    const validPassword = await bcrypt.compare(password, account.passwordHash)
+    if (!validPassword) {
+      return res.redirect('/admin/login?error=invalid_password')
+    }
+
+    // Check admin access
+    if (!account.hasAdminAccess()) {
+      console.warn(`Non-admin login attempt: ${email}`)
+      return res.redirect('/admin/login?error=admin_access_required')
+    }
+
+    console.log(`✅ Admin login successful: ${email} (${account.isSuperAdmin ? 'Super Admin' : 'System Admin'})`)
+
+    // Set session
+    req.session.accountId = account.sub
+
+    // Redirect to requested page or admin dashboard
+    if (redirect && redirect.startsWith('/admin')) {
+      res.redirect(redirect)
+    } else {
+      res.redirect('/admin')
+    }
+  } catch (error) {
+    console.error('Admin login error:', error)
+    res.redirect('/admin/login?error=login_failed')
+  }
+})
+
+app.get('/admin/logout', (req, res, next) => {
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Error destroying session:', err)
+      return next(err)
+    }
+
+    // Clear session cookie
+    res.clearCookie('_session')
+
+    console.log('✅ Admin logged out')
+    res.redirect('/admin/login?message=You have been logged out')
+  })
+})
+
+// Admin Panel View Routes
+app.use('/admin/campaigns', adminCampaignViewsRouter)
+app.use('/admin', adminViewsRouter)
 
 // SAML 2.0 Identity Provider Routes
 app.use('/saml', samlRoutes)
@@ -3435,14 +5768,245 @@ app.use('/api', teamsRouter)
 
 // UI Routes (HTML pages)
 
-// Profile page
-app.get('/profile', getSessionUser, async (req, res) => {
+app.get('/api/notifications/summary', getSessionUser, async (req, res) => {
   try {
-    res.render('profile', {
+    const summary = await buildNotificationCenterData(req.user, { maxTasks: 6 })
+    return res.json({
+      success: true,
+      totalUnread: summary.totalUnread,
+      counts: summary.counts,
+      pendingSignatureCount: summary.pendingSignatureCount || 0,
+      tasks: summary.tasks
+    })
+  } catch (error) {
+    console.error('Notification summary API error:', error)
+    return res.status(500).json({ success: false, error: 'Failed to load notification summary' })
+  }
+})
+
+app.post('/api/notifications/read', getSessionUser, async (req, res) => {
+  try {
+    const taskId = String(req.body?.taskId || '').trim()
+    const categoryFromBody = getNotificationCategory(req.body?.category, '')
+    const organizationId = String(req.body?.organizationId || '').trim()
+
+    let reference = null
+    if (taskId) {
+      reference = getNotificationReferenceFromTask({
+        id: taskId,
+        organizationId
+      })
+    }
+
+    if (!reference) {
+      const category = categoryFromBody
+      const assignmentId = String(req.body?.assignmentId || '').trim()
+      const evaluationId = String(req.body?.evaluationId || '').trim()
+      const entityId = category === NOTIFICATION_CATEGORY.documents
+        ? assignmentId
+        : (category === NOTIFICATION_CATEGORY.simplePerformance ? evaluationId : '')
+
+      if (category && entityId) {
+        reference = {
+          category,
+          entityId,
+          organizationId
+        }
+      }
+    }
+
+    if (!reference) {
+      return res.status(400).json({ success: false, error: 'Notification reference is required' })
+    }
+
+    if (reference.organizationId) {
+      const orgIds = getOrganizationIdsFromAccount(req.user)
+      if (!orgIds.includes(reference.organizationId)) {
+        return res.status(403).json({ success: false, error: 'You are not allowed to modify this notification' })
+      }
+    }
+
+    await markNotificationReferencesAsRead({
+      accountId: req.user._id,
+      references: [reference]
+    })
+
+    const updatedAccount = await Account.findById(req.user._id)
+      .populate('organizations.organization', 'name')
+      .populate('currentOrganization', 'name')
+    const summary = await buildNotificationCenterData(updatedAccount, { maxTasks: 6 })
+
+    return res.json({
+      success: true,
+      totalUnread: summary.totalUnread,
+      counts: summary.counts,
+      pendingSignatureCount: summary.pendingSignatureCount || 0
+    })
+  } catch (error) {
+    console.error('Mark notification read API error:', error)
+    return res.status(500).json({ success: false, error: 'Failed to mark notification as read' })
+  }
+})
+
+app.post('/api/notifications/read-all', getSessionUser, async (req, res) => {
+  try {
+    const selectedCategory = getNotificationCategory(req.body?.category, NOTIFICATION_CATEGORY.all)
+    const summary = await buildNotificationCenterData(req.user, {
+      maxTasks: 250,
+      includeAllTasks: true
+    })
+
+    const scopedTasks = selectedCategory === NOTIFICATION_CATEGORY.all
+      ? summary.tasks
+      : summary.tasks.filter(task => task.category === selectedCategory)
+    const references = scopedTasks
+      .map(task => getNotificationReferenceFromTask(task))
+      .filter(Boolean)
+
+    await markNotificationReferencesAsRead({
+      accountId: req.user._id,
+      references
+    })
+
+    const updatedAccount = await Account.findById(req.user._id)
+      .populate('organizations.organization', 'name')
+      .populate('currentOrganization', 'name')
+    const updatedSummary = await buildNotificationCenterData(updatedAccount, { maxTasks: 6 })
+
+    return res.json({
+      success: true,
+      markedCount: references.length,
+      totalUnread: updatedSummary.totalUnread,
+      counts: updatedSummary.counts,
+      pendingSignatureCount: updatedSummary.pendingSignatureCount || 0
+    })
+  } catch (error) {
+    console.error('Mark all notifications read API error:', error)
+    return res.status(500).json({ success: false, error: 'Failed to mark notifications as read' })
+  }
+})
+
+app.get('/notifications', getSessionUser, async (req, res) => {
+  try {
+    const summary = await buildNotificationCenterData(req.user, { maxTasks: 120, includeAllTasks: true })
+    const selectedCategory = getNotificationCategory(req.query.category, NOTIFICATION_CATEGORY.all)
+    const tasks = selectedCategory === NOTIFICATION_CATEGORY.all
+      ? summary.tasks
+      : summary.tasks.filter(task => task.category === selectedCategory)
+
+    res.render('notifications-center', {
       user: req.user,
+      activePage: 'notifications',
+      notificationSummary: summary,
+      selectedCategory,
+      tasks,
       error: req.query.error,
       success: req.query.success
     })
+  } catch (error) {
+    console.error('Notification center page error:', error)
+    res.redirect('/?error=Failed to load notifications')
+  }
+})
+
+app.get('/notifications/open', getSessionUser, async (req, res) => {
+  try {
+    const type = getNotificationCategory(req.query.type, '')
+    if (!type || type === NOTIFICATION_CATEGORY.all) {
+      return res.redirect('/notifications?error=Notification target is invalid')
+    }
+
+    const organizationId = String(req.query.org || '').trim()
+    const activeMembership = (req.user.organizations || []).find(membership => {
+      if (membership?.isActive === false) return false
+      const memberOrgId =
+        membership?.organization?._id?.toString() ||
+        membership?.organization?.toString() ||
+        ''
+      return organizationId && memberOrgId === organizationId
+    })
+
+    if (organizationId && !activeMembership) {
+      return res.redirect('/notifications?error=You are no longer an active member of this organization')
+    }
+
+    if (organizationId) {
+      const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString() || ''
+      if (currentOrgId !== organizationId) {
+        await Account.updateOne(
+          { _id: req.user._id },
+          {
+            $set: {
+              currentOrganization: organizationId,
+              updatedAt: new Date()
+            }
+          }
+        )
+        invalidateClaimsCache(req.user.sub)
+      }
+    }
+
+    if (type === NOTIFICATION_CATEGORY.documents) {
+      const workflow = normalizeWorkflowType(req.query.workflow, { allowAll: false, fallback: 'all' })
+      const assignmentId = String(req.query.assignment || '').trim()
+      const itemId = String(req.query.item || '').trim()
+      const action = String(req.query.action || '').trim().toLowerCase()
+      if (assignmentId && mongoose.Types.ObjectId.isValid(assignmentId)) {
+        await markNotificationReferencesAsRead({
+          accountId: req.user._id,
+          references: [{
+            category: NOTIFICATION_CATEGORY.documents,
+            entityId: assignmentId,
+            organizationId
+          }]
+        })
+      }
+      const params = new URLSearchParams()
+      if (workflow && workflow !== 'all') params.set('workflow', workflow)
+      params.set('tab', 'my')
+      if (assignmentId && mongoose.Types.ObjectId.isValid(assignmentId)) {
+        params.set('focusAssignment', assignmentId)
+      }
+      if (itemId && mongoose.Types.ObjectId.isValid(itemId)) {
+        params.set('focusItem', itemId)
+      }
+      if (action === 'sign') {
+        params.set('action', 'sign')
+      }
+      const query = params.toString()
+      return res.redirect(query ? `/documents/my?${query}` : '/documents/my')
+    }
+
+    if (type === NOTIFICATION_CATEGORY.simplePerformance) {
+      const evaluationId = String(req.query.evaluation || '').trim()
+      if (evaluationId && mongoose.Types.ObjectId.isValid(evaluationId)) {
+        await markNotificationReferencesAsRead({
+          accountId: req.user._id,
+          references: [{
+            category: NOTIFICATION_CATEGORY.simplePerformance,
+            entityId: evaluationId,
+            organizationId
+          }]
+        })
+      }
+      return res.redirect('/performance-evaluations?view=overview&reviewed=me')
+    }
+
+    return res.redirect('/notifications')
+  } catch (error) {
+    console.error('Notification open redirect error:', error)
+    return res.redirect('/notifications?error=Failed to open notification task')
+  }
+})
+
+// Profile page
+app.get('/profile', getSessionUser, async (req, res) => {
+  try {
+    const completion = req.profileCompletion || await getProfileCompletionForAccount(req.user, {
+      organizationId: req.user?.currentOrganization?._id?.toString?.() || req.user?.currentOrganization?.toString?.() || req.session?.currentOrganization || null
+    })
+    const targetRoute = `${completion?.nextIncompleteStep?.route || '/profile/personal'}?wizard=1`
+    res.redirect(targetRoute)
   } catch (error) {
     console.error('Profile page error:', error)
     res.redirect('/?error=Failed to load profile page')
@@ -3532,6 +6096,11 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
     if (!organization) {
       return res.redirect('/organizations?error=Organization not found')
     }
+    await organization.save()
+    const generalDepartmentId = organization.getGeneralDepartment()?._id
+    if (generalDepartmentId) {
+      await Team.ensureDepartmentAssignments(req.params.orgId, generalDepartmentId)
+    }
 
     const member = organization.members.find(
       m => m.account._id.toString() === req.user._id.toString() && m.status === 'active'
@@ -3541,20 +6110,106 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       return res.redirect('/organizations?error=Not a member of this organization')
     }
 
+    const assignments = await OnboardingAssignment.find({ organization: req.params.orgId })
+      .select('member status updatedAt')
+      .sort({ updatedAt: -1 })
+      .lean()
+    const { apps: availableApps, appIdSet, appNameById } = getHubAppMetadata()
+    const teams = await Team.find({ organization: req.params.orgId })
+      .populate('manager', 'email profile.name')
+      .populate('members.account', 'email profile.name')
+      .populate('parentTeam', 'name')
+      .sort({ name: 1 })
+
+    const orgMembers = await Account.find({
+      _id: { $in: organization.members.filter(m => m.status === 'active').map(m => m.account) }
+    }).select('email profile.name')
+
+    const teamNamesByMemberId = new Map()
+    const memberStructure = buildMemberStructureMap(organization, teams)
+    memberStructure.forEach((value, key) => {
+      teamNamesByMemberId.set(key, value.teamNames || [])
+    })
+
+    const onboardingStateByMember = buildOnboardingStateMap({
+      members: organization.members.filter(m => m.status === 'active'),
+      assignments,
+      workflowType: 'onboarding'
+    })
+    const memberEntryById = new Map(
+      organization.members
+        .filter((m) => m.status === 'active')
+        .map((m) => [((m.account?._id || m.account).toString()), m])
+    )
+
     const mappedMembers = organization.members
       .filter(m => m.status === 'active')
-      .map(m => ({
-        id: m.account?._id || m.account,
-        name: m.account?.profile?.name || m.account?.profile?.preferred_username || m.account?.email?.split('@')[0] || 'Unknown',
-        email: m.account?.email || '',
-        role: m.role,
-        joinedAt: m.joinedAt,
-        isOwner: m.role === 'owner'
-      }))
+      .map((m) => {
+        const accountId = (m.account?._id || m.account).toString()
+        const structure = getMemberStructure(memberStructure, accountId, organization)
+        const onboardingState = getMemberOnboardingState(accountId, onboardingStateByMember)
+        return {
+          id: m.account?._id || m.account,
+          name: m.account?.profile?.name || m.account?.profile?.preferred_username || m.account?.email?.split('@')[0] || 'Unknown',
+          email: m.account?.email || '',
+          designation: m.designation || '',
+          employeeId: m.employeeId || '',
+          departmentId: structure.departmentId,
+          departmentName: structure.departmentName || '',
+          role: m.role,
+          ...getInvitationAccessSummary(m, appNameById, appIdSet),
+          teamNames: teamNamesByMemberId.get(accountId) || [],
+          joinedAt: m.joinedAt,
+          isOwner: m.role === 'owner',
+          onboardingStatus: onboardingState.status,
+          onboardingStatusSource: onboardingState.source
+        }
+      })
 
     res.render('members', {
       organization,
       members: mappedMembers,
+      availableApps,
+      orgMembers: orgMembers.map(m => ({
+        ...getMemberStructure(memberStructure, m._id, organization),
+        id: m._id.toString(),
+        email: m.email,
+        name: m.profile?.name,
+        employeeId: memberEntryById.get(m._id.toString())?.employeeId || ''
+      })),
+      teams: teams.map((team) => ({
+        id: team._id.toString(),
+        name: team.name,
+        description: team.description,
+        department: team.department ? {
+          id: team.department.toString(),
+          name: organization.getDepartmentById(team.department)?.name || 'General'
+        } : null,
+        parentTeam: team.parentTeam ? {
+          id: team.parentTeam._id.toString(),
+          name: team.parentTeam.name
+        } : null,
+        manager: getDerivedManagerInfo(team),
+        members: team.members.filter(m => m.status === 'active').map(m => ({
+          id: m.account._id.toString(),
+          email: m.account.email,
+          name: m.account.profile?.name,
+          employeeId: memberEntryById.get(m.account._id.toString())?.employeeId || '',
+          role: m.role
+        })),
+        memberCount: team.memberCount
+      })),
+      departments: (organization.departments || []).map((department) => ({
+        id: department._id.toString(),
+        name: department.name,
+        description: department.description || '',
+        headAccount: department.headAccount?.toString() || '',
+        headName: orgMembers.find((orgMember) => orgMember._id.toString() === department.headAccount?.toString())?.profile?.name || '',
+        parentDepartment: department.parentDepartment?.toString() || ''
+      })),
+      canManageMemberRoles: ['owner', 'admin'].includes(member.role),
+      canManageMemberMetadata: ['owner', 'admin', 'hr_manager'].includes(member.role),
+      canManageTeams: ['owner', 'admin'].includes(member.role) || organization.isDepartmentHead(req.user._id),
       yourRole: member.role,
       ownerCount: organization.getOwnerCount(),
       user: req.user,
@@ -3573,24 +6228,53 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
     if (!organization) {
       return res.redirect('/organizations?error=Organization not found')
     }
+    await organization.save()
+    const generalDepartmentId = organization.getGeneralDepartment()?._id
+    if (generalDepartmentId) {
+      await Team.ensureDepartmentAssignments(req.params.orgId, generalDepartmentId)
+    }
 
     const member = organization.members.find(
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
     )
 
-    if (!member || !['owner', 'admin'].includes(member.role)) {
-      return res.redirect('/organizations?error=Admin or owner role required')
+    if (!member || !['owner', 'admin', 'hr_manager'].includes(member.role)) {
+      return res.redirect('/organizations?error=Admin, owner, or HR manager role required')
     }
 
     const invitations = await OrganizationInvite.find({
       organization: req.params.orgId,
       status: 'pending',
       expiresAt: { $gt: new Date() }
-    }).populate('invitedBy', 'email profile.name')
+    })
+      .populate('invitedBy', 'email profile.name')
+      .populate('team', 'name')
+
+    const { apps: availableApps, appIdSet, appNameById } = getHubAppMetadata()
+    const invitationRows = invitations.map(invite => ({
+      id: invite._id.toString(),
+      ...invite.toObject(),
+      departmentName: organization.getDepartmentById(invite.department)?.name || 'General',
+      teamName: invite.team?.name || '',
+      ...getInvitationAccessSummary(invite, appNameById, appIdSet)
+    }))
+
+    const teams = await Team.find({ organization: req.params.orgId }).select('name department').lean()
 
     res.render('invitations', {
       organization,
-      invitations,
+      invitations: invitationRows,
+      availableApps,
+      departments: (organization.departments || []).map((department) => ({
+        id: department._id.toString(),
+        name: department.name,
+        parentDepartment: department.parentDepartment?.toString() || ''
+      })),
+      teams: teams.map((team) => ({
+        id: team._id.toString(),
+        name: team.name,
+        departmentId: team.department?.toString() || ''
+      })),
       yourRole: member.role,
       user: req.user,
       error: req.query.error,
@@ -3602,69 +6286,1775 @@ app.get('/organizations/:orgId/invitations', getSessionUser, async (req, res) =>
   }
 })
 
-app.get('/organizations/:orgId/teams', getSessionUser, async (req, res) => {
+// Onboarding admin page
+app.get('/organizations/:orgId/onboarding', getSessionUser, async (req, res) => {
+  try {
+    const adminContext = await loadOnboardingAdminContext(req, req.params.orgId, { workflowType: 'onboarding' })
+    const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, req.params.orgId, { workflowType: 'onboarding' })
+
+    res.render('onboarding-admin', {
+      ...adminContext,
+      personalAssignments,
+      defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
+      activePage: 'organizations',
+      activeWorkflow: 'onboarding',
+      workspaceMode: false,
+      user: req.user,
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Onboarding admin page error:', error)
+    res.redirect('/organizations?error=Failed to load onboarding')
+  }
+})
+
+// Onboarding assignment detail (admin/HR)
+app.get('/organizations/:orgId/onboarding/assignments/:assignmentId', getSessionUser, async (req, res) => {
   try {
     const organization = await Organization.findById(req.params.orgId)
+      .populate('members.account', 'email profile.name')
+
     if (!organization) {
       return res.redirect('/organizations?error=Organization not found')
     }
 
     const member = organization.members.find(
-      m => m.account.toString() === req.user._id.toString() && m.status === 'active'
+      m => (m.account?._id || m.account).toString() === req.user._id.toString() && m.status === 'active'
+    )
+
+    if (!member || !ONBOARDING_MANAGER_ROLES.includes(member.role)) {
+      return res.redirect(`/organizations/${req.params.orgId}/onboarding?error=Admin or HR role required`)
+    }
+
+    const assignment = await OnboardingAssignment.findOne({
+      _id: req.params.assignmentId,
+      organization: req.params.orgId
+    })
+      .populate('member', 'email profile.name')
+      .populate('createdBy', 'email profile.name')
+      .populate('template', 'name')
+      .lean()
+
+    if (!assignment) {
+      return res.redirect(`/organizations/${req.params.orgId}/onboarding?error=Assignment not found`)
+    }
+
+    assignment.templateName = assignment.template?.name || null
+
+    res.render('onboarding-assignment', {
+      organization,
+      assignment,
+      yourRole: member.role,
+      activePage: 'organizations',
+      user: req.user,
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Onboarding assignment detail error:', error)
+    res.redirect(`/organizations/${req.params.orgId}/onboarding?error=Failed to load assignment`)
+  }
+})
+
+// Notifications page - Send email notifications to teams, members, or organization
+app.get('/organizations/:orgId/notifications', getSessionUser, async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.params.orgId)
+      .populate('members.account', 'email profile.name')
+
+    if (!organization) {
+      return res.redirect('/organizations?error=Organization not found')
+    }
+
+    const member = organization.members.find(
+      m => m.account._id.toString() === req.user._id.toString() && m.status === 'active'
     )
 
     if (!member) {
       return res.redirect('/organizations?error=Not a member of this organization')
     }
 
+    // Get teams for the dropdown
     const teams = await Team.find({ organization: req.params.orgId })
-      .populate('manager', 'email profile.name')
-      .populate('members.account', 'email profile.name')
-      .populate('parentTeam', 'name')
+      .select('name members')
       .sort({ name: 1 })
 
-    // Get all organization members for adding to teams
-    const orgMembers = await Account.find({
-      _id: { $in: organization.members.filter(m => m.status === 'active').map(m => m.account) }
-    }).select('email profile.name')
+    const mappedTeams = teams.map(t => ({
+      _id: t._id,
+      name: t.name,
+      memberCount: t.members.filter(m => m.status === 'active').length
+    }))
 
-    res.render('teams', {
+    // Get members for the dropdown
+    const mappedMembers = organization.members
+      .filter(m => m.status === 'active')
+      .map(m => ({
+        id: m.account._id,
+        name: m.account.profile?.name || m.account.email?.split('@')[0] || 'Unknown',
+        email: m.account.email
+      }))
+
+    // Get notification history (paginated)
+    const page = parseInt(req.query.page) || 1
+    const limit = 10
+    const skip = (page - 1) * limit
+
+    const [notifications, totalNotifications] = await Promise.all([
+      Notification.find({ organization: req.params.orgId })
+        .populate('sentBy', 'email profile.name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select('-recipients -htmlContent -textContent'),
+      Notification.countDocuments({ organization: req.params.orgId })
+    ])
+
+    res.render('notifications', {
       organization,
-      teams: teams.map(t => ({
-        id: t._id.toString(),
-        name: t.name,
-        description: t.description,
-        parentTeam: t.parentTeam ? {
-          id: t.parentTeam._id.toString(),
-          name: t.parentTeam.name
-        } : null,
-        manager: t.manager ? {
-          id: t.manager._id.toString(),
-          email: t.manager.email,
-          name: t.manager.profile?.name
-        } : null,
-        members: t.members.filter(m => m.status === 'active').map(m => ({
-          id: m.account._id.toString(),
-          email: m.account.email,
-          name: m.account.profile?.name,
-          role: m.role
-        })),
-        memberCount: t.memberCount
-      })),
-      orgMembers: orgMembers.map(m => ({
-        id: m._id.toString(),
-        email: m.email,
-        name: m.profile?.name
-      })),
+      teams: mappedTeams,
+      members: mappedMembers,
+      notifications,
+      pagination: {
+        page,
+        limit,
+        total: totalNotifications,
+        pages: Math.ceil(totalNotifications / limit)
+      },
       yourRole: member.role,
       user: req.user,
       error: req.query.error,
       success: req.query.success
     })
   } catch (error) {
-    console.error('Teams page error:', error)
-    res.redirect('/organizations?error=Failed to load teams')
+    console.error('Notifications page error:', error)
+    res.redirect('/organizations?error=Failed to load notifications')
   }
+})
+
+const sanitizeDownloadFileName = (value, fallback = 'document') => {
+  const raw = (value || '').toString().trim()
+  const safe = raw
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return safe || fallback
+}
+
+const ensureFileExtension = (fileName, extension) => {
+  const safeFileName = sanitizeDownloadFileName(fileName)
+  if (!extension) return safeFileName
+
+  const normalizedExtension = extension.startsWith('.') ? extension.toLowerCase() : `.${extension.toLowerCase()}`
+  if (safeFileName.toLowerCase().endsWith(normalizedExtension)) {
+    return safeFileName
+  }
+
+  const base = safeFileName.replace(/\.[^/.]+$/, '')
+  return `${base}${normalizedExtension}`
+}
+
+const normalizeMimeType = (mimeType) => (mimeType || '').toString().toLowerCase().split(';')[0].trim()
+
+const inferMimeTypeFromFileName = (fileName) => {
+  const lower = (fileName || '').toString().toLowerCase()
+  if (lower.endsWith('.pdf')) return 'application/pdf'
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.bmp')) return 'image/bmp'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
+  if (lower.endsWith('.doc')) return 'application/msword'
+  if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  return 'application/octet-stream'
+}
+
+const inferFileExtensionFromMimeType = (mimeType) => {
+  const normalized = normalizeMimeType(mimeType)
+  if (normalized === 'application/pdf') return '.pdf'
+  if (normalized === 'image/png') return '.png'
+  if (normalized === 'image/jpeg') return '.jpg'
+  if (normalized === 'image/gif') return '.gif'
+  if (normalized === 'image/webp') return '.webp'
+  if (normalized === 'image/bmp') return '.bmp'
+  if (normalized === 'image/svg+xml') return '.svg'
+  if (normalized === 'application/msword') return '.doc'
+  if (normalized === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return '.docx'
+  return ''
+}
+
+const isGenericBinaryMimeType = (mimeType) => (
+  normalizeMimeType(mimeType) === 'application/octet-stream'
+)
+
+const inferCloudinaryPublicIdFromUrl = (docUrl = '') => {
+  const rawUrl = (docUrl || '').toString().trim()
+  if (!rawUrl) return ''
+
+  try {
+    const parsed = new URL(rawUrl)
+    if (!/cloudinary\.com$/i.test(parsed.hostname)) {
+      return ''
+    }
+
+    const pathParts = parsed.pathname
+      .split('/')
+      .map(part => part.trim())
+      .filter(Boolean)
+
+    const uploadIndex = pathParts.findIndex(part => part === 'upload')
+    if (uploadIndex < 0 || uploadIndex === pathParts.length - 1) {
+      return ''
+    }
+
+    const publicIdParts = pathParts.slice(uploadIndex + 1)
+    if (publicIdParts[0] && /^v\d+$/i.test(publicIdParts[0])) {
+      publicIdParts.shift()
+    }
+
+    if (!publicIdParts.length) {
+      return ''
+    }
+
+    return decodeURIComponent(publicIdParts.join('/'))
+  } catch {
+    return ''
+  }
+}
+
+const ensureExtensionForMimeType = (fileName, mimeType) => {
+  const extension = inferFileExtensionFromMimeType(mimeType)
+  if (!extension) return sanitizeDownloadFileName(fileName)
+  return ensureFileExtension(fileName, extension)
+}
+
+const resolveOnboardingDocumentPayload = (item, requestedVersion) => {
+  const normalizedVersion = (requestedVersion || '').toString().toLowerCase()
+
+  if (item.type === 'esign') {
+    const originalUrl = item.data?.esign?.originalUrl || item.config?.document?.url || ''
+    const signedUrl = item.data?.esign?.signedUrl || ''
+    const originalPublicId = item.config?.document?.publicId || inferCloudinaryPublicIdFromUrl(originalUrl)
+    const signedPublicId = item.data?.esign?.signedPublicId || inferCloudinaryPublicIdFromUrl(signedUrl)
+    const originalFileName = ensureFileExtension(
+      item.config?.document?.fileName || `${item.title || 'document'}.pdf`,
+      '.pdf'
+    )
+    const generatedSignedName = `${originalFileName.replace(/\.[^/.]+$/, '')}-signed.pdf`
+    const signedFileName = ensureFileExtension(
+      item.data?.esign?.signedFileName || generatedSignedName,
+      '.pdf'
+    )
+
+    let resolvedVersion = normalizedVersion === 'original' ? 'original' : 'signed'
+    if (resolvedVersion === 'signed' && !signedUrl) {
+      resolvedVersion = 'original'
+    }
+
+    let docUrl = resolvedVersion === 'signed' ? signedUrl : originalUrl
+    if (!docUrl) {
+      docUrl = signedUrl || originalUrl
+      resolvedVersion = signedUrl ? 'signed' : 'original'
+    }
+
+    return {
+      docUrl,
+      docPublicId: resolvedVersion === 'signed' ? signedPublicId : originalPublicId,
+      docType: 'pdf',
+      subtitle: resolvedVersion === 'signed' ? 'Signed document' : 'Original document',
+      docMimeType: normalizeMimeType(item.data?.esign?.signedMimeType) || 'application/pdf',
+      docFileName: resolvedVersion === 'signed' ? signedFileName : originalFileName,
+      resolvedVersion
+    }
+  }
+
+  const upload = item.data?.upload || {}
+  const docUrl = upload.url || ''
+  const docPublicId = upload.publicId || inferCloudinaryPublicIdFromUrl(docUrl)
+  const normalizedMimeType = normalizeMimeType(upload.mimeType) || inferMimeTypeFromFileName(upload.fileName)
+  const docFileName = ensureExtensionForMimeType(
+    upload.fileName || item.title || 'uploaded-document',
+    normalizedMimeType
+  )
+  const lowerFileName = docFileName.toLowerCase()
+  const isPdf = normalizedMimeType.includes('pdf') || lowerFileName.endsWith('.pdf')
+  const isImage = normalizedMimeType.startsWith('image/') || /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(lowerFileName)
+
+  return {
+    docUrl,
+    docPublicId,
+    docType: isPdf ? 'pdf' : (isImage ? 'image' : 'unknown'),
+    subtitle: 'Uploaded document',
+    docMimeType: normalizedMimeType || 'application/octet-stream',
+    docFileName,
+    resolvedVersion: null
+  }
+}
+
+const buildDocumentDownloadUrl = (assignmentId, itemId, version) => {
+  const params = new URLSearchParams()
+  if (version === 'original' || version === 'signed') {
+    params.set('version', version)
+  }
+  const query = params.toString()
+  return `/onboarding/assignments/${assignmentId}/items/${itemId}/document/download${query ? `?${query}` : ''}`
+}
+
+const buildDocumentInlineUrl = (assignmentId, itemId, version) => {
+  const params = new URLSearchParams()
+  if (version === 'original' || version === 'signed') {
+    params.set('version', version)
+  }
+  const query = params.toString()
+  return `/onboarding/assignments/${assignmentId}/items/${itemId}/document/file${query ? `?${query}` : ''}`
+}
+
+const buildDocumentViewUrl = (assignmentId, itemId, version) => {
+  const params = new URLSearchParams()
+  if (version === 'original' || version === 'signed') {
+    params.set('version', version)
+  }
+  const query = params.toString()
+  return `/onboarding/assignments/${assignmentId}/items/${itemId}/document${query ? `?${query}` : ''}`
+}
+
+const buildDocumentWorkspaceActionUrl = ({
+  assignmentId,
+  itemId,
+  workflowType,
+  itemType,
+  statusKey
+} = {}) => {
+  const params = new URLSearchParams()
+  params.set('workflow', normalizeWorkflowType(workflowType, { allowAll: false, fallback: 'onboarding' }))
+
+  if (assignmentId) {
+    params.set('focusAssignment', String(assignmentId))
+  }
+
+  if (itemId) {
+    params.set('focusItem', String(itemId))
+  }
+
+  if (statusKey === 'needs_action' && itemType === 'esign') {
+    params.set('action', 'sign')
+  }
+
+  return `/documents/my?${params.toString()}`
+}
+
+const getComparableActorId = (value) => {
+  if (!value) return ''
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed || trimmed === 'undefined' || trimmed === 'null' || trimmed === '[object Object]') {
+      return ''
+    }
+    const objectIdMatch = trimmed.match(/^[Oo]bject[Ii]d\(['"]([0-9a-fA-F]{24})['"]\)$/)
+    return objectIdMatch ? objectIdMatch[1] : trimmed
+  }
+
+  if (typeof value === 'object') {
+    if (typeof value.$oid === 'string') return value.$oid
+    if (typeof value.toHexString === 'function') return value.toHexString()
+    if (typeof value.toString === 'function') {
+      const stringValue = value.toString()
+      if (/^[0-9a-fA-F]{24}$/.test(stringValue)) {
+        return stringValue
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(value, '_id')) {
+      const next = value._id
+      if (next && next !== value) return getComparableActorId(next)
+    }
+    if (value.member) return getComparableActorId(value.member)
+    if (value.memberId) return getComparableActorId(value.memberId)
+    if (value.key) return getComparableActorId(value.key)
+    if (value.id) return getComparableActorId(value.id)
+  }
+
+  return String(value)
+}
+
+const ensureArray = (value) => (Array.isArray(value) ? value : [])
+
+const isOnboardingESignFieldAssignedToUser = (field, {
+  currentUserId = '',
+  assignmentMemberId = ''
+} = {}) => {
+  const rawSignerId = getComparableActorId(field?.signerId || field?.signerKey || field?.signer)
+
+  if (!rawSignerId) {
+    return assignmentMemberId === currentUserId
+  }
+
+  const resolvedSignerId = rawSignerId === 'assignee'
+    ? assignmentMemberId
+    : rawSignerId
+
+  return resolvedSignerId === currentUserId
+}
+
+const getOnboardingESignState = (item, {
+  currentUserId = '',
+  assignmentMemberId = '',
+  assignmentStatus = ''
+} = {}) => {
+  const signerConfigList = ensureArray(item?.config?.signers)
+  const signatureFieldList = ensureArray(item?.config?.signatureFields)
+  const signerStatusList = ensureArray(item?.data?.esign?.signers)
+  const signerConfigIds = signerConfigList
+    .map(signer => getComparableActorId(signer))
+    .filter(Boolean)
+  const hasAssignedField = signatureFieldList.some(field => (
+    isOnboardingESignFieldAssignedToUser(field, {
+      currentUserId,
+      assignmentMemberId
+    })
+  ))
+  const signerEntry = signerStatusList.find(signer => getComparableActorId(signer?.member) === currentUserId) || null
+  const hasSigned = signerEntry?.status === 'signed'
+  const canSign = Boolean(
+    signerEntry ||
+    signerConfigIds.includes(currentUserId) ||
+    hasAssignedField ||
+    ((!signerConfigIds.length && !signatureFieldList.length) && assignmentMemberId === currentUserId)
+  )
+  const isCancelled = assignmentStatus === 'cancelled'
+  const isCompleted = item?.status === 'completed' || item?.data?.esign?.status === 'completed'
+  const userActionable = !isCancelled && !isCompleted && canSign && !hasSigned
+  const userDone = isCompleted || hasSigned
+
+  return {
+    signerEntry,
+    hasSigned,
+    canSign,
+    hasAssignedField,
+    isCancelled,
+    isCompleted,
+    userActionable,
+    userDone
+  }
+}
+
+const buildProfileDocumentEntries = (assignments = [], user = {}) => {
+  const currentUserId = user?._id?.toString?.() || user?.toString?.() || ''
+  const entries = []
+
+  assignments.forEach((assignment) => {
+    const assignmentId = assignment?._id?.toString?.() || ''
+
+    try {
+      const assignmentMemberId = getComparableActorId(assignment?.member)
+      const isAssignee = assignmentMemberId === currentUserId
+      const organizationName = assignment?.organization?.name || 'Organization'
+      const workflowType = normalizeWorkflowType(assignment?.workflowType, { fallback: 'general' })
+      const workflowLabel = WORKFLOW_LABELS[workflowType] || 'Document Workflow'
+
+      ensureArray(assignment?.items).forEach((item) => {
+        try {
+          if (!['esign', 'upload'].includes(item?.type)) {
+            return
+          }
+
+          const configuredSigners = ensureArray(item?.config?.signers)
+          const signatureFields = ensureArray(item?.config?.signatureFields)
+          const signingStatus = ensureArray(item?.data?.esign?.signers)
+          const isConfiguredSigner = item.type === 'esign'
+            ? configuredSigners.some((signer) => getComparableActorId(signer) === currentUserId)
+            : false
+          const isFieldSigner = item.type === 'esign'
+            ? signatureFields.some((field) => (
+                isOnboardingESignFieldAssignedToUser(field, {
+                  currentUserId,
+                  assignmentMemberId
+                })
+              ))
+            : false
+          const isSignerInStatus = item.type === 'esign'
+            ? signingStatus.some((signer) => getComparableActorId(signer?.member) === currentUserId)
+            : false
+
+          if (!(isAssignee || isConfiguredSigner || isFieldSigner || isSignerInStatus)) {
+            return
+          }
+
+          const descriptor = resolveOnboardingDocumentPayload(item, item.type === 'esign' ? 'signed' : null)
+          if (!descriptor?.docUrl) {
+            return
+          }
+
+          const esignState = item.type === 'esign'
+            ? getOnboardingESignState(item, {
+                currentUserId,
+                assignmentMemberId,
+                assignmentStatus: assignment?.status || ''
+              })
+            : null
+
+          let statusKey = 'available'
+          let statusLabel = 'Available'
+
+          if (item.type === 'esign') {
+            if (esignState?.isCancelled) {
+              statusKey = 'available'
+              statusLabel = 'Cancelled'
+            } else if (esignState?.userDone) {
+              statusKey = 'completed'
+              statusLabel = 'Signed'
+            } else if (esignState?.userActionable) {
+              statusKey = 'needs_action'
+              statusLabel = 'Needs Signature'
+            } else {
+              statusKey = 'available'
+              statusLabel = 'Waiting'
+            }
+          } else if (item.type === 'upload') {
+            if (assignment?.status === 'cancelled') {
+              statusKey = 'available'
+              statusLabel = 'Cancelled'
+            } else {
+              statusKey = 'completed'
+              statusLabel = 'Uploaded'
+            }
+          }
+
+          const issuedAt = item.type === 'esign'
+            ? (esignState?.signerEntry?.signedAt || item?.data?.esign?.signedAt || assignment?.completedAt || assignment?.createdAt)
+            : (item?.data?.upload?.uploadedAt || assignment?.completedAt || assignment?.createdAt)
+
+          const fileName = descriptor.docFileName || item?.data?.upload?.fileName || item?.config?.document?.fileName || item?.title || 'Document'
+          const title = item?.title || fileName
+          const requiresSignature = item.type === 'esign' && esignState?.userActionable === true
+          const workspaceActionUrl = buildDocumentWorkspaceActionUrl({
+            assignmentId,
+            itemId: item?._id?.toString?.() || '',
+            workflowType,
+            itemType: item.type,
+            statusKey
+          })
+          const searchText = [
+            title,
+            fileName,
+            descriptor.subtitle,
+            organizationName,
+            workflowLabel,
+            statusLabel,
+            item?.description || ''
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+
+          entries.push({
+            id: `${assignmentId}:${item?._id?.toString?.() || ''}`,
+            assignmentId,
+            itemId: item?._id?.toString?.() || '',
+            title,
+            description: item?.description || '',
+            organizationName,
+            workflowType,
+            workflowLabel,
+            itemType: item.type,
+            itemTypeLabel: item.type === 'esign' ? 'E-sign Document' : 'Uploaded File',
+            subtitle: descriptor.subtitle,
+            fileName,
+            statusKey,
+            statusLabel,
+            assignmentStatus: assignment?.status || 'pending',
+            itemStatus: item?.status || 'pending',
+            issuedAt: issuedAt || assignment?.createdAt || null,
+            dueAt: assignment?.dueAt || null,
+            viewUrl: buildDocumentViewUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
+            downloadUrl: buildDocumentDownloadUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
+            actionUrl: requiresSignature ? workspaceActionUrl : buildDocumentViewUrl(assignmentId, item?._id?.toString?.() || '', descriptor.resolvedVersion),
+            actionLabel: requiresSignature ? 'Review & Sign' : 'View',
+            actionHint: requiresSignature
+              ? 'Open the signing screen for this exact document and finish your signature there.'
+              : (statusLabel === 'Cancelled'
+                  ? 'This document assignment was cancelled. Open the document if you need to review the original file.'
+                  : (statusLabel === 'Waiting'
+                      ? 'This document is visible to you, but there is no signature action pending from your account right now.'
+                      : (statusKey === 'completed'
+                          ? 'Open the completed document.'
+                          : 'Open the document to review it.'))),
+            requiresSignature,
+            searchText,
+            sortPriority: requiresSignature ? 0 : (statusKey === 'needs_action' ? 1 : (statusKey === 'available' ? 2 : 3))
+          })
+        } catch (itemError) {
+          console.error('Failed to build profile document entry:', {
+            assignmentId,
+            itemId: item?._id?.toString?.() || '',
+            itemType: item?.type || 'unknown'
+          }, itemError)
+        }
+      })
+    } catch (assignmentError) {
+      console.error('Failed to process document assignment for profile entries:', {
+        assignmentId,
+        workflowType: assignment?.workflowType || 'unknown'
+      }, assignmentError)
+    }
+  })
+
+  return entries.sort((left, right) => {
+    const priorityDelta = Number(left?.sortPriority || 0) - Number(right?.sortPriority || 0)
+    if (priorityDelta !== 0) {
+      return priorityDelta
+    }
+    const leftTime = left?.issuedAt ? new Date(left.issuedAt).getTime() : 0
+    const rightTime = right?.issuedAt ? new Date(right.issuedAt).getTime() : 0
+    return rightTime - leftTime
+  })
+}
+
+const resolveOnboardingDocumentAccess = async (assignmentId, itemId, userId) => {
+  const assignment = await OnboardingAssignment.findById(assignmentId)
+    .populate('organization', 'name')
+
+  if (!assignment) {
+    return { error: 'not_found' }
+  }
+
+  const item = assignment.items.id(itemId)
+  if (!item || !['esign', 'upload'].includes(item.type)) {
+    return { error: 'not_found' }
+  }
+
+  const organizationId = assignment.organization?._id || assignment.organization
+  const organization = await Organization.findById(organizationId).select('members')
+  const userIdStr = userId.toString()
+
+  const member = organization?.members?.find(
+    m => m.account.toString() === userIdStr && m.status === 'active'
+  )
+
+  const isManager = !!(member && ONBOARDING_MANAGER_ROLES.includes(member.role))
+  const isAssignee = assignment.member?.toString() === userIdStr
+  const isConfiguredSigner = item.type === 'esign'
+    ? ensureArray(item?.config?.signers).some(signer => signer?.member?.toString() === userIdStr)
+    : false
+  const isFieldSigner = item.type === 'esign'
+    ? ensureArray(item?.config?.signatureFields).some(field => (
+        isOnboardingESignFieldAssignedToUser(field, {
+          currentUserId: userIdStr,
+          assignmentMemberId: assignment.member?.toString?.() || ''
+        })
+      ))
+    : false
+  const isSignerInStatus = item.type === 'esign'
+    ? ensureArray(item?.data?.esign?.signers).some(signer => signer?.member?.toString() === userIdStr)
+    : false
+
+  return {
+    assignment,
+    item,
+    organizationId,
+    isManager,
+    canAccess: isManager || isAssignee || isConfiguredSigner || isFieldSigner || isSignerInStatus
+  }
+}
+
+const resolveOnboardingBackUrl = (backParam, isManager, organizationId) => {
+  const rawBack = (backParam || '').toString()
+  const safeBackUrl = rawBack.startsWith('/') && !rawBack.startsWith('//') ? rawBack : null
+  const defaultBackUrl = isManager
+    ? `/organizations/${organizationId.toString()}/onboarding`
+    : '/documents'
+  return safeBackUrl || defaultBackUrl
+}
+
+const buildOnboardingCloudinaryDownloadUrl = (payload = {}) => {
+  const publicId = (payload.docPublicId || inferCloudinaryPublicIdFromUrl(payload.docUrl)).toString().trim()
+  if (!publicId || !isCloudinaryConfigured()) {
+    return ''
+  }
+
+  const fileExtension = inferFileExtensionFromMimeType(payload.docMimeType || '')
+  const format = fileExtension ? fileExtension.replace(/^\./, '') : undefined
+
+  try {
+    return cloudinary.utils.private_download_url(publicId, format, {
+      resource_type: 'raw',
+      type: 'upload',
+      attachment: false
+    })
+  } catch (error) {
+    console.error('Failed to build Cloudinary onboarding download URL:', {
+      publicId,
+      requestedFormat: format || null
+    }, error)
+    return ''
+  }
+}
+
+const fetchOnboardingDocumentAsset = async (payload) => {
+  const candidateUrls = []
+  const cloudinaryDownloadUrl = buildOnboardingCloudinaryDownloadUrl(payload)
+
+  if (cloudinaryDownloadUrl) {
+    candidateUrls.push({
+      url: cloudinaryDownloadUrl,
+      label: 'cloudinary-download'
+    })
+  }
+
+  if (payload.docUrl) {
+    candidateUrls.push({
+      url: payload.docUrl,
+      label: 'stored-url'
+    })
+  }
+
+  let lastError = null
+
+  for (const candidate of candidateUrls) {
+    try {
+      const upstream = await fetch(candidate.url, {
+        headers: {
+          Accept: payload.docMimeType || 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8'
+        }
+      })
+
+      if (!upstream.ok) {
+        throw new Error(`Upstream document fetch failed (${candidate.label}): ${upstream.status}`)
+      }
+
+      const upstreamContentType = normalizeMimeType(upstream.headers.get('content-type'))
+      const contentType = !upstreamContentType || isGenericBinaryMimeType(upstreamContentType)
+        ? (payload.docMimeType || inferMimeTypeFromFileName(payload.docFileName) || 'application/octet-stream')
+        : upstreamContentType
+
+      return {
+        buffer: Buffer.from(await upstream.arrayBuffer()),
+        contentType
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  console.error('Failed to fetch onboarding document asset from all sources:', {
+    docFileName: payload.docFileName || '',
+    docPublicId: payload.docPublicId || '',
+    docUrl: payload.docUrl || '',
+    sourcesTried: candidateUrls.map(candidate => candidate.label)
+  }, lastError)
+
+  throw lastError || new Error('Upstream document fetch failed')
+}
+
+const setOnboardingDocumentResponseHeaders = (res, payload, contentType, disposition = 'inline') => {
+  const fileName = sanitizeDownloadFileName(payload.docFileName || 'document')
+  const asciiFileName = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_')
+
+  res.setHeader('Content-Type', contentType || payload.docMimeType || 'application/octet-stream')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.setHeader(
+    'Content-Disposition',
+    `${disposition}; filename="${asciiFileName || 'document'}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+  )
+}
+
+app.get('/performance-evaluations', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    try {
+      await markDashboardNotificationViewed({
+        accountId: req.user._id,
+        type: 'simplePerformance',
+        organizationIds: [orgContext.organizationId]
+      })
+    } catch (notificationViewError) {
+      console.error('Failed to mark simple performance notification as viewed:', notificationViewError)
+    }
+
+    const fieldConfig = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
+    const evaluationFields = normalizeSimplePerformanceFields(fieldConfig.fields)
+
+    const { members: evaluableMembers } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
+    })
+    const canEvaluate = evaluableMembers.length > 0
+    const hasOrgWideHistoryAccess = SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES.includes(orgContext.memberRole)
+    const canManageFields = canManageSimplePerformanceFields({
+      memberRole: orgContext.memberRole,
+      canEvaluate
+    })
+    const canViewAllHistory = hasOrgWideHistoryAccess || canEvaluate
+    const canCreateTeam = ['owner', 'admin'].includes(orgContext.memberRole)
+    const teamManagementUrl = `/organizations/${orgContext.organizationId}/teams`
+
+    const organizationTeams = await Team.find({ organization: orgContext.organizationId })
+      .select('_id name parentTeam')
+      .sort({ name: 1 })
+      .lean()
+    const organizationTeamCount = organizationTeams.length
+    const { teamById: organizationTeamById, childrenByParent: organizationTeamChildrenByParent } =
+      buildTeamHierarchyMaps(organizationTeams)
+
+    const requestedView = getQueryStringValue(req.query.view).trim().toLowerCase()
+    let viewMode = 'overview'
+    if (requestedView === 'new') {
+      viewMode = 'new'
+    } else if (requestedView === 'settings') {
+      viewMode = 'settings'
+    }
+
+    let evaluableTeams = []
+    if (hasOrgWideHistoryAccess) {
+      evaluableTeams = organizationTeams.map(team => ({
+        teamId: String(team._id),
+        teamName: team.name || 'Team',
+        teamHierarchyPath: resolveTeamPath(team._id, organizationTeamById)
+      }))
+    } else {
+      const evaluableTeamMap = new Map()
+      for (const member of evaluableMembers) {
+        const teamId = String(member.teamId || '').trim()
+        if (!teamId || evaluableTeamMap.has(teamId)) continue
+        evaluableTeamMap.set(teamId, {
+          teamId,
+          teamName: member.teamName || 'Team',
+          teamHierarchyPath: Array.isArray(member.teamHierarchyPath) ? member.teamHierarchyPath : []
+        })
+      }
+      evaluableTeams = Array.from(evaluableTeamMap.values())
+    }
+    evaluableTeams.sort((a, b) => {
+      const aLabel = (a.teamHierarchyPath?.join(' > ') || a.teamName || '').toLowerCase()
+      const bLabel = (b.teamHierarchyPath?.join(' > ') || b.teamName || '').toLowerCase()
+      return aLabel.localeCompare(bLabel)
+    })
+
+    const evaluableTeamById = new Map(evaluableTeams.map(team => [team.teamId, team]))
+
+    const requestedTeamId = getQueryStringValue(req.query.team).trim()
+    let selectedTeam = requestedTeamId ? evaluableTeamById.get(requestedTeamId) : null
+    if (canViewAllHistory && !selectedTeam && evaluableTeams.length > 0) {
+      selectedTeam = evaluableTeams[0]
+    }
+    const selectedTeamId = selectedTeam?.teamId || ''
+    const selectedTeamScopeIds = selectedTeamId
+      ? collectTeamAndDescendantIds(selectedTeamId, organizationTeamChildrenByParent)
+      : new Set()
+
+    const teamScopedEvaluableMembers = selectedTeamId
+      ? evaluableMembers.filter(member => selectedTeamScopeIds.has(String(member.teamId || '').trim()))
+      : (canViewAllHistory ? [] : evaluableMembers)
+    const teamScopedMemberMap = new Map(teamScopedEvaluableMembers.map(member => [member.accountId, member]))
+
+    const requestedMemberId = getQueryStringValue(req.query.member).trim()
+    const requestedReviewedScope = getQueryStringValue(req.query.reviewed).trim().toLowerCase()
+    const requestedMember = requestedMemberId ? teamScopedMemberMap.get(requestedMemberId) : null
+    const showOwnHistoryOnly = requestedReviewedScope === 'me' || !canViewAllHistory
+    let selectedMember = showOwnHistoryOnly ? null : (requestedMember || null)
+
+    // In "Evaluate New" mode, auto-select first evaluable member for convenience.
+    if (viewMode === 'new' && !selectedMember && canEvaluate) {
+      selectedMember = teamScopedEvaluableMembers[0] || null
+    }
+
+    const selectedMemberId = selectedMember?.accountId || ''
+    const historyQuery = { organization: orgContext.organizationId }
+    const requestedHistoryDate = getQueryStringValue(req.query.date).trim()
+    const requestedHistoryMonth = getQueryStringValue(req.query.month).trim()
+    const parsedHistoryDate = parseIsoDateFilterValue(requestedHistoryDate)
+    const parsedHistoryMonth = parseIsoMonthFilterValue(requestedHistoryMonth)
+
+    // History is team-scoped for manager views.
+    // Non-managers always see evaluations about themselves.
+    if (showOwnHistoryOnly) {
+      historyQuery.evaluatedMember = req.user._id
+    } else {
+      if (selectedTeamId) {
+        const scopedTeamIds = selectedTeamScopeIds.size
+          ? Array.from(selectedTeamScopeIds)
+          : [selectedTeamId]
+        historyQuery.evaluatedTeam = scopedTeamIds.length > 1
+          ? { $in: scopedTeamIds }
+          : scopedTeamIds[0]
+      }
+      if (requestedMember?.accountId) {
+        historyQuery.evaluatedMember = requestedMember.accountId
+      }
+    }
+
+    const historyDateRange = {}
+    if (parsedHistoryMonth) {
+      historyDateRange.$gte = parsedHistoryMonth.start
+      historyDateRange.$lt = parsedHistoryMonth.end
+    }
+    if (parsedHistoryDate) {
+      historyDateRange.$gte = historyDateRange.$gte
+        ? new Date(Math.max(historyDateRange.$gte.getTime(), parsedHistoryDate.start.getTime()))
+        : parsedHistoryDate.start
+      historyDateRange.$lt = historyDateRange.$lt
+        ? new Date(Math.min(historyDateRange.$lt.getTime(), parsedHistoryDate.end.getTime()))
+        : parsedHistoryDate.end
+    }
+    if (Object.keys(historyDateRange).length > 0) {
+      historyQuery.evaluationDate = historyDateRange
+    }
+
+    const shouldSuppressHistoryForMissingTeam = canViewAllHistory && !showOwnHistoryOnly && !selectedTeamId
+    const history = shouldSuppressHistoryForMissingTeam
+      ? []
+      : await PerformanceEvaluation.find(historyQuery)
+        .sort({ evaluationDate: -1, createdAt: -1 })
+        .limit(80)
+        .lean()
+
+    const currentUserId = req.user._id?.toString() || ''
+    const evaluableMemberIdSet = new Set(evaluableMembers.map(member => member.accountId))
+    const canDeleteAnyEvaluation = SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES.includes(orgContext.memberRole)
+
+    const historyWithMetrics = history.map(entry => ({
+      ...entry,
+      ratings: normalizeEvaluationRatingsForHistory(entry.ratings),
+      averageRating: calculateAverageRating(entry.ratings),
+      canDelete: Boolean(
+        canDeleteAnyEvaluation ||
+        (currentUserId && String(entry.evaluator || '') === currentUserId) ||
+        evaluableMemberIdSet.has(String(entry.evaluatedMember || ''))
+      )
+    }))
+
+    const historySummary = {
+      totalEvaluations: historyWithMetrics.length,
+      evaluatedMembersCount: new Set(
+        historyWithMetrics
+          .map(entry => String(entry.evaluatedMember || ''))
+          .filter(Boolean)
+      ).size,
+      oneOnOneCount: historyWithMetrics.filter(entry => entry.needsOneOnOne).length,
+      averageScore: calculateAverageRating(historyWithMetrics.flatMap(entry => entry.ratings || []))
+    }
+    const historyScopeSubtitle = showOwnHistoryOnly
+      ? 'Showing evaluations submitted about you.'
+      : (selectedTeam
+          ? (selectedMember
+              ? `Showing history for ${selectedMember.name} in ${selectedTeam.teamName}.`
+              : `Showing history for ${selectedTeam.teamName}.`)
+          : (organizationTeamCount === 0
+              ? 'No teams found yet. Create a team to start evaluations.'
+              : 'Select a team to review history.'))
+
+    let errorMessage = getQueryStringValue(req.query.error)
+    if (canViewAllHistory && requestedTeamId && !selectedTeam && !errorMessage) {
+      errorMessage = 'Select a valid team.'
+    }
+    if (canViewAllHistory && requestedMemberId && !requestedMember && !errorMessage) {
+      errorMessage = 'Select a valid team member to evaluate.'
+    }
+    if (requestedHistoryDate && !parsedHistoryDate && !errorMessage) {
+      errorMessage = 'Use a valid date filter in YYYY-MM-DD format.'
+    }
+    if (requestedHistoryMonth && !parsedHistoryMonth && !errorMessage) {
+      errorMessage = 'Use a valid month filter in YYYY-MM format.'
+    }
+    if (viewMode === 'new' && !canEvaluate && !errorMessage) {
+      errorMessage = 'You do not have permission to submit evaluations in this organization.'
+    }
+    if (viewMode === 'settings' && !canManageFields) {
+      viewMode = 'overview'
+      if (!errorMessage) {
+        errorMessage = 'You do not have permission to manage evaluation settings.'
+      }
+    }
+
+    res.render('performance-evaluations', {
+      user: req.user,
+      activePage: 'performance-evaluations',
+      organizationName: orgContext.organizationName,
+      pageTitle: 'Simple Evaluation',
+      aiPoweredAppLaunchUrl: '/launch/performance-management',
+      viewMode,
+      evaluableMembers,
+      teamScopedEvaluableMembers,
+      evaluableTeams,
+      selectedTeam,
+      selectedTeamId,
+      selectedMember,
+      selectedMemberId,
+      evaluationFields,
+      history: historyWithMetrics,
+      historySummary,
+      ratingScale: PERFORMANCE_RATING_SCALE,
+      roleLabels: TEAM_ROLE_LABELS,
+      canEvaluate,
+      canManageFields,
+      canViewAllHistory,
+      canCreateTeam,
+      organizationTeamCount,
+      teamManagementUrl,
+      historyScopeSubtitle,
+      historyFilters: {
+        date: parsedHistoryDate?.normalized || '',
+        month: parsedHistoryMonth?.normalized || '',
+        reviewed: requestedReviewedScope === 'me' ? 'me' : '',
+        team: selectedTeamId
+      },
+      error: errorMessage,
+      success: getQueryStringValue(req.query.success)
+    })
+  } catch (error) {
+    console.error('Performance evaluations page error:', error)
+    res.redirect('/?error=Failed to load performance evaluations')
+  }
+})
+
+app.post('/performance-evaluations', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    const fieldConfig = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
+    const evaluationFields = normalizeSimplePerformanceFields(fieldConfig.fields)
+    if (evaluationFields.length === 0) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'new',
+        error: 'Add at least one evaluation field before submitting evaluations.'
+      })
+    }
+
+    const { members: evaluableMembers, memberMap } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
+    })
+
+    if (evaluableMembers.length === 0) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'overview',
+        error: 'You do not have permission to evaluate any member in this organization.'
+      })
+    }
+
+    const requestedTeamId = String(req.body.team || '').trim()
+    const evaluatedMemberId = String(req.body.evaluatedMemberId || '').trim()
+    const selectedMember = memberMap.get(evaluatedMemberId)
+
+    if (!requestedTeamId) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'new',
+        error: 'Select a team before submitting an evaluation.'
+      })
+    }
+
+    if (!selectedMember) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'new',
+        team: requestedTeamId,
+        error: 'Select a valid member to evaluate.'
+      })
+    }
+
+    if (requestedTeamId) {
+      const selectedMemberTeamId = String(selectedMember.teamId || '').trim()
+      let teamMatchesSelection = selectedMemberTeamId === requestedTeamId
+
+      if (!teamMatchesSelection) {
+        const organizationTeams = await Team.find({ organization: orgContext.organizationId })
+          .select('_id parentTeam')
+          .lean()
+        const { childrenByParent } = buildTeamHierarchyMaps(organizationTeams)
+        const requestedScopeIds = collectTeamAndDescendantIds(requestedTeamId, childrenByParent)
+        teamMatchesSelection = requestedScopeIds.has(selectedMemberTeamId)
+      }
+
+      if (!teamMatchesSelection) {
+        return redirectToPerformanceEvaluations(res, {
+          view: 'new',
+          team: requestedTeamId,
+          error: 'Selected member is not in the selected team.'
+        })
+      }
+    }
+
+    const ratings = []
+    for (const field of evaluationFields) {
+      const parsedValue = parsePerformanceRating(req.body[`rating_${field.key}`])
+      if (!parsedValue) {
+        return redirectToPerformanceEvaluations(res, {
+          view: 'new',
+          team: requestedTeamId || selectedMember.teamId,
+          member: evaluatedMemberId,
+          error: `${field.label} rating is required.`
+        })
+      }
+      ratings.push({
+        fieldKey: field.key,
+        fieldLabel: field.label,
+        value: parsedValue
+      })
+    }
+
+    const evaluationDateRaw = String(req.body.evaluationDate || '').trim()
+    let evaluationDate = new Date()
+    if (evaluationDateRaw) {
+      const parsedDate = new Date(evaluationDateRaw)
+      if (Number.isNaN(parsedDate.getTime())) {
+        return redirectToPerformanceEvaluations(res, {
+          view: 'new',
+          team: requestedTeamId || selectedMember.teamId,
+          member: evaluatedMemberId,
+          error: 'Enter a valid evaluation date.'
+        })
+      }
+      evaluationDate = parsedDate
+    }
+
+    const needsOneOnOneValue = String(req.body.needsOneOnOne || '').trim().toLowerCase()
+    if (!['yes', 'no'].includes(needsOneOnOneValue)) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'new',
+        team: requestedTeamId || selectedMember.teamId,
+        member: evaluatedMemberId,
+        error: 'Select whether a 1:1 meeting is needed.'
+      })
+    }
+
+    const evaluatorName = req.user.profile?.name || req.user.email || 'Evaluator'
+
+    const createdEvaluation = await PerformanceEvaluation.create({
+      organization: orgContext.organizationId,
+      evaluator: req.user._id,
+      evaluatorName,
+      evaluatorEmail: req.user.email,
+      evaluatorScopeRole: selectedMember.scopeRole,
+      evaluatedMember: selectedMember.accountId,
+      evaluatedMemberName: selectedMember.name,
+      evaluatedMemberEmail: selectedMember.email,
+      evaluatedMemberRole: selectedMember.memberRole,
+      evaluatedTeam: selectedMember.teamId || null,
+      evaluatedTeamName: selectedMember.teamName || '',
+      evaluatedTeamPath: selectedMember.teamHierarchyPath || [],
+      evaluationDate,
+      ratings,
+      improvements: String(req.body.improvements || '').trim(),
+      additionalNotes: String(req.body.additionalNotes || '').trim(),
+      needsOneOnOne: needsOneOnOneValue === 'yes'
+    })
+
+    try {
+      await sendReviewedMemberEvaluationNotification({
+        reviewedMemberEmail: selectedMember.email,
+        reviewedMemberName: selectedMember.name,
+        evaluatorName,
+        organizationName: orgContext.organizationName,
+        evaluationDate: createdEvaluation.evaluationDate
+      })
+    } catch (emailError) {
+      console.error('Performance evaluation notification email failed:', emailError.message || emailError)
+    }
+
+    return redirectToPerformanceEvaluations(res, {
+      view: 'overview',
+      team: selectedMember.teamId,
+      success: 'Performance evaluation submitted.'
+    })
+  } catch (error) {
+    console.error('Submit performance evaluation error:', error)
+    return redirectToPerformanceEvaluations(res, {
+      view: 'new',
+      team: String(req.body.team || '').trim(),
+      member: String(req.body.evaluatedMemberId || '').trim(),
+      error: 'Failed to submit evaluation.'
+    })
+  }
+})
+
+app.post('/performance-evaluations/:evaluationId/delete', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    const requestedTeamId = getQueryStringValue(req.body.team).trim()
+    const requestedMemberId = getQueryStringValue(req.body.member).trim()
+    const requestedReviewedScope = getQueryStringValue(req.body.reviewed).trim().toLowerCase()
+    const requestedHistoryDate = getQueryStringValue(req.body.date).trim()
+    const requestedHistoryMonth = getQueryStringValue(req.body.month).trim()
+    const parsedHistoryDate = parseIsoDateFilterValue(requestedHistoryDate)
+    const parsedHistoryMonth = parseIsoMonthFilterValue(requestedHistoryMonth)
+
+    const redirectQuery = {
+      view: 'overview'
+    }
+    if (requestedTeamId) {
+      redirectQuery.team = requestedTeamId
+    }
+    if (requestedReviewedScope === 'me') {
+      redirectQuery.reviewed = 'me'
+    }
+    if (parsedHistoryDate) {
+      redirectQuery.date = parsedHistoryDate.normalized
+    }
+    if (parsedHistoryMonth) {
+      redirectQuery.month = parsedHistoryMonth.normalized
+    }
+
+    const evaluationId = String(req.params.evaluationId || '').trim()
+    if (!mongoose.Types.ObjectId.isValid(evaluationId)) {
+      return redirectToPerformanceEvaluations(res, {
+        ...redirectQuery,
+        error: 'Invalid evaluation record.'
+      })
+    }
+
+    const { members: evaluableMembers, memberMap } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
+    })
+
+    if (requestedMemberId && memberMap.has(requestedMemberId)) {
+      redirectQuery.member = requestedMemberId
+    }
+
+    const evaluation = await PerformanceEvaluation.findOne({
+      _id: evaluationId,
+      organization: orgContext.organizationId
+    })
+      .select('_id evaluator evaluatedMember')
+      .lean()
+
+    if (!evaluation) {
+      return redirectToPerformanceEvaluations(res, {
+        ...redirectQuery,
+        error: 'Evaluation record not found.'
+      })
+    }
+
+    const currentUserId = req.user._id?.toString() || ''
+    const evaluatedMemberId = String(evaluation.evaluatedMember || '')
+    const evaluatorId = String(evaluation.evaluator || '')
+    const evaluableMemberIdSet = new Set(evaluableMembers.map(member => member.accountId))
+    const canDeleteAnyEvaluation = SIMPLE_PERFORMANCE_FIELD_MANAGER_ROLES.includes(orgContext.memberRole)
+    const canDeleteEvaluation = Boolean(
+      canDeleteAnyEvaluation ||
+      (currentUserId && evaluatorId === currentUserId) ||
+      evaluableMemberIdSet.has(evaluatedMemberId)
+    )
+
+    if (!canDeleteEvaluation) {
+      return redirectToPerformanceEvaluations(res, {
+        ...redirectQuery,
+        error: 'You do not have permission to remove this evaluation.'
+      })
+    }
+
+    await PerformanceEvaluation.deleteOne({
+      _id: evaluationId,
+      organization: orgContext.organizationId
+    })
+
+    return redirectToPerformanceEvaluations(res, {
+      ...redirectQuery,
+      success: 'Evaluation removed.'
+    })
+  } catch (error) {
+    console.error('Delete performance evaluation error:', error)
+    return redirectToPerformanceEvaluations(res, {
+      view: 'overview',
+      error: 'Failed to remove evaluation.'
+    })
+  }
+})
+
+app.post('/performance-evaluations/fields', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    const { members: evaluableMembers } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
+    })
+    const canManageFields = canManageSimplePerformanceFields({
+      memberRole: orgContext.memberRole,
+      canEvaluate: evaluableMembers.length > 0
+    })
+
+    if (!canManageFields) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'You do not have permission to manage evaluation fields.'
+      })
+    }
+
+    const fieldLabel = normalizeSimplePerformanceFieldLabel(req.body.fieldLabel)
+    if (!fieldLabel) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'Field name is required.'
+      })
+    }
+
+    const config = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
+    const fields = normalizeSimplePerformanceFields(config.fields)
+
+    const hasDuplicate = fields.some(field => field.label.toLowerCase() === fieldLabel.toLowerCase())
+    if (hasDuplicate) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'A field with this name already exists.'
+      })
+    }
+
+    const existingKeys = new Set(fields.map(field => field.key))
+    const newFieldKey = buildSimplePerformanceFieldKey(fieldLabel, existingKeys)
+
+    config.fields = [
+      ...fields,
+      {
+        key: newFieldKey,
+        label: fieldLabel,
+        createdBy: req.user._id,
+        createdByName: req.user.profile?.name || req.user.email || 'User'
+      }
+    ]
+    config.updatedBy = req.user._id
+    config.updatedByName = req.user.profile?.name || req.user.email || 'User'
+    await config.save()
+
+    return redirectToPerformanceEvaluations(res, {
+      view: 'settings',
+      success: 'Evaluation field created.'
+    })
+  } catch (error) {
+    console.error('Create evaluation field error:', error)
+    return redirectToPerformanceEvaluations(res, {
+      view: 'settings',
+      error: 'Failed to create evaluation field.'
+    })
+  }
+})
+
+app.post('/performance-evaluations/fields/:fieldKey/delete', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    if (orgContext.error) {
+      return res.redirect(`/organizations?error=${encodeURIComponent(orgContext.error)}`)
+    }
+
+    const { members: evaluableMembers } = await getEvaluableMembersForEvaluator({
+      organizationId: orgContext.organizationId,
+      evaluatorId: req.user._id,
+      evaluatorOrganizationRole: orgContext.memberRole
+    })
+    const canManageFields = canManageSimplePerformanceFields({
+      memberRole: orgContext.memberRole,
+      canEvaluate: evaluableMembers.length > 0
+    })
+
+    if (!canManageFields) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'You do not have permission to manage evaluation fields.'
+      })
+    }
+
+    const fieldKey = String(req.params.fieldKey || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48)
+
+    if (!fieldKey) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'Invalid field key.'
+      })
+    }
+
+    const config = await ensureSimplePerformanceFieldConfig(orgContext.organizationId, req.user)
+    const fields = normalizeSimplePerformanceFields(config.fields)
+    if (fields.length <= 1) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'At least one evaluation field is required.'
+      })
+    }
+
+    const remainingFields = fields.filter(field => field.key !== fieldKey)
+    if (remainingFields.length === fields.length) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'Field not found.'
+      })
+    }
+
+    if (remainingFields.length === 0) {
+      return redirectToPerformanceEvaluations(res, {
+        view: 'settings',
+        error: 'At least one evaluation field is required.'
+      })
+    }
+
+    config.fields = remainingFields
+    config.updatedBy = req.user._id
+    config.updatedByName = req.user.profile?.name || req.user.email || 'User'
+    await config.save()
+
+    return redirectToPerformanceEvaluations(res, {
+      view: 'settings',
+      success: 'Evaluation field deleted.'
+    })
+  } catch (error) {
+    console.error('Delete evaluation field error:', error)
+    return redirectToPerformanceEvaluations(res, {
+      view: 'settings',
+      error: 'Failed to delete evaluation field.'
+    })
+  }
+})
+
+app.get('/simple-performance-evaluation', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  const query = new URLSearchParams(req.query).toString()
+  return res.redirect(`/performance-evaluations${query ? `?${query}` : ''}`)
+})
+
+// View onboarding documents (uses PDF.js viewer so Cloudinary raw PDFs render correctly in-app)
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document', getSessionUser, async (req, res) => {
+  try {
+    const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
+    if (access.error === 'not_found') {
+      return res.redirect('/documents?error=Document not found')
+    }
+
+    const { assignment, item, organizationId, isManager, canAccess } = access
+    const backUrl = resolveOnboardingBackUrl(req.query.back, isManager, organizationId)
+
+    if (!canAccess) {
+      return res.status(403).render('document-viewer', {
+        user: req.user,
+        activePage: isManager ? 'organizations' : 'documents',
+        title: 'Unauthorized',
+        subtitle: 'You do not have access to this document.',
+        docUrl: null,
+        docType: 'unknown',
+        backUrl,
+        downloadUrl: null
+      })
+    }
+
+    const payload = resolveOnboardingDocumentPayload(
+      item,
+      (req.query.version || '').toString().toLowerCase()
+    )
+
+    if (!payload.docUrl) {
+      return res.redirect('/documents?error=Document is not available')
+    }
+
+    res.render('document-viewer', {
+      user: req.user,
+      activePage: isManager ? 'organizations' : 'documents',
+      title: item.title || 'Document',
+      subtitle: payload.subtitle,
+      docUrl: buildDocumentInlineUrl(
+        assignment._id.toString(),
+        item._id.toString(),
+        payload.resolvedVersion
+      ),
+      docType: payload.docType,
+      backUrl,
+      downloadUrl: buildDocumentDownloadUrl(
+        assignment._id.toString(),
+        item._id.toString(),
+        payload.resolvedVersion
+      )
+    })
+  } catch (error) {
+    console.error('Onboarding document viewer error:', error)
+    res.redirect('/documents?error=Failed to load document')
+  }
+})
+
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/file', getSessionUser, async (req, res) => {
+  try {
+    const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
+    if (access.error === 'not_found') {
+      return res.status(404).send('Document not found')
+    }
+
+    const { item, canAccess } = access
+    if (!canAccess) {
+      return res.status(403).send('Unauthorized')
+    }
+
+    const payload = resolveOnboardingDocumentPayload(
+      item,
+      (req.query.version || '').toString().toLowerCase()
+    )
+
+    if (!payload.docUrl) {
+      return res.status(404).send('Document not available')
+    }
+
+    const { buffer, contentType } = await fetchOnboardingDocumentAsset(payload)
+    setOnboardingDocumentResponseHeaders(res, payload, contentType, 'inline')
+    res.send(buffer)
+  } catch (error) {
+    console.error('Onboarding document file error:', error)
+    res.status(500).send('Failed to load document')
+  }
+})
+
+// Download onboarding documents with a stable filename + extension.
+app.get('/onboarding/assignments/:assignmentId/items/:itemId/document/download', getSessionUser, async (req, res) => {
+  try {
+    const access = await resolveOnboardingDocumentAccess(req.params.assignmentId, req.params.itemId, req.user._id)
+    if (access.error === 'not_found') {
+      return res.status(404).send('Document not found')
+    }
+
+    const { item, canAccess } = access
+    if (!canAccess) {
+      return res.status(403).send('Unauthorized')
+    }
+
+    const payload = resolveOnboardingDocumentPayload(
+      item,
+      (req.query.version || '').toString().toLowerCase()
+    )
+
+    if (!payload.docUrl) {
+      return res.status(404).send('Document not available')
+    }
+
+    const { buffer, contentType } = await fetchOnboardingDocumentAsset(payload)
+    setOnboardingDocumentResponseHeaders(res, payload, contentType, 'attachment')
+    res.send(buffer)
+  } catch (error) {
+    console.error('Onboarding document download error:', error)
+    res.status(500).send('Failed to download document')
+  }
+})
+
+const buildPathFromRequestQuery = (pathname, query = {}, omitKeys = []) => {
+  const omitted = new Set((omitKeys || []).map(key => String(key || '').trim()).filter(Boolean))
+  const params = new URLSearchParams()
+
+  Object.keys(query || {}).forEach((key) => {
+    if (omitted.has(key)) return
+    const value = getQueryStringValue(query[key]).trim()
+    if (!value) return
+    params.set(key, value)
+  })
+
+  const nextQuery = params.toString()
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname
+}
+
+const markDocumentsNotificationViewedForUser = async (account) => {
+  const currentOrgId = account.currentOrganization?._id?.toString() || account.currentOrganization?.toString()
+  const documentNotificationOrgIds = getOrganizationIdsFromAccount(account)
+  if (currentOrgId && !documentNotificationOrgIds.includes(currentOrgId)) {
+    documentNotificationOrgIds.push(currentOrgId)
+  }
+
+  try {
+    await markDashboardNotificationViewed({
+      accountId: account._id,
+      type: 'documents',
+      organizationIds: documentNotificationOrgIds
+    })
+  } catch (notificationViewError) {
+    console.error('Failed to mark documents notification as viewed:', notificationViewError)
+  }
+}
+
+const renderMyDocumentsPage = async (req, res) => {
+  const activeWorkflow = normalizeWorkflowType(req.query.workflow, {
+    allowAll: true,
+    fallback: 'all'
+  })
+
+  await markDocumentsNotificationViewedForUser(req.user)
+
+  const assignments = await getPersonalOnboardingAssignments(req.user._id, undefined, { workflowType: 'all' })
+
+  return res.render('onboarding', {
+    assignments,
+    user: req.user,
+    activePage: 'documents',
+    activeWorkflow,
+    workspaceMode: true,
+    workflowLabels: WORKFLOW_LABELS,
+    workflowTypes: WORKFLOW_TYPES,
+    workflowSummary: buildWorkflowSummary({ assignments }),
+    error: req.query.error,
+    success: req.query.success
+  })
+}
+
+const renderDocumentsWorkspacePage = async (req, res) => {
+  const activeWorkflow = normalizeWorkflowType(req.query.workflow, {
+    allowAll: true,
+    fallback: 'all'
+  })
+
+  await markDocumentsNotificationViewedForUser(req.user)
+
+  const orgContext = await getCurrentOrganizationContext(req.user)
+  if (orgContext.error) {
+    return res.redirect(`/documents?error=${encodeURIComponent(orgContext.error)}`)
+  }
+
+  if (!ONBOARDING_MANAGER_ROLES.includes(orgContext.memberRole)) {
+    return res.redirect('/documents?error=Document workspace is available to owners, admins, and HR managers only')
+  }
+
+  const adminContext = await loadOnboardingAdminContext(req, orgContext.organizationId, { workflowType: 'all' })
+
+  return res.render('onboarding-admin', {
+    ...adminContext,
+    defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
+    activePage: 'documents',
+    activeWorkflow,
+    workspaceMode: true,
+    user: req.user,
+    error: req.query.error,
+    success: req.query.success
+  })
+}
+
+// Document workspace landing page
+app.get('/documents', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    const requestedTab = getQueryStringValue(req.query.tab).trim().toLowerCase()
+    const hasDirectMyDocumentsTarget = ['workflow', 'focusAssignment', 'focusItem', 'action']
+      .some(key => getQueryStringValue(req.query[key]).trim())
+
+    if (requestedTab === 'center') {
+      return res.redirect(buildPathFromRequestQuery('/documents/workspace', req.query, ['tab']))
+    }
+
+    if (requestedTab === 'my' || hasDirectMyDocumentsTarget) {
+      return res.redirect(buildPathFromRequestQuery('/documents/my', req.query, ['tab']))
+    }
+
+    const orgContext = await getCurrentOrganizationContext(req.user)
+    const canAccessWorkspace = !orgContext.error && ONBOARDING_MANAGER_ROLES.includes(orgContext.memberRole)
+    const currentOrganizationName = orgContext.organizationName
+      || req.user.currentOrganization?.name
+      || 'Current organization'
+
+    return res.render('documents-home', {
+      user: req.user,
+      activePage: 'documents',
+      canAccessWorkspace,
+      currentOrganizationName,
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Documents landing page error:', error)
+    return res.redirect('/?error=Failed to load documents')
+  }
+})
+
+app.get('/documents/my', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    return await renderMyDocumentsPage(req, res)
+  } catch (error) {
+    console.error('My documents page error:', error)
+    return res.redirect('/documents?error=Failed to load your documents')
+  }
+})
+
+app.get('/documents/workspace', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    return await renderDocumentsWorkspacePage(req, res)
+  } catch (error) {
+    console.error('Document workspace page error:', error)
+    return res.redirect('/documents?error=Failed to load document workspace')
+  }
+})
+
+// Backward-compatible onboarding route
+app.get('/onboarding', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
+    const documentNotificationOrgIds = getOrganizationIdsFromAccount(req.user)
+    if (currentOrgId && !documentNotificationOrgIds.includes(currentOrgId)) {
+      documentNotificationOrgIds.push(currentOrgId)
+    }
+
+    try {
+      await markDashboardNotificationViewed({
+        accountId: req.user._id,
+        type: 'documents',
+        organizationIds: documentNotificationOrgIds
+      })
+    } catch (notificationViewError) {
+      console.error('Failed to mark onboarding notification as viewed:', notificationViewError)
+    }
+
+    if (currentOrgId) {
+      try {
+        const adminContext = await loadOnboardingAdminContext(req, currentOrgId, { workflowType: 'onboarding' })
+        const personalAssignments = await getPersonalOnboardingAssignments(req.user._id, currentOrgId, { workflowType: 'onboarding' })
+
+        return res.render('onboarding-admin', {
+          ...adminContext,
+          personalAssignments,
+          defaultTemplateId: adminContext.templates.find(t => t.isDefault)?._id?.toString() || null,
+          activePage: 'documents',
+          activeWorkflow: 'onboarding',
+          workspaceMode: false,
+          user: req.user,
+          error: req.query.error,
+          success: req.query.success
+        })
+      } catch (adminError) {
+        // Fall back to personal onboarding view if user isn't an admin/HR in the current org
+      }
+    }
+
+    const assignments = await getPersonalOnboardingAssignments(req.user._id, undefined, { workflowType: 'onboarding' })
+
+    res.render('onboarding', {
+      assignments,
+      user: req.user,
+      activePage: 'documents',
+      activeWorkflow: 'onboarding',
+      workspaceMode: false,
+      workflowLabels: WORKFLOW_LABELS,
+      workflowTypes: WORKFLOW_TYPES,
+      workflowSummary: buildWorkflowSummary({ assignments }),
+      error: req.query.error,
+      success: req.query.success
+    })
+  } catch (error) {
+    console.error('Onboarding page error:', error)
+    res.redirect('/?error=Failed to load onboarding')
+  }
+})
+
+app.get('/organizations/:orgId/teams', getSessionUser, async (req, res) => {
+  return res.redirect(`/organizations/${req.params.orgId}/members`)
 })
 
 // User's pending invitations page
@@ -3679,6 +8069,8 @@ app.get('/invitations/pending', getSessionUser, async (req, res) => {
       .populate('invitedBy', 'email profile.name')
       .sort({ createdAt: -1 })
 
+    const { appIdSet, appNameById } = getHubAppMetadata()
+
     res.render('pending-invitations', {
       invitations: invitations.map(inv => ({
         id: inv._id.toString(),
@@ -3688,10 +8080,12 @@ app.get('/invitations/pending', getSessionUser, async (req, res) => {
           description: inv.organization.description
         },
         role: inv.role,
+        employeeId: inv.employeeId || '',
         invitedBy: {
           email: inv.invitedBy?.email,
           name: inv.invitedBy?.profile?.name
         },
+        ...getInvitationAccessSummary(inv, appNameById, appIdSet),
         expiresAt: inv.expiresAt,
         createdAt: inv.createdAt
       })),
@@ -3752,6 +8146,12 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
 
     // Show confirmation page instead of auto-accepting
     const inviterName = matchedInvite.invitedBy?.profile?.name || matchedInvite.invitedBy?.email || 'A team member'
+    const { appIdSet, appNameById } = getHubAppMetadata()
+    const inviteAccess = getInvitationAccessSummary(matchedInvite, appNameById, appIdSet)
+    const inviteAccessDetail = inviteAccess.appAccess.mode === APP_ACCESS_MODE_SELECTED
+      ? (inviteAccess.appAccessAppNames.join(', ') || 'Selected apps only')
+      : 'All apps available to your organization plan'
+
     res.send(`
       <!DOCTYPE html>
       <html>
@@ -3767,7 +8167,7 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
             --line: #1f2a44;
             --text: #e2e8f0;
             --muted: #94a3b8;
-            --success: #22c55e;
+            --success: #8b5cf6;
           }
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
@@ -3794,7 +8194,7 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
           .icon {
             width: 80px;
             height: 80px;
-            background: linear-gradient(135deg, var(--success), #16a34a);
+            background: linear-gradient(135deg, var(--success), #4c1d95);
             border-radius: 20px;
             display: flex;
             align-items: center;
@@ -3858,7 +8258,7 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
           }
           .role-owner { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
           .role-admin { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
-          .role-hr_manager { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+          .role-hr_manager { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
           .role-recruiter { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
           .role-interviewer { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
           .buttons {
@@ -3876,12 +8276,12 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
             transition: all 0.2s;
           }
           .btn-primary {
-            background: linear-gradient(135deg, var(--success), #16a34a);
+            background: linear-gradient(135deg, var(--success), #4c1d95);
             color: white;
           }
           .btn-primary:hover {
             transform: translateY(-1px);
-            box-shadow: 0 8px 24px rgba(34, 197, 94, 0.3);
+            box-shadow: 0 8px 24px rgba(139, 92, 246, 0.3);
           }
           .btn-secondary {
             background: rgba(255,255,255,0.08);
@@ -3922,6 +8322,8 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
         </style>
       </head>
       <body>
+        <div class="grid-overlay"></div>
+        
         <div class="container">
           <a href="/organizations" class="back-link">← Back to Organizations</a>
           <div class="card">
@@ -3938,6 +8340,10 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
                 <span class="role-badge role-${matchedInvite.role}">${matchedInvite.role}</span>
               </div>
               <div class="detail-row">
+                <span class="detail-label">App Access</span>
+                <span class="detail-value">${inviteAccessDetail}</span>
+              </div>
+              <div class="detail-row">
                 <span class="detail-label">Invited By</span>
                 <span class="detail-value">${inviterName}</span>
               </div>
@@ -3948,7 +8354,7 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
             </div>
 
             <div class="buttons">
-              <button class="btn btn-secondary" onclick="window.location.href='/organizations'">
+              <button class="btn btn-secondary" id="declineBtn" onclick="declineInvitation()">
                 Decline
               </button>
               <button class="btn btn-primary" id="acceptBtn" onclick="acceptInvitation()">
@@ -3961,29 +8367,67 @@ app.get('/invitations/accept/confirm', getSessionUser, async (req, res) => {
         <script>
           async function acceptInvitation() {
             const btn = document.getElementById('acceptBtn');
+            const declineBtn = document.getElementById('declineBtn');
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span>Joining...';
+            if (declineBtn) declineBtn.disabled = true;
 
             try {
-              const response = await fetch('/invitations/accept/do?token=${token}', {
+              const response = await fetch('/api/invitations/${token}/accept', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin'
               });
 
               if (response.ok) {
                 const data = await response.json();
-                window.location.href = data.redirectUrl || '/organizations';
+                window.location.href = '/organizations/' + data.organization.id + '/members?success=' + encodeURIComponent('Welcome to ' + data.organization.name + '!');
               } else {
                 const error = await response.json();
                 alert(error.error || 'Failed to join organization');
                 btn.disabled = false;
                 btn.innerHTML = 'Join Organization';
+                if (declineBtn) declineBtn.disabled = false;
               }
             } catch (error) {
               console.error('Error:', error);
               alert('Failed to join organization. Please try again.');
               btn.disabled = false;
               btn.innerHTML = 'Join Organization';
+              if (declineBtn) declineBtn.disabled = false;
+            }
+          }
+
+          async function declineInvitation() {
+            const btn = document.getElementById('declineBtn');
+            const acceptBtn = document.getElementById('acceptBtn');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Declining...';
+            if (acceptBtn) acceptBtn.disabled = true;
+
+            try {
+              const response = await fetch('/api/invitations/${token}/reject', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin'
+              });
+
+              if (response.ok) {
+                window.location.href = '/organizations?success=' + encodeURIComponent('Invitation declined successfully');
+              } else {
+                const error = await response.json();
+                alert(error.error || 'Failed to decline invitation');
+                btn.disabled = false;
+                btn.innerHTML = 'Decline';
+                if (acceptBtn) acceptBtn.disabled = false;
+              }
+            } catch (error) {
+              console.error('Error:', error);
+              alert('Failed to decline invitation. Please try again.');
+              btn.disabled = false;
+              btn.innerHTML = 'Decline';
+              if (acceptBtn) acceptBtn.disabled = false;
             }
           }
         </script>
@@ -4036,7 +8480,14 @@ app.post('/invitations/accept/do', getSessionUser, async (req, res) => {
 
     // Add user to organization
     const organization = await Organization.findById(matchedInvite.organization._id)
-    await organization.addMember(req.user._id, matchedInvite.role, matchedInvite.invitedBy)
+    await organization.addMember(
+      req.user._id,
+      matchedInvite.role,
+      matchedInvite.invitedBy,
+      normalizeAppAccess(matchedInvite.appAccess)
+    )
+
+    invalidateClaimsCache(req.user.sub)
 
     console.log(`✅ User ${req.user.email} joined organization ${organization.name} as ${matchedInvite.role}`)
 
@@ -4126,7 +8577,7 @@ function renderHubPage(account, apps, organizations = []) {
         .hub-card .chip { background: var(--panel-strong); border: 1px solid var(--border); }
         .hub-card .chip.secondary { color: var(--brand-2); }
         .stat { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--text); font-weight: 600; }
-        .dot { width: 10px; height: 10px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 6px rgba(34,197,94,0.14); }
+        .dot { width: 10px; height: 10px; border-radius: 999px; background: #8b5cf6; box-shadow: 0 0 0 6px rgba(139,92,246,0.14); }
 
         .apps { width: 100%; display: block; margin-top: 18px; }
         .section-title {
@@ -4213,40 +8664,49 @@ function renderHubPage(account, apps, organizations = []) {
         }
       </style>
       <script src="/js/theme.js?v=2"></script>
+      <script src="/js/invitation-gatekeeper.js"></script>
     </head>
     <body>
+      <!-- Mobile Nav Checkbox (CSS-only toggle) -->
+      <input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-checkbox">
+
       <nav class="top-nav">
         <a href="/" class="top-nav-brand">
-          ${seemplifyMarkSvg}
-          <span>Seemplify</span>
+          ${seemplifyNavLogoImg}
         </a>
+        <!-- Mobile Nav Toggle Label -->
+        <label for="mobile-nav-toggle" class="mobile-nav-toggle" aria-label="Toggle navigation">
+          <span></span>
+          <span></span>
+          <span></span>
+        </label>
         <div class="top-nav-links">
-          <a href="/" class="top-nav-link">Home</a>
+          <a href="/" class="top-nav-link active">Home</a>
           <a href="/organizations" class="top-nav-link">Organizations</a>
           <a href="/invitations/pending" class="top-nav-link">Invitations</a>
           <a href="/profile" class="top-nav-link">Profile</a>
         </div>
         <div class="top-nav-user">
-      <div class="theme-dropdown">
-        <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
-          <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-          <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        </button>
-        <div class="theme-menu" id="theme-menu">
-          <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            Light
-          </button>
-          <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            Dark
-          </button>
-          <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            System
-          </button>
-        </div>
-      </div>
+          <div class="theme-dropdown">
+            <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
+              <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+            <div class="theme-menu" id="theme-menu">
+              <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                Light
+              </button>
+              <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                Dark
+              </button>
+              <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                System
+              </button>
+            </div>
+          </div>
           <div class="top-nav-user-info">
             <div class="top-nav-user-name">${account.profile?.name || account.email.split('@')[0]}</div>
             <div class="top-nav-user-email">${account.email}</div>
@@ -4254,6 +8714,8 @@ function renderHubPage(account, apps, organizations = []) {
           <a href="/logout" class="top-nav-logout">Sign out</a>
         </div>
       </nav>
+      <!-- Mobile Nav Overlay (closes menu when clicked) -->
+      <label for="mobile-nav-toggle" class="mobile-nav-overlay"></label>
 
       <div class="container hub-content">
 
@@ -4533,11 +8995,12 @@ function renderHubPage(account, apps, organizations = []) {
 }
 
 // Hub Login Page Renderer
-function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
+function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = null) {
+  const brand = getIdpBrand(req)
   const inviteBanner = pendingInviteInfo ? `
     <div style="
-      background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(59, 130, 246, 0.15));
-      border: 1px solid rgba(34, 197, 94, 0.4);
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15));
+      border: 1px solid rgba(139, 92, 246, 0.4);
       border-radius: 12px;
       padding: 16px 20px;
       margin-bottom: 20px;
@@ -4548,7 +9011,7 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
       <div style="
         width: 40px;
         height: 40px;
-        background: linear-gradient(135deg, #22c55e, #3b82f6);
+        background: linear-gradient(135deg, #8b5cf6, #6366f1);
         border-radius: 10px;
         display: flex;
         align-items: center;
@@ -4575,137 +9038,149 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>AIIN Hub - Sign in</title>
+      <meta charset="UTF-8">
+      <title>${brand.name} - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=6">
+      <script src="/js/theme.js?v=5"></script>
       <style>
-        ${themeCss}
-        /* Page-specific tweaks */
-        body {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 32px 18px;
-          position: relative;
-        }
-        .auth-shell {
-          position: relative;
-          z-index: 1;
-          width: min(1180px, 100%);
-          display: grid;
-          grid-template-columns: 1.05fr 0.95fr;
-          gap: 22px;
-          align-items: stretch;
-        }
-        .card { padding: 28px; }
-        .btn { width: 100%; margin-top: 6px; }
-        @media (max-width: 1024px) {
-          .auth-shell { grid-template-columns: 1fr; }
-        }
-        @media (max-width: 640px) {
-          .card { padding: 22px; }
-          .title h1 { font-size: 26px; }
-        }
+        ${brand.cssVars}
       </style>
-      <script src="/js/theme.js?v=2"></script>
     </head>
-    <body>
-      <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
-        <div class="theme-dropdown">
-          <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
-            <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-          </button>
-          <div class="theme-menu" id="theme-menu">
-            <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-              Light
-            </button>
-            <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              Dark
-            </button>
-            <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              System
-            </button>
-          </div>
-        </div>
-      </div>
-      <div class="halo one"></div>
-      <div class="halo two"></div>
-      <div class="halo three"></div>
+    <body class="${brand.themeClass}">
+      <div class="grid-overlay"></div>
 
-      <div class="auth-shell">
-        <div class="card intro">
-          <span class="pill">AIIN Identity / Hub</span>
-          <div class="title">
-            <h1>Welcome back to the Hub</h1>
-            <p>Enterprise-grade sign-in that mirrors the SmartHR dashboard feel. One consistent entry point for all AIIN apps.</p>
-          </div>
-          <div class="chips">
-            <span class="chip">SSO ready</span>
-            <span class="chip">Adaptive MFA</span>
-            <span class="chip secondary">Session continuity</span>
-          </div>
-          <div class="stats">
-            <div class="stat"><span class="dot online"></span>All systems healthy</div>
-            <div class="stat"><span class="dot"></span>Smart redirect with hub token</div>
-          </div>
-          <div class="surface">
-            <div class="surface-row">
-              <div>
-                <div class="label">Single redirect</div>
-                <div class="value">Hub token -> SmartHR API</div>
+      <!-- Theme Toggle -->
+      <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+
+      <div class="login-split">
+        <!-- LEFT: Form Panel -->
+        <div class="login-form-panel">
+          <a href="/" class="login-back-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Back to home
+          </a>
+
+          <div class="login-form-inner">
+            <div class="login-brand">
+              <div class="brand-mark">${brand.logoHtml}</div>
+              <span class="login-brand-name">${brand.name}</span>
+            </div>
+
+            <h1 class="login-heading">Welcome back</h1>
+            <p class="login-subheading">Sign in to access your AIIN workspace.</p>
+
+            ${inviteBanner}
+            ${errorMsg ? `<div id="loginError" class="error show" role="alert" aria-live="polite">${errorMsg}</div>` : ''}
+
+            <form id="loginForm" action="/login" method="POST">
+              ${returnTo ? `<input type="hidden" name="return_to" value="${returnTo}" />` : ''}
+              
+              <div class="form-group">
+                <label for="email">Email address</label>
+                <input type="email" id="email" name="email" placeholder="name@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required autofocus ${pendingInviteInfo ? `value="${pendingInviteInfo.email}"` : ''} />
               </div>
-              <div class="badge success">Live</div>
+
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;">
+                  <label for="password" style="margin: 0;">Password</label>
+                  <a href="/forgot-password" class="link">Forgot password?</a>
+                </div>
+                <div class="password-field">
+                  <input type="password" id="password" name="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password" required />
+                  <button type="button" id="passwordToggle" class="password-toggle" aria-label="Show password" aria-controls="password" aria-pressed="false">
+                    <svg class="password-toggle-icon password-toggle-icon--show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <svg class="password-toggle-icon password-toggle-icon--hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a21.7 21.7 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.72 21.72 0 0 1-3.1 4.44M1 1l22 22"/>
+                    </svg>
+                  </button>
+                </div>
+                <div id="capsLockHint" class="caps-lock-hint" aria-live="polite"></div>
+              </div>
+
+              <div class="muted-row">
+                <label>
+                  <input type="checkbox" name="remember" value="true" />
+                  Remember me
+                </label>
+              </div>
+
+              <button type="submit" id="submitBtn">
+                <span id="btnText">${pendingInviteInfo ? 'Sign in to accept invitation' : 'Sign in'}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </button>
+            </form>
+
+            <div class="divider"><span>or</span></div>
+
+            <div class="signup-link">
+              Don't have an account? <a class="link" href="/signup">Create free account</a>
             </div>
-            <p class="surface-note">Launch SmartHR and connected tools without re-entering credentials. Aligned with the frontend dashboard styling.</p>
+
+            <div class="signup-link" style="margin-top: 12px;">
+              Need a guided walkthrough? <a class="link" href="/book-demo">Book a demo</a>
+            </div>
           </div>
         </div>
 
-        <div class="card form-card">
-          <div class="form-header">
-            <div>
-              <span class="eyebrow">Identity</span>
-              <h2 class="form-title">Sign in</h2>
-              <p class="hint">Access SmartHR, dashboards, and connected tools.</p>
-            </div>
-            <div class="brand-mark">
-              ${seemplifyMarkSvg}
-            </div>
-          </div>
-
-          ${inviteBanner}
-
-          ${errorMsg ? `<div class="error">${errorMsg}</div>` : ''}
-
-          <form id="loginForm" action="/login" method="POST">
-            ${returnTo ? `<input type="hidden" name="return_to" value="${returnTo}" />` : ''}
-            <div class="form-group">
-              <label for="email">Work email</label>
-              <input type="email" id="email" name="email" placeholder="you@company.com" required autofocus ${pendingInviteInfo ? `value="${pendingInviteInfo.email}"` : ''} />
+        <!-- RIGHT: Marketing Panel -->
+        <div class="login-marketing-panel">
+          <div class="marketing-inner">
+            <div class="marketing-pill">
+              <span class="status-dot"></span>
+              ${brand.marketing ? brand.marketing.pill : 'Enterprise-ready &bull; SOC 2 Ready'}
             </div>
 
-            <div class="form-group">
-              <label for="password">Password</label>
-              <input type="password" id="password" name="password" placeholder="Enter your password" required />
+            <h2 class="marketing-heading">
+              ${brand.marketing ? brand.marketing.heading : 'Your Workforce,<br/><span class="highlight">Supercharged.</span>'}
+            </h2>
+
+            <p class="marketing-desc">
+              ${brand.marketing ? brand.marketing.desc : `${brand.name} gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.`}
+            </p>
+
+            <div class="feature-cards">
+              ${(brand.marketing ? brand.marketing.features : [
+                { title: 'Single Sign-On', desc: 'One identity for SmartHR, LMS, Chat, AI Assistant, and all connected apps.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>', color: 'blue' },
+                { title: 'Instant Access', desc: 'Adaptive MFA and session continuity for seamless, secure access across your tools.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>', color: 'purple' },
+                { title: 'Enterprise Security', desc: 'SOC 2 ready with end-to-end encryption, SAML/OIDC, and organization-level controls.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>', color: 'accent' }
+              ]).map(f => `
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--${f.color}">
+                  ${f.icon}
+                </div>
+                <div>
+                  <div class="feature-title">${f.title}</div>
+                  <div class="feature-desc">${f.desc}</div>
+                </div>
+              </div>
+              `).join('')}
             </div>
-
-            <div class="muted-row">
-              <label>
-                <input type="checkbox" name="remember" value="true" />
-                Remember me
-              </label>
-              <a href="/forgot-password" class="link">Forgot password?</a>
-            </div>
-
-            <button type="submit" id="submitBtn" class="btn">
-              <span id="btnText">${pendingInviteInfo ? 'Sign in to accept invitation' : 'Sign in'}</span>
-            </button>
-          </form>
-
-          <div class="meta-footer">
-            New to the hub? <a class="link" href="/signup">Create an account</a>
           </div>
         </div>
       </div>
@@ -4714,10 +9189,83 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
         const form = document.getElementById('loginForm');
         const submitBtn = document.getElementById('submitBtn');
         const btnText = document.getElementById('btnText');
+        const passwordInput = document.getElementById('password');
+        const passwordToggle = document.getElementById('passwordToggle');
+        const capsLockHint = document.getElementById('capsLockHint');
+        const submitLabel = '${pendingInviteInfo ? 'Sign in to accept invitation' : 'Sign in'}';
+        const hasError = ${JSON.stringify(Boolean(errorMsg))};
 
-        form.addEventListener('submit', () => {
-          submitBtn.disabled = true;
-          btnText.innerHTML = '<span class="spinner"></span>Signing in...';
+        if (hasError) {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('error');
+          window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
+        }
+
+        function setSubmittingState(isSubmitting) {
+          if (!submitBtn || !btnText) return;
+          submitBtn.disabled = isSubmitting;
+          submitBtn.classList.toggle('is-loading', isSubmitting);
+          btnText.innerHTML = isSubmitting ? '<span class="spinner"></span>Signing in...' : submitLabel;
+        }
+
+        form.addEventListener('submit', (event) => {
+          if (submitBtn.disabled) {
+            event.preventDefault();
+            return;
+          }
+          setSubmittingState(true);
+        });
+
+        window.addEventListener('pageshow', () => {
+          setSubmittingState(false);
+        });
+
+        if (passwordToggle && passwordInput) {
+          passwordToggle.addEventListener('click', () => {
+            const shouldShowPassword = passwordInput.type === 'password';
+            passwordInput.type = shouldShowPassword ? 'text' : 'password';
+            passwordToggle.setAttribute('aria-pressed', shouldShowPassword ? 'true' : 'false');
+            passwordToggle.setAttribute('aria-label', shouldShowPassword ? 'Hide password' : 'Show password');
+            passwordToggle.classList.toggle('is-visible', shouldShowPassword);
+            passwordInput.focus();
+          });
+        }
+
+        if (passwordInput && capsLockHint) {
+          const updateCapsLockHint = (event) => {
+            const isCapsLock = Boolean(event.getModifierState && event.getModifierState('CapsLock'));
+            capsLockHint.textContent = isCapsLock ? 'Caps Lock is on' : '';
+          };
+
+          ['keydown', 'keyup', 'focus', 'blur'].forEach((eventName) => {
+            passwordInput.addEventListener(eventName, updateCapsLockHint);
+          });
+        }
+
+        function toggleTheme() {
+          const current = window.ThemeManager?.getTheme() || 'dark';
+          const next = current === 'dark' ? 'light' : 'dark';
+          window.ThemeManager?.setTheme(next);
+          updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+          const sunIcon = document.querySelector('.theme-icon-sun');
+          const moonIcon = document.querySelector('.theme-icon-moon');
+          if (!sunIcon || !moonIcon) return;
+          if (theme === 'light') {
+            sunIcon.style.display = 'none';
+            moonIcon.style.display = 'block';
+          } else {
+            sunIcon.style.display = 'block';
+            moonIcon.style.display = 'none';
+          }
+        }
+
+        // Initialize theme icon on load
+        window.addEventListener('DOMContentLoaded', () => {
+          const currentTheme = window.ThemeManager?.getTheme() || 'dark';
+          updateThemeIcon(currentTheme);
         });
       </script>
     </body>
@@ -4726,125 +9274,161 @@ function renderHubLoginPage(errorMsg, returnTo = '', pendingInviteInfo = null) {
 }
 
 // Hub Signup Page Renderer
-function renderHubSignupPage(errorMsg) {
+function renderHubSignupPage(req, errorMsg, attributionValues = {}) {
+  const brand = getIdpBrand(req)
+  const hiddenAttributionInputs = buildHiddenAttributionInputs(attributionValues)
+  const marketingFeatures = brand.marketing ? brand.marketing.features : [
+    { title: 'Single Sign-On', desc: `One identity for ${brand.name}, SmartHR, LMS, AI Assistant, and all connected apps.`, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>', color: 'blue' },
+    { title: 'Adaptive Security', desc: 'MFA, session continuity, and SOC 2-ready controls baked in from day one.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>', color: 'purple' },
+    { title: 'Instant Setup', desc: 'Free trial, no credit card required. Invite your team and start in minutes.', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>', color: 'accent' }
+  ]
+  const marketingPill = brand.marketing ? brand.marketing.pill : 'Start free &bull; No credit card required'
+  const marketingHeading = brand.marketing ? brand.marketing.heading : 'Join the workspace,<br/><span class="highlight">unified.</span>'
+  const marketingDesc = brand.marketing ? brand.marketing.desc : `Create your ${brand.name} identity to connect HR, learning, and collaboration tools through one secure account.`
+
   return `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>AIIN Hub - Create account</title>
+      <meta charset="UTF-8">
+      <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=6">
+      <script src="/js/theme.js?v=5"></script>
       <style>
-        ${themeCss}
-        body {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 32px 18px;
-          position: relative;
-        }
-        .shell {
-          position: relative;
-          z-index: 1;
-          width: min(1080px, 100%);
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 20px;
-          align-items: stretch;
-        }
-        .card { padding: 28px; }
-        .btn { width: 100%; margin-top: 6px; }
-        @media (max-width: 1024px) { .shell { grid-template-columns: 1fr; } }
-        @media (max-width: 640px) { .card { padding: 22px; } }
+        ${brand.cssVars}
       </style>
-      <script src="/js/theme.js?v=2"></script>
     </head>
-    <body>
-      <div style="position: absolute; top: 20px; right: 20px; z-index: 10;">
-        <div class="theme-dropdown">
-          <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
-            <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-          </button>
-          <div class="theme-menu" id="theme-menu">
-            <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-              Light
-            </button>
-            <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              Dark
-            </button>
-            <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              System
-            </button>
-          </div>
-        </div>
-      </div>
-      <div class="halo one"></div>
-      <div class="halo two"></div>
-      <div class="halo three"></div>
+    <body class="${brand.themeClass}">
+      <div class="grid-overlay"></div>
 
-      <div class="shell">
-        <div class="card intro">
-          <span class="pill">AIIN Identity / New account</span>
-          <h1>Create your AIIN identity</h1>
-          <p>Aligned with the SmartHR dashboard aesthetic for a seamless move between login, hub, and apps.</p>
-          <div class="list">
-            <div class="list-item"><span class="dot"></span>SSO-ready hub credentials</div>
-            <div class="list-item"><span class="dot"></span>Adaptive MFA and session continuity</div>
-            <div class="list-item"><span class="dot"></span>Instant access to SmartHR and connected tools</div>
-          </div>
-        </div>
+      <!-- Theme Toggle -->
+      <button class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
 
-        <div class="card form-card">
-          <div class="form-header">
-            <div>
-              <span class="eyebrow">Identity</span>
-              <h2 class="form-title">Create account</h2>
-              <p class="hint">One account for the hub and all connected apps.</p>
-            </div>
-            <div class="brand-mark">
-              ${seemplifyMarkSvg}
-            </div>
-          </div>
+      <div class="login-split">
+        <!-- LEFT: Form Panel -->
+        <div class="login-form-panel">
+          <a href="/" class="login-back-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Back to home
+          </a>
 
-          ${errorMsg ? `<div class="error">${errorMsg}</div>` : ''}
-
-          <form id="signupForm" action="/signup" method="POST">
-            <div class="form-group">
-              <label for="name">Full name (optional)</label>
-              <input type="text" id="name" name="name" placeholder="Jordan Harper" />
+          <div class="login-form-inner">
+            <div class="login-brand">
+              <div class="brand-mark">${brand.logoHtml}</div>
+              <span class="login-brand-name">${brand.name}</span>
             </div>
 
-            <div class="form-group">
-              <label for="email">Work email</label>
-              <input type="email" id="email" name="email" placeholder="you@company.com" required autofocus />
-            </div>
+            <h1 class="login-heading">Create your account</h1>
+            <p class="login-subheading">One identity for ${brand.name} and every connected app. Free trial included.</p>
 
-            <div class="form-group">
-              <label for="password">Password</label>
-              <input type="password" id="password" name="password" placeholder="Create a strong password" required minlength="8" />
-              <div class="password-strength">
-                <div class="password-strength-bar" id="strengthBar"></div>
+            ${errorMsg ? `<div id="signupError" class="error show" role="alert" aria-live="polite">${errorMsg}</div>` : ''}
+
+            <form id="signupForm" action="/signup" method="POST">
+              ${hiddenAttributionInputs}
+
+              <div class="form-group">
+                <label for="name">Full name <span class="label-hint">(optional)</span></label>
+                <input type="text" id="name" name="name" placeholder="Jordan Harper" autocomplete="name" />
               </div>
-              <div class="password-hint" id="strengthText">Use 8+ characters with letters, numbers, and symbols.</div>
+
+              <div class="form-group">
+                <label for="email">Work email</label>
+                <input type="email" id="email" name="email" placeholder="you@company.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required autofocus />
+              </div>
+
+              <div class="form-group">
+                <label for="password">Password</label>
+                <div class="password-field">
+                  <input type="password" id="password" name="password" placeholder="Create a strong password" autocomplete="new-password" required minlength="8" />
+                  <button type="button" id="passwordToggle" class="password-toggle" aria-label="Show password" aria-controls="password" aria-pressed="false">
+                    <svg class="password-toggle-icon password-toggle-icon--show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <svg class="password-toggle-icon password-toggle-icon--hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a21.7 21.7 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.72 21.72 0 0 1-3.1 4.44M1 1l22 22"/>
+                    </svg>
+                  </button>
+                </div>
+                <div class="password-strength">
+                  <div class="password-strength-bar" id="strengthBar"></div>
+                </div>
+                <div class="password-hint" id="strengthText">Use 8+ characters with letters, numbers, and symbols.</div>
+              </div>
+
+              <div class="form-group">
+                <label for="confirmPassword">Confirm password</label>
+                <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" autocomplete="new-password" required />
+              </div>
+
+              <button type="submit" id="submitBtn">
+                <span id="btnText">Create account</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </button>
+            </form>
+
+            <p class="terms-line">By creating an account, you agree to our terms of service and privacy policy.</p>
+
+            <div class="divider"><span>or</span></div>
+
+            <div class="signup-link">
+              Already have an account? <a class="link" href="/login">Sign in</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Marketing Panel -->
+        <div class="login-marketing-panel">
+          <div class="marketing-inner">
+            <div class="marketing-pill">
+              <span class="status-dot"></span>
+              ${marketingPill}
             </div>
 
-            <div class="form-group">
-              <label for="confirmPassword">Confirm password</label>
-              <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" required />
+            <h2 class="marketing-heading">
+              ${marketingHeading}
+            </h2>
+
+            <p class="marketing-desc">
+              ${marketingDesc}
+            </p>
+
+            <div class="feature-cards">
+              ${marketingFeatures.map(f => `
+              <div class="feature-card">
+                <div class="feature-icon feature-icon--${f.color}">
+                  ${f.icon}
+                </div>
+                <div>
+                  <div class="feature-title">${f.title}</div>
+                  <div class="feature-desc">${f.desc}</div>
+                </div>
+              </div>
+              `).join('')}
             </div>
-
-            <button type="submit" id="submitBtn" class="btn">
-              <span id="btnText">Create account</span>
-            </button>
-          </form>
-
-          <hr class="divider" />
-
-          <div class="login-link">
-            Already a member? <a href="/login">Sign in</a>
           </div>
         </div>
       </div>
@@ -4857,6 +9441,21 @@ function renderHubSignupPage(errorMsg) {
         const confirmPasswordInput = document.getElementById('confirmPassword');
         const strengthBar = document.getElementById('strengthBar');
         const strengthText = document.getElementById('strengthText');
+        const passwordToggle = document.getElementById('passwordToggle');
+        const hasError = ${JSON.stringify(Boolean(errorMsg))};
+
+        if (hasError) {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('error');
+          window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search);
+        }
+
+        function setSubmittingState(isSubmitting) {
+          if (!submitBtn || !btnText) return;
+          submitBtn.disabled = isSubmitting;
+          submitBtn.classList.toggle('is-loading', isSubmitting);
+          btnText.innerHTML = isSubmitting ? '<span class="spinner"></span>Creating account...' : 'Create account';
+        }
 
         passwordInput.addEventListener('input', () => {
           const password = passwordInput.value;
@@ -4869,7 +9468,10 @@ function renderHubSignupPage(errorMsg) {
           if (/[^a-zA-Z0-9]/.test(password)) strength++;
 
           strengthBar.className = 'password-strength-bar';
-          if (strength <= 2) {
+          if (!password) {
+            strengthText.textContent = 'Use 8+ characters with letters, numbers, and symbols.';
+            strengthText.style.color = '';
+          } else if (strength <= 2) {
             strengthBar.classList.add('strength-weak');
             strengthText.textContent = 'Weak password';
             strengthText.style.color = '#fca5a5';
@@ -4880,9 +9482,20 @@ function renderHubSignupPage(errorMsg) {
           } else {
             strengthBar.classList.add('strength-strong');
             strengthText.textContent = 'Strong password!';
-            strengthText.style.color = '#34d399';
+            strengthText.style.color = '#c4b5fd';
           }
         });
+
+        if (passwordToggle && passwordInput) {
+          passwordToggle.addEventListener('click', () => {
+            const shouldShowPassword = passwordInput.type === 'password';
+            passwordInput.type = shouldShowPassword ? 'text' : 'password';
+            passwordToggle.setAttribute('aria-pressed', shouldShowPassword ? 'true' : 'false');
+            passwordToggle.setAttribute('aria-label', shouldShowPassword ? 'Hide password' : 'Show password');
+            passwordToggle.classList.toggle('is-visible', shouldShowPassword);
+            passwordInput.focus();
+          });
+        }
 
         form.addEventListener('submit', (e) => {
           if (passwordInput.value !== confirmPasswordInput.value) {
@@ -4890,8 +9503,36 @@ function renderHubSignupPage(errorMsg) {
             alert('Passwords do not match');
             return;
           }
-          submitBtn.disabled = true;
-          btnText.innerHTML = '<span class=\"spinner\"></span>Creating account...';
+          setSubmittingState(true);
+        });
+
+        window.addEventListener('pageshow', () => {
+          setSubmittingState(false);
+        });
+
+        function toggleTheme() {
+          const current = window.ThemeManager?.getTheme() || 'dark';
+          const next = current === 'dark' ? 'light' : 'dark';
+          window.ThemeManager?.setTheme(next);
+          updateThemeIcon(next);
+        }
+
+        function updateThemeIcon(theme) {
+          const sunIcon = document.querySelector('.theme-icon-sun');
+          const moonIcon = document.querySelector('.theme-icon-moon');
+          if (!sunIcon || !moonIcon) return;
+          if (theme === 'light') {
+            sunIcon.style.display = 'none';
+            moonIcon.style.display = 'block';
+          } else {
+            sunIcon.style.display = 'block';
+            moonIcon.style.display = 'none';
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+          const currentTheme = window.ThemeManager?.getTheme() || 'dark';
+          updateThemeIcon(currentTheme);
         });
       </script>
     </body>
@@ -4905,14 +9546,126 @@ function getAppIcon(iconName) {
     briefcase: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>',
     users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>',
     chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>',
+    'chart-bar': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>',
     mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>',
     calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
     settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>',
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>',
+    'document-text': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>',
+    'currency-dollar': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>',
+    'academic-cap': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10l-10-5L2 10l10 5 10-5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path><line x1="22" y1="10" x2="22" y2="16"></line></svg>',
+    'chat-bubble-left-right': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
     default: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>'
   }
 
   return icons[iconName] || icons.default
 }
+
+// ==============================================================
+// PROFILE ROUTES - Employee Self-Service Hub
+// ==============================================================
+
+// Register profile API routes
+app.use(profileRouter)
+
+function buildProfilePageViewModel(req, currentProfileSection) {
+  return {
+    user: req.user,
+    currentProfileSection,
+    activeProfileSection: currentProfileSection,
+    profileCompletion: req.profileCompletion || getProfileCompletion(req.user),
+    profileCompletionEnforced: false
+  }
+}
+
+// Profile page GET routes
+app.get('/profile/personal', getSessionUser, async (req, res) => {
+  try {
+    res.render('profile-personal', buildProfilePageViewModel(req, 'personal'))
+  } catch (error) {
+    console.error('Error loading personal page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/tax', getSessionUser, async (req, res) => {
+  try {
+    res.redirect('/profile/personal')
+  } catch (error) {
+    console.error('Error loading tax page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/banking', getSessionUser, async (req, res) => {
+  try {
+    res.render('profile-banking', {
+      ...buildProfilePageViewModel(req, 'banking'),
+      bankJurisdictions: PAYROLL_BANK_JURISDICTIONS,
+      nigerianBanks: NIGERIAN_BANK_OPTIONS
+    })
+  } catch (error) {
+    console.error('Error loading banking page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/dependents', getSessionUser, async (req, res) => {
+  try {
+    res.render('profile-dependents', buildProfilePageViewModel(req, 'dependents'))
+  } catch (error) {
+    console.error('Error loading dependents page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+app.get('/profile/documents', getSessionUser, requireCurrentOrganizationActiveSubscription, async (req, res) => {
+  try {
+    const currentOrgId = req.user.currentOrganization?._id?.toString() || req.user.currentOrganization?.toString()
+    const documentNotificationOrgIds = getOrganizationIdsFromAccount(req.user)
+    if (currentOrgId && !documentNotificationOrgIds.includes(currentOrgId)) {
+      documentNotificationOrgIds.push(currentOrgId)
+    }
+
+    try {
+      await markDashboardNotificationViewed({
+        accountId: req.user._id,
+        type: 'documents',
+        organizationIds: documentNotificationOrgIds
+      })
+    } catch (notificationViewError) {
+      console.error('Failed to mark profile documents notification as viewed:', notificationViewError)
+    }
+
+    const assignments = await getPersonalOnboardingAssignments(req.user._id, undefined, { workflowType: 'all' })
+    const documents = buildProfileDocumentEntries(assignments, req.user)
+    const defaultWorkflowFilter = normalizeWorkflowType(req.query.workflow, {
+      allowAll: true,
+      fallback: 'all'
+    })
+    const rawStatusFilter = String(req.query.status || '').trim().toLowerCase()
+    const defaultStatusFilter = ['all', 'needs_action', 'completed', 'available'].includes(rawStatusFilter)
+      ? rawStatusFilter
+      : 'all'
+    const defaultSearchQuery = String(req.query.search || '').trim()
+
+    res.render('profile-documents', {
+      ...buildProfilePageViewModel(req, 'documents'),
+      documents,
+      workflowLabels: WORKFLOW_LABELS,
+      workflowTypes: WORKFLOW_TYPES,
+      defaultWorkflowFilter,
+      defaultStatusFilter,
+      defaultSearchQuery
+    })
+  } catch (error) {
+    console.error('Error loading documents page:', error)
+    res.status(500).send('Error loading page')
+  }
+})
+
+// ==============================================================
 
 // Provider callback MUST come AFTER custom routes
 // Wrap provider callback to ensure HTTPS is detected in production
@@ -4966,11 +9719,31 @@ app.listen(PORT, async () => {
 
   // Initialize background jobs
   try {
-    await initializeCleanupJobs()
-    console.log('✅ Background jobs initialized')
+    const defaultTrialPlan = await subscriptionService.ensureDefaultTrialPlan()
+    console.log(`✅ Default trial plan ready: ${defaultTrialPlan.name} (${defaultTrialPlan.slug})`)
   } catch (error) {
-    console.error('⚠️ Failed to initialize background jobs:', error)
+    console.error('⚠️ Failed to ensure default trial plan:', error)
+  }
+
+  try {
+    await initializeCleanupJobs()
+    console.log('✅ Cleanup jobs initialized')
+  } catch (error) {
+    console.error('⚠️ Failed to initialize cleanup jobs:', error)
+  }
+
+  // Initialize subscription lifecycle jobs (runs every 6 hours)
+  try {
+    startSubscriptionLifecycleJobs(6)
+    console.log('✅ Subscription lifecycle jobs initialized')
+  } catch (error) {
+    console.error('⚠️ Failed to initialize subscription lifecycle jobs:', error)
+  }
+
+  try {
+    startCampaignWorker()
+    console.log('✅ Campaign worker initialized')
+  } catch (error) {
+    console.error('⚠️ Failed to initialize campaign worker:', error)
   }
 })
-
-

@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260304-11">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    body.public-site.lmsv-settings-page {
+      background: #f6f6f7;
+      color: #0f172a;
+    }
+    .settings-shell {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      padding: 28px 20px 34px;
+      display: grid;
+      gap: 16px;
+      flex: 1 0 auto;
+    }
+    .settings-head {
+      display: grid;
+      gap: 6px;
+    }
+    .settings-head h1 {
+      margin: 0;
+      font-size: clamp(36px, 4vw, 50px);
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .settings-head p {
+      margin: 0;
+      color: #64748b;
+      font-size: 16px;
+    }
+    .settings-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #dbe1e8;
+    }
+    .settings-tab {
+      text-decoration: none;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      background: #ffffff;
+      color: #475569;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 9px 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .settings-tab.active {
+      border-color: #0f172a;
+      background: #0f172a;
+      color: #f8fafc;
+    }
+    .settings-layout {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: minmax(0, 1.34fr) minmax(300px, 0.66fr);
+      align-items: start;
+    }
+    .settings-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      background: #ffffff;
+      box-shadow: 0 12px 30px -24px rgba(15, 23, 42, 0.33);
+      padding: 20px;
+      display: grid;
+      gap: 12px;
+    }
+    .settings-card h2 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.04;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .settings-card h3 {
+      margin: 0;
+      font-size: 29px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .settings-card p {
+      margin: 0;
+      color: #64748b;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .profile-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+    }
+    .avatar {
+      width: 62px;
+      height: 62px;
+      border-radius: 999px;
+      background: #dbeafe;
+      color: #0284c7;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .profile-meta strong {
+      display: block;
+      color: #0f172a;
+      font-size: 31px;
+      line-height: 1.04;
+      letter-spacing: -0.03em;
+    }
+    .profile-meta span {
+      color: #64748b;
+      font-size: 14px;
+    }
+    .role-badge {
+      margin-top: 5px;
+      width: fit-content;
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      background: rgba(255, 237, 213, 0.8);
+      color: #ea580c;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+    }
+    .input-grid {
+      display: grid;
+      gap: 10px;
+    }
+    .input-grid label {
+      display: grid;
+      gap: 6px;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .input-grid .input,
+    .input-grid textarea,
+    .input-grid select {
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      color: #0f172a;
+      min-height: 42px;
+      padding: 10px 12px;
+    }
+    .btn-primary-soft {
+      width: fit-content;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: #0f172a;
+      color: #f8fafc;
+      font-weight: 700;
+      font-size: 14px;
+      padding: 10px 15px;
+    }
+    .btn-primary-soft:hover {
+      background: #020617;
+      color: #ffffff;
+    }
+    .pulse-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 0;
+    }
+    .pulse-list li {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 12px 0;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .pulse-list li:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+    .pulse-list span {
+      color: #64748b;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 800;
+    }
+    .pulse-list strong {
+      font-size: 31px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .workspace-overview-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .workspace-overview-chip {
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 12px;
+      color: #334155;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .settings-two-col {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #ffffff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 640px;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      font-size: 13px;
+      color: #334155;
+    }
+    th {
+      font-size: 11px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+      background: #f8fafc;
+    }
+    .cart-item-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 12px;
+      display: grid;
+      gap: 7px;
+    }
+    .cart-item-card h4 {
+      margin: 0;
+      font-size: 20px;
+      color: #0f172a;
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+    }
+    .cart-item-card p {
+      margin: 0;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .pill-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      border: 1px solid #d1d5db;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #64748b;
+      background: #f8fafc;
+    }
+    .settings-note {
+      margin: 2px 0 0;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .quick-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .quick-actions .btn {
+      border-radius: 10px;
+      padding: 9px 13px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .creator-tools-layout {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: 290px minmax(0, 1fr);
+      align-items: start;
+    }
+    .creator-menu-card {
+      position: sticky;
+      top: 18px;
+      gap: 10px;
+      padding: 16px;
+    }
+    .creator-menu-card h3 {
+      font-size: 24px;
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+    }
+    .creator-menu-nav {
+      display: grid;
+      gap: 8px;
+    }
+    .creator-menu-link {
+      text-decoration: none;
+      border: 1px solid #dbe4ef;
+      border-radius: 12px;
+      background: #f8fafd;
+      padding: 10px 12px;
+      display: grid;
+      gap: 3px;
+      transition: border-color .18s ease, background .18s ease, transform .18s ease, box-shadow .18s ease;
+    }
+    .creator-menu-link:hover {
+      border-color: #b8cdf1;
+      background: #f1f6ff;
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px -22px rgba(15, 23, 42, 0.6);
+    }
+    .creator-menu-link strong {
+      font-size: 13px;
+      color: #0f172a;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    .creator-menu-link span {
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.4;
+    }
+    .creator-menu-link.active {
+      border-color: #0f172a;
+      background: #0f172a;
+      box-shadow: 0 14px 26px -24px rgba(15, 23, 42, 0.7);
+    }
+    .creator-menu-link.active strong,
+    .creator-menu-link.active span {
+      color: #e2e8f0;
+    }
+    .creator-tools-content {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+    .creator-section-card {
+      border: 1px solid #e5eaf3;
+      border-radius: 16px;
+      background: #ffffff;
+      box-shadow: 0 12px 28px -24px rgba(15, 23, 42, 0.3);
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }
+    .creator-section-card h2 {
+      margin: 0;
+      font-size: 32px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .creator-section-note {
+      margin: 0;
+      color: #64748b;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    @media (max-width: 1120px) {
+      .settings-layout,
+      .settings-two-col,
+      .creator-tools-layout {
+        grid-template-columns: 1fr;
+      }
+      .creator-menu-card {
+        position: static;
+      }
+    }
+    @media (max-width: 760px) {
+      .settings-shell {
+        padding: 18px 12px 22px;
+      }
+      .settings-card {
+        border-radius: 14px;
+        padding: 14px;
+      }
+      .settings-head h1,
+      .settings-card h2,
+      .settings-card h3,
+      .profile-meta strong,
+      .pulse-list strong {
+        font-size: clamp(24px, 9vw, 36px);
+      }
+    }
+  </style>
+</head>
+<body class="public-site lmsv-settings-page">
+  <%- include('./partials/nav', { user, activePage, activeLmsView: 'settings' }) %>
+  <%
+    const learningName = brandLearningName || 'Seemplify Learning'
+    const userName = user?.profile?.name || user?.email || 'Learner'
+    const userRoleLabel = String(role || 'learner').replace(/_/g, ' ')
+    const canAccessAdminFromSettings = Boolean(
+      (typeof canManagePlatform !== 'undefined' && canManagePlatform)
+      || ['admin', 'super_admin'].includes(String(role || '').trim().toLowerCase())
+    )
+    const currencyOptions = Array.isArray(supportedCurrencies) && supportedCurrencies.length > 0
+      ? supportedCurrencies
+      : [{ code: 'NGN', name: 'Nigerian Naira', symbol: 'NGN' }]
+    const currencyCodes = currencyOptions.map((option) => String(option?.code || '').trim().toUpperCase()).filter(Boolean)
+    const selectCurrency = (value, fallback = 'NGN') => {
+      const normalized = String(value || '').trim().toUpperCase()
+      if (currencyCodes.includes(normalized)) return normalized
+      const fallbackCode = String(fallback || '').trim().toUpperCase()
+      if (currencyCodes.includes(fallbackCode)) return fallbackCode
+      return currencyCodes[0] || 'NGN'
+    }
+    const defaultCurrency = selectCurrency(defaultCurrencyCode || 'NGN', 'NGN')
+    const activeTab = settingsTab || 'profile'
+    const tabLink = (tab) => `/simple-lms?view=settings&settingsTab=${tab}`
+    const creatorSections = [
+      { key: 'overview', label: 'Workspace Overview', description: 'Platform stats and quick links' },
+      { key: 'profile', label: 'Profile', description: 'Name, email, and display settings' },
+      { key: 'defaults', label: 'Creator Defaults', description: 'Course and publishing defaults' },
+      { key: 'actions', label: 'Course Studio', description: 'Open creator studio surfaces' },
+      { key: 'payout', label: 'Payout Profile', description: 'Bank details and payout account' },
+      { key: 'performance', label: 'Performance Snapshot', description: 'Sales and conversion metrics' },
+      { key: 'wallet', label: 'Creator Wallet', description: 'Earnings, balance, and withdrawal request' },
+      { key: 'withdrawals', label: 'Withdrawal Requests', description: 'Track admin review and payouts' }
+    ]
+    const activeCreatorSection = creatorSections.some((section) => section.key === creatorSection) ? creatorSection : 'overview'
+    const creatorSectionLink = (section) => `/simple-lms?view=settings&settingsTab=creator&creatorSection=${encodeURIComponent(section)}`
+    const creatorDefaultsReturnTo = creatorSectionLink('defaults')
+    const creatorPayoutReturnTo = creatorSectionLink('payout')
+    const creatorWalletReturnTo = creatorSectionLink('wallet')
+    const creatorWithdrawalsReturnTo = creatorSectionLink('withdrawals')
+    const dateText = (value) => { try { return value ? new Date(value).toLocaleString('en-GB') : '-' } catch { return '-' } }
+    const numberOrZero = (value) => Number.isFinite(Number(value)) ? Number(value) : 0
+    const partnerApplication = partnerApplicationState || {}
+    const partnerApplicationRequest = partnerApplication.latestRequest || null
+    const partnerApplicationOrg = partnerApplication.currentOrganization || null
+    const canSubmitPartnerApplication = Boolean(partnerApplication.canSubmit)
+    const partnerTypeLabel = (value) => String(value || 'partner').replace(/_/g, ' ')
+  %>
+
+  <main class="settings-shell">
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (info) { %><div class="alert"><%= info %></div><% } %>
+
+    <header class="settings-head">
+      <h1>Settings</h1>
+      <p>Manage your profile, creator tools, and workspace preferences.</p>
+    </header>
+
+    <nav class="settings-tabs" aria-label="Settings tabs">
+      <a class="settings-tab <%= activeTab === 'creator' ? 'active' : '' %>" href="<%= tabLink('creator') %>">Creator Workspace</a>
+      <a class="settings-tab <%= activeTab === 'payments' ? 'active' : '' %>" href="<%= tabLink('payments') %>">Payments & Cart</a>
+      <% if (canAccessAdminFromSettings) { %>
+        <a class="settings-tab" href="/admin">Admin Console</a>
+      <% } %>
+    </nav>
+
+    <% if (activeTab === 'creator') { %>
+      <section class="creator-tools-layout">
+        <aside class="settings-card creator-menu-card">
+          <h3>Creator Workspace</h3>
+          <p>All workspace settings, profile, and creator tools in one place.</p>
+          <nav class="creator-menu-nav" aria-label="Creator tool sections">
+            <% creatorSections.forEach((section) => { %>
+              <a class="creator-menu-link <%= activeCreatorSection === section.key ? 'active' : '' %>" href="<%= creatorSectionLink(section.key) %>">
+                <strong><%= section.label %></strong>
+                <span><%= section.description %></span>
+              </a>
+            <% }) %>
+          </nav>
+        </aside>
+
+        <div class="creator-tools-content">
+          <% if (activeCreatorSection === 'overview') { %>
+            <article class="creator-section-card">
+              <h2>Workspace Overview</h2>
+              <p class="creator-section-note">Your platform pulse and quick access links.</p>
+              <div class="workspace-overview-chip-row">
+                <span class="workspace-overview-chip">Role: <%= userRoleLabel %></span>
+                <span class="workspace-overview-chip">Courses: <%= stats.publishedCourseCount %></span>
+                <span class="workspace-overview-chip">Programs: <%= stats.publishedProgramCount %></span>
+                <span class="workspace-overview-chip">Course Authors: <%= stats.creatorCount %></span>
+                <span class="workspace-overview-chip">My Enrollments: <%= stats.myEnrollmentCount %></span>
+                <span class="workspace-overview-chip">Paid Courses: <%= stats.myPaidCourseCount %></span>
+                <span class="workspace-overview-chip">Cart: <%= stats.cartItemCount %></span>
+              </div>
+              <ul class="pulse-list">
+                <li><span>Published Courses</span><strong><%= stats.publishedCourseCount %></strong></li>
+                <li><span>Programs</span><strong><%= stats.publishedProgramCount %></strong></li>
+                <li><span>Total Learners</span><strong><%= stats.learnerCount %></strong></li>
+                <li><span>Completed Enrollments</span><strong><%= stats.completionCount %></strong></li>
+              </ul>
+              <div class="quick-actions">
+                <a class="btn btn-secondary" href="/simple-lms/studio/courses">Open Course Studio</a>
+                <a class="btn btn-secondary" href="/simple-lms?view=program-studio">Open Program Studio</a>
+                <% if (canManagePlatform) { %>
+                  <a class="btn btn-secondary" href="/admin">Open Admin</a>
+                <% } %>
+              </div>
+              <% if (canSubmitPartnerApplication || partnerApplicationRequest || partnerApplicationOrg) { %>
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+                  <h3 style="margin: 0 0 6px; font-size: 18px;">Partner Access</h3>
+                  <% if (partnerApplicationOrg && ['active', 'pending', 'suspended'].includes(String(partnerApplicationOrg.status || ''))) { %>
+                    <p class="settings-note">
+                      Current organization: <strong><%= partnerApplicationOrg.name || 'Partner Organization' %></strong>
+                      (<%= partnerTypeLabel(partnerApplicationOrg.partnerType) %>, <%= partnerApplicationOrg.status %>)
+                    </p>
+                  <% } else { %>
+                    <p class="settings-note">Apply to become a Partner or Channel Partner from your existing account.</p>
+                  <% } %>
+                  <% if (partnerApplicationRequest) { %>
+                    <div class="workspace-overview-chip-row">
+                      <span class="workspace-overview-chip">Latest Request: <%= partnerApplicationRequest.statusLabel %></span>
+                      <span class="workspace-overview-chip">Type: <%= partnerTypeLabel(partnerApplicationRequest.registrationIntent) %></span>
+                      <span class="workspace-overview-chip">Org: <%= partnerApplicationRequest.organizationName || '-' %></span>
+                    </div>
+                  <% } %>
+                  <% if (partnerApplicationOrg && partnerApplicationOrg.status === 'active') { %>
+                    <div class="quick-actions" style="margin-top: 8px;">
+                      <a class="btn btn-secondary" href="/partner-dashboard">Open Partner Dashboard</a>
+                    </div>
+                  <% } %>
+                </div>
+              <% } %>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'profile') { %>
+            <article class="creator-section-card">
+              <h2>Personal Information</h2>
+              <p class="creator-section-note">Update your display name and email address.</p>
+              <div class="profile-row">
+                <div class="avatar"><%= String(userName || 'L').slice(0, 1) %></div>
+                <div class="profile-meta">
+                  <strong><%= userName %></strong>
+                  <span><%= user?.email || '' %></span>
+                  <div class="role-badge"><%= userRoleLabel %></div>
+                </div>
+              </div>
+              <form method="post" action="/simple-lms/settings/profile" class="input-grid">
+                <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=creator&creatorSection=profile">
+                <label>Display Name
+                  <input class="input" name="displayName" value="<%= user?.profile?.name || '' %>" maxlength="120">
+                </label>
+                <label>Email Address
+                  <input class="input" type="email" name="email" value="<%= user?.email || '' %>" maxlength="320" required>
+                </label>
+                <button class="btn-primary-soft" type="submit">Save Changes</button>
+              </form>
+            </article>
+          <% } %>
+          <% if (activeCreatorSection === 'defaults') { %>
+            <article class="creator-section-card">
+              <h2>Creator Defaults</h2>
+              <p class="creator-section-note">Control your course creation defaults and publishing workflow.</p>
+              <form method="post" action="/simple-lms/settings/creator" class="input-grid">
+                <input type="hidden" name="returnTo" value="<%= creatorDefaultsReturnTo %>">
+                <label>Default Category
+                  <input class="input" name="defaultCategory" value="<%= creatorSettings.defaultCategory || '' %>">
+                </label>
+                <label>Default Level
+                  <select class="input" name="defaultLevel">
+                    <% levels.forEach((level) => { %>
+                      <option value="<%= level %>" <%= creatorSettings.defaultLevel === level ? 'selected' : '' %>><%= String(level).replace(/_/g, ' ') %></option>
+                    <% }) %>
+                  </select>
+                </label>
+                <label>Default Visibility
+                  <select class="input" name="defaultVisibility">
+                    <option value="private" <%= creatorSettings.defaultVisibility === 'private' ? 'selected' : '' %>>private</option>
+                    <option value="public" <%= creatorSettings.defaultVisibility === 'public' ? 'selected' : '' %>>public</option>
+                  </select>
+                </label>
+                <label>Default Payment Mode
+                  <select class="input" name="defaultPaymentMode">
+                    <option value="free" <%= creatorSettings.defaultPaymentMode === 'free' ? 'selected' : '' %>>free</option>
+                    <option value="paid" <%= creatorSettings.defaultPaymentMode === 'paid' ? 'selected' : '' %>>paid</option>
+                  </select>
+                </label>
+                <label>Default Currency
+                  <select class="input" name="defaultCurrency">
+                    <% const creatorDefaultCurrency = selectCurrency(creatorSettings.defaultCurrency || defaultCurrency, defaultCurrency) %>
+                    <% currencyOptions.forEach((currencyOption) => { %>
+                      <% const optionCode = String(currencyOption?.code || '').trim().toUpperCase() %>
+                      <% const optionName = String(currencyOption?.name || optionCode || 'Currency').trim() %>
+                      <option value="<%= optionCode %>" <%= creatorDefaultCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
+                    <% }) %>
+                  </select>
+                </label>
+                <label>Preferred Lesson Duration (minutes)
+                  <input class="input" type="number" name="preferredLessonDurationMinutes" min="1" max="600" value="<%= creatorSettings.preferredLessonDurationMinutes || 12 %>">
+                </label>
+                <label>Default Lesson Media Type
+                  <select class="input" name="defaultLessonMediaType">
+                    <option value="video" <%= (creatorSettings.defaultLessonMediaType || 'video') === 'video' ? 'selected' : '' %>>video</option>
+                    <option value="audio" <%= creatorSettings.defaultLessonMediaType === 'audio' ? 'selected' : '' %>>audio</option>
+                    <option value="document" <%= creatorSettings.defaultLessonMediaType === 'document' ? 'selected' : '' %>>document</option>
+                  </select>
+                </label>
+                <label>Auto-save Draft Interval (minutes)
+                  <input class="input" type="number" name="autoSaveDraftMinutes" min="1" max="30" value="<%= creatorSettings.autoSaveDraftMinutes || 5 %>">
+                </label>
+                <label><input type="checkbox" name="autoLoadSampleCurriculum" <%= creatorSettings.autoLoadSampleCurriculum ? 'checked' : '' %>> Auto-load sample curriculum</label>
+                <label><input type="checkbox" name="autoGenerateCourseSlug" <%= creatorSettings.autoGenerateCourseSlug !== false ? 'checked' : '' %>> Auto-generate course slugs from title</label>
+                <label><input type="checkbox" name="publishNotifyByEmail" <%= creatorSettings.publishNotifyByEmail !== false ? 'checked' : '' %>> Send email when course status changes</label>
+                <label><input type="checkbox" name="showSalesDashboard" <%= creatorSettings.showSalesDashboard !== false ? 'checked' : '' %>> Show creator sales dashboard by default</label>
+                <label><input type="checkbox" name="showCreatorTips" <%= creatorSettings.showCreatorTips !== false ? 'checked' : '' %>> Show creator tips</label>
+                <button class="btn-primary-soft" type="submit">Save Creator Settings</button>
+              </form>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'actions') { %>
+            <article class="creator-section-card">
+              <h2>Course Studio</h2>
+              <p class="creator-section-note">Open your creation surfaces from one place.</p>
+              <div class="quick-actions">
+                <a class="btn btn-primary" href="/simple-lms/studio/courses">Open Course Studio</a>
+                <a class="btn btn-secondary" href="/simple-lms?view=program-studio">Open Program Studio</a>
+                <% if (canManagePlatform) { %>
+                  <a class="btn btn-secondary" href="/admin">Open Admin</a>
+                <% } %>
+              </div>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'payout') { %>
+            <article class="creator-section-card">
+              <h2>Payout Profile</h2>
+              <p class="creator-section-note">Set the destination where payouts should be sent.</p>
+              <form method="post" action="/simple-lms/profile/payout" class="input-grid">
+                <input type="hidden" name="returnTo" value="<%= creatorPayoutReturnTo %>">
+                <label>Account Name
+                  <input class="input" name="accountName" value="<%= payoutProfile.accountName || '' %>">
+                </label>
+                <label>Account Number
+                  <input class="input" name="accountNumber" value="<%= payoutProfile.accountNumber || '' %>">
+                </label>
+                <label>Bank Name
+                  <input class="input" name="bankName" value="<%= payoutProfile.bankName || '' %>">
+                </label>
+                <label>Currency
+                  <select class="input" name="currency">
+                    <% const payoutCurrency = selectCurrency(payoutProfile.currency || defaultCurrency, defaultCurrency) %>
+                    <% currencyOptions.forEach((currencyOption) => { %>
+                      <% const optionCode = String(currencyOption?.code || '').trim().toUpperCase() %>
+                      <% const optionName = String(currencyOption?.name || optionCode || 'Currency').trim() %>
+                      <option value="<%= optionCode %>" <%= payoutCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
+                    <% }) %>
+                  </select>
+                </label>
+                <label>Payment Email
+                  <input class="input" type="email" name="paymentEmail" value="<%= payoutProfile.paymentEmail || '' %>">
+                </label>
+                <button class="btn-primary-soft" type="submit">Save Payout Details</button>
+              </form>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'performance') { %>
+            <article class="creator-section-card">
+              <h2>Creator Performance Snapshot</h2>
+              <p class="creator-section-note">A quick summary of sales and completion performance.</p>
+              <div class="workspace-overview-chip-row">
+                <span class="workspace-overview-chip">Sales: <%= numberOrZero(creatorStats?.saleCount) %></span>
+                <span class="workspace-overview-chip">Avg Order: <%= creatorStats?.avgOrderDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Conversion: <%= numberOrZero(creatorStats?.conversionRatePercent) %>%</span>
+                <span class="workspace-overview-chip">Completion: <%= numberOrZero(creatorStats?.completionRatePercent) %>%</span>
+                <span class="workspace-overview-chip">Enrollments: <%= numberOrZero(creatorStats?.enrollmentCount) %></span>
+                <span class="workspace-overview-chip">Completions: <%= numberOrZero(creatorStats?.completionCount) %></span>
+              </div>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'wallet') { %>
+            <article class="creator-section-card">
+              <h2>Creator Wallet</h2>
+              <p class="creator-section-note">Track creator earnings and request payout withdrawals.</p>
+              <div class="workspace-overview-chip-row">
+                <span class="workspace-overview-chip">Sold: <%= creatorWalletSummary?.soldDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Earnings: <%= creatorWalletSummary?.earningsDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Pending: <%= creatorWalletSummary?.pendingWithdrawalDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Paid Out: <%= creatorWalletSummary?.paidOutDisplay || 'NGN 0.00' %></span>
+                <span class="workspace-overview-chip">Available: <%= creatorWalletSummary?.availableBalanceDisplay || 'NGN 0.00' %></span>
+              </div>
+              <% if (canCreateCourses) { %>
+                <form method="post" action="/simple-lms/withdrawals/request" class="input-grid">
+                  <input type="hidden" name="returnTo" value="<%= creatorWalletReturnTo %>">
+                  <label>Amount (major units)
+                    <input class="input" type="number" name="amount" min="0.01" step="0.01" required>
+                  </label>
+                  <label>Currency
+                    <select class="input" name="currency">
+                      <% const withdrawalCurrency = selectCurrency(payoutProfile.currency || defaultCurrency, defaultCurrency) %>
+                      <% currencyOptions.forEach((currencyOption) => { %>
+                        <% const optionCode = String(currencyOption?.code || '').trim().toUpperCase() %>
+                        <% const optionName = String(currencyOption?.name || optionCode || 'Currency').trim() %>
+                        <option value="<%= optionCode %>" <%= withdrawalCurrency === optionCode ? 'selected' : '' %>><%= optionCode %> - <%= optionName %></option>
+                      <% }) %>
+                    </select>
+                  </label>
+                  <label>Note for admin
+                    <textarea class="input" name="notes" rows="3" maxlength="1200" placeholder="Optional context for this withdrawal request"></textarea>
+                  </label>
+                  <button class="btn-primary-soft" type="submit">Submit Withdrawal Request</button>
+                </form>
+              <% } %>
+            </article>
+          <% } %>
+
+          <% if (activeCreatorSection === 'withdrawals') { %>
+            <article class="creator-section-card">
+              <h2>Withdrawal Requests</h2>
+              <p class="creator-section-note">Follow request status and cancel pending requests when needed.</p>
+              <% if (!creatorWithdrawalRequests || creatorWithdrawalRequests.length === 0) { %>
+                <p class="settings-note">No withdrawal requests yet.</p>
+              <% } else { %>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Note</th>
+                        <th>Admin Update</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% creatorWithdrawalRequests.forEach((request) => { %>
+                        <tr>
+                          <td><%= dateText(request.requestedAt || request.createdAt) %></td>
+                          <td><%= request.amountDisplay %></td>
+                          <td><span class="pill"><%= request.statusLabel %></span></td>
+                          <td><%= request.notes || '-' %></td>
+                          <td>
+                            <%= request.adminNotes || '-' %>
+                            <% if (request.reviewerName) { %><br><span class="mini">by <%= request.reviewerName %></span><% } %>
+                          </td>
+                          <td>
+                            <% if (request.canCancel) { %>
+                              <form method="post" action="/simple-lms/withdrawals/<%= request._id %>/cancel" style="display:inline-flex;">
+                                <input type="hidden" name="returnTo" value="<%= creatorWithdrawalsReturnTo %>">
+                                <button class="btn btn-secondary" type="submit">Cancel</button>
+                              </form>
+                            <% } else { %>
+                              <span class="mini">No action</span>
+                            <% } %>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              <% } %>
+            </article>
+          <% } %>
+        </div>
+      </section>
+    <% } %>
+
+    <% if (activeTab === 'payments') { %>
+      <section class="settings-card">
+        <h2>Cart & Checkout</h2>
+        <p>Review cart totals and continue secure checkout.</p>
+        <div class="quick-actions">
+          <% if (cartSummary?.hasItems) { %>
+            <form method="post" action="/simple-lms/cart/checkout" style="display:inline-flex;">
+              <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=payments">
+              <button class="btn btn-primary" type="submit">Checkout Cart</button>
+            </form>
+            <form method="post" action="/simple-lms/cart/clear" style="display:inline-flex;">
+              <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=payments">
+              <button class="btn btn-secondary" type="submit">Clear Cart</button>
+            </form>
+          <% } %>
+          <a class="btn btn-secondary" href="/simple-lms/cart">Open Dedicated Cart</a>
+          <a class="btn btn-secondary" href="/courses">Browse Courses</a>
+        </div>
+        <% if (!cartSummary || !cartSummary.hasItems) { %>
+          <div class="settings-note">Your cart is empty.</div>
+        <% } else { %>
+          <div class="pill-row">
+            <% (cartSummary.totalsByCurrency || []).forEach((entry) => { %>
+              <span class="pill"><%= entry.amountDisplay %></span>
+            <% }) %>
+          </div>
+          <div style="display:grid;gap:10px;">
+            <% (cartCourses || []).forEach((course) => { %>
+              <article class="cart-item-card">
+                <h4><%= course.title %></h4>
+                <p><%= course.summaryText %></p>
+                <div class="pill-row">
+                  <span class="pill"><%= course.levelLabel %></span>
+                  <span class="pill"><%= course.lessonCount %> lessons</span>
+                  <span class="pill"><%= course.displayPrice %></span>
+                </div>
+                <div class="quick-actions">
+                  <a class="btn btn-secondary" href="<%= course.courseUrl %>">Preview</a>
+                  <form method="post" action="/simple-lms/courses/<%= course._id %>/pay" style="display:inline-flex;">
+                    <input type="hidden" name="next" value="/simple-lms?view=settings&settingsTab=payments">
+                    <input type="hidden" name="fallback" value="/simple-lms?view=settings&settingsTab=payments">
+                    <input type="hidden" name="checkoutContext" value="cart">
+                    <button class="btn btn-primary" type="submit">Purchase Now</button>
+                  </form>
+                  <form method="post" action="/simple-lms/cart/remove/<%= course._id %>" style="display:inline-flex;">
+                    <input type="hidden" name="returnTo" value="/simple-lms?view=settings&settingsTab=payments">
+                    <button class="btn btn-secondary" type="submit">Remove</button>
+                  </form>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        <% } %>
+      </section>
+
+      <section class="settings-card">
+        <h3>My Payment History</h3>
+        <% if (!myPayments || myPayments.length === 0) { %>
+          <p class="settings-note">No successful payments yet.</p>
+        <% } else { %>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Course</th><th>Amount</th><th>Provider</th><th>Tx Ref</th><th>Provider Tx ID</th></tr></thead>
+              <tbody>
+                <% myPayments.forEach((payment) => { %>
+                  <tr>
+                    <td><%= dateText(payment.paidAt || payment.createdAt) %></td>
+                    <td><%= payment.courseTitle %></td>
+                    <td><%= payment.amountDisplay %></td>
+                    <td><%= payment.providerLabel || 'Gateway' %></td>
+                    <td><%= payment.txRef %></td>
+                    <td><%= payment.providerReference || '-' %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </section>
+    <% } %>
+  </main>
+
+  <%- include('./partials/public-footer') %>
+</body>
+</html>

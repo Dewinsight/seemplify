@@ -9,6 +9,7 @@ const path = require('path');
 const Job = require('../models/Job');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const publicApplicationCapacityService = require('../services/publicApplicationCapacityService');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -40,6 +41,7 @@ router.get('/public', async (req, res) => {
       type,
       remote,
       company,
+      orgName,
       sort = 'createdAt',
       order = 'desc',
       page = 1,
@@ -91,6 +93,15 @@ router.get('/public', async (req, res) => {
     if (company) {
       const companies = company.split(',').map(c => c.trim());
       query.organization = { $in: companies };
+    }
+
+    // orgName filter — case-insensitive partial match on organization name
+    if (orgName) {
+      const Organization = require('../models/Organization');
+      const matchedOrgs = await Organization.find({
+        name: { $regex: orgName, $options: 'i' }
+      }).select('_id');
+      query.organization = { $in: matchedOrgs.map(o => o._id) };
     }
 
     // Pagination
@@ -217,7 +228,8 @@ router.get('/public', async (req, res) => {
 router.get('/public/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
+
+    await publicApplicationCapacityService.reconcileInflatedCount({ jobId: id });
     const job = await Job.findOne({ 
       _id: id,
       isPublic: true,
@@ -245,24 +257,20 @@ router.get('/public/:id', async (req, res) => {
   }
 });
 
-// Internal recruitment endpoints (no authentication for viewing/applying)
-// Get internal job by ID
-router.get('/internal/:jobId', jobController.getInternalJobById);
-
-// Submit internal application
-router.post('/internal/:jobId/apply', jobController.submitInternalApplication);
-
-// Internal recruitment management endpoints (authenticated)
-// Enable internal recruitment for a job
-router.post('/:jobId/internal/enable', authMiddleware, requireOrganization, jobController.enableInternalRecruitment);
-
-// Disable internal recruitment for a job
-router.post('/:jobId/internal/disable', authMiddleware, requireOrganization, jobController.disableInternalRecruitment);
-
 // Public endpoint to submit job application (no authentication required)
 router.post('/public/apply', async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, coverLetter, jobId, cvData, source } = req.body;
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      coverLetter,
+      jobId,
+      cvData,
+      source,
+      isOrganizationStaff
+    } = req.body;
     
     // Validate required fields
     if (!firstName || !lastName || !email || !jobId) {
@@ -305,7 +313,8 @@ router.post('/public/apply', async (req, res) => {
           strengths: cvData?.strengths || [],
           parseSuccess: cvData?.parseSuccess || false,
           aiSuccess: cvData?.aiSuccess || false
-        }
+        },
+        isInternalCandidate: Boolean(isOrganizationStaff)
       });
       
       await candidate.save();
@@ -328,6 +337,11 @@ router.post('/public/apply', async (req, res) => {
       if (cvData?.skills && !candidate.skills) candidate.skills = cvData.skills.join(', ');
       if (cvData?.education && !candidate.education) candidate.education = cvData.education;
       if (cvData?.personalInfo?.location && !candidate.location) candidate.location = cvData.personalInfo.location;
+      if (typeof isOrganizationStaff !== 'undefined') {
+        candidate.isInternalCandidate = typeof isOrganizationStaff === 'string'
+          ? isOrganizationStaff.toLowerCase() === 'true'
+          : Boolean(isOrganizationStaff);
+      }
       
       await candidate.save();
     }
@@ -465,6 +479,7 @@ router.delete('/:id', authMiddleware, requireOrganization, jobController.deleteJ
 router.get('/:id/embedding-status', authMiddleware, requireOrganization, jobController.getJobEmbeddingStatus);
 router.post('/:id/create-embedding', authMiddleware, requireOrganization, requireCredits('reEmbed', 'job'), deductCredits, jobController.createJobEmbedding);
 router.get('/:id/matching-candidates', authMiddleware, requireOrganization, requireCredits('aiMatching', 'matching'), deductCredits, jobController.getMatchingCandidates);
+router.get('/:jobId/candidate/:candidateId/explanation', authMiddleware, requireOrganization, jobController.getCandidateExplanation);
 
 // Shortlist routes - IMPORTANT: Specific routes MUST come before generic ones
 // Bulk shortlist operations (most specific first)
@@ -504,13 +519,16 @@ router.get('/:jobId/interview-questions/performance-insights', authMiddleware, r
 // New Pipeline Management Routes
 router.post('/:jobId/applicants', authMiddleware, requireOrganization, jobController.addCandidateToJobPipeline);
 router.get('/:jobId/pipeline/detailed', authMiddleware, requireOrganization, jobController.getDetailedPipeline);
+router.get('/:jobId/pipeline/export/excel', authMiddleware, requireOrganization, jobController.exportPipelineExcelReport);
 router.get('/:jobId/pipeline/analytics', authMiddleware, requireOrganization, jobController.getPipelineAnalytics);
 router.post('/:jobId/candidates/:candidateId/advance', authMiddleware, requireOrganization, jobController.advanceCandidateToStage);
+router.post('/:jobId/candidates/:candidateId/keep-in-view', authMiddleware, requireOrganization, jobController.keepCandidateInView);
 router.get('/:jobId/pipeline/stage-analytics', authMiddleware, requireOrganization, jobController.getStageAnalytics);
 router.put('/:jobId/candidates/:candidateId/stages/:stageId/result', authMiddleware, requireOrganization, jobController.updateStageResult);
 router.post('/:jobId/candidates/:candidateId/stages/:stageId/schedule-interview', authMiddleware, requireOrganization, jobController.scheduleInterview);
 router.delete('/:jobId/candidates/:candidateId', authMiddleware, requireOrganization, jobController.removeCandidateFromPipeline);
 router.post('/:jobId/pipeline/bulk-move', authMiddleware, requireOrganization, jobController.bulkMoveCandidates);
+router.post('/:jobId/pipeline/bulk-keep-in-view', authMiddleware, requireOrganization, jobController.bulkKeepCandidatesInView);
 
 // Stage Template Routes
 router.post('/:jobId/save-as-template', authMiddleware, requireOrganization, jobController.saveStagesAsTemplate);
@@ -546,24 +564,16 @@ router.post('/admin/fix-public-counts', authMiddleware, requireOrganization, asy
     const results = [];
     
     for (const job of publicJobs) {
-      // Count applicants with 'public' source
-      const publicApplicants = job.applicants.filter(app => 
-        app.source === 'public' || 
-        (app.statusHistory && app.statusHistory.some(h => h.notes?.includes('public') || h.notes?.includes('Public')))
-      );
-      
-      const actualCount = publicApplicants.length;
-      const currentCount = job.publicApplicationCount || 0;
-      
-      if (actualCount !== currentCount) {
-        job.publicApplicationCount = actualCount;
-        await job.save();
-        
+      const reconciliation = await publicApplicationCapacityService.reconcileInflatedCount({
+        jobId: job._id,
+        organizationId
+      });
+      if (reconciliation?.repaired) {
         results.push({
           jobId: job._id,
           title: job.title,
-          oldCount: currentCount,
-          newCount: actualCount,
+          oldCount: reconciliation.previousCount,
+          newCount: reconciliation.applicationCount,
           fixed: true
         });
         fixed++;

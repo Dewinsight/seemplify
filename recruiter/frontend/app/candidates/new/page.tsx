@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
-import { Upload, FileText, Check, Loader2, X } from "lucide-react"
+import { Upload, FileText, Check, Loader2, RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -17,7 +17,15 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
-import { uploadCV, createCandidateManually, CandidateData } from "@/services/candidateService" // Import the service
+import {
+  uploadCV,
+  createCandidateManually,
+  retryCVProcessing,
+  CandidateData,
+  CVProcessingError,
+  type AcceptedCVProcessing,
+  type CVProcessingStatus,
+} from "@/services/candidateService"
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
 
@@ -83,6 +91,12 @@ export default function UploadCVPage() {
   const [processingComplete, setProcessingComplete] = useState(false)
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null)
   const [processingResults, setProcessingResults] = useState<any>(null)
+  const [queueStatus, setQueueStatus] = useState<CVProcessingStatus | null>(null)
+  const [failedProcessing, setFailedProcessing] = useState<{
+    accepted: AcceptedCVProcessing
+    status: CVProcessingStatus
+  } | null>(null)
+  const [isRetrying, setIsRetrying] = useState(false)
 
   const form = useForm<CandidateFormValues>({
     resolver: zodResolver(candidateFormSchema),
@@ -149,8 +163,62 @@ export default function UploadCVPage() {
     setCreatedCandidateId(null);
     setProcessingResults(null);
     setUploadProgress(0);
+    setQueueStatus(null);
+    setFailedProcessing(null);
+    setIsRetrying(false);
     form.reset(defaultValues);
     setActiveTab("upload");
+  };
+
+  const completeCVProcessing = (result: Awaited<ReturnType<typeof uploadCV>>) => {
+    const candidate: CandidateData = result.candidate;
+    setCreatedCandidateId(candidate._id);
+    setProcessingResults(result.processingResults);
+    setQueueStatus(null);
+    setFailedProcessing(null);
+
+    form.setValue("firstName", candidate.firstName || "");
+    form.setValue("lastName", candidate.lastName || "");
+    form.setValue("email", candidate.email || "");
+    form.setValue("phone", candidate.phone || "");
+    form.setValue("location", candidate.location || "");
+    form.setValue("position", candidate.position || form.getValues("position") || "");
+    form.setValue("experience", candidate.experience || "");
+    form.setValue("education", candidate.education || "");
+    form.setValue("skills", candidate.skills || "");
+
+    setIsProcessing(false);
+    setProcessingComplete(true);
+    toast({
+      title: "Candidate created",
+      description: `${candidate.firstName} ${candidate.lastName} has been added to your candidate database.`,
+    });
+  };
+
+  const handleProcessingRetry = async () => {
+    if (!failedProcessing || isRetrying) return;
+    setIsRetrying(true);
+    setIsProcessing(true);
+    try {
+      const result = await retryCVProcessing(failedProcessing.accepted, (status) => {
+        setQueueStatus(status);
+        setFailedProcessing((current) => current ? { ...current, status } : current);
+      });
+      completeCVProcessing(result);
+    } catch (error) {
+      setIsProcessing(false);
+      if (error instanceof CVProcessingError) {
+        setQueueStatus(error.status);
+        setFailedProcessing({ accepted: error.accepted, status: error.status });
+      }
+      toast({
+        title: "CV retry failed",
+        description: error instanceof Error ? error.message : "CV processing could not be retried.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRetrying(false);
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,6 +252,8 @@ export default function UploadCVPage() {
     setProcessingComplete(false)
     setCreatedCandidateId(null)
     setProcessingResults(null)
+    setQueueStatus(null)
+    setFailedProcessing(null)
 
     const formData = new FormData()
     formData.append("resume", file)
@@ -200,44 +270,30 @@ export default function UploadCVPage() {
     }, 100)
 
     try {
-      const result = await uploadCV(formData);
+      const result = await uploadCV(formData, (status) => {
+        setQueueStatus(status)
+        setIsUploading(false)
+        setIsProcessing(true)
+      });
 
       clearInterval(progressInterval);
       setUploadProgress(100);
       setIsUploading(false);
       setIsProcessing(true);
 
-      // Show processing animation for better UX
+      // Keep a short visual handoff after the queue reports completion.
       setTimeout(() => {
-        const candidate: CandidateData = result.candidate;
-        setCreatedCandidateId(candidate._id);
-        setProcessingResults(result.processingResults);
-
-        // Auto-fill form with extracted data
-        form.setValue("firstName", candidate.firstName || "");
-        form.setValue("lastName", candidate.lastName || "");
-        form.setValue("email", candidate.email || "");
-        form.setValue("phone", candidate.phone || "");
-        form.setValue("location", candidate.location || "");
-        form.setValue("position", candidate.position || form.getValues("position") || "");
-        form.setValue("experience", candidate.experience || "");
-        form.setValue("education", candidate.education || "");
-        form.setValue("skills", candidate.skills || "");
-
-        setIsProcessing(false);
-        setProcessingComplete(true);
-
-        toast({
-          title: "✅ Candidate Successfully Created!",
-          description: `${candidate.firstName} ${candidate.lastName} has been automatically added to your candidate database.`,
-        });
-
-      }, 1500); // Short delay for better UX
+        completeCVProcessing(result);
+      }, 750);
 
     } catch (error: any) {
       clearInterval(progressInterval);
       setIsUploading(false);
       setIsProcessing(false);
+      if (error instanceof CVProcessingError) {
+        setQueueStatus(error.status);
+        setFailedProcessing({ accepted: error.accepted, status: error.status });
+      }
       
       const isCreditError = handleError(error)
       if (!isCreditError) {
@@ -245,12 +301,14 @@ export default function UploadCVPage() {
         let errorTitle = "Upload Error";
         let errorDesc = error.message || "Could not upload or process the CV.";
         
-        // Detect parsing/extraction failures
-        if (error.message?.includes('Could not extract readable text') || 
+        // Detect parsing/extraction failures (image-based CV, OCR failure, etc.)
+        if (error.message?.includes('IMAGE_BASED_CV') || 
+            error.message?.includes('Could not extract readable text') || 
             error.message?.includes('insufficient information') ||
-            error.message?.includes('CV parsing failed')) {
-          errorTitle = "Unable to Read CV File";
-          errorDesc = "The file appears to be a scanned PDF, image, or corrupted. Please try:\n• Uploading a text-based PDF\n• Uploading a DOCX file\n• Entering candidate details manually below";
+            error.message?.includes('CV parsing failed') ||
+            error.message?.includes('image-based')) {
+          errorTitle = "Image-Based CV Detected";
+          errorDesc = "There is a problem with your CV: it appears to be image-based or scanned. Do NOT use image-based or scanned CVs — we cannot extract information from them.\n\nPlease upload a text-based CV instead:\n• A PDF or DOCX file with selectable text (not a scan)\n• Or enter the candidate details manually below\n\nImportant: Ensure the email in your CV is correct — a wrong email can cause issues (application not received, contact problems).";
         }
         
         toast({
@@ -300,6 +358,9 @@ export default function UploadCVPage() {
                           <br />
                           Supports PDF, DOC, DOCX (Max 5MB)
                         </p>
+                        <p className="mb-4 text-center text-xs text-amber-600/90">
+                          Do NOT use image-based or scanned CVs — use text-based PDF/DOCX only. Ensure the email in the CV is correct; a wrong email can cause issues.
+                        </p>
                         <Button variant="outline" className="relative">
                           <FileText className="mr-2 h-4 w-4" />
                           Select File
@@ -334,6 +395,8 @@ export default function UploadCVPage() {
                               setIsUploading(false)
                               setIsProcessing(false)
                               setProcessingComplete(false)
+                              setQueueStatus(null)
+                              setFailedProcessing(null)
                             }}
                           >
                             <X className="h-4 w-4" />
@@ -351,9 +414,77 @@ export default function UploadCVPage() {
                         )}
 
                         {isProcessing && (
-                          <div className="mt-4 flex items-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                            <p className="text-sm">Processing CV and extracting information...</p>
+                          <div className="mt-4 border-t pt-4">
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              <p className="text-sm">
+                                {queueStatus?.state === "waiting_for_local_runtime"
+                                  ? "Local CV analysis is offline. Your CV is safely queued."
+                                  : queueStatus?.state === "queued"
+                                    ? queueStatus.attempts && queueStatus.attempts > 1
+                                      ? `Automatic retry ${queueStatus.attempts} is queued${queueStatus.position ? ` · position ${queueStatus.position}` : ""}`
+                                      : `Queued for analysis${queueStatus.position ? ` · position ${queueStatus.position}` : ""}`
+                                    : "Processing CV and extracting information..."}
+                              </p>
+                            </div>
+                            {queueStatus && <Progress value={queueStatus.progress} className="mt-3 h-2" />}
+                            {queueStatus && (
+                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                <span>Stage: {(queueStatus.stage || queueStatus.state).replace(/_/g, " ")}</span>
+                                <span>Run: {queueStatus.attempts || 1}</span>
+                                {queueStatus.retry?.nextAttemptAt && (
+                                  <span>Next retry: {new Date(queueStatus.retry.nextAttemptAt).toLocaleTimeString()}</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {failedProcessing && !isProcessing && (
+                          <div role="alert" className="mt-4 border-t border-red-200 pt-4 dark:border-red-900">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="text-sm font-medium text-red-700 dark:text-red-300">CV processing failed</p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {failedProcessing.status.error?.message || "The CV could not be parsed and analysed."}
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {failedProcessing.status.attempts || 0} run{failedProcessing.status.attempts === 1 ? "" : "s"}
+                              </span>
+                            </div>
+                            {!!failedProcessing.status.attemptHistory?.length && (
+                              <div className="mt-3">
+                                <p className="mb-1 text-xs font-medium text-foreground">Processing trail</p>
+                                <div className="divide-y rounded-md border text-xs">
+                                  {failedProcessing.status.attemptHistory.slice(-5).map((attempt) => (
+                                    <div key={`${attempt.number}-${attempt.startedAt}`} className="flex items-center justify-between gap-3 px-3 py-2">
+                                      <span>Run {attempt.number} · {attempt.trigger} · {(attempt.stage || "processing").replace(/_/g, " ")}</span>
+                                      <span className={attempt.status === "completed" ? "text-green-600" : "text-red-600"}>
+                                        {attempt.errorCode || attempt.status.replace(/_/g, " ")}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                              <p className="text-xs text-muted-foreground">
+                                {failedProcessing.status.retry?.availableUntil
+                                  ? `Stored CV retained until ${new Date(failedProcessing.status.retry.availableUntil).toLocaleDateString()}`
+                                  : "Stored CV is no longer available for retry."}
+                              </p>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={!failedProcessing.status.retry?.available || isRetrying}
+                                onClick={handleProcessingRetry}
+                              >
+                                {isRetrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                                Retry CV processing
+                              </Button>
+                            </div>
                           </div>
                         )}
 

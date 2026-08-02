@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Simple LMS (IDP) - Admin - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+    .lms-admin-note { border-left: 3px solid #0ea5e9; }
+    .lms-admin-layout { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 16px; margin-top: 16px; align-items: start; }
+    .lms-admin-banner { display: grid; grid-template-columns: 170px 1fr; gap: 10px; }
+    .lms-admin-banner-preview { min-height: 110px; border: 1px solid var(--card-border); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--muted); background: rgba(255,255,255,.02); overflow: hidden; }
+    .lms-admin-banner-preview img { width: 100%; height: 110px; object-fit: cover; display: none; }
+    .lms-admin-builder { display: grid; gap: 10px; }
+    .lms-admin-chapter { border: 1px solid var(--card-border); border-radius: 10px; padding: 10px; display: grid; gap: 8px; background: rgba(255,255,255,.02); }
+    .lms-admin-lesson { border: 1px solid var(--card-border); border-radius: 10px; padding: 8px; display: grid; gap: 8px; background: rgba(255,255,255,.02); }
+    .lms-admin-list { display: grid; gap: 10px; max-height: 980px; overflow: auto; }
+    .lms-admin-course { border: 1px solid var(--card-border); border-radius: 10px; padding: 10px; display: grid; gap: 8px; background: rgba(255,255,255,.02); }
+    .lms-admin-course-head { display: flex; justify-content: space-between; gap: 10px; }
+    .lms-admin-course-title { font-size: 15px; margin: 0; }
+    .lms-admin-meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .lms-admin-summary { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .lms-admin-empty { border: 1px dashed var(--card-border); border-radius: 10px; padding: 16px; text-align: center; color: var(--muted); }
+    .lms-admin-status { font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid transparent; text-transform: uppercase; font-weight: 700; letter-spacing: .04em; }
+    .lms-admin-status.published { color: #22c55e; border-color: rgba(34,197,94,.32); background: rgba(34,197,94,.15); }
+    .lms-admin-status.draft { color: #cbd5e1; border-color: rgba(148,163,184,.3); background: rgba(148,163,184,.16); }
+    .lms-admin-status.archived { color: #f87171; border-color: rgba(239,68,68,.3); background: rgba(239,68,68,.15); }
+    .lms-admin-inline-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .lms-admin-filter-row { display: grid; grid-template-columns: 1fr 170px auto; gap: 8px; margin-bottom: 10px; }
+    @media (max-width: 1200px) { .lms-admin-layout { grid-template-columns: 1fr; } .lms-admin-list { max-height: none; } }
+    @media (max-width: 820px) { .lms-admin-banner { grid-template-columns: 1fr; } .lms-admin-filter-row { grid-template-columns: 1fr; } }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'simple-lms-admin' }) %>
+    <main class="admin-content">
+      <div class="admin-header">
+        <div>
+          <h1>Simple LMS (IDP) Admin</h1>
+          <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">Manage system courses for IDP Simple LMS.</div>
+        </div>
+        <div class="admin-header-actions">
+          <button id="newCourseBtn" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            New System Course
+          </button>
+        </div>
+      </div>
+
+      <div class="admin-card lms-admin-note">
+        <p style="margin:0; color:var(--muted); line-height:1.55;">
+          This page is for <strong>Simple LMS (IDP)</strong> only, separate from the external Seemplify LMS app.
+        </p>
+      </div>
+
+      <div class="admin-stats-grid">
+        <div class="admin-stat-card"><div class="admin-stat-label">System Courses</div><div id="statTotal" class="admin-stat-value"><%= stats?.total || 0 %></div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Published</div><div id="statPublished" class="admin-stat-value" style="color:#22c55e;"><%= stats?.published || 0 %></div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Draft</div><div id="statDraft" class="admin-stat-value"><%= stats?.draft || 0 %></div></div>
+        <div class="admin-stat-card"><div class="admin-stat-label">Archived</div><div id="statArchived" class="admin-stat-value" style="color:#ef4444;"><%= stats?.archived || 0 %></div></div>
+      </div>
+
+      <div class="lms-admin-layout">
+        <section class="admin-card">
+          <div class="admin-card-header">
+            <div class="admin-card-title" id="builderTitle">Create System Course</div>
+          </div>
+          <form id="courseForm" class="lms-admin-builder">
+            <input type="hidden" id="courseId">
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">Title *</label>
+                <input id="title" class="admin-form-input" type="text" required placeholder="Course title">
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Slug</label>
+                <input id="slug" class="admin-form-input" type="text" placeholder="auto if blank">
+              </div>
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Summary</label>
+              <textarea id="summary" class="admin-form-textarea" rows="2" placeholder="Catalog summary"></textarea>
+            </div>
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">Category</label>
+                <input id="category" class="admin-form-input" type="text" placeholder="Category">
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Level</label>
+                <select id="level" class="admin-form-select">
+                  <option value="mixed">Mixed</option>
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+              </div>
+            </div>
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">Status</label>
+                <select id="status" class="admin-form-select">
+                  <option value="draft">Draft</option>
+                  <option value="published">Published</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Tags</label>
+                <input id="tags" class="admin-form-input" type="text" placeholder="comma,separated,tags">
+              </div>
+            </div>
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">Payment Mode</label>
+                <select id="paymentMode" class="admin-form-select"><option value="free">Free</option><option value="paid">Paid</option></select>
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Amount</label>
+                <input id="amount" class="admin-form-input" type="number" min="0" value="0">
+              </div>
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Currency</label>
+              <input id="currency" class="admin-form-input" type="text" maxlength="3" value="NGN">
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Banner</label>
+              <div class="lms-admin-banner">
+                <div id="bannerPreview" class="lms-admin-banner-preview">
+                  <span id="bannerPreviewText">No banner</span>
+                  <img id="bannerImage" alt="Banner preview">
+                </div>
+                <div class="lms-admin-inline-actions">
+                  <input id="bannerFile" class="admin-form-input" type="file" accept="image/*">
+                  <button id="uploadBannerBtn" class="btn btn-secondary btn-sm" type="button">Upload Banner</button>
+                  <button id="clearBannerBtn" class="btn btn-secondary btn-sm" type="button">Clear Banner</button>
+                </div>
+              </div>
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Description</label>
+              <textarea id="description" class="admin-form-textarea" rows="4" placeholder="Full description"></textarea>
+            </div>
+            <div class="admin-form-group">
+              <div class="admin-card-header" style="padding:0; border-bottom:none;">
+                <div class="admin-card-title" style="font-size:15px;">Chapters and Lessons</div>
+                <button id="addChapterBtn" class="btn btn-secondary btn-sm" type="button">Add Chapter</button>
+              </div>
+              <div id="chapterContainer" class="lms-admin-builder"></div>
+            </div>
+            <div class="lms-admin-inline-actions" style="justify-content:flex-end;">
+              <button id="cancelEditBtn" class="btn btn-secondary" type="button">Cancel Edit</button>
+              <button id="saveBtn" class="btn btn-primary" type="submit">Create System Course</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="admin-card">
+          <div class="admin-card-header">
+            <div class="admin-card-title">System Course Catalog</div>
+          </div>
+          <div class="lms-admin-filter-row">
+            <input id="searchInput" class="admin-form-input" type="text" placeholder="Search title, category, tags">
+            <select id="statusFilter" class="admin-form-select">
+              <option value="all">All Statuses</option>
+              <option value="published">Published</option>
+              <option value="draft">Draft</option>
+              <option value="archived">Archived</option>
+            </select>
+            <button id="applyFilterBtn" class="btn btn-secondary" type="button">Apply</button>
+          </div>
+          <div id="courseList" class="lms-admin-list"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const initialCourses = <%- JSON.stringify(systemCourses || []).replace(/</g, '\\u003c') %>;
+    const initialStats = <%- JSON.stringify(stats || {}).replace(/</g, '\\u003c') %>;
+    const initialFilters = <%- JSON.stringify(filters || {}).replace(/</g, '\\u003c') %>;
+
+    const state = {
+      courses: Array.isArray(initialCourses) ? initialCourses : [],
+      stats: initialStats || { total: 0, published: 0, draft: 0, archived: 0 },
+      banner: null,
+      editingId: '',
+      statusFilter: String(initialFilters.status || 'all'),
+      search: String(initialFilters.query || '')
+    };
+
+    const els = {
+      builderTitle: document.getElementById('builderTitle'),
+      form: document.getElementById('courseForm'),
+      courseId: document.getElementById('courseId'),
+      title: document.getElementById('title'),
+      slug: document.getElementById('slug'),
+      summary: document.getElementById('summary'),
+      category: document.getElementById('category'),
+      level: document.getElementById('level'),
+      status: document.getElementById('status'),
+      tags: document.getElementById('tags'),
+      paymentMode: document.getElementById('paymentMode'),
+      amount: document.getElementById('amount'),
+      currency: document.getElementById('currency'),
+      description: document.getElementById('description'),
+      chapterContainer: document.getElementById('chapterContainer'),
+      addChapterBtn: document.getElementById('addChapterBtn'),
+      saveBtn: document.getElementById('saveBtn'),
+      cancelEditBtn: document.getElementById('cancelEditBtn'),
+      newCourseBtn: document.getElementById('newCourseBtn'),
+      bannerFile: document.getElementById('bannerFile'),
+      uploadBannerBtn: document.getElementById('uploadBannerBtn'),
+      clearBannerBtn: document.getElementById('clearBannerBtn'),
+      bannerImage: document.getElementById('bannerImage'),
+      bannerPreviewText: document.getElementById('bannerPreviewText'),
+      searchInput: document.getElementById('searchInput'),
+      statusFilter: document.getElementById('statusFilter'),
+      applyFilterBtn: document.getElementById('applyFilterBtn'),
+      courseList: document.getElementById('courseList'),
+      statTotal: document.getElementById('statTotal'),
+      statPublished: document.getElementById('statPublished'),
+      statDraft: document.getElementById('statDraft'),
+      statArchived: document.getElementById('statArchived')
+    };
+
+    function html(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function slugify(value, fallback = 'item') {
+      const cleaned = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80);
+      return cleaned || fallback;
+    }
+
+    function formatDate(value) {
+      if (!value) return 'N/A';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? 'N/A' : date.toLocaleString();
+    }
+
+    function getStatusClass(status) {
+      const normalized = String(status || '').toLowerCase();
+      if (normalized === 'published') return 'published';
+      if (normalized === 'archived') return 'archived';
+      return 'draft';
+    }
+
+    function updateStats(summary) {
+      const next = {
+        total: Number(summary?.total || 0),
+        published: Number(summary?.published || 0),
+        draft: Number(summary?.draft || 0),
+        archived: Number(summary?.archived || 0)
+      };
+      state.stats = next;
+      els.statTotal.textContent = next.total;
+      els.statPublished.textContent = next.published;
+      els.statDraft.textContent = next.draft;
+      els.statArchived.textContent = next.archived;
+    }
+
+    function renderBanner() {
+      const url = state.banner?.url ? String(state.banner.url) : '';
+      if (url) {
+        els.bannerImage.src = url;
+        els.bannerImage.style.display = 'block';
+        els.bannerPreviewText.style.display = 'none';
+      } else {
+        els.bannerImage.removeAttribute('src');
+        els.bannerImage.style.display = 'none';
+        els.bannerPreviewText.style.display = 'inline';
+      }
+    }
+
+    function createLesson(lesson = {}) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lms-admin-lesson';
+      wrapper.innerHTML = `
+        <div class="lms-admin-inline-actions" style="justify-content:space-between;">
+          <strong style="font-size:12px; color:var(--muted);">Lesson</strong>
+          <button type="button" class="btn btn-secondary btn-sm remove-lesson">Remove Lesson</button>
+        </div>
+        <input class="admin-form-input lesson-title" type="text" placeholder="Lesson title *" value="${html(lesson.title || '')}">
+        <textarea class="admin-form-textarea lesson-description" rows="2" placeholder="Lesson description">${html(lesson.description || '')}</textarea>
+        <div class="admin-form-row">
+          <input class="admin-form-input lesson-video" type="text" placeholder="Video URL" value="${html(lesson.videoUrl || '')}">
+          <input class="admin-form-input lesson-duration" type="number" min="0" placeholder="Minutes" value="${Number(lesson.durationMinutes || 0)}">
+        </div>
+        <textarea class="admin-form-textarea lesson-content" rows="3" placeholder="Lesson content">${html(lesson.content || '')}</textarea>
+      `;
+      return wrapper;
+    }
+
+    function createChapter(chapter = {}) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lms-admin-chapter';
+      wrapper.innerHTML = `
+        <div class="lms-admin-inline-actions" style="justify-content:space-between;">
+          <strong>Chapter</strong>
+          <button type="button" class="btn btn-secondary btn-sm remove-chapter">Remove Chapter</button>
+        </div>
+        <input class="admin-form-input chapter-title" type="text" placeholder="Chapter title *" value="${html(chapter.title || '')}">
+        <textarea class="admin-form-textarea chapter-description" rows="2" placeholder="Chapter description">${html(chapter.description || '')}</textarea>
+        <div class="lesson-list"></div>
+        <button type="button" class="btn btn-secondary btn-sm add-lesson">Add Lesson</button>
+      `;
+
+      const lessonList = wrapper.querySelector('.lesson-list');
+      const lessons = Array.isArray(chapter.lessons) && chapter.lessons.length > 0 ? chapter.lessons : [{}];
+      lessons.forEach((lesson) => lessonList.appendChild(createLesson(lesson)));
+
+      return wrapper;
+    }
+
+    function resetBuilder(chapters = []) {
+      els.chapterContainer.innerHTML = '';
+      const base = Array.isArray(chapters) && chapters.length > 0 ? chapters : [{}];
+      base.forEach((chapter) => els.chapterContainer.appendChild(createChapter(chapter)));
+    }
+
+    function collectChapters() {
+      const chapters = [];
+      Array.from(els.chapterContainer.querySelectorAll('.lms-admin-chapter')).forEach((chapterEl, chapterIndex) => {
+        const chapterTitle = String(chapterEl.querySelector('.chapter-title')?.value || '').trim();
+        if (!chapterTitle) return;
+        const chapterDescription = String(chapterEl.querySelector('.chapter-description')?.value || '').trim();
+        const lessons = [];
+
+        Array.from(chapterEl.querySelectorAll('.lms-admin-lesson')).forEach((lessonEl, lessonIndex) => {
+          const lessonTitle = String(lessonEl.querySelector('.lesson-title')?.value || '').trim();
+          if (!lessonTitle) return;
+          const parsedDuration = Number.parseInt(String(lessonEl.querySelector('.lesson-duration')?.value || ''), 10);
+          lessons.push({
+            key: `${slugify(chapterTitle, `chapter-${chapterIndex + 1}`)}-lesson-${lessonIndex + 1}`,
+            title: lessonTitle,
+            description: String(lessonEl.querySelector('.lesson-description')?.value || '').trim(),
+            videoUrl: String(lessonEl.querySelector('.lesson-video')?.value || '').trim(),
+            content: String(lessonEl.querySelector('.lesson-content')?.value || '').trim(),
+            durationMinutes: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 0
+          });
+        });
+
+        chapters.push({
+          key: slugify(chapterTitle, `chapter-${chapterIndex + 1}`),
+          title: chapterTitle,
+          description: chapterDescription,
+          lessons
+        });
+      });
+
+      return chapters;
+    }
+
+    function findCourse(id) {
+      return state.courses.find((course) => String(course._id) === String(id)) || null;
+    }
+
+    function renderList() {
+      if (!Array.isArray(state.courses) || state.courses.length === 0) {
+        els.courseList.innerHTML = '<div class="lms-admin-empty">No system courses found for this filter.</div>';
+        return;
+      }
+
+      els.courseList.innerHTML = state.courses.map((course) => {
+        const status = String(course.status || 'draft');
+        const statusClass = getStatusClass(status);
+        const creator = course?.createdByName || course?.createdBy?.profile?.name || course?.createdBy?.email || 'Unknown';
+        const chapters = Array.isArray(course.chapters) ? course.chapters.length : 0;
+        const lessons = (course.chapters || []).reduce((sum, chapter) => sum + ((chapter.lessons || []).length), 0);
+
+        return `
+          <article class="lms-admin-course">
+            <div class="lms-admin-course-head">
+              <h3 class="lms-admin-course-title">${html(course.title || 'Untitled')}</h3>
+              <span class="lms-admin-status ${statusClass}">${html(status)}</span>
+            </div>
+            <p class="lms-admin-summary">${html(course.summary || 'No summary provided.')}</p>
+            <div class="lms-admin-meta">
+              <span>${chapters} chapter(s)</span>
+              <span>${lessons} lesson(s)</span>
+              <span>By ${html(creator)}</span>
+              <span>${html(formatDate(course.updatedAt))}</span>
+            </div>
+            <div class="lms-admin-inline-actions">
+              <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${html(course._id)}">Edit</button>
+              ${status === 'archived'
+                ? `<button class="btn btn-success btn-sm" data-action="restore" data-id="${html(course._id)}">Restore</button>`
+                : `<button class="btn btn-danger btn-sm" data-action="archive" data-id="${html(course._id)}">Archive</button>`}
+            </div>
+          </article>
+        `;
+      }).join('');
+    }
+
+    function enterCreateMode() {
+      state.editingId = '';
+      state.banner = null;
+      els.form.reset();
+      els.courseId.value = '';
+      els.builderTitle.textContent = 'Create System Course';
+      els.saveBtn.textContent = 'Create System Course';
+      els.amount.value = '0';
+      els.currency.value = 'NGN';
+      els.status.value = 'draft';
+      els.bannerFile.value = '';
+      resetBuilder([]);
+      renderBanner();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function enterEditMode(course) {
+      if (!course) return;
+      state.editingId = String(course._id);
+      els.courseId.value = state.editingId;
+      els.builderTitle.textContent = `Edit System Course: ${course.title || ''}`;
+      els.saveBtn.textContent = 'Save Changes';
+      els.title.value = String(course.title || '');
+      els.slug.value = String(course.slug || '');
+      els.summary.value = String(course.summary || '');
+      els.category.value = String(course.category || '');
+      els.level.value = String(course.level || 'mixed');
+      els.status.value = String(course.status || 'draft');
+      els.tags.value = Array.isArray(course.tags) ? course.tags.join(', ') : '';
+      els.paymentMode.value = course?.pricing?.paymentMode === 'paid' ? 'paid' : 'free';
+      els.amount.value = Number(course?.pricing?.amount || 0);
+      els.currency.value = String(course?.pricing?.currency || 'NGN');
+      els.description.value = String(course.description || '');
+      state.banner = course?.banner?.url ? {
+        url: String(course.banner.url),
+        publicId: String(course.banner.publicId || ''),
+        width: course.banner.width,
+        height: course.banner.height
+      } : null;
+      renderBanner();
+      resetBuilder(course.chapters || []);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    async function loadCourses() {
+      const params = new URLSearchParams();
+      if (state.statusFilter && state.statusFilter !== 'all') params.set('status', state.statusFilter);
+      if (state.search) params.set('q', state.search);
+      params.set('limit', '200');
+
+      const response = await fetch(`/api/admin/simple-lms/system-courses?${params.toString()}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to load system courses.');
+      state.courses = Array.isArray(payload.courses) ? payload.courses : [];
+      updateStats(payload.summary || {});
+      renderList();
+    }
+
+    async function uploadBanner() {
+      const file = els.bannerFile.files?.[0];
+      if (!file) return alert('Choose an image file first.');
+      const fd = new FormData();
+      fd.append('banner', file);
+
+      const prev = els.uploadBannerBtn.textContent;
+      els.uploadBannerBtn.disabled = true;
+      els.uploadBannerBtn.textContent = 'Uploading...';
+      try {
+        const response = await fetch('/api/admin/simple-lms/upload/banner', { method: 'POST', body: fd });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Failed to upload banner.');
+        state.banner = { url: payload.url, publicId: payload.publicId, width: payload.width, height: payload.height };
+        renderBanner();
+        alert('Banner uploaded successfully.');
+      } catch (error) {
+        alert(error.message || 'Banner upload failed.');
+      } finally {
+        els.uploadBannerBtn.disabled = false;
+        els.uploadBannerBtn.textContent = prev;
+      }
+    }
+
+    async function archiveCourse(id, restore = false) {
+      const course = findCourse(id);
+      if (!course) return;
+      const message = restore ? `Restore "${course.title}"?` : `Archive "${course.title}"?`;
+      if (!window.confirm(message)) return;
+
+      const response = await fetch(`/api/admin/simple-lms/system-courses/${encodeURIComponent(id)}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restore })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Failed to update course state.');
+      await loadCourses();
+      alert(payload.message || 'Course updated.');
+    }
+
+    async function saveCourse(event) {
+      event.preventDefault();
+      const title = String(els.title.value || '').trim();
+      if (!title) return alert('Course title is required.');
+
+      const payload = {
+        title,
+        slug: String(els.slug.value || '').trim(),
+        summary: String(els.summary.value || '').trim(),
+        category: String(els.category.value || '').trim(),
+        level: String(els.level.value || 'mixed'),
+        status: String(els.status.value || 'draft'),
+        tags: String(els.tags.value || '').trim(),
+        paymentMode: els.paymentMode.value === 'paid' ? 'paid' : 'free',
+        pricingAmount: Number.parseInt(String(els.amount.value || '0'), 10) || 0,
+        pricingCurrency: String(els.currency.value || 'NGN').trim().toUpperCase().slice(0, 3),
+        description: String(els.description.value || '').trim(),
+        banner: state.banner || {},
+        chapters: collectChapters()
+      };
+
+      const editing = Boolean(state.editingId);
+      const endpoint = editing
+        ? `/api/admin/simple-lms/system-courses/${encodeURIComponent(state.editingId)}`
+        : '/api/admin/simple-lms/system-courses';
+      const method = editing ? 'PUT' : 'POST';
+
+      const prev = els.saveBtn.textContent;
+      els.saveBtn.disabled = true;
+      els.saveBtn.textContent = editing ? 'Saving...' : 'Creating...';
+      try {
+        const response = await fetch(endpoint, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Failed to save course.');
+        await loadCourses();
+        enterCreateMode();
+        alert(result.message || 'System course saved.');
+      } catch (error) {
+        alert(error.message || 'Failed to save system course.');
+      } finally {
+        els.saveBtn.disabled = false;
+        els.saveBtn.textContent = prev;
+      }
+    }
+
+    els.addChapterBtn.addEventListener('click', () => {
+      els.chapterContainer.appendChild(createChapter({}));
+    });
+
+    els.chapterContainer.addEventListener('click', (event) => {
+      const removeChapterBtn = event.target.closest('.remove-chapter');
+      if (removeChapterBtn) {
+        removeChapterBtn.closest('.lms-admin-chapter')?.remove();
+        if (els.chapterContainer.querySelectorAll('.lms-admin-chapter').length === 0) resetBuilder([]);
+        return;
+      }
+      const addLessonBtn = event.target.closest('.add-lesson');
+      if (addLessonBtn) {
+        const chapter = addLessonBtn.closest('.lms-admin-chapter');
+        chapter?.querySelector('.lesson-list')?.appendChild(createLesson({}));
+        return;
+      }
+      const removeLessonBtn = event.target.closest('.remove-lesson');
+      if (removeLessonBtn) {
+        const chapter = removeLessonBtn.closest('.lms-admin-chapter');
+        const lessonList = chapter?.querySelector('.lesson-list');
+        removeLessonBtn.closest('.lms-admin-lesson')?.remove();
+        if (lessonList && lessonList.querySelectorAll('.lms-admin-lesson').length === 0) {
+          lessonList.appendChild(createLesson({}));
+        }
+      }
+    });
+
+    els.courseList.addEventListener('click', async (event) => {
+      const actionBtn = event.target.closest('button[data-action]');
+      if (!actionBtn) return;
+      const action = actionBtn.getAttribute('data-action');
+      const id = actionBtn.getAttribute('data-id');
+      const course = findCourse(id);
+      if (!course) return;
+      try {
+        if (action === 'edit') return enterEditMode(course);
+        if (action === 'archive') return await archiveCourse(id, false);
+        if (action === 'restore') return await archiveCourse(id, true);
+      } catch (error) {
+        alert(error.message || 'Action failed.');
+      }
+    });
+
+    els.newCourseBtn.addEventListener('click', () => enterCreateMode());
+    els.cancelEditBtn.addEventListener('click', () => enterCreateMode());
+    els.uploadBannerBtn.addEventListener('click', uploadBanner);
+    els.clearBannerBtn.addEventListener('click', () => {
+      state.banner = null;
+      els.bannerFile.value = '';
+      renderBanner();
+    });
+    els.form.addEventListener('submit', saveCourse);
+    els.applyFilterBtn.addEventListener('click', async () => {
+      try {
+        state.search = String(els.searchInput.value || '').trim();
+        state.statusFilter = String(els.statusFilter.value || 'all');
+        await loadCourses();
+      } catch (error) {
+        alert(error.message || 'Failed to apply filters.');
+      }
+    });
+    els.searchInput.addEventListener('keydown', async (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      els.applyFilterBtn.click();
+    });
+
+    els.searchInput.value = state.search;
+    els.statusFilter.value = state.statusFilter;
+    updateStats(state.stats);
+    renderList();
+    enterCreateMode();
+  </script>
+</body>
+</html>

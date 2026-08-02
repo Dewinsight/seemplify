@@ -33,10 +33,15 @@ export function ThemeProviderWrapper({ children }: ThemeProviderWrapperProps) {
     const savedMode = localStorage.getItem('themeMode') as PaletteMode;
     if (savedMode && (savedMode === 'light' || savedMode === 'dark')) {
       setMode(savedMode);
+      document.documentElement.setAttribute('data-theme', savedMode);
+      document.documentElement.classList.toggle('dark', savedMode === 'dark');
     } else {
       // Check system preference
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setMode(prefersDark ? 'dark' : 'light');
+      const systemMode: PaletteMode = prefersDark ? 'dark' : 'light';
+      setMode(systemMode);
+      document.documentElement.setAttribute('data-theme', systemMode);
+      document.documentElement.classList.toggle('dark', systemMode === 'dark');
     }
   }, []);
 
@@ -46,6 +51,9 @@ export function ThemeProviderWrapper({ children }: ThemeProviderWrapperProps) {
       localStorage.setItem('themeMode', mode);
       // Update document attribute for CSS
       document.documentElement.setAttribute('data-theme', mode);
+      // Tailwind's dark variant relies on the `dark` class by default.
+      // Keep it in sync with our `data-theme` attribute.
+      document.documentElement.classList.toggle('dark', mode === 'dark');
     }
   }, [mode, mounted]);
 

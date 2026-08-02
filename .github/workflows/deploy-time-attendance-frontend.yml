@@ -1,0 +1,51 @@
+# Deploy Time Attendance Frontend to Dokploy
+name: Deploy Time Attendance Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'time-attendance/frontend/**'
+      - '.github/workflows/deploy-time-attendance-frontend.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: time-attendance-frontend
+  APP_PATH: time-attendance/frontend
+
+jobs:
+  deploy:
+    name: Deploy to Dokploy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Production URLs
+        run: |
+          echo "🔍 Checking for localhost references in production code..."
+          if grep -r "localhost" time-attendance/frontend/lib/api.ts time-attendance/frontend/app/login/page.tsx time-attendance/frontend/app/dashboard/page.tsx 2>/dev/null | grep -v "isLocalDevelopment\|localhost:5010\|localhost:4000" | grep -v "//\|/\*"; then
+            echo "❌ Found hardcoded localhost in production code!"
+            echo "   Use @/lib/env utility functions instead."
+            exit 1
+          fi
+          echo "✅ No hardcoded localhost found in production code"
+
+      - name: Trigger Dokploy Deployment
+        run: |
+          response=$(curl -s -w "%{http_code}" -o /tmp/response.txt -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d '{"applicationId": "${{ secrets.TIME_ATTENDANCE_FRONTEND_APP_ID }}"}')
+          
+          if [ "$response" -eq 200 ]; then
+            echo "✅ ${{ env.APP_NAME }} deployment triggered successfully (HTTP $response)"
+            cat /tmp/response.txt 2>/dev/null || true
+            echo "🔗 Frontend URL: https://time.seemplifyai.com"
+          else
+            echo "❌ Deployment failed with HTTP status code: $response"
+            cat /tmp/response.txt 2>/dev/null || true
+            exit 1
+          fi

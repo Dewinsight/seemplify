@@ -71,84 +71,110 @@ class GrantManagementService {
   }
 
   /**
-   * Find the oldest grant across ALL Nylas accounts (system-wide)
-   * Skips users with upcoming interviews
-   * @returns {Promise<Object|null>} Oldest removable grant or null if all users have upcoming interviews
+   * Find the best grant to rotate out across ALL Nylas accounts (system-wide).
+   *
+   * Selection priority:
+   * 1. Users with no upcoming interviews
+   * 2. Least recently used grant (lastGrantRefresh, fallback to grantConnectedAt)
+   * 3. Oldest connection timestamp as final tiebreaker
+   *
+   * If every user has upcoming interviews, this still returns the least recently used
+   * user so the caller can force-rotate and keep onboarding unblocked.
+   *
+   * @returns {Promise<Object|null>} Rotation candidate or null when no grants exist
    */
   async findOldestGrantAcrossAllAccounts() {
     try {
       const Interview = require('../models/Interview');
       const now = new Date();
       
-      console.log(`🔍 Finding oldest removable grant across ALL Nylas accounts (system-wide)...`);
+      console.log('Searching for least recently used grant across all Nylas accounts...');
       
-      // Get all users with grants across ALL accounts, sorted by oldest first
       const usersWithGrants = await User.find({
         nylasGrantId: { $exists: true, $ne: null },
         calendarConnected: true,
-        grantConnectedAt: { $exists: true },
         nylasAccountId: { $exists: true } // Must have an account assigned
       })
       .populate({
         path: 'nylasAccountId',
         select: '+apiKey +clientSecret name clientId region apiUri redirectUri'
       })
-      .sort({ grantConnectedAt: 1 }) // Oldest first globally
-      .select('email profile.displayName profile.firstName profile.lastName nylasGrantId nylasAccountId grantConnectedAt');
+      .select('email profile.displayName profile.firstName profile.lastName nylasGrantId nylasAccountId grantConnectedAt lastGrantRefresh updatedAt createdAt');
 
       if (usersWithGrants.length === 0) {
-        console.log('⚠️ No grants with timestamps found');
+        console.log('No grants found to rotate');
         return null;
       }
 
-      console.log(`📊 Found ${usersWithGrants.length} users with grants. Checking for upcoming interviews...`);
+      const candidates = [];
 
-      // Find the oldest user WITHOUT upcoming interviews
       for (const user of usersWithGrants) {
-        // Check if this user has any upcoming interviews
         const upcomingInterviews = await Interview.countDocuments({
           interviewerId: user._id,
           status: { $in: ['scheduled', 'confirmed'] },
           scheduledAt: { $gte: now }
         });
 
-        if (upcomingInterviews === 0) {
-          // This user has no upcoming interviews - safe to remove
-          const userName = user.profile?.displayName || 
-            `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() || 'Unknown';
-          const daysOld = Math.floor((Date.now() - user.grantConnectedAt.getTime()) / (1000 * 60 * 60 * 24));
-          const accountName = user.nylasAccountId?.name || 'Unknown Account';
-          
-          console.log(`✅ Found removable grant: ${userName} (${user.email})`);
-          console.log(`   Account: ${accountName}`);
-          console.log(`   Age: ${daysOld} days, No upcoming interviews`);
-          
-          return {
-            userId: user._id,
-            userName,
-            email: user.email,
-            grantId: user.nylasGrantId,
-            nylasAccount: user.nylasAccountId,
-            accountName,
-            connectedAt: user.grantConnectedAt,
-            ageInDays: daysOld,
-            hasUpcomingInterviews: false
-          };
-        } else {
-          console.log(`⏭️  Skipping ${user.email} - has ${upcomingInterviews} upcoming interview(s)`);
-        }
+        const userName = user.profile?.displayName ||
+          `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() ||
+          'Unknown';
+        const accountName = user.nylasAccountId?.name || 'Unknown Account';
+        const connectedAt = user.grantConnectedAt || user.updatedAt || user.createdAt || now;
+        const lastUsedAt = user.lastGrantRefresh || connectedAt;
+        const ageInDays = connectedAt
+          ? Math.floor((Date.now() - connectedAt.getTime()) / (1000 * 60 * 60 * 24))
+          : null;
+
+        candidates.push({
+          userId: user._id,
+          userName,
+          email: user.email,
+          grantId: user.nylasGrantId,
+          nylasAccount: user.nylasAccountId,
+          accountName,
+          connectedAt,
+          lastUsedAt,
+          ageInDays,
+          upcomingInterviews,
+          hasUpcomingInterviews: upcomingInterviews > 0
+        });
       }
 
-      // If we get here, ALL users have upcoming interviews
-      console.warn('⚠️ ALL USERS HAVE UPCOMING INTERVIEWS - Cannot remove any grant!');
-      
+      const sortByLeastRecentlyUsed = (a, b) => {
+        const aLastUsed = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+        const bLastUsed = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+        if (aLastUsed !== bLastUsed) {
+          return aLastUsed - bLastUsed;
+        }
+
+        const aConnected = a.connectedAt ? new Date(a.connectedAt).getTime() : 0;
+        const bConnected = b.connectedAt ? new Date(b.connectedAt).getTime() : 0;
+        return aConnected - bConnected;
+      };
+
+      const noUpcomingCandidates = candidates
+        .filter((candidate) => !candidate.hasUpcomingInterviews)
+        .sort(sortByLeastRecentlyUsed);
+
+      if (noUpcomingCandidates.length > 0) {
+        const winner = noUpcomingCandidates[0];
+        console.log(`Selected inactive grant for rotation: ${winner.email} (account: ${winner.accountName})`);
+        return {
+          ...winner,
+          forcedRemoval: false
+        };
+      }
+
+      // Fallback: everyone is active, force-rotate least recently used grant to keep onboarding unblocked.
+      const forcedWinner = candidates.sort(sortByLeastRecentlyUsed)[0];
+      console.warn(`All grants have upcoming interviews. Force-rotating least recently used grant: ${forcedWinner.email}`);
+
       return {
-        allUsersActive: true,
-        totalUsers: usersWithGrants.length,
-        message: 'All calendar slots are occupied by users with upcoming interviews'
+        ...forcedWinner,
+        forcedRemoval: true
       };
     } catch (error) {
-      console.error('Error finding oldest grant:', error);
+      console.error('Error finding rotation candidate:', error);
       throw error;
     }
   }
@@ -264,24 +290,25 @@ class GrantManagementService {
   }
 
   /**
-   * Ensure a grant slot is available using multi-account pool
-   * Checks ALL Nylas accounts for space, applies rotation with interview protection if all full
+   * Ensure a grant slot is available using multi-account pool.
+   * Checks ALL Nylas accounts for space, and if full, rotates out the least
+   * recently used grant so a new connection can always proceed.
    * @param {string} organizationId - MongoDB Organization ID (kept for compatibility, not used for account selection)
    * @param {string} newUserEmail - Email of user requesting new grant (for logging)
    * @returns {Promise<Object>} Result of slot management with selected account
    */
   async ensureGrantSlotAvailable(organizationId, newUserEmail = 'unknown') {
     try {
-      console.log(`\n🎰 === MULTI-ACCOUNT GRANT SLOT MANAGEMENT ===`);
+      console.log('\n=== MULTI-ACCOUNT GRANT SLOT MANAGEMENT ===');
       console.log(`New user: ${newUserEmail}`);
       
       // STEP 1: Try to find ANY Nylas account with available space
       const availableAccount = await multiNylasService.findAvailableAccount();
       
       if (availableAccount) {
-        console.log(`✅ Found available slot in: ${availableAccount.account.name}`);
+        console.log(`Found available slot in: ${availableAccount.account.name}`);
         console.log(`   Slots: ${availableAccount.currentGrants}/${availableAccount.account.maxGrants}`);
-        console.log(`=== END GRANT SLOT MANAGEMENT ===\n`);
+        console.log('=== END GRANT SLOT MANAGEMENT ===\n');
         
         return {
           slotAvailable: true,
@@ -292,74 +319,72 @@ class GrantManagementService {
         };
       }
 
-      // STEP 2: All accounts full - get total capacity and try rotation
+      // STEP 2: All accounts full - rotate out least recently used grant
       const systemCapacity = await multiNylasService.getSystemCapacity();
-      console.log(`⚠️ All Nylas accounts at capacity!`);
+      console.log('All Nylas accounts are at capacity. Running LRU rotation...');
       console.log(`   System total: ${systemCapacity.totalUsed}/${systemCapacity.totalMax} across ${systemCapacity.accountCount} account(s)`);
-      console.log(`   Attempting auto-rotation with interview protection...`);
+
+      const rotationCandidate = await this.findOldestGrantAcrossAllAccounts();
       
-      // Find oldest grant across ALL accounts with interview protection
-      const oldestGrant = await this.findOldestGrantAcrossAllAccounts();
-      
-      if (!oldestGrant) {
-        console.error('❌ No grants found to remove despite system being at capacity!');
+      if (!rotationCandidate) {
+        console.error('No grants found to remove despite system being at capacity.');
         throw new Error('Grant count inconsistency detected. Please contact support.');
       }
 
-      // Check if all users have upcoming interviews
-      if (oldestGrant.allUsersActive) {
-        console.warn(`🚫 CANNOT REMOVE ANY GRANT - All ${oldestGrant.totalUsers} users have upcoming interviews`);
-        console.log(`❌ Denying calendar connection for ${newUserEmail}`);
-        console.log(`=== END GRANT SLOT MANAGEMENT ===\n`);
-        
-        // Return error state - caller should handle this
-        const error = new Error('GRANT_SLOTS_FULL');
-        error.code = 'GRANT_SLOTS_FULL';
-        error.details = {
-          systemCapacity: systemCapacity.totalMax,
-          systemUsed: systemCapacity.totalUsed,
-          accountCount: systemCapacity.accountCount,
-          allUsersActive: true,
-          totalUsers: oldestGrant.totalUsers,
-          message: `All ${systemCapacity.totalMax} calendar slots across ${systemCapacity.accountCount} Nylas account(s) are occupied by users with upcoming interviews. Please contact your administrator to add more accounts or wait for a slot to become available.`
-        };
-        throw error;
-      }
+      const connectedAtText = rotationCandidate.connectedAt
+        ? new Date(rotationCandidate.connectedAt).toISOString()
+        : 'unknown';
+      const lastUsedAtText = rotationCandidate.lastUsedAt
+        ? new Date(rotationCandidate.lastUsedAt).toISOString()
+        : 'unknown';
 
-      console.log(`🗑️ Removing oldest grant to make room...`);
-      console.log(`   User: ${oldestGrant.userName} (${oldestGrant.email})`);
-      console.log(`   Account: ${oldestGrant.accountName}`);
-      console.log(`   Age: ${oldestGrant.ageInDays} days`);
-      console.log(`   Connected: ${oldestGrant.connectedAt.toISOString()}`);
+      console.log('Removing grant to make room...');
+      console.log(`   User: ${rotationCandidate.userName} (${rotationCandidate.email})`);
+      console.log(`   Account: ${rotationCandidate.accountName}`);
+      console.log(`   Last used: ${lastUsedAtText}`);
+      console.log(`   Connected: ${connectedAtText}`);
+      console.log(`   Upcoming interviews: ${rotationCandidate.upcomingInterviews}`);
+      console.log(`   Forced rotation: ${rotationCandidate.forcedRemoval ? 'yes' : 'no'}`);
+
+      const revocationReason = rotationCandidate.forcedRemoval
+        ? `Automatic forced LRU removal: Capacity full, rotating out ${rotationCandidate.email} (has upcoming interviews) for ${newUserEmail}`
+        : `Automatic LRU removal: Capacity full, rotating out inactive grant ${rotationCandidate.email} for ${newUserEmail}`;
 
       const revocationResult = await this.revokeGrant(
-        oldestGrant.userId,
-        `Automatic removal: All ${systemCapacity.accountCount} Nylas accounts full. Making room for ${newUserEmail}`,
+        rotationCandidate.userId,
+        revocationReason,
         true // Revoke in Nylas
       );
 
-      console.log(`✅ Successfully removed oldest grant`);
-      console.log(`🎉 Slot now available in: ${oldestGrant.accountName}`);
-      console.log(`=== END GRANT SLOT MANAGEMENT ===\n`);
+      console.log(`Successfully removed grant from ${rotationCandidate.accountName}`);
+      console.log(`Slot now available in: ${rotationCandidate.accountName}`);
+      console.log('=== END GRANT SLOT MANAGEMENT ===\n');
 
       return {
         slotAvailable: true,
-        nylasAccount: oldestGrant.nylasAccount,
+        nylasAccount: rotationCandidate.nylasAccount,
         removedGrant: {
-          userId: oldestGrant.userId,
-          userName: oldestGrant.userName,
-          email: oldestGrant.email,
-          accountName: oldestGrant.accountName,
-          ageInDays: oldestGrant.ageInDays,
-          connectedAt: oldestGrant.connectedAt,
+          userId: rotationCandidate.userId,
+          userName: rotationCandidate.userName,
+          email: rotationCandidate.email,
+          accountName: rotationCandidate.accountName,
+          ageInDays: rotationCandidate.ageInDays,
+          connectedAt: rotationCandidate.connectedAt,
+          lastUsedAt: rotationCandidate.lastUsedAt,
+          upcomingInterviews: rotationCandidate.upcomingInterviews,
+          forcedRemoval: Boolean(rotationCandidate.forcedRemoval),
           revocationDetails: revocationResult
         },
         systemCapacity,
-        message: `Oldest grant (${oldestGrant.userName}) automatically removed from ${oldestGrant.accountName} to make room for new connection.`,
-        autoRemovalPerformed: true
+        message: rotationCandidate.forcedRemoval
+          ? `Capacity full. Force-rotated least recently used grant (${rotationCandidate.userName}) from ${rotationCandidate.accountName} to allow new connection.`
+          : `Least recently used inactive grant (${rotationCandidate.userName}) was removed from ${rotationCandidate.accountName} to make room for new connection.`,
+        autoRemovalPerformed: true,
+        forcedRotation: Boolean(rotationCandidate.forcedRemoval),
+        removalType: rotationCandidate.forcedRemoval ? 'forced' : 'safe'
       };
     } catch (error) {
-      console.error('❌ Error ensuring grant slot available:', error);
+      console.error('Error ensuring grant slot available:', error);
       throw error;
     }
   }

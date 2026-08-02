@@ -2,9 +2,17 @@ const Interview = require('../models/Interview');
 const User = require('../models/User');
 const NylasAccount = require('../models/NylasAccount');
 const nylasV3Service = require('../services/nylasV3Service');
+const emailService = require('../services/emailService');
 const { handleInterviewError } = require('../utils/errorHandler');
 const { updatePipelineStatusOnCompletion } = require('../services/interviewCompletionService');
 const transcriptSegmentationService = require('../services/transcriptSegmentationService');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
+const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
+
+async function organizationInterviewQuery(req, query) {
+  return buildInterviewOrganizationQuery(req.user?.currentOrganization, query);
+}
 
 // Helper function to get account credentials for a user
 async function getAccountCredentials(user) {
@@ -15,10 +23,14 @@ async function getAccountCredentials(user) {
   
   return {
     apiKey: nylasAccount.apiKey,
+    apiUri: nylasAccount.apiUri,
     region: nylasAccount.region,
     clientId: nylasAccount.clientId
   };
 }
+
+const ACTIVE_JOIN_STATUSES = new Set(['joining', 'joined', 'recording', 'processing', 'completed']);
+const REPLACEABLE_JOIN_STATUSES = new Set(['pending', 'scheduled', 'enabled', 'failed', 'stopped']);
 
 const handleNotetakerWebhook = async (req, res) => {
   try {
@@ -56,7 +68,7 @@ const handleNotetakerWebhook = async (req, res) => {
         console.log('Notetaker created:', notetakerId);
         await Interview.findOneAndUpdate(
           { notetakerId: notetakerId },
-          { notetakerStatus: 'created' }
+          { notetakerStatus: 'scheduled' }
         );
         break;
         
@@ -101,14 +113,55 @@ const handleNotetakerWebhook = async (req, res) => {
         
         // Special handling for failed entry
         if (meetingState === 'failed_entry') {
+          const diagnosticMessage = 'Notetaker failed_entry: bot could not join the meeting. Check Teams lobby policy, join-before-host, and Nylas Teams prerequisites.';
           console.error('Notetaker failed to join meeting - may need approval or meeting settings issue');
-          await Interview.findOneAndUpdate(
+          const failedInterview = await Interview.findOneAndUpdate(
             { notetakerId: notetakerId },
             { 
               notetakerStatus: 'failed',
-              notetakerError: 'Failed to join meeting - may need approval'
-            }
+              notetakerError: diagnosticMessage
+            },
+            { new: true }
           );
+
+          try {
+            const interviewWithInterviewer = failedInterview
+              ? await Interview.findOne({ _id: failedInterview._id, notetakerId })
+                  .populate('interviewerId', 'email name')
+                  .populate('jobId', 'organization')
+              : null;
+
+            const recipient = interviewWithInterviewer?.interviewerId?.email;
+            if (recipient) {
+              const organization = await resolveOrganizationForEmail({
+                job: interviewWithInterviewer.jobId,
+                interview: interviewWithInterviewer,
+                userId: interviewWithInterviewer.interviewerId?._id
+              });
+              const organizationName = decodeHtmlEntities(organization.name);
+              const teamsChecklistUrl = 'https://developer.nylas.com/docs/v3/notetaker/support/troubleshooting/';
+              await emailService.sendUserNotification(
+                recipient,
+                'Notetaker failed to join a Teams interview',
+                'The notetaker could not join the meeting. Please review Teams setup and Nylas prerequisites.',
+                {
+                  organizationName,
+                  htmlContent: `
+                    <p>The notetaker reported <strong>failed_entry</strong> for interview <strong>${interviewWithInterviewer._id}</strong>.</p>
+                    <p>Checklist:</p>
+                    <ul>
+                      <li>Allow participants to join before organizer</li>
+                      <li>Disable waiting room or allowlist bot participant</li>
+                      <li>Ensure Teams recording/transcription policies are enabled</li>
+                    </ul>
+                    <p>Reference: <a href="${teamsChecklistUrl}">${teamsChecklistUrl}</a></p>
+                  `
+                }
+              );
+            }
+          } catch (opsEmailError) {
+            console.error('Failed to send failed_entry diagnostic email:', opsEmailError.message);
+          }
         }
         break;
         
@@ -230,7 +283,7 @@ function mapNotetakerStatus(meetingState, state) {
   console.log(`🔍 Mapping notetaker status - state: '${state}', meetingState: '${meetingState}'`);
   
   // Map based on both meeting_state and state fields
-  if (state === 'scheduled') {
+  if (state === 'scheduled' || state === 'created') {
     return 'scheduled';
   } else if (state === 'connected' || meetingState === 'in_call') {
     // If bot is connected OR meeting state shows in_call, it's recording
@@ -305,7 +358,7 @@ const getTranscript = async (req, res) => {
     const { interviewId } = req.params;
     const { includeOverflow = true, viewFullSession = false } = req.query;
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId')
       .populate('candidateId', 'firstName lastName email')
       .populate('jobId', 'title company');
@@ -319,14 +372,16 @@ const getTranscript = async (req, res) => {
       try {
         const transcriptData = await transcriptSegmentationService.getInterviewTranscript(
           interviewId,
-          includeOverflow === 'true' || includeOverflow === true
+          includeOverflow === 'true' || includeOverflow === true,
+          req.user.currentOrganization
         );
         
         // If user wants to view full session
         if (viewFullSession === 'true' || viewFullSession === true) {
           const sessionData = await transcriptSegmentationService.segmentTranscriptBySession(
             interview.multiCandidateSessionId,
-            transcriptData.transcript?.content || ''
+            transcriptData.transcript?.content || '',
+            req.user.currentOrganization
           );
           
           return res.json({
@@ -349,13 +404,11 @@ const getTranscript = async (req, res) => {
     if (!interview.notetakerId) {
       return res.status(400).json({ error: 'No notetaker associated with this interview' });
     }
-    
-    if (!interview.interviewerId || !interview.interviewerId.nylasGrantId) {
-      return res.status(400).json({ error: 'Interviewer grant not found' });
-    }
+
+    const notetakerType = 'standalone';
     
     // Get account credentials for multi-account support
-    const accountCredentials = await getAccountCredentials(interview.interviewerId);
+    const accountCredentials = interview.interviewerId ? await getAccountCredentials(interview.interviewerId) : null;
     
     // Check if we have cached transcript first
     if (interview.transcript && interview.transcript.content) {
@@ -368,7 +421,11 @@ const getTranscript = async (req, res) => {
       // For multi-candidate interviews, try to get actual recorded duration
       if (interview.isMultiCandidate && interview.multiCandidateSessionId) {
         try {
-          const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(interviewId, false);
+          const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(
+            interviewId,
+            false,
+            req.user.currentOrganization
+          );
           if (segmentedTranscript.actualTime && segmentedTranscript.actualTime.duration) {
             actualDuration = Math.round(segmentedTranscript.actualTime.duration / 60); // Convert seconds to minutes
             console.log(`📊 Using actual recorded duration: ${actualDuration} minutes (from transcript timestamps)`);
@@ -389,11 +446,7 @@ const getTranscript = async (req, res) => {
       let recordingUrl = interview.recordingUrl;
       if (!recordingUrl) {
         try {
-          const media = await nylasV3Service.getNotetakerMedia(
-            interview.interviewerId.nylasGrantId,
-            interview.notetakerId,
-            accountCredentials
-          );
+          const media = await nylasV3Service.getStandaloneNotetakerMedia(interview.notetakerId, accountCredentials);
           if (media.recording && media.recording.url) {
             recordingUrl = media.recording.url;
             interview.recordingUrl = recordingUrl;
@@ -434,8 +487,8 @@ const getTranscript = async (req, res) => {
     try {
       // Try to get both transcript and recording
       const [transcript, media] = await Promise.allSettled([
-        nylasV3Service.getTranscript(interview.interviewerId.nylasGrantId, interview.notetakerId, accountCredentials),
-        nylasV3Service.getNotetakerMedia(interview.interviewerId.nylasGrantId, interview.notetakerId, accountCredentials)
+        nylasV3Service.getStandaloneTranscript(interview.notetakerId, accountCredentials),
+        nylasV3Service.getStandaloneNotetakerMedia(interview.notetakerId, accountCredentials)
       ]);
       
       if (transcript.status === 'fulfilled') {
@@ -503,6 +556,9 @@ const getTranscript = async (req, res) => {
     if (!interview.transcript?.content) {
       interview.transcript = enhancedTranscript;
       interview.transcriptAvailableAt = new Date();
+      if (!interview.notetakerType) {
+        interview.notetakerType = notetakerType;
+      }
       if (recordingUrl) {
         interview.recordingUrl = recordingUrl;
       }
@@ -513,7 +569,7 @@ const getTranscript = async (req, res) => {
         interview.status = 'completed';
         
         // Update pipeline status as well
-        await updatePipelineStatusOnCompletion(interview);
+        await updatePipelineStatusOnCompletion(interview, req.user.currentOrganization);
       }
       
       await interview.save();
@@ -563,7 +619,7 @@ const enableNotetaker = async (req, res) => {
       return res.status(400).json({ error: 'Meeting link is required' });
     }
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
@@ -573,79 +629,42 @@ const enableNotetaker = async (req, res) => {
     if (interview.notetakerEnabled && interview.notetakerId) {
       return res.status(400).json({ error: 'Notetaker already enabled for this interview' });
     }
-    
-    if (!interview.interviewerId || !interview.interviewerId.nylasGrantId) {
-      return res.status(400).json({ error: 'Interviewer grant not found' });
-    }
-    
+
     // Get account credentials if interviewer has a linked Nylas account
     let accountCredentials = null;
-    if (interview.interviewerId.nylasAccountId) {
+    if (interview.interviewerId?.nylasAccountId) {
       const NylasAccount = require('../models/NylasAccount');
       const nylasAccount = await NylasAccount.findById(interview.interviewerId.nylasAccountId).select('+apiKey');
       if (nylasAccount) {
         accountCredentials = {
           apiKey: nylasAccount.apiKey,
+          apiUri: nylasAccount.apiUri,
           region: nylasAccount.region,
           clientId: nylasAccount.clientId
         };
         console.log(`   Using Nylas account: ${nylasAccount.name}`);
       }
     }
-    
-    let notetakerId = null;
-    
-    try {
-      // First, try to create a new notetaker
-      const result = await nylasV3Service.enableNotetakerForEvent(
-        interview.interviewerId.nylasGrantId,
-        interview.nylasEventId,
-        meetingLink,
-        interview.scheduledAt, // Use interview time as join time
-        accountCredentials // Pass account credentials for correct API key
-      );
-      notetakerId = result.notetakerId;
-    } catch (error) {
-      console.log('Error creating notetaker:', error.message);
-      
-      // If notetaker already exists, try to find it
-      if (error.message.includes('notetaker already exists')) {
-        console.log('Notetaker already exists, attempting to find it...');
-        
-        try {
-          // Get all notetakers for this grant
-          const notetakers = await nylasV3Service.getNotetakers(interview.interviewerId.nylasGrantId);
-          console.log(`Found ${notetakers.data?.length || 0} notetakers for this grant`);
-          
-          // Find the notetaker for this meeting link
-          const existingNotetaker = notetakers.data?.find(nt => {
-            // Check if the meeting link matches
-            return nt.meeting_link === meetingLink || 
-                   nt.meeting_url === meetingLink ||
-                   // Also check if it's for the same event (if event_id is available)
-                   (interview.nylasEventId && nt.event_id === interview.nylasEventId);
-          });
-          
-          if (existingNotetaker) {
-            console.log('Found existing notetaker:', existingNotetaker.notetaker_id);
-            notetakerId = existingNotetaker.notetaker_id;
-          } else {
-            // If we can't find a matching notetaker, throw error
-            throw new Error('Could not find existing notetaker for this meeting');
-          }
-        } catch (findError) {
-          console.error('Error finding existing notetaker:', findError);
-          throw new Error('A notetaker already exists for this meeting but could not be linked. Please check the meeting manually.');
-        }
-      } else {
-        // If it's a different error, re-throw it
-        throw error;
-      }
-    }
+
+    const result = await nylasV3Service.createStandaloneNotetaker(
+      meetingLink,
+      {
+        name: "SmartHR Notetaker Bot",
+        videoRecording: true,
+        audioRecording: true,
+        transcription: true,
+        summary: true
+      },
+      interview.scheduledAt, // Join at interview time
+      accountCredentials
+    );
+
+    const notetakerId = result.notetakerId || result.id;
     
     // Update interview with notetaker ID (either newly created or existing)
     interview.notetakerEnabled = true;
     interview.notetakerId = notetakerId;
+    interview.notetakerType = 'standalone';
     interview.notetakerStatus = 'enabled';
     await interview.save();
     
@@ -668,8 +687,8 @@ const cancelNotetaker = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId');
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
+      .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
@@ -679,20 +698,12 @@ const cancelNotetaker = async (req, res) => {
       return res.status(400).json({ error: 'No notetaker to cancel' });
     }
     
-    if (!interview.interviewerId || !interview.interviewerId.nylasGrantId) {
-      return res.status(400).json({ error: 'Interviewer grant not found' });
-    }
-    
     try {
       // Get account credentials
-      const accountCredentials = await getAccountCredentials(interview.interviewerId);
+      const accountCredentials = interview.interviewerId ? await getAccountCredentials(interview.interviewerId) : null;
       
       // First, try to get the current notetaker status from Nylas
-      const notetakerStatus = await nylasV3Service.getNotetakerStatus(
-        interview.interviewerId.nylasGrantId,
-        interview.notetakerId,
-        accountCredentials
-      );
+      const notetakerStatus = await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId, accountCredentials);
       
       console.log('Current notetaker status:', notetakerStatus);
       
@@ -704,19 +715,12 @@ const cancelNotetaker = async (req, res) => {
       
       // If notetaker is in a meeting (connected/recording), remove it
       if (notetakerState === 'connected' || meetingState === 'in_call') {
-        await nylasV3Service.removeNotetakerFromMeeting(
-          interview.interviewerId.nylasGrantId,
-          interview.notetakerId
-        );
+        await nylasV3Service.leaveStandaloneNotetaker(interview.notetakerId, accountCredentials);
         actionTaken = 'removed from meeting';
       } 
       // If notetaker is scheduled but not yet joined, cancel it
       else if (notetakerState === 'scheduled' || notetakerState === 'connecting') {
-        await nylasV3Service.cancelNotetaker(
-          interview.interviewerId.nylasGrantId,
-          interview.notetakerId,
-          accountCredentials
-        );
+        await nylasV3Service.cancelStandaloneNotetaker(interview.notetakerId, accountCredentials);
         actionTaken = 'cancelled';
       }
       // If notetaker is already disconnected or in another state
@@ -727,6 +731,7 @@ const cancelNotetaker = async (req, res) => {
       
       // Update interview regardless of the action
       interview.notetakerEnabled = false;
+      interview.notetakerType = 'standalone';
       interview.notetakerStatus = 'cancelled';
       await interview.save();
       
@@ -767,15 +772,11 @@ const joinMeetingNow = async (req, res) => {
     const { interviewId } = req.params;
     const { meetingLink } = req.body;
     
-    const interview = await Interview.findById(interviewId)
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
-    }
-    
-    if (!interview.interviewerId || !interview.interviewerId.nylasGrantId) {
-      return res.status(400).json({ error: 'Interviewer grant not found' });
     }
     
     // Get the meeting link - from request body or interview data
@@ -788,75 +789,127 @@ const joinMeetingNow = async (req, res) => {
     }
     
     // Get account credentials if interviewer has a linked Nylas account
-    let accountCredentials = null;
-    if (interview.interviewerId.nylasAccountId) {
-      const NylasAccount = require('../models/NylasAccount');
-      const nylasAccount = await NylasAccount.findById(interview.interviewerId.nylasAccountId).select('+apiKey');
-      if (nylasAccount) {
-        accountCredentials = {
-          apiKey: nylasAccount.apiKey,
-          region: nylasAccount.region,
-          apiUri: nylasAccount.apiUri || 'https://api.us.nylas.com'
-        };
-        console.log(`   Using Nylas account for immediate join: ${nylasAccount.name}`);
+    const accountCredentials = interview.interviewerId
+      ? await getAccountCredentials(interview.interviewerId)
+      : null;
+
+    console.log('Triggering notetaker to join meeting immediately:', meetingUrl);
+    console.log('Using account credentials:', !!accountCredentials);
+
+    if (interview.notetakerId) {
+      try {
+        const existingNotetakerId = interview.notetakerId;
+        const existingStatusResponse = await nylasV3Service.getStandaloneNotetakerStatus(
+          existingNotetakerId,
+          accountCredentials
+        );
+        const existingStatusData = existingStatusResponse?.data || existingStatusResponse || {};
+        const mappedStatus = mapNotetakerStatusWithTimeCheck(
+          existingStatusData.meeting_state || 'unknown',
+          existingStatusData.state || existingStatusData.status || 'unknown',
+          existingStatusData.join_time,
+          existingStatusData
+        );
+
+        if (ACTIVE_JOIN_STATUSES.has(mappedStatus)) {
+          if (interview.notetakerStatus !== mappedStatus) {
+            interview.notetakerStatus = mappedStatus;
+            interview.notetakerType = 'standalone';
+            await interview.save();
+          }
+
+          return res.json({
+            success: true,
+            notetakerId: interview.notetakerId,
+            status: mappedStatus,
+            alreadyActive: true,
+            message: 'Notetaker is already active for this meeting'
+          });
+        }
+
+        if (REPLACEABLE_JOIN_STATUSES.has(mappedStatus)) {
+          try {
+            await nylasV3Service.cancelStandaloneNotetaker(existingNotetakerId, accountCredentials);
+            console.log(
+              `Cancelled existing notetaker ${existingNotetakerId} for interview ${interview._id} before join-now`
+            );
+
+            interview.notetakerId = null;
+            interview.notetakerStatus = 'cancelled';
+            interview.notetakerType = 'standalone';
+            await interview.save();
+          } catch (cancelError) {
+            if (cancelError?.message?.includes('NOTETAKER_NOT_FOUND')) {
+              interview.notetakerStatus = 'deleted';
+              interview.notetakerId = null;
+              await interview.save();
+            } else {
+              console.warn(
+                `Cannot safely replace existing notetaker ${existingNotetakerId} for interview ${interview._id}:`,
+                cancelError.message
+              );
+              return res.status(409).json({
+                error: 'An existing bot could not be replaced safely. Please refresh and try again.',
+                status: mappedStatus
+              });
+            }
+          }
+        } else {
+          return res.status(409).json({
+            error: 'An existing bot is already configured for this interview. Refresh status before adding another.',
+            status: mappedStatus
+          });
+        }
+      } catch (statusError) {
+        if (statusError?.message?.includes('NOTETAKER_NOT_FOUND')) {
+          interview.notetakerStatus = 'deleted';
+          interview.notetakerId = null;
+          await interview.save();
+        } else {
+          console.warn(
+            `Failed to check existing notetaker status for interview ${interview._id}:`,
+            statusError.message
+          );
+          return res.status(502).json({
+            error: 'Unable to verify existing bot status safely. Please retry.'
+          });
+        }
       }
     }
     
-    const apiKey = accountCredentials?.apiKey || nylasV3Service.apiKey;
-    const apiUri = accountCredentials?.apiUri || nylasV3Service.apiUri;
-    
-    console.log('Triggering notetaker to join meeting immediately:', meetingUrl);
-    console.log('Using account credentials:', !!accountCredentials);
-    
     try {
-      // Create a new notetaker that joins immediately (no join_time)
-      const requestBody = {
-        meeting_link: meetingUrl,
-        name: "SmartHR Notetaker",
-        meeting_settings: {
-          video_recording: true,
-          audio_recording: true,
-          transcription: true
-        }
-        // NO join_time - this makes it join immediately
-      };
-      
-      const response = await fetch(`${apiUri}/v3/grants/${interview.interviewerId.nylasGrantId}/notetakers`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json, application/gzip'
+      // Create a standalone notetaker that joins immediately (no join_time).
+      const result = await nylasV3Service.createStandaloneNotetaker(
+        meetingUrl,
+        {
+          name: "SmartHR Notetaker",
+          videoRecording: true,
+          audioRecording: true,
+          transcription: true,
+          summary: true
         },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Failed to trigger notetaker:', errorText);
-        
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { message: errorText };
-        }
-        
-        throw new Error(errorData.error?.message || 'Failed to trigger notetaker to join');
-      }
-
-      const result = await response.json();
+        null,
+        accountCredentials
+      );
       console.log('Notetaker triggered successfully:', result);
+
+      const notetakerId = result.notetakerId || result.id;
+      if (!notetakerId) {
+        throw new Error('Nylas did not return a notetaker ID');
+      }
       
       // Update interview with new notetaker ID
       interview.notetakerEnabled = true;
-      interview.notetakerId = result.data?.notetaker_id;
-      interview.notetakerStatus = 'joined';
+      interview.notetakerId = notetakerId;
+      interview.notetakerType = 'standalone';
+      interview.notetakerStatus = 'joining';
+      interview.notetakerError = null;
       await interview.save();
       
       res.json({ 
         success: true,
-        notetakerId: result.data?.notetaker_id,
+        notetakerId,
+        status: 'joining',
         message: 'Notetaker is joining the meeting now'
       });
       
@@ -886,8 +939,8 @@ const getRealtimeTranscript = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId');
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
+      .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
       return res.status(404).json({ 
@@ -918,25 +971,14 @@ const getRealtimeTranscript = async (req, res) => {
       });
     }
     
-    if (!interview.interviewerId || !interview.interviewerId.nylasGrantId) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Interviewer grant not found' 
-      });
-    }
-    
     const interviewer = interview.interviewerId;
     
     try {
       // Get account credentials
-      const accountCredentials = await getAccountCredentials(interviewer);
+      const accountCredentials = interviewer ? await getAccountCredentials(interviewer) : null;
       
       // First check the notetaker status
-      const statusResponse = await nylasV3Service.getNotetakerStatus(
-        interviewer.nylasGrantId,
-        interview.notetakerId,
-        accountCredentials
-      );
+      const statusResponse = await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId, accountCredentials);
       
       console.log('📊 Notetaker status:', statusResponse);
       
@@ -953,6 +995,7 @@ const getRealtimeTranscript = async (req, res) => {
       // Update interview with latest status
       if (interview.notetakerStatus !== mappedStatus) {
         interview.notetakerStatus = mappedStatus;
+        interview.notetakerType = 'standalone';
         await interview.save();
       }
       
@@ -963,20 +1006,13 @@ const getRealtimeTranscript = async (req, res) => {
       // If notetaker is completed or processing, try to get transcript
       if (mappedStatus === 'completed' || mappedStatus === 'processing') {
         try {
-          const media = await nylasV3Service.getNotetakerMedia(
-            interviewer.nylasGrantId,
-            interview.notetakerId,
-            accountCredentials
-          );
+          const media = await nylasV3Service.getStandaloneNotetakerMedia(interview.notetakerId, accountCredentials);
           
           if (media.transcript && media.transcript.url) {
             // Download and save transcript if not already saved
             if (!interview.transcript || !interview.transcript.content) {
               console.log('📝 Downloading transcript content...');
-              const transcript = await nylasV3Service.getTranscript(
-                interviewer.nylasGrantId,
-                interview.notetakerId
-              );
+              const transcript = await nylasV3Service.getStandaloneTranscript(interview.notetakerId, accountCredentials);
               
               // Save transcript to database
               interview.transcript = {
@@ -990,6 +1026,7 @@ const getRealtimeTranscript = async (req, res) => {
                 confidence: null
               };
               interview.transcriptAvailableAt = new Date();
+              interview.notetakerType = 'standalone';
               
               if (media.recording && media.recording.url) {
                 interview.recordingUrl = media.recording.url;
@@ -1099,8 +1136,8 @@ const getNotetakerStatus = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId');
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
+      .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
@@ -1114,16 +1151,11 @@ const getNotetakerStatus = async (req, res) => {
       });
     }
 
-    if (!interview.interviewerId || !interview.interviewerId.nylasGrantId) {
-      return res.status(400).json({ error: 'Interviewer grant not found' });
-    }
-
     try {
+      const accountCredentials = interview.interviewerId ? await getAccountCredentials(interview.interviewerId) : null;
+
       // Get status from Nylas
-      const statusResponse = await nylasV3Service.getNotetakerStatus(
-        interview.interviewerId.nylasGrantId,
-        interview.notetakerId
-      );
+      const statusResponse = await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId, accountCredentials);
 
       const notetakerData = statusResponse.data || statusResponse;
       const currentStatus = notetakerData.state || notetakerData.status || 'unknown';
@@ -1136,6 +1168,7 @@ const getNotetakerStatus = async (req, res) => {
       // Update interview with latest status
       if (interview.notetakerStatus !== mappedStatus) {
         interview.notetakerStatus = mappedStatus;
+        interview.notetakerType = 'standalone';
         await interview.save();
       }
 
@@ -1189,15 +1222,11 @@ async function syncNotetakerStatus(req, res) {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId');
+    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
+      .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
-    }
-    
-    if (!interview.interviewerId || !interview.interviewerId.nylasGrantId) {
-      return res.status(400).json({ error: 'Interviewer grant not found' });
     }
     
     // Only sync if notetaker is enabled but ID is missing
@@ -1208,130 +1237,45 @@ async function syncNotetakerStatus(req, res) {
         hasNotetakerId: !!interview.notetakerId
       });
     }
-    
-    console.log('Syncing notetaker for interview:', interviewId);
-    
-    try {
-      // Get all notetakers for this grant
-      const notetakers = await nylasV3Service.getNotetakers(interview.interviewerId.nylasGrantId);
-      console.log(`Found ${notetakers.data?.length || 0} notetakers for this grant`);
-      console.log('Raw notetakers response:', JSON.stringify(notetakers, null, 2));
-      
-      // Log each notetaker to see the structure
-      if (notetakers.data && Array.isArray(notetakers.data)) {
-        notetakers.data.forEach((nt, index) => {
-          console.log(`Notetaker ${index}:`, {
-            notetaker_id: nt.notetaker_id,
-            id: nt.id,
-            meeting_link: nt.meeting_link,
-            meeting_url: nt.meeting_url,
-            event_id: nt.event_id,
-            join_time: nt.join_time,
-            state: nt.state,
-            allFields: Object.keys(nt)
-          });
-        });
-      }
-      
-      // Find the notetaker for this interview
-      let matchingNotetaker = null;
-      
-      // First try to match by event ID
-      if (interview.nylasEventId) {
-        matchingNotetaker = notetakers.data?.find(nt => nt.event_id === interview.nylasEventId);
-      }
-      
-      // If not found by event ID, try to match by meeting link
-      if (!matchingNotetaker && interview.conferencing?.details?.url) {
-        const meetingLink = interview.conferencing.details.url;
-        matchingNotetaker = notetakers.data?.find(nt => 
-          nt.meeting_link === meetingLink || 
-          nt.meeting_url === meetingLink
-        );
-      }
-      
-      // If not found by meeting link, try to match by time (within 30 minutes)
-      if (!matchingNotetaker && interview.scheduledAt) {
-        const interviewTime = new Date(interview.scheduledAt).getTime();
-        matchingNotetaker = notetakers.data?.find(nt => {
-          if (nt.join_time) {
-            const notetakerTime = nt.join_time * 1000; // Convert to milliseconds
-            const timeDiff = Math.abs(interviewTime - notetakerTime);
-            return timeDiff < 30 * 60 * 1000; // Within 30 minutes
-          }
-          return false;
-        });
-      }
-      
-      if (matchingNotetaker) {
-        // Extract the actual notetaker ID - check multiple possible field names
-        const extractedId = matchingNotetaker.notetaker_id || 
-                           matchingNotetaker.id || 
-                           matchingNotetaker.notetakerId ||
-                           matchingNotetaker.object_id ||
-                           matchingNotetaker.uuid ||
-                           matchingNotetaker.guid ||
-                           matchingNotetaker._id;
-        
-        console.log('Found matching notetaker:', {
-          rawNotetaker: matchingNotetaker,
-          extractedId: extractedId,
-          fieldOptions: {
-            notetaker_id: matchingNotetaker.notetaker_id,
-            id: matchingNotetaker.id,
-            notetakerId: matchingNotetaker.notetakerId,
-            object_id: matchingNotetaker.object_id,
-            uuid: matchingNotetaker.uuid,
-            guid: matchingNotetaker.guid,
-            _id: matchingNotetaker._id
-          }
-        });
-        
-        if (!extractedId) {
-          console.error('No valid ID found in matching notetaker:', matchingNotetaker);
-          return res.status(404).json({
-            error: 'Found matching notetaker but no valid ID field',
-            notetakerData: matchingNotetaker,
-            availableFields: Object.keys(matchingNotetaker)
-          });
-        }
-        
-        // Map Nylas status to our valid enum values
-        let mappedStatus = matchingNotetaker.state || 'enabled';
-        const validStatuses = ['pending', 'scheduled', 'enabled', 'joining', 'joined', 'recording', 'processing', 'completed', 'failed', 'cancelled', 'stopped', 'deleted'];
-        
-        if (!validStatuses.includes(mappedStatus)) {
-          console.log(`Unknown notetaker status '${mappedStatus}', mapping to 'enabled'`);
-          mappedStatus = 'enabled';
-        }
-        
-        // Update interview with the found notetaker ID
-        interview.notetakerId = extractedId;
-        interview.notetakerStatus = mappedStatus;
-        await interview.save();
-        
-        res.json({
-          success: true,
-          notetakerId: extractedId,
-          status: mappedStatus,
-          originalStatus: matchingNotetaker.state,
-          message: 'Notetaker synced successfully'
-        });
-      } else {
-        res.status(404).json({
-          error: 'Could not find a matching notetaker for this interview',
-          searchCriteria: {
-            eventId: interview.nylasEventId,
-            meetingLink: interview.conferencing?.details?.url,
-            scheduledAt: interview.scheduledAt
-          }
-        });
-      }
-      
-    } catch (error) {
-      console.error('Error syncing notetaker:', error);
-      throw error;
+
+    // Standalone notetakers cannot be listed/discovered server-side without an ID, so "sync" means re-create.
+    const meetingUrl = interview.conferencing?.details?.url || interview.meetingLink;
+    if (!meetingUrl) {
+      return res.status(400).json({
+        error: 'Meeting link is required to recreate notetaker',
+        message: 'This interview is missing conferencing details/meetingLink.'
+      });
     }
+
+    const accountCredentials = interview.interviewerId ? await getAccountCredentials(interview.interviewerId) : null;
+
+    const result = await nylasV3Service.createStandaloneNotetaker(
+      meetingUrl,
+      {
+        name: "SmartHR Notetaker Bot",
+        videoRecording: true,
+        audioRecording: true,
+        transcription: true,
+        summary: true
+      },
+      interview.scheduledAt,
+      accountCredentials
+    );
+
+    const notetakerId = result.notetakerId || result.id;
+
+    interview.notetakerEnabled = true;
+    interview.notetakerId = notetakerId;
+    interview.notetakerType = 'standalone';
+    interview.notetakerStatus = 'enabled';
+    await interview.save();
+
+    return res.json({
+      success: true,
+      notetakerId,
+      status: 'enabled',
+      message: 'Notetaker recreated successfully'
+    });
     
   } catch (error) {
     console.error('Sync notetaker error:', error);
@@ -1346,7 +1290,7 @@ const triggerCompletionCheck = async (req, res) => {
   try {
     console.log('🔧 [MANUAL-TRIGGER] Manual completion check triggered');
     const { checkAndCompleteInterviews } = require('../services/interviewCompletionService');
-    const completedCount = await checkAndCompleteInterviews();
+    const completedCount = await checkAndCompleteInterviews(req.user.currentOrganization);
     
     res.json({
       success: true,
@@ -1368,11 +1312,12 @@ const cleanupStaleNotetakers = async (req, res) => {
     console.log('🧹 Starting cleanup of stale notetakers...');
     
     // Find all interviews with notetakers
-    const interviews = await Interview.find({
+    const cleanupQuery = await organizationInterviewQuery(req, {
       notetakerEnabled: true,
       notetakerId: { $ne: null },
       notetakerStatus: { $nin: ['deleted', 'cancelled'] }
-    }).populate('interviewerId', 'nylasGrantId');
+    });
+    const interviews = await Interview.find(cleanupQuery).populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     console.log(`Found ${interviews.length} interviews with notetakers to check`);
     
@@ -1381,16 +1326,8 @@ const cleanupStaleNotetakers = async (req, res) => {
     
     for (const interview of interviews) {
       try {
-        if (!interview.interviewerId?.nylasGrantId) {
-          console.log(`Skipping interview ${interview._id} - no grant ID`);
-          continue;
-        }
-        
-        // Try to get notetaker status
-        await nylasV3Service.getNotetakerStatus(
-          interview.interviewerId.nylasGrantId,
-          interview.notetakerId
-        );
+        const accountCredentials = interview.interviewerId ? await getAccountCredentials(interview.interviewerId) : null;
+        await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId, accountCredentials);
         
         console.log(`✅ Notetaker ${interview.notetakerId} exists for interview ${interview._id}`);
         

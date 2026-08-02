@@ -2,6 +2,8 @@ const jwt = require('jsonwebtoken');
 const sessionService = require('../services/sessionService');
 const adaptiveRiskService = require('../services/adaptiveRiskService');
 const logger = require('../utils/securityLogger');
+const { attachUserActivityTracking } = require('../services/userActivityTrackingService');
+const { updateAIRequestContext } = require('../services/aiRuntime/requestContext');
 
 const authMiddleware = async (req, res, next) => {
   // Get token from header
@@ -59,6 +61,16 @@ const authMiddleware = async (req, res, next) => {
 
     req.user = decoded.user;
     req.session = session;
+    const currentOrganization = user.currentOrganization || decoded.user.currentOrganization;
+    updateAIRequestContext({
+      actorId: decoded.user.id,
+      actorName: user.profile?.displayName || `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim(),
+      actorEmail: user.email,
+      organizationId: currentOrganization?._id || currentOrganization,
+      organizationName: currentOrganization?.name,
+      sessionId: decoded.jti
+    });
+    attachUserActivityTracking(req, res, { user, session });
     next();
   } catch (err) {
     console.error('Token verification failed:', err.message);
@@ -104,4 +116,4 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-module.exports = authMiddleware; 
+module.exports = authMiddleware;

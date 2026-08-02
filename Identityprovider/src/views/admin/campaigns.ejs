@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title><%= workspaceTitle %> - Campaigns - Seemplify IDP Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+
+    .campaign-workspace-grid { display:grid; grid-template-columns:minmax(0, 1.48fr) minmax(320px, .82fr); gap:20px; align-items:start; }
+    .campaign-shell { display:grid; gap:18px; }
+    .campaign-sticky { position:sticky; top:20px; display:grid; gap:18px; }
+    .campaign-stepper { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; margin:0 0 20px; }
+    .campaign-step-tab { display:flex; align-items:flex-start; gap:12px; width:100%; border:1px solid var(--border); border-radius:18px; padding:14px 16px; background:var(--panel); color:var(--text); cursor:pointer; text-align:left; transition:border-color .18s ease, transform .18s ease, background .18s ease; }
+    .campaign-step-tab:hover { border-color:rgba(99, 102, 241, 0.28); transform:translateY(-1px); }
+    .campaign-step-tab.is-active { border-color:rgba(99, 102, 241, 0.32); background:rgba(99, 102, 241, 0.08); }
+    .campaign-step-index { width:30px; height:30px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:var(--panel-strong); color:#a5b4fc; font-size:12px; font-weight:800; flex:none; }
+    .campaign-step-tab.is-active .campaign-step-index { background:rgba(99, 102, 241, 0.18); color:#c7d2fe; }
+    .campaign-step-copy { display:grid; gap:4px; min-width:0; }
+    .campaign-step-label { color:var(--text); font-size:13px; font-weight:700; }
+    .campaign-step-help { color:var(--muted); font-size:12px; line-height:1.5; }
+    .campaign-step-panel { display:none; gap:18px; }
+    .campaign-step-panel.is-active { display:grid; }
+    .campaign-step-actions { display:flex; justify-content:space-between; gap:12px; margin-top:4px; }
+    .campaign-step-actions-right { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+    .campaign-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+    .campaign-form-grid--triple { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+    .campaign-toolbar { display:flex; flex-wrap:wrap; gap:10px; }
+    .campaign-mode-toggle { display:inline-flex; padding:4px; gap:4px; border-radius:999px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-mode-toggle button { border:none; background:transparent; color:var(--muted); padding:8px 14px; border-radius:999px; cursor:pointer; font-weight:600; }
+    .campaign-mode-toggle button.active { background:rgba(99, 102, 241, 0.12); color:#818cf8; }
+    .campaign-builder-grid { display:grid; grid-template-columns:280px minmax(0, 1fr); gap:18px; align-items:start; }
+    .campaign-palette { display:grid; gap:12px; }
+    .campaign-palette-list { display:grid; gap:8px; }
+    .campaign-palette-item { display:flex; justify-content:space-between; align-items:center; gap:12px; border:1px solid var(--border); border-radius:14px; padding:12px 14px; background:var(--panel-strong); }
+    .campaign-preview-shell { position:relative; min-height:640px; padding:18px; border-radius:22px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-preview-canvas { width:100%; max-width:720px; margin:0 auto; background:var(--panel-solid); border:1px solid var(--border); border-radius:28px; padding:22px; box-shadow:0 16px 40px rgba(15,23,42,.12); }
+    .campaign-preview-stack { display:grid; gap:14px; }
+    .campaign-block { position:relative; border-radius:26px; border:1px solid rgba(31,22,55,.08); background:#ffffff; overflow:hidden; }
+    .campaign-block.is-dragging { opacity:.45; }
+    .campaign-block-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid rgba(31,22,55,.08); background:rgba(246,240,255,.85); }
+    .campaign-block-toolbar strong { font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#6d6485; }
+    .campaign-block-actions { display:flex; gap:8px; }
+    .campaign-block-actions button { border:none; background:rgba(15,23,42,.06); color:#221934; border-radius:999px; width:30px; height:30px; cursor:pointer; }
+    .campaign-block-body { padding:22px; display:grid; gap:14px; color:#221934; }
+    .campaign-block-body[data-type="hero"] { background:linear-gradient(160deg, #6d28d9 0%, #221934 100%); color:#ffffff; }
+    .campaign-block-body[data-type="cta"] { background:rgba(109,40,217,.06); }
+    .campaign-preview-eyebrow { font-size:12px; letter-spacing:.24em; text-transform:uppercase; color:inherit; opacity:.72; }
+    .campaign-preview-title { font-size:30px; line-height:1.08; font-weight:700; letter-spacing:-.03em; outline:none; }
+    .campaign-preview-subtitle { font-size:15px; line-height:1.7; outline:none; }
+    .campaign-preview-editable { min-height:18px; outline:none; }
+    .campaign-preview-editable:focus { box-shadow:0 0 0 2px rgba(109,40,217,.18); border-radius:10px; }
+    .campaign-preview-items { display:grid; gap:10px; }
+    .campaign-preview-item { display:grid; grid-template-columns:26px 1fr auto; gap:10px; align-items:flex-start; }
+    .campaign-preview-item-badge { width:26px; height:26px; border-radius:999px; background:rgba(20,184,166,.12); color:#14b8a6; display:flex; align-items:center; justify-content:center; font-weight:700; }
+    .campaign-preview-item button { border:none; background:transparent; color:#ef4444; cursor:pointer; }
+    .campaign-preview-buttons { display:flex; flex-wrap:wrap; gap:10px; }
+    .campaign-preview-button { display:inline-flex; align-items:center; gap:8px; padding:12px 18px; border-radius:999px; border:1px solid rgba(255,255,255,.3); text-decoration:none; font-weight:700; }
+    .campaign-preview-button.primary { background:linear-gradient(135deg, #14b8a6, #6d28d9); color:#ffffff; border:none; }
+    .campaign-preview-button.secondary { background:transparent; color:inherit; }
+    .campaign-preview-button input { border:none; background:transparent; color:inherit; width:100%; min-width:140px; outline:none; }
+    .campaign-preview-button .campaign-mini-input { max-width:150px; }
+    .campaign-mini-input { width:100%; border:1px solid rgba(31,22,55,.12); border-radius:999px; padding:8px 12px; background:rgba(255,255,255,.82); color:#221934; }
+    .campaign-mini-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+    .campaign-html-grid { display:grid; grid-template-columns:minmax(0, .95fr) minmax(0, 1fr); gap:18px; }
+    .campaign-html-editor { min-height:560px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; resize:vertical; }
+    .campaign-html-preview { min-height:560px; border:1px solid var(--border); border-radius:18px; background:var(--panel-solid); padding:18px; overflow:auto; }
+    .campaign-card-stack, .campaign-health-list { display:grid; gap:12px; }
+    .campaign-pill { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+    .campaign-pill.red { background:rgba(239,68,68,.12); color:#fca5a5; }
+    .campaign-pill.amber { background:rgba(245,158,11,.12); color:#fbbf24; }
+    .campaign-pill.green { background:rgba(34,197,94,.12); color:#86efac; }
+    .campaign-pill.blue { background:rgba(59,130,246,.12); color:#93c5fd; }
+    .campaign-selected-card { display:grid; gap:14px; padding:18px; border-radius:20px; border:1px solid var(--border); background:var(--panel); }
+    .campaign-selected-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+    .campaign-selected-item { padding:12px 14px; border-radius:16px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-selected-item strong { display:block; margin-bottom:6px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .campaign-selected-item span { color:var(--text); font-weight:600; line-height:1.4; }
+    .campaign-list-metrics { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; padding-top:10px; border-top:1px solid var(--border); }
+    .campaign-mini-stat { padding:10px 12px; border-radius:14px; background:var(--panel-strong); border:1px solid var(--border); }
+    .campaign-mini-stat-label { display:block; margin-bottom:4px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .campaign-mini-stat-value { color:var(--text); font-size:16px; font-weight:700; }
+    .campaign-audience-card, .campaign-template-card, .campaign-health-card { border:1px solid var(--border); border-radius:18px; padding:14px; background:var(--panel-strong); display:grid; gap:8px; }
+    .campaign-upload-form { display:grid; gap:12px; }
+    .campaign-audience-hint { padding:14px; border-radius:18px; border:1px solid var(--border); background:var(--panel-strong); color:var(--muted); font-size:13px; line-height:1.7; margin-bottom:14px; }
+    .campaign-upload-actions { display:flex; flex-wrap:wrap; gap:10px; }
+    .campaign-audience-status { min-height:20px; font-size:13px; color:var(--muted); margin-top:12px; }
+    .campaign-audience-status.success { color:#10b981; }
+    .campaign-audience-status.error { color:#f87171; }
+    .campaign-mapping-panel { display:grid; gap:16px; margin-top:16px; padding:16px; border-radius:18px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-preview-meta { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
+    .campaign-mapping-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+    .campaign-mapping-card { padding:12px; border-radius:16px; border:1px solid var(--border); background:var(--panel); display:grid; gap:8px; }
+    .campaign-mapping-card.required { border-color:rgba(245,158,11,.25); background:rgba(245,158,11,.08); }
+    .campaign-mapping-label { display:flex; justify-content:space-between; gap:8px; align-items:center; color:var(--text); font-weight:700; font-size:13px; }
+    .campaign-mapping-description { color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-guide-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+    .campaign-guide-item { display:flex; gap:10px; align-items:flex-start; }
+    .campaign-guide-step { width:22px; height:22px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; background:rgba(99, 102, 241, 0.14); color:#a5b4fc; font-size:12px; font-weight:800; flex:none; }
+    .campaign-guide-copy { color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-variable-grid { display:grid; gap:12px; }
+    .campaign-variable-card { padding:12px; border-radius:16px; border:1px solid var(--border); background:var(--panel); display:grid; gap:10px; }
+    .campaign-variable-card.is-missing { border-style:dashed; }
+    .campaign-variable-header { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+    .campaign-variable-title { color:var(--text); font-weight:700; font-size:13px; }
+    .campaign-token-list { display:flex; flex-wrap:wrap; gap:8px; }
+    .campaign-token { display:inline-flex; align-items:center; border-radius:999px; padding:6px 10px; background:rgba(99, 102, 241, 0.12); color:#a5b4fc; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; font-weight:700; }
+    .campaign-variable-meta { display:grid; gap:6px; color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-variable-source { color:var(--text); font-weight:600; }
+    .campaign-variable-empty { color:var(--muted); }
+    .campaign-preview-table-wrap { overflow:auto; border-radius:16px; border:1px solid var(--border); background:var(--panel); }
+    .campaign-preview-table { width:100%; min-width:540px; border-collapse:collapse; }
+    .campaign-preview-table th, .campaign-preview-table td { padding:10px 12px; border-bottom:1px solid rgba(148,163,184,.12); text-align:left; vertical-align:top; font-size:13px; }
+    .campaign-preview-table th { background:var(--panel-strong); color:var(--text); font-weight:700; }
+    .campaign-review-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+    .campaign-review-card { padding:16px; border-radius:18px; border:1px solid var(--border); background:var(--panel-strong); display:grid; gap:12px; }
+    .campaign-checklist { display:grid; gap:10px; }
+    .campaign-check-item { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:12px 14px; border-radius:14px; border:1px solid var(--border); background:var(--panel); }
+    .campaign-check-copy { display:grid; gap:4px; min-width:0; }
+    .campaign-check-title { color:var(--text); font-size:13px; font-weight:700; }
+    .campaign-check-help { color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-review-meta { display:grid; gap:10px; }
+    .campaign-review-meta-item { padding:12px 14px; border-radius:14px; border:1px solid var(--border); background:var(--panel); }
+    .campaign-review-meta-item strong { display:block; margin-bottom:6px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .campaign-review-meta-item span { color:var(--text); font-weight:600; line-height:1.5; word-break:break-word; }
+    .campaign-side-guide { display:grid; gap:10px; }
+    .campaign-side-guide-item { padding:12px 14px; border-radius:16px; border:1px solid var(--border); background:var(--panel-strong); }
+    .campaign-side-guide-item strong { display:block; margin-bottom:4px; color:var(--text); font-size:13px; font-weight:700; }
+    .campaign-side-guide-item span { color:var(--muted); font-size:12px; line-height:1.6; }
+    .campaign-link-popover { position:fixed; z-index:1200; min-width:260px; padding:12px; border-radius:16px; border:1px solid var(--border); background:var(--panel-solid); box-shadow:0 20px 60px rgba(2,6,23,.35); display:none; gap:10px; }
+    .campaign-link-popover.show { display:grid; }
+    .campaign-link-popover-actions { display:flex; justify-content:flex-end; gap:8px; }
+    .campaign-empty-state { border:1px dashed var(--border); border-radius:18px; padding:18px; color:var(--muted); text-align:center; }
+
+    @media (max-width: 1280px) {
+      .campaign-workspace-grid, .campaign-builder-grid, .campaign-html-grid, .campaign-stepper, .campaign-review-grid { grid-template-columns:1fr; }
+      .campaign-sticky { position:static; }
+    }
+
+    @media (max-width: 820px) {
+      .campaign-form-grid,
+      .campaign-form-grid--triple,
+      .campaign-mini-grid,
+      .campaign-preview-meta,
+      .campaign-mapping-grid,
+      .campaign-selected-grid,
+      .campaign-review-grid {
+        grid-template-columns:1fr;
+      }
+
+      .campaign-list-metrics {
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+      }
+
+      .campaign-step-actions {
+        flex-direction:column;
+      }
+
+      .campaign-step-actions-right {
+        justify-content:stretch;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+<body>
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'campaigns' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <div>
+          <h1><%= workspaceTitle %></h1>
+          <div style="color:var(--muted); font-size:13px; margin-top:4px;"><%= workspaceDescription %></div>
+        </div>
+        <div class="campaign-toolbar">
+          <a href="/admin/campaigns" class="btn btn-secondary">Campaign Home</a>
+          <a href="/admin/campaigns/manage" class="btn btn-secondary">Manage Campaigns</a>
+          <button id="newCampaignBtn" class="btn btn-secondary" type="button">New Campaign</button>
+          <button id="saveCampaignBtn" class="btn btn-primary" type="button">Save Draft</button>
+          <button id="launchCampaignBtn" class="btn btn-success" type="button">Launch</button>
+          <button id="pauseCampaignBtn" class="btn btn-secondary" type="button">Pause</button>
+          <button id="resumeCampaignBtn" class="btn btn-secondary" type="button">Resume</button>
+          <button id="cancelCampaignBtn" class="btn btn-danger" type="button">Cancel</button>
+        </div>
+      </div>
+
+      <nav class="campaign-stepper" id="campaignStepTabs" aria-label="Campaign workflow">
+        <button class="campaign-step-tab is-active" type="button" data-workspace-step-target="setup">
+          <span class="campaign-step-index">1</span>
+          <span class="campaign-step-copy">
+            <span class="campaign-step-label">Setup</span>
+            <span class="campaign-step-help">Campaign basics, sender details, pacing, tracking, and template choice.</span>
+          </span>
+        </button>
+        <button class="campaign-step-tab" type="button" data-workspace-step-target="content">
+          <span class="campaign-step-index">2</span>
+          <span class="campaign-step-copy">
+            <span class="campaign-step-label">Content</span>
+            <span class="campaign-step-help">Build the message visually or switch to HTML when you need direct markup control.</span>
+          </span>
+        </button>
+        <button class="campaign-step-tab" type="button" data-workspace-step-target="audience">
+          <span class="campaign-step-index">3</span>
+          <span class="campaign-step-copy">
+            <span class="campaign-step-label">Audience</span>
+            <span class="campaign-step-help">Upload contacts, map CSV or Excel fields, and attach the right audience.</span>
+          </span>
+        </button>
+        <button class="campaign-step-tab" type="button" data-workspace-step-target="review">
+          <span class="campaign-step-index">4</span>
+          <span class="campaign-step-copy">
+            <span class="campaign-step-label">Review & Send</span>
+            <span class="campaign-step-help">Run the checklist, send a test, and launch only when the setup is complete.</span>
+          </span>
+        </button>
+      </nav>
+
+      <div class="campaign-workspace-grid">
+        <section class="campaign-shell">
+          <div class="admin-card campaign-step-panel is-active" data-workspace-step-panel="setup">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Campaign Setup</div>
+                <div class="admin-card-subtitle">Configure the campaign metadata, sender, audience, and delivery settings.</div>
+              </div>
+            </div>
+            <form id="campaignForm" class="campaign-shell">
+              <input type="hidden" id="campaignId">
+              <div class="campaign-form-grid">
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Campaign name</label>
+                  <input id="campaignName" class="admin-form-input" type="text" placeholder="Seemplify HR Launch">
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Audience</label>
+                  <select id="campaignAudience" class="admin-form-select"></select>
+                </div>
+              </div>
+              <div class="campaign-form-grid">
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Sender name</label>
+                  <input id="senderName" class="admin-form-input" type="text" placeholder="Seemplify">
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Sender email</label>
+                  <input id="senderEmail" class="admin-form-input" type="email" placeholder="campaigns@seemplifyai.com">
+                </div>
+              </div>
+              <div class="campaign-form-grid">
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Subject</label>
+                  <input id="campaignSubject" class="admin-form-input" type="text" placeholder="{{ contact.FIRSTNAME }}, simplify HR operations with Seemplify">
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Preview text</label>
+                  <input id="campaignPreviewText" class="admin-form-input" type="text" placeholder="One operating system for recruiting, onboarding, approvals, payroll, and performance.">
+                </div>
+              </div>
+              <div class="campaign-form-grid campaign-form-grid--triple">
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Reply-to</label>
+                  <input id="campaignReplyTo" class="admin-form-input" type="email" placeholder="hello@seemplifyai.com">
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Batch size</label>
+                  <input id="campaignBatchSize" class="admin-form-input" type="number" min="1" value="200">
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Interval (minutes)</label>
+                  <input id="campaignIntervalMinutes" class="admin-form-input" type="number" min="1" value="30">
+                </div>
+              </div>
+              <div class="campaign-form-grid campaign-form-grid--triple">
+                <div class="admin-form-group">
+                  <label class="admin-form-label">UTM source</label>
+                  <input id="campaignUtmSource" class="admin-form-input" type="text" value="seemplify">
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label">UTM medium</label>
+                  <input id="campaignUtmMedium" class="admin-form-input" type="text" value="email">
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label">UTM campaign</label>
+                  <input id="campaignUtmCampaign" class="admin-form-input" type="text" placeholder="seemplify-launch">
+                </div>
+              </div>
+              <div class="campaign-form-grid">
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Template</label>
+                  <select id="campaignTemplate" class="admin-form-select"></select>
+                </div>
+                <div class="admin-form-group">
+                  <label class="admin-form-label">Test emails</label>
+                  <input id="campaignTestEmails" class="admin-form-input" type="text" placeholder="you@company.com, teammate@company.com">
+                </div>
+              </div>
+              <label class="admin-form-checkbox">
+                <input id="allowExternalDecoration" type="checkbox">
+                <span>Decorate external links with UTM parameters</span>
+              </label>
+            </form>
+          </div>
+
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="content">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Email Builder</div>
+                <div class="admin-card-subtitle">Build the message in a focused editor. Switch to raw HTML when needed.</div>
+              </div>
+              <div class="campaign-mode-toggle">
+                <button id="visualModeBtn" type="button" class="active">Visual</button>
+                <button id="htmlModeBtn" type="button">HTML</button>
+              </div>
+            </div>
+
+            <div id="visualBuilder" class="campaign-builder-grid">
+              <aside class="campaign-palette">
+                <div class="campaign-palette-list">
+                  <div class="campaign-palette-item"><div><strong>Hero</strong><div class="admin-card-subtitle">Lead section with primary CTA</div></div><button data-add-block="hero" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+                  <div class="campaign-palette-item"><div><strong>Text</strong><div class="admin-card-subtitle">Free-form narrative block</div></div><button data-add-block="text" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+                  <div class="campaign-palette-item"><div><strong>Features</strong><div class="admin-card-subtitle">Structured benefits list</div></div><button data-add-block="features" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+                  <div class="campaign-palette-item"><div><strong>CTA</strong><div class="admin-card-subtitle">Standalone call-to-action panel</div></div><button data-add-block="cta" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+                  <div class="campaign-palette-item"><div><strong>Divider</strong><div class="admin-card-subtitle">Visual spacing break</div></div><button data-add-block="divider" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+                  <div class="campaign-palette-item"><div><strong>Footer</strong><div class="admin-card-subtitle">Compliance footer and unsubscribe note</div></div><button data-add-block="footer" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+                </div>
+                <div class="campaign-empty-state">
+                  Drag blocks to reorder them. Text blocks are editable directly inside the preview.
+                </div>
+              </aside>
+              <div class="campaign-preview-shell">
+                <div class="campaign-preview-canvas">
+                  <div id="visualPreview" class="campaign-preview-stack"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="htmlBuilder" class="campaign-html-grid" style="display:none;">
+              <div class="admin-form-group" style="margin:0;">
+                <label class="admin-form-label">HTML source</label>
+                <textarea id="htmlEditor" class="admin-form-textarea campaign-html-editor" spellcheck="false"></textarea>
+              </div>
+              <div class="admin-form-group" style="margin:0;">
+                <label class="admin-form-label">Preview</label>
+                <div id="htmlPreview" class="campaign-html-preview campaign-preview-editable" contenteditable="true"></div>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="review">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Review & Send</div>
+                <div class="admin-card-subtitle">Check readiness before you send a test or launch the campaign.</div>
+              </div>
+            </div>
+            <div class="campaign-review-grid">
+              <div class="campaign-review-card">
+                <div class="admin-card-title" style="font-size:15px;">Checklist</div>
+                <div id="campaignReviewChecklist" class="campaign-checklist"></div>
+              </div>
+              <div class="campaign-review-card">
+                <div class="admin-card-title" style="font-size:15px;">Campaign Snapshot</div>
+                <div id="campaignReviewHighlights" class="campaign-review-meta"></div>
+              </div>
+            </div>
+            <div class="campaign-toolbar">
+              <button id="sendTestBtn" class="btn btn-secondary" type="button">Send Test</button>
+              <a id="campaignDetailLink" class="btn btn-secondary" href="#" target="_blank" rel="noopener noreferrer">Open Analytics</a>
+            </div>
+          </div>
+
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Audience Workflow</div>
+                <div class="admin-card-subtitle">Use the audience tools in the right rail to import the file, map the fields, and attach the correct audience.</div>
+              </div>
+            </div>
+            <div class="campaign-side-guide">
+              <div class="campaign-side-guide-item">
+                <strong>Upload</strong>
+                <span>Choose the CSV or Excel file, then extract the headers so the mapper can inspect the sheet correctly.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>Map</strong>
+                <span>Match the imported columns to the campaign fields and confirm the merge tags shown for each one.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>Import</strong>
+                <span>Import the cleaned audience, then confirm the selected audience back in the setup summary before launch.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="campaign-step-actions">
+            <button id="campaignStepPrevBtn" class="btn btn-secondary" type="button">Previous Step</button>
+            <div class="campaign-step-actions-right">
+              <button id="campaignStepNextBtn" class="btn btn-primary" type="button">Next Step</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="campaign-sticky">
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Current Campaign</div>
+                <div class="admin-card-subtitle">A compact summary of the campaign loaded into this workspace.</div>
+              </div>
+            </div>
+            <div id="selectedCampaignSummary" class="campaign-selected-card"></div>
+          </div>
+
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Audience Studio</div>
+                <div class="admin-card-subtitle">Import and map audience files without leaving the editor.</div>
+              </div>
+            </div>
+            <div class="campaign-audience-hint">
+              <ul class="campaign-guide-list">
+                <li class="campaign-guide-item">
+                  <span class="campaign-guide-step">1</span>
+                  <span class="campaign-guide-copy">Upload your CSV or Excel file, then click <strong>Extract Fields</strong> so Seemplify can read the headers.</span>
+                </li>
+                <li class="campaign-guide-item">
+                  <span class="campaign-guide-step">2</span>
+                  <span class="campaign-guide-copy">For each campaign field, choose the matching column from your file. The card shows the exact merge tag that field powers.</span>
+                </li>
+                <li class="campaign-guide-item">
+                  <span class="campaign-guide-step">3</span>
+                  <span class="campaign-guide-copy">Use those merge tags in the subject, preview text, visual builder, or raw HTML to personalize the campaign.</span>
+                </li>
+                <li class="campaign-guide-item">
+                  <span class="campaign-guide-step">4</span>
+                  <span class="campaign-guide-copy">Preview the sample rows, import the audience, then assign that audience to the campaign.</span>
+                </li>
+              </ul>
+            </div>
+            <form id="audienceUploadForm" class="campaign-upload-form">
+              <input id="audienceName" class="admin-form-input" type="text" placeholder="Audience name">
+              <input id="audienceDescription" class="admin-form-input" type="text" placeholder="Audience description (optional)">
+              <input id="audienceFile" class="admin-form-input" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+              <div id="audienceSheetGroup" class="admin-form-group" style="display:none; margin:0;">
+                <label class="admin-form-label">Workbook sheet</label>
+                <select id="audienceSheetSelect" class="admin-form-select"></select>
+              </div>
+              <div class="campaign-upload-actions">
+                <button id="audiencePreviewBtn" class="btn btn-secondary" type="submit">Extract Fields</button>
+                <button id="audienceImportBtn" class="btn btn-primary" type="button" disabled>Import Audience</button>
+                <button id="audienceResetBtn" class="btn btn-secondary" type="button">Reset</button>
+              </div>
+            </form>
+            <div id="audienceImportStatus" class="campaign-audience-status">No file extracted yet.</div>
+            <div id="audienceMappingPanel" class="campaign-mapping-panel" style="display:none;">
+              <div id="audiencePreviewMeta" class="campaign-preview-meta"></div>
+              <div>
+                <div class="admin-card-title" style="font-size:15px; margin-bottom:8px;">Field Mapping</div>
+                <div class="admin-card-subtitle" style="margin-bottom:10px;">Each mapped field shows the merge tag you can use inside the campaign content.</div>
+                <div id="audienceColumnMapping" class="campaign-mapping-grid"></div>
+              </div>
+              <div>
+                <div class="admin-card-title" style="font-size:15px; margin-bottom:8px;">Derived Personalization</div>
+                <div class="admin-card-subtitle" style="margin-bottom:10px;">These variables are generated from the mapped audience data and are available in the subject, preview text, visual builder, and HTML.</div>
+                <div id="audienceDerivedVariables" class="campaign-variable-grid"></div>
+              </div>
+              <div>
+                <div class="admin-card-title" style="font-size:15px; margin-bottom:8px;">Sample Rows</div>
+                <div id="audiencePreviewTable" class="campaign-preview-table-wrap"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card campaign-step-panel" data-workspace-step-panel="audience">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Audience Library</div>
+                <div class="admin-card-subtitle">Imported audiences available for this campaign.</div>
+              </div>
+            </div>
+            <div id="audienceList" class="campaign-card-stack"></div>
+          </div>
+
+          <div class="admin-card campaign-step-panel is-active" data-workspace-step-panel="setup">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Template Library</div>
+                <div class="admin-card-subtitle">Pick a system template and apply it to the current draft.</div>
+              </div>
+            </div>
+            <div id="templateList" class="campaign-card-stack"></div>
+          </div>
+
+          <div class="admin-card campaign-step-panel is-active" data-workspace-step-panel="setup">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Sender Health</div>
+                <div class="admin-card-subtitle">Review sender readiness without opening the management screen.</div>
+              </div>
+            </div>
+            <div id="senderHealthList" class="campaign-health-list"></div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <div>
+                <div class="admin-card-title">Workflow Guide</div>
+                <div class="admin-card-subtitle">Use the steps above instead of trying to do everything at once.</div>
+              </div>
+            </div>
+            <div class="campaign-side-guide">
+              <div class="campaign-side-guide-item">
+                <strong>1. Setup</strong>
+                <span>Choose the template, define the sender, and lock down the pacing and tracking basics.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>2. Content</strong>
+                <span>Build the email visually or switch to HTML for direct control over the markup and preview.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>3. Audience</strong>
+                <span>Upload the file, map the fields, verify the merge tags, and import the audience cleanly.</span>
+              </div>
+              <div class="campaign-side-guide-item">
+                <strong>4. Review & Send</strong>
+                <span>Run the checklist, send a test, and launch only when the sender, content, and audience are all ready.</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <div id="linkPopover" class="campaign-link-popover">
+    <input id="linkPopoverInput" class="admin-form-input" type="url" placeholder="https://auth.seemplifyai.com/signup">
+    <div class="campaign-link-popover-actions">
+      <button id="unlinkSelectionBtn" class="btn btn-secondary btn-sm" type="button">Remove link</button>
+      <button id="applyLinkBtn" class="btn btn-primary btn-sm" type="button">Apply</button>
+    </div>
+  </div>
+
+  <script>
+    window.__CAMPAIGN_CONSOLE__ = <%- JSON.stringify({
+      campaigns,
+      audiences,
+      templates,
+      senderHealth,
+      audienceFields,
+      selectedCampaign,
+      workspaceMode
+    }).replace(/</g, '\\u003c') %>
+  </script>
+  <script src="/js/admin-campaign-console.js"></script>
+</body>
+</html>

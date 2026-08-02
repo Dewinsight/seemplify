@@ -210,6 +210,8 @@ const insertQuiz = (close) => {
 	quizzes.insert.submit(
 		{
 			title: title.value,
+			passing_percentage: 60,
+			show_submission_history: 1,
 		},
 		{
 			onSuccess(data) {

@@ -6,6 +6,7 @@ import { HelpCircle, Plus, Minus } from 'lucide-react';
 import * as Accordion from '@radix-ui/react-accordion';
 import ScrollReveal from '@/components/animations/ScrollReveal';
 import GlassmorphicCard from '@/components/ui/glassmorphic-card';
+import { useBrandConfig } from '@/context/BrandContext';
 
 const faqs = [
   {
@@ -22,7 +23,7 @@ const faqs = [
   },
   {
     question: "What integrations do you support?",
-    answer: "SmartHR integrates with popular calendar platforms (Google Calendar, Outlook), email services, Slack, Microsoft Teams, and various ATS systems. We also offer a robust API for custom integrations."
+    answer: "We integrate with popular calendar platforms (Google Calendar, Outlook), email services, Slack, Microsoft Teams, and various ATS systems. We also offer a robust API for custom integrations."
   },
   {
     question: "Is my data secure?",
@@ -35,6 +36,7 @@ const faqs = [
 ];
 
 export const FAQSection: React.FC = () => {
+  const brand = useBrandConfig();
   const [openItems, setOpenItems] = React.useState<string[]>([]);
 
   return (
@@ -54,7 +56,7 @@ export const FAQSection: React.FC = () => {
           </h2>
           
           <p className="text-slate-300 text-xl max-w-3xl mx-auto">
-            Everything you need to know about SmartHR
+            Everything you need to know about {brand.name}
           </p>
         </div>
       </ScrollReveal>

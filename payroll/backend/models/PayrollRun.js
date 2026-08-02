@@ -13,6 +13,16 @@ const Schema = mongoose.Schema;
  */
 
 // Processing summary for a payroll run
+const CurrencyBreakdownSchema = new Schema({
+  currency: { type: String, required: true },
+  employeeCount: { type: Number, default: 0 },
+  totalGrossPayroll: { type: Number, default: 0 },
+  totalDeductions: { type: Number, default: 0 },
+  totalNetPayroll: { type: Number, default: 0 },
+  totalTaxWithheld: { type: Number, default: 0 },
+  totalEmployerContributions: { type: Number, default: 0 }
+}, { _id: false });
+
 const ProcessingSummarySchema = new Schema({
   totalEmployees: { type: Number, default: 0 },
   processedCount: { type: Number, default: 0 },
@@ -23,13 +33,21 @@ const ProcessingSummarySchema = new Schema({
   totalNetPayroll: { type: Number, default: 0 },
   totalTaxWithheld: { type: Number, default: 0 },
   totalEmployerContributions: { type: Number, default: 0 },
-  currency: { type: String, default: 'USD' }
+  currency: { type: String, default: 'USD' },
+  reportingCurrency: String,
+  hasAggregateTotals: { type: Boolean, default: true },
+  isMultiCurrency: { type: Boolean, default: false },
+  currencies: [String],
+  currencyBreakdown: [CurrencyBreakdownSchema],
+  unconvertedCurrencies: [String],
+  conversionWarnings: [String]
 }, { _id: false });
 
 // Employee breakdown (summary per employee)
 const EmployeeBreakdownSchema = new Schema({
   userId: { type: String, required: true },
   employeeName: String,
+  currency: { type: String, default: 'USD' },
   grossPay: { type: Number, default: 0 },
   deductions: { type: Number, default: 0 },
   netPay: { type: Number, default: 0 },
@@ -46,7 +64,7 @@ const EmployeeBreakdownSchema = new Schema({
 const ApprovalEntrySchema = new Schema({
   action: {
     type: String,
-    enum: ['submitted', 'approved', 'rejected', 'revised', 'finalized'],
+    enum: ['submitted', 'approved', 'rejected', 'revised', 'finalized', 'retracted'],
     required: true
   },
   actionBy: { type: String, required: true },
@@ -86,6 +104,12 @@ const ProcessingSettingsSchema = new Schema({
     default: 'round'
   },
   roundingPrecision: { type: Number, default: 2 },
+  reportingCurrency: {
+    type: String,
+    uppercase: true,
+    trim: true,
+    maxlength: 3
+  },
   
   // Filters
   departments: [String], // If empty, include all
@@ -130,6 +154,7 @@ const PayrollRunSchema = new Schema({
       'approved',         // Approved, ready for payment
       'processing_payment', // Payment in progress
       'paid',             // Fully paid
+      'exported',         // Exported/finalized for accountant
       'partially_paid',   // Some payments completed
       'cancelled'         // Cancelled
     ],
@@ -156,16 +181,23 @@ const PayrollRunSchema = new Schema({
   calculatedAt: Date,
   approvedAt: Date,
   paidAt: Date,
-  
+  exportedAt: Date,
+  retractedAt: Date,
+
   // Audit
   createdBy: { type: String, required: true },
   createdByName: String,
   processedBy: String,
   processedByName: String,
+  exportedBy: String,
+  exportedByName: String,
+  retractedBy: String,
+  retractedByName: String,
   
   // Notes
   notes: String,
   internalNotes: String, // HR only
+  retractionReason: String,
   
   // Error tracking
   errors: [{
@@ -236,7 +268,7 @@ PayrollRunSchema.virtual('progressPercent').get(function() {
 // ===== METHODS =====
 
 // Initialize summary
-PayrollRunSchema.methods.initializeSummary = function(totalEmployees, currency = 'USD') {
+PayrollRunSchema.methods.initializeSummary = function(totalEmployees, currency = 'USD', options = {}) {
   this.summary = {
     totalEmployees,
     processedCount: 0,
@@ -247,7 +279,14 @@ PayrollRunSchema.methods.initializeSummary = function(totalEmployees, currency =
     totalNetPayroll: 0,
     totalTaxWithheld: 0,
     totalEmployerContributions: 0,
-    currency
+    currency,
+    reportingCurrency: options.reportingCurrency || null,
+    hasAggregateTotals: true,
+    isMultiCurrency: false,
+    currencies: currency ? [currency] : [],
+    currencyBreakdown: [],
+    unconvertedCurrencies: [],
+    conversionWarnings: []
   };
   return this;
 };
@@ -311,6 +350,7 @@ PayrollRunSchema.methods.updateTotalsFromPayslips = function(payslips) {
   payslips.forEach(payslip => {
     const emp = this.employees.find(e => e.userId === payslip.userId);
     if (emp) {
+      emp.currency = payslip.currency || emp.currency || this.summary?.currency || 'USD';
       emp.grossPay = payslip.earningsSummary?.grossPay || 0;
       emp.deductions = payslip.deductionsSummary?.totalDeductions || 0;
       emp.netPay = payslip.netPay || 0;

@@ -148,12 +148,12 @@ const JobSchema = new mongoose.Schema({
     status: {
       type: String,
       default: 'applied',
-      enum: ['applied', 'reviewing', 'shortlisted', 'interviewing', 'offered', 'hired', 'rejected'],
+      enum: ['applied', 'reviewing', 'shortlisted', 'interviewing', 'keep_in_view', 'offered', 'hired', 'rejected'],
     },
     statusHistory: [{
       status: {
         type: String,
-        enum: ['applied', 'reviewing', 'shortlisted', 'interviewing', 'offered', 'hired', 'rejected'],
+        enum: ['applied', 'reviewing', 'shortlisted', 'interviewing', 'keep_in_view', 'offered', 'hired', 'rejected'],
         required: true,
       },
       changedBy: {
@@ -420,11 +420,6 @@ const JobSchema = new mongoose.Schema({
       type: Boolean,
       default: false // Require manual approval by default
     },
-    senderName: {
-      type: String,
-      trim: true,
-      default: 'SmartHR'
-    },
     senderEmail: {
       type: String,
       trim: true,
@@ -444,6 +439,10 @@ const JobSchema = new mongoose.Schema({
         trim: true
       },
       shortlistRejection: {
+        type: String,
+        trim: true
+      },
+      applicationConfirmation: {
         type: String,
         trim: true
       }
@@ -493,11 +492,46 @@ const JobSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  // Locked when a public application pool is funded. Plan changes must not
+  // reprice an already-reserved pool or its later refunds.
+  publicApplicationCreditUnitCost: {
+    type: Number,
+    min: 0
+  },
   publicApplicationCount: {
     type: Number,
     default: 0,
     min: 0
   },
+  publicApplicationReservations: [{
+    processingJob: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CVProcessingJob',
+      required: true
+    },
+    processingJobPublicId: {
+      type: String,
+      required: true
+    },
+    creditCost: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    applicationCount: {
+      type: Number,
+      required: true,
+      min: 1
+    },
+    limitReached: {
+      type: Boolean,
+      default: false
+    },
+    reservedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
 
   // Feedback Form Configuration
   feedbackFormConfig: {
@@ -534,6 +568,14 @@ const JobSchema = new mongoose.Schema({
 
 // Indexes for better query performance
 JobSchema.index({ title: 'text', department: 'text', description: 'text' });
+JobSchema.index(
+  { 'publicApplicationReservations.processingJob': 1 },
+  {
+    unique: true,
+    sparse: true,
+    name: 'uniq_public_application_processing_job'
+  }
+);
 JobSchema.index({ status: 1 });
 JobSchema.index({ department: 1 });
 JobSchema.index({ location: 1 });

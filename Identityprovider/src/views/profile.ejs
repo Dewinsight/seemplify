@@ -2,254 +2,358 @@
 <html>
 
 <head>
-  <meta charset="UTF-8">
-  <title>Profile Settings - AIIN Identity</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    <%- include('../public/css/idp-theme.css') %>
-  </style>
-  <link rel="stylesheet" href="/css/main.css">
-  <script src="/js/theme.js?v=2"></script>
+    <meta charset="UTF-8">
+    <title>My Profile - Seemplify</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        <%- include('../public/css/idp-theme.css') %>
+    </style>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/profile-dashboard.css?v=2">
+    <script src="/js/theme.js?v=2"></script>
 </head>
 
 <body>
-  <!-- Top Navigation -->
-  <nav class="top-nav">
-    <a href="https://seemplifyai.com" class="top-nav-brand">
-      <svg viewBox="0 0 100 100" aria-hidden="true">
-        <defs>
-          <linearGradient id="seemplifyNavGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#3b82f6" />
-            <stop offset="50%" stop-color="#8b5cf6" />
-            <stop offset="100%" stop-color="#ec4899" />
-          </linearGradient>
-        </defs>
-        <path d="M 65 25 Q 75 25 75 35 Q 75 45 65 45 Q 50 50 35 55 Q 25 55 25 65 Q 25 75 35 75"
-          stroke="url(#seemplifyNavGradient)" stroke-width="8" fill="none" stroke-linecap="round"
-          stroke-linejoin="round" />
-        <circle cx="65" cy="25" r="6" class="logo-dot" />
-        <circle cx="50" cy="50" r="6" class="logo-dot" />
-        <circle cx="35" cy="75" r="6" class="logo-dot" />
-      </svg>
-      <span>Seemplify</span>
-    </a>
-    <div class="top-nav-links">
-      <a href="/" class="top-nav-link">Home</a>
-      <a href="/organizations" class="top-nav-link">Organizations</a>
-      <a href="/invitations/pending" class="top-nav-link">My Invitations</a>
-      <a href="/profile" class="top-nav-link active">Profile</a>
-      <a href="/logout" class="top-nav-link">Logout</a>
-    </div>
-    <div class="top-nav-user">
-      <div class="theme-dropdown">
-        <button onclick="window.ThemeManager.toggleDropdown(event)" class="theme-toggle" aria-label="Toggle theme">
-          <svg class="theme-toggle-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5" />
-            <path
-              d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-          </svg>
-          <svg class="theme-toggle-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            style="display:none;">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-          </svg>
-        </button>
-        <div class="theme-menu" id="theme-menu">
-          <button class="theme-option" data-value="light" onclick="window.ThemeManager.setTheme('light')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <circle cx="12" cy="12" r="5" />
-              <path
-                d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-            </svg>
-            Light
-          </button>
-          <button class="theme-option" data-value="dark" onclick="window.ThemeManager.setTheme('dark')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-            Dark
-          </button>
-          <button class="theme-option" data-value="system" onclick="window.ThemeManager.setTheme('system')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <line x1="8" y1="21" x2="16" y2="21" />
-              <line x1="12" y1="17" x2="12" y2="21" />
-            </svg>
-            System
-          </button>
-        </div>
-      </div>
-      <div class="top-nav-user-info">
-        <div class="top-nav-user-name">
-          <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
-        </div>
-        <div class="top-nav-user-email">
-          <%= user.email %>
-        </div>
-      </div>
-      <a href="/logout" class="top-nav-logout">Logout</a>
-    </div>
-  </nav>
+    <%- include('partials/nav', { activePage: 'profile' }) %>
 
-  <div class="container">
-    <div class="header">
-      <div>
-        <h1>Profile Settings</h1>
-        <div class="header-subtitle">
-          Manage your personal information
-        </div>
-      </div>
-    </div>
+        <div class="container">
+            <div class="header">
+                <div>
+                    <h1>My Profile</h1>
+                    <div class="header-subtitle">
+                        Your personal HR dashboard and information
+                    </div>
+                </div>
+            </div>
 
-    <div id="alertSuccess" class="alert alert-success"></div>
-    <div id="alertError" class="alert alert-error"></div>
+            <!-- Profile Navigation Tabs -->
+            <div class="profile-nav">
+                <a href="/profile" class="active">Dashboard</a>
+                <a href="/profile/personal">Personal Info</a>
+                <a href="/profile/documents">Documents</a>
+                <a href="/profile/banking">Banking</a>
+                <a href="/profile/dependents">Dependents</a>
+            </div>
 
-    <div class="card">
-      <div class="avatar-section">
-        <div class="avatar">
-          <%= (user.profile?.name || user.email)[0].toUpperCase() %>
-        </div>
-        <div class="avatar-info">
-          <h3>
-            <%= user.profile?.name || 'No name set' %>
-          </h3>
-          <p>
-            <%= user.email %>
-          </p>
-        </div>
-      </div>
+            <!-- Personal Info Summary -->
+            <div class="card personal-summary">
+                <div class="avatar-section">
+                    <div class="avatar">
+                        <%= (user.profile?.name || user.email)[0].toUpperCase() %>
+                    </div>
+                    <div class="avatar-info">
+                        <h3>
+                            <%= user.profile?.name || 'No name set' %>
+                        </h3>
+                        <p>
+                            <%= user.email %>
+                        </p>
+                        <% if (user.profile?.personalInfo?.phoneNumbers?.mobile) { %>
+                            <p style="font-size: 14px; color: var(--muted);">📱 <%=
+                                    user.profile.personalInfo.phoneNumbers.mobile %>
+                            </p>
+                            <% } %>
+                    </div>
+                </div>
+                <a href="/profile/personal" class="edit-profile-link">✏️ Edit Personal Info</a>
+            </div>
 
-      <form id="profileForm">
-        <div class="form-group">
-          <label for="email">Email Address</label>
-          <input type="email" id="email" value="<%= user.email %>" disabled>
-          <div class="form-hint">Email cannot be changed. Contact support if you need to update it.</div>
+            <!-- HR Dashboard Widgets -->
+            <div class="dashboard-widgets">
+
+                <!-- Leave Balance Widget -->
+                <div class="widget-card">
+                    <div class="widget-header">
+                        <h3>Leave Balance</h3>
+                        <span class="widget-icon">🏖️</span>
+                    </div>
+                    <div class="widget-body loading" id="leaveWidget">
+                        <div class="spinner">Loading...</div>
+                    </div>
+                    <div class="widget-footer">
+                        <a href="<%= process.env.LEAVE_MANAGEMENT_URL %>/request" target="_blank">
+                            Request Time Off
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Payroll Widget -->
+                <div class="widget-card">
+                    <div class="widget-header">
+                        <h3>Payroll</h3>
+                        <span class="widget-icon">💰</span>
+                    </div>
+                    <div class="widget-body loading" id="payrollWidget">
+                        <div class="spinner">Loading...</div>
+                    </div>
+                    <div class="widget-footer">
+                        <a href="<%= process.env.PAYROLL_MANAGEMENT_URL %>/payslips" target="_blank">
+                            View All Payslips
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Performance Widget -->
+                <div class="widget-card">
+                    <div class="widget-header">
+                        <h3>Performance</h3>
+                        <span class="widget-icon">🎯</span>
+                    </div>
+                    <div class="widget-body loading" id="performanceWidget">
+                        <div class="spinner">Loading...</div>
+                    </div>
+                    <div class="widget-footer">
+                        <a href="<%= process.env.PERFORMANCE_MANAGEMENT_URL %>/goals" target="_blank">
+                            Manage Goals
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Time Tracking Widget -->
+                <div class="widget-card">
+                    <div class="widget-header">
+                        <h3>Time Tracking</h3>
+                        <span class="widget-icon">⏰</span>
+                    </div>
+                    <div class="widget-body loading" id="timeWidget">
+                        <div class="spinner">Loading...</div>
+                    </div>
+                    <div class="widget-footer">
+                        <a href="<%= process.env.TIME_ATTENDANCE_URL || 'https://time.seemplifyai.com' %>/timesheets" target="_blank">
+                            View Timesheets
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Learning Widget -->
+                <div class="widget-card">
+                    <div class="widget-header">
+                        <h3>Learning</h3>
+                        <span class="widget-icon">📚</span>
+                    </div>
+                    <div class="widget-body loading" id="learningWidget">
+                        <div class="spinner">Loading...</div>
+                    </div>
+                    <div class="widget-footer">
+                        <a href="<%= process.env.SIMPLE_LMS_URL || '/simple-lms' %>">
+                            Open Simple LMS
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Account Information (kept from original) -->
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Account Information</h3>
+                <div style="display: grid; gap: 12px;">
+                    <div>
+                        <div style="font-size: 13px; color: var(--muted);">Account ID</div>
+                        <div style="font-size: 14px; color: var(--text); font-family: monospace;">
+                            <%= user.sub %>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size: 13px; color: var(--muted);">Member Since</div>
+                        <div style="font-size: 14px; color: var(--text);">
+                            <%= new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric' , month: 'long' ,
+                                day: 'numeric' }) %>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size: 13px; color: var(--muted);">Email Verified</div>
+                        <div
+                            style="font-size: 14px; color: <%= user.emailVerified ? 'var(--success)' : 'var(--error)' %>;">
+                            <%= user.emailVerified ? '✓ Verified' : '✗ Not Verified' %>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="form-group">
-          <label for="name">Full Name</label>
-          <input type="text" id="name" name="name" value="<%= user.profile?.name || '' %>"
-            placeholder="Enter your full name" maxlength="100">
-          <div class="form-hint">Your name will be displayed to other users in your organizations.</div>
-        </div>
+        <script>
+            // Fetch dashboard data on page load
+            async function loadDashboardData() {
+                try {
+                    const response = await fetch('/api/profile/dashboard');
+                    const result = await response.json();
 
-        <div class="form-group">
-          <label for="preferredUsername">Preferred Username (Optional)</label>
-          <input type="text" id="preferredUsername" name="preferredUsername"
-            value="<%= user.profile?.preferred_username || '' %>" placeholder="Enter a username" maxlength="50">
-          <div class="form-hint">A unique username for display purposes.</div>
-        </div>
+                    if (result.success) {
+                        populateWidgets(result.data);
+                    } else {
+                        showError('Failed to load dashboard data');
+                    }
+                } catch (error) {
+                    console.error('Failed to load dashboard:', error);
+                    showError('Unable to connect to dashboard');
+                }
+            }
 
-        <div class="form-actions">
-          <button type="submit" class="btn btn-primary" id="saveBtn">
-            <span id="btnText">Save Changes</span>
-            <span id="btnSpinner" style="display:none;">Saving...</span>
-          </button>
-          <a href="/" class="btn btn-secondary">Cancel</a>
-        </div>
-      </form>
-    </div>
-
-    <div class="card">
-      <h3 style="font-size: 18px; margin-bottom: 16px;">Account Information</h3>
-      <div style="display: grid; gap: 12px;">
-        <div>
-          <div style="font-size: 13px; color: var(--muted);">Account ID</div>
-          <div style="font-size: 14px; color: var(--text); font-family: monospace;">
-            <%= user.sub %>
+            function populateWidgets(data) {
+                // Populate leave widget
+                const leaveWidget = document.getElementById('leaveWidget');
+                if (data.leave && data.availability.leave) {
+                    leaveWidget.className = 'widget-body';
+                    leaveWidget.innerHTML = `
+          <div class="stat-row">
+            <span>Annual Leave:</span>
+            <strong>${data.leave.annual || 0} days</strong>
           </div>
-        </div>
-        <div>
-          <div style="font-size: 13px; color: var(--muted);">Member Since</div>
-          <div style="font-size: 14px; color: var(--text);">
-            <%= new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric' , month: 'long' , day: 'numeric'
-              }) %>
+          <div class="stat-row">
+            <span>Sick Leave:</span>
+            <strong>${data.leave.sick || 0} days</strong>
           </div>
-        </div>
-        <div>
-          <div style="font-size: 13px; color: var(--muted);">Email Verified</div>
-          <div style="font-size: 14px; color: <%= user.emailVerified ? 'var(--success)' : 'var(--error)' %>;">
-            <%= user.emailVerified ? '✓ Verified' : '✗ Not Verified' %>
+          ${data.leave.upcoming && data.leave.upcoming.length > 0 ? `
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted);">
+              <strong>Upcoming:</strong> ${formatDate(data.leave.upcoming[0].startDate)} - ${formatDate(data.leave.upcoming[0].endDate)}
+            </div>
+          ` : ''}
+        `;
+                } else {
+                    leaveWidget.className = 'widget-body';
+                    leaveWidget.innerHTML = '<div class="widget-empty">No leave data available</div>';
+                }
+
+                // Populate payroll widget
+                const payrollWidget = document.getElementById('payrollWidget');
+                if (data.payroll && data.availability.payroll) {
+                    payrollWidget.className = 'widget-body';
+                    payrollWidget.innerHTML = `
+          <div class="stat-row">
+            <span>Latest Payslip:</span>
+            <strong>$${(data.payroll.latestPayslip?.netPay || 0).toLocaleString()}</strong>
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
+          <div class="stat-row">
+            <span>YTD Earnings:</span>
+            <strong>$${(data.payroll.ytd?.gross || 0).toLocaleString()}</strong>
+          </div>
+          ${data.payroll.latestPayslip?.month ? `
+            <div style="margin-top: 12px; font-size: 13px; color: var(--muted);">
+              ${data.payroll.latestPayslip.month}
+            </div>
+          ` : ''}
+        `;
+                } else {
+                    payrollWidget.className = 'widget-body';
+                    payrollWidget.innerHTML = '<div class="widget-empty">No payroll data available</div>';
+                }
 
-  <script>
-    const form = document.getElementById('profileForm');
-    const saveBtn = document.getElementById('saveBtn');
-    const btnText = document.getElementById('btnText');
-    const btnSpinner = document.getElementById('btnSpinner');
-    const alertSuccess = document.getElementById('alertSuccess');
-    const alertError = document.getElementById('alertError');
+                // Populate performance widget
+                const performanceWidget = document.getElementById('performanceWidget');
+                if (data.performance && data.availability.performance) {
+                    performanceWidget.className = 'widget-body';
+                    performanceWidget.innerHTML = `
+          <div class="stat-row">
+            <span>Active Goals:</span>
+            <strong>${data.performance.activeGoals || 0}</strong>
+          </div>
+          <div class="stat-row">
+            <span>Completed Goals:</span>
+            <strong>${data.performance.completedGoals || 0}</strong>
+          </div>
+          ${data.performance.recentFeedback && data.performance.recentFeedback.length > 0 ? `
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted);">
+              <strong>Recent feedback:</strong> "${data.performance.recentFeedback[0].snippet}"
+            </div>
+          ` : ''}
+        `;
+                } else {
+                    performanceWidget.className = 'widget-body';
+                    performanceWidget.innerHTML = '<div class="widget-empty">No performance data available</div>';
+                }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
+                // Populate time tracking widget
+                const timeWidget = document.getElementById('timeWidget');
+                if (data.time && data.availability.time) {
+                    timeWidget.className = 'widget-body';
+                    const status = data.time.status === 'in' ? '🟢 Clocked In' : '⚪ Clocked Out';
+                    timeWidget.innerHTML = `
+          <div class="stat-row">
+            <span>This Week:</span>
+            <strong>${data.time.currentWeekHours || 0} hours</strong>
+          </div>
+          <div class="stat-row">
+            <span>Status:</span>
+            <strong>${status}</strong>
+          </div>
+          ${data.time.lastPunch ? `
+            <div style="margin-top: 12px; font-size: 13px; color: var(--muted);">
+              Last punch: ${formatTime(data.time.lastPunch)}
+            </div>
+          ` : ''}
+        `;
+                } else {
+                    timeWidget.className = 'widget-body';
+                    timeWidget.innerHTML = '<div class="widget-empty">No time tracking data available</div>';
+                }
 
-      // Hide previous alerts
-      alertSuccess.classList.remove('show');
-      alertError.classList.remove('show');
+                // Populate learning widget
+                const learningWidget = document.getElementById('learningWidget');
+                if (data.learning && data.availability.learning) {
+                    learningWidget.className = 'widget-body';
+                    learningWidget.innerHTML = `
+          <div class="stat-row">
+            <span>Assigned Courses:</span>
+            <strong>${data.learning.assignedCourses || 0}</strong>
+          </div>
+          <div class="stat-row">
+            <span>In Progress:</span>
+            <strong>${data.learning.inProgress || 0}</strong>
+          </div>
+          ${data.learning.courses && data.learning.courses.length > 0 ? `
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px;">
+              <strong>${data.learning.courses[0].title}</strong><br>
+              <div style="margin-top: 4px; color: var(--muted);">${data.learning.courses[0].progress}% complete</div>
+            </div>
+          ` : ''}
+        `;
+                } else {
+                    learningWidget.className = 'widget-body';
+                    learningWidget.innerHTML = '<div class="widget-empty">No learning data available</div>';
+                }
+            }
 
-      // Disable button and show loading
-      saveBtn.disabled = true;
-      btnText.style.display = 'none';
-      btnSpinner.style.display = 'inline';
+            function showError(message) {
+                // Show error state in all widgets
+                const widgets = ['leaveWidget', 'payrollWidget', 'performanceWidget', 'timeWidget', 'learningWidget'];
+                widgets.forEach(id => {
+                    const widget = document.getElementById(id);
+                    widget.className = 'widget-body error';
+                    widget.innerHTML = `<div>${message}</div>`;
+                });
+            }
 
-      const formData = {
-        name: document.getElementById('name').value.trim(),
-        preferredUsername: document.getElementById('preferredUsername').value.trim() || null
-      };
+            function formatDate(dateString) {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
 
-      try {
-        const response = await fetch('/api/profile', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(formData)
-        });
+            function formatTime(dateString) {
+                const date = new Date(dateString);
+                return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+            }
 
-        const data = await response.json();
+            // Load data on page load
+            document.addEventListener('DOMContentLoaded', loadDashboardData);
+        </script>
 
-        if (response.ok) {
-          alertSuccess.textContent = data.message || 'Profile updated successfully!';
-          alertSuccess.classList.add('show');
-
-          // Update avatar if name changed
-          if (formData.name) {
-            const avatar = document.querySelector('.avatar');
-            avatar.textContent = formData.name[0].toUpperCase();
-
-            const avatarName = document.querySelector('.avatar-info h3');
-            avatarName.textContent = formData.name;
-          }
-
-          // Scroll to top to show success message
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        } else {
-          alertError.textContent = data.error || 'Failed to update profile';
-          alertError.classList.add('show');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-      } catch (error) {
-        console.error('Profile update error:', error);
-        alertError.textContent = 'An error occurred while updating your profile';
-        alertError.classList.add('show');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      } finally {
-        // Re-enable button
-        saveBtn.disabled = false;
-        btnText.style.display = 'inline';
-        btnSpinner.style.display = 'none';
-      }
-    });
-  </script>
-
-  <!-- Invitation Gatekeeper - Blocks page until invitation decision is made -->
-  <script src="/js/invitation-gatekeeper.js"></script>
+        <!-- Invitation Gatekeeper -->
+        <script src="/js/invitation-gatekeeper.js"></script>
 </body>
 
 </html>

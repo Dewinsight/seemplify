@@ -10,7 +10,22 @@ const NotificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['organization_invite', 'interview_scheduled', 'candidate_applied', 'job_posted', 'general', 'job_created', 'candidate_uploaded', 'interview_created'],
+    enum: [
+      'organization_invite',
+      'interview_scheduled',
+      'candidate_applied',
+      'job_posted',
+      'general',
+      'job_created',
+      'candidate_uploaded',
+      'interview_created',
+      'people_transition_started',
+      'people_transition_action',
+      'people_transition_completed',
+      'people_transition_task_assigned',
+      'people_transition_due_soon',
+      'people_transition_overdue'
+    ],
     required: true
   },
   title: {
@@ -26,6 +41,12 @@ const NotificationSchema = new mongoose.Schema({
   data: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
+  },
+  // Optional durable producer key. Scoped per recipient so a retried outbox
+  // delivery cannot create duplicate notifications for the same user.
+  eventKey: {
+    type: String,
+    trim: true
   },
   read: {
     type: Boolean,
@@ -62,6 +83,13 @@ const NotificationSchema = new mongoose.Schema({
 NotificationSchema.index({ user: 1, read: 1 });
 NotificationSchema.index({ user: 1, createdAt: -1 });
 NotificationSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+NotificationSchema.index(
+  { user: 1, eventKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { eventKey: { $type: 'string' } }
+  }
+);
 
 // Virtual for checking if notification is expired
 NotificationSchema.virtual('isExpired').get(function() {
@@ -203,28 +231,26 @@ NotificationSchema.statics.createJobCreatedNotification = async function(userId,
 };
 
 // Static method to create candidate upload activity notification for all org members
-NotificationSchema.statics.createCandidateUploadedNotification = async function(userId, candidateData) {
+NotificationSchema.statics.createCandidateUploadedNotification = async function(userId, candidateData, options = {}) {
   try {
     const User = require('./User');
     const Organization = require('./Organization');
-    const creator = await User.findById(userId);
-    if (!creator) return;
+    const creator = userId ? await User.findById(userId) : null;
+    const organizationId = options.organizationId
+      || candidateData.organization
+      || creator?.currentOrganization;
+    if (!organizationId) return [];
 
-    // Get organization info for embedding
-    let orgName = null;
-    if (creator.currentOrganization) {
-      try {
-        const org = await Organization.findById(creator.currentOrganization).select('name').lean();
-        orgName = org?.name || null;
-      } catch (e) {
-        console.warn('Failed to get org name for candidate notification:', e.message);
+    const orgDoc = await Organization.findById(organizationId);
+    if (!orgDoc) return [];
+    const orgName = orgDoc.name || null;
+    const recipientIds = new Map();
+    for (const member of orgDoc.members || []) {
+      if (member.status === 'active' && member.user) {
+        recipientIds.set(String(member.user), member.user);
       }
     }
-
-    // Get all users who are members of this organization (not just those with it as currentOrganization)
-    const orgDoc = await Organization.findById(creator.currentOrganization);
-    const orgMemberIds = orgDoc ? orgDoc.members.filter(m => m.status === 'active' && m.user.toString() !== userId.toString()).map(m => m.user) : [];
-    const orgUsers = await User.find({ _id: { $in: orgMemberIds } });
+    if (creator?._id) recipientIds.set(String(creator._id), creator._id);
 
     const notifications = [];
     
@@ -250,53 +276,53 @@ NotificationSchema.statics.createCandidateUploadedNotification = async function(
     
     const candidateName = getDisplayName(candidateData);
 
-    // Create notification for the creator (different message)
-    notifications.push({
-      user: userId,
-      type: 'candidate_uploaded',
-      title: decodeHtmlEntities(`Candidate added: ${candidateName}`),
-      message: decodeHtmlEntities(`You added ${candidateName} to the candidate database`),
-      data: {
-        candidateId: candidateData._id,
-        candidateName: candidateName,
-        position: candidateData.position,
-        email: candidateData.email,
-        source: candidateData.source,
-        creatorId: userId,
-        creatorName: creator.name || creator.email,
-        organizationId: creator.currentOrganization,
-        organizationName: orgName
-      },
-      actionUrl: `/candidates/${candidateData._id}`,
-      actionText: 'View Candidate',
-      priority: 'medium'
-    });
-
-    // Create notifications for all other org members
-    for (const orgUser of orgUsers) {
+    const creatorName = creator?.name || creator?.email || 'A public applicant';
+    for (const recipientId of recipientIds.values()) {
+      const isCreator = creator?._id && String(recipientId) === String(creator._id);
       notifications.push({
-        user: orgUser._id,
+        user: recipientId,
         type: 'candidate_uploaded',
-        title: decodeHtmlEntities(`New candidate: ${candidateName}`),
-        message: decodeHtmlEntities(`${creator.name || creator.email} added ${candidateName} to the candidate database`),
+        title: decodeHtmlEntities(isCreator ? `Candidate added: ${candidateName}` : `New candidate: ${candidateName}`),
+        message: decodeHtmlEntities(
+          isCreator
+            ? `You added ${candidateName} to the candidate database`
+            : `${creatorName} added ${candidateName} to the candidate database`
+        ),
         data: {
           candidateId: candidateData._id,
           candidateName: candidateName,
           position: candidateData.position,
           email: candidateData.email,
           source: candidateData.source,
-          creatorId: userId,
-          creatorName: creator.name || creator.email,
-          organizationId: creator.currentOrganization,
+          creatorId: creator?._id || null,
+          creatorName,
+          organizationId,
           organizationName: orgName
         },
         actionUrl: `/candidates/${candidateData._id}`,
         actionText: 'View Candidate',
-        priority: 'medium'
+        priority: 'medium',
+        ...(options.eventKey ? { eventKey: String(options.eventKey) } : {})
       });
     }
 
-    return this.insertMany(notifications);
+    if (!notifications.length) return [];
+    if (!options.eventKey) return this.insertMany(notifications);
+
+    await this.bulkWrite(notifications.map((notification) => ({
+      updateOne: {
+        filter: {
+          user: notification.user,
+          eventKey: notification.eventKey
+        },
+        update: { $setOnInsert: notification },
+        upsert: true
+      }
+    })), { ordered: false });
+    return this.find({
+      user: { $in: notifications.map((notification) => notification.user) },
+      eventKey: String(options.eventKey)
+    });
   } catch (error) {
     console.error('Error creating candidate notifications:', error);
     throw error;

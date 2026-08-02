@@ -2,6 +2,17 @@ const Organization = require('../models/Organization');
 const Plan = require('../models/Plan');
 const mongoose = require('mongoose');
 
+const DEFAULT_ACTION_CREDIT_COSTS = {
+  aiInterviewCandidate: 8
+};
+
+function normalizeCreditCostOverride(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.ceil(parsed);
+}
+
 class CreditsService {
   /**
    * Get organization's current credit status
@@ -17,16 +28,24 @@ class CreditsService {
       }
 
       const creditUsage = organization.subscription?.creditUsage || {};
-      const totalCredits = creditUsage.totalCredits || 100;
-      const usedCredits = creditUsage.usedCredits || 0;
-      const remainingCredits = creditUsage.remainingCredits || totalCredits;
+      const configuredTotalCredits = Math.max(creditUsage.totalCredits || 100, 0);
+      const remainingCredits = Math.max(
+        0,
+        creditUsage.remainingCredits != null ? creditUsage.remainingCredits : configuredTotalCredits
+      );
+      // Normalize for display/math so usage never becomes contradictory when remaining exceeds plan credits.
+      const totalCredits = Math.max(configuredTotalCredits, remainingCredits);
+      const usedCredits = Math.max(0, totalCredits - remainingCredits);
       const rolloverCredits = creditUsage.rolloverCredits || 0;
 
       // Calculate cycle info
       const cycleStart = creditUsage.currentCycleStart || new Date();
       const cycleEnd = creditUsage.currentCycleEnd || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       const now = new Date();
-      const daysUntilReset = Math.ceil((cycleEnd - now) / (1000 * 60 * 60 * 24));
+      const daysUntilReset = Math.max(
+        0,
+        Math.ceil((cycleEnd - now) / (1000 * 60 * 60 * 24))
+      );
 
       // Calculate usage breakdown
       const transactions = creditUsage.transactions || [];
@@ -44,19 +63,24 @@ class CreditsService {
       );
 
       // Check warnings
-      const percentageUsed = (usedCredits / totalCredits) * 100;
+      const safeTotalCredits = Math.max(totalCredits, 1);
+      const percentageUsed = (usedCredits / safeTotalCredits) * 100;
+      const percentageRemaining = (remainingCredits / safeTotalCredits) * 100;
       const warningThreshold = creditUsage.lowCreditWarning?.threshold || 20;
+      const lowCreditWarningEnabled = creditUsage.lowCreditWarning?.enabled !== false;
       const warnings = {
-        lowCredit: percentageUsed >= warningThreshold,
+        lowCredit: lowCreditWarningEnabled && percentageRemaining <= warningThreshold,
         nearCycleEnd: daysUntilReset <= 5,
         projectedOverage: projectedRunout && projectedRunout < cycleEnd
       };
 
       return {
         totalCredits,
+        configuredTotalCredits,
         usedCredits,
         remainingCredits,
         percentageUsed: Math.round(percentageUsed * 10) / 10,
+        percentageRemaining: Math.round(percentageRemaining * 10) / 10,
         cycleStart,
         cycleEnd,
         daysUntilReset,
@@ -81,7 +105,7 @@ class CreditsService {
    * @param {String} action - Action name (e.g., 'createJob')
    * @returns {Object} { allowed: Boolean, cost: Number, remaining: Number, message: String }
    */
-  async checkSufficientCredits(organizationId, action) {
+  async checkSufficientCredits(organizationId, action, options = {}) {
     const timestamp = new Date().toISOString();
     console.log(`🔍 [${timestamp}] Checking credits for action: ${action}, Org: ${organizationId}`);
     
@@ -89,19 +113,40 @@ class CreditsService {
       // Validate inputs
       if (!organizationId) {
         console.error(`❌ [${timestamp}] Invalid organizationId: ${organizationId}`);
-        return { allowed: false, cost: 0, remaining: 0, message: 'Invalid organization ID' };
+        return {
+          allowed: false,
+          cost: 0,
+          remaining: 0,
+          error: 'INVALID_CREDIT_CONTEXT',
+          permanent: true,
+          message: 'Invalid organization ID'
+        };
       }
       
       if (!action || typeof action !== 'string') {
         console.error(`❌ [${timestamp}] Invalid action: ${action}`);
-        return { allowed: false, cost: 0, remaining: 0, message: 'Invalid action specified' };
+        return {
+          allowed: false,
+          cost: 0,
+          remaining: 0,
+          error: 'INVALID_CREDIT_CONTEXT',
+          permanent: true,
+          message: 'Invalid action specified'
+        };
       }
       
       const organization = await Organization.findById(organizationId);
       
       if (!organization) {
         console.error(`❌ [${timestamp}] Organization not found: ${organizationId}`);
-        return { allowed: false, cost: 0, remaining: 0, message: 'Organization not found' };
+        return {
+          allowed: false,
+          cost: 0,
+          remaining: 0,
+          error: 'CREDIT_ORGANIZATION_NOT_FOUND',
+          permanent: true,
+          message: 'Organization not found'
+        };
       }
 
       // Get credit cost for this action from plan
@@ -109,11 +154,19 @@ class CreditsService {
       
       if (!plan) {
         console.warn(`⚠️ No plan found for organization ${organizationId}, plan code: ${organization.subscription?.plan}`);
-        return { allowed: false, cost: 0, remaining: 0, message: 'No plan configured for organization' };
+        return {
+          allowed: false,
+          cost: 0,
+          remaining: 0,
+          error: 'CREDIT_PLAN_NOT_CONFIGURED',
+          permanent: true,
+          message: 'No plan configured for organization'
+        };
       }
       
       const creditCosts = plan.credits?.creditCosts || {};
-      const cost = creditCosts[action] || 0;
+      const configuredCost = creditCosts[action] ?? DEFAULT_ACTION_CREDIT_COSTS[action] ?? 0;
+      const cost = normalizeCreditCostOverride(options.creditCostOverride ?? options.costOverride ?? options.cost) ?? configuredCost;
 
       // If cost is 0 or plan has unlimited credits, allow action
       if (cost === 0 || plan?.credits?.totalCredits === 'unlimited') {
@@ -160,6 +213,8 @@ class CreditsService {
           allowed: false, 
           cost, 
           remaining: 0, 
+          error: 'CREDIT_BALANCE_ERROR',
+          permanent: true,
           message: 'Credit balance error: negative credits detected' 
         };
       }
@@ -170,6 +225,8 @@ class CreditsService {
           allowed: false, 
           cost: 0, 
           remaining: remainingCredits, 
+          error: 'INVALID_CREDIT_COST',
+          permanent: true,
           message: 'Invalid action cost configuration' 
         };
       }
@@ -186,12 +243,21 @@ class CreditsService {
           allowed: false,
           cost,
           remaining: remainingCredits,
+          error: 'INSUFFICIENT_CREDITS',
+          permanent: true,
           message: `Insufficient credits. Required: ${cost}, Available: ${remainingCredits}`
         };
       }
     } catch (error) {
       console.error('Error checking credits:', error);
-      return { allowed: false, cost: 0, remaining: 0, message: error.message };
+      return {
+        allowed: false,
+        cost: 0,
+        remaining: 0,
+        error: error.code || 'CREDIT_CHECK_UNAVAILABLE',
+        retryable: true,
+        message: error.message
+      };
     }
   }
 
@@ -245,7 +311,10 @@ class CreditsService {
         console.warn(`⚠️ [${timestamp}] Unknown action '${action}'. Valid actions: ${validActions.join(', ')}`);
       }
       
-      const cost = plan?.credits?.creditCosts?.[action] || 0;
+      const configuredCost = plan?.credits?.creditCosts?.[action] ?? DEFAULT_ACTION_CREDIT_COSTS[action] ?? 0;
+      const cost = normalizeCreditCostOverride(
+        metadata.creditCostOverride ?? metadata.costOverride ?? metadata.overrideCost
+      ) ?? configuredCost;
 
       // Skip if no cost
       if (cost === 0) {
@@ -327,7 +396,12 @@ class CreditsService {
       creditUsage.transactions.push(transaction);
 
       // Check for low credit warning
-      const percentageRemaining = (creditUsage.remainingCredits / creditUsage.totalCredits) * 100;
+      const safeTotalCredits = Math.max(
+        creditUsage.totalCredits || 0,
+        creditUsage.remainingCredits || 0,
+        1
+      );
+      const percentageRemaining = (creditUsage.remainingCredits / safeTotalCredits) * 100;
       if (percentageRemaining <= (creditUsage.lowCreditWarning?.threshold || 20)) {
         if (creditUsage.lowCreditWarning.enabled) {
           // Mark that warning should be sent
@@ -348,7 +422,13 @@ class CreditsService {
         organization: organization.name,
         previousBalance: creditUsage.remainingCredits + cost,
         newBalance: creditUsage.remainingCredits,
-        percentageRemaining: ((creditUsage.remainingCredits / creditUsage.totalCredits) * 100).toFixed(1) + '%'
+        percentageRemaining: (
+          (creditUsage.remainingCredits / Math.max(
+            creditUsage.totalCredits || 0,
+            creditUsage.remainingCredits || 0,
+            1
+          )) * 100
+        ).toFixed(1) + '%'
       });
 
       return {
@@ -365,6 +445,170 @@ class CreditsService {
     } finally {
       session.endSession();
     }
+  }
+
+  /**
+   * Atomically consume credits once for a durable operation.
+   *
+   * The idempotency key lives in the embedded ledger transaction and the
+   * conditional pipeline update checks both that key and the balance on the
+   * same Organization write. This avoids the check-then-debit race in async
+   * request replay paths.
+   */
+  async consumeCreditsIdempotently(
+    organizationId,
+    action,
+    entityId,
+    entityType,
+    userId,
+    metadata = {}
+  ) {
+    const idempotencyKey = String(metadata.idempotencyKey || '').trim();
+    if (!idempotencyKey) {
+      const error = new Error('An idempotency key is required for idempotent credit consumption');
+      error.code = 'CREDIT_IDEMPOTENCY_KEY_REQUIRED';
+      error.permanent = true;
+      throw error;
+    }
+    if (
+      !mongoose.isValidObjectId(organizationId)
+      || !mongoose.isValidObjectId(entityId)
+      || !mongoose.isValidObjectId(userId)
+    ) {
+      const error = new Error('Organization, entity, and user must be valid Mongo ObjectIds');
+      error.code = 'INVALID_CREDIT_CONTEXT';
+      error.permanent = true;
+      throw error;
+    }
+
+    const normalizedOrganizationId = new mongoose.Types.ObjectId(String(organizationId));
+    const normalizedEntityId = new mongoose.Types.ObjectId(String(entityId));
+    const normalizedUserId = new mongoose.Types.ObjectId(String(userId));
+    const existingFilter = {
+      _id: normalizedOrganizationId,
+      'subscription.creditUsage.transactions': {
+        $elemMatch: { 'metadata.idempotencyKey': idempotencyKey }
+      }
+    };
+
+    const existingOrganization = await Organization.findOne(existingFilter).lean();
+    const existingTransaction = existingOrganization?.subscription?.creditUsage?.transactions?.find(
+      (transaction) => transaction.metadata?.idempotencyKey === idempotencyKey
+    );
+    if (existingTransaction) {
+      return {
+        success: true,
+        alreadyConsumed: true,
+        credits: Math.abs(Number(existingTransaction.credits || 0)),
+        balanceAfter: existingTransaction.balanceAfter,
+        transaction: existingTransaction
+      };
+    }
+
+    const creditCheck = await this.checkSufficientCredits(normalizedOrganizationId, action, {
+      creditCostOverride: metadata.creditCostOverride
+        ?? metadata.costOverride
+        ?? metadata.overrideCost
+    });
+    const cost = Number(creditCheck.cost || 0);
+    if (cost === 0 && creditCheck.allowed) {
+      return {
+        success: true,
+        alreadyConsumed: false,
+        credits: 0,
+        balanceAfter: creditCheck.remaining
+      };
+    }
+
+    const timestamp = new Date();
+    const transactionId = new mongoose.Types.ObjectId();
+    const updated = creditCheck.allowed
+      ? await Organization.findOneAndUpdate(
+        {
+          _id: normalizedOrganizationId,
+          'subscription.creditUsage.remainingCredits': { $gte: cost },
+          'subscription.creditUsage.transactions': {
+            $not: { $elemMatch: { 'metadata.idempotencyKey': idempotencyKey } }
+          }
+        },
+        [
+          {
+            $set: {
+              'subscription.creditUsage.usedCredits': {
+                $add: [
+                  { $ifNull: ['$subscription.creditUsage.usedCredits', 0] },
+                  cost
+                ]
+              },
+              'subscription.creditUsage.remainingCredits': {
+                $subtract: ['$subscription.creditUsage.remainingCredits', cost]
+              },
+              'subscription.creditUsage.transactions': {
+                $concatArrays: [
+                  { $ifNull: ['$subscription.creditUsage.transactions', []] },
+                  [{
+                    _id: transactionId,
+                    action,
+                    credits: -cost,
+                    entityId: normalizedEntityId,
+                    entityType,
+                    performedBy: normalizedUserId,
+                    timestamp,
+                    balanceAfter: {
+                      $subtract: ['$subscription.creditUsage.remainingCredits', cost]
+                    },
+                    metadata: {
+                      ...metadata,
+                      idempotencyKey
+                    }
+                  }]
+                ]
+              }
+            }
+          }
+        ],
+        { new: true }
+      ).lean()
+      : null;
+
+    if (updated) {
+      const transaction = updated.subscription.creditUsage.transactions.find(
+        (item) => String(item._id) === String(transactionId)
+      );
+      return {
+        success: true,
+        alreadyConsumed: false,
+        credits: cost,
+        balanceAfter: Number(updated.subscription.creditUsage.remainingCredits),
+        transaction
+      };
+    }
+
+    // Distinguish a concurrent winner from a genuinely exhausted balance.
+    const latest = await Organization.findById(normalizedOrganizationId).lean();
+    const concurrentTransaction = latest?.subscription?.creditUsage?.transactions?.find(
+      (transaction) => transaction.metadata?.idempotencyKey === idempotencyKey
+    );
+    if (concurrentTransaction) {
+      return {
+        success: true,
+        alreadyConsumed: true,
+        credits: Math.abs(Number(concurrentTransaction.credits || 0)),
+        balanceAfter: concurrentTransaction.balanceAfter,
+        transaction: concurrentTransaction
+      };
+    }
+
+    return {
+      success: false,
+      alreadyConsumed: false,
+      error: creditCheck.error || 'INSUFFICIENT_CREDITS',
+      retryable: creditCheck.retryable === true,
+      permanent: creditCheck.permanent === true,
+      credits: cost,
+      balanceAfter: Number(latest?.subscription?.creditUsage?.remainingCredits || 0),
+      message: creditCheck.message || `Insufficient credits. Required: ${cost}`
+    };
   }
 
   /**

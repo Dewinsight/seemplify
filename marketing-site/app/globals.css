@@ -2,12 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
+/* Theme Variables */
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 5, 5, 5;
-  --background-end-rgb: 10, 10, 10;
+  color-scheme: light;
+  --background: 250 250 250;
+  --foreground: 9 9 11;
+  --card: 255 255 255;
+  --card-foreground: 24 24 27;
+  --muted: 244 244 245;
+  --muted-foreground: 113 113 122;
+  --border: 228 228 231;
+  --accent: 99 102 241;
+  --aurora-violet: rgba(99, 102, 241, 0.35);
+  --aurora-cyan: rgba(34, 211, 238, 0.28);
+  --aurora-emerald: rgba(16, 185, 129, 0.28);
+  --grid-line: rgba(15, 23, 42, 0.12);
 }
 
 * {
@@ -17,17 +28,20 @@
 }
 
 html {
+  color-scheme: light;
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale; 
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: #050505;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  color: rgb(var(--foreground));
+  background: rgb(var(--background));
   min-height: 100vh;
   letter-spacing: -0.015em;
   overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Background Noise Texture */
@@ -39,65 +53,68 @@ body {
   height: 100%;
   pointer-events: none;
   z-index: 50;
-  opacity: 0.03;
+  opacity: 0.02;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
 }
 
-/* Custom scrollbar - darker and thinner */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #09090b;
+  background: rgb(var(--muted));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: rgb(var(--border));
   border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: rgb(var(--muted-foreground));
 }
 
 /* Premium Glassmorphism */
 .glass {
-  background: rgba(20, 20, 25, 0.4);
+  background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 2px 4px -1px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.05),
+    0 2px 4px -1px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
 }
 
+/* Glass Card */
 .glass-card {
-  background: linear-gradient(180deg, rgba(24, 24, 27, 0.6) 0%, rgba(24, 24, 27, 0.3) 100%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.7) 100%);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 10px 40px -10px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 0 rgba(255, 255, 255, 1);
 }
 
 .glass-card:hover {
-  background: linear-gradient(180deg, rgba(30, 30, 35, 0.7) 0%, rgba(30, 30, 35, 0.4) 100%);
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
-    0 0 30px rgba(0,0,0,0.3);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.85) 100%);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 20px 50px -15px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 0 rgba(255, 255, 255, 1);
 }
 
-/* Sophisticated Gradient Text */
+/* Gradient Text */
 .gradient-text {
-  background: linear-gradient(to bottom right, #ffffff 30%, #a1a1aa 100%);
+  background: linear-gradient(to bottom right, #18181b 30%, #71717a 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .gradient-text-primary {
-  background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -111,4 +128,34 @@ body {
 .mask-fade-b {
   mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+}
+
+/* Akwa Ibom State green/amber theme overrides */
+.akwaibom-theme {
+  --accent: 21 128 61;
+  --aurora-violet: rgba(21, 128, 61, 0.35);
+  --aurora-cyan: rgba(217, 119, 6, 0.28);
+  --aurora-emerald: rgba(16, 185, 129, 0.32);
+}
+
+.akwaibom-theme .gradient-text-primary {
+  background: linear-gradient(135deg, #15803d 0%, #b45309 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Noise overlay must sit behind page content; default z-50 hid footer & lower sections */
+.akwaibom-theme .bg-noise {
+  z-index: 1;
+}
+
+.akwaibom-theme main {
+  position: relative;
+  z-index: 10;
+}
+
+.akwaibom-theme .akwa-footer {
+  position: relative;
+  z-index: 20;
 }

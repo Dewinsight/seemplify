@@ -83,16 +83,21 @@ export function QuestionQualityDisplay({
     return "High Bias";
   };
 
-  const hasQualityMetrics = question.qualityMetrics || qualityAnalysis;
+  const hasQualityMetrics = Boolean(question.qualityMetrics || qualityAnalysis);
   
   // Get quality metrics from question or analysis, with proper defaults
   const getQualityMetrics = () => {
     if (qualityAnalysis) {
+      const status = qualityAnalysis.analysisStatus
+        || (typeof qualityAnalysis.biasScore === 'number' ? 'complete' : 'manual_review');
       return {
-        biasScore: qualityAnalysis.overallBiasScore ?? qualityAnalysis.biasScore ?? 0,
-        diversityIndex: qualityAnalysis.diversityIndex || 0,
-        difficultyCalibration: qualityAnalysis.difficultyCalibration || 0,
-        legalCompliance: qualityAnalysis.legalCompliance !== undefined ? qualityAnalysis.legalCompliance : true,
+        semanticQualityScore: qualityAnalysis.semanticQualityScore ?? null,
+        qualityIssues: qualityAnalysis.qualityIssues || [],
+        analysisStatus: status,
+        biasScore: qualityAnalysis.overallBiasScore ?? qualityAnalysis.biasScore ?? null,
+        diversityIndex: qualityAnalysis.diversityIndex ?? 0,
+        difficultyCalibration: qualityAnalysis.difficultyCalibration ?? 0,
+        legalCompliance: qualityAnalysis.legalCompliance ?? null,
         biasAnalysis: qualityAnalysis.biasAnalysis || {},
         detectedBiasFactors: qualityAnalysis.detectedBiasFactors || [],
         neutralityConfidence: qualityAnalysis.neutralityConfidence,
@@ -102,25 +107,33 @@ export function QuestionQualityDisplay({
     }
     
     if (question.qualityMetrics) {
+      const status = question.qualityMetrics.analysisStatus
+        || (typeof question.qualityMetrics.biasScore === 'number' && typeof question.qualityMetrics.legalCompliance === 'boolean' ? 'complete' : 'pending');
       return {
-        biasScore: question.qualityMetrics.biasScore || 0,
-        diversityIndex: question.qualityMetrics.diversityIndex || 0,
-        difficultyCalibration: question.qualityMetrics.difficultyCalibration || 0,
-        legalCompliance: question.qualityMetrics.legalCompliance !== undefined ? question.qualityMetrics.legalCompliance : true,
+        semanticQualityScore: question.qualityMetrics.semanticQualityScore ?? null,
+        qualityIssues: question.qualityMetrics.qualityIssues || [],
+        analysisStatus: status,
+        biasScore: question.qualityMetrics.biasScore ?? null,
+        diversityIndex: question.qualityMetrics.diversityIndex ?? 0,
+        difficultyCalibration: question.qualityMetrics.difficultyCalibration ?? 0,
+        legalCompliance: question.qualityMetrics.legalCompliance ?? null,
         biasAnalysis: question.qualityMetrics.biasAnalysis || {},
-        detectedBiasFactors: [],
-        neutralityConfidence: undefined,
-        recommendation: undefined,
-        isBiased: undefined
+        detectedBiasFactors: question.qualityMetrics.detectedBiasFactors || [],
+        neutralityConfidence: question.qualityMetrics.aiNeutralityConfidence,
+        recommendation: question.qualityMetrics.aiRecommendation,
+        isBiased: question.qualityMetrics.isBiased
       };
     }
     
     // Default values for questions without analysis
     return {
-      biasScore: 0,
+      semanticQualityScore: null,
+      qualityIssues: [],
+      analysisStatus: 'pending' as const,
+      biasScore: null,
       diversityIndex: 0,
       difficultyCalibration: 0,
-      legalCompliance: true,
+      legalCompliance: null,
       biasAnalysis: {},
       detectedBiasFactors: [],
       neutralityConfidence: undefined,
@@ -176,20 +189,22 @@ export function QuestionQualityDisplay({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Quality Score</span>
+                  <span className="text-sm font-medium">Semantic Quality</span>
                   <div className="flex items-center gap-1">
-                    {getScoreIcon(1 - metrics.biasScore)}
-                    <span className={`text-sm font-medium ${getScoreColor(1 - metrics.biasScore)}`}>
-                      {Math.round((1 - metrics.biasScore) * 100)}%
-                    </span>
+                    {typeof metrics.semanticQualityScore === 'number' ? getScoreIcon(metrics.semanticQualityScore) : <AlertCircle className="h-4 w-4 text-gray-500" />}
+                    {typeof metrics.semanticQualityScore === 'number' ? (
+                      <span className={`text-sm font-medium ${getScoreColor(metrics.semanticQualityScore)}`}>
+                        {Math.round(metrics.semanticQualityScore * 100)}%
+                      </span>
+                    ) : <span className="text-sm font-medium text-gray-500">Not assessed</span>}
                   </div>
                 </div>
                 <Progress 
-                  value={(1 - metrics.biasScore) * 100} 
+                  value={(metrics.semanticQualityScore ?? 0) * 100}
                   className="h-2"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Higher is better (100% = bias-free)
+                <p className="text-xs text-gray-500">
+                  Job grounding, specificity, answer depth, and scoring completeness.
                 </p>
               </div>
 
@@ -197,30 +212,38 @@ export function QuestionQualityDisplay({
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Bias Level</span>
                   <div className="flex items-center gap-1">
-                    {metrics.biasScore === 0 ? (
+                    {metrics.analysisStatus !== 'complete' || typeof metrics.biasScore !== 'number' ? (
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    ) : metrics.biasScore === 0 ? (
                       <CheckCircle className="h-4 w-4 text-green-600" />
                     ) : metrics.biasScore <= 0.3 ? (
                       <AlertTriangle className="h-4 w-4 text-yellow-600" />
                     ) : (
                       <XCircle className="h-4 w-4 text-red-600" />
                     )}
-                    <span className={`text-sm font-medium ${getBiasLevelColor(metrics.biasScore)}`}>
-                      {getBiasLevelText(metrics.biasScore)}
+                    <span className={`text-sm font-medium ${metrics.analysisStatus === 'complete' && typeof metrics.biasScore === 'number' ? getBiasLevelColor(metrics.biasScore) : 'text-amber-700'}`}>
+                      {metrics.analysisStatus === 'manual_review'
+                        ? 'Manual review'
+                        : metrics.analysisStatus !== 'complete' || typeof metrics.biasScore !== 'number'
+                          ? 'Pending'
+                          : getBiasLevelText(metrics.biasScore)}
                     </span>
                   </div>
                 </div>
                 <Progress 
-                  value={metrics.biasScore * 100} 
+                  value={(metrics.biasScore ?? 0) * 100}
                   className="h-2"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Raw bias score: {(metrics.biasScore * 100).toFixed(1)}%
+                <p className="text-xs text-gray-500">
+                  {metrics.analysisStatus === 'complete' && typeof metrics.biasScore === 'number'
+                    ? `Raw bias score: ${(metrics.biasScore * 100).toFixed(1)}%`
+                    : 'No bias or compliance claim is made until analysis completes.'}
                 </p>
               </div>
             </div>
 
             {/* Neutrality Confidence */}
-            {metrics.neutralityConfidence !== undefined && (
+            {metrics.analysisStatus === 'complete' && typeof metrics.neutralityConfidence === 'number' && (
               <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                 <div className="flex items-center gap-2">
                   <Eye className="h-4 w-4 text-blue-600" />
@@ -242,7 +265,12 @@ export function QuestionQualityDisplay({
                 <span className="text-sm font-medium">Legal Compliance</span>
               </div>
               <div className="flex items-center gap-1">
-                {metrics.legalCompliance ? (
+                {metrics.analysisStatus !== 'complete' || metrics.legalCompliance === null ? (
+                  <>
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <span className="text-sm font-medium text-amber-700">Not verified</span>
+                  </>
+                ) : metrics.legalCompliance ? (
                   <>
                     <CheckCircle className="h-4 w-4 text-green-600" />
                     <span className="text-sm font-medium text-green-600">Compliant</span>
@@ -410,7 +438,7 @@ export function QuestionQualityDisplay({
 
             {/* AI Generation Metadata */}
             {question.isAIGenerated && question.aiGenerationMetadata && (
-              <div className="text-xs text-muted-foreground pt-2 border-t">
+              <div className="text-xs text-gray-500 pt-2 border-t">
                 <div className="flex justify-between">
                   <span>Model: {question.aiGenerationMetadata.model}</span>
                   <span>Confidence: {Math.round(question.aiGenerationMetadata.confidence * 100)}%</span>
@@ -422,8 +450,8 @@ export function QuestionQualityDisplay({
             )}
           </>
         ) : (
-          <div className="text-center py-4 text-muted-foreground">
-            <Shield className="h-8 w-8 mx-auto mb-2 text-muted-foreground/70" />
+          <div className="text-center py-4 text-gray-500">
+            <Shield className="h-8 w-8 mx-auto mb-2 text-gray-400" />
             <p className="text-sm">No quality analysis available</p>
             <p className="text-xs mt-1">Click "Analyze" to generate quality metrics</p>
           </div>
@@ -431,4 +459,4 @@ export function QuestionQualityDisplay({
       </CardContent>
     </Card>
   );
-} 
+}

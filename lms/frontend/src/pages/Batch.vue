@@ -370,7 +370,7 @@ const isStudent = computed(() => {
 })
 
 const redirectToLogin = () => {
-	window.location.href = `/login?redirect-to=/lms/batches/${props.batchName}`
+	window.location.href = `/lms-login?redirect-to=/lms/batches/${props.batchName}`
 }
 
 const openAnnouncementModal = () => {

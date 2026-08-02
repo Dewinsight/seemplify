@@ -18,9 +18,12 @@
   "section_break_unwn",
   "course",
   "course_title",
+  "program",
+  "program_title",
   "column_break_ywee",
   "batch_name",
-  "batch_title"
+  "batch_title",
+  "certificate_image"
  ],
  "fields": [
   {
@@ -87,6 +90,20 @@
    "read_only": 1
   },
   {
+   "fieldname": "program",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Program",
+   "options": "LMS Program"
+  },
+  {
+   "fetch_from": "program.title",
+   "fieldname": "program_title",
+   "fieldtype": "Data",
+   "label": "Program Title",
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_vwbn",
    "fieldtype": "Column Break"
   },
@@ -118,6 +135,11 @@
    "fieldtype": "Data",
    "label": "Batch Title",
    "read_only": 1
+  },
+  {
+   "fieldname": "certificate_image",
+   "fieldtype": "Attach Image",
+   "label": "Certificate Image"
   }
  ],
  "grid_page_length": 50,

@@ -1,0 +1,202 @@
+/* ============================================================================
+   diGiLog Light Theme
+   ----------------------------------------------------------------------------
+   Re-skins the (default-branch) marketing surfaces from the dark slate/purple
+   neon theme to the diGiLog design system: near-white canvas, navy #1E0059
+   headings, slate-gray body, white cards with soft shadows, and purple #754BE5
+   brand accents. Scoped to `.digilog-light-theme` (set via brand.landingRootClass)
+   so other brands (SmartHR / Producive / Jetstone) are unaffected.
+
+   Palette (from the diGiLog "Color" design-system sheet):
+     Primary 100 #1E0059  Primary 80 #754BE5  Primary 60 #A284F1
+     Primary 40 #D5C6FB   Primary 20 #F1ECFF   (secondary ramp end #6935CF)
+     Base 80 #4C5569  Base 70 #62708D  Base 50 #93A1BE  Base 30 #D6DFF3
+     Info #1563FF  Success #5FCF62  Warning #F07D13  Danger #DD4347
+   This is a colors/background re-skin only — no layout or content changes.
+   ========================================================================== */
+
+.digilog-light-theme {
+  color: #1e0059; /* base text -> deep indigo */
+}
+
+/* ---------------------------------------------------------------------------
+   1. Text: white / light-slate -> navy + readable greys
+   (gradient buttons, colored tiles and embedded dark device mockups are
+    re-exempted further down so their text stays light)
+   --------------------------------------------------------------------------- */
+.digilog-light-theme .text-white,
+.digilog-light-theme .text-white\/90,
+.digilog-light-theme .text-white\/80,
+.digilog-light-theme .text-white\/70,
+.digilog-light-theme .text-white\/60 {
+  color: #1e0059 !important;
+}
+
+.digilog-light-theme .text-slate-100 { color: #1e293b !important; }
+.digilog-light-theme .text-slate-200 { color: #334155 !important; }
+.digilog-light-theme .text-slate-300 { color: #475569 !important; } /* body copy */
+.digilog-light-theme .text-slate-400 { color: #64748b !important; } /* muted */
+
+/* Accent text (badges / icons / links) -> saturated digilog accents that
+   read on white. Mid-light tailwind shades (300/400) are too pale on a
+   near-white canvas. */
+.digilog-light-theme .text-blue-200 { color: #1d4ed8 !important; }
+.digilog-light-theme .text-blue-300,
+.digilog-light-theme .text-blue-400 { color: #1563ff !important; } /* Info */
+.digilog-light-theme .text-purple-300,
+.digilog-light-theme .text-purple-400 { color: #754be5 !important; } /* Primary */
+.digilog-light-theme .text-green-200,
+.digilog-light-theme .text-green-300,
+.digilog-light-theme .text-green-400 { color: #16a34a !important; } /* Success */
+.digilog-light-theme .text-amber-300,
+.digilog-light-theme .text-amber-400 { color: #d97706 !important; } /* Warning */
+.digilog-light-theme .text-orange-300 { color: #ea580c !important; }
+.digilog-light-theme .text-yellow-300,
+.digilog-light-theme .text-yellow-400 { color: #ca8a04 !important; }
+.digilog-light-theme .text-pink-400 { color: #db2777 !important; }
+.digilog-light-theme .text-red-200 { color: #b91c1c !important; }
+.digilog-light-theme .text-red-400 { color: #dc2626 !important; }
+
+/* Hover -> navy (default dark theme hovered links to white) */
+.digilog-light-theme .hover\:text-white:hover { color: #1e0059 !important; }
+
+/* Keep WHITE text wherever it sits on a colored gradient (buttons / icon tiles
+   / pills). text-white on the same element OR as a descendant. */
+.digilog-light-theme [class*="bg-gradient-to-"].text-white,
+.digilog-light-theme [class*="bg-gradient-to-"] .text-white,
+.digilog-light-theme [class*="bg-gradient-to-"] .hover\:text-white {
+  color: #ffffff !important;
+}
+
+/* ---------------------------------------------------------------------------
+   2. Glassmorphism: translucent-white surfaces -> solid white cards
+   (existing shadow-lg / shadow-2xl utilities supply the soft elevation)
+   --------------------------------------------------------------------------- */
+.digilog-light-theme .bg-white\/5,
+.digilog-light-theme .bg-white\/10,
+.digilog-light-theme .bg-white\/15,
+.digilog-light-theme .bg-white\/20,
+.digilog-light-theme .bg-white\/90 {
+  background-color: #ffffff !important;
+  border-color: rgba(30, 0, 89, 0.08) !important;
+}
+
+/* Subtle hover lift for surfaces */
+.digilog-light-theme .hover\:bg-white\/5:hover,
+.digilog-light-theme .hover\:bg-white\/10:hover,
+.digilog-light-theme .hover\:bg-white\/20:hover {
+  background-color: #f4f2fd !important; /* faint primary-20 wash */
+}
+
+/* ---------------------------------------------------------------------------
+   3. Borders: white-alpha hairlines -> navy-tint hairlines
+   --------------------------------------------------------------------------- */
+.digilog-light-theme .border-white\/10,
+.digilog-light-theme .border-white\/50,
+.digilog-light-theme .divide-white\/10 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(30, 0, 89, 0.08) !important;
+}
+.digilog-light-theme .border-white\/20 { border-color: rgba(30, 0, 89, 0.12) !important; }
+.digilog-light-theme .border-white\/30 { border-color: rgba(30, 0, 89, 0.16) !important; }
+.digilog-light-theme .hover\:border-white\/20:hover { border-color: rgba(30, 0, 89, 0.16) !important; }
+.digilog-light-theme .hover\:border-white\/30:hover { border-color: rgba(30, 0, 89, 0.22) !important; }
+
+/* ---------------------------------------------------------------------------
+   4. Sticky-header / mobile-menu dark chrome -> light
+   (StickyHeader's scrolled bg gets a digilog branch in the component; these
+    cover the mobile drawer + scrim.)
+   --------------------------------------------------------------------------- */
+.digilog-light-theme .bg-slate-900\/95 { /* drawer scrim */
+  background-color: rgba(20, 8, 48, 0.45) !important;
+}
+.digilog-light-theme .bg-slate-900\/98, /* slide-out drawer panel */
+.digilog-light-theme .bg-slate-900\/90 { /* scrolled header fallback */
+  background-color: rgba(255, 255, 255, 0.96) !important;
+  border-color: rgba(30, 0, 89, 0.08) !important;
+}
+
+/* Light-mode safety for the floating hero/AI "stat" cards that ship with
+   dark: variants — keep them light even if a global .dark class is active. */
+.digilog-light-theme .dark\:bg-gray-800\/90,
+.digilog-light-theme .dark\:bg-slate-800\/90 { background-color: rgba(255, 255, 255, 0.92) !important; }
+.digilog-light-theme .dark\:text-white { color: #1f2937 !important; }
+
+/* ---------------------------------------------------------------------------
+   5. Clipped gradient headings (bg-clip-text text-transparent)
+   The default branch uses near-white stops (from-white via-blue-100 ...) that
+   vanish on a light bg. Repaint ALL clipped headings to a navy -> purple ramp.
+   --------------------------------------------------------------------------- */
+.digilog-light-theme .bg-clip-text.text-transparent {
+  background-image: linear-gradient(90deg, #1e0059 0%, #754be5 100%) !important;
+  color: transparent !important;
+}
+
+/* ---------------------------------------------------------------------------
+   6. Brand CTA button gradients (blue/pink neon) -> digilog purple
+   Targeted by their exact stop combos so multi-color feature-icon tiles
+   (e.g. from-blue-500 to-cyan-400) keep their palette-consistent variety.
+   --------------------------------------------------------------------------- */
+.digilog-light-theme .from-blue-500.via-purple-500.to-pink-500:not(.bg-clip-text),
+.digilog-light-theme .from-blue-500.to-purple-600:not(.bg-clip-text),
+.digilog-light-theme .from-purple-500.to-blue-600:not(.bg-clip-text),
+.digilog-light-theme .from-blue-400.to-purple-500:not(.bg-clip-text),
+.digilog-light-theme .from-blue-600.to-purple-600:not(.bg-clip-text),
+.digilog-light-theme .from-blue-400.via-purple-400.to-pink-400:not(.bg-clip-text) {
+  background-image: linear-gradient(90deg, #754be5 0%, #6935cf 100%) !important;
+}
+.digilog-light-theme .from-blue-500.via-purple-500.to-pink-500:hover,
+.digilog-light-theme .from-blue-500.to-purple-600:hover,
+.digilog-light-theme .from-purple-500.to-blue-600:hover,
+.digilog-light-theme .from-blue-600.to-purple-600:hover {
+  background-image: linear-gradient(90deg, #6935cf 0%, #1e0059 100%) !important;
+}
+
+/* Soften neon glow shadows that read as "dark theme" on a light canvas */
+.digilog-light-theme .shadow-purple-500\/50,
+.digilog-light-theme .shadow-purple-500\/70,
+.digilog-light-theme .hover\:shadow-purple-500\/70:hover {
+  --tw-shadow-color: rgba(117, 75, 229, 0.28) !important;
+  --tw-shadow: var(--tw-shadow-colored) !important;
+}
+
+/* Low-opacity accent chips/bands tuned for dark -> a touch more presence */
+.digilog-light-theme .bg-blue-500\/10 { background-color: rgba(21, 99, 255, 0.10) !important; }
+.digilog-light-theme .bg-purple-500\/10 { background-color: rgba(117, 75, 229, 0.10) !important; }
+.digilog-light-theme .border-blue-500\/20 { border-color: rgba(21, 99, 255, 0.28) !important; }
+.digilog-light-theme .border-blue-500\/30 { border-color: rgba(21, 99, 255, 0.30) !important; }
+.digilog-light-theme .border-purple-500\/30 { border-color: rgba(117, 75, 229, 0.30) !important; }
+
+/* ---------------------------------------------------------------------------
+   7. Embedded dark "device mockups" (ATS comparison AI-dashboard & legacy ATS)
+   Kept intentionally dark as product-screenshot panels. Re-assert their light
+   text so it stays readable against the dark panel (overrides §1 by specificity).
+   --------------------------------------------------------------------------- */
+.digilog-light-theme [class*="blue-900"] .text-white,
+.digilog-light-theme [class*="purple-900"] .text-white,
+.digilog-light-theme [class*="green-900"] .text-white,
+.digilog-light-theme .bg-slate-900\/80 .text-white,
+.digilog-light-theme .bg-slate-800 .text-white,
+.digilog-light-theme .bg-slate-700 .text-white {
+  color: #ffffff !important;
+}
+.digilog-light-theme [class*="blue-900"] .text-slate-300,
+.digilog-light-theme [class*="purple-900"] .text-slate-300,
+.digilog-light-theme .bg-slate-900\/80 .text-slate-300,
+.digilog-light-theme .bg-slate-800 .text-slate-300,
+.digilog-light-theme .bg-slate-800 .text-slate-400,
+.digilog-light-theme .bg-slate-700 .text-slate-300,
+.digilog-light-theme .bg-slate-700 .text-slate-400 {
+  color: #cbd5e1 !important;
+}
+.digilog-light-theme [class*="blue-900"] .text-blue-200,
+.digilog-light-theme [class*="blue-900"] .text-blue-300 { color: #bfdbfe !important; }
+.digilog-light-theme [class*="blue-900"] .text-green-400,
+.digilog-light-theme [class*="green-900"] .text-green-200,
+.digilog-light-theme [class*="green-900"] .text-green-400 { color: #86efac !important; }
+/* Keep their translucent-white surfaces translucent (not solid white cards) */
+.digilog-light-theme [class*="blue-900"] .bg-white\/10,
+.digilog-light-theme [class*="purple-900"] .bg-white\/10,
+.digilog-light-theme .bg-slate-800 .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.10) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}

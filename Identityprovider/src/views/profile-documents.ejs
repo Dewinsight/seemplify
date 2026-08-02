@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>My Documents - Seemplify</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        <%- include('../public/css/idp-theme.css') %>
+    </style>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/profile-dashboard.css?v=2">
+    <script src="/js/theme.js?v=2"></script>
+    <style>
+        .document-toolbar {
+            display: grid;
+            gap: 16px;
+        }
+
+        .document-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .document-summary-copy {
+            color: var(--muted);
+            max-width: 720px;
+        }
+
+        .document-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .document-callout {
+            display: grid;
+            gap: 10px;
+            padding: 16px 18px;
+            border: 1px solid rgba(245, 158, 11, 0.22);
+            border-radius: 16px;
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .document-callout-title {
+            margin: 0;
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .document-callout-copy {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .document-stat {
+            min-width: 120px;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--hover-bg);
+        }
+
+        .document-stat-value {
+            color: var(--text);
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .document-stat-label {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .document-filters {
+            display: grid;
+            grid-template-columns: minmax(0, 2fr) repeat(2, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .document-results-meta {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .document-list {
+            display: grid;
+            gap: 14px;
+        }
+
+        .document-card {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 18px;
+            align-items: center;
+        }
+
+        .document-card--needs-action {
+            border-color: rgba(245, 158, 11, 0.24);
+            box-shadow: 0 16px 32px rgba(245, 158, 11, 0.08);
+        }
+
+        .document-card-main {
+            min-width: 0;
+        }
+
+        .document-card-head {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .document-card-title {
+            margin: 0;
+            color: var(--text);
+            font-size: 18px;
+            line-height: 1.2;
+        }
+
+        .document-card-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .document-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 10px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: var(--hover-bg);
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .document-badge--needs_action {
+            border-color: rgba(245, 158, 11, 0.25);
+            background: rgba(245, 158, 11, 0.12);
+            color: #b45309;
+        }
+
+        .document-badge--completed {
+            border-color: rgba(16, 185, 129, 0.2);
+            background: rgba(16, 185, 129, 0.12);
+            color: #047857;
+        }
+
+        .document-badge--workflow {
+            color: var(--brand);
+        }
+
+        .document-card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 18px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .document-card-description {
+            margin-top: 10px;
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .document-card-instruction {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(99, 102, 241, 0.08);
+            color: var(--text);
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        .document-card-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .document-action-primary {
+            min-width: 140px;
+            justify-content: center;
+        }
+
+        .document-empty {
+            padding: 40px 24px;
+            text-align: center;
+            color: var(--muted);
+        }
+
+        .document-empty h3 {
+            margin: 0 0 8px;
+            color: var(--text);
+            font-size: 20px;
+        }
+
+        .document-empty p {
+            margin: 0;
+        }
+
+        @media (max-width: 900px) {
+            .document-filters {
+                grid-template-columns: 1fr;
+            }
+
+            .document-card {
+                grid-template-columns: 1fr;
+            }
+
+            .document-card-actions {
+                justify-content: flex-start;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <%- include('partials/nav', { activePage: 'profile' }) %>
+
+    <% const documentList = Array.isArray(documents) ? documents : []; %>
+    <% const defaultWorkflow = defaultWorkflowFilter || 'all'; %>
+    <% const defaultStatus = defaultStatusFilter || 'all'; %>
+    <% const defaultSearch = defaultSearchQuery || ''; %>
+    <% const isOnboardingActionView = defaultWorkflow === 'onboarding' && defaultStatus === 'needs_action'; %>
+    <% const actionCount = documentList.filter(doc => doc.statusKey === 'needs_action').length; %>
+    <% const completedCount = documentList.filter(doc => doc.statusKey === 'completed').length; %>
+    <% const availableWorkflows = (workflowTypes || []).filter(type => type === defaultWorkflow || documentList.some(doc => doc.workflowType === type)); %>
+
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>My Documents</h1>
+                <div class="header-subtitle">
+                    Browse the documents assigned or completed through Document Workspace.
+                </div>
+            </div>
+        </div>
+
+        <%- include('partials/profile-nav', { activeProfileSection }) %>
+
+        <div class="card">
+            <div class="document-toolbar">
+                <div class="document-summary">
+                    <div class="document-summary-copy">
+                        <% if (isOnboardingActionView) { %>
+                            This view is focused on onboarding documents that still need your signature or action so you can finish setup quickly.
+                        <% } else { %>
+                            This list shows your document-workspace files across onboarding, agreements, policy acknowledgements, and other document workflows.
+                        <% } %>
+                    </div>
+                    <a href="<%= isOnboardingActionView ? '/documents?workflow=onboarding' : '/documents' %>" class="btn btn-secondary">Open Document Workspace</a>
+                </div>
+
+                <% if (actionCount > 0) { %>
+                    <div class="document-callout">
+                        <h2 class="document-callout-title">
+                            <%= actionCount %> document<%= actionCount === 1 ? '' : 's' %> still need your action
+                        </h2>
+                        <div class="document-callout-copy">
+                            Use <strong>Review &amp; Sign</strong> on any highlighted row. That opens the exact onboarding step where the signing controls live.
+                            <strong>Download</strong> only saves a copy and does not complete the signature.
+                        </div>
+                    </div>
+                <% } %>
+
+                <div class="document-stats">
+                    <div class="document-stat">
+                        <div class="document-stat-value"><%= documentList.length %></div>
+                        <div class="document-stat-label">Documents</div>
+                    </div>
+                    <div class="document-stat">
+                        <div class="document-stat-value"><%= actionCount %></div>
+                        <div class="document-stat-label">Needs Action</div>
+                    </div>
+                    <div class="document-stat">
+                        <div class="document-stat-value"><%= completedCount %></div>
+                        <div class="document-stat-label">Completed</div>
+                    </div>
+                </div>
+
+                <% if (documentList.length > 0) { %>
+                    <div>
+                        <div class="document-filters">
+                            <div class="form-group" style="margin: 0;">
+                                <label for="documentSearch">Search</label>
+                                <input type="search" id="documentSearch" value="<%= defaultSearch %>" placeholder="Search by title, file name, organization, or workflow">
+                            </div>
+
+                            <div class="form-group" style="margin: 0;">
+                                <label for="workflowFilter">Workflow</label>
+                                <select id="workflowFilter">
+                                    <option value="all" <%= defaultWorkflow === 'all' ? 'selected' : '' %>>All workflows</option>
+                                    <% availableWorkflows.forEach(type => { %>
+                                        <option value="<%= type %>" <%= defaultWorkflow === type ? 'selected' : '' %>><%= (workflowLabels && workflowLabels[type]) || type %></option>
+                                    <% }) %>
+                                </select>
+                            </div>
+
+                            <div class="form-group" style="margin: 0;">
+                                <label for="statusFilter">Status</label>
+                                <select id="statusFilter">
+                                    <option value="all" <%= defaultStatus === 'all' ? 'selected' : '' %>>All statuses</option>
+                                    <option value="needs_action" <%= defaultStatus === 'needs_action' ? 'selected' : '' %>>Needs action</option>
+                                    <option value="completed" <%= defaultStatus === 'completed' ? 'selected' : '' %>>Completed</option>
+                                    <option value="available" <%= defaultStatus === 'available' ? 'selected' : '' %>>Available</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="document-results-meta">
+                            <span id="documentResultsCount"><%= documentList.length %> documents</span>
+                        </div>
+                    </div>
+                <% } %>
+            </div>
+        </div>
+
+        <% if (documentList.length === 0) { %>
+            <div class="card document-empty">
+                <h3>No documents yet</h3>
+                <p>Your document-workspace files will appear here once you receive or complete them.</p>
+            </div>
+        <% } else { %>
+            <div id="documentFilteredEmpty" class="card document-empty" hidden>
+                <h3>No matching documents</h3>
+                <p>
+                    <% if (isOnboardingActionView) { %>
+                        No onboarding documents currently need your signature or action here. If onboarding is still incomplete, open Document Workspace to finish any non-document tasks.
+                    <% } else { %>
+                        Try changing the search text or filter selections.
+                    <% } %>
+                </p>
+            </div>
+
+            <div id="documentList" class="document-list">
+                <% documentList.forEach(doc => { %>
+                    <article
+                        class="card document-card<%= doc.requiresSignature ? ' document-card--needs-action' : '' %>"
+                        data-document-card
+                        data-search="<%= doc.searchText %>"
+                        data-workflow="<%= doc.workflowType %>"
+                        data-status="<%= doc.statusKey %>"
+                    >
+                        <div class="document-card-main">
+                            <div class="document-card-head">
+                                <h2 class="document-card-title"><%= doc.title %></h2>
+                                <div class="document-card-badges">
+                                    <span class="document-badge document-badge--<%= doc.statusKey %>"><%= doc.statusLabel %></span>
+                                    <span class="document-badge document-badge--workflow"><%= doc.workflowLabel %></span>
+                                    <span class="document-badge"><%= doc.subtitle %></span>
+                                </div>
+                            </div>
+
+                            <div class="document-card-meta">
+                                <span><strong>Organization:</strong> <%= doc.organizationName %></span>
+                                <span><strong>File:</strong> <%= doc.fileName %></span>
+                                <span><strong>Type:</strong> <%= doc.itemTypeLabel %></span>
+                                <% if (doc.issuedAt) { %>
+                                    <span><strong>Updated:</strong> <%= new Date(doc.issuedAt).toLocaleDateString() %></span>
+                                <% } %>
+                                <% if (doc.dueAt && doc.statusKey === 'needs_action') { %>
+                                    <span><strong>Due:</strong> <%= new Date(doc.dueAt).toLocaleDateString() %></span>
+                                <% } %>
+                            </div>
+
+                            <% if (doc.description) { %>
+                                <div class="document-card-description"><%= doc.description %></div>
+                            <% } %>
+
+                            <% if (doc.requiresSignature) { %>
+                                <div class="document-card-instruction">
+                                    This document still needs your signature. Open <strong>Review &amp; Sign</strong> to jump into the signing screen for this exact onboarding document.
+                                </div>
+                            <% } %>
+                        </div>
+
+                        <div class="document-card-actions">
+                            <a
+                                href="<%= doc.actionUrl || doc.viewUrl %>"
+                                class="btn <%= doc.requiresSignature ? 'btn-primary document-action-primary' : 'btn-secondary' %>"
+                                <%= doc.requiresSignature ? '' : 'target="_blank" rel="noreferrer"' %>
+                            >
+                                <%= doc.actionLabel || 'View' %>
+                            </a>
+                            <% if (doc.requiresSignature) { %>
+                                <a href="<%= doc.viewUrl %>" class="btn btn-secondary" target="_blank" rel="noreferrer">Preview</a>
+                            <% } %>
+                            <a href="<%= doc.downloadUrl %>" class="btn <%= doc.requiresSignature ? 'btn-secondary' : 'btn-primary' %>">Download</a>
+                        </div>
+                    </article>
+                <% }) %>
+            </div>
+        <% } %>
+    </div>
+
+    <script>
+        (() => {
+            const searchInput = document.getElementById('documentSearch');
+            const workflowFilter = document.getElementById('workflowFilter');
+            const statusFilter = document.getElementById('statusFilter');
+            const resultsCount = document.getElementById('documentResultsCount');
+            const filteredEmpty = document.getElementById('documentFilteredEmpty');
+            const cards = Array.from(document.querySelectorAll('[data-document-card]'));
+
+            if (!cards.length || !searchInput || !workflowFilter || !statusFilter) {
+                return;
+            }
+
+            const updateCountLabel = (count) => {
+                if (!resultsCount) return;
+                resultsCount.textContent = `${count} document${count === 1 ? '' : 's'}`;
+            };
+
+            const applyFilters = () => {
+                const query = searchInput.value.trim().toLowerCase();
+                const workflow = workflowFilter.value;
+                const status = statusFilter.value;
+                let visibleCount = 0;
+
+                cards.forEach((card) => {
+                    const matchesQuery = !query || (card.dataset.search || '').includes(query);
+                    const matchesWorkflow = workflow === 'all' || card.dataset.workflow === workflow;
+                    const matchesStatus = status === 'all' || card.dataset.status === status;
+                    const visible = matchesQuery && matchesWorkflow && matchesStatus;
+                    card.hidden = !visible;
+                    if (visible) {
+                        visibleCount += 1;
+                    }
+                });
+
+                updateCountLabel(visibleCount);
+
+                if (filteredEmpty) {
+                    filteredEmpty.hidden = visibleCount !== 0;
+                }
+            };
+
+            searchInput.addEventListener('input', applyFilters);
+            workflowFilter.addEventListener('change', applyFilters);
+            statusFilter.addEventListener('change', applyFilters);
+            applyFilters();
+        })();
+    </script>
+    <script src="/js/invitation-gatekeeper.js"></script>
+</body>
+
+</html>

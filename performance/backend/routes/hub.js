@@ -3,6 +3,7 @@ const router = express.Router();
 
 const { validateHubToken } = require('../middleware/hubAuth');
 const User = require('../models/User');
+const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
 
 // Hub launch endpoint - handles IdP-initiated SSO
 router.get('/launch', validateHubToken, async (req, res) => {
@@ -23,6 +24,8 @@ router.get('/launch', validateHubToken, async (req, res) => {
       teams: hubUser.teams || [],
       idpTeams: hubUser.teams || [],
       currentOrganization: hubUser.currentOrganization,
+      designation: hubUser.currentOrganization?.designation || null,
+      employeeId: hubUser.currentOrganization?.employeeId || null,
       userinfo: hubUser,
       hubInitiated: true, // Mark as hub-initiated login
     };
@@ -40,15 +43,41 @@ router.get('/launch', validateHubToken, async (req, res) => {
       req.session.currentOrganizationId = hubUser.organizations[0].id;
     }
 
+    // Verify subscription access for the current organization
+    if (req.session.currentOrganizationId) {
+      console.log('🔒 Verifying subscription access for org:', req.session.currentOrganizationId);
+      const subscriptionCheck = await verifySubscriptionAccess(
+        req.session.currentOrganizationId,
+        req.headers['authorization']?.replace('Bearer ', '') || hubUser.accessToken
+      );
+
+      if (!subscriptionCheck.allowed) {
+        console.log('❌ Subscription access denied for performance-management:', subscriptionCheck.reason);
+        // Redirect to IDP subscription required page
+        const subscriptionUrl = getSubscriptionRequiredUrl(
+          'performance-management',
+          req.session.currentOrganizationId,
+          subscriptionCheck.reason
+        );
+        return res.redirect(subscriptionUrl);
+      }
+      console.log('✅ Subscription access verified for performance-management');
+    }
+
     // Sync user profile and teams with local database
     // Note: Organizations come from IDP session only, not stored locally
     // Teams are cached for querying users in an organization
     let user = await User.findOne({ email: hubUser.email });
     if (user) {
       user.idpTeams = hubUser.teams || []; // Cache teams for org queries
+      user.idpOrganizations = hubUser.organizations || [];
       user.lastGrantRefresh = new Date();
       if (req.session.currentOrganizationId) {
         user.currentOrganizationId = req.session.currentOrganizationId;
+      }
+      if (hubUser.currentOrganization?.designation) {
+        user.profile = user.profile || {};
+        user.profile.title = hubUser.currentOrganization.designation;
       }
       await user.save();
     } else {
@@ -57,9 +86,11 @@ router.get('/launch', validateHubToken, async (req, res) => {
         profile: {
           displayName: hubUser.name,
           firstName: hubUser.name?.split(' ')[0],
-          lastName: hubUser.name?.split(' ').slice(1).join(' ')
+          lastName: hubUser.name?.split(' ').slice(1).join(' '),
+          title: hubUser.currentOrganization?.designation || undefined
         },
         idpTeams: hubUser.teams || [], // Cache teams for org queries
+        idpOrganizations: hubUser.organizations || [],
         currentOrganizationId: req.session.currentOrganizationId,
         lastGrantRefresh: new Date()
       });

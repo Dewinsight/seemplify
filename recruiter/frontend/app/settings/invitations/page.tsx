@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import organizationService from '@/services/organizationService';
 import { useOrganization } from '@/context/OrganizationContext';
+import { getIdpBaseUrl } from '@/utils/env';
 
 interface PendingInvite {
   _id: string;
@@ -48,7 +49,7 @@ interface PendingInvite {
 
 const InvitationsPage = () => {
   const { loadOrganizations } = useOrganization();
-  const idpUrl = process.env.NEXT_PUBLIC_IDP_URL || '';
+  const idpUrl = getIdpBaseUrl();
   const [invitations, setInvitations] = useState<PendingInvite[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [processingInvites, setProcessingInvites] = useState<Set<string>>(new Set());
@@ -76,8 +77,8 @@ const InvitationsPage = () => {
       case 'admin': return <Shield className="w-4 h-4 text-blue-600" />;
       case 'hr_manager': return <UserCheck className="w-4 h-4 text-green-600" />;
       case 'recruiter': return <User className="w-4 h-4 text-orange-600" />;
-      case 'interviewer': return <Eye className="w-4 h-4 text-muted-foreground" />;
-      default: return <User className="w-4 h-4 text-muted-foreground" />;
+      case 'interviewer': return <Eye className="w-4 h-4 text-gray-600" />;
+      default: return <User className="w-4 h-4 text-gray-600" />;
     }
   };
 
@@ -223,8 +224,8 @@ const InvitationsPage = () => {
           <CardContent className="py-12">
             <div className="text-center">
               <Mail className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">No pending invitations</h3>
-              <p className="text-muted-foreground">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No pending invitations</h3>
+              <p className="text-gray-500">
                 You don't have any pending organization invitations at the moment.
               </p>
             </div>
@@ -245,7 +246,7 @@ const InvitationsPage = () => {
                     
                     <div className="flex-1">
                       <div className="flex items-center space-x-2 mb-2">
-                        <h4 className="text-lg font-semibold text-foreground">
+                        <h4 className="text-lg font-semibold text-gray-900">
                           {invite.organization.name}
                         </h4>
                         <Badge 
@@ -258,10 +259,10 @@ const InvitationsPage = () => {
                       </div>
                       
                       {invite.organization.description && (
-                        <p className="text-muted-foreground mb-2">{invite.organization.description}</p>
+                        <p className="text-gray-600 mb-2">{invite.organization.description}</p>
                       )}
                       
-                      <div className="flex items-center text-sm text-muted-foreground space-x-4">
+                      <div className="flex items-center text-sm text-gray-500 space-x-4">
                         <span className="flex items-center space-x-1">
                           <User className="w-4 h-4" />
                           <span>

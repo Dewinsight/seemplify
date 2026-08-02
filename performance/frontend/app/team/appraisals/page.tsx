@@ -17,43 +17,34 @@ import {
 
 // Status chip colors
 const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  draft: 'default',
+  not_started: 'default',
+  goal_setting: 'info',
+  goal_approval_pending: 'warning',
   self_assessment_pending: 'warning',
-  self_assessment_submitted: 'info',
+  self_assessment_in_progress: 'info',
+  self_assessment_submitted: 'info', // legacy
   manager_review_pending: 'warning',
-  manager_review_submitted: 'info',
-  discussion_pending: 'warning',
-  discussion_completed: 'info',
-  calibration_pending: 'warning',
-  final_review: 'primary',
+  manager_review_in_progress: 'info',
+  final_review_pending: 'warning',
   completed: 'success',
-  acknowledged: 'success',
+  employee_acknowledged: 'success',
+  cancelled: 'error',
 };
 
 // Workflow steps
 const workflowSteps = [
   'Self Assessment',
   'Manager Review',
-  'Discussion',
-  'Calibration',
-  'Final Review'
+  'Final Review',
+  'Completed'
 ];
 
 function getActiveStep(status: string): number {
-  const stepMap: Record<string, number> = {
-    draft: 0,
-    self_assessment_pending: 0,
-    self_assessment_submitted: 1,
-    manager_review_pending: 1,
-    manager_review_submitted: 2,
-    discussion_pending: 2,
-    discussion_completed: 3,
-    calibration_pending: 3,
-    final_review: 4,
-    completed: 5,
-    acknowledged: 5,
-  };
-  return stepMap[status] || 0;
+  if (status === 'completed' || status === 'employee_acknowledged') return 4;
+  if (status === 'final_review_pending') return 2;
+  if (status === 'self_assessment_submitted' || status.startsWith('manager_review')) return 1;
+  if (status.startsWith('self_assessment')) return 0;
+  return 0;
 }
 
 export default function TeamAppraisalsPage() {
@@ -81,7 +72,7 @@ export default function TeamAppraisalsPage() {
 
   // Count appraisals requiring action
   const pendingCount = appraisals.filter((a: any) =>
-    ['self_assessment_submitted', 'manager_review_pending'].includes(a.status)
+    ['self_assessment_submitted', 'manager_review_pending', 'manager_review_in_progress', 'final_review_pending'].includes(a.status)
   ).length;
 
   if (!isManager) {
@@ -150,11 +141,13 @@ export default function TeamAppraisalsPage() {
                 >
                   <MenuItem value="all">All Statuses</MenuItem>
                   <MenuItem value="self_assessment_pending">Self Assessment Pending</MenuItem>
-                  <MenuItem value="self_assessment_submitted">Self Assessment Submitted</MenuItem>
+                  <MenuItem value="self_assessment_in_progress">Self Assessment In Progress</MenuItem>
+                  <MenuItem value="self_assessment_submitted">Self Assessment Submitted (Legacy)</MenuItem>
                   <MenuItem value="manager_review_pending">Manager Review Pending</MenuItem>
-                  <MenuItem value="manager_review_submitted">Manager Review Submitted</MenuItem>
-                  <MenuItem value="discussion_pending">Discussion Pending</MenuItem>
+                  <MenuItem value="manager_review_in_progress">Manager Review In Progress</MenuItem>
+                  <MenuItem value="final_review_pending">Final Review Pending</MenuItem>
                   <MenuItem value="completed">Completed</MenuItem>
+                  <MenuItem value="cancelled">Cancelled</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -203,7 +196,9 @@ export default function TeamAppraisalsPage() {
             </TableHead>
             <TableBody>
               {filteredAppraisals.map((appraisal: any) => {
-                const needsAction = ['self_assessment_submitted', 'manager_review_pending'].includes(appraisal.status);
+                const needsReview = ['self_assessment_submitted', 'manager_review_pending', 'manager_review_in_progress'].includes(appraisal.status);
+                const needsFinalReview = appraisal.status === 'final_review_pending';
+                const needsAction = needsReview || needsFinalReview;
 
                 return (
                   <TableRow
@@ -233,8 +228,8 @@ export default function TeamAppraisalsPage() {
                         {appraisal.cycleId?.name || 'Review Cycle'}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {appraisal.cycleId?.reviewPeriod?.startDate
-                          ? `${new Date(appraisal.cycleId.reviewPeriod.startDate).toLocaleDateString()} - ${new Date(appraisal.cycleId.reviewPeriod.endDate).toLocaleDateString()}`
+                        {appraisal.cycleId?.periodStart
+                          ? `${new Date(appraisal.cycleId.periodStart).toLocaleDateString()} - ${new Date(appraisal.cycleId.periodEnd).toLocaleDateString()}`
                           : 'N/A'}
                       </Typography>
                     </TableCell>
@@ -284,12 +279,16 @@ export default function TeamAppraisalsPage() {
                     <TableCell align="right">
                       <Button
                         variant={needsAction ? 'contained' : 'outlined'}
-                        color={needsAction ? 'warning' : 'primary'}
+                        color={needsFinalReview ? 'success' : needsReview ? 'warning' : 'primary'}
                         size="small"
-                        startIcon={needsAction ? <PlayArrow /> : <Visibility />}
-                        onClick={() => needsAction ? handleStartManagerReview(appraisal._id) : handleViewAppraisal(appraisal._id)}
+                        startIcon={needsFinalReview ? <CheckCircle /> : needsReview ? <PlayArrow /> : <Visibility />}
+                        onClick={() => {
+                          if (needsFinalReview) return router.push(`/appraisals/${appraisal._id}/final-review`);
+                          if (needsReview) return handleStartManagerReview(appraisal._id);
+                          return handleViewAppraisal(appraisal._id);
+                        }}
                       >
-                        {needsAction ? 'Review' : 'View'}
+                        {needsFinalReview ? 'Finalize' : needsReview ? 'Review' : 'View'}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -319,17 +318,17 @@ export default function TeamAppraisalsPage() {
                 <Typography variant="h3" color="warning.main">
                   {pendingCount}
                 </Typography>
-                <Typography variant="body2">Pending Review</Typography>
+                <Typography variant="body2">Requiring Action</Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 12, md: 3 }}>
             <Card>
               <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h3" color="info.main">
-                  {filteredAppraisals.filter((a: any) => a.status?.includes('discussion')).length}
+                <Typography variant="h3" color="warning.main">
+                  {filteredAppraisals.filter((a: any) => a.status === 'final_review_pending').length}
                 </Typography>
-                <Typography variant="body2">In Discussion</Typography>
+                <Typography variant="body2">Final Review Pending</Typography>
               </CardContent>
             </Card>
           </Grid>
@@ -337,7 +336,7 @@ export default function TeamAppraisalsPage() {
             <Card>
               <CardContent sx={{ textAlign: 'center' }}>
                 <Typography variant="h3" color="success.main">
-                  {filteredAppraisals.filter((a: any) => ['completed', 'acknowledged'].includes(a.status)).length}
+                  {filteredAppraisals.filter((a: any) => ['completed', 'employee_acknowledged'].includes(a.status)).length}
                 </Typography>
                 <Typography variant="body2">Completed</Typography>
               </CardContent>

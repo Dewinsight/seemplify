@@ -1,6 +1,28 @@
 import { Organization } from '../models/Organization.js'
 import { Team } from '../models/Team.js'
 import { Account } from '../models/Account.js'
+import { MongoAdapter } from '../adapter/mongoAdapter.js'
+import { hasLineManagerRole } from '../utils/teamManager.js'
+
+/**
+ * Fallback: resolve account from hub session cookie (_session)
+ * Mirrors logic in index.js getSessionFromCookies.
+ */
+const getAccountFromSessionCookie = async (req) => {
+  try {
+    const sessionCookie = req.cookies?._session
+    if (!sessionCookie) return null
+
+    const adapter = new MongoAdapter('Session')
+    const sessionData = await adapter.find(sessionCookie)
+    if (!sessionData?.accountId) return null
+
+    return await Account.findOne({ sub: sessionData.accountId })
+  } catch (error) {
+    console.error('Session cookie lookup error:', error.message)
+    return null
+  }
+}
 
 /**
  * Middleware to require authenticated user
@@ -9,6 +31,15 @@ import { Account } from '../models/Account.js'
 export const requireAuth = async (req, res, next) => {
   // Check for session user (set during login)
   if (!req.session || !req.session.accountId) {
+    // Fallback to hub session cookie
+    const cookieAccount = await getAccountFromSessionCookie(req)
+    if (cookieAccount) {
+      req.session = req.session || {}
+      req.session.accountId = cookieAccount.sub
+      req.user = cookieAccount
+      return next()
+    }
+
     return res.status(401).json({ error: 'Authentication required' })
   }
 
@@ -42,6 +73,7 @@ export const requireOrganizationMember = async (req, res, next) => {
     if (!organization) {
       return res.status(404).json({ error: 'Organization not found' })
     }
+    await organization.save()
 
     const member = organization.members.find(
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
@@ -148,19 +180,13 @@ export const requireTeamManager = async (req, res, next) => {
       return res.status(404).json({ error: 'Team not found' })
     }
 
-    // Check if user is the team manager
-    if (!team.manager || team.manager.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ error: 'Not team manager' })
-    }
-
-    // CRITICAL: Check that manager has line_manager role
     const teamMember = team.members.find(
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
     )
 
-    if (!teamMember || teamMember.role !== 'line_manager') {
+    if (!teamMember || !hasLineManagerRole(team, req.user._id)) {
       return res.status(403).json({
-        error: 'Manager must have line_manager role in team'
+        error: 'Line manager role required'
       })
     }
 
@@ -238,20 +264,17 @@ export const requireTeamAdminOrManager = async (req, res, next) => {
     )
 
     const isOrgAdmin = orgMember && ['owner', 'admin'].includes(orgMember.role)
-
-    // Check team manager with line_manager role
-    const isTeamManager = team.manager &&
-      team.manager.toString() === req.user._id.toString()
+    const isDepartmentHead = organization.isDepartmentHead(req.user._id, team.department)
 
     const teamMember = team.members.find(
       m => m.account.toString() === req.user._id.toString() && m.status === 'active'
     )
 
-    const hasLineManagerRole = teamMember && teamMember.role === 'line_manager'
+    const isTeamManager = teamMember && hasLineManagerRole(team, req.user._id)
 
-    if (!isOrgAdmin && !(isTeamManager && hasLineManagerRole)) {
+    if (!isOrgAdmin && !isDepartmentHead && !isTeamManager) {
       return res.status(403).json({
-        error: 'Organization admin or team manager (with line_manager role) required'
+        error: 'Organization admin, department head, or line manager role required'
       })
     }
 
@@ -260,7 +283,8 @@ export const requireTeamAdminOrManager = async (req, res, next) => {
     req.memberRole = orgMember?.role
     req.teamMember = teamMember
     req.isOrgAdmin = isOrgAdmin
-    req.isTeamManager = isTeamManager && hasLineManagerRole
+    req.isDepartmentHead = isDepartmentHead
+    req.isTeamManager = !!isTeamManager
 
     next()
   } catch (error) {

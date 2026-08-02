@@ -5,11 +5,11 @@
 const Job = require('../models/Job');
 const Notification = require('../models/Notification');
 const embeddingService = require('./embeddingService');
-const AzureOpenAIService = require('./azureOpenAIService'); // For potential AI helper methods
+const AIModelService = require('./aiModelService');
 
 class AiJobService {
     constructor() {
-        this.azureOpenAIService = new AzureOpenAIService(); // Initialize if direct Azure calls are needed from this service
+        this.aiModelService = new AIModelService();
         console.log('AiJobService initialized');
     }
 
@@ -285,12 +285,12 @@ class AiJobService {
                 return false;
             }
 
-            // Delete embedding from Weaviate first
+            // Delete embedding from vector store first
             try {
-                await embeddingService.deleteEmbedding(jobId, 'jobs');
-                console.log(`[AiJobService] Job embedding deleted from Weaviate for job: ${jobId}`);
+                await embeddingService.deleteEmbedding(jobId, embeddingService.jobIndexName);
+                console.log(`[AiJobService] Job embedding deleted from vector store for job: ${jobId}`);
             } catch (embeddingError) {
-                console.warn(`[AiJobService] WARNING: Failed to delete job embedding for ${jobId} from Weaviate:`, embeddingError.message);
+                console.warn(`[AiJobService] WARNING: Failed to delete job embedding for ${jobId}:`, embeddingError.message);
                 // Continue with DB deletion even if embedding deletion fails
             }
 
@@ -316,14 +316,14 @@ class AiJobService {
                 throw new Error('Job not found');
             }
 
-            const weaviateExists = await embeddingService.checkEmbeddingExists(jobId, 'jobs');
+            const vectorIndexExists = await embeddingService.checkEmbeddingExists(jobId, embeddingService.jobIndexName);
             
             return {
                 jobId: job._id,
                 isEmbeddedInDB: job.isEmbedded,
                 embeddingCreatedAt: job.embeddingCreatedAt,
-                isEmbeddedInWeaviate: weaviateExists,
-                isConsistent: job.isEmbedded === weaviateExists
+                vectorIndexExists,
+                isConsistent: job.isEmbedded === vectorIndexExists
             };
         } catch (error) {
             console.error(`[AiJobService] Error getting embedding status for job ID ${jobId}:`, error);
@@ -354,32 +354,32 @@ class AiJobService {
     }
     
     /**
-     * Generate comprehensive job details using Azure AI.
+     * Generate comprehensive job details using the managed AI runtime.
      * Creates description, requirements, responsibilities, and skills based on job basics.
      * @param {object} promptData - Basic job data (title, department, level, etc.).
      * @returns {Promise<object>} Generated job details.
      */
     async generateJobDetailsWithAzureAI(promptData) {
-        console.log('[AiJobService] Generating comprehensive job details with Azure AI:', promptData);
+        console.log('[AiJobService] Generating comprehensive job details.');
         try {
             const { title, department, location, level, type, experience, education, existingDescription } = promptData;
             
-            // Call Azure OpenAI using the existing generateJobDescription method which returns structured data
-            console.log('[AiJobService] 🤖 Calling Azure OpenAI for comprehensive job generation...');
-            const jobGenerationResult = await this.azureOpenAIService.generateJobDescription(promptData);
+            // Use the shared model service, which returns structured job data.
+            console.log('[AiJobService] Calling the managed AI runtime for comprehensive job generation.');
+            const jobGenerationResult = await this.aiModelService.generateJobDescription(promptData);
             
             if (!jobGenerationResult.success) {
-                console.error('[AiJobService] ❌ Azure AI generation failed:', jobGenerationResult.error);
-                throw new Error(jobGenerationResult.error || 'Azure AI generation failed');
+                console.error('[AiJobService] AI generation failed:', jobGenerationResult.error);
+                throw new Error(jobGenerationResult.error || 'AI generation failed');
             }
             
-            console.log('[AiJobService] ✅ Azure OpenAI responded successfully');
+            console.log('[AiJobService] AI runtime responded successfully.');
             console.log('[AiJobService] 📊 Response structure:', Object.keys(jobGenerationResult));
 
             // Extract the generated content - the generateJobDescription method returns structured data
             let generatedContent = jobGenerationResult;
             
-            // Handle different response formats from Azure OpenAI
+            // Handle supported structured response formats.
             if (jobGenerationResult.extractedFields) {
                 generatedContent = jobGenerationResult.extractedFields;
             } else if (jobGenerationResult.jobDescription) {
@@ -409,7 +409,7 @@ class AiJobService {
             return comprehensiveJobDetails;
 
         } catch (error) {
-            console.error('[AiJobService] ❌ Error generating comprehensive job details with Azure AI:', error);
+            console.error('[AiJobService] Error generating comprehensive job details:', error);
             
             // Provide fallback content if AI generation fails
             console.log('[AiJobService] 🔄 Using fallback content generation');

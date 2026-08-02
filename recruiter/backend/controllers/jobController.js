@@ -2,8 +2,8 @@ const Job = require('../models/Job');
 const Department = require('../models/Department');
 const Notification = require('../models/Notification');
 const Candidate = require('../models/Candidate');
+const CVProcessingJob = require('../models/CVProcessingJob');
 const Organization = require('../models/Organization');
-const Plan = require('../models/Plan');
 const csv = require('csv-parser');
 const xlsx = require('xlsx');
 const fs = require('fs');
@@ -12,69 +12,14 @@ const embeddingService = require('../services/embeddingService');
 const InterviewService = require('../services/interviewService');
 const pipelineProgressionService = require('../services/pipelineProgressionService');
 const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
+const pipelineReportExportService = require('../services/pipelineReportExportService');
+const publicJobCreditService = require('../services/publicJobCreditService');
+const publicApplicationCapacityService = require('../services/publicApplicationCapacityService');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 const interviewController = require('./interviewController');
 
 const unlinkAsync = util.promisify(fs.unlink);
 const interviewService = new InterviewService();
-
-/**
- * Helper: Get upload candidate cost from organization's plan
- */
-async function getUploadCandidateCost(organizationId) {
-  try {
-    const organization = await Organization.findById(organizationId);
-    if (!organization) throw new Error('Organization not found');
-    
-    const plan = await Plan.findOne({ code: organization.subscription?.plan });
-    const uploadCost = plan?.credits?.creditCosts?.uploadCandidate || 3; // Default to 3 if not found
-    
-    return uploadCost;
-  } catch (error) {
-    console.error('Error getting upload candidate cost:', error);
-    return 3; // Fallback default
-  }
-}
-
-/**
- * Helper: Reserve credits for public job
- */
-async function reserveCreditsForJob(organizationId, jobId, creditsToReserve) {
-  const organization = await Organization.findById(organizationId);
-  if (!organization) throw new Error('Organization not found');
-  
-  const creditUsage = organization.subscription?.creditUsage || {};
-  const remainingCredits = creditUsage.remainingCredits || 0;
-  
-  if (remainingCredits < creditsToReserve) {
-    throw new Error(`Insufficient credits. Need ${creditsToReserve} credits, but only ${remainingCredits} available.`);
-  }
-  
-  // Deduct from organization's main credit pool
-  creditUsage.usedCredits = (creditUsage.usedCredits || 0) + creditsToReserve;
-  creditUsage.remainingCredits = remainingCredits - creditsToReserve;
-  
-  // Record transaction
-  if (!creditUsage.transactions) creditUsage.transactions = [];
-  creditUsage.transactions.push({
-    action: 'creditPurchase', // Using existing enum value for reservation
-    credits: creditsToReserve,
-    entityId: jobId,
-    entityType: 'job',
-    timestamp: new Date(),
-    balanceAfter: remainingCredits - creditsToReserve,
-    metadata: {
-      type: 'reservation',
-      description: `Reserved ${creditsToReserve} credits for public job`
-    }
-  });
-  
-  organization.subscription.creditUsage = creditUsage;
-  await organization.save();
-  
-  console.log(`💳 Reserved ${creditsToReserve} credits for public job ${jobId}`);
-  return creditsToReserve;
-}
 
 /**
  * Helper: Refund unused reserved credits back to organization
@@ -157,9 +102,17 @@ exports.createJob = async (req, res) => {
     if (req.body.applicationDeadline) jobData.applicationDeadline = new Date(req.body.applicationDeadline);
     if (req.body.startDate) jobData.startDate = new Date(req.body.startDate);
     if (!jobData.createdBy) delete jobData.createdBy;
+    delete jobData.reservedCredits;
+    delete jobData.publicApplicationCount;
+    delete jobData.publicApplicationReservations;
+    delete jobData.publicApplicationCreditUnitCost;
 
-    const job = new Job(jobData);
-    await job.save();
+    const job = jobData.isPublic
+      ? await publicJobCreditService.createJob({
+        jobData,
+        actorId: req.user?.id
+      })
+      : await new Job(jobData).save();
     console.log(`✅ Job created successfully: ${job.title}`);
 
     // Create activity notification for all organization members
@@ -184,7 +137,10 @@ exports.createJob = async (req, res) => {
     res.status(201).json({ msg: 'Job created successfully', job });
   } catch (error) {
     console.error('❌ Error creating job:', error);
-    res.status(500).json({ msg: 'Server error creating job', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.statusCode ? error.message : 'Server error creating job',
+      error: error.code || error.message
+    });
   }
 };
 
@@ -219,6 +175,10 @@ exports.getAllJobs = async (req, res) => {
 exports.getJobById = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
+    await publicApplicationCapacityService.reconcileInflatedCount({
+      jobId: req.params.id,
+      organizationId
+    });
     const job = await Job.findOne({ _id: req.params.id, organization: organizationId })
       .populate('department', 'name description')
       .populate('hiringManager', 'firstName lastName email')
@@ -249,79 +209,51 @@ exports.updateJob = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
     const decodedBody = decodeObjectHtmlEntities(req.body);
-    const { isPublic, candidateApplyLimit, ...otherUpdateData } = decodedBody;
+    const {
+      isPublic,
+      candidateApplyLimit,
+      // These fields are server-owned financial state.
+      reservedCredits: ignoredReservedCredits,
+      publicApplicationCount: ignoredApplicationCount,
+      publicApplicationReservations: ignoredReservations,
+      publicApplicationCreditUnitCost: ignoredUnitCost,
+      ...otherUpdateData
+    } = decodedBody;
+    void ignoredReservedCredits;
+    void ignoredApplicationCount;
+    void ignoredReservations;
+    void ignoredUnitCost;
 
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
-    if (!job) {
-      return res.status(404).json({ msg: 'Job not found' });
-    }
-
-    const wasPublic = job.isPublic;
-    const willBePublic = isPublic !== undefined ? isPublic : wasPublic;
-
-    // Handle public status change and credit management first
-    if (willBePublic !== wasPublic || (willBePublic && candidateApplyLimit !== job.candidateApplyLimit)) {
-      if (willBePublic) {
-        const applyLimit = candidateApplyLimit || 0;
-        if (applyLimit <= 0) {
-          return res.status(400).json({
-            msg: 'Candidate apply limit must be greater than 0 for public jobs',
-            error: 'INVALID_APPLY_LIMIT'
-          });
-        }
-
-        const uploadCost = await getUploadCandidateCost(organizationId);
-        const requiredCredits = applyLimit * uploadCost;
-        const currentReserved = job.reservedCredits || 0;
-        const creditDifference = requiredCredits - currentReserved;
-
-        if (creditDifference > 0) {
-          try {
-            await reserveCreditsForJob(organizationId, job._id, creditDifference);
-          } catch (creditError) {
-            return res.status(400).json({
-              msg: creditError.message,
-              error: 'INSUFFICIENT_CREDITS',
-              requiredCredits: creditDifference
-            });
-          }
-        } else if (creditDifference < 0) {
-          await refundReservedCredits(organizationId, job._id, Math.abs(creditDifference), `Apply limit reduced`);
-        }
-        
-        job.isPublic = true;
-        job.candidateApplyLimit = applyLimit;
-        job.reservedCredits = requiredCredits;
-        if (!wasPublic) {
-          job.publicApplicationCount = 0; // Reset on making public
-        }
-      } else { // Making private
-        const uploadCost = await getUploadCandidateCost(organizationId);
-        const usedCredits = (job.publicApplicationCount || 0) * uploadCost;
-        const unusedCredits = (job.reservedCredits || 0) - usedCredits;
-
-        if (unusedCredits > 0) {
-          await refundReservedCredits(organizationId, job._id, unusedCredits, 'Job set to private');
-        }
-        
-        job.isPublic = false;
-        job.reservedCredits = 0;
-        job.candidateApplyLimit = undefined;
+    const mutateJob = (jobToUpdate) => {
+      Object.assign(jobToUpdate, otherUpdateData);
+      jobToUpdate.updatedBy = req.user?.id || null;
+      jobToUpdate.updatedAt = new Date();
+      if (otherUpdateData.applicationDeadline) {
+        jobToUpdate.applicationDeadline = new Date(otherUpdateData.applicationDeadline);
       }
-    }
+      if (otherUpdateData.startDate) {
+        jobToUpdate.startDate = new Date(otherUpdateData.startDate);
+      }
+    };
 
-    // Update other job data
-    Object.assign(job, otherUpdateData);
-    job.updatedBy = req.user?.id || null;
-    job.updatedAt = new Date();
-    if (otherUpdateData.applicationDeadline) {
-      job.applicationDeadline = new Date(otherUpdateData.applicationDeadline);
+    let job;
+    if (isPublic !== undefined || candidateApplyLimit !== undefined) {
+      job = await publicJobCreditService.updatePublicSettings({
+        jobId: req.params.id,
+        organizationId,
+        isPublic,
+        candidateApplyLimit,
+        actorId: req.user?.id,
+        mutateJob
+      });
+    } else {
+      job = await Job.findOne({ _id: req.params.id, organization: organizationId });
+      if (!job) {
+        return res.status(404).json({ msg: 'Job not found' });
+      }
+      mutateJob(job);
+      await job.save();
     }
-    if (otherUpdateData.startDate) {
-      job.startDate = new Date(otherUpdateData.startDate);
-    }
-
-    await job.save();
 
     // Invalidate AI match cache if relevant fields changed
     const cacheInvalidatingFields = ['description', 'requirements', 'skills', 'experience', 'education', 'level'];
@@ -336,41 +268,37 @@ exports.updateJob = async (req, res) => {
     res.json({ msg: 'Job updated successfully', job });
   } catch (error) {
     console.error('❌ Error updating job:', error);
-    res.status(500).json({ msg: 'Server error updating job', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.statusCode ? error.message : 'Server error updating job',
+      error: error.code || error.message
+    });
   }
 };
 
 exports.deleteJob = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
-    if (!job) return res.status(404).json({ msg: 'Job not found' });
+    const job = await publicJobCreditService.deleteJob({
+      jobId: req.params.id,
+      organizationId,
+      actorId: req.user?.id
+    });
     console.log(`🗑️ Deleting job: ${job.title} (${req.params.id})`);
-    
-    // Refund reserved credits if job was public
-    if (job.isPublic && job.reservedCredits > 0) {
-      const uploadCost = await getUploadCandidateCost(organizationId);
-      const usedCredits = job.publicApplicationCount * uploadCost;
-      const unusedCredits = job.reservedCredits - usedCredits;
-      
-      if (unusedCredits > 0) {
-        await refundReservedCredits(organizationId, job._id, unusedCredits, 'Job deleted');
-        console.log(`💰 Refunded ${unusedCredits} unused credits from deleted public job "${job.title}"`);
-      }
-    }
-    
+
     try {
-      await embeddingService.deleteEmbedding(req.params.id, 'jobs');
-      console.log(`✅ Job embedding deleted from Weaviate for job: ${req.params.id}`);
+      await embeddingService.deleteEmbedding(req.params.id, embeddingService.jobIndexName);
+      console.log(`✅ Job embedding deleted from vector store for job: ${req.params.id}`);
     } catch (embeddingError) {
       console.warn(`⚠️ Failed to delete job embedding for ${req.params.id}:`, embeddingError.message);
     }
-    await Job.findByIdAndDelete(req.params.id);
     console.log(`✅ Job and embedding successfully deleted: ${job.title}`);
     res.json({ msg: 'Job deleted successfully', deletedJob: { id: job._id, title: job.title, embeddingDeleted: true } });
   } catch (error) {
     console.error('❌ Error deleting job:', error);
-    res.status(500).json({ msg: 'Server error deleting job', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.statusCode ? error.message : 'Server error deleting job',
+      error: error.code || error.message
+    });
   }
 };
 
@@ -389,11 +317,11 @@ exports.bulkDeleteJobs = async (req, res) => {
 
     for (const id of jobIds) {
       try {
-        const job = await Job.findOne({ _id: id, organization: organizationId });
-        if (!job) {
-          failures.push({ id, error: 'Job not found or access denied' });
-          continue;
-        }
+        const job = await publicJobCreditService.deleteJob({
+          jobId: id,
+          organizationId,
+          actorId: req.user?.id
+        });
 
         try {
           await embeddingService.deleteEmbedding(id, embeddingService.jobIndexName);
@@ -401,7 +329,6 @@ exports.bulkDeleteJobs = async (req, res) => {
           console.warn(`⚠️ Failed to delete job embedding for ${id}:`, embeddingError.message);
         }
 
-        await Job.findByIdAndDelete(id);
         results.push({ id, title: job.title, success: true });
       } catch (err) {
         failures.push({ id, error: err.message });
@@ -499,8 +426,13 @@ exports.getJobEmbeddingStatus = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
-    const weaviateExists = await embeddingService.checkEmbeddingExists(job._id.toString(), 'jobs');
-    res.json({ jobId: job._id, isEmbedded: job.isEmbedded && weaviateExists, embeddingCreatedAt: job.embeddingCreatedAt, weaviateExists });
+    const vectorIndexExists = await embeddingService.checkEmbeddingExists(job._id.toString(), embeddingService.jobIndexName);
+    res.json({
+      jobId: job._id,
+      isEmbedded: job.isEmbedded && vectorIndexExists,
+      embeddingCreatedAt: job.embeddingCreatedAt,
+      vectorIndexExists,
+    });
   } catch (error) {
     console.error('❌ Error checking job embedding status:', error);
     res.status(500).json({ msg: 'Server error checking embedding status', error: error.message });
@@ -526,32 +458,160 @@ exports.createJobEmbedding = async (req, res) => {
 exports.getMatchingCandidates = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const { topK = 10, includeExplanations = 'true' } = req.query;
+    const topK = parseInt(req.query.topK) || 10;
+    const includeExplanations = req.query.includeExplanations !== 'false';
     const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
-    
-    const matchResult = includeExplanations === 'true' 
-      ? await embeddingService.findMatchingCandidatesWithExplanation(job, parseInt(topK))
-      : await embeddingService.findMatchingCandidatesForJob(job, parseInt(topK));
-    
-    // Both functions now return object with matches array and cache metadata
+
+    const LARGE_SCALE_THRESHOLD = 100;
+    const isLargeScale = topK > LARGE_SCALE_THRESHOLD;
+
+    let matchResult;
+    if (isLargeScale || !includeExplanations) {
+      console.log(`🔍 Large-scale vector-only matching: topK=${topK} for job ${job.title}`);
+      matchResult = await embeddingService.findMatchingCandidatesForJob(job, topK, { skipCache: topK > 500 });
+    } else {
+      matchResult = await embeddingService.findMatchingCandidatesWithExplanation(job, topK);
+    }
+
     const matches = matchResult.matches || (Array.isArray(matchResult) ? matchResult : []);
     const fromCache = matchResult.fromCache || false;
     const cacheAge = matchResult.cacheAge || null;
     const cacheAgeMinutes = matchResult.cacheAgeMinutes || null;
-    
+
     res.json({
       jobId: job._id,
       jobTitle: job.title,
       matchCount: matches.length,
-      matches: matches.map(m => ({ ...m, similarityPercentage: Math.round(m.similarity * 100) })),
+      matches: matches.map(m => ({
+        ...m,
+        relevanceScore: m.relevanceScore ?? m.similarity ?? 0,
+        similarityPercentage: Math.round((m.similarity || 0) * 100),
+      })),
       fromCache,
       cacheAge,
-      cacheAgeMinutes
+      cacheAgeMinutes,
+      mode: isLargeScale ? 'vector-ranked' : 'full-analysis',
+      explanationsIncluded: !isLargeScale && includeExplanations,
     });
   } catch (error) {
     console.error('❌ Error getting matching candidates:', error);
     res.status(500).json({ msg: 'Server error finding matching candidates', error: error.message });
+  }
+};
+
+exports.getCandidateExplanation = async (req, res) => {
+  try {
+    const organizationId = req.user.currentOrganization;
+    const { jobId, candidateId } = req.params;
+
+    const job = await Job.findOne({ _id: jobId, organization: organizationId });
+    if (!job) return res.status(404).json({ msg: 'Job not found' });
+
+    const Candidate = require('../models/Candidate');
+    const candidate = await Candidate.findOne({ _id: candidateId, organization: organizationId });
+    if (!candidate) return res.status(404).json({ msg: 'Candidate not found' });
+
+    const gptAnalysisService = require('../services/gptAnalysisService');
+
+    if (gptAnalysisService.isEnabled) {
+      const candidateSkills = Array.isArray(candidate.skills)
+        ? candidate.skills
+        : (candidate.skills ? candidate.skills.split(',').map(s => s.trim()) : []);
+
+      const candidateObj = {
+        _id: candidate._id.toString(),
+        id: candidate._id.toString(),
+        name: `${candidate.firstName} ${candidate.lastName}`.trim(),
+        skills: candidateSkills,
+        experience: candidate.workExperience?.totalYearsExperience || 0,
+        location: candidate.location || '',
+        currentRole: candidate.position || '',
+        education: candidate.education || '',
+        bio: candidate.aiAnalysis?.summary || '',
+      };
+
+      const gptResults = await gptAnalysisService.batchAnalyzeCandidates(job, [candidateObj]);
+      const result = gptResults[0];
+
+      if (result) {
+        return res.json({
+          candidateId,
+          jobId,
+          explanation: {
+            skillsMatch: {
+              matchedSkills: result.gptAnalysis.technicalStrengths || [],
+              missingSkills: result.gptAnalysis.skillGaps || [],
+              bonusSkills: result.gptAnalysis.transferableSkills || [],
+              matchPercentage: result.gptAnalysis.skillMatchPercentage || 0,
+              totalRequired: (job.skills || []).length,
+              totalMatched: (result.gptAnalysis.technicalStrengths || []).length,
+            },
+            experienceMatch: {
+              isMatch: result.gptAnalysis.experienceFit >= 6,
+              required: job.experience || 0,
+              candidate: candidateObj.experience,
+              difference: candidateObj.experience - (job.experience || 0),
+              category: result.gptAnalysis.experienceFit >= 8 ? 'Strong' : result.gptAnalysis.experienceFit >= 6 ? 'Good' : 'Below',
+            },
+            aiInsights: {
+              hasAIAnalysis: true,
+              summary: result.gptAnalysis.explanation,
+              strengths: result.gptAnalysis.technicalStrengths || [],
+              potentialFlags: result.gptAnalysis.skillGaps || [],
+              strengthsCount: (result.gptAnalysis.technicalStrengths || []).length,
+              flagsCount: (result.gptAnalysis.skillGaps || []).length,
+            },
+            matchStrength: (result.relevanceScore || 0) >= 0.9 ? 'Excellent Match' : (result.relevanceScore || 0) >= 0.8 ? 'Strong Match' : (result.relevanceScore || 0) >= 0.7 ? 'Good Match' : (result.relevanceScore || 0) >= 0.6 ? 'Moderate Match' : (result.relevanceScore || 0) >= 0.5 ? 'Weak Match' : 'Poor Match',
+            overallScore: Math.round((result.relevanceScore || 0) * 100),
+            gptEnhanced: {
+              skillMatchPercentage: result.gptAnalysis.skillMatchPercentage,
+              experienceFit: result.gptAnalysis.experienceFit,
+              culturalAlignment: result.gptAnalysis.culturalAlignment,
+              growthPotential: result.gptAnalysis.growthPotential,
+              interviewFocus: result.gptAnalysis.interviewFocus,
+              confidenceScore: result.gptAnalysis.confidenceScore,
+              contextualExplanation: result.gptAnalysis.explanation,
+            },
+            reasons: [
+              result.gptAnalysis.explanation,
+              ...(result.gptAnalysis.technicalStrengths || []).slice(0, 3).map(s => `Strong in ${s}`),
+            ].filter(Boolean).slice(0, 5),
+            concerns: [
+              ...(result.gptAnalysis.skillGaps || []).slice(0, 2).map(g => `Missing: ${g}`),
+            ].filter(Boolean).slice(0, 3),
+          },
+        });
+      }
+    }
+
+    const explanation = await embeddingService.generateMatchExplanation(job, {
+      candidateId,
+      similarity: 0,
+      metadata: {
+        skills: candidate.skills,
+        experience: candidate.experience,
+        location: candidate.location,
+        totalYearsExp: candidate.workExperience?.totalYearsExperience || 0,
+        aiSummary: candidate.aiAnalysis?.summary || '',
+        aiStrengths: candidate.aiAnalysis?.strengths || [],
+        aiFlags: candidate.aiAnalysis?.potentialFlags || [],
+        hasAIAnalysis: !!candidate.aiAnalysis?.summary,
+        dataCompleteness: 70,
+      },
+      candidate: {
+        name: `${candidate.firstName} ${candidate.lastName}`,
+        position: candidate.position,
+        experience: candidate.experience,
+        skills: candidate.skills,
+        location: candidate.location,
+      },
+    });
+
+    res.json({ candidateId, jobId, explanation });
+  } catch (error) {
+    console.error('❌ Error generating candidate explanation:', error);
+    res.status(500).json({ msg: 'Failed to generate explanation', error: error.message });
   }
 };
 
@@ -569,7 +629,7 @@ exports.getShortlist = async (req, res) => {
 
     const job = await Job.findOne(query).populate({
       path: 'shortlist.candidate',
-      select: 'firstName lastName position experience skills location email phone'
+      select: 'firstName lastName position experience skills location email phone isInternalCandidate employeeId'
     });
 
     if (!job) {
@@ -578,6 +638,12 @@ exports.getShortlist = async (req, res) => {
 
     // Get current pipeline candidates to check actual pipeline status
     const pipelineCandidateIds = job.applicants?.map(app => app.candidate._id.toString()) || [];
+
+    // Create a map of candidate IDs to application types for quick lookup
+    const applicationTypeMap = new Map();
+    job.applicants?.forEach(app => {
+      applicationTypeMap.set(app.candidate._id.toString(), app.applicationType || 'manual');
+    });
 
     // Filter out any null/deleted candidate references and construct full names
     const validShortlistItems = job.shortlist
@@ -589,9 +655,13 @@ exports.getShortlist = async (req, res) => {
           actualStatus = 'moved_to_pipeline';
         }
 
+        // Get application type from the applicants array
+        const applicationType = applicationTypeMap.get(item.candidate._id.toString()) || 'manual';
+
         return {
           ...item.toObject(),
           status: actualStatus, // Use actual status
+          applicationType, // Include application type (public, internal, manual)
           candidate: {
             ...item.candidate.toObject(),
             name: item.candidate.firstName && item.candidate.lastName 
@@ -627,7 +697,7 @@ exports.getShortlist = async (req, res) => {
 exports.addCandidateToShortlist = async (req, res) => {
   try {
     const { jobId } = req.params;
-    const { candidateId, coverLetter } = req.body;
+    const { candidateId, coverLetter, isOrganizationStaff } = req.body;
     
     // Handle both authenticated and public route access
     const organizationId = req.user?.currentOrganization;
@@ -639,65 +709,128 @@ exports.addCandidateToShortlist = async (req, res) => {
       query.organization = organizationId;
     }
     
-    const job = await Job.findOne(query);
+    let job = await Job.findOne(query);
 
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
 
-    // Check if candidate is already in the shortlist or pipeline
+    // Ensure candidate exists and belongs to the same organization context.
+    const candidateQuery = { _id: candidateId };
+    if (organizationId) {
+      candidateQuery.organization = organizationId;
+    } else if (job.organization) {
+      candidateQuery.organization = job.organization;
+    }
+    const candidate = await Candidate.findOne(candidateQuery);
+    if (!candidate) {
+      return res.status(404).json({ msg: 'Candidate not found' });
+    }
+
+    // Public retries are idempotent: the first successful submission already
+    // owns the slot, so a network retry must not look like a failure.
     if (job.shortlist.some(item => item.candidate.toString() === candidateId)) {
+      if (isPublicApplication) {
+        return res.status(200).json({
+          msg: 'Application already submitted',
+          shortlist: job.shortlist,
+          duplicate: true
+        });
+      }
       return res.status(400).json({ msg: 'Candidate already in shortlist' });
     }
     if (job.applicants.some(item => item.candidate.toString() === candidateId)) {
       return res.status(400).json({ msg: 'Candidate already in pipeline' });
     }
 
-    job.shortlist.push({ candidate: candidateId, addedBy: req.user?.id });
-    
-    // For public applications, also update analytics
     if (isPublicApplication) {
-      if (!job.analytics) job.analytics = {};
-      job.analytics.publicApplications = (job.analytics.publicApplications || 0) + 1;
-      job.analytics.applications = (job.analytics.applications || 0) + 1;
-    }
-    
-    await job.save();
+      if (!job.isPublic || job.status !== 'active') {
+        return res.status(403).json({
+          msg: 'This job is not accepting public applications',
+          code: 'PUBLIC_JOB_NOT_PUBLIC'
+        });
+      }
 
-    // Send application confirmation email for public applications
-    if (isPublicApplication) {
+      // Undo slots consumed by CV parses that never became submitted
+      // applications, then atomically commit this real application.
+      await publicApplicationCapacityService.reconcileInflatedCount({
+        jobId: job._id,
+        organizationId: job.organization
+      });
+      const processingPublicId = candidate.processingMetadata?.cvProcessingJobId;
+      const processingJob = processingPublicId
+        ? await CVProcessingJob.findOne({
+          publicId: processingPublicId,
+          organization: job.organization,
+          jobAppliedFor: job._id,
+          source: 'public'
+        }).select('_id publicId')
+        : null;
+
+      // Candidates created before durable processing jobs still get a stable,
+      // replay-safe reservation identity.
+      const capacity = await publicApplicationCapacityService.commit({
+        jobId: job._id,
+        organizationId: job.organization,
+        candidateId: candidate._id,
+        processingJobId: processingJob?._id || candidate._id,
+        processingJobPublicId: processingJob?.publicId || `legacy-candidate:${candidate._id}`
+      });
+      job = Job.hydrate(capacity.job);
+
+      if (typeof isOrganizationStaff !== 'undefined') {
+        const staffValue = typeof isOrganizationStaff === 'string'
+          ? isOrganizationStaff.toLowerCase() === 'true'
+          : Boolean(isOrganizationStaff);
+        await Candidate.updateOne(
+          { _id: candidate._id, organization: job.organization },
+          { $set: { isInternalCandidate: staffValue } }
+        );
+      }
+
       try {
-        // Get candidate data
-        const Candidate = require('../models/Candidate');
-        const candidate = await Candidate.findById(candidateId);
-        
-        if (candidate) {
-          // Populate job organization and department for email service
-          await job.populate([
-            { path: 'organization' },
-            { path: 'department', select: 'name' }
-          ]);
-          
-                  console.log(`📧 Sending application confirmation email for public job application`);
-                  await candidateEmailNotificationService.sendApplicationConfirmationEmail({
-                    candidate,
-                    job
-                  });
+        await job.populate([
+          { path: 'organization' },
+          { path: 'department', select: 'name' }
+        ]);
+        await candidateEmailNotificationService.sendApplicationConfirmationEmail({
+          candidate,
+          job
+        });
+        if (capacity.limitReached && !capacity.duplicate) {
+          await candidateEmailNotificationService.sendJobApplicationLimitReachedEmail({ job });
         }
       } catch (emailError) {
-        console.error('❌ Error sending application confirmation email:', emailError);
-        // Don't fail the application if email fails - just log the error
+        console.error('Error sending public application email:', emailError);
       }
+
+      return res.status(capacity.duplicate ? 200 : 201).json({
+        msg: capacity.duplicate
+          ? 'Application already submitted'
+          : 'Candidate added to shortlist successfully',
+        shortlist: job.shortlist,
+        duplicate: capacity.duplicate,
+        applicationCount: capacity.applicationCount,
+        limitReached: capacity.limitReached,
+        emailSent: true
+      });
     }
+
+    job.shortlist.push({ candidate: candidateId, addedBy: req.user?.id });
+    await job.save();
 
     res.status(201).json({ 
       msg: 'Candidate added to shortlist successfully', 
       shortlist: job.shortlist,
-      emailSent: isPublicApplication // Let frontend know if email was attempted
+      emailSent: false
     });
   } catch (error) {
     console.error('❌ Error adding candidate to shortlist:', error);
-    res.status(500).json({ msg: 'Server error adding candidate to shortlist', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.statusCode ? error.message : 'Server error adding candidate to shortlist',
+      code: error.code,
+      error: error.message
+    });
   }
 };
 
@@ -768,7 +901,7 @@ exports.getRankedShortlist = async (req, res) => {
     
     const job = await Job.findOne(query).populate({
       path: 'shortlist.candidate',
-      select: 'firstName lastName position experience skills location email phone'
+      select: 'firstName lastName position experience skills location email phone isInternalCandidate employeeId'
     });
 
     if (!job) {
@@ -811,6 +944,10 @@ exports.getRankedShortlist = async (req, res) => {
       const shortlistItem = validShortlistItems.find(item => 
         item.candidate._id.toString() === match.candidateId
       );
+      const shortlistCandidate = shortlistItem?.candidate;
+      const normalizedCandidate = shortlistCandidate && typeof shortlistCandidate.toObject === 'function'
+        ? shortlistCandidate.toObject()
+        : shortlistCandidate;
       
       // Determine actual status: check if in pipeline first, then shortlist status
       let actualStatus = shortlistItem?.status || 'shortlisted';
@@ -820,6 +957,15 @@ exports.getRankedShortlist = async (req, res) => {
       
       return {
         ...match,
+        candidate: {
+          ...(match.candidate || {}),
+          ...(normalizedCandidate || {}),
+          _id: match.candidateId,
+          id: match.candidateId,
+          name: normalizedCandidate?.firstName && normalizedCandidate?.lastName
+            ? `${normalizedCandidate.firstName} ${normalizedCandidate.lastName}`.trim()
+            : normalizedCandidate?.name || match.candidate?.name || 'Unnamed Candidate'
+        },
         similarityPercentage: Math.round(match.similarity * 100),
         // Use actual status (pipeline takes precedence)
         status: actualStatus,
@@ -1333,7 +1479,13 @@ exports.generateInterviewQuestions = async (req, res) => {
     res.status(201).json({ msg: `Successfully generated ${questions.length} interview questions`, questions, count: questions.length, generationOptions: options });
   } catch (error) {
     console.error('❌ Error generating interview questions:', error);
-    res.status(500).json({ msg: 'Server error generating interview questions', error: error.message });
+    res.status(error.statusCode || 500).json({
+      msg: error.code === 'AI_QUESTION_QUALITY_FAILED'
+        ? 'AI could not produce a sufficiently job-specific question set. No questions were saved.'
+        : 'Server error generating interview questions',
+      code: error.code,
+      error: error.message
+    });
   }
 };
 
@@ -1546,6 +1698,29 @@ exports.getDetailedPipeline = async (req, res) => {
   }
 };
 
+exports.exportPipelineExcelReport = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const organizationId = req.user.currentOrganization;
+
+    const { buffer, fileName } = await pipelineReportExportService.buildDetailedPipelineWorkbook({
+      jobId,
+      organizationId
+    });
+
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (error) {
+    if (error.statusCode === 404) {
+      return res.status(404).json({ msg: 'Job not found' });
+    }
+    console.error('Error exporting detailed pipeline report:', error);
+    res.status(500).json({ msg: 'Server error exporting pipeline report', error: error.message });
+  }
+};
+
 exports.advanceCandidateToStage = async (req, res) => {
   try {
     const { jobId, candidateId } = req.params;
@@ -1561,6 +1736,34 @@ exports.advanceCandidateToStage = async (req, res) => {
       } catch (error) {
     console.error('❌ Error advancing candidate to stage:', error);
     res.status(500).json({ msg: 'Server error advancing candidate', error: error.message });
+  }
+};
+
+exports.keepCandidateInView = async (req, res) => {
+  try {
+    const { jobId, candidateId } = req.params;
+    const { reason } = req.body;
+
+    const applicant = await pipelineProgressionService.keepCandidateInView(
+      jobId,
+      candidateId,
+      reason,
+      req.user.id
+    );
+
+    res.json({
+      msg: 'Candidate moved to keep in view successfully',
+      applicant
+    });
+  } catch (error) {
+    console.error('❌ Error moving candidate to keep in view:', error);
+    if (error.message === 'Job not found' || error.message === 'Candidate not found in job applicants') {
+      return res.status(404).json({ msg: error.message });
+    }
+    if (error.message.includes('cannot be moved')) {
+      return res.status(400).json({ msg: error.message });
+    }
+    res.status(500).json({ msg: 'Server error moving candidate to keep in view', error: error.message });
   }
 };
 
@@ -1693,6 +1896,55 @@ exports.bulkMoveCandidates = async (req, res) => {
     res.status(500).json({ 
       msg: 'Server error during bulk move', 
       error: error.message 
+    });
+  }
+};
+
+exports.bulkKeepCandidatesInView = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { candidateIds, reason } = req.body;
+    const userId = req.user.id;
+
+    if (!Array.isArray(candidateIds) || candidateIds.length === 0) {
+      return res.status(400).json({
+        msg: 'candidateIds must be a non-empty array'
+      });
+    }
+
+    const result = await pipelineProgressionService.bulkKeepCandidatesInView(
+      jobId,
+      candidateIds,
+      reason,
+      userId
+    );
+
+    if (result.success) {
+      return res.status(200).json({
+        msg: `Successfully moved ${result.results.successful.length} candidates to keep in view`,
+        result
+      });
+    }
+
+    if (result.partialSuccess) {
+      return res.status(207).json({
+        msg: `Partially successful: ${result.results.successful.length} moved, ${result.results.failed.length} failed`,
+        result
+      });
+    }
+
+    return res.status(400).json({
+      msg: 'Bulk keep in view failed',
+      result
+    });
+  } catch (error) {
+    console.error('❌ Error in bulk keep in view:', error);
+    if (error.message === 'Job not found') {
+      return res.status(404).json({ msg: error.message });
+    }
+    res.status(500).json({
+      msg: 'Server error during bulk keep in view',
+      error: error.message
     });
   }
 };
@@ -2429,7 +2681,7 @@ exports.enableInternalRecruitment = async (req, res) => {
     const { jobId } = req.params;
     const { internalCandidateApplyLimit, requireEmployeeId, notifyHiringManager } = req.body;
     const userId = req.user._id;
-    const organizationId = req.user.organization;
+    const organizationId = req.user.currentOrganization;
 
     // Find the job
     const job = await Job.findOne({ _id: jobId, organization: organizationId });
@@ -2453,7 +2705,7 @@ exports.enableInternalRecruitment = async (req, res) => {
     if (internalCandidateApplyLimit && internalCandidateApplyLimit > 0) {
       creditsNeeded = internalCandidateApplyLimit;
 
-      // Check organization credits
+      // Check organization credits (use subscription.creditUsage)
       const Organization = require('../models/Organization');
       const organization = await Organization.findById(organizationId);
 
@@ -2464,18 +2716,48 @@ exports.enableInternalRecruitment = async (req, res) => {
         });
       }
 
-      const availableCredits = (organization.credits?.available || 0) -
-                               (organization.credits?.reserved || 0);
+      // Ensure subscription.creditUsage exists (match creditsService structure)
+      if (!organization.subscription) organization.subscription = {};
+      if (!organization.subscription.creditUsage) {
+        organization.subscription.creditUsage = {
+          totalCredits: 100,
+          usedCredits: 0,
+          remainingCredits: 100
+        };
+      }
+      const creditUsage = organization.subscription.creditUsage;
+      const totalCredits = creditUsage.totalCredits || 100;
+      // Match creditsService: when remainingCredits is undefined, fall back to totalCredits
+      const remainingCredits = (creditUsage.remainingCredits != null)
+        ? creditUsage.remainingCredits
+        : totalCredits;
 
-      if (availableCredits < creditsNeeded) {
+      if (remainingCredits < creditsNeeded) {
         return res.status(400).json({
           success: false,
-          message: `Insufficient credits. Need ${creditsNeeded}, have ${availableCredits} available`
+          message: `Insufficient credits. Need ${creditsNeeded}, have ${remainingCredits} available`
         });
       }
 
-      // Reserve credits
-      organization.credits.reserved = (organization.credits.reserved || 0) + creditsNeeded;
+      // Reserve credits: deduct from remainingCredits
+      creditUsage.usedCredits = (creditUsage.usedCredits || 0) + creditsNeeded;
+      creditUsage.remainingCredits = remainingCredits - creditsNeeded;
+
+      if (!creditUsage.transactions) creditUsage.transactions = [];
+      creditUsage.transactions.push({
+        action: 'creditPurchase',
+        credits: creditsNeeded,
+        entityId: job._id,
+        entityType: 'job',
+        timestamp: new Date(),
+        balanceAfter: remainingCredits - creditsNeeded,
+        metadata: {
+          type: 'internal_recruitment_reservation',
+          description: `Reserved ${creditsNeeded} credits for internal recruitment`
+        }
+      });
+
+      organization.subscription.creditUsage = creditUsage;
       await organization.save();
     }
 
@@ -2518,7 +2800,7 @@ exports.disableInternalRecruitment = async (req, res) => {
   try {
     const { jobId } = req.params;
     const userId = req.user._id;
-    const organizationId = req.user.organization;
+    const organizationId = req.user.currentOrganization;
 
     // Find the job
     const job = await Job.findOne({ _id: jobId, organization: organizationId });
@@ -2541,14 +2823,8 @@ exports.disableInternalRecruitment = async (req, res) => {
     const creditsToRefund = job.reservedInternalCredits - (job.internalApplicationCount || 0);
 
     if (creditsToRefund > 0) {
-      // Refund unused credits
-      const Organization = require('../models/Organization');
-      const organization = await Organization.findById(organizationId);
-
-      if (organization) {
-        organization.credits.reserved = Math.max(0, (organization.credits.reserved || 0) - creditsToRefund);
-        await organization.save();
-      }
+      // Refund unused credits (add back to subscription.creditUsage)
+      await refundReservedCredits(organizationId, jobId, creditsToRefund, 'Internal recruitment disabled');
     }
 
     // Disable internal recruitment
@@ -2644,10 +2920,12 @@ exports.submitInternalApplication = async (req, res) => {
   try {
     const { jobId } = req.params;
     const { candidateId, employeeId, notes } = req.body;
-    const organizationId = req.user.organization;
+    const organizationId = req.user?.currentOrganization || req.user?.organization;
 
-    // Find the job
-    const job = await Job.findOne({ _id: jobId, organization: organizationId });
+    // Find the job (when unauthenticated, find by id only - internal URL is secret)
+    const jobQuery = organizationId ? { _id: jobId, organization: organizationId } : { _id: jobId };
+    const job = await Job.findOne(jobQuery);
+    const orgId = organizationId || (job && job.organization?.toString());
     if (!job) {
       return res.status(404).json({
         success: false,
@@ -2682,7 +2960,7 @@ exports.submitInternalApplication = async (req, res) => {
 
     // Find or create candidate
     const Candidate = require('../models/Candidate');
-    let candidate = await Candidate.findOne({ _id: candidateId, organization: organizationId });
+    let candidate = await Candidate.findOne({ _id: candidateId, organization: orgId });
 
     if (!candidate) {
       return res.status(404).json({
@@ -2710,16 +2988,23 @@ exports.submitInternalApplication = async (req, res) => {
       });
     }
 
-    // Add to applicants with internal type
+    // Add to applicants with internal type (requires auth for addedBy/changedBy)
+    const addedByUserId = req.user?._id;
+    if (!addedByUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required to submit internal application'
+      });
+    }
     job.applicants.push({
       candidate: candidateId,
       applicationType: 'internal',
       status: 'applied',
-      addedBy: req.user._id,
+      addedBy: addedByUserId,
       notes: notes || 'Internal application',
       statusHistory: [{
         status: 'applied',
-        changedBy: req.user._id,
+        changedBy: addedByUserId,
         changedAt: new Date(),
         notes: 'Internal application submitted'
       }]
@@ -2730,18 +3015,7 @@ exports.submitInternalApplication = async (req, res) => {
     job.analytics.internalApplications = (job.analytics.internalApplications || 0) + 1;
     job.analytics.applications = (job.analytics.applications || 0) + 1;
 
-    // Consume one credit if using credit system
-    if (job.internalCandidateApplyLimit > 0) {
-      const Organization = require('../models/Organization');
-      const organization = await Organization.findById(organizationId);
-
-      if (organization) {
-        // Move credit from reserved to used
-        organization.credits.reserved = Math.max(0, (organization.credits.reserved || 0) - 1);
-        organization.credits.used = (organization.credits.used || 0) + 1;
-        await organization.save();
-      }
-    }
+    // Credits were already deducted when internal recruitment was enabled; no per-apply deduction needed
 
     await job.save();
 

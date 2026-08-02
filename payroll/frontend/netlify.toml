@@ -8,8 +8,8 @@
   NPM_FLAGS = "--legacy-peer-deps"
   # Disable pnpm detection - force npm
   NETLIFY_USE_PNPM = "false"
-  NEXT_PUBLIC_API_URL = "https://payroll-backend-smarthr.azurewebsites.net/api"
-  NEXT_PUBLIC_IDP_URL = "https://smarthr-identity.azurewebsites.net"
+  NEXT_PUBLIC_API_URL = "https://api-payroll.seemplifyai.com/api"
+  NEXT_PUBLIC_IDP_URL = "https://auth.seemplifyai.com"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

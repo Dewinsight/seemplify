@@ -6,7 +6,9 @@ const fs = require('fs');
 const candidateController = require('../controllers/candidateController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization, requirePermission } = require('../middleware/organizationMiddleware');
-const { requireCredits, deductCredits } = require('../middleware/creditsMiddleware');
+const { requireCredits } = require('../middleware/creditsMiddleware');
+const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
+const queueUpload = require('../middleware/cvQueueUploadHandler');
 
 // Ensure uploads directory exists
 const uploadsDir = 'uploads/';
@@ -36,7 +38,7 @@ const fileFilter = (req, file, cb) => {
     mimetype: file.mimetype,
     encoding: file.encoding
   });
-  
+
   const allowedTypes = [
     'application/pdf',
     'application/msword',
@@ -46,7 +48,7 @@ const fileFilter = (req, file, cb) => {
     'image/jpg',
     'image/tiff'
   ];
-  
+
   if (allowedTypes.includes(file.mimetype)) {
     console.log('✅ File type accepted:', file.mimetype);
     cb(null, true);
@@ -58,7 +60,7 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage: storage,
-  limits: { 
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
     files: 1
   },
@@ -81,8 +83,8 @@ const logMulterProcessing = (req, res, next) => {
 // @route   POST api/candidates/upload-cv
 // @desc    Upload CV, parse, and create candidate
 // @access  Private (or Public depending on your requirements)
-router.post('/upload-cv', 
-  authMiddleware, 
+router.post('/upload-cv',
+  authMiddleware,
   requireOrganization,
   requireCredits('uploadCandidate', 'candidate'),
   (req, res, next) => {
@@ -106,14 +108,13 @@ router.post('/upload-cv',
     }
     next();
   },
-  deductCredits,
-  candidateController.uploadAndCreateCandidate
+  queueUpload('private')
 );
 
 // @route   POST api/candidates/public/upload-cv
 // @desc    Upload CV, parse, and create candidate (public access for job applications)
 // @access  Public
-router.post('/public/upload-cv', 
+router.post('/public/upload-cv',
   (req, res, next) => {
     console.log('🌐 Public CV upload route hit');
     // Set a longer timeout for CV processing
@@ -132,7 +133,52 @@ router.post('/public/upload-cv',
     }
     next();
   },
-  candidateController.uploadAndCreateCandidate
+  // When the applicant already submitted their application (candidateId
+  // present in the body), attach this CV analysis to that candidate instead
+  // of creating a new one.
+  queueUpload('public', undefined, (req) => ({ linkedCandidateId: req.body?.candidateId }))
+);
+
+router.get('/cv-jobs/:jobId', async (req, res) => {
+  try {
+    const statusToken = req.get('X-CV-Status-Token') || req.query.token;
+    const status = await cvAnalysisQueue.getStatus(req.params.jobId, statusToken);
+    if (!status) return res.status(404).json({ code: 'CV_JOB_NOT_FOUND', msg: 'CV processing job was not found' });
+    return res.json(status);
+  } catch (error) {
+    return res.status(503).json({ code: 'CV_QUEUE_UNAVAILABLE', msg: error.message });
+  }
+});
+
+router.post(
+  '/cv-jobs/:jobId/retry',
+  authMiddleware,
+  requireOrganization,
+  requirePermission('manage_candidates'),
+  async (req, res) => {
+    try {
+      const result = await cvAnalysisQueue.retryFailedJob(req.params.jobId, {
+        organizationId: req.user.currentOrganization,
+        stage: req.body?.stage,
+        requestedBy: {
+          type: 'user',
+          id: req.user.id,
+          name: req.user.name,
+          email: req.user.email
+        }
+      });
+      return res.status(202).json({
+        ...cvAnalysisQueue.publicState(result.job),
+        queueAvailable: result.queueAvailable,
+        requestedStage: result.requestedStage
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 500).json({
+        code: error.code || 'CV_RETRY_FAILED',
+        msg: error.message || 'CV processing could not be retried'
+      });
+    }
+  }
 );
 
 // @route   POST api/candidates
@@ -144,6 +190,11 @@ router.post('/', authMiddleware, requireOrganization, candidateController.create
 // @desc    Get all candidates
 // @access  Private
 router.get('/', authMiddleware, requireOrganization, candidateController.getAllCandidates);
+
+// @route   GET api/candidates/export
+// @desc    Export candidates to Excel
+// @access  Private
+router.get('/export', authMiddleware, requireOrganization, candidateController.exportCandidates);
 
 // @route   GET api/candidates/:id
 // @desc    Get a single candidate by ID
@@ -160,10 +211,21 @@ router.put('/:id', authMiddleware, requireOrganization, candidateController.upda
 // @access  Public
 router.put('/public/:id', candidateController.updateCandidate);
 
+// @route   POST api/candidates/public
+// @desc    Create a candidate immediately from a public job-application form,
+//          independent of (and before) any CV upload/parsing
+// @access  Public
+router.post('/public', candidateController.createPublicCandidate);
+
 // @route   DELETE api/candidates/bulk
 // @desc    Bulk delete candidates
 // @access  Private
 router.delete('/bulk', authMiddleware, requireOrganization, candidateController.bulkDeleteCandidates);
+
+// @route   POST api/candidates/bulk-download
+// @desc    Download a ZIP with a profile.pdf + CV per selected candidate
+// @access  Private
+router.post('/bulk-download', authMiddleware, requireOrganization, candidateController.bulkDownloadCandidates);
 
 // @route   DELETE api/candidates/:id
 // @desc    Delete a candidate
@@ -181,7 +243,7 @@ router.get('/:id/accessible-resume-url', authMiddleware, requireOrganization, ca
 router.get('/public/:id/accessible-resume-url', candidateController.getAccessibleResumeUrl);
 
 // @route   GET api/candidates/:id/embedding-status
-// @desc    Check if candidate has embedding in Weaviate
+// @desc    Check if candidate has embedding in the vector store (Weaviate)
 // @access  Private
 router.get('/:id/embedding-status', authMiddleware, requireOrganization, candidateController.checkEmbeddingStatus);
 
@@ -206,18 +268,28 @@ router.post('/:id/comments', authMiddleware, requireOrganization, candidateContr
 router.delete('/:id/comments/:commentId', authMiddleware, requireOrganization, candidateController.deleteComment);
 
 // @route   GET api/candidates/cache/stats
-// @desc    Get GPT analysis cache statistics for monitoring
+// @desc    Get AI analysis cache statistics for monitoring
 // @access  Private
 router.get('/cache/stats', authMiddleware, candidateController.getCacheStats);
 
 // @route   GET api/candidates/gpt/status
-// @desc    Get GPT system status and configuration
+// @desc    Get AI system status and configuration (legacy path)
 // @access  Private
 router.get('/gpt/status', authMiddleware, candidateController.getGPTStatus);
 
+// @route   GET api/candidates/ai/status
+// @desc    Get AI system status and configuration
+// @access  Private
+router.get('/ai/status', authMiddleware, candidateController.getGPTStatus);
+
 // @route   POST api/candidates/gpt/toggle
-// @desc    Emergency toggle for GPT analysis system (admin only)
+// @desc    Emergency toggle for AI analysis system (legacy path)
 // @access  Private
 router.post('/gpt/toggle', authMiddleware, candidateController.toggleGPTSystem);
+
+// @route   POST api/candidates/ai/toggle
+// @desc    Emergency toggle for AI analysis system
+// @access  Private
+router.post('/ai/toggle', authMiddleware, candidateController.toggleGPTSystem);
 
 module.exports = router;

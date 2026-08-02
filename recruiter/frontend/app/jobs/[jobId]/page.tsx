@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import "@/styles/hiring-pipeline-tabs.css"
@@ -45,11 +45,11 @@ import {
   Trophy,
   BarChart3,
   Sparkles,
+  Bot,
 } from "lucide-react"
 import useMobile from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
 import { PublicJobDialog } from "@/components/jobs/public-job-dialog"
-import { InternalRecruitmentDialog } from "@/components/jobs/internal-recruitment-dialog"
 import { apiRequest, getAuthHeaders } from "@/services/apiConfig"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -108,9 +108,9 @@ import { FeedbackLeaderboard } from "@/components/ui/feedback-leaderboard"
 import { JobEmailSettings } from "@/components/ui/job-email-settings"
 import { PipelineEmailManagementTab } from "@/components/ui/pipeline-email-management-tab"
 import { FeedbackFormSettings } from "@/components/ui/feedback-form-settings"
-import interviewService, {
-  InterviewQuestion,
-  InterviewQuestionCreateData,
+import interviewService, { 
+  InterviewQuestion, 
+  InterviewQuestionCreateData, 
   GenerateQuestionsOptions,
   OptimizedGenerationOptions,
   QuestionQualityAnalysis,
@@ -122,11 +122,17 @@ import { formatCurrency } from "@/lib/currencies"
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
 import { JobSetupWizard } from "@/components/wizards/JobSetupWizard"
+import { CANDIDATE_EMAIL_TEMPLATE_EVENT } from "@/lib/candidateEmailTemplateNavigation"
+import type { CandidateEmailTemplateEventDetail } from "@/lib/candidateEmailTemplateNavigation"
+import type { CandidateEmailTemplateType } from "@/lib/candidateEmailTemplatePresets"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 function JobDetailInnerPage() {
   const params = useParams()
   const router = useRouter()
   const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
+  const { isFeatureEnabled } = useFeatureFlags()
+  const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
   const [activeTab, setActiveTab] = useState("overview")
   const [candidatesTab, setCandidatesTab] = useState("ai-matches")
   const [interviewsTab, setInterviewsTab] = useState("overview")
@@ -140,11 +146,10 @@ function JobDetailInnerPage() {
   const [isUpdatingPublicStatus, setIsUpdatingPublicStatus] = useState(false)
   const [showPublicJobDialog, setShowPublicJobDialog] = useState(false)
   const [publicDialogMode, setPublicDialogMode] = useState<'enable' | 'disable' | 'increase'>('enable')
-  const [showInternalDialog, setShowInternalDialog] = useState(false)
-  const [internalDialogMode, setInternalDialogMode] = useState<'enable' | 'disable'>('enable')
   const [creditInfo, setCreditInfo] = useState<any>(null)
   const isMobile = useMobile()
-
+  const lastLoadedJobIdRef = useRef<string | null>(null)
+  
   // Handle URL search params for tab navigation
   useEffect(() => {
     const handleTabNavigation = () => {
@@ -161,17 +166,17 @@ function JobDetailInnerPage() {
         }
       }
     }
-
+    
     // Check on mount
     handleTabNavigation()
-
+    
     // Listen for route changes (when navigating to the same page with different params)
     const handleRouteChange = () => {
       setTimeout(handleTabNavigation, 50)
     }
-
+    
     window.addEventListener('popstate', handleRouteChange)
-
+    
     // Also check periodically in case router.push doesn't trigger popstate
     const checkInterval = setInterval(() => {
       const searchParams = new URLSearchParams(window.location.search)
@@ -180,23 +185,23 @@ function JobDetailInnerPage() {
         handleTabNavigation()
       }
     }, 100)
-
+    
     // Clear interval after 2 seconds (enough time to catch any navigation)
     setTimeout(() => clearInterval(checkInterval), 2000)
-
+    
     return () => {
       window.removeEventListener('popstate', handleRouteChange)
       clearInterval(checkInterval)
     }
   }, [])
-
+  
   // Function to navigate to the stage configuration (within hiring pipeline)
   const navigateToStagesTab = () => {
     console.log('Navigating to stage configuration');
     setActiveTab("hiring-pipeline");
     setHiringPipelineTab("configuration");
   }
-
+  
   // Add a global function that can be called from anywhere
   useEffect(() => {
     // @ts-ignore
@@ -240,7 +245,7 @@ function JobDetailInnerPage() {
       setActiveTab('insights')
       setInsightsTab('analytics')
     }
-
+    
     return () => {
       // @ts-ignore
       delete window.navigateToJobStagesTab;
@@ -262,17 +267,17 @@ function JobDetailInnerPage() {
       delete window.navigateToInsightsAnalytics;
     };
   }, []);
-
+  
   // Listen for custom event from the pipeline component and URL hash changes
   useEffect(() => {
     const handleNavigateToStages = () => {
       console.log('Custom event: navigateToStages received');
       navigateToStagesTab();
     };
-
+    
     // Listen for custom event
     document.addEventListener('navigateToStages', handleNavigateToStages);
-
+    
     // Listen for URL hash changes
     const handleHashChange = () => {
       console.log('URL hash changed:', window.location.hash);
@@ -285,7 +290,7 @@ function JobDetailInnerPage() {
         setHiringPipelineTab('board');
       }
     };
-
+    
     // Check hash on initial load
     if (window.location.hash === '#stages' || window.location.hash === '#configuration') {
       console.log('Initial hash is #stages, navigating to stage configuration');
@@ -297,10 +302,10 @@ function JobDetailInnerPage() {
         setHiringPipelineTab('board');
       }, 100);
     }
-
+    
     // Add hash change listener
     window.addEventListener('hashchange', handleHashChange);
-
+    
     return () => {
       document.removeEventListener('navigateToStages', handleNavigateToStages);
       window.removeEventListener('hashchange', handleHashChange);
@@ -314,7 +319,7 @@ function JobDetailInnerPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   // Removed showGenerateDialog - only using advanced generator now
   const [editingQuestion, setEditingQuestion] = useState<InterviewQuestion | null>(null)
-
+  
   // Interviews State
   const [jobInterviews, setJobInterviews] = useState<Interview[]>([])
   const [interviewsLoading, setInterviewsLoading] = useState(false)
@@ -336,7 +341,7 @@ function JobDetailInnerPage() {
     stage: '',
     difficulty: '',
   })
-
+  
   // Advanced generation state
   const [showAdvancedGenerator, setShowAdvancedGenerator] = useState(false)
   const [qualityAnalyses, setQualityAnalyses] = useState<Record<string, QuestionQualityAnalysis>>({})
@@ -348,18 +353,37 @@ function JobDetailInnerPage() {
   // Simple candidate count for navigation (optional)
   const [candidateCount, setCandidateCount] = useState(0)
   const [showEmailSettingsDialog, setShowEmailSettingsDialog] = useState(false)
+  const [showBulkRejectionDialog, setShowBulkRejectionDialog] = useState(false)
+  const [emailTemplateToEdit, setEmailTemplateToEdit] = useState<CandidateEmailTemplateType>('rejection')
+  const [isExportingReport, setIsExportingReport] = useState(false)
+
+  const openCandidateEmailTemplate = (templateType: CandidateEmailTemplateType) => {
+    setEmailTemplateToEdit(templateType)
+    setActiveTab('hiring-pipeline')
+    setHiringPipelineTab('email-settings')
+    setShowEmailSettingsDialog(false)
+    setShowBulkRejectionDialog(false)
+  }
 
   // Listen for global email settings open event
   useEffect(() => {
-    const handleOpenEmailSettings = () => {
-      setShowEmailSettingsDialog(true)
+    const handleOpenEmailSettings = (event: Event) => {
+      const detail = (event as CustomEvent<CandidateEmailTemplateEventDetail>).detail
+      openCandidateEmailTemplate(detail?.templateType || 'rejection')
     }
-
-    window.addEventListener('openEmailSettings', handleOpenEmailSettings)
-    return () => window.removeEventListener('openEmailSettings', handleOpenEmailSettings)
+    
+    window.addEventListener(CANDIDATE_EMAIL_TEMPLATE_EVENT, handleOpenEmailSettings)
+    return () => window.removeEventListener(CANDIDATE_EMAIL_TEMPLATE_EVENT, handleOpenEmailSettings)
   }, [])
   const [showSetupWizard, setShowSetupWizard] = useState(false)
 
+  // Backward compatibility: old tab value removed, redirect to board section
+  useEffect(() => {
+    if (hiringPipelineTab === 'email-management') {
+      setHiringPipelineTab('board')
+    }
+  }, [hiringPipelineTab])
+  
   // Mobile scroll to top functionality
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -371,7 +395,7 @@ function JobDetailInnerPage() {
       if (jobData?._id) {
         try {
           const pipeline = await pipelineService.getDetailedPipeline(jobData?._id)
-          const totalCandidates = pipeline?.stages?.reduce((total: number, stage: any) =>
+          const totalCandidates = pipeline?.stages?.reduce((total: number, stage: any) => 
             total + (stage.candidates?.length || 0), 0) || 0
           setCandidateCount(totalCandidates)
         } catch (error) {
@@ -380,7 +404,7 @@ function JobDetailInnerPage() {
         }
       }
     }
-
+    
     fetchCandidateCount()
   }, [jobData])
 
@@ -388,10 +412,18 @@ function JobDetailInnerPage() {
   const [stagesRefreshTrigger, setStagesRefreshTrigger] = useState(0)
   const [selectedCandidate, setSelectedCandidate] = useState<any>(null)
 
-  const fetchJobData = async () => {
+  const fetchJobData = async (options?: { showLoading?: boolean }) => {
+    const currentJobId = params.jobId as string
+    const shouldShowLoading =
+      options?.showLoading ??
+      (!jobData || (lastLoadedJobIdRef.current !== null && lastLoadedJobIdRef.current !== currentJobId))
+
     try {
-      setLoading(true)
-      const data = await getJobById(params.jobId as string)
+      if (shouldShowLoading) {
+        setLoading(true)
+      }
+
+      const data = await getJobById(currentJobId)
       // Decode HTML entities in job data for display
       const decodedData = decodeObjectHtmlEntities(data)
       // Calculate total applicants: shortlist (excluding moved_to_pipeline) + pipeline
@@ -399,16 +431,23 @@ function JobDetailInnerPage() {
       const pipelineCount = decodedData.applicants?.length || 0
       decodedData.applicantCount = shortlistCount + pipelineCount
       setJobData(decodedData)
+      setError(null)
+      lastLoadedJobIdRef.current = currentJobId
     } catch (e: any) {
       console.error("Error fetching job data:", e)
-      setError(e.message || "An error occurred while fetching job data.")
+      // Avoid blanking the entire page on background refresh failures.
+      if (shouldShowLoading) {
+        setError(e.message || "An error occurred while fetching job data.")
+      }
       toast({
         title: "Error Loading Job",
         description: e.message || "Failed to load job details.",
         variant: "destructive",
       })
     } finally {
-      setLoading(false)
+      if (shouldShowLoading) {
+        setLoading(false)
+      }
     }
   }
 
@@ -419,14 +458,14 @@ function JobDetailInnerPage() {
         method: 'GET',
         headers: getAuthHeaders(),
       })
-
+      
       if (!response.ok) {
         throw new Error('Failed to fetch credit info')
       }
-
+      
       const data = await response.json()
       console.log('💳 Credit info fetched:', data)
-
+      
       if (data.success) {
         setCreditInfo(data.credits)
       }
@@ -461,7 +500,7 @@ function JobDetailInnerPage() {
   // Handle job deletion
   const handleDeleteJob = async () => {
     if (!jobData) return
-
+    
     setIsDeleting(true)
     try {
       await deleteJob(jobData?._id)
@@ -484,7 +523,7 @@ function JobDetailInnerPage() {
   // Handle public status toggle
   const handleTogglePublicStatus = async (isPublic: boolean) => {
     if (!jobData) return
-
+    
     if (isPublic) {
       // Show dialog to set candidate limit
       setPublicDialogMode('enable')
@@ -499,13 +538,13 @@ function JobDetailInnerPage() {
   // Handle actual public status update after dialog confirmation
   const handlePublicStatusUpdate = async (isPublic: boolean, candidateApplyLimit?: number) => {
     if (!jobData) return
-
+    
     setIsUpdatingPublicStatus(true)
     try {
-      const updateData = isPublic
+      const updateData = isPublic 
         ? { isPublic, candidateApplyLimit }
         : { isPublic }
-
+      
       const updatedJob = await updateJob(jobData._id, updateData)
       // Recalculate applicant count (exclude moved_to_pipeline from shortlist)
       const shortlistCount = updatedJob.shortlist?.filter((item: any) => item.status !== 'moved_to_pipeline').length || 0
@@ -513,23 +552,23 @@ function JobDetailInnerPage() {
       updatedJob.applicantCount = shortlistCount + pipelineCount
       setJobData(updatedJob)
       setShowPublicJobDialog(false)
-
+      
       // Refresh credit info after update
       await fetchCreditInfo()
-
+      
       toast({
         title: isPublic ? "Job Made Public" : "Job Made Private",
-        description: isPublic
+        description: isPublic 
           ? `Credits reserved for ${candidateApplyLimit} applications`
           : "Unused credits have been refunded",
       })
     } catch (error: any) {
       console.error('❌ Error updating job public status:', error)
-
+      
       // Parse error response for better user feedback
       let errorTitle = "Update Failed"
       let errorMessage = "Failed to update job status."
-
+      
       if (error.message) {
         // Check for specific error codes
         if (error.message.includes('INSUFFICIENT_CREDITS')) {
@@ -545,13 +584,13 @@ function JobDetailInnerPage() {
           errorMessage = error.message
         }
       }
-
+      
       toast({
         title: errorTitle,
         description: errorMessage,
         variant: "destructive",
       })
-
+      
       // Keep dialog open on error so user can adjust settings
       // setShowPublicJobDialog remains true
     } finally {
@@ -563,7 +602,7 @@ function JobDetailInnerPage() {
   // Interview Questions Functions
   const fetchInterviewQuestions = async () => {
     if (!jobData) return
-
+    
     setQuestionsLoading(true)
     try {
       const questions = await interviewService.getQuestionsByJob(jobData?._id, questionsFilter)
@@ -584,7 +623,7 @@ function JobDetailInnerPage() {
   // Interviews Functions
   const fetchJobInterviews = async () => {
     if (!jobData) return
-
+    
     setInterviewsLoading(true)
     try {
       const interviews = await interviewService.getJobInterviews(jobData._id)
@@ -604,7 +643,7 @@ function JobDetailInnerPage() {
 
   const fetchInterviewStages = async () => {
     if (!jobData) return
-
+    
     setStagesLoading(true)
     try {
       const stages = await interviewStageService.getStagesForJob(jobData._id)
@@ -644,7 +683,7 @@ function JobDetailInnerPage() {
         tags: [],
         timeLimit: undefined,
       })
-
+      
       // Automatically analyze the quality of the newly created question
       try {
         console.log('🔍 Automatically analyzing quality for new question:', createdQuestion._id)
@@ -658,7 +697,7 @@ function JobDetailInnerPage() {
         console.warn('⚠️ Failed to analyze question quality:', analysisError)
         // Don't show error to user as this is automatic
       }
-
+      
       toast({
         title: "Question Created",
         description: "Interview question has been created successfully.",
@@ -676,7 +715,7 @@ function JobDetailInnerPage() {
 
   const handleAdvancedGenerate = async (options: GenerateQuestionsOptions) => {
     if (!jobData) return
-
+    
     setIsGenerating(true)
     try {
       const generatedQuestions = await interviewService.generateQuestions(jobData?._id, options)
@@ -702,7 +741,7 @@ function JobDetailInnerPage() {
 
   const handleOptimizedGenerate = async (options: OptimizedGenerationOptions) => {
     if (!jobData) return
-
+    
     setIsGenerating(true)
     try {
       const result = await interviewService.generateOptimizedQuestionSet(jobData?._id, options)
@@ -755,7 +794,7 @@ function JobDetailInnerPage() {
       // Decode HTML entities from question text fields before saving
       const cleanedData = prepareFormDataForSave(updateData)
       const updatedQuestion = await interviewService.updateQuestion(questionId, cleanedData)
-      setInterviewQuestions(prev =>
+      setInterviewQuestions(prev => 
         prev.map(q => q._id === questionId ? updatedQuestion : q)
       )
       setEditingQuestion(null)
@@ -852,6 +891,36 @@ function JobDetailInnerPage() {
     setSelectedCandidate(candidate)
   }
 
+  const handleExportPipelineReport = async () => {
+    if (!jobData?._id || isExportingReport) return
+
+    try {
+      setIsExportingReport(true)
+      const { blob, fileName } = await pipelineService.exportPipelineExcelReport(jobData._id)
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(link)
+
+      toast({
+        title: "Export Ready",
+        description: "Detailed pipeline report downloaded successfully.",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Export Failed",
+        description: error?.message || "Unable to export pipeline report.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsExportingReport(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -880,44 +949,57 @@ function JobDetailInnerPage() {
   }
 
   // Extract department name for MobileJobHeader
-  const departmentName = typeof jobData?.department === 'object'
-    ? (jobData.department as any)?.name
+  const departmentName = typeof jobData?.department === 'object' 
+    ? (jobData.department as any)?.name 
     : jobData?.department;
 
   return (
     <div className={cn(
-      "min-h-screen bg-background relative z-0 font-sans selection:bg-blue-500/30",
+      "min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-900 dark:to-gray-900",
       isMobile && "pb-20" // Add bottom padding on mobile for the bottom action bar
     )}>
-      <div className="fixed inset-0 bg-noise opacity-5 pointer-events-none z-10"></div>
-      <div className="relative z-20">
-        <JobSetupWizard isOpen={showSetupWizard} onClose={() => setShowSetupWizard(false)} />
-        {/* Mobile-Responsive Header */}
-        <div>
-          <MobileJobHeader
-            jobData={{
-              _id: jobData._id,
-              title: jobData.title,
-              department: departmentName,
-              location: jobData.location,
-              type: jobData.type,
-              salary: jobData.salary || {},
-              applicantCount: jobData.applicantCount,
-              status: jobData.status,
-              publiclyVisible: jobData.isPublic || false
-            }}
-            isMobile={isMobile}
-            onBack={() => router.back()}
-            onEdit={() => router.push(`/jobs/${jobData?._id}/edit`)}
-            onDelete={handleDeleteJob}
-            onEmailSettings={() => setShowEmailSettingsDialog(true)}
-            onSetupWizard={() => setShowSetupWizard(true)}
-            onTogglePublic={() => handleTogglePublicStatus(!jobData.isPublic)}
-            isUpdatingPublicStatus={isUpdatingPublicStatus}
-            formatSalaryDisplay={formatSalaryDisplay}
-          />
-        </div>
+      <JobSetupWizard isOpen={showSetupWizard} onClose={() => setShowSetupWizard(false)} />
+      {/* Mobile-Responsive Header */}
+      <div>
+      <MobileJobHeader
+        jobData={{
+          _id: jobData._id,
+          title: jobData.title,
+          department: departmentName,
+          location: jobData.location,
+          type: jobData.type,
+          salary: jobData.salary || {},
+          applicantCount: jobData.applicantCount,
+          status: jobData.status,
+          publiclyVisible: jobData.isPublic || false
+        }}
+        isMobile={isMobile}
+        onBack={() => router.back()}
+        onEdit={() => router.push(`/jobs/${jobData?._id}/edit`)}
+        onDelete={handleDeleteJob}
+        onExportReport={handleExportPipelineReport}
+        onEmailSettings={() => {
+          setEmailTemplateToEdit('rejection')
+          setShowEmailSettingsDialog(true)
+        }}
+        onSetupWizard={() => setShowSetupWizard(true)}
+        onTogglePublic={() => handleTogglePublicStatus(!jobData.isPublic)}
+        isUpdatingPublicStatus={isUpdatingPublicStatus}
+        isExportingReport={isExportingReport}
+        formatSalaryDisplay={formatSalaryDisplay}
+      />
       </div>
+
+      {aiInterviewsEnabled && (
+        <div className="mx-auto flex w-full max-w-screen-2xl justify-end px-4 pt-4 sm:px-6 lg:px-8">
+          <Button asChild className="w-full sm:w-auto">
+            <Link href={`/ai-interviews?jobId=${jobData._id}`}>
+              <Bot className="mr-2 h-4 w-4" />
+              Create AI Interview
+            </Link>
+          </Button>
+        </div>
+      )}
 
       {/* Guided Tour Button moved into header actions */}
 
@@ -925,378 +1007,241 @@ function JobDetailInnerPage() {
       <ResponsiveContentLayout>
         <div className="w-full">
 
-          <div className="w-full">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              {/* Simple Tab Navigation */}
-              <div>
+                <div className="w-full">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                {/* Simple Tab Navigation */}
+                <div>
                 <SimpleTabNavigation
                   activeTab={activeTab}
                   onTabChange={setActiveTab}
                   candidateCount={candidateCount}
                   isMobile={isMobile}
                 />
-              </div>
+                </div>
 
-              <TabsContent value="overview" className="space-y-4 sm:space-y-6">
-                <Card className="glass-card border-0 shadow-lg">
-                  <CardHeader className="bg-gradient-to-r from-blue-950/40 to-indigo-950/40 text-blue-100 rounded-t-lg border-b border-white/5">
-                    <CardTitle className="text-xl font-semibold flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-blue-400" />
-                      Job Details
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4 sm:space-y-6 pt-4 sm:pt-6 px-3 sm:px-4 lg:px-6">
-                    {/* Public Job Application Management */}
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3 px-1">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-green-600 to-green-700 flex items-center justify-center">
-                          <Globe className="h-4 w-4 text-white" />
-                        </div>
-                        <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Public Applications</h3>
-                      </div>
-                      <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-card/30 border border-white/5">
-                        {/* Mobile-Responsive Toggle Section */}
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
-                          <div className="flex-1">
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
-                              <p className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100">
-                                Enable Public Applications
-                              </p>
-                              <Badge
-                                variant={jobData?.isPublic ? "default" : "secondary"}
-                                className={jobData?.isPublic ? "bg-green-600 hover:bg-green-700" : ""}
-                              >
-                                {jobData?.isPublic ? 'Public' : 'Private'}
-                              </Badge>
+                <TabsContent value="overview" className="space-y-4 sm:space-y-6">
+                  <Card className="border-0 bg-white/60 backdrop-blur-xl shadow-lg dark:bg-slate-800/60 dark:backdrop-blur-xl dark:shadow-2xl">
+                    <CardHeader className="bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-t-lg">
+                      <CardTitle className="text-xl font-semibold flex items-center gap-2">
+                        <FileText className="h-5 w-5" />
+                        Job Details
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4 sm:space-y-6 pt-4 sm:pt-6 px-3 sm:px-4 lg:px-6">
+                        {/* Public Job Application Management */}
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-3 px-1">
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-green-600 to-green-700 flex items-center justify-center">
+                              <Globe className="h-4 w-4 text-white" />
                             </div>
-                            <p className="text-sm text-gray-600">
-                              {jobData?.isPublic
-                                ? 'Anyone can apply through your public job link'
-                                : 'Only internal applications are accepted'}
-                            </p>
+                            <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Public Applications</h3>
                           </div>
-                          <div className="flex items-center gap-3">
-                            {isUpdatingPublicStatus && (
-                              <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
-                            )}
-                            <Switch
-                              checked={jobData?.isPublic || false}
-                              onCheckedChange={handleTogglePublicStatus}
-                              disabled={isUpdatingPublicStatus}
-                              className="data-[state=checked]:bg-green-600"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Public Link Section - Only show when public */}
-                        {jobData?.isPublic && (
-                          <div className="space-y-4 pt-4 border-t border-green-200">
-                            {jobData?.publicUrl ? (
-                              <div className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                  <label className="text-sm font-medium text-gray-700">Public Job Link:</label>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={async () => {
-                                      const fullUrl = `${window.location.origin}${jobData?.publicUrl}`
-                                      await navigator.clipboard.writeText(fullUrl)
-                                      toast({
-                                        title: "Link Copied!",
-                                        description: "Public job link copied to clipboard.",
-                                      })
-                                    }}
-                                    className="h-7 px-2 text-xs"
-                                  >
-                                    Copy Link
-                                  </Button>
-                                </div>
-                                <div className="p-3 bg-white rounded-lg border border-green-300">
-                                  <code className="text-sm text-gray-800 break-all">
-                                    {`${window.location.origin}${jobData?.publicUrl}`}
-                                  </code>
-                                </div>
-
-                                <div className="flex items-center gap-4 text-sm text-gray-600">
-                                  <div className="flex items-center gap-1">
-                                    <Users className="h-4 w-4" />
-                                    <span>{jobData?.analytics?.publicViews || 0} views</span>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <Send className="h-4 w-4" />
-                                    <span>{jobData?.analytics?.publicApplications || 0} applications</span>
-                                  </div>
-                                </div>
-
-                                {/* Application Slots Info & Management */}
-                                {jobData?.candidateApplyLimit && jobData.candidateApplyLimit > 0 && (
-                                  <div className="p-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-slate-800 dark:to-slate-700 rounded-lg border border-blue-200 dark:border-slate-600 space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Application Slots:</span>
-                                      <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
-                                        {jobData?.publicApplicationCount || 0} / {jobData.candidateApplyLimit}
-                                      </span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-2">
-                                      <div
-                                        className="bg-gradient-to-r from-blue-600 to-purple-600 h-2 rounded-full transition-all duration-300"
-                                        style={{
-                                          width: `${Math.min(((jobData?.publicApplicationCount || 0) / jobData.candidateApplyLimit) * 100, 100)}%`
-                                        }}
-                                      />
-                                    </div>
-                                    <div className="flex items-center justify-between text-xs text-gray-600 dark:text-muted-foreground/70">
-                                      <span>
-                                        {jobData.candidateApplyLimit - (jobData?.publicApplicationCount || 0)} slots remaining
-                                      </span>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                          setPublicDialogMode('increase')
-                                          setShowPublicJobDialog(true)
-                                        }}
-                                        className="h-7 px-3 text-xs bg-blue-600 text-white hover:bg-blue-700 border-blue-600"
-                                      >
-                                        <Plus className="h-3 w-3 mr-1" />
-                                        Increase Slots
-                                      </Button>
-                                    </div>
-                                  </div>
-                                )}
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => window.open(`${window.location.origin}${jobData?.publicUrl}`, '_blank')}
-                                  className="w-full"
-                                >
-                                  <ExternalLink className="h-4 w-4 mr-2" />
-                                  Preview Public Job Page
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="text-center py-4">
-                                <div className="flex items-center justify-center gap-2 text-blue-600 mb-2">
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                  <span className="text-sm font-medium">Generating public link...</span>
-                                </div>
-                                <p className="text-xs text-gray-500">
-                                  Your public job link will be available shortly
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Internal Recruitment Management */}
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-3 px-1">
-                          <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 flex items-center justify-center">
-                            <Building className="h-4 w-4 text-white" />
-                          </div>
-                          <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Internal Recruitment</h3>
-                        </div>
-                        <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-card/30 border border-white/5">
-                          {/* Toggle Section */}
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
-                            <div className="flex-1">
-                              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
-                                <p className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100">
-                                  Enable Internal Applications
-                                </p>
+                          <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-gradient-to-br from-green-50/50 to-green-100/50 border border-green-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
+                            {/* Mobile-Responsive Toggle Section */}
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 sm:mb-6">
+                              <div className="flex-1">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
+                                  <p className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                    Enable Public Applications
+                                  </p>
                                 <Badge
-                                  variant={jobData?.isInternalEnabled ? "default" : "secondary"}
-                                  className={jobData?.isInternalEnabled ? "bg-purple-600 hover:bg-purple-700" : ""}
+                                  variant={jobData?.isPublic ? "default" : "secondary"}
+                                  className={jobData?.isPublic ? "bg-green-600 hover:bg-green-700" : ""}
                                 >
-                                  {jobData?.isInternalEnabled ? 'Enabled' : 'Disabled'}
+                                  {jobData?.isPublic ? 'Public' : 'Private'}
                                 </Badge>
                               </div>
                               <p className="text-sm text-gray-600">
-                                {jobData?.isInternalEnabled
-                                  ? 'Internal employees can apply through the internal link'
-                                  : 'Enable to allow internal employee applications'}
+                                {jobData?.isPublic
+                                  ? 'Anyone can apply through your public job link'
+                                  : 'Applications can only be added by your hiring team'}
                               </p>
                             </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                if (jobData?.isInternalEnabled) {
-                                  setInternalDialogMode('disable')
-                                  setShowInternalDialog(true)
-                                } else {
-                                  setInternalDialogMode('enable')
-                                  setShowInternalDialog(true)
-                                }
-                              }}
-                              className={jobData?.isInternalEnabled ? "bg-purple-600 text-white hover:bg-purple-700" : ""}
-                            >
-                              {jobData?.isInternalEnabled ? 'Manage' : 'Enable'}
-                            </Button>
+                            <div className="flex items-center gap-3">
+                              {isUpdatingPublicStatus && (
+                                <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+                              )}
+                              <Switch
+                                checked={jobData?.isPublic || false}
+                                onCheckedChange={handleTogglePublicStatus}
+                                disabled={isUpdatingPublicStatus}
+                                className="data-[state=checked]:bg-green-600"
+                              />
+                            </div>
                           </div>
-                        </div>
+                          
+                          {/* Public Link Section - Only show when public */}
+                          {jobData?.isPublic && (
+                            <div className="space-y-4 pt-4 border-t border-green-200">
+                              {jobData?.publicUrl ? (
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <label className="text-sm font-medium text-gray-700">Public Job Link:</label>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={async () => {
+                                        const fullUrl = `${window.location.origin}${jobData?.publicUrl}`
+                                        await navigator.clipboard.writeText(fullUrl)
+                                        toast({
+                                          title: "Link Copied!",
+                                          description: "Public job link copied to clipboard.",
+                                        })
+                                      }}
+                                      className="h-7 px-2 text-xs"
+                                    >
+                                      Copy Link
+                                    </Button>
+                                  </div>
+                                  <div className="p-3 bg-white rounded-lg border border-green-300">
+                                    <code className="text-sm text-gray-800 break-all">
+                                      {`${window.location.origin}${jobData?.publicUrl}`}
+                                    </code>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-4 text-sm text-gray-600">
+                                    <div className="flex items-center gap-1">
+                                      <Users className="h-4 w-4" />
+                                      <span>{jobData?.analytics?.publicViews || 0} views</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Send className="h-4 w-4" />
+                                      <span>{jobData?.analytics?.publicApplications || 0} applications</span>
+                                    </div>
+                                  </div>
 
-                        {/* Internal Link Section - Only show when enabled */}
-                        {jobData?.isInternalEnabled && (
-                          <div className="space-y-4 pt-4 border-t border-purple-200">
-                            {jobData?.internalUrl ? (
-                              <div className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                  <label className="text-sm font-medium text-gray-700">Internal Job Link:</label>
+                                  {/* Application Slots Info & Management */}
+                                  {jobData?.candidateApplyLimit && jobData.candidateApplyLimit > 0 && (
+                                    <div className="p-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-slate-800 dark:to-slate-700 rounded-lg border border-blue-200 dark:border-slate-600 space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Application Slots:</span>
+                                        <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+                                          {jobData?.publicApplicationCount || 0} / {jobData.candidateApplyLimit}
+                                        </span>
+                                      </div>
+                                      <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-2">
+                                        <div
+                                          className="bg-gradient-to-r from-blue-600 to-purple-600 h-2 rounded-full transition-all duration-300"
+                                          style={{
+                                            width: `${Math.min(((jobData?.publicApplicationCount || 0) / jobData.candidateApplyLimit) * 100, 100)}%`
+                                          }}
+                                        />
+                                      </div>
+                                      <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
+                                        <span>
+                                          {jobData.candidateApplyLimit - (jobData?.publicApplicationCount || 0)} slots remaining
+                                        </span>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setPublicDialogMode('increase')
+                                            setShowPublicJobDialog(true)
+                                          }}
+                                          className="h-7 px-3 text-xs bg-blue-600 text-white hover:bg-blue-700 border-blue-600"
+                                        >
+                                          <Plus className="h-3 w-3 mr-1" />
+                                          Increase Slots
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    onClick={async () => {
-                                      const fullUrl = `${window.location.origin}${jobData?.internalUrl}`
-                                      await navigator.clipboard.writeText(fullUrl)
-                                      toast({
-                                        title: "Link Copied!",
-                                        description: "Internal job link copied to clipboard.",
-                                      })
-                                    }}
-                                    className="h-7 px-2 text-xs"
+                                    onClick={() => window.open(`${window.location.origin}${jobData?.publicUrl}`, '_blank')}
+                                    className="w-full"
                                   >
-                                    Copy Link
+                                    <ExternalLink className="h-4 w-4 mr-2" />
+                                    Preview Public Job Page
                                   </Button>
                                 </div>
-                                <div className="p-3 bg-white rounded-lg border border-purple-300">
-                                  <code className="text-sm text-gray-800 break-all">
-                                    {`${window.location.origin}${jobData?.internalUrl}`}
-                                  </code>
-                                </div>
-
-                                <div className="flex items-center gap-4 text-sm text-gray-600">
-                                  <div className="flex items-center gap-1">
-                                    <Users className="h-4 w-4" />
-                                    <span>{jobData?.analytics?.internalViews || 0} views</span>
+                              ) : (
+                                <div className="text-center py-4">
+                                  <div className="flex items-center justify-center gap-2 text-blue-600 mb-2">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span className="text-sm font-medium">Generating public link...</span>
                                   </div>
-                                  <div className="flex items-center gap-1">
-                                    <Send className="h-4 w-4" />
-                                    <span>{jobData?.analytics?.internalApplications || 0} applications</span>
-                                  </div>
+                                  <p className="text-xs text-gray-500">
+                                    Your public job link will be available shortly
+                                  </p>
                                 </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
 
-                                {/* Application Slots Info */}
-                                {jobData?.internalCandidateApplyLimit && jobData.internalCandidateApplyLimit > 0 && (
-                                  <div className="p-3 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-slate-800 dark:to-slate-700 rounded-lg border border-purple-200 dark:border-slate-600 space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Application Slots:</span>
-                                      <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
-                                        {jobData?.internalApplicationCount || 0} / {jobData.internalCandidateApplyLimit}
-                                      </span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-2">
-                                      <div
-                                        className="bg-gradient-to-r from-purple-600 to-pink-600 h-2 rounded-full transition-all duration-300"
-                                        style={{
-                                          width: `${Math.min(((jobData?.internalApplicationCount || 0) / jobData.internalCandidateApplyLimit) * 100, 100)}%`
-                                        }}
-                                      />
-                                    </div>
-                                    <div className="flex items-center justify-between text-xs text-gray-600 dark:text-muted-foreground/70">
-                                      <span>
-                                        {jobData.internalCandidateApplyLimit - (jobData?.internalApplicationCount || 0)} slots remaining
-                                      </span>
-                                    </div>
-                                  </div>
-                                )}
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => window.open(`${window.location.origin}${jobData?.internalUrl}`, '_blank')}
-                                  className="w-full bg-purple-600 text-white hover:bg-purple-700"
-                                >
-                                  <ExternalLink className="h-4 w-4 mr-2" />
-                                  Preview Internal Job Page
-                                </Button>
-                              </div>
-                            ) : (
-                              <div className="text-center py-4">
-                                <div className="flex items-center justify-center gap-2 text-purple-600 mb-2">
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                  <span className="text-sm font-medium">Generating internal link...</span>
-                                </div>
-                                <p className="text-xs text-gray-500">
-                                  Your internal job link will be available shortly
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
                       {/* Mobile-First Stats Grid */}
                       <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 transition-all duration-200 dark:from-slate-800 dark:to-slate-700 dark:hover:from-slate-700 dark:hover:to-slate-600 min-h-[80px] flex items-center">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
                               <Building className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">Department</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{typeof jobData?.department === 'object' ? (jobData?.department as any)?.name : jobData?.department}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{typeof jobData?.department === 'object' ? (jobData?.department as any)?.name : jobData?.department}</p>
                             </div>
                           </div>
                         </div>
-
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
+                        
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 transition-all duration-200 dark:from-slate-800 dark:to-slate-700 dark:hover:from-slate-700 dark:hover:to-slate-600 min-h-[80px] flex items-center">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gray-600 flex items-center justify-center flex-shrink-0">
                               <MapPin className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide">Location</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{jobData?.location}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{jobData?.location}</p>
                             </div>
                           </div>
                         </div>
-
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
+                        
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 transition-all duration-200 dark:from-slate-800 dark:to-slate-700 dark:hover:from-slate-700 dark:hover:to-slate-600 min-h-[80px] flex items-center">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
                               <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-blue-700 dark:text-blue-300 uppercase tracking-wide">Job Type</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{jobData?.type}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{jobData?.type}</p>
                             </div>
                           </div>
                         </div>
-
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
+                        
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl bg-gradient-to-br from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 transition-all duration-200 dark:from-slate-800 dark:to-slate-700 dark:hover:from-slate-700 dark:hover:to-slate-600 min-h-[80px] flex items-center">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-green-600 flex items-center justify-center flex-shrink-0">
                               <Briefcase className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-green-700 dark:text-green-300 uppercase tracking-wide">Salary</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{formatSalaryDisplay(jobData?.salary)}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{formatSalaryDisplay(jobData?.salary)}</p>
                             </div>
                           </div>
                         </div>
-
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
+                        
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 hover:from-purple-100 hover:to-purple-200 transition-all duration-200 dark:from-slate-800 dark:to-slate-700 dark:hover:from-slate-700 dark:hover:to-slate-600 min-h-[80px] flex items-center">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-purple-600 flex items-center justify-center flex-shrink-0">
                               <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-purple-700 dark:text-purple-300 uppercase tracking-wide">Posted</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{jobData?.createdAt ? new Date(jobData?.createdAt).toLocaleDateString() : 'Not specified'}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{jobData?.createdAt ? new Date(jobData?.createdAt).toLocaleDateString() : 'Not specified'}</p>
                             </div>
                           </div>
                         </div>
-
-                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl glass-card bg-white/50 dark:bg-card/30 hover:bg-white/80 dark:hover:bg-card/50 transition-all duration-200 min-h-[80px] flex items-center border border-gray-200 dark:border-white/5">
+                        
+                        <div className="group p-3 sm:p-4 lg:p-5 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 hover:from-orange-100 hover:to-orange-200 transition-all duration-200 dark:from-slate-800 dark:to-slate-700 dark:hover:from-slate-700 dark:hover:to-slate-600 min-h-[80px] flex items-center">
                           <div className="flex items-center gap-3 w-full">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-orange-600 flex items-center justify-center flex-shrink-0">
                               <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium text-orange-700 dark:text-orange-300 uppercase tracking-wide">Deadline</p>
-                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-foreground dark:text-gray-100 truncate">{jobData?.applicationDeadline ? new Date(jobData?.applicationDeadline).toLocaleDateString() : 'Open'}</p>
+                              <p className="text-sm sm:text-base lg:text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">{jobData?.applicationDeadline ? new Date(jobData?.applicationDeadline).toLocaleDateString() : 'Open'}</p>
                             </div>
                           </div>
                         </div>
@@ -1314,9 +1259,9 @@ function JobDetailInnerPage() {
                             <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 flex items-center justify-center flex-shrink-0">
                               <FileText className="h-4 w-4 text-white" />
                             </div>
-                            <h3 className="text-base sm:text-lg lg:text-xl font-bold text-foreground dark:text-gray-100">Description</h3>
+                            <h3 className="text-base sm:text-lg lg:text-xl font-bold text-gray-900 dark:text-gray-100">Description</h3>
                           </div>
-                          <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
+                          <div className="p-4 sm:p-5 lg:p-6 rounded-xl bg-gradient-to-br from-blue-50/50 to-blue-100/50 border border-blue-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                             <div className="prose prose-sm sm:prose max-w-none dark:prose-invert">
                               <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap break-words text-sm sm:text-base">
                                 {jobData?.description || 'No description available.'}
@@ -1332,9 +1277,9 @@ function JobDetailInnerPage() {
                               <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-green-600 to-green-700 flex items-center justify-center">
                                 <CheckCircle className="h-4 w-4 text-white" />
                               </div>
-                              <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Requirements</h3>
+                              <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Requirements</h3>
                             </div>
-                            <div className="p-4 sm:p-5 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
+                            <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-green-50/50 to-green-100/50 border border-green-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                               {jobData?.requirements ? (
                                 <div className="prose prose-sm max-w-none dark:prose-invert">
                                   <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap text-sm sm:text-base">
@@ -1342,7 +1287,7 @@ function JobDetailInnerPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <p className="text-gray-500 dark:text-muted-foreground/70 italic text-sm">No requirements specified.</p>
+                                <p className="text-gray-500 dark:text-gray-400 italic text-sm">No requirements specified.</p>
                               )}
                             </div>
                           </div>
@@ -1352,9 +1297,9 @@ function JobDetailInnerPage() {
                               <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 flex items-center justify-center">
                                 <Star className="h-4 w-4 text-white" />
                               </div>
-                              <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Responsibilities</h3>
+                              <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Responsibilities</h3>
                             </div>
-                            <div className="p-4 sm:p-5 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
+                            <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-purple-50/50 to-purple-100/50 border border-purple-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
                               {jobData?.responsibilities ? (
                                 <div className="prose prose-sm max-w-none dark:prose-invert">
                                   <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap text-sm sm:text-base">
@@ -1362,104 +1307,104 @@ function JobDetailInnerPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <p className="text-gray-500 dark:text-muted-foreground/70 italic text-sm">No responsibilities specified.</p>
+                                <p className="text-gray-500 dark:text-gray-400 italic text-sm">No responsibilities specified.</p>
                               )}
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Skills & Benefits - Grid Layout */}
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                        {jobData?.skills && (
-                          <div className="space-y-3">
-                            <div className="flex items-center gap-3 px-1">
-                              <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-orange-600 to-orange-700 flex items-center justify-center">
-                                <Star className="h-4 w-4 text-white" />
+                        {/* Skills & Benefits - Grid Layout */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                          {jobData?.skills && (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-3 px-1">
+                                <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-orange-600 to-orange-700 flex items-center justify-center">
+                                  <Star className="h-4 w-4 text-white" />
+                                </div>
+                                <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Required Skills</h3>
                               </div>
-                              <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Required Skills</h3>
-                            </div>
-                            <div className="p-4 sm:p-5 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
-                              <div className="prose prose-sm max-w-none dark:prose-invert">
-                                <div className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm sm:text-base">
-                                  {jobData?.skills}
+                              <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-orange-50/50 to-orange-100/50 border border-orange-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
+                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                  <div className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm sm:text-base">
+                                    {jobData?.skills}
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        )}
+                          )}
 
-                        {jobData?.benefits && (
-                          <div className="space-y-3">
-                            <div className="flex items-center gap-3 px-1">
-                              <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 flex items-center justify-center">
-                                <Star className="h-4 w-4 text-white" />
+                          {jobData?.benefits && (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-3 px-1">
+                                <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 flex items-center justify-center">
+                                  <Star className="h-4 w-4 text-white" />
+                                </div>
+                                <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100">Benefits</h3>
                               </div>
-                              <h3 className="text-base sm:text-lg font-bold text-foreground dark:text-gray-100">Benefits</h3>
-                            </div>
-                            <div className="p-4 sm:p-5 rounded-xl bg-white/50 dark:bg-card/30 border border-gray-200 dark:border-white/5">
-                              <div className="prose prose-sm max-w-none dark:prose-invert">
-                                <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap text-sm sm:text-base">
-                                  {jobData?.benefits}
+                              <div className="p-4 sm:p-5 rounded-xl bg-gradient-to-br from-emerald-50/50 to-emerald-100/50 border border-emerald-200 dark:from-slate-800/50 dark:to-slate-700/50 dark:border-slate-700">
+                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                  <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap text-sm sm:text-base">
+                                    {jobData?.benefits}
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
+                    </CardContent>
+                  </Card>
+            </TabsContent>
+
+                <TabsContent value="candidates" className="space-y-3 sm:space-y-4">
+                  <Tabs value={candidatesTab} onValueChange={setCandidatesTab} className="w-full">
+                    {/* Mobile-Optimized Sub-Tabs */}
+                    <div className="mb-4">
+                      {isMobile ? (
+                        <div className="flex space-x-2 overflow-x-auto pb-2">
+                          <Button
+                            variant={candidatesTab === 'ai-matches' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setCandidatesTab('ai-matches')}
+                            className={cn(
+                              "min-w-fit whitespace-nowrap h-12 px-4",
+                              candidatesTab === 'ai-matches' && "bg-blue-600 text-white shadow-md"
+                            )}
+                          >
+                            🤖 AI Matches
+                          </Button>
+                          <Button
+                            variant={candidatesTab === 'shortlist' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setCandidatesTab('shortlist')}
+                            className={cn(
+                              "min-w-fit whitespace-nowrap h-12 px-4",
+                              candidatesTab === 'shortlist' && "bg-blue-600 text-white shadow-md"
+                            )}
+                          >
+                            ⭐ Shortlist
+                          </Button>
+                        </div>
+                      ) : (
+                        <TabsList className="grid w-full grid-cols-2 bg-gradient-to-r from-gray-100 to-blue-50 dark:from-slate-700 dark:to-slate-800 p-2 rounded-xl h-auto sm:h-12 gap-1">
+                          <TabsTrigger 
+                            value="ai-matches"
+                            className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-blue-700 data-[state=active]:text-white data-[state=active]:shadow-lg rounded-lg font-medium transition-all duration-200 text-gray-700 dark:text-slate-300 dark:data-[state=active]:text-white hover:bg-white/50 dark:hover:bg-slate-600/50 text-sm sm:text-base min-h-[44px] px-3 py-2"
+                          >
+                            🤖 AI Matches
+                          </TabsTrigger>
+                          <TabsTrigger 
+                            value="shortlist"
+                            className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-blue-700 data-[state=active]:text-white data-[state=active]:shadow-lg rounded-lg font-medium transition-all duration-200 text-gray-700 dark:text-slate-300 dark:data-[state=active]:text-white hover:bg-white/50 dark:hover:bg-slate-600/50 text-sm sm:text-base min-h-[44px] px-3 py-2"
+                          >
+                            ⭐ Shortlist
+                          </TabsTrigger>
+                        </TabsList>
+                      )}
                     </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="candidates" className="space-y-3 sm:space-y-4">
-                <Tabs value={candidatesTab} onValueChange={setCandidatesTab} className="w-full">
-                  {/* Mobile-Optimized Sub-Tabs */}
-                  <div className="mb-4">
-                    {isMobile ? (
-                      <div className="flex space-x-2 overflow-x-auto pb-2">
-                        <Button
-                          variant={candidatesTab === 'ai-matches' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setCandidatesTab('ai-matches')}
-                          className={cn(
-                            "min-w-fit whitespace-nowrap h-12 px-4",
-                            candidatesTab === 'ai-matches' && "bg-blue-600 text-white shadow-md"
-                          )}
-                        >
-                          🤖 AI Matches
-                        </Button>
-                        <Button
-                          variant={candidatesTab === 'shortlist' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setCandidatesTab('shortlist')}
-                          className={cn(
-                            "min-w-fit whitespace-nowrap h-12 px-4",
-                            candidatesTab === 'shortlist' && "bg-blue-600 text-white shadow-md"
-                          )}
-                        >
-                          ⭐ Shortlist
-                        </Button>
-                      </div>
-                    ) : (
-                      <TabsList className="grid w-full grid-cols-2 bg-gray-100/50 dark:bg-card/30 border border-gray-200 dark:border-white/5 p-2 rounded-xl h-auto sm:h-12 gap-1">
-                        <TabsTrigger
-                          value="ai-matches"
-                          className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-blue-700 data-[state=active]:text-white data-[state=active]:shadow-lg rounded-lg font-medium transition-all duration-200 text-gray-700 dark:text-slate-300 dark:data-[state=active]:text-white hover:bg-white/50 dark:hover:bg-slate-600/50 text-sm sm:text-base min-h-[44px] px-3 py-2"
-                        >
-                          🤖 AI Matches
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="shortlist"
-                          className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-blue-700 data-[state=active]:text-white data-[state=active]:shadow-lg rounded-lg font-medium transition-all duration-200 text-gray-700 dark:text-slate-300 dark:data-[state=active]:text-white hover:bg-white/50 dark:hover:bg-slate-600/50 text-sm sm:text-base min-h-[44px] px-3 py-2"
-                        >
-                          ⭐ Shortlist
-                        </TabsTrigger>
-                      </TabsList>
-                    )}
-                  </div>
-                  <TabsContent value="ai-matches">
-                    <div data-tutorial="ai-matches">
+                    <TabsContent value="ai-matches">
+                      <div data-tutorial="ai-matches">
                       <JobEmbeddingCard
                         jobId={jobData?._id}
                         onCandidateAdded={() => {
@@ -1469,10 +1414,10 @@ function JobDetailInnerPage() {
                         pipelineCandidateIds={jobData?.applicants?.map(app => app.candidate._id) || []}
                         shortlistCandidateIds={jobData?.shortlist?.map(item => item.candidate) || []}
                       />
-                    </div>
-                  </TabsContent>
-                  <TabsContent value="shortlist">
-                    <div data-tutorial="shortlist-section">
+                      </div>
+                    </TabsContent>
+                    <TabsContent value="shortlist">
+                      <div data-tutorial="shortlist-section">
                       <ShortlistCard
                         jobId={jobData?._id}
                         jobTitle={jobData?.title}
@@ -1481,306 +1426,54 @@ function JobDetailInnerPage() {
                           handleAnalyticsUpdate()
                         }}
                       />
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </TabsContent>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </TabsContent>
 
-              <TabsContent value="questions" className="space-y-3 sm:space-y-4">
-                <Card className="glass-card border-0 shadow-lg ring-1 ring-gray-200 dark:ring-0">
-                  <CardHeader className="bg-gradient-to-r from-purple-100 to-indigo-100 dark:from-purple-950/40 dark:to-indigo-950/40 text-purple-900 dark:text-purple-100 rounded-t-lg border-b border-gray-200 dark:border-white/5">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
-                          <HelpCircle className="h-5 w-5 flex-shrink-0" />
-                          <span className="truncate">Interview Questions</span>
-                        </CardTitle>
-                        <CardDescription className="text-purple-700 dark:text-purple-100 text-sm">
-                          Manage interview questions for this position
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    {/* Filters */}
-                    <div className="mb-6 p-4 bg-gray-50/50 dark:bg-card/30 border border-gray-200 dark:border-white/5 rounded-lg">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Filter className="h-4 w-4 text-purple-600 flex-shrink-0" />
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filters:</span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                        <select
-                          className="px-3 py-2 border rounded-md text-sm bg-card/50 border-white/10 text-gray-100 min-h-[40px]"
-                          value={questionsFilter.type}
-                          onChange={(e) => setQuestionsFilter(prev => ({ ...prev, type: e.target.value }))}
-                        >
-                          <option value="all_types">All Types</option>
-                          <option value="technical">Technical</option>
-                          <option value="behavioral">Behavioral</option>
-                          <option value="situational">Situational</option>
-                          <option value="cultural_fit">Cultural Fit</option>
-                          <option value="general">General</option>
-                          <option value="skills_based">Skills Based</option>
-                          <option value="experience_based">Experience Based</option>
-                        </select>
-                        <select
-                          className="px-3 py-2 border rounded-md text-sm bg-card/50 border-white/10 text-gray-100 min-h-[40px]"
-                          value={questionsFilter.stage}
-                          onChange={(e) => setQuestionsFilter(prev => ({ ...prev, stage: e.target.value }))}
-                        >
-                          <option value="all_stages">All Stages</option>
-                          <option value="screening">Screening</option>
-                          <option value="first_round">First Round</option>
-                          <option value="technical">Technical</option>
-                          <option value="final">Final</option>
-                          <option value="hr">HR</option>
-                          <option value="panel">Panel</option>
-                        </select>
-                        <select
-                          className="px-3 py-2 border rounded-md text-sm bg-card/50 border-white/10 text-gray-100 min-h-[40px]"
-                          value={questionsFilter.difficulty}
-                          onChange={(e) => setQuestionsFilter(prev => ({ ...prev, difficulty: e.target.value }))}
-                        >
-                          <option value="all_difficulties">All Difficulties</option>
-                          <option value="easy">Easy</option>
-                          <option value="medium">Medium</option>
-                          <option value="hard">Hard</option>
-                        </select>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setQuestionsFilter({ type: '', stage: '', difficulty: '' })}
-                          className="text-gray-600 dark:text-gray-300 dark:border-slate-600 min-h-[40px] w-full justify-center"
-                        >
-                          <RefreshCw className="h-4 w-4 mr-1" />
-                          Clear
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Questions List */}
-                    {questionsLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <Loader2 className="animate-spin h-8 w-8 text-purple-600 mr-3" />
-                        <span className="text-gray-600">Loading interview questions...</span>
-                      </div>
-                    ) : interviewQuestions.length === 0 ? (
-                      <div className="text-center py-12">
-                        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center mb-6 mx-auto dark:from-purple-900/30 dark:to-purple-800/30">
-                          <HelpCircle className="h-12 w-12 text-purple-600 dark:text-purple-400" />
-                        </div>
-                        <h3 className="text-2xl font-bold text-foreground dark:text-gray-100 mb-2">🎯 Ready to interview?</h3>
-                        <p className="text-lg text-gray-600 dark:text-muted-foreground/70 mb-6">
-                          Create interview questions to help evaluate candidates for this position.
-                        </p>
-                        <div className="flex flex-wrap justify-center gap-3">
-                          <Button
-                            onClick={() => setShowAdvancedGenerator(true)}
-                            className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
-                          >
-                            <Sparkles className="mr-2 h-5 w-5" />
-                            Generate Advanced Questions
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => setShowCreateDialog(true)}
-                            className="border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-900/20"
-                          >
-                            <Plus className="mr-2 h-4 w-4" />
-                            Create Question
-                          </Button>
+                <TabsContent value="questions" className="space-y-3 sm:space-y-4">
+                  <Card className="border-0 bg-white/60 backdrop-blur-xl shadow-lg dark:bg-slate-800/60 dark:backdrop-blur-xl dark:shadow-2xl">
+                    <CardHeader className="bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-t-lg">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
+                            <HelpCircle className="h-5 w-5 flex-shrink-0" />
+                            <span className="truncate">Interview Questions</span>
+                          </CardTitle>
+                          <CardDescription className="text-purple-100 text-sm">
+                            Manage interview questions for this position
+                          </CardDescription>
                         </div>
                       </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {/* Action Buttons Row */}
-                        <div className="flex items-center justify-between gap-3 pb-4 border-b">
-                          <div className="text-sm text-gray-600 dark:text-muted-foreground/70">
-                            Showing {interviewQuestions.length} question{interviewQuestions.length !== 1 ? 's' : ''}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setShowAdvancedGenerator(true)}
-                              className="min-h-[40px] border-purple-200 text-purple-600 hover:bg-purple-50"
-                            >
-                              <Sparkles className="h-4 w-4 mr-2" />
-                              Generate Advanced Questions
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setShowCreateDialog(true)}
-                              className="min-h-[40px]"
-                            >
-                              <Plus className="h-4 w-4 mr-2" />
-                              Create Question
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={fetchInterviewQuestions}
-                              className="text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 min-h-[44px] px-3"
-                            >
-                              <RefreshCw className="h-4 w-4 mr-1" />
-                              Refresh
-                            </Button>
-                          </div>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      {/* Filters */}
+                      <div className="mb-6 p-4 bg-gradient-to-r from-gray-50 to-purple-50 rounded-lg dark:from-slate-800 dark:to-purple-900/30">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Filter className="h-4 w-4 text-purple-600 flex-shrink-0" />
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filters:</span>
                         </div>
-
-                        {interviewQuestions.map((question) => (
-                          <Card key={question._id} className="glass-card border-0 hover:bg-card/50 transition-colors shadow-none hover:shadow-lg">
-                            <CardContent className="p-6">
-                              <div className="flex items-start justify-between gap-4">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Badge
-                                      variant={question.type === 'technical' ? 'default' : 'secondary'}
-                                      className={
-                                        question.type === 'technical' ? 'bg-blue-100 text-blue-700' :
-                                          question.type === 'behavioral' ? 'bg-green-100 text-green-700' :
-                                            question.type === 'situational' ? 'bg-yellow-100 text-yellow-700' :
-                                              'bg-gray-100 text-gray-700'
-                                      }
-                                    >
-                                      {question.type.replace('_', ' ').toUpperCase()}
-                                    </Badge>
-                                    <Badge variant="outline" className="text-xs">
-                                      {question.interviewStage.replace('_', ' ').toUpperCase()}
-                                    </Badge>
-                                    <Badge
-                                      variant="outline"
-                                      className={
-                                        question.difficulty === 'easy' ? 'border-green-300 text-green-700' :
-                                          question.difficulty === 'medium' ? 'border-yellow-300 text-yellow-700' :
-                                            'border-red-300 text-red-700'
-                                      }
-                                    >
-                                      {question.difficulty.toUpperCase()}
-                                    </Badge>
-                                    {question.isAIGenerated && (
-                                      <Badge variant="outline" className="border-purple-300 text-purple-700 text-xs">
-                                        <Lightbulb className="h-3 w-3 mr-1" />
-                                        AI Generated
-                                      </Badge>
-                                    )}
-                                  </div>
-                                  <h4 className="font-semibold text-foreground dark:text-gray-100 mb-2 text-lg">
-                                    {question.question}
-                                  </h4>
-                                  {question.expectedAnswer && (
-                                    <div className="mt-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
-                                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Expected Answer:</p>
-                                      <p className="text-sm text-gray-600 dark:text-muted-foreground/70">{question.expectedAnswer}</p>
-                                    </div>
-                                  )}
-                                  {question.category && (
-                                    <p className="text-sm text-gray-500 dark:text-muted-foreground/70 mt-2">Category: {question.category}</p>
-                                  )}
-
-                                  {/* Quality Metrics Display */}
-                                  <div className="mt-4">
-                                    <QuestionQualityDisplay
-                                      question={question}
-                                      qualityAnalysis={qualityAnalyses[question._id]}
-                                      onAnalyze={() => handleAnalyzeQuestion(question._id)}
-                                      isAnalyzing={analyzingQuestions.has(question._id)}
-                                    />
-                                  </div>
-                                </div>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px] p-2">
-                                      <MoreHorizontal className="h-4 w-4" />
-                                      <span className="sr-only">Question actions</span>
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => setEditingQuestion(question)}>
-                                      <Edit className="mr-2 h-4 w-4" />
-                                      Edit
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onClick={() => handleDeleteQuestion(question._id)}
-                                      className="text-red-600 focus:text-red-600"
-                                    >
-                                      <Trash className="mr-2 h-4 w-4" />
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Edit Question Dialog */}
-                <Dialog open={!!editingQuestion} onOpenChange={(open) => !open && setEditingQuestion(null)}>
-                  <DialogContent className="sm:max-w-lg mx-3 max-w-[calc(100vw-24px)] max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-                        <Edit className="h-5 w-5 text-purple-600 flex-shrink-0" />
-                        <span className="truncate">Edit Interview Question</span>
-                      </DialogTitle>
-                      <DialogDescription className="text-sm">
-                        Modify the interview question details.
-                      </DialogDescription>
-                    </DialogHeader>
-                    {editingQuestion && (
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Question</label>
-                          <Textarea
-                            placeholder="Enter your interview question..."
-                            className="w-full mt-1 min-h-[120px]"
-                            rows={5}
-                            value={editingQuestion?.question}
-                            onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, question: e.target.value } : null)}
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
-                            <select
-                              className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
-                              value={editingQuestion?.type}
-                              onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, type: e.target.value as any } : null)}
-                            >
-                              <option value="general">General</option>
-                              <option value="technical">Technical</option>
-                              <option value="behavioral">Behavioral</option>
-                              <option value="situational">Situational</option>
-                              <option value="cultural_fit">Cultural Fit</option>
-                              <option value="skills_based">Skills Based</option>
-                              <option value="experience_based">Experience Based</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Difficulty</label>
-                            <select
-                              className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
-                              value={editingQuestion?.difficulty}
-                              onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, difficulty: e.target.value as any } : null)}
-                            >
-                              <option value="easy">Easy</option>
-                              <option value="medium">Medium</option>
-                              <option value="hard">Hard</option>
-                            </select>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Interview Stage</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                           <select
-                            className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
-                            value={editingQuestion?.interviewStage}
-                            onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, interviewStage: e.target.value as any } : null)}
+                            className="px-3 py-2 border rounded-md text-sm bg-white dark:bg-slate-700 dark:border-slate-600 min-h-[40px]"
+                            value={questionsFilter.type}
+                            onChange={(e) => setQuestionsFilter(prev => ({ ...prev, type: e.target.value }))}
                           >
+                            <option value="all_types">All Types</option>
+                            <option value="technical">Technical</option>
+                            <option value="behavioral">Behavioral</option>
+                            <option value="situational">Situational</option>
+                            <option value="cultural_fit">Cultural Fit</option>
+                            <option value="general">General</option>
+                            <option value="skills_based">Skills Based</option>
+                            <option value="experience_based">Experience Based</option>
+                          </select>
+                          <select 
+                            className="px-3 py-2 border rounded-md text-sm bg-white dark:bg-slate-700 dark:border-slate-600 min-h-[40px]"
+                            value={questionsFilter.stage}
+                            onChange={(e) => setQuestionsFilter(prev => ({ ...prev, stage: e.target.value }))}
+                          >
+                            <option value="all_stages">All Stages</option>
                             <option value="screening">Screening</option>
                             <option value="first_round">First Round</option>
                             <option value="technical">Technical</option>
@@ -1788,507 +1481,792 @@ function JobDetailInnerPage() {
                             <option value="hr">HR</option>
                             <option value="panel">Panel</option>
                           </select>
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Expected Answer (Optional)</label>
-                          <Textarea
-                            placeholder="Guidelines for what constitutes a good answer..."
-                            className="w-full mt-1 min-h-[100px]"
-                            rows={4}
-                            value={editingQuestion?.expectedAnswer || ''}
-                            onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, expectedAnswer: e.target.value } : null)}
-                          />
-                        </div>
-                      </div>
-                    )}
-                    <DialogFooter className="flex-col sm:flex-row gap-3 sm:gap-2 mt-6">
-                      <Button variant="outline" onClick={() => setEditingQuestion(null)} className="w-full sm:w-auto order-2 sm:order-1">
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={() => editingQuestion && handleUpdateQuestion(editingQuestion?._id, {
-                          question: editingQuestion?.question,
-                          type: editingQuestion?.type,
-                          difficulty: editingQuestion?.difficulty,
-                          interviewStage: editingQuestion?.interviewStage,
-                          expectedAnswer: editingQuestion?.expectedAnswer,
-                        })}
-                        className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 order-1 sm:order-2"
-                      >
-                        <Edit className="mr-2 h-4 w-4" />
-                        Update Question
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-
-                {/* Create Question Dialog */}
-                <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-                  <DialogContent className="sm:max-w-lg mx-3 max-w-[calc(100vw-24px)] max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-                        <Plus className="h-5 w-5 text-purple-600 flex-shrink-0" />
-                        <span className="truncate">Create Interview Question</span>
-                      </DialogTitle>
-                      <DialogDescription className="text-sm">
-                        Add a new interview question for this position.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Question *</label>
-                        <Textarea
-                          placeholder="Enter your interview question..."
-                          className="w-full mt-1 min-h-[120px]"
-                          rows={5}
-                          value={newQuestion.question}
-                          onChange={(e) => setNewQuestionForm(prev => ({ ...prev, question: e.target.value }))}
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
-                          <select
-                            className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
-                            value={newQuestion.type}
-                            onChange={(e) => setNewQuestionForm(prev => ({ ...prev, type: e.target.value as any }))}
+                          <select 
+                            className="px-3 py-2 border rounded-md text-sm bg-white dark:bg-slate-700 dark:border-slate-600 min-h-[40px]"
+                            value={questionsFilter.difficulty}
+                            onChange={(e) => setQuestionsFilter(prev => ({ ...prev, difficulty: e.target.value }))}
                           >
-                            <option value="general">General</option>
-                            <option value="technical">Technical</option>
-                            <option value="behavioral">Behavioral</option>
-                            <option value="situational">Situational</option>
-                            <option value="cultural_fit">Cultural Fit</option>
-                            <option value="skills_based">Skills Based</option>
-                            <option value="experience_based">Experience Based</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Difficulty</label>
-                          <select
-                            className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
-                            value={newQuestion.difficulty}
-                            onChange={(e) => setNewQuestionForm(prev => ({ ...prev, difficulty: e.target.value as any }))}
-                          >
+                            <option value="all_difficulties">All Difficulties</option>
                             <option value="easy">Easy</option>
                             <option value="medium">Medium</option>
                             <option value="hard">Hard</option>
                           </select>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setQuestionsFilter({ type: '', stage: '', difficulty: '' })}
+                            className="text-gray-600 dark:text-gray-300 dark:border-slate-600 min-h-[40px] w-full justify-center"
+                          >
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            Clear
+                          </Button>
                         </div>
                       </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Interview Stage</label>
-                        <select
-                          className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-foreground dark:text-gray-100"
-                          value={newQuestion.interviewStage}
-                          onChange={(e) => setNewQuestionForm(prev => ({ ...prev, interviewStage: e.target.value as any }))}
-                        >
-                          <option value="screening">Screening</option>
-                          <option value="first_round">First Round</option>
-                          <option value="technical">Technical</option>
-                          <option value="final">Final</option>
-                          <option value="hr">HR</option>
-                          <option value="panel">Panel</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Category (Optional)</label>
-                        <Input
-                          placeholder="e.g., Problem Solving, Communication..."
-                          className="w-full mt-1"
-                          value={newQuestion.category || ''}
-                          onChange={(e) => setNewQuestionForm(prev => ({ ...prev, category: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Expected Answer (Optional)</label>
-                        <Textarea
-                          placeholder="Guidelines for what constitutes a good answer..."
-                          className="w-full mt-1 min-h-[100px]"
-                          rows={4}
-                          value={newQuestion.expectedAnswer || ''}
-                          onChange={(e) => setNewQuestionForm(prev => ({ ...prev, expectedAnswer: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Time Limit (Optional)</label>
-                        <Input
-                          type="number"
-                          placeholder="Time in minutes"
-                          className="w-full mt-1"
-                          value={newQuestion.timeLimit || ''}
-                          onChange={(e) => setNewQuestionForm(prev => ({ ...prev, timeLimit: e.target.value ? parseInt(e.target.value) : undefined }))}
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter className="flex-col sm:flex-row gap-3 sm:gap-2 mt-6">
-                      <Button variant="outline" onClick={() => setShowCreateDialog(false)} className="w-full sm:w-auto order-2 sm:order-1">
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={handleCreateQuestion}
-                        className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 order-1 sm:order-2"
-                        disabled={!newQuestion.question.trim()}
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Create Question
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </TabsContent>
 
-              <TabsContent value="hiring-pipeline" className="space-y-3 sm:space-y-4">
-                <Tabs value={hiringPipelineTab} onValueChange={setHiringPipelineTab} className="hiring-pipeline-tabs">
-                  <TabsList className="flex w-full bg-gray-100/50 dark:bg-card/30 border border-gray-200 dark:border-white/5 p-1 rounded-xl shadow-lg gap-1 mb-6" data-tutorial="pipeline-tabs">
-                    <TabsTrigger
-                      value="board"
-                      className="flex-1 flex items-center justify-center h-11 sm:h-12 font-medium rounded-lg transition-all duration-200 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-slate-100 dark:hover:bg-slate-800 group"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Workflow className="h-6 w-6 sm:h-5 sm:w-5 flex-shrink-0 transition-transform group-data-[state=active]:scale-110" />
-                        <span className="hidden sm:inline text-sm font-semibold">Board</span>
-                      </div>
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="configuration"
-                      className="flex-1 flex items-center justify-center h-11 sm:h-12 font-medium rounded-lg transition-all duration-200 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-slate-100 dark:hover:bg-slate-800 group"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Settings className="h-6 w-6 sm:h-5 sm:w-5 flex-shrink-0 transition-transform group-data-[state=active]:scale-110" />
-                        <span className="hidden sm:inline text-sm font-semibold">Configuration</span>
-                      </div>
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="email-management"
-                      className="flex-1 flex items-center justify-center h-11 sm:h-12 font-medium rounded-lg transition-all duration-200 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-slate-100 dark:hover:bg-slate-800 group"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-6 w-6 sm:h-5 sm:w-5 flex-shrink-0 transition-transform group-data-[state=active]:scale-110" />
-                        <span className="hidden sm:inline text-sm font-semibold">Email Management</span>
-                      </div>
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="feedback-form"
-                      className="flex-1 flex items-center justify-center h-11 sm:h-12 font-medium rounded-lg transition-all duration-200 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-slate-100 dark:hover:bg-slate-800 group"
-                    >
-                      <div className="flex items-center gap-2">
-                        <MessageSquare className="h-6 w-6 sm:h-5 sm:w-5 flex-shrink-0 transition-transform group-data-[state=active]:scale-110" />
-                        <span className="hidden sm:inline text-sm font-semibold">Feedback Form</span>
-                      </div>
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="board" className="mt-0">
-                    <div>
-                      <PipelineWithTabs
-                        jobId={jobData?._id}
-                        jobTitle={jobData?.title}
-                        refreshTrigger={analyticsRefreshTrigger}
-                        onCandidateSelect={handleCandidateSelect}
-                        onStageUpdate={handleStagesUpdate}
-                        onNavigateToStages={() => setHiringPipelineTab('configuration')}
-                      />
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="configuration" className="mt-0">
-                    <Card className="glass-card border-0 shadow-lg ring-1 ring-gray-200 dark:ring-0">
-                      <CardHeader className="bg-gradient-to-r from-indigo-100 to-blue-100 dark:from-indigo-950/40 dark:to-blue-950/40 text-blue-900 dark:text-blue-100 rounded-t-lg px-4 sm:px-6 border-b border-gray-200 dark:border-white/5" data-tutorial="job-settings">
-                        <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
-                          <Settings className="h-5 w-5 flex-shrink-0" />
-                          <span className="truncate">Stage Configuration</span>
-                        </CardTitle>
-                        <CardDescription className="text-indigo-100 text-sm">
-                          Set up and manage interview stages for this position
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="p-4 sm:p-6">
-                        <InterviewStageConfiguration
-                          jobId={jobData?._id}
-                          onStagesUpdate={() => {
-                            handleStagesUpdate()
-                            // Optionally switch to board view after updating
-                            // setHiringPipelineTab('board')
-                          }}
-                        />
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-
-                  <TabsContent value="email-management" className="mt-0">
-                    <Card className="glass-card border-0 shadow-lg">
-                      <CardHeader className="bg-gradient-to-r from-orange-950/40 to-red-950/40 text-orange-100 rounded-t-lg px-4 sm:px-6 border-b border-white/5">
-                        <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
-                          <Mail className="h-5 w-5 flex-shrink-0" />
-                          <span className="truncate">Email Management</span>
-                        </CardTitle>
-                        <CardDescription className="text-orange-100 text-sm">
-                          Send targeted emails to candidates in the hiring pipeline
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="p-4 sm:p-6">
-                        <PipelineEmailManagementTab
-                          jobId={jobData?._id}
-                          jobTitle={jobData?.title}
-                          onEmailSent={() => {
-                            toast({
-                              title: "Email sent successfully",
-                              description: "The email has been sent to the selected candidates.",
-                            })
-                            // Refresh analytics
-                            setAnalyticsRefreshTrigger(prev => prev + 1)
-                          }}
-                        />
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-
-                  <TabsContent value="feedback-form" className="mt-0">
-                    <Card className="glass-card border-0 shadow-lg">
-                      <CardHeader className="bg-gradient-to-r from-purple-950/40 to-pink-950/40 text-purple-100 rounded-t-lg px-4 sm:px-6 border-b border-white/5">
-                        <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
-                          <MessageSquare className="h-5 w-5 flex-shrink-0" />
-                          <span className="truncate">Feedback Form Management</span>
-                        </CardTitle>
-                        <CardDescription className="text-purple-100 text-sm">
-                          Configure job settings and manage organization templates & custom fields
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="p-4 sm:p-6">
-                        <FeedbackFormSettings jobId={jobData?._id || ''} />
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
-                </Tabs>
-              </TabsContent>
-
-              <TabsContent value="interviews" className="space-y-3 sm:space-y-4">
-                <Tabs value={interviewsTab} onValueChange={setInterviewsTab} className="interviews-tabs">
-                  <TabsList className="interviews-tabs-list" data-tutorial="interviews-pipeline">
-                    <TabsTrigger
-                      value="overview"
-                      className="interviews-tab-trigger data-[state=active]:!bg-white data-[state=active]:!text-[#059669]"
-                    >
-                      <Calendar className="h-4 w-4 mr-2 flex-shrink-0" />
-                      <span>Overview</span>
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="setup"
-                      className="interviews-tab-trigger data-[state=active]:!bg-white data-[state=active]:!text-[#059669]"
-                    >
-                      <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
-                      <span>Setup Interview</span>
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="overview" className="mt-0">
-                    <Card className="glass-card border-0 shadow-lg">
-                      <CardHeader className="bg-gradient-to-r from-emerald-950/40 to-teal-950/40 text-emerald-100 rounded-t-lg px-4 sm:px-6 border-b border-white/5">
-                        <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
-                          <Calendar className="h-5 w-5 flex-shrink-0" />
-                          <span className="truncate">Interview Overview</span>
-                        </CardTitle>
-                        <CardDescription className="text-emerald-100 text-sm">
-                          All interviews scheduled for this position
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="p-4 sm:p-6">
-                        {interviewsLoading ? (
-                          <div className="flex items-center justify-center py-8">
-                            <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-                            <span className="ml-2 text-gray-600">Loading interviews...</span>
+                      {/* Questions List */}
+                      {questionsLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                          <Loader2 className="animate-spin h-8 w-8 text-purple-600 mr-3" />
+                          <span className="text-gray-600">Loading interview questions...</span>
+                        </div>
+                      ) : interviewQuestions.length === 0 ? (
+                        <div className="text-center py-12">
+                          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center mb-6 mx-auto dark:from-purple-900/30 dark:to-purple-800/30">
+                            <HelpCircle className="h-12 w-12 text-purple-600 dark:text-purple-400" />
                           </div>
-                        ) : jobInterviews.length === 0 ? (
-                          <div className="text-center py-12">
-                            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 flex items-center justify-center mb-6 mx-auto dark:from-emerald-900/30 dark:to-emerald-800/30">
-                              <Calendar className="h-12 w-12 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                            <h3 className="text-2xl font-bold text-foreground dark:text-gray-100 mb-2">No interviews yet</h3>
-                            <p className="text-lg text-gray-600 dark:text-muted-foreground/70 mb-6">
-                              Schedule your first interview to get started.
-                            </p>
-                            <Button
-                              onClick={() => setInterviewsTab('setup')}
-                              className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800"
+                          <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">🎯 Ready to interview?</h3>
+                          <p className="text-lg text-gray-600 dark:text-gray-400 mb-6">
+                            Create interview questions to help evaluate candidates for this position.
+                          </p>
+                          <div className="flex flex-wrap justify-center gap-3">
+                            <Button 
+                              onClick={() => setShowAdvancedGenerator(true)}
+                              className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800"
                             >
-                              <Plus className="mr-2 h-5 w-5" />
-                              Setup Interview
+                              <Sparkles className="mr-2 h-5 w-5" />
+                              Generate Advanced Questions
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setShowCreateDialog(true)}
+                              className="border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-900/20"
+                            >
+                              <Plus className="mr-2 h-4 w-4" />
+                              Create Question
                             </Button>
                           </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <div className="flex items-center justify-between mb-4">
-                              <div className="text-sm text-gray-600 dark:text-muted-foreground/70">
-                                Showing {jobInterviews.length} interview{jobInterviews.length !== 1 ? 's' : ''}
-                              </div>
-                              <Button
-                                variant="ghost"
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {/* Action Buttons Row */}
+                          <div className="flex items-center justify-between gap-3 pb-4 border-b">
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              Showing {interviewQuestions.length} question{interviewQuestions.length !== 1 ? 's' : ''}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button 
+                                variant="outline"
                                 size="sm"
-                                onClick={fetchJobInterviews}
-                                className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 min-h-[44px] px-3"
+                                onClick={() => setShowAdvancedGenerator(true)}
+                                className="min-h-[40px] border-purple-200 text-purple-600 hover:bg-purple-50"
+                              >
+                                <Sparkles className="h-4 w-4 mr-2" />
+                                Generate Advanced Questions
+                              </Button>
+                              <Button 
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowCreateDialog(true)}
+                                className="min-h-[40px]"
+                              >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Create Question
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={fetchInterviewQuestions}
+                                className="text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 min-h-[44px] px-3"
                               >
                                 <RefreshCw className="h-4 w-4 mr-1" />
                                 Refresh
                               </Button>
                             </div>
+                          </div>
 
-                            {/* Interview History */}
-                            <div className="space-y-3">
-                              <h4 className="text-lg font-semibold text-foreground dark:text-gray-100 mb-4">
-                                Interview History
-                              </h4>
-                              {jobInterviews
-                                .sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime())
-                                .map((interview) => {
-                                  const scheduledDate = new Date(interview.scheduledAt);
-                                  const candidateName = interview.candidateId?.firstName && interview.candidateId?.lastName
-                                    ? `${interview.candidateId.firstName} ${interview.candidateId.lastName}`
-                                    : interview.candidateId?.email || 'Unknown Candidate';
+                          {interviewQuestions.map((question) => (
+                            <Card key={question._id} className="border border-gray-200 hover:border-purple-300 transition-colors dark:border-slate-700 dark:hover:border-purple-600">
+                              <CardContent className="p-6">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Badge 
+                                        variant={question.type === 'technical' ? 'default' : 'secondary'}
+                                        className={
+                                          question.type === 'technical' ? 'bg-blue-100 text-blue-700' :
+                                          question.type === 'behavioral' ? 'bg-green-100 text-green-700' :
+                                          question.type === 'situational' ? 'bg-yellow-100 text-yellow-700' :
+                                          'bg-gray-100 text-gray-700'
+                                        }
+                                      >
+                                        {question.type.replace('_', ' ').toUpperCase()}
+                                      </Badge>
+                                      <Badge variant="outline" className="text-xs">
+                                        {question.interviewStage.replace('_', ' ').toUpperCase()}
+                                      </Badge>
+                                      <Badge 
+                                        variant="outline" 
+                                        className={
+                                          question.difficulty === 'easy' ? 'border-green-300 text-green-700' :
+                                          question.difficulty === 'medium' ? 'border-yellow-300 text-yellow-700' :
+                                          'border-red-300 text-red-700'
+                                        }
+                                      >
+                                        {question.difficulty.toUpperCase()}
+                                      </Badge>
+                                      {question.isAIGenerated && (
+                                        <Badge variant="outline" className="border-purple-300 text-purple-700 text-xs">
+                                          <Lightbulb className="h-3 w-3 mr-1" />
+                                          AI Generated
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 text-lg">
+                                      {question.question}
+                                    </h4>
+                                    {question.expectedAnswer && (
+                                      <div className="mt-3 p-3 bg-gray-50 dark:bg-slate-700/50 rounded-lg">
+                                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Expected Answer:</p>
+                                        <p className="text-sm text-gray-600 dark:text-gray-400">{question.expectedAnswer}</p>
+                                      </div>
+                                    )}
+                                    {question.category && (
+                                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Category: {question.category}</p>
+                                    )}
+                                    
+                                    {/* Quality Metrics Display */}
+                                    <div className="mt-4">
+                                      <QuestionQualityDisplay
+                                        question={question}
+                                        qualityAnalysis={qualityAnalyses[question._id]}
+                                        onAnalyze={() => handleAnalyzeQuestion(question._id)}
+                                        isAnalyzing={analyzingQuestions.has(question._id)}
+                                      />
+                                    </div>
+                                  </div>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px] p-2">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                        <span className="sr-only">Question actions</span>
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => setEditingQuestion(question)}>
+                                        <Edit className="mr-2 h-4 w-4" />
+                                        Edit
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem 
+                                        onClick={() => handleDeleteQuestion(question._id)}
+                                        className="text-red-600 focus:text-red-600"
+                                      >
+                                        <Trash className="mr-2 h-4 w-4" />
+                                        Delete
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              </CardContent>
+                            </Card>
+                                                     ))}
+                         </div>
+                       )}
+                     </CardContent>
+                   </Card>
 
-                                  return (
-                                    <Card key={interview._id} className="glass-card border-0 hover:bg-card/50 transition-colors shadow-none hover:shadow-lg">
-                                      <CardContent className="p-4">
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex-1">
-                                            <div className="flex items-center gap-3 mb-2">
-                                              <div className="flex items-center gap-2">
-                                                <div className={`w-3 h-3 rounded-full ${interview.status === 'scheduled' || interview.status === 'confirmed'
-                                                  ? 'bg-blue-500'
-                                                  : interview.status === 'completed'
+                   {/* Edit Question Dialog */}
+                   <Dialog open={!!editingQuestion} onOpenChange={(open) => !open && setEditingQuestion(null)}>
+                     <DialogContent className="sm:max-w-lg mx-3 max-w-[calc(100vw-24px)] max-h-[90vh] overflow-y-auto">
+                       <DialogHeader>
+                         <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                           <Edit className="h-5 w-5 text-purple-600 flex-shrink-0" />
+                           <span className="truncate">Edit Interview Question</span>
+                         </DialogTitle>
+                         <DialogDescription className="text-sm">
+                           Modify the interview question details.
+                         </DialogDescription>
+                       </DialogHeader>
+                       {editingQuestion && (
+                         <div className="space-y-4">
+                           <div>
+                             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Question</label>
+                            <Textarea 
+                              placeholder="Enter your interview question..."
+                              className="w-full mt-1 min-h-[120px]"
+                              rows={5}
+                              value={editingQuestion?.question}
+                              onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, question: e.target.value } : null)}
+                            />
+                           </div>
+                           <div className="grid grid-cols-2 gap-4">
+                             <div>
+                               <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+                               <select 
+                                 className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                                 value={editingQuestion?.type}
+                                 onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, type: e.target.value as any } : null)}
+                               >
+                                 <option value="general">General</option>
+                                 <option value="technical">Technical</option>
+                                 <option value="behavioral">Behavioral</option>
+                                 <option value="situational">Situational</option>
+                                 <option value="cultural_fit">Cultural Fit</option>
+                                 <option value="skills_based">Skills Based</option>
+                                 <option value="experience_based">Experience Based</option>
+                               </select>
+                             </div>
+                             <div>
+                               <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Difficulty</label>
+                               <select 
+                                 className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                                 value={editingQuestion?.difficulty}
+                                 onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, difficulty: e.target.value as any } : null)}
+                               >
+                                 <option value="easy">Easy</option>
+                                 <option value="medium">Medium</option>
+                                 <option value="hard">Hard</option>
+                               </select>
+                             </div>
+                           </div>
+                           <div>
+                             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Interview Stage</label>
+                             <select 
+                               className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                               value={editingQuestion?.interviewStage}
+                               onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, interviewStage: e.target.value as any } : null)}
+                             >
+                               <option value="screening">Screening</option>
+                               <option value="first_round">First Round</option>
+                               <option value="technical">Technical</option>
+                               <option value="final">Final</option>
+                               <option value="hr">HR</option>
+                               <option value="panel">Panel</option>
+                             </select>
+                           </div>
+                           <div>
+                             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Expected Answer (Optional)</label>
+                            <Textarea 
+                              placeholder="Guidelines for what constitutes a good answer..."
+                              className="w-full mt-1 min-h-[100px]"
+                              rows={4}
+                              value={editingQuestion?.expectedAnswer || ''}
+                              onChange={(e) => setEditingQuestion(prev => prev ? { ...prev, expectedAnswer: e.target.value } : null)}
+                            />
+                           </div>
+                         </div>
+                       )}
+                       <DialogFooter className="flex-col sm:flex-row gap-3 sm:gap-2 mt-6">
+                         <Button variant="outline" onClick={() => setEditingQuestion(null)} className="w-full sm:w-auto order-2 sm:order-1">
+                           Cancel
+                         </Button>
+                         <Button 
+                           onClick={() => editingQuestion && handleUpdateQuestion(editingQuestion?._id, {
+                             question: editingQuestion?.question,
+                             type: editingQuestion?.type,
+                             difficulty: editingQuestion?.difficulty,
+                             interviewStage: editingQuestion?.interviewStage,
+                             expectedAnswer: editingQuestion?.expectedAnswer,
+                           })}
+                           className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 order-1 sm:order-2"
+                         >
+                           <Edit className="mr-2 h-4 w-4" />
+                           Update Question
+                         </Button>
+                       </DialogFooter>
+                     </DialogContent>
+                   </Dialog>
+
+                   {/* Create Question Dialog */}
+                   <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                     <DialogContent className="sm:max-w-lg mx-3 max-w-[calc(100vw-24px)] max-h-[90vh] overflow-y-auto">
+                       <DialogHeader>
+                         <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                           <Plus className="h-5 w-5 text-purple-600 flex-shrink-0" />
+                           <span className="truncate">Create Interview Question</span>
+                         </DialogTitle>
+                         <DialogDescription className="text-sm">
+                           Add a new interview question for this position.
+                         </DialogDescription>
+                       </DialogHeader>
+                       <div className="space-y-4">
+                         <div>
+                           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Question *</label>
+                          <Textarea 
+                            placeholder="Enter your interview question..."
+                            className="w-full mt-1 min-h-[120px]"
+                            rows={5}
+                            value={newQuestion.question}
+                            onChange={(e) => setNewQuestionForm(prev => ({ ...prev, question: e.target.value }))}
+                          />
+                         </div>
+                         <div className="grid grid-cols-2 gap-4">
+                           <div>
+                             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+                             <select 
+                               className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                               value={newQuestion.type}
+                               onChange={(e) => setNewQuestionForm(prev => ({ ...prev, type: e.target.value as any }))}
+                             >
+                               <option value="general">General</option>
+                               <option value="technical">Technical</option>
+                               <option value="behavioral">Behavioral</option>
+                               <option value="situational">Situational</option>
+                               <option value="cultural_fit">Cultural Fit</option>
+                               <option value="skills_based">Skills Based</option>
+                               <option value="experience_based">Experience Based</option>
+                             </select>
+                           </div>
+                           <div>
+                             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Difficulty</label>
+                             <select 
+                               className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                               value={newQuestion.difficulty}
+                               onChange={(e) => setNewQuestionForm(prev => ({ ...prev, difficulty: e.target.value as any }))}
+                             >
+                               <option value="easy">Easy</option>
+                               <option value="medium">Medium</option>
+                               <option value="hard">Hard</option>
+                             </select>
+                           </div>
+                         </div>
+                         <div>
+                           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Interview Stage</label>
+                           <select 
+                             className="w-full mt-1 p-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                             value={newQuestion.interviewStage}
+                             onChange={(e) => setNewQuestionForm(prev => ({ ...prev, interviewStage: e.target.value as any }))}
+                           >
+                             <option value="screening">Screening</option>
+                             <option value="first_round">First Round</option>
+                             <option value="technical">Technical</option>
+                             <option value="final">Final</option>
+                             <option value="hr">HR</option>
+                             <option value="panel">Panel</option>
+                           </select>
+                         </div>
+                         <div>
+                           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Category (Optional)</label>
+                           <Input 
+                             placeholder="e.g., Problem Solving, Communication..."
+                             className="w-full mt-1"
+                             value={newQuestion.category || ''}
+                             onChange={(e) => setNewQuestionForm(prev => ({ ...prev, category: e.target.value }))}
+                           />
+                         </div>
+                         <div>
+                           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Expected Answer (Optional)</label>
+                          <Textarea 
+                            placeholder="Guidelines for what constitutes a good answer..."
+                            className="w-full mt-1 min-h-[100px]"
+                            rows={4}
+                            value={newQuestion.expectedAnswer || ''}
+                            onChange={(e) => setNewQuestionForm(prev => ({ ...prev, expectedAnswer: e.target.value }))}
+                          />
+                         </div>
+                         <div>
+                           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Time Limit (Optional)</label>
+                           <Input 
+                             type="number"
+                             placeholder="Time in minutes"
+                             className="w-full mt-1"
+                             value={newQuestion.timeLimit || ''}
+                             onChange={(e) => setNewQuestionForm(prev => ({ ...prev, timeLimit: e.target.value ? parseInt(e.target.value) : undefined }))}
+                           />
+                         </div>
+                       </div>
+                       <DialogFooter className="flex-col sm:flex-row gap-3 sm:gap-2 mt-6">
+                         <Button variant="outline" onClick={() => setShowCreateDialog(false)} className="w-full sm:w-auto order-2 sm:order-1">
+                           Cancel
+                         </Button>
+                         <Button 
+                           onClick={handleCreateQuestion}
+                           className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 order-1 sm:order-2"
+                           disabled={!newQuestion.question.trim()}
+                         >
+                           <Plus className="mr-2 h-4 w-4" />
+                           Create Question
+                         </Button>
+                       </DialogFooter>
+                     </DialogContent>
+                   </Dialog>
+                </TabsContent>
+
+                <TabsContent value="hiring-pipeline" className="space-y-3 sm:space-y-4">
+                  <Tabs value={hiringPipelineTab} onValueChange={setHiringPipelineTab} className="hiring-pipeline-tabs">
+                    <TabsList className="flex w-full bg-white dark:bg-slate-900 p-1 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 gap-1 mb-6" data-tutorial="pipeline-tabs">
+                      <TabsTrigger 
+                        value="board" 
+                        className="flex-1 flex items-center justify-center h-11 sm:h-12 font-medium rounded-lg transition-all duration-200 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-slate-100 dark:hover:bg-slate-800 group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Workflow className="h-6 w-6 sm:h-5 sm:w-5 flex-shrink-0 transition-transform group-data-[state=active]:scale-110" />
+                          <span className="hidden sm:inline text-sm font-semibold">Board</span>
+                        </div>
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="configuration" 
+                        className="flex-1 flex items-center justify-center h-11 sm:h-12 font-medium rounded-lg transition-all duration-200 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-slate-100 dark:hover:bg-slate-800 group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Settings className="h-6 w-6 sm:h-5 sm:w-5 flex-shrink-0 transition-transform group-data-[state=active]:scale-110" />
+                          <span className="hidden sm:inline text-sm font-semibold">Configuration</span>
+                        </div>
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="email-settings" 
+                        className="flex-1 flex items-center justify-center h-11 sm:h-12 font-medium rounded-lg transition-all duration-200 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md hover:bg-slate-100 dark:hover:bg-slate-800 group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-6 w-6 sm:h-5 sm:w-5 flex-shrink-0 transition-transform group-data-[state=active]:scale-110" />
+                          <span className="text-xs font-semibold sm:text-sm">Customize Emails</span>
+                        </div>
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="board" className="mt-0">
+                      <div className="space-y-4 sm:space-y-6">
+                        <Card className="border-0 bg-white/70 dark:bg-slate-800/60 backdrop-blur-xl shadow-sm dark:shadow-xl dark:border-slate-700">
+                          <CardContent className="p-4 sm:p-5">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="min-w-0">
+                                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                  <Mail className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500 flex-shrink-0" />
+                                  <span className="truncate">Pipeline Rejection Center</span>
+                                </h3>
+                                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                                  Reject selected candidates or reject everyone in a chosen stage from one place.
+                                </p>
+                              </div>
+                              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                                <Button
+                                  variant="outline"
+                                  onClick={() => openCandidateEmailTemplate('rejection')}
+                                  className="w-full sm:w-auto"
+                                >
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Customize Rejection Email
+                                </Button>
+                                <Button
+                                  onClick={() => setShowBulkRejectionDialog(true)}
+                                  className="w-full bg-red-600 hover:bg-red-700 sm:w-auto"
+                                >
+                                  <Send className="h-4 w-4 mr-2" />
+                                  Manage Rejections
+                                  {candidateCount > 0 && (
+                                    <Badge className="ml-2 bg-white/20 text-white border-white/30">
+                                      {candidateCount}
+                                    </Badge>
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <PipelineWithTabs
+                          jobId={jobData?._id}
+                          jobTitle={jobData?.title}
+                          refreshTrigger={analyticsRefreshTrigger}
+                          onCandidateSelect={handleCandidateSelect}
+                          onStageUpdate={handleStagesUpdate}
+                          onNavigateToStages={() => setHiringPipelineTab('configuration')}
+                        />
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="configuration" className="mt-0">
+                      <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg dark:shadow-2xl dark:border-slate-700">
+                        <CardHeader className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-t-lg px-4 sm:px-6" data-tutorial="job-settings">
+                          <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
+                            <Settings className="h-5 w-5 flex-shrink-0" />
+                            <span className="truncate">Stage Configuration</span>
+                          </CardTitle>
+                          <CardDescription className="text-indigo-100 text-sm">
+                            Set up and manage interview stages for this position
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-4 sm:p-6">
+                          <InterviewStageConfiguration
+                            jobId={jobData?._id}
+                            onStagesUpdate={() => {
+                              handleStagesUpdate()
+                              // Optionally switch to board view after updating
+                              // setHiringPipelineTab('board')
+                            }}
+                          />
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+
+                    <TabsContent value="email-settings" className="mt-0">
+                      <Card className="border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                        <CardHeader className="border-b px-4 sm:px-6">
+                          <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
+                            <Mail className="h-5 w-5 flex-shrink-0" />
+                            <span className="truncate">Customize Candidate Emails</span>
+                          </CardTitle>
+                          <CardDescription className="text-sm">
+                            Rejection, stage movement, shortlist, and application emails for this job
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-4 sm:p-6">
+                          <JobEmailSettings
+                            jobId={jobData?._id || ''}
+                            jobTitle={jobData?.title || 'Job'}
+                            initialTemplate={emailTemplateToEdit}
+                            onSettingsChange={(settings) => {
+                              console.log('Email settings updated:', settings)
+                            }}
+                          />
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+                  </Tabs>
+                </TabsContent>
+
+                <TabsContent value="interviews" className="space-y-3 sm:space-y-4">
+                  <Tabs value={interviewsTab} onValueChange={setInterviewsTab} className="interviews-tabs">
+                    <TabsList className="interviews-tabs-list" data-tutorial="interviews-pipeline">
+                      <TabsTrigger 
+                        value="overview" 
+                        className="interviews-tab-trigger data-[state=active]:!bg-white data-[state=active]:!text-[#059669]"
+                      >
+                        <Calendar className="h-4 w-4 mr-2 flex-shrink-0" />
+                        <span>Overview</span>
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="setup" 
+                        className="interviews-tab-trigger data-[state=active]:!bg-white data-[state=active]:!text-[#059669]"
+                      >
+                        <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
+                        <span>Setup Interview</span>
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="feedback-form" 
+                        className="interviews-tab-trigger data-[state=active]:!bg-white data-[state=active]:!text-[#059669]"
+                      >
+                        <MessageSquare className="h-4 w-4 mr-2 flex-shrink-0" />
+                        <span>Feedback Form</span>
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="overview" className="mt-0">
+                      <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg dark:shadow-2xl dark:border-slate-700">
+                        <CardHeader className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-t-lg px-4 sm:px-6">
+                          <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
+                            <Calendar className="h-5 w-5 flex-shrink-0" />
+                            <span className="truncate">Interview Overview</span>
+                          </CardTitle>
+                          <CardDescription className="text-emerald-100 text-sm">
+                            All interviews scheduled for this position
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-4 sm:p-6">
+                      {interviewsLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+                          <span className="ml-2 text-gray-600">Loading interviews...</span>
+                        </div>
+                      ) : jobInterviews.length === 0 ? (
+                        <div className="text-center py-12">
+                          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 flex items-center justify-center mb-6 mx-auto dark:from-emerald-900/30 dark:to-emerald-800/30">
+                            <Calendar className="h-12 w-12 text-emerald-600 dark:text-emerald-400" />
+                          </div>
+                          <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">No interviews yet</h3>
+                          <p className="text-lg text-gray-600 dark:text-gray-400 mb-6">
+                            Schedule your first interview to get started.
+                          </p>
+                          <Button 
+                            onClick={() => setInterviewsTab('setup')}
+                            className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800"
+                          >
+                            <Plus className="mr-2 h-5 w-5" />
+                            Setup Interview
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              Showing {jobInterviews.length} interview{jobInterviews.length !== 1 ? 's' : ''}
+                            </div>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={fetchJobInterviews}
+                              className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 min-h-[44px] px-3"
+                            >
+                              <RefreshCw className="h-4 w-4 mr-1" />
+                              Refresh
+                            </Button>
+                          </div>
+
+                          {/* Interview History */}
+                          <div className="space-y-3">
+                            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                              Interview History
+                            </h4>
+                            {jobInterviews
+                              .sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime())
+                              .map((interview) => {
+                                const scheduledDate = new Date(interview.scheduledAt);
+                                const candidateName = interview.candidateId?.firstName && interview.candidateId?.lastName 
+                                  ? `${interview.candidateId.firstName} ${interview.candidateId.lastName}`
+                                  : interview.candidateId?.email || 'Unknown Candidate';
+                                
+                                return (
+                                  <Card key={interview._id} className="border border-gray-200 hover:border-emerald-300 transition-colors dark:border-slate-700 dark:hover:border-emerald-600">
+                                    <CardContent className="p-4">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-3 mb-2">
+                                            <div className="flex items-center gap-2">
+                                              <div className={`w-3 h-3 rounded-full ${
+                                                interview.status === 'scheduled' || interview.status === 'confirmed' 
+                                                  ? 'bg-blue-500' 
+                                                  : interview.status === 'completed' 
                                                     ? 'bg-green-500'
                                                     : interview.status === 'cancelled'
                                                       ? 'bg-red-500'
                                                       : 'bg-gray-400'
-                                                  }`} />
-                                                <h5 className="font-medium text-foreground dark:text-gray-100">
-                                                  {interview.title || `Interview - ${candidateName}`}
-                                                </h5>
-                                              </div>
-                                              <Badge variant={interview.status === 'completed' ? 'default' : 'secondary'}>
-                                                {interview.status}
-                                              </Badge>
+                                              }`} />
+                                              <h5 className="font-medium text-gray-900 dark:text-gray-100">
+                                                {interview.title || `Interview - ${candidateName}`}
+                                              </h5>
                                             </div>
-                                            <div className="text-sm text-gray-600 dark:text-muted-foreground/70 space-y-1">
-                                              <div className="flex items-center gap-4">
-                                                <span className="flex items-center gap-1">
-                                                  <Users className="h-4 w-4" />
-                                                  {candidateName}
-                                                </span>
-                                                <span className="flex items-center gap-1">
-                                                  <Clock className="h-4 w-4" />
-                                                  {scheduledDate.toLocaleDateString()} at {scheduledDate.toLocaleTimeString()}
-                                                </span>
-                                                <span className="flex items-center gap-1">
-                                                  <Calendar className="h-4 w-4" />
-                                                  {interview.duration} min
-                                                </span>
-                                              </div>
-                                            </div>
+                                            <Badge variant={interview.status === 'completed' ? 'default' : 'secondary'}>
+                                              {interview.status}
+                                            </Badge>
                                           </div>
-                                          <div className="flex items-center gap-2">
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => window.open(`/interviews/${interview._id}/transcript?from=jobs&jobId=${jobData?._id}`, '_blank')}
-                                            >
-                                              View
-                                            </Button>
+                                          <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                                            <div className="flex items-center gap-4">
+                                              <span className="flex items-center gap-1">
+                                                <Users className="h-4 w-4" />
+                                                {candidateName}
+                                              </span>
+                                              <span className="flex items-center gap-1">
+                                                <Clock className="h-4 w-4" />
+                                                {scheduledDate.toLocaleDateString()} at {scheduledDate.toLocaleTimeString()}
+                                              </span>
+                                              <span className="flex items-center gap-1">
+                                                <Calendar className="h-4 w-4" />
+                                                {interview.duration} min
+                                              </span>
+                                            </div>
                                           </div>
                                         </div>
-                                      </CardContent>
-                                    </Card>
-                                  );
-                                })}
-                            </div>
+                                        <div className="flex items-center gap-2">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => window.open(`/interviews/${interview._id}/transcript?from=jobs&jobId=${jobData?._id}`, '_blank')}
+                                          >
+                                            View
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+                                );
+                              })}
                           </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </TabsContent>
+                        </div>
+                      )}
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
 
-                  <TabsContent value="setup" className="mt-0">
-                    <InterviewSetupTab
-                      jobId={jobData?._id}
-                      jobTitle={jobData?.title}
-                      stages={interviewStages}
-                      loadingStages={stagesLoading}
-                      onInterviewScheduled={() => {
-                        setInterviewsTab('overview')
-                        fetchJobInterviews()
-                        handleAnalyticsUpdate()
-                      }}
-                      onNavigateToShortlist={() => {
-                        setActiveTab('candidates')
-                        setCandidatesTab('shortlist')
-                      }}
-                    />
-                  </TabsContent>
-                </Tabs>
-              </TabsContent>
-
-              {/* Insights Tab - Merged Analytics & Rankings */}
-              <TabsContent value="insights" className="space-y-3 sm:space-y-4">
-                <Tabs value={insightsTab} onValueChange={setInsightsTab} className="insights-tabs">
-                  <TabsList className="insights-tabs-list">
-                    <TabsTrigger
-                      value="analytics"
-                      className="insights-tab-trigger data-[state=active]:!bg-white data-[state=active]:!text-[#3B82F6]"
-                    >
-                      <BarChart3 className="h-4 w-4 mr-2 flex-shrink-0" />
-                      <span>Analytics</span>
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="rankings"
-                      className="insights-tab-trigger data-[state=active]:!bg-white data-[state=active]:!text-[#7C3AED]"
-                    >
-                      <Trophy className="h-4 w-4 mr-2 flex-shrink-0" />
-                      <span>Rankings</span>
-                    </TabsTrigger>
-                  </TabsList>
-
-                  {/* Analytics Sub-Tab */}
-                  <TabsContent value="analytics" className="mt-0 space-y-3 sm:space-y-4">
-                    {/* Mobile-Responsive Key Metrics Grid */}
-                    <ResponsiveGrid
-                      cols={{ mobile: 2, tablet: 2, desktop: 4 }}
-                      gap="sm"
-                      className="mb-4 sm:mb-6"
-                    >
-                      <MobileStatCard
-                        title="Applicants"
-                        value={jobData?.applicantCount || 0}
-                        icon={<Users className="h-4 w-4 text-blue-600" />}
-                        trend="up"
-                        subtitle="Total applications"
+                    <TabsContent value="setup" className="mt-0">
+                      <InterviewSetupTab
+                        jobId={jobData?._id}
+                        jobTitle={jobData?.title}
+                        stages={interviewStages}
+                        loadingStages={stagesLoading}
+                        onInterviewScheduled={() => {
+                          setInterviewsTab('overview')
+                          fetchJobInterviews()
+                          handleAnalyticsUpdate()
+                        }}
+                        onNavigateToShortlist={() => {
+                          setActiveTab('candidates')
+                          setCandidatesTab('shortlist')
+                        }}
                       />
+                    </TabsContent>
 
-                      <MobileStatCard
-                        title="Days Active"
-                        value={jobData?.createdAt ? Math.ceil((new Date().getTime() - new Date(jobData?.createdAt).getTime()) / (1000 * 60 * 60 * 24)) : 0}
-                        icon={<Calendar className="h-4 w-4 text-purple-600" />}
-                        trend="neutral"
-                        subtitle="Since posting"
-                      />
+                    <TabsContent value="feedback-form" className="mt-0">
+                      <Card className="border-0 bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl shadow-lg dark:shadow-2xl dark:border-slate-700">
+                        <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-t-lg px-4 sm:px-6">
+                          <CardTitle className="text-lg sm:text-xl font-semibold flex items-center gap-2">
+                            <MessageSquare className="h-5 w-5 flex-shrink-0" />
+                            <span className="truncate">Feedback Form Management</span>
+                          </CardTitle>
+                          <CardDescription className="text-purple-100 text-sm">
+                            Configure job settings and manage organization templates & custom fields
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-4 sm:p-6">
+                          <FeedbackFormSettings jobId={jobData?._id || ''} />
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+                  </Tabs>
+                </TabsContent>
 
-                      <MobileStatCard
-                        title="Questions"
-                        value={interviewQuestions.length}
-                        icon={<HelpCircle className="h-4 w-4 text-green-600" />}
-                        trend="up"
-                        subtitle="Interview ready"
-                      />
+                {/* Insights Tab - Merged Analytics & Rankings */}
+                <TabsContent value="insights" className="space-y-3 sm:space-y-4">
+                  <Tabs value={insightsTab} onValueChange={setInsightsTab} className="insights-tabs">
+                    <TabsList className="insights-tabs-list">
+                      <TabsTrigger 
+                        value="analytics" 
+                        className="insights-tab-trigger data-[state=active]:!bg-white data-[state=active]:!text-[#3B82F6]"
+                      >
+                        <BarChart3 className="h-4 w-4 mr-2 flex-shrink-0" />
+                        <span>Analytics</span>
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="rankings" 
+                        className="insights-tab-trigger data-[state=active]:!bg-white data-[state=active]:!text-[#7C3AED]"
+                      >
+                        <Trophy className="h-4 w-4 mr-2 flex-shrink-0" />
+                        <span>Rankings</span>
+                      </TabsTrigger>
+                    </TabsList>
 
-                      <MobileStatCard
-                        title="Openings"
-                        value={jobData?.openings || 1}
-                        icon={<Building className="h-4 w-4 text-orange-600" />}
-                        trend="neutral"
-                        subtitle="Available positions"
-                      />
-                    </ResponsiveGrid>
+                    {/* Analytics Sub-Tab */}
+                    <TabsContent value="analytics" className="mt-0 space-y-3 sm:space-y-4">
+                      {/* Mobile-Responsive Key Metrics Grid */}
+                      <ResponsiveGrid 
+                        cols={{ mobile: 2, tablet: 2, desktop: 4 }}
+                        gap="sm"
+                        className="mb-4 sm:mb-6"
+                      >
+                        <MobileStatCard
+                          title="Applicants"
+                          value={jobData?.applicantCount || 0}
+                          icon={<Users className="h-4 w-4 text-blue-600" />}
+                          trend="up"
+                          subtitle="Total applications"
+                        />
+                        
+                        <MobileStatCard
+                          title="Days Active"
+                          value={jobData?.createdAt ? Math.ceil((new Date().getTime() - new Date(jobData?.createdAt).getTime()) / (1000 * 60 * 60 * 24)) : 0}
+                          icon={<Calendar className="h-4 w-4 text-purple-600" />}
+                          trend="neutral"
+                          subtitle="Since posting"
+                        />
 
-                    {/* Advanced Pipeline Analytics */}
-                    <div>
+                        <MobileStatCard
+                          title="Questions"
+                          value={interviewQuestions.length}
+                          icon={<HelpCircle className="h-4 w-4 text-green-600" />}
+                          trend="up"
+                          subtitle="Interview ready"
+                        />
+                        
+                        <MobileStatCard
+                          title="Openings"
+                          value={jobData?.openings || 1}
+                          icon={<Building className="h-4 w-4 text-orange-600" />}
+                          trend="neutral"
+                          subtitle="Available positions"
+                        />
+                      </ResponsiveGrid>
+
+                      {/* Advanced Pipeline Analytics */}
+                      <div>
                       <ResponsiveCard
                         title="Advanced Pipeline Analytics"
                         subtitle="Comprehensive insights and AI-powered analytics for your hiring pipeline"
@@ -2298,76 +2276,76 @@ function JobDetailInnerPage() {
                         mobileFullWidth
                         data-tutorial="job-analytics"
                       >
-                        <PipelineAnalyticsEnhanced
-                          jobId={jobData?._id}
-                          refreshTrigger={analyticsRefreshTrigger}
-                        />
-                      </ResponsiveCard>
-                    </div>
-
-                    {/* Performance Indicators */}
-                    <ResponsiveCard
-                      title="Performance Indicators"
-                      subtitle="Real-time hiring metrics and insights"
-                      icon={<BarChart className="h-5 w-5" />}
-                      variant="gradient"
-                      mobileFullWidth
-                    >
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                        <div className="text-center p-4 sm:p-6 rounded-xl glass-card bg-card/30 border border-white/5 shadow-sm">
-                          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
-                            <Users className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
-                          </div>
-                          <h3 className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100 mb-2">Application Rate</h3>
-                          <p className="text-2xl sm:text-3xl font-bold text-blue-600 mb-1">
-                            {jobData?.createdAt ?
-                              Math.round((jobData?.applicantCount || 0) / Math.max(1, Math.ceil((new Date().getTime() - new Date(jobData?.createdAt).getTime()) / (1000 * 60 * 60 * 24))))
-                              : 0}
-                          </p>
-                          <p className="text-xs sm:text-sm text-gray-600 dark:text-muted-foreground/70">applications per day</p>
-                        </div>
-
-                        <div className="text-center p-4 sm:p-6 rounded-xl glass-card bg-card/30 border border-white/5 shadow-sm">
-                          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
-                            <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
-                          </div>
-                          <h3 className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100 mb-2">Job Readiness</h3>
-                          <p className="text-2xl sm:text-3xl font-bold text-green-600 mb-1">
-                            {Math.round(((jobData?.description ? 25 : 0) +
-                              (jobData?.requirements ? 25 : 0) +
-                              (jobData?.responsibilities ? 25 : 0) +
-                              (interviewQuestions.length > 0 ? 25 : 0)))}%
-                          </p>
-                          <p className="text-xs sm:text-sm text-gray-600 dark:text-muted-foreground/70">completeness score</p>
-                        </div>
-
-                        <div className="text-center p-4 sm:p-6 rounded-xl glass-card bg-card/30 border border-white/5 shadow-sm">
-                          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
-                            <Star className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
-                          </div>
-                          <h3 className="text-base sm:text-lg font-semibold text-foreground dark:text-gray-100 mb-2">Position Demand</h3>
-                          <p className="text-2xl sm:text-3xl font-bold text-purple-600 mb-1">
-                            {jobData?.openings > 1 ? 'High' : 'Standard'}
-                          </p>
-                          <p className="text-xs sm:text-sm text-gray-600 dark:text-muted-foreground/70">
-                            {jobData?.openings} position{jobData?.openings > 1 ? 's' : ''} available
-                          </p>
-                        </div>
+                          <PipelineAnalyticsEnhanced
+                            jobId={jobData?._id}
+                            refreshTrigger={analyticsRefreshTrigger}
+                          />
+                        </ResponsiveCard>
                       </div>
-                    </ResponsiveCard>
-                  </TabsContent>
 
-                  {/* Rankings Sub-Tab */}
-                  <TabsContent value="rankings" className="mt-0">
-                    <FeedbackLeaderboard jobId={jobData?._id || ''} />
-                  </TabsContent>
-                </Tabs>
-              </TabsContent>
+                      {/* Performance Indicators */}
+                      <ResponsiveCard
+                        title="Performance Indicators"
+                        subtitle="Real-time hiring metrics and insights"
+                        icon={<BarChart className="h-5 w-5" />}
+                        variant="gradient"
+                        mobileFullWidth
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                          <div className="text-center p-4 sm:p-6 rounded-xl bg-white dark:bg-slate-800 shadow-sm">
+                            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                              <Users className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
+                            </div>
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Application Rate</h3>
+                            <p className="text-2xl sm:text-3xl font-bold text-blue-600 mb-1">
+                              {jobData?.createdAt ? 
+                                Math.round((jobData?.applicantCount || 0) / Math.max(1, Math.ceil((new Date().getTime() - new Date(jobData?.createdAt).getTime()) / (1000 * 60 * 60 * 24)))) 
+                                : 0}
+                            </p>
+                            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">applications per day</p>
+                          </div>
+                          
+                          <div className="text-center p-4 sm:p-6 rounded-xl bg-white dark:bg-slate-800 shadow-sm">
+                            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                              <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
+                            </div>
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Job Readiness</h3>
+                            <p className="text-2xl sm:text-3xl font-bold text-green-600 mb-1">
+                              {Math.round(((jobData?.description ? 25 : 0) + 
+                                         (jobData?.requirements ? 25 : 0) + 
+                                         (jobData?.responsibilities ? 25 : 0) + 
+                                         (interviewQuestions.length > 0 ? 25 : 0)))}%
+                            </p>
+                            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">completeness score</p>
+                          </div>
+                          
+                          <div className="text-center p-4 sm:p-6 rounded-xl bg-white dark:bg-slate-800 shadow-sm">
+                            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                              <Star className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
+                            </div>
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Position Demand</h3>
+                            <p className="text-2xl sm:text-3xl font-bold text-purple-600 mb-1">
+                              {jobData?.openings > 1 ? 'High' : 'Standard'}
+                            </p>
+                            <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                              {jobData?.openings} position{jobData?.openings > 1 ? 's' : ''} available
+                            </p>
+                          </div>
+                        </div>
+                      </ResponsiveCard>
+                    </TabsContent>
+
+                    {/* Rankings Sub-Tab */}
+                    <TabsContent value="rankings" className="mt-0">
+                      <FeedbackLeaderboard jobId={jobData?._id || ''} />
+                    </TabsContent>
+                  </Tabs>
+                </TabsContent>
 
 
-              {/* Statistics tab removed - merged into insights */}
+                {/* Statistics tab removed - merged into insights */}
 
-            </Tabs>
+                              </Tabs>
           </div>
         </div>
       </ResponsiveContentLayout>
@@ -2376,14 +2354,15 @@ function JobDetailInnerPage() {
       <Dialog open={showEmailSettingsDialog} onOpenChange={setShowEmailSettingsDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Email Settings</DialogTitle>
+            <DialogTitle>Customize Candidate Emails</DialogTitle>
             <DialogDescription>
-              Configure email notification settings for {jobData?.title || 'this job'}
+              Edit the message sent to candidates for {jobData?.title || 'this job'}
             </DialogDescription>
           </DialogHeader>
           <JobEmailSettings
             jobId={jobData?._id || ''}
             jobTitle={jobData?.title || 'Job'}
+            initialTemplate={emailTemplateToEdit}
             onSettingsChange={(settings) => {
               console.log('Email settings updated:', settings)
             }}
@@ -2391,6 +2370,30 @@ function JobDetailInnerPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Pipeline Rejection Center Dialog */}
+      <Dialog open={showBulkRejectionDialog} onOpenChange={setShowBulkRejectionDialog}>
+        <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pipeline Rejection Center</DialogTitle>
+            <DialogDescription>
+              Select individual pipeline candidates or reject everyone in a selected scope.
+            </DialogDescription>
+          </DialogHeader>
+          <PipelineEmailManagementTab
+            jobId={jobData?._id}
+            jobTitle={jobData?.title}
+            onEmailSent={() => {
+              toast({
+                title: "Emails sent successfully",
+                description: "Rejection emails have been sent to the selected candidates.",
+              })
+              setAnalyticsRefreshTrigger(prev => prev + 1)
+              setShowBulkRejectionDialog(false)
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+      
       {/* Advanced Question Generator */}
       <AdvancedQuestionGenerator
         isOpen={showAdvancedGenerator}
@@ -2402,10 +2405,10 @@ function JobDetailInnerPage() {
       />
 
       {/* Credit Error Dialog */}
-      <CreditErrorDialog
-        open={showCreditDialog}
-        onOpenChange={setShowCreditDialog}
-        error={creditError}
+      <CreditErrorDialog 
+        open={showCreditDialog} 
+        onOpenChange={setShowCreditDialog} 
+        error={creditError} 
       />
 
       {/* Public Job Dialog */}
@@ -2419,19 +2422,6 @@ function JobDetailInnerPage() {
         isLoading={isUpdatingPublicStatus}
       />
 
-      {/* Internal Recruitment Dialog */}
-      <InternalRecruitmentDialog
-        open={showInternalDialog}
-        onOpenChange={setShowInternalDialog}
-        mode={internalDialogMode}
-        jobId={params.jobId as string}
-        jobTitle={jobData?.title || ''}
-        currentLimit={jobData?.internalCandidateApplyLimit}
-        currentApplicationCount={jobData?.internalApplicationCount}
-        reservedCredits={jobData?.reservedInternalCredits}
-        creditInfo={creditInfo}
-        onSuccess={fetchJobData}
-      />
     </div>
   )
 }
