@@ -132,11 +132,20 @@ function validateLocalUsageEnvelope(payload = {}) {
   if (httpStatus && (!Number.isInteger(httpStatus) || httpStatus < 100 || httpStatus > 599)) {
     throw validationError('Local usage HTTP status is invalid');
   }
+  const estimatedCostUsd = Number(input.estimatedCostUsd || 0);
+  if (!Number.isFinite(estimatedCostUsd) || estimatedCostUsd < 0 || estimatedCostUsd > 1_000_000) {
+    throw validationError('Local usage estimated cost is invalid');
+  }
   return {
     eventId,
     gatewayExecutionId,
     requestId,
     sourceApp,
+    organizationId: text(input.organizationId, 120) || undefined,
+    organizationName: text(input.organizationName, 200) || undefined,
+    actorId: text(input.actorId, 160) || undefined,
+    actorName: text(input.actorName, 200) || undefined,
+    actorEmail: text(input.actorEmail, 254) || undefined,
     activity,
     provider,
     model,
@@ -148,6 +157,7 @@ function validateLocalUsageEnvelope(payload = {}) {
     usageReported: input.usageReported === true,
     usageSource: text(input.usageSource || (input.usageReported ? 'local-gateway' : 'unreported'), 100),
     usage,
+    estimatedCostUsd,
     occurredAt
   };
 }
@@ -161,6 +171,11 @@ async function ingestLocalUsageEnvelope(payload, { recordUsageImpl = recordUsage
     atSourceOnly: true,
     requestId: event.requestId,
     sourceApp: event.sourceApp,
+    organizationId: event.organizationId,
+    organizationName: event.organizationName,
+    actorId: event.actorId,
+    actorName: event.actorName,
+    actorEmail: event.actorEmail,
     activity: event.activity,
     provider: event.provider,
     model: event.model,
@@ -178,7 +193,7 @@ async function ingestLocalUsageEnvelope(payload, { recordUsageImpl = recordUsage
       completion_tokens_details: { reasoning_tokens: event.usage.reasoningTokens },
       total_tokens: event.usage.totalTokens
     },
-    estimatedCostUsd: 0,
+    estimatedCostUsd: event.estimatedCostUsd,
     createdAt: event.occurredAt
   });
   return {

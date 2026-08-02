@@ -769,6 +769,9 @@ function providerUsageLabel(provider: string, model?: string) {
     if (model === 'gpt-5.6-terra') return 'Terra (Codex local-cloud)';
     return model ? `Codex local-cloud · ${model}` : 'Codex local-cloud';
   }
+  if (provider === 'local-claude') {
+    return model ? `Claude Code local-cloud · ${model}` : 'Claude Code local-cloud';
+  }
   if (provider === 'local-ollama') {
     if (model === 'managed-local-gpu') return 'Managed local runtime';
     return model ? `Ollama (local GPU) · ${model}` : 'Ollama (local GPU)';
@@ -1829,7 +1832,9 @@ export default function AIRuntimeAdminPage() {
                           const managedAssigned = route?.enabled && route.provider?.startsWith('local-');
                           const routingLabel = route?.provider === 'local-codex'
                             ? 'Terra assigned'
-                            : managedAssigned ? 'Local GPU assigned' : 'Not assigned';
+                            : route?.provider === 'local-claude'
+                              ? 'Claude Sonnet assigned'
+                              : managedAssigned ? 'Managed local assigned' : 'Not assigned';
                           return (
                             <TableRow key={lane.activity} className="border-gray-800">
                               <TableCell>
@@ -2308,7 +2313,7 @@ export default function AIRuntimeAdminPage() {
                     />
                     <Select value={requestProvider} onValueChange={(value) => { setRequestProvider(value); setRequestPage(1); }}>
                       <SelectTrigger aria-label="Filter AI activity by provider" className="w-44 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="all">All providers</SelectItem><SelectItem value="groq">Groq</SelectItem><SelectItem value="local-codex">Codex local-cloud</SelectItem><SelectItem value="local-ollama">Ollama (local GPU)</SelectItem><SelectItem value="local-vllm">vLLM (local GPU)</SelectItem><SelectItem value="azure-openai">Azure</SelectItem></SelectContent>
+                      <SelectContent><SelectItem value="all">All providers</SelectItem><SelectItem value="groq">Groq</SelectItem><SelectItem value="local-codex">Codex local-cloud</SelectItem><SelectItem value="local-claude">Claude Code local-cloud</SelectItem><SelectItem value="local-ollama">Ollama (local GPU)</SelectItem><SelectItem value="local-vllm">vLLM (local GPU)</SelectItem><SelectItem value="azure-openai">Azure</SelectItem></SelectContent>
                     </Select>
                     <Select value={requestStatus} onValueChange={(value) => { setRequestStatus(value); setRequestPage(1); }}>
                       <SelectTrigger aria-label="Filter AI activity by status" className="w-36 border-gray-700 bg-gray-900"><SelectValue /></SelectTrigger>

@@ -405,6 +405,13 @@ const experienceQuestionSchema = strictObject({
 const assistantCitationSchema = strictObject({
   sourceRef: { type: 'string' }, excerpt: { type: 'string' }
 });
+const intelligenceEvidenceSchema = strictObject({
+  sourceRef: { type: 'string' }, excerpt: { type: 'string' }, relevance: { type: 'string' }
+});
+const intelligenceFindingSchema = strictObject({
+  title: { type: 'string' }, detail: { type: 'string' },
+  evidence: { type: 'array', items: intelligenceEvidenceSchema }, confidence: { type: 'number' }
+});
 const experienceFixtures = [
   {
     id: 'experience-survey-generation', activity: 'experience.survey_generation',
@@ -456,82 +463,40 @@ const experienceFixtures = [
     output: { executiveSummary: 'Support is praised while billing clarity creates risk.', sentiment: { positive: 1, neutral: 0, mixed: 0, negative: 1 }, themes: ['Support quality', 'Billing clarity'], risks: ['Confusing billing'], opportunities: ['Clarify billing guidance'], mentions: [{ mentionId: 'm-1', sentiment: 'positive', summary: 'Praises support.' }, { mentionId: 'm-2', sentiment: 'negative', summary: 'Reports confusing billing.' }] }
   },
   {
+    id: 'experience-journey-mapping', activity: 'experience.journey_mapping',
+    prompt: 'Map a software customer journey from discovery through onboarding and adoption.',
+    schema: strictObject({ name: { type: 'string' }, audience: { type: 'string' }, objective: { type: 'string' }, industry: { type: 'string' }, summary: { type: 'string' }, stages: { type: 'array', items: strictObject({ name: { type: 'string' }, touchpoints: stringArray, painPoints: stringArray, metrics: stringArray, recommendedActions: stringArray }) } }),
+    keywords: ['Discovery', 'Onboarding', 'Adoption'],
+    output: { name: 'Software customer journey', audience: 'New customers', objective: 'Improve activation', industry: 'Software', summary: 'A measurable path from discovery to adoption.', stages: [{ name: 'Discovery', touchpoints: ['Website'], painPoints: ['Unclear value'], metrics: ['Demo conversion'], recommendedActions: ['Clarify value proposition'] }, { name: 'Onboarding', touchpoints: ['Setup flow'], painPoints: ['Too many steps'], metrics: ['Time to value'], recommendedActions: ['Reduce setup steps'] }, { name: 'Adoption', touchpoints: ['Product'], painPoints: ['Low feature discovery'], metrics: ['Weekly active use'], recommendedActions: ['Add contextual guidance'] }] }
+  },
+  {
     id: 'experience-social-reply-draft', activity: 'experience.social_reply_draft',
-    prompt: 'Draft a concise, human-reviewed reply to this supplied post: “Setup was confusing, but support helped quickly.”',
-    schema: strictObject({ reply: { type: 'string', maxLength: 280 }, rationale: { type: 'string' }, safetyFlags: stringArray }),
-    keywords: ['support', 'setup'],
-    output: { reply: 'Thanks for sharing this. We are glad support helped, and we will use your feedback to make setup clearer.', rationale: 'Acknowledges both the setup problem and the positive support experience without making unsupported promises.', safetyFlags: [] }
+    prompt: 'Draft a concise human-reviewed reply to a public post that says billing instructions were unclear.',
+    schema: strictObject({ reply: { type: 'string' }, rationale: { type: 'string' }, safetyFlags: stringArray }),
+    keywords: ['billing', 'clarity', 'review'],
+    output: { reply: 'Thank you for flagging the billing instructions. We are reviewing the guidance to make it clearer.', rationale: 'Acknowledges the supplied issue without claiming it is already resolved.', safetyFlags: ['Human review required before posting.'] }
   },
   {
     id: 'experience-cross-source-intelligence', activity: 'experience.cross_source_intelligence',
-    prompt: 'Synthesize supplied survey report s-1 and social report x-1. Both identify confusing setup guidance.',
+    prompt: 'Synthesize supplied survey and social reports that both identify unclear billing instructions.',
     schema: strictObject({
-      title: { type: 'string' }, executiveSummary: { type: 'string' }, confidence: { type: 'number', minimum: 0, maximum: 1 },
-      themes: { type: 'array' }, convergence: { type: 'array' }, divergence: { type: 'array' }, risks: { type: 'array' }, opportunities: { type: 'array' },
-      recommendations: { type: 'array' }, limitations: stringArray
+      title: { type: 'string' }, executiveSummary: { type: 'string' }, confidence: { type: 'number' },
+      themes: { type: 'array', items: intelligenceFindingSchema }, convergence: { type: 'array', items: intelligenceFindingSchema },
+      divergence: { type: 'array', items: intelligenceFindingSchema }, risks: { type: 'array', items: intelligenceFindingSchema },
+      opportunities: { type: 'array', items: intelligenceFindingSchema },
+      recommendations: { type: 'array', items: strictObject({ action: { type: 'string' }, priority: { type: 'string' }, rationale: { type: 'string' }, evidence: { type: 'array', items: intelligenceEvidenceSchema } }) },
+      limitations: stringArray
     }),
-    keywords: ['setup', 's-1', 'x-1'],
+    keywords: ['billing', 'survey', 'social'],
     output: {
-      title: 'Setup clarity across feedback sources',
-      executiveSummary: 'Survey and social evidence both identify confusing setup guidance.',
-      confidence: 0.9,
-      themes: [],
-      convergence: [{ title: 'Setup clarity', detail: 'Both supplied sources identify unclear setup guidance.', evidence: [{ sourceRef: 's-1', excerpt: 'setup guidance was confusing', relevance: 'Survey evidence.' }, { sourceRef: 'x-1', excerpt: 'the setup instructions were unclear', relevance: 'Social evidence.' }], confidence: 0.9 }],
-      divergence: [], risks: [], opportunities: [],
-      recommendations: [{ action: 'Simplify setup guidance.', priority: 'now', rationale: 'Both supplied sources identify the same friction.', evidence: [{ sourceRef: 's-1', excerpt: 'setup guidance was confusing', relevance: 'Supports the action.' }, { sourceRef: 'x-1', excerpt: 'the setup instructions were unclear', relevance: 'Confirms the issue.' }] }],
-      limitations: ['Only two supplied reports were compared.']
-    }
-  },
-  {
-    id: 'experience-knowledge-answer', activity: 'experience.knowledge_answer',
-    prompt: 'Answer only from this supplied knowledge excerpt. [doc-1:p1:c1] The onboarding checklist has three required steps. How many required steps are there?',
-    schema: strictObject({
-      answer: { type: 'string' },
-      citationSourceRefs: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 20 }
-    }),
-    keywords: ['three', 'doc-1:p1:c1'],
-    output: {
-      answer: 'The onboarding checklist has three required steps [doc-1:p1:c1].',
-      citationSourceRefs: ['doc-1:p1:c1']
-    }
-  },
-  {
-    id: 'experience-knowledge-graph-extract', activity: 'experience.knowledge_graph_extract',
-    prompt: 'Extract only grounded graph facts from: Acme uses Atlas for onboarding.',
-    schema: strictObject({
-      entities: {
-        type: 'array',
-        items: strictObject({
-          localId: { type: 'string' }, type: { type: 'string' }, name: { type: 'string' }, aliases: stringArray,
-          mentions: { type: 'array', items: strictObject({ quote: { type: 'string' }, start: { type: 'integer' }, end: { type: 'integer' } }) }
-        })
-      },
-      claims: {
-        type: 'array',
-        items: strictObject({
-          localId: { type: 'string' }, subjectEntityId: { type: 'string' }, predicate: { type: 'string' },
-          objectText: { type: ['string', 'null'] }, objectEntityId: { type: ['string', 'null'] }, confidence: { type: 'number' },
-          mentions: { type: 'array', items: strictObject({ quote: { type: 'string' }, start: { type: 'integer' }, end: { type: 'integer' } }) }
-        })
-      },
-      relations: {
-        type: 'array',
-        items: strictObject({
-          sourceEntityId: { type: 'string' }, type: { type: 'string' }, targetEntityId: { type: 'string' }, confidence: { type: 'number' },
-          mentions: { type: 'array', items: strictObject({ quote: { type: 'string' }, start: { type: 'integer' }, end: { type: 'integer' } }) }
-        })
-      }
-    }),
-    keywords: ['Acme', 'Atlas', 'uses'],
-    output: {
-      entities: [
-        { localId: 'e-acme', type: 'organization', name: 'Acme', aliases: [], mentions: [{ quote: 'Acme', start: 0, end: 4 }] },
-        { localId: 'e-atlas', type: 'product', name: 'Atlas', aliases: [], mentions: [{ quote: 'Atlas', start: 10, end: 15 }] }
-      ],
-      claims: [{ localId: 'c-1', subjectEntityId: 'e-acme', predicate: 'uses', objectText: null, objectEntityId: 'e-atlas', confidence: 1,
-        mentions: [{ quote: 'Acme uses Atlas', start: 0, end: 15 }] }],
-      relations: [{ sourceEntityId: 'e-acme', type: 'uses', targetEntityId: 'e-atlas', confidence: 1,
-        mentions: [{ quote: 'Acme uses Atlas', start: 0, end: 15 }] }]
+      title: 'Billing clarity intelligence', executiveSummary: 'Survey and social evidence both identify unclear billing instructions.', confidence: 0.9,
+      themes: [{ title: 'Billing clarity', detail: 'Customers report unclear billing instructions.', evidence: [{ sourceRef: 'survey-1', excerpt: 'billing instructions were unclear', relevance: 'Direct survey evidence.' }], confidence: 0.9 }],
+      convergence: [{ title: 'Shared clarity issue', detail: 'Both sources identify the same issue.', evidence: [{ sourceRef: 'survey-1', excerpt: 'billing instructions were unclear', relevance: 'Survey evidence.' }, { sourceRef: 'social-1', excerpt: 'the billing guide is confusing', relevance: 'Social evidence.' }], confidence: 0.88 }],
+      divergence: [],
+      risks: [{ title: 'Repeated confusion', detail: 'Unclear instructions may increase support demand.', evidence: [{ sourceRef: 'social-1', excerpt: 'the billing guide is confusing', relevance: 'Shows public confusion.' }], confidence: 0.8 }],
+      opportunities: [{ title: 'Guidance revision', detail: 'Rewrite and test the billing guide.', evidence: [{ sourceRef: 'survey-1', excerpt: 'billing instructions were unclear', relevance: 'Supports a clarity intervention.' }], confidence: 0.82 }],
+      recommendations: [{ action: 'Prioritise a reviewed billing-guide revision.', priority: 'now', rationale: 'Both supplied sources identify clarity problems.', evidence: [{ sourceRef: 'survey-1', excerpt: 'billing instructions were unclear', relevance: 'Supports immediate review.' }] }],
+      limitations: ['Only the supplied reports were considered.']
     }
   },
   {
@@ -603,13 +568,6 @@ const experienceFixtures = [
     schema: strictObject({ subject: { type: 'string' }, body: { type: 'string' }, factsUsed: stringArray, missingInformation: stringArray, warnings: stringArray }),
     keywords: ['approval', 'onboarding guide', 'draft'],
     output: { subject: 'Approval request: revised onboarding guide', body: 'Please review the revised onboarding guide and confirm approval.', factsUsed: ['A revised guide is ready for review.'], missingInformation: ['Approval deadline'], warnings: ['Draft only; human approval is required before sending.'] }
-  },
-  {
-    id: 'experience-journey-mapping', activity: 'experience.journey_mapping',
-    prompt: 'Map a software customer journey from discovery through onboarding and adoption.',
-    schema: strictObject({ name: { type: 'string' }, audience: { type: 'string' }, objective: { type: 'string' }, industry: { type: 'string' }, summary: { type: 'string' }, stages: { type: 'array', items: strictObject({ name: { type: 'string' }, touchpoints: stringArray, painPoints: stringArray, metrics: stringArray, recommendedActions: stringArray }) } }),
-    keywords: ['Discovery', 'Onboarding', 'Adoption'],
-    output: { name: 'Software customer journey', audience: 'New customers', objective: 'Improve activation', industry: 'Software', summary: 'A measurable path from discovery to adoption.', stages: [{ name: 'Discovery', touchpoints: ['Website'], painPoints: ['Unclear value'], metrics: ['Demo conversion'], recommendedActions: ['Clarify value proposition'] }, { name: 'Onboarding', touchpoints: ['Setup flow'], painPoints: ['Too many steps'], metrics: ['Time to value'], recommendedActions: ['Reduce setup steps'] }, { name: 'Adoption', touchpoints: ['Product'], painPoints: ['Low feature discovery'], metrics: ['Weekly active use'], recommendedActions: ['Add contextual guidance'] }] }
   }
 ];
 fixtures.push(...experienceFixtures.map((fixture) => ({

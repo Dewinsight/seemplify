@@ -7,7 +7,8 @@ export function SurveyStatus({ status }: { status: Survey['status'] }) {
 }
 
 export function JobStatus({ job }: { job: AiJob }) {
-  const variant = job.state === 'completed' ? 'success' : job.state === 'failed' ? 'destructive' : job.stage === 'waiting_for_terra' ? 'warning' : 'secondary';
-  const label = job.stage === 'waiting_for_terra' ? 'Waiting for Terra' : job.state === 'processing' ? `${job.progress}%` : job.state;
+  const waitingForRuntime = job.stage === 'waiting_for_runtime' || job.stage === 'waiting_for_terra';
+  const variant = job.state === 'completed' ? 'success' : job.state === 'failed' ? 'destructive' : waitingForRuntime ? 'warning' : 'secondary';
+  const label = waitingForRuntime ? 'Waiting for Experience AI' : job.state === 'processing' ? `${job.progress}%` : job.state;
   return <Badge variant={variant}>{label}</Badge>;
 }

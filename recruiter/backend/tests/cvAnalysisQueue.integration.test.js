@@ -137,6 +137,16 @@ test('retry backoff grows exponentially and caps local-runtime outages', () => {
   assert.equal(cvQueue.isOfflineError(new Error('schema mismatch')), false);
 });
 
+test('retryable service failures use the configured long deferred delay', () => {
+  const transient = Object.assign(new Error('upstream service unavailable'), { retryable: true, status: 503 });
+  assert.equal(cvQueue.isRetryableProcessingError(transient), true);
+  assert.equal(cvQueue.deferredRetryDelay(1), 1_800_000);
+  assert.equal(cvQueue.deferredRetryDelay(2), 3_600_000);
+  transient.retryAfterMs = cvQueue.deferredRetryDelay(1);
+  assert.equal(cvQueue.cvBackoffDelay(5, transient), 1_800_000);
+  assert.equal(cvQueue.isRetryableProcessingError(new Error('invalid CV schema')), false);
+});
+
 test.after(async () => {
   if (initialGatewayControl) {
     await setGatewayControl(initialGatewayControl).catch(() => {});

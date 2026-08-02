@@ -596,7 +596,7 @@ export function PersonalAssistantPage() {
         setDraftBody(result.run.draft.body || '');
         setDraftRevision(result.run.draft.revision || 0);
       }
-      await loadWorkspace(true);
+      void loadWorkspace(true);
       setTab(kind === 'knowledge-answer' ? 'knowledge' : 'mailbox');
       if (emailRun) {
         setAssistantMode(kind === 'email-draft' ? 'reply' : 'insights');

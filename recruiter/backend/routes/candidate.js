@@ -133,7 +133,10 @@ router.post('/public/upload-cv',
     }
     next();
   },
-  queueUpload('public')
+  // When the applicant already submitted their application (candidateId
+  // present in the body), attach this CV analysis to that candidate instead
+  // of creating a new one.
+  queueUpload('public', undefined, (req) => ({ linkedCandidateId: req.body?.candidateId }))
 );
 
 router.get('/cv-jobs/:jobId', async (req, res) => {
@@ -208,10 +211,21 @@ router.put('/:id', authMiddleware, requireOrganization, candidateController.upda
 // @access  Public
 router.put('/public/:id', candidateController.updateCandidate);
 
+// @route   POST api/candidates/public
+// @desc    Create a candidate immediately from a public job-application form,
+//          independent of (and before) any CV upload/parsing
+// @access  Public
+router.post('/public', candidateController.createPublicCandidate);
+
 // @route   DELETE api/candidates/bulk
 // @desc    Bulk delete candidates
 // @access  Private
 router.delete('/bulk', authMiddleware, requireOrganization, candidateController.bulkDeleteCandidates);
+
+// @route   POST api/candidates/bulk-download
+// @desc    Download a ZIP with a profile.pdf + CV per selected candidate
+// @access  Private
+router.post('/bulk-download', authMiddleware, requireOrganization, candidateController.bulkDownloadCandidates);
 
 // @route   DELETE api/candidates/:id
 // @desc    Delete a candidate

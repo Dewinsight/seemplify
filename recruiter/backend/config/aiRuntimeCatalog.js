@@ -7,6 +7,8 @@ const LOCAL_MANAGED_MODEL = 'managed-local-gpu';
 const LOCAL_CV_MODEL = LOCAL_MANAGED_MODEL;
 const TERRA_PROVIDER = 'local-codex';
 const TERRA_MODEL = 'gpt-5.6-terra';
+const CLAUDE_PROVIDER = 'local-claude';
+const CLAUDE_SONNET_MODEL = 'sonnet';
 const DEFAULT_LOCAL_FAILOVER = Object.freeze({
   enabled: true,
   intervalMinutes: 30,
@@ -70,6 +72,20 @@ const DEFAULT_MODELS = Object.freeze([
     enabled: true,
     localCloud: true,
     managed: true
+  },
+  {
+    id: CLAUDE_SONNET_MODEL,
+    provider: CLAUDE_PROVIDER,
+    label: 'Claude Sonnet (Claude Code local-cloud)',
+    capabilities: ['text', 'reasoning', 'json_object', 'json_schema', 'tools', 'streaming'],
+    pricing: { inputPerMillionUsd: 0, cachedInputPerMillionUsd: 0, outputPerMillionUsd: 0 },
+    documentedLimits: { concurrency: 32 },
+    contextWindow: 200000,
+    maxOutputTokens: 64000,
+    available: true,
+    enabled: true,
+    localCloud: true,
+    managed: true
   }
 ]);
 
@@ -79,6 +95,19 @@ function experienceActivity(label, reasoningEffort = 'medium') {
     group: 'Experience Management',
     model: TERRA_MODEL,
     provider: TERRA_PROVIDER,
+    reasoningEffort,
+    defaultLocal: true,
+    lockedProvider: true,
+    failoverPolicy: 'wait_local'
+  };
+}
+
+function crmActivity(label, reasoningEffort = 'medium') {
+  return {
+    label,
+    group: 'Xplorer CRM',
+    model: CLAUDE_SONNET_MODEL,
+    provider: CLAUDE_PROVIDER,
     reasoningEffort,
     defaultLocal: true,
     lockedProvider: true,
@@ -153,26 +182,6 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
     lockedProvider: true,
     failoverPolicy: 'wait_local'
   },
-  'experience.knowledge_answer': {
-    label: 'Experience knowledge answer',
-    group: 'Experience Management',
-    model: TERRA_MODEL,
-    provider: TERRA_PROVIDER,
-    reasoningEffort: 'high',
-    defaultLocal: true,
-    lockedProvider: true,
-    failoverPolicy: 'wait_local'
-  },
-  'experience.knowledge_graph_extract': {
-    label: 'Experience knowledge graph extraction',
-    group: 'Experience Management',
-    model: TERRA_MODEL,
-    provider: TERRA_PROVIDER,
-    reasoningEffort: 'high',
-    defaultLocal: true,
-    lockedProvider: true,
-    failoverPolicy: 'wait_local'
-  },
   'experience.report_generation': {
     label: 'Experience report generation',
     group: 'Experience Management',
@@ -203,26 +212,6 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
     lockedProvider: true,
     failoverPolicy: 'wait_local'
   },
-  'experience.social_reply_draft': {
-    label: 'Experience social reply draft',
-    group: 'Experience Management',
-    model: TERRA_MODEL,
-    provider: TERRA_PROVIDER,
-    reasoningEffort: 'medium',
-    defaultLocal: true,
-    lockedProvider: true,
-    failoverPolicy: 'wait_local'
-  },
-  'experience.cross_source_intelligence': {
-    label: 'Experience cross-source intelligence',
-    group: 'Experience Management',
-    model: TERRA_MODEL,
-    provider: TERRA_PROVIDER,
-    reasoningEffort: 'high',
-    defaultLocal: true,
-    lockedProvider: true,
-    failoverPolicy: 'wait_local'
-  },
   'experience.journey_mapping': {
     label: 'Experience journey mapping',
     group: 'Experience Management',
@@ -233,6 +222,10 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
     lockedProvider: true,
     failoverPolicy: 'wait_local'
   },
+  'experience.knowledge_answer': experienceActivity('Experience knowledge answer', 'high'),
+  'experience.knowledge_graph_extract': experienceActivity('Experience knowledge graph extraction', 'high'),
+  'experience.social_reply_draft': experienceActivity('Experience social reply draft'),
+  'experience.cross_source_intelligence': experienceActivity('Experience cross-source intelligence', 'high'),
   'experience.assistant.email_summarise': experienceActivity('Experience assistant email summarisation'),
   'experience.assistant.email_draft': experienceActivity('Experience assistant email draft'),
   'experience.assistant.document_summarise': experienceActivity('Experience assistant document summarisation'),
@@ -243,6 +236,18 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
   'experience.assistant.knowledge_answer': experienceActivity('Experience assistant knowledge answer', 'high'),
   'experience.assistant.executive_brief': experienceActivity('Experience assistant executive brief', 'high'),
   'experience.assistant.correspondence_draft': experienceActivity('Experience assistant correspondence draft'),
+  'experience.assistant.work_product': experienceActivity('Experience assistant work product', 'high'),
+  'knowledge.ask': crmActivity('CRM knowledge answer', 'high'),
+  'knowledge.source_ingestion': crmActivity('CRM knowledge source ingestion'),
+  'knowledge.draft_generation': crmActivity('CRM knowledge draft generation', 'high'),
+  'inbox.classification': crmActivity('CRM inbox classification', 'low'),
+  'case.recommendation': crmActivity('CRM case recommendation', 'high'),
+  'ai.advisory': crmActivity('CRM AI advisory', 'high'),
+  'ai.copilot': crmActivity('CRM AI copilot', 'high'),
+  'summarization': crmActivity('CRM summarization'),
+  'action.classification': crmActivity('CRM action classification', 'low'),
+  'ai.interview.reasoning': crmActivity('CRM interview reasoning', 'high'),
+  'ai.interview.chat': crmActivity('CRM interview chat'),
   'interview.questions': {
     label: 'Interview question generation',
     group: 'Interviews',
@@ -361,6 +366,8 @@ function createDefaultRuntimeSettings() {
 
 module.exports = {
   ACTIVITY_DEFINITIONS,
+  CLAUDE_PROVIDER,
+  CLAUDE_SONNET_MODEL,
   DEFAULT_ALERT_SETTINGS,
   DEFAULT_LOCAL_FAILOVER,
   DEFAULT_ROLLOUT_SETTINGS,

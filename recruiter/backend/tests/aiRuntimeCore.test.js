@@ -5,6 +5,9 @@ const test = require('node:test');
 const { createInternalServiceAuth } = require('../middleware/internalServiceAuth');
 const { requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
 const {
+  ACTIVITY_DEFINITIONS,
+  CLAUDE_PROVIDER,
+  CLAUDE_SONNET_MODEL,
   createDefaultRuntimeSettings,
   GROQ_120B,
   GROQ_20B,
@@ -52,6 +55,24 @@ test('every seeded AI activity has one compatible explicit route', () => {
   assert.ok(requiredCapabilitiesForActivity('ai_interview.chat.clarification').includes('streaming'));
 });
 
+test('the local knowledge graph extraction activity is registered and pinned to Terra', () => {
+  const activity = ACTIVITY_DEFINITIONS['experience.knowledge_graph_extract'];
+  assert.ok(activity);
+  assert.equal(activity.provider, TERRA_PROVIDER);
+  assert.equal(activity.model, TERRA_MODEL);
+  assert.equal(activity.reasoningEffort, 'high');
+  assert.equal(activity.lockedProvider, true);
+});
+
+test('the grounded knowledge answer activity is registered and pinned to Terra', () => {
+  const activity = ACTIVITY_DEFINITIONS['experience.knowledge_answer'];
+  assert.ok(activity);
+  assert.equal(activity.provider, TERRA_PROVIDER);
+  assert.equal(activity.model, TERRA_MODEL);
+  assert.equal(activity.reasoningEffort, 'high');
+  assert.equal(activity.lockedProvider, true);
+});
+
 test('default routing keeps CV and questions on managed local inference while Experience is pinned to Terra', () => {
   const settings = createDefaultRuntimeSettings();
   const liveChatActivities = new Set([
@@ -69,16 +90,25 @@ test('default routing keeps CV and questions on managed local inference while Ex
     Object.keys(require('../config/aiRuntimeCatalog').ACTIVITY_DEFINITIONS)
       .filter((activity) => activity.startsWith('experience.'))
   );
+  const claudeActivities = new Set(
+    Object.entries(ACTIVITY_DEFINITIONS)
+      .filter(([, definition]) => definition.provider === CLAUDE_PROVIDER)
+      .map(([activity]) => activity)
+  );
 
   for (const route of settings.routes) {
     const expectedModel = terraActivities.has(route.activity)
       ? TERRA_MODEL
+      : claudeActivities.has(route.activity)
+        ? CLAUDE_SONNET_MODEL
       : localActivities.has(route.activity)
         ? LOCAL_CV_MODEL
         : liveChatActivities.has(route.activity) ? GROQ_20B : GROQ_120B;
     const expectedProvider = terraActivities.has(route.activity)
       ? TERRA_PROVIDER
-      : localActivities.has(route.activity) ? LOCAL_PROVIDER : 'groq';
+      : claudeActivities.has(route.activity)
+        ? CLAUDE_PROVIDER
+        : localActivities.has(route.activity) ? LOCAL_PROVIDER : 'groq';
     assert.equal(route.model, expectedModel, route.activity);
     assert.equal(route.provider, expectedProvider, route.activity);
   }
@@ -87,10 +117,10 @@ test('default routing keeps CV and questions on managed local inference while Ex
   assert.equal(settings.routes.find((route) => route.activity === 'ai_interview.chat.clarification').reasoningEffort, 'low');
 });
 
-test('configurable activities can use local inference while CV and Experience provider locks remain enforced', () => {
+test('configurable activities can use local inference while CV, CRM, and Experience provider locks remain enforced', () => {
   const settings = createDefaultRuntimeSettings();
   for (const route of settings.routes) {
-    if (!route.activity.startsWith('experience.')) {
+    if (ACTIVITY_DEFINITIONS[route.activity]?.lockedProvider !== true) {
       route.provider = LOCAL_PROVIDER;
       route.model = LOCAL_CV_MODEL;
     }
@@ -738,6 +768,7 @@ test('default catalog keeps CV and question generation local and pins every Expe
     'experience.assistant.knowledge_answer',
     'experience.assistant.meeting_minutes',
     'experience.assistant.meeting_prepare',
+    'experience.assistant.work_product',
     'experience.cross_source_intelligence',
     'experience.insight_generation',
     'experience.journey_mapping',
@@ -751,7 +782,10 @@ test('default catalog keeps CV and question generation local and pins every Expe
     'experience.translation'
   ]);
   assert.equal(terraRoutes.every((route) => route.model === TERRA_MODEL && route.failoverPolicy === 'wait_local'), true);
-  assert.equal(settings.routes.filter((route) => !localRoutes.includes(route) && !terraRoutes.includes(route)).every((route) => route.provider === 'groq'), true);
+  const claudeRoutes = settings.routes.filter((route) => route.provider === CLAUDE_PROVIDER);
+  assert.equal(claudeRoutes.length, 11);
+  assert.equal(claudeRoutes.every((route) => route.model === CLAUDE_SONNET_MODEL && route.failoverPolicy === 'wait_local'), true);
+  assert.equal(settings.routes.filter((route) => !localRoutes.includes(route) && !terraRoutes.includes(route) && !claudeRoutes.includes(route)).every((route) => route.provider === 'groq'), true);
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-120b'), true);
   assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-20b'), true);
   assert.equal(settings.models.some((model) => model.id === LOCAL_CV_MODEL), true);

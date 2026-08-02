@@ -453,6 +453,8 @@ function normalizeQueueTelemetry(input = {}) {
         stage: queueText(job?.stage, 40) || null,
         progress: Math.min(100, queueCount(job?.progress)),
         attempts: queueCount(job?.attempts),
+        nextAttemptAt: queueTimestamp(job?.nextAttemptAt || job?.retry?.nextAttemptAt),
+        deferredCycles: queueCount(job?.deferredCycles ?? job?.retry?.deferredCycles),
         createdAt: queueTimestamp(job?.createdAt),
         startedAt: queueTimestamp(job?.startedAt),
         completedAt: queueTimestamp(job?.completedAt),
@@ -592,11 +594,11 @@ function queueHistoryPath(inputUrl) {
   return `/api/internal/local-cv-queue/history?${params.toString()}`;
 }
 
-function signQueueHistoryPath(requestPath) {
+function signQueueHistoryPath(requestPath, method = 'GET') {
   const timestamp = String(Date.now());
   const nonce = crypto.randomBytes(24).toString('base64url');
   const signature = crypto.createHmac('sha256', secret)
-    .update(`${timestamp}\n${nonce}\nGET\n${requestPath}`)
+    .update(`${timestamp}\n${nonce}\n${String(method).toUpperCase()}\n${requestPath}`)
     .digest('base64url');
   return { timestamp, nonce, signature };
 }
@@ -639,6 +641,86 @@ async function fetchProviderTelemetry() {
         code: queueText(input?.code, 80) || 'PROVIDER_TELEMETRY_UNAVAILABLE',
         message: 'Hosted AI provider telemetry is unavailable'
       };
+  return { status: upstream.status, payload };
+}
+
+function executionModeForEngine(engine) {
+  return ['codex', 'claude'].includes(String(engine || '').toLowerCase())
+    ? 'local-cloud'
+    : 'local';
+}
+
+async function retryQueueJob(jobId, stage = 'failed') {
+  if (!/^cv_[A-Za-z0-9_-]{8,100}$/.test(String(jobId || ''))) {
+    return { status: 400, payload: { code: 'CV_JOB_ID_INVALID', message: 'CV job identifier is invalid' } };
+  }
+  const requestPath = `/api/internal/local-cv-queue/jobs/${encodeURIComponent(jobId)}/retry`;
+  const signed = signQueueHistoryPath(requestPath, 'POST');
+  const body = JSON.stringify({ stage: ['failed', 'parsing', 'analysis'].includes(stage) ? stage : 'failed' });
+  const upstream = await fetch(`${recruiterBackendUrl}${requestPath}`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      'x-seemplify-timestamp': signed.timestamp,
+      'x-seemplify-nonce': signed.nonce,
+      'x-seemplify-signature': signed.signature
+    },
+    body,
+    signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(10_000) : undefined
+  });
+  const payload = await upstream.json().catch(() => ({
+    code: 'CV_RETRY_INVALID_RESPONSE',
+    message: 'The recruiter backend returned an invalid retry response'
+  }));
+  return { status: upstream.status, payload };
+}
+
+function activityAnalyticsPath(inputUrl) {
+  const params = new URLSearchParams();
+  const range = String(inputUrl.searchParams.get('range') || '24h');
+  params.set('range', ['1h', '24h', '7d', '30d', '90d'].includes(range) ? range : '24h');
+  return `/api/internal/local-cv-queue/activity-analytics?${params.toString()}`;
+}
+
+function activityHistoryPath(inputUrl) {
+  const params = new URLSearchParams();
+  const range = String(inputUrl.searchParams.get('range') || '24h');
+  params.set('range', ['1h', '24h', '7d', '30d', '90d'].includes(range) ? range : '24h');
+  params.set('page', String(Math.max(1, Math.min(100_000, Number(inputUrl.searchParams.get('page')) || 1))));
+  params.set('limit', String(Math.max(10, Math.min(100, Number(inputUrl.searchParams.get('limit')) || 25))));
+  const filters = {
+    status: /^(success|failed)$/,
+    provider: /^[A-Za-z0-9._-]{1,80}$/,
+    activity: /^[A-Za-z0-9._:-]{1,120}$/,
+    sourceApp: /^[A-Za-z0-9._:-]{1,80}$/,
+    organizationId: /^[A-Za-z0-9._:-]{1,120}$/,
+    actorId: /^[A-Za-z0-9._:@+-]{1,160}$/
+  };
+  for (const [name, pattern] of Object.entries(filters)) {
+    const value = String(inputUrl.searchParams.get(name) || '').trim();
+    if (value && pattern.test(value)) params.set(name, value);
+  }
+  const search = queueText(inputUrl.searchParams.get('search'), 100);
+  if (search) params.set('search', search);
+  return `/api/internal/local-cv-queue/activity-history?${params.toString()}`;
+}
+
+async function fetchSignedHosted(requestPath, timeoutMs = 8_000) {
+  const signed = signQueueHistoryPath(requestPath);
+  const upstream = await fetch(`${recruiterBackendUrl}${requestPath}`, {
+    headers: {
+      accept: 'application/json',
+      'x-seemplify-timestamp': signed.timestamp,
+      'x-seemplify-nonce': signed.nonce,
+      'x-seemplify-signature': signed.signature
+    },
+    signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
+  });
+  const payload = await upstream.json().catch(() => ({
+    code: 'AI_ACTIVITY_INVALID_RESPONSE',
+    message: 'The hosted backend returned an invalid AI activity response'
+  }));
   return { status: upstream.status, payload };
 }
 
@@ -767,7 +849,7 @@ function statusPayload() {
     model: selected.model,
     provider: `local-${selected.id}`,
     providerLabel: localProviderLabel(`local-${selected.id}`, selected.model),
-    executionMode: selected.id === 'codex' ? 'local-cloud' : 'local',
+    executionMode: executionModeForEngine(selected.id),
     applicationDefaults: state.applicationDefaults,
     runtimeProfiles: RUNTIME_PROFILE_IDS.map((id) => {
       const profileState = stateForRuntimeProfile(state, id);
@@ -777,7 +859,7 @@ function statusPayload() {
         engine: profileEngine.id,
         model: profileEngine.model,
         provider: `local-${profileEngine.id}`,
-        executionMode: profileEngine.id === 'codex' ? 'local-cloud' : 'local'
+        executionMode: executionModeForEngine(profileEngine.id)
       };
     }),
     cvLocalEligible,
@@ -841,6 +923,11 @@ function meteringContext(input = {}, requestSource = '') {
   }
   const requestId = String(metering.requestId || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200);
   const sourceApp = String(metering.sourceApp || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 64);
+  const organizationId = String(metering.organizationId || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 120);
+  const organizationName = String(metering.organizationName || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200);
+  const actorId = String(metering.actorId || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 160);
+  const actorName = String(metering.actorName || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 200);
+  const actorEmail = String(metering.actorEmail || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 254);
   if (!requestId || !sourceApp) {
     throw Object.assign(new Error('The local metering request identity is incomplete'), {
       code: 'INVALID_METERING_CONTEXT',
@@ -851,7 +938,12 @@ function meteringContext(input = {}, requestSource = '') {
     eventId: metering.eventId,
     gatewayExecutionId: expectedExecutionId,
     requestId,
-    sourceApp
+    sourceApp,
+    organizationId: organizationId || undefined,
+    organizationName: organizationName || undefined,
+    actorId: actorId || undefined,
+    actorName: actorName || undefined,
+    actorEmail: actorEmail || undefined
   };
 }
 
@@ -901,6 +993,7 @@ function atSourceUsageRecord({
   usage,
   usageReported,
   usageSource,
+  estimatedCostUsd,
   occurredAt = new Date().toISOString()
 }) {
   if (!metering) return null;
@@ -916,6 +1009,7 @@ function atSourceUsageRecord({
     latencyMs,
     usageReported: usageReported === true,
     usageSource: usageReported === true ? usageSource : 'unreported',
+    estimatedCostUsd: Math.max(0, Number(estimatedCostUsd || 0)),
     ...meteredTokenCounts(usage),
     occurredAt
   };
@@ -1168,7 +1262,8 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       latencyMs,
       usage: data.usage,
       usageReported: data.usageReported,
-      usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported'
+      usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported',
+      estimatedCostUsd: data.estimatedCostUsd
     });
     const responsePayload = {
       id: responseId,
@@ -1185,6 +1280,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       usage: data.usage,
       usageReported: data.usageReported === true,
       usageSource: data.usageReported === true ? `${data.engine}-response` : 'unreported',
+      estimatedCostUsd: data.estimatedCostUsd,
       metrics: {
         ...(data.metrics || {}),
         queueWaitMs: permit.waitMs,
@@ -1432,6 +1528,47 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 503, { code: 'PROVIDER_TELEMETRY_UNAVAILABLE', message: error.message });
     }
   }
+  const queueRetryMatch = request.method === 'POST'
+    && url.pathname.match(/^\/control\/queue-retry\/(cv_[A-Za-z0-9_-]{8,100})$/);
+  if (queueRetryMatch) {
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const input = JSON.parse(await readBody(request) || '{}');
+      const result = await retryQueueJob(queueRetryMatch[1], input.stage);
+      return sendJson(response, result.status, result.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'CV_RETRY_UNAVAILABLE', message: error.message });
+    }
+  }
+  if (request.method === 'GET' && url.pathname === '/control/activity-analytics') {
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const result = await fetchSignedHosted(activityAnalyticsPath(url));
+      return sendJson(response, result.status, result.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'AI_ACTIVITY_ANALYTICS_UNAVAILABLE', message: error.message });
+    }
+  }
+  if (request.method === 'GET' && url.pathname === '/control/activity-history') {
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const result = await fetchSignedHosted(activityHistoryPath(url), 10_000);
+      return sendJson(response, result.status, result.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'AI_ACTIVITY_HISTORY_UNAVAILABLE', message: error.message });
+    }
+  }
+  const activityDetailMatch = request.method === 'GET'
+    && url.pathname.match(/^\/control\/activity-history\/([a-f\d]{24})$/i);
+  if (activityDetailMatch) {
+    if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
+    try {
+      const result = await fetchSignedHosted(`/api/internal/local-cv-queue/activity-history/${activityDetailMatch[1]}`);
+      return sendJson(response, result.status, result.payload);
+    } catch (error) {
+      return sendJson(response, 503, { code: 'AI_ACTIVITY_DETAIL_UNAVAILABLE', message: error.message });
+    }
+  }
   if (request.method === 'PUT' && url.pathname === '/control/state') {
     if (!isLocalControlRequest(request)) {
       return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
@@ -1570,7 +1707,7 @@ const server = http.createServer(async (request, response) => {
           model: selected.model,
           provider: `local-${selected.id}`,
           providerLabel: localProviderLabel(`local-${selected.id}`, selected.model),
-          executionMode: selected.id === 'codex' ? 'local-cloud' : 'local'
+          executionMode: executionModeForEngine(selected.id)
         } : {}),
         health
       });

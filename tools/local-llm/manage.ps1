@@ -3,13 +3,15 @@ param(
     'start', 'stop', 'force-stop', 'restart', 'status', 'load', 'unload',
     'pause', 'resume', 'enable-ingress', 'disable-ingress',
     'enable-auto-start', 'disable-auto-start', 'set-concurrency',
-    'select-engine', 'select-best', 'set-model', 'set-experience-default', 'verify-engine', 'install-codex', 'login-codex', 'sync-codex-models',
+    'select-engine', 'select-best', 'set-model', 'set-experience-default', 'set-xplorer-default', 'verify-engine',
+    'install-codex', 'login-codex', 'logout-codex', 'switch-codex-account', 'sync-codex-models',
+    'install-claude', 'login-claude', 'logout-claude', 'switch-claude-account',
     'install-vllm', 'vllm-start', 'vllm-stop'
   )]
   [string]$Action = 'status',
   [ValidateRange(1, 128)]
   [int]$Concurrency = 1,
-  [ValidateSet('ollama', 'vllm', 'codex')]
+  [ValidateSet('ollama', 'vllm', 'codex', 'claude')]
   [string]$Engine = 'ollama',
   [ValidateLength(0, 200)]
   [string]$Model = '',
@@ -35,8 +37,11 @@ $OllamaStartupBackup = Join-Path $RuntimeDir 'Ollama.original-startup.lnk'
 $CodexInstallDir = Join-Path $RuntimeDir 'codex-cli'
 $CodexScript = Join-Path $CodexInstallDir 'node_modules\@openai\codex\bin\codex.js'
 $CodexCatalogFile = Join-Path $RuntimeDir 'codex-models.json'
+$ClaudeInstallDir = Join-Path $RuntimeDir 'claude-cli'
+$ClaudeExe = Join-Path $ClaudeInstallDir 'node_modules\@anthropic-ai\claude-code\bin\claude.exe'
 $ApprovedConcurrencyFile = Join-Path $RuntimeDir 'approved-concurrency.json'
 $VerificationFile = Join-Path $RuntimeDir 'verification.json'
+$AccountTransitionFile = Join-Path $RuntimeDir 'account-transition.json'
 $VerificationScript = Join-Path $PSScriptRoot 'verify-engine.cjs'
 $BenchmarkSummaryScript = Join-Path $PSScriptRoot 'benchmark-summary.cjs'
 $VllmContainer = 'seemplify-vllm'
@@ -47,6 +52,7 @@ $DefaultModels = [ordered]@{
   ollama = if ($env:LOCAL_LLM_MODEL) { $env:LOCAL_LLM_MODEL } else { 'gemma4:26b-a4b-it-qat' }
   vllm = if ($env:SEEMPLIFY_VLLM_MODEL) { $env:SEEMPLIFY_VLLM_MODEL } else { 'Qwen/Qwen3-14B-AWQ' }
   codex = 'gpt-5.6-terra'
+  claude = 'sonnet'
 }
 $ConfiguredModelsDir = [Environment]::GetEnvironmentVariable('OLLAMA_MODELS', 'User')
 if ($ConfiguredModelsDir) { $env:OLLAMA_MODELS = $ConfiguredModelsDir }
@@ -96,12 +102,14 @@ function New-DefaultState {
     selectionMode = 'automatic'
     selectedEngine = 'codex'
     applicationDefaults = [ordered]@{
-      experienceManagement = [ordered]@{ engine='codex'; model=$DefaultModels.codex }
+      experienceManagement = [ordered]@{ engine='claude'; model=$DefaultModels.claude }
+      xplorerCrm = [ordered]@{ engine='claude'; model=$DefaultModels.claude }
     }
     engines = [ordered]@{
       ollama = [ordered]@{ model=$DefaultModels.ollama; baseUrl='http://127.0.0.1:11434' }
       vllm = [ordered]@{ model=$DefaultModels.vllm; baseUrl='http://127.0.0.1:8000' }
       codex = [ordered]@{ model=$DefaultModels.codex }
+      claude = [ordered]@{ model=$DefaultModels.claude }
     }
   }
 }
@@ -116,21 +124,30 @@ function Get-SavedState {
       }
       if ($saved.applicationDefaults.experienceManagement) {
         $experienceDefault = $saved.applicationDefaults.experienceManagement
-        if ($experienceDefault.engine -in @('ollama', 'vllm', 'codex')) {
+        if ($experienceDefault.engine -in @('ollama', 'vllm', 'codex', 'claude')) {
           $defaults.applicationDefaults.experienceManagement.engine = [string]$experienceDefault.engine
         }
         if ($experienceDefault.model) {
           $defaults.applicationDefaults.experienceManagement.model = [string]$experienceDefault.model
         }
       }
-      foreach ($engineId in @('ollama', 'vllm', 'codex')) {
+      if ($saved.applicationDefaults.xplorerCrm) {
+        $xplorerDefault = $saved.applicationDefaults.xplorerCrm
+        if ($xplorerDefault.engine -in @('ollama', 'vllm', 'codex', 'claude')) {
+          $defaults.applicationDefaults.xplorerCrm.engine = [string]$xplorerDefault.engine
+        }
+        if ($xplorerDefault.model) {
+          $defaults.applicationDefaults.xplorerCrm.model = [string]$xplorerDefault.model
+        }
+      }
+      foreach ($engineId in @('ollama', 'vllm', 'codex', 'claude')) {
         $savedEngine = $saved.engines.$engineId
         if ($savedEngine -and $savedEngine.model) { $defaults.engines[$engineId].model = [string]$savedEngine.model }
         if ($savedEngine -and $savedEngine.baseUrl) { $defaults.engines[$engineId].baseUrl = [string]$savedEngine.baseUrl }
       }
     } catch {}
   }
-  $selectedEngine = if ($defaults.selectedEngine -in @('ollama', 'vllm', 'codex')) {
+  $selectedEngine = if ($defaults.selectedEngine -in @('ollama', 'vllm', 'codex', 'claude')) {
     [string]$defaults.selectedEngine
   } else {
     'codex'
@@ -287,6 +304,7 @@ function Set-EngineState([string]$EngineId, [string]$ModelId) {
     ollama = [ordered]@{ model=[string]$state.engines.ollama.model; baseUrl=[string]$state.engines.ollama.baseUrl }
     vllm = [ordered]@{ model=[string]$state.engines.vllm.model; baseUrl=[string]$state.engines.vllm.baseUrl }
     codex = [ordered]@{ model=[string]$state.engines.codex.model }
+    claude = [ordered]@{ model=[string]$state.engines.claude.model }
   }
   $engines[$EngineId].model = $ModelId
   return Set-GatewayState @{ selectedEngine=$EngineId; engines=$engines }
@@ -555,12 +573,141 @@ function Get-CodexStatus([switch]$SkipAuthenticationProbe) {
   }
 }
 
+function Logout-CodexCli {
+  if (-not (Test-Path $CodexScript)) { return }
+  $result = Invoke-NativeCapture (Get-Command node.exe).Source @($CodexScript, 'logout') 30000
+  if ($result.exitCode -ne 0 -and "$($result.stdout)`n$($result.stderr)" -notmatch 'Not logged in') {
+    throw "Codex logout failed: $($result.stderr)"
+  }
+}
+
+function Install-ClaudeCli {
+  if (Test-Path $ClaudeExe) { return }
+  if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) { throw 'npm is required to install Claude Code CLI.' }
+  & npm.cmd install --prefix $ClaudeInstallDir '@anthropic-ai/claude-code@2.1.220' --no-audit --no-fund
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path $ClaudeExe)) { throw 'Claude Code CLI installation failed.' }
+}
+
+function Get-ClaudeStatus([switch]$SkipAuthenticationProbe) {
+  $authenticated = $false
+  $authLabel = if (Test-Path $ClaudeExe) { 'Authentication not checked' } else { 'Not installed' }
+  $subscriptionType = $null
+  $authMethod = $null
+  if ((Test-Path $ClaudeExe) -and -not $SkipAuthenticationProbe) {
+    try {
+      $result = Invoke-NativeCapture $ClaudeExe @('auth', 'status', '--json') 8000
+      if ($result.exitCode -eq 0 -and $result.stdout) {
+        $status = $result.stdout | ConvertFrom-Json
+        $authenticated = [bool]$status.loggedIn
+        $subscriptionType = [string]$status.subscriptionType
+        $authMethod = [string]$status.authMethod
+        $authLabel = if ($authenticated) {
+          (@('Claude.ai signed in', $subscriptionType) | Where-Object { $_ } | Select-Object -Unique) -join ' / '
+        } else { 'Authentication required' }
+      } else {
+        $authLabel = 'Authentication required'
+      }
+    } catch {
+      $authLabel = 'Authentication status unavailable'
+    }
+  }
+  return [ordered]@{
+    installed = Test-Path $ClaudeExe
+    authenticated = $authenticated
+    authStatus = $authLabel
+    authMethod = $authMethod
+    subscriptionType = $subscriptionType
+    defaultModel = $DefaultModels.claude
+    models = @(
+      [ordered]@{ id='sonnet'; label='Claude Sonnet'; recommended=$true }
+      [ordered]@{ id='opus'; label='Claude Opus'; recommended=$false }
+      [ordered]@{ id='haiku'; label='Claude Haiku'; recommended=$false }
+    )
+  }
+}
+
+function Login-ClaudeCli {
+  Install-ClaudeCli
+  $result = Invoke-NativeCapture $ClaudeExe @('auth', 'login', '--claudeai') 900000
+  if ($result.exitCode -ne 0) { throw "Claude login failed: $($result.stderr)" }
+  if (-not (Get-ClaudeStatus).authenticated) {
+    throw 'Claude login finished without an authenticated Claude.ai session.'
+  }
+}
+
+function Logout-ClaudeCli {
+  if (-not (Test-Path $ClaudeExe)) { return }
+  $result = Invoke-NativeCapture $ClaudeExe @('auth', 'logout') 30000
+  if ($result.exitCode -ne 0 -and "$($result.stdout)`n$($result.stderr)" -notmatch 'logged out|not logged') {
+    throw "Claude logout failed: $($result.stderr)"
+  }
+}
+
+function Invoke-SafeAccountTransition([string]$Provider, [switch]$SwitchAccount, [switch]$LogoutOnly) {
+  $state = Get-SavedState
+  $gatewayControlled = $false
+  [ordered]@{
+    provider = $Provider
+    paused = [bool]$state.paused
+    ingressEnabled = [bool]$state.ingressEnabled
+    startedAt = [DateTime]::UtcNow.ToString('o')
+  } | ConvertTo-Json | Set-Content -LiteralPath $AccountTransitionFile -Encoding utf8
+  try {
+    Set-GatewayState @{ paused=$true; ingressEnabled=$false } | Out-Null
+    $gatewayControlled = $true
+    Wait-GatewayIdle
+  } catch {}
+  try {
+    if ($Provider -eq 'codex') {
+      Logout-CodexCli
+      if ($SwitchAccount) { Login-CodexCli; Sync-CodexCatalog | Out-Null }
+    } elseif ($Provider -eq 'claude') {
+      Logout-ClaudeCli
+      if ($SwitchAccount) { Login-ClaudeCli }
+    } else {
+      throw 'Unsupported account provider.'
+    }
+    $selectedProvider = [string]$state.selectedEngine
+    $canRestore = $SwitchAccount -or $selectedProvider -ne $Provider
+    if ($gatewayControlled -and $canRestore) {
+      Set-GatewayState @{ paused=[bool]$state.paused; ingressEnabled=[bool]$state.ingressEnabled } | Out-Null
+      Remove-Item -LiteralPath $AccountTransitionFile -Force -ErrorAction SilentlyContinue
+    }
+  } catch {
+    # A failed or cancelled sign-in remains fail-closed: ingress is disabled
+    # and queued work stays durable until an authenticated operator resumes it.
+    throw
+  }
+}
+
+function Restore-InterruptedAccountTransition([string]$Provider) {
+  if (-not (Test-Path -LiteralPath $AccountTransitionFile)) { return $false }
+  try {
+    $transition = Get-Content -LiteralPath $AccountTransitionFile -Raw | ConvertFrom-Json
+    if ([string]$transition.provider -ne $Provider) { return $false }
+    $model = Get-EngineModel $Provider
+    if (-not (Test-EngineProfileAvailable $Provider $model)) { return $false }
+    Set-GatewayState @{
+      paused = [bool]$transition.paused
+      ingressEnabled = [bool]$transition.ingressEnabled
+    } | Out-Null
+    Remove-Item -LiteralPath $AccountTransitionFile -Force -ErrorAction SilentlyContinue
+    return $true
+  } catch {
+    return $false
+  }
+}
+
 function Test-EngineProfileAvailable([string]$EngineId, [string]$ModelId) {
   if ($EngineId -eq 'codex') {
     $status = Get-CodexStatus
     if (-not $status.installed -or -not $status.authenticated) { return $false }
     $catalogIds = @($status.models | ForEach-Object { [string]$_.id })
     return $catalogIds.Count -eq 0 -or $catalogIds -contains $ModelId
+  }
+  if ($EngineId -eq 'claude') {
+    $status = Get-ClaudeStatus
+    return $status.installed -and $status.authenticated -and @($status.models.id) -contains $ModelId
   }
   if ($EngineId -eq 'ollama') {
     if (-not $OllamaExe) { return $false }
@@ -668,6 +815,12 @@ function Start-SelectedEngine {
     Install-CodexCli
     $codex = Get-CodexStatus
     if (-not $codex.authenticated) { throw 'Codex CLI is installed but not authenticated.' }
+  } elseif ($engineId -eq 'claude') {
+    Stop-Vllm
+    Stop-Ollama
+    Install-ClaudeCli
+    $claude = Get-ClaudeStatus
+    if (-not $claude.authenticated) { throw 'Claude Code CLI is installed but not authenticated.' }
   }
 }
 
@@ -694,14 +847,22 @@ function Select-InferenceEngine([string]$EngineId, [string]$ModelId) {
     Start-Ollama
   } elseif ($EngineId -eq 'vllm') {
     Start-Vllm $ModelId
-  } else {
+  } elseif ($EngineId -eq 'codex') {
     Stop-Vllm
     Stop-Ollama
     Install-CodexCli
     if (-not (Get-CodexStatus).authenticated) { throw 'Codex CLI authentication is required before selecting it.' }
+  } elseif ($EngineId -eq 'claude') {
+    Stop-Vllm
+    Stop-Ollama
+    Install-ClaudeCli
+    if (-not (Get-ClaudeStatus).authenticated) { throw 'Claude Code authentication is required before selecting it.' }
+  } else {
+    throw "Unsupported inference engine $EngineId."
   }
   Set-ActiveApprovedProfile $EngineId $ModelId
   Set-GatewayState @{ enabled=$true; paused=$false; ingressEnabled=$restoreIngress } | Out-Null
+  Restore-InterruptedAccountTransition $EngineId | Out-Null
 }
 
 function Verify-InferenceEngine([string]$EngineId, [string]$ModelId) {
@@ -774,10 +935,15 @@ function Get-Status {
       }
     } catch {}
   }
-  $codex = Get-CodexStatus -SkipAuthenticationProbe
-  if ($selectedEngine -eq 'codex' -and $gateway.pid) {
+  $codex = Get-CodexStatus
+  if ($selectedEngine -eq 'codex' -and $gateway.pid -and $codex.authStatus -eq 'Authentication status unavailable') {
     $codex.authenticated = $true
     $codex.authStatus = 'Active gateway session'
+  }
+  $claude = Get-ClaudeStatus
+  if ($selectedEngine -eq 'claude' -and $gateway.pid -and $claude.authStatus -eq 'Authentication status unavailable') {
+    $claude.authenticated = $true
+    $claude.authStatus = 'Active gateway session'
   }
   return [ordered]@{
     installed = [bool]$OllamaExe
@@ -788,6 +954,7 @@ function Get-Status {
       ollama = [ordered]@{ installed=[bool]$OllamaExe; executable=$OllamaExe; running=[bool](Get-Process ollama -ErrorAction SilentlyContinue); model=[string]$state.engines.ollama.model; availableModels=$ollamaTags; runtime=$ollama }
       vllm = $vllm
       codex = $codex
+      claude = $claude
     }
     gpu = $gpu
     verification = $verification
@@ -873,6 +1040,17 @@ switch ($Action) {
         experienceManagement = [ordered]@{ engine=$Engine; model=$Model }
       }
     } | Out-Null
+    Restore-InterruptedAccountTransition $Engine | Out-Null
+  }
+  'set-xplorer-default' {
+    if (-not $Model) { throw '-Model is required for set-xplorer-default.' }
+    Assert-ModelIdentifier $Model
+    Set-GatewayState @{
+      applicationDefaults = [ordered]@{
+        xplorerCrm = [ordered]@{ engine=$Engine; model=$Model }
+      }
+    } | Out-Null
+    Restore-InterruptedAccountTransition $Engine | Out-Null
   }
   'verify-engine' {
     $verificationModel = if ($Model) { $Model } else { Get-EngineModel $Engine }
@@ -880,7 +1058,13 @@ switch ($Action) {
   }
   'install-codex' { Install-CodexCli; Sync-CodexCatalog | Out-Null }
   'login-codex' { Login-CodexCli; Sync-CodexCatalog | Out-Null }
+  'logout-codex' { Invoke-SafeAccountTransition 'codex' -LogoutOnly }
+  'switch-codex-account' { Invoke-SafeAccountTransition 'codex' -SwitchAccount }
   'sync-codex-models' { Sync-CodexCatalog | Out-Null }
+  'install-claude' { Install-ClaudeCli }
+  'login-claude' { Login-ClaudeCli }
+  'logout-claude' { Invoke-SafeAccountTransition 'claude' -LogoutOnly }
+  'switch-claude-account' { Invoke-SafeAccountTransition 'claude' -SwitchAccount }
   'install-vllm' { Install-Vllm }
   'vllm-start' {
     $vllmModel = if ($Model) { $Model } else { Get-EngineModel 'vllm' }

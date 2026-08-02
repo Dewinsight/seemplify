@@ -51,8 +51,10 @@ export function RichEmailEditor({ id, value, onChange, disabled = false, maxLeng
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
-  const latestValue = useRef(value);
-  latestValue.current = value;
+  const externalValue = useRef(value);
+  const changeHandler = useRef(onChange);
+  externalValue.current = value;
+  changeHandler.current = onChange;
   const editor = useEditor({
     immediatelyRender: false,
     editable: !disabled,
@@ -72,10 +74,17 @@ export function RichEmailEditor({ id, value, onChange, disabled = false, maxLeng
         class: 'tiptap min-h-52 px-4 py-3 text-sm leading-6 outline-none'
       }
     },
-    onCreate: ({ editor: current }) => {
-      current.commands.setContent(emailBodyToHtml(latestValue.current), { emitUpdate: false });
+  onCreate: ({ editor: current }) => {
+      current.commands.setContent(emailBodyToHtml(externalValue.current), { emitUpdate: false });
     },
-    onUpdate: ({ editor: current }) => onChange(current.getHTML())
+    onUpdate: ({ editor: current }) => {
+      const next = current.getHTML();
+      // Tiptap can emit its initial empty document after an asynchronously
+      // loaded draft has already populated React state. Do not let that
+      // initialization event erase the saved/generated draft.
+      if (!current.isFocused && !emailBodyToPlainText(next) && emailBodyToPlainText(externalValue.current)) return;
+      changeHandler.current(next);
+    }
   });
 
   useEffect(() => { editor?.setEditable(!disabled); }, [disabled, editor]);
