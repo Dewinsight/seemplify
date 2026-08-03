@@ -241,7 +241,8 @@ export function SocialListeningPage() {
     if (nextReports.status === 'fulfilled') setReports(nextReports.value);
     if (nextDrafts.status === 'fulfilled') {
       setReplyDrafts(nextDrafts.value);
-      setDraftEdits((current) => Object.fromEntries(nextDrafts.value.map((draft) => [draft.id, current[draft.id] ?? draft.content])));
+      const retainedIds = new Set(nextDrafts.value.map((draft) => draft.id));
+      setDraftEdits((current) => Object.fromEntries(Object.entries(current).filter(([id]) => retainedIds.has(id))));
     }
     const failures = results.filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
     setLoadError(failures.map((failure) => failure.reason instanceof Error ? failure.reason.message : 'A live data source could not refresh.').join(' '));
@@ -422,7 +423,15 @@ export function SocialListeningPage() {
   async function saveReplyDraft(draft: SocialReplyDraft) {
     const content = draftEdits[draft.id]?.trim(); if (!content) return;
     setWorking(`draft:${draft.id}`);
-    try { await api(`/api/social/reply-drafts/${draft.id}`, json('PATCH', { content })); await load('manual'); toast.success('Reply draft saved.'); }
+    try {
+      await api(`/api/social/reply-drafts/${draft.id}`, json('PATCH', { content }));
+      setDraftEdits((current) => {
+        const next = { ...current };
+        delete next[draft.id];
+        return next;
+      });
+      await load('manual'); toast.success('Reply draft saved.');
+    }
     catch (error) { toast.error(error instanceof Error ? error.message : 'Could not save the reply draft.'); }
     finally { setWorking(''); }
   }
