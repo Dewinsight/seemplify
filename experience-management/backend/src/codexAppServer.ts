@@ -48,19 +48,24 @@ type LoginState = {
 };
 
 const require = createRequire(import.meta.url);
+const codexPermissionProfile = 'experience-read-only';
 
 function safeRuntimeKey(userId: string) {
   return crypto.createHash('sha256').update(`experience-codex:${userId}`).digest('hex');
 }
 
-function codexLaunch() {
+function codexLaunch(homeDir: string) {
   const configured = String(process.env.CODEX_CLI_PATH || '').trim();
   const entry = configured || require.resolve('@openai/codex/bin/codex.js');
+  const authFile = JSON.stringify(path.join(homeDir, 'auth.json'));
   const args = [
     'app-server', '--listen', 'stdio://',
     '-c', 'cli_auth_credentials_store="file"',
     '-c', 'history.persistence="none"',
-    '-c', 'shell_environment_policy.inherit="none"'
+    '-c', 'shell_environment_policy.inherit="none"',
+    '-c', `default_permissions="${codexPermissionProfile}"`,
+    '-c', `permissions.${codexPermissionProfile}.filesystem={":root"="deny",":minimal"="read",${authFile}="deny",":workspace_roots"={"."="read"}}`,
+    '-c', `permissions.${codexPermissionProfile}.network.enabled=false`
   ];
   return entry.toLowerCase().endsWith('.js')
     ? { command: process.execPath, args: [entry, ...args] }
@@ -152,7 +157,7 @@ export class CodexAppServerClient {
   private async startProcess() {
     fs.mkdirSync(this.workDir, { recursive: true });
     protectRuntimeDirectory(this.homeDir);
-    const launch = codexLaunch();
+    const launch = codexLaunch(this.homeDir);
     this.stopped = false;
     this.lastFailure = null;
     const child = spawn(launch.command, launch.args, {
@@ -182,7 +187,11 @@ export class CodexAppServerClient {
     });
     await this.rawRequest('initialize', {
       clientInfo: { name: 'seemplify_experience', title: 'Seemplify Experience', version: '0.1.0' },
-      capabilities: { optOutNotificationMethods: ['item/agentMessage/delta'] }
+      capabilities: {
+        experimentalApi: true,
+        requestAttestation: false,
+        optOutNotificationMethods: ['item/agentMessage/delta']
+      }
     }, 30_000);
     this.send({ method: 'initialized', params: {} });
   }
@@ -368,8 +377,9 @@ export class CodexAppServerClient {
     const threadResult = await this.request('thread/start', {
       model: input.model,
       cwd: this.workDir,
+      runtimeWorkspaceRoots: [this.workDir],
       approvalPolicy: 'never',
-      sandbox: 'readOnly',
+      permissions: codexPermissionProfile,
       serviceName: 'seemplify_experience'
     }, 30_000);
     const threadId = String(threadResult?.thread?.id || '');
@@ -392,10 +402,6 @@ export class CodexAppServerClient {
         model: input.model,
         effort: input.reasoningEffort,
         approvalPolicy: 'never',
-        sandboxPolicy: {
-          type: 'readOnly',
-          access: { type: 'restricted', includePlatformDefaults: true, readableRoots: [this.workDir] }
-        },
         ...(input.jsonSchema ? { outputSchema: input.jsonSchema } : {})
       }, 30_000);
       const turnId = String(started?.turn?.id || '');

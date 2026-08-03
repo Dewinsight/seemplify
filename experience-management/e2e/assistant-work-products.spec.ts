@@ -27,7 +27,7 @@ function json(route: Route, body: unknown, status = 200) {
 async function signIn(page: Page) {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 }

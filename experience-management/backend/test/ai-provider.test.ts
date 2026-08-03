@@ -117,6 +117,10 @@ test('App Server completes structured turns and recovers after an unexpected exi
   assert.ok(marker.argv.includes('cli_auth_credentials_store="file"'));
   assert.ok(marker.argv.includes('history.persistence="none"'));
   assert.ok(marker.argv.includes('shell_environment_policy.inherit="none"'));
+  assert.ok(marker.argv.includes('default_permissions="experience-read-only"'));
+  const authFile = JSON.stringify(path.join(client.homeDir, 'auth.json'));
+  assert.ok(marker.argv.includes(`permissions.experience-read-only.filesystem={":root"="deny",":minimal"="read",${authFile}="deny",":workspace_roots"={"."="read"}}`));
+  assert.ok(marker.argv.includes('permissions.experience-read-only.network.enabled=false'));
   assert.equal(marker.leakedSecret, null);
   await client.stop();
 

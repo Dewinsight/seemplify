@@ -7,7 +7,7 @@ const secondConnectionId = '20222222-2222-4222-8222-222222222222';
 async function signIn(page: Page) {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 }

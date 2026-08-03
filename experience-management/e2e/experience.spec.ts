@@ -10,7 +10,7 @@ test('space settings renders safely when stored timestamps are malformed', async
 
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -86,7 +86,7 @@ test('authenticated live refresh stream connects and emits its handshake', async
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser project verifies the shared event stream');
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
   const result = await page.evaluate(() => new Promise<{ connected: boolean; readyState: number }>((resolve) => {
@@ -110,7 +110,7 @@ test('sidebar runtime identity stays readable and opens the AI queue', async ({ 
   }));
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -196,7 +196,7 @@ test('admin builds, publishes and receives a survey response through the public 
   await page.goto('/');
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -232,7 +232,7 @@ test('survey editor selects, reorders across pages, and accepts a dragged questi
   test.skip(testInfo.project.name !== 'desktop-chromium', 'Desktop exercises precise pointer and keyboard drag interactions');
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -337,7 +337,7 @@ test('runs a sequenced survey campaign through completion', async ({ page }, tes
   test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'Outbound campaign delivery is exercised only against the local log-mode provider');
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -466,7 +466,7 @@ test('runs a sequenced survey campaign through completion', async ({ page }, tes
 test('admin surface and public survey remain usable at a narrow mobile viewport', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile-chromium', 'Dedicated responsive check');
   await page.goto('/login');
-  await page.getByLabel('Email').fill('qa@seemplify.local'); await page.getByLabel('Password').fill('Playwright-Test-Password-2026!'); await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByLabel('Email').fill('qa@seemplify.local'); await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!'); await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
@@ -478,7 +478,7 @@ test('admin surface and public survey remain usable at a narrow mobile viewport'
 test('conditional respondent logic skips a page and opens a recovery case', async ({ page }, testInfo) => {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
   const suffix = `${testInfo.project.name}-${Date.now()}`;
@@ -516,7 +516,7 @@ test('conditional respondent logic skips a page and opens a recovery case', asyn
 test('opens and tracks a manual recovery case from the service recovery workspace', async ({ page }, testInfo) => {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
   const suffix = `${testInfo.project.name}-${Date.now()}`;
@@ -559,7 +559,7 @@ test('opens and tracks a manual recovery case from the service recovery workspac
 test('requests and approves a subscription through the workspace and platform administration', async ({ page }, testInfo) => {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -631,7 +631,7 @@ test('root administration manages a user role and workspace access with an audit
   await page.request.post('/api/auth/logout');
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -679,7 +679,7 @@ test('root administration manages a user role and workspace access with an audit
 test('X social listening setup and journey maps remain visible while Terra work waits durably', async ({ page }, testInfo) => {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -833,7 +833,7 @@ test('journey live refresh never lets an older response overwrite a newer edit',
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One browser project exercises the ordered refresh guard');
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -883,7 +883,7 @@ test.skip('legacy survey translations remain hidden from the intelligence worksp
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop project exercises the saved-output refresh race');
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
@@ -1044,7 +1044,7 @@ test('completed survey intelligence opens from saved history and survives a stal
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop project exercises the saved-output refresh race');
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 

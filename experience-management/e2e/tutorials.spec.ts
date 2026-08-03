@@ -6,7 +6,7 @@ const qaPassword = 'Playwright-Test-Password-2026!';
 async function login(page: Page) {
   await page.goto('/login');
   await page.getByLabel('Email').fill(qaEmail);
-  await page.getByLabel('Password').fill(qaPassword);
+  await page.getByLabel('Password', { exact: true }).fill(qaPassword);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 }

@@ -31,7 +31,14 @@ input.on('line', (line) => {
   try { message = JSON.parse(line); } catch { return; }
   if (message.method === 'initialized') return;
   const id = message.id;
-  if (message.method === 'initialize') return result(id, { userAgent: 'fake-codex-app-server' });
+  if (message.method === 'initialize') {
+    const capabilities = message.params?.capabilities;
+    if (capabilities?.experimentalApi !== true || capabilities?.requestAttestation !== false) {
+      send({ id, error: { code: -32600, message: 'Invalid request: the Experience client must enable its required App Server capabilities.' } });
+      return;
+    }
+    return result(id, { userAgent: 'fake-codex-app-server' });
+  }
   if (message.method === 'account/read') {
     if (home && fs.existsSync(path.join(home, 'crash-on-account-read'))) {
       const marker = path.join(home, 'crashed-once');
@@ -77,12 +84,25 @@ input.on('line', (line) => {
     ], inputModalities: ['text']
   }], nextCursor: null });
   if (message.method === 'thread/start') {
+    const runtimeRoots = message.params?.runtimeWorkspaceRoots;
+    if (message.params?.sandbox !== undefined
+      || message.params?.permissions !== 'experience-read-only'
+      || !Array.isArray(runtimeRoots)
+      || runtimeRoots.length !== 1
+      || runtimeRoots[0] !== message.params?.cwd) {
+      send({ id, error: { code: -32600, message: 'Invalid request: thread/start must use the isolated Experience permission profile.' } });
+      return;
+    }
     const threadId = `fake-thread-${++threadSequence}`;
     result(id, { thread: { id: threadId, ephemeral: false } });
     send({ method: 'thread/started', params: { thread: { id: threadId } } });
     return;
   }
   if (message.method === 'turn/start') {
+    if (message.params?.sandboxPolicy !== undefined || message.params?.permissions !== undefined) {
+      send({ id, error: { code: -32600, message: 'Invalid request: turn/start must inherit the thread permission profile.' } });
+      return;
+    }
     const turnId = `fake-turn-${++turnSequence}`;
     result(id, { turn: { id: turnId, status: 'inProgress', items: [], error: null } });
     if (home && fs.existsSync(path.join(home, 'crash-during-turn'))) {

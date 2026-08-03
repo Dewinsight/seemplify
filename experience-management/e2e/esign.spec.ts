@@ -22,7 +22,7 @@ type OutboxItem = {
 async function login(page: Page) {
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');
-  await page.getByLabel('Password').fill('Playwright-Test-Password-2026!');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 }
@@ -390,7 +390,7 @@ test('creates, prepares and completes a protected three-signer agreement with or
   await adaSigner.page.getByRole('button', { name: 'Sign out' }).click();
   await expect(adaSigner.page).toHaveURL(/\/login\?returnTo=%2Fmy-documents$/);
   await adaSigner.page.getByLabel('Email').fill(ada.email);
-  await adaSigner.page.getByLabel('Password').fill(portalPassword);
+  await adaSigner.page.getByLabel('Password', { exact: true }).fill(portalPassword);
   await adaSigner.page.getByRole('button', { name: 'Sign in' }).click();
   await expect(adaSigner.page.getByRole('heading', { name: 'My documents' })).toBeVisible();
   await expect(adaSigner.page.getByRole('heading', { name: title })).toBeVisible();

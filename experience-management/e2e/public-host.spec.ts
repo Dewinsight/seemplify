@@ -33,7 +33,7 @@ test('public Cloudflare host serves the secured application', async ({ page }, t
   await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
   await page.getByRole('link', { name: 'Back to sign in' }).click();
   await page.getByLabel('Email').fill('admin@seemplify.local');
-  await page.getByLabel('Password').fill(password);
+  await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await dismissFirstVisitTutorial(page);
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
