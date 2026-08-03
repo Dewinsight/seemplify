@@ -6,6 +6,7 @@ import { api, json } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PasswordInput } from '@/components/ui/password-input';
 import type { ESignAccountInvitation, SpaceInvitationPreview } from '@/types';
 
 interface SignupResult {
@@ -96,8 +97,8 @@ export function SignupPage() {
         <div><Label className="field-label" htmlFor="email">{accountInvitation ? 'Recipient email' : 'Work email'}</Label><Input id="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} readOnly={Boolean(invitation || accountInvitation)} required /></div>
       </> : <>
         {!accountInvitation && <div><Label className="field-label" htmlFor="space-name">Personal space name <span className="font-normal text-muted-foreground">(optional)</span></Label><Input id="space-name" value={spaceName} onChange={(event) => setSpaceName(event.target.value)} placeholder={name.trim() ? `${name.trim().split(/\s+/)[0]}'s space` : 'My space'} minLength={2} maxLength={100} autoFocus /><p className="mt-1 text-xs leading-5 text-muted-foreground">This is your private starting point. You can rename it or create team spaces later.</p></div>}
-        <div><Label className="field-label" htmlFor="password">Password</Label><Input id="password" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={12} /><p className="mt-1 text-xs text-muted-foreground">12+ characters with uppercase, lowercase, and a number.</p></div>
-        <div><Label className="field-label" htmlFor="confirm-password">Confirm password</Label><Input id="confirm-password" type="password" autoComplete="new-password" value={confirm} onChange={(event) => setConfirm(event.target.value)} required minLength={12} /></div>
+        <div><Label className="field-label" htmlFor="password">Password</Label><PasswordInput id="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={12} /><p className="mt-1 text-xs text-muted-foreground">12+ characters with uppercase, lowercase, and a number.</p></div>
+        <div><Label className="field-label" htmlFor="confirm-password">Confirm password</Label><PasswordInput id="confirm-password" autoComplete="new-password" value={confirm} onChange={(event) => setConfirm(event.target.value)} required minLength={12} /></div>
         <p className="text-xs leading-5 text-muted-foreground">By creating an account, you agree to the <Link className="text-foreground underline" to="/legal/terms">Terms</Link> and acknowledge the <Link className="text-foreground underline" to="/legal/privacy">Privacy Policy</Link>.</p>
       </>}
       {error && <div className="border border-destructive/35 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert">{error}</div>}

@@ -6,6 +6,7 @@ import { AuthLayout } from '@/components/auth/AuthLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PasswordInput } from '@/components/ui/password-input';
 import type { AuthSession, ESignAccountInvitation, SpaceInvitationPreview } from '@/types';
 
 export function LoginPage() {
@@ -68,7 +69,7 @@ export function LoginPage() {
     {accountError && <div className="mt-5 border border-destructive/35 bg-destructive/5 px-3 py-2.5 text-sm leading-6 text-destructive" role="alert">{accountError} <Link className="font-medium underline" to="/login?returnTo=%2Fmy-documents">Sign in to My documents instead.</Link></div>}
     <form className="mt-7 space-y-5" onSubmit={submit}>
       <div><Label className="field-label" htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} readOnly={Boolean(invitation || accountInvitation)} required autoFocus /></div>
-      <div><div className="flex items-center justify-between"><Label className="field-label" htmlFor="password">Password</Label><Link className="mb-1.5 text-xs font-medium text-foreground underline-offset-4 hover:underline" to="/forgot-password">Forgot password?</Link></div><Input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
+      <div><div className="flex items-center justify-between"><Label className="field-label" htmlFor="password">Password</Label><Link className="mb-1.5 text-xs font-medium text-foreground underline-offset-4 hover:underline" to="/forgot-password">Forgot password?</Link></div><PasswordInput id="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
       {error && <div className="border border-destructive/35 bg-destructive/5 px-3 py-2.5 text-sm text-destructive" role="alert">{error}</div>}
       <Button className="h-10 w-full" disabled={working || inviteLoading || accountLoading || Boolean(inviteError || accountError)}>{working ? <Loader2 className="animate-spin" /> : <LockKeyhole />}{working ? 'Signing in' : 'Sign in'}</Button>
     </form>
