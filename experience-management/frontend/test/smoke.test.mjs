@@ -312,6 +312,17 @@ test('retains versioned assets before an isolated release becomes active', () =>
   const activate = deploy.indexOf('Set-Content -LiteralPath $ActiveProjectFile', merge);
   assert.ok(build >= 0 && merge > build && activate > merge);
 });
+test('isolates deployment tests from inherited live service configuration', () => {
+  const deploy = fs.readFileSync(path.resolve(source, '..', '..', 'scripts', 'auto-deploy.ps1'), 'utf8');
+  assert.match(deploy, /function Invoke-IsolatedTests/);
+  assert.match(deploy, /DATABASE_PROVIDER\|DATABASE_PATH\|POSTGRES_/);
+  assert.match(deploy, /Remove-Item -LiteralPath "Env:\$\(\$variable\.Name\)"/);
+  assert.match(deploy, /Set-Item -LiteralPath "Env:\$name" -Value \$inherited\[\$name\]/);
+  const testFunction = deploy.indexOf('function Invoke-IsolatedTests');
+  const deploymentCall = deploy.indexOf('Invoke-IsolatedTests', testFunction + 1);
+  const build = deploy.indexOf('& npm.cmd run build', deploymentCall);
+  assert.ok(testFunction >= 0 && deploymentCall > testFunction && build > deploymentCall);
+});
 test('refuses an incompatible rollback after the PostgreSQL runtime-v5 upgrade starts', () => {
   const deploy = fs.readFileSync(path.resolve(source, '..', '..', 'scripts', 'auto-deploy.ps1'), 'utf8');
   const compatibility = JSON.parse(fs.readFileSync(path.resolve(source, '..', '..', 'backend', 'migrations', 'postgres', 'runtime-compatibility.json'), 'utf8'));

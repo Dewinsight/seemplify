@@ -27,6 +27,24 @@ $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
 
 function Write-DeployLog([string]$Message) { Add-Content -LiteralPath $LogFile -Value "$(Get-Date -Format o) $Message" }
+function Invoke-IsolatedTests {
+  # A watcher can be started by a shell that previously managed the live
+  # service. Never let those inherited credentials, database selectors, or
+  # integration settings leak into the deployment's isolated unit tests.
+  $serviceEnvironmentPattern = '^(DATABASE_PROVIDER|DATABASE_PATH|POSTGRES_.+|SUBSCRIPTION_.+|ADMIN_.+|SESSION_.+|PUBLIC_URL|UPLOAD_DIR|EMAIL_MODE|AI_WORKER_.+|X_.+|NYLAS_.+|TERRA_.+|KNOWLEDGE_.+|ESIGN_.+|BREVO_.+|EXPERIENCE_.+)$'
+  $inherited = @{}
+  foreach ($variable in @(Get-ChildItem Env:)) {
+    if ($variable.Name -notmatch $serviceEnvironmentPattern) { continue }
+    $inherited[$variable.Name] = $variable.Value
+    Remove-Item -LiteralPath "Env:$($variable.Name)"
+  }
+  try {
+    & npm.cmd test
+    if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
+  } finally {
+    foreach ($name in $inherited.Keys) { Set-Item -LiteralPath "Env:$name" -Value $inherited[$name] }
+  }
+}
 function Merge-RetainedFrontendAssets([string]$ReleaseProject) {
   $destinationAssets = Join-Path $ReleaseProject 'frontend\dist\assets'
   if (-not (Test-Path -LiteralPath $destinationAssets -PathType Container)) { throw "Frontend asset directory was not produced: $destinationAssets" }
@@ -183,7 +201,7 @@ function Invoke-Deployment([switch]$ForceDeploy) {
     try {
       & npm.cmd ci --prefer-offline --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
       & npm.cmd run typecheck; if ($LASTEXITCODE -ne 0) { throw 'typecheck failed' }
-      & npm.cmd test; if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
+      Invoke-IsolatedTests
       & npm.cmd run build; if ($LASTEXITCODE -ne 0) { throw 'build failed' }
       $retainedAssetCount = Merge-RetainedFrontendAssets -ReleaseProject $releaseProject
       Write-DeployLog "Retained $retainedAssetCount versioned frontend asset(s) from earlier releases."
