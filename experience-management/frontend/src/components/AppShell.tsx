@@ -248,9 +248,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
   const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(location.pathname);
   const title = location.pathname === '/' ? 'Overview' : location.pathname === '/settings/profile' ? 'Your profile' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : location.pathname.startsWith('/agreements/') ? 'Agreement workspace' : location.pathname.startsWith('/knowledge-bases/') ? 'Knowledge base workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
-  const terraReady = runtime?.terra?.ready === true;
-  const runtimeState: RuntimeState = runtime === null ? 'checking' : terraReady ? 'ready' : 'unavailable';
-  const runtimeLabel = runtime?.terra?.providerLabel || 'Experience AI';
+  const codexSelected = runtime?.ai?.preference?.provider === 'codex';
+  const runtimeReady = codexSelected
+    ? runtime?.ai?.codex?.account?.connected === true
+    : runtime?.terra?.ready === true;
+  const runtimeState: RuntimeState = runtime === null ? 'checking' : runtimeReady ? 'ready' : 'unavailable';
+  const runtimeLabel = codexSelected
+    ? `ChatGPT / Codex${runtime?.ai?.codex?.selectedModel ? ` · ${runtime.ai.codex.selectedModel}` : ''}`
+    : runtime?.terra?.providerLabel || 'Experience AI';
   const creationAction = location.pathname.startsWith('/agreements')
     ? { to: '/agreements/new', label: 'New agreement' }
     : location.pathname === '/' || location.pathname.startsWith('/surveys')

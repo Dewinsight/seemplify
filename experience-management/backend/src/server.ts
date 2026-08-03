@@ -7,6 +7,7 @@ import { seedXIntegrationForAdmin, xSyncRunner } from './xIntegration.js';
 import { esignWorker } from './esign.js';
 import { knowledgeJobRunner } from './knowledgeJobs.js';
 import { knowledgeBackfillCoordinator } from './knowledgeBackfill.js';
+import { stopCodexClients } from './codexAppServer.js';
 
 aiJobRunner.start();
 campaignRunner.start();
@@ -38,6 +39,7 @@ async function shutdown(signal: string) {
   if (!esignDrained) console.warn('E-sign worker did not drain before the shutdown deadline.');
   if (!knowledgeDrained) console.warn('Knowledge worker did not drain before the shutdown deadline; its durable job will recover on restart.');
   if (!backfillDrained) console.warn('Knowledge backfill did not drain before the shutdown deadline; its cursor will recover on restart.');
+  await stopCodexClients();
   server.close(() => { clearTimeout(forceExit); process.exit(0); });
 }
 

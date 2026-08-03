@@ -121,8 +121,8 @@ export interface JourneyStage {
 }
 
 export interface JourneyProvenance {
-  origin: 'workspace' | 'terra' | 'legacy';
-  lastModifiedBy: 'workspace' | 'terra' | 'unknown';
+  origin: 'workspace' | 'terra' | 'codex' | 'legacy';
+  lastModifiedBy: 'workspace' | 'terra' | 'codex' | 'unknown';
   evidenceBasis: 'workspace_authored' | 'brief_only' | 'knowledge_grounded' | 'unknown';
   evidenceLevel: 'hypothesis';
   generatedAt: string | null;
@@ -145,8 +145,8 @@ export interface Journey {
 export interface JourneyVersion {
   id: string;
   journeyId: string;
-  reason: 'workspace_edit' | 'terra_optimize' | 'restore_displaced';
-  actor: 'workspace' | 'terra';
+  reason: 'workspace_edit' | 'terra_optimize' | 'codex_optimize' | 'restore_displaced';
+  actor: 'workspace' | 'terra' | 'codex';
   sourceJobId: string | null;
   snapshot: Journey;
   snapshotUpdatedAt: string;

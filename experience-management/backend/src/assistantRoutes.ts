@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { aiJobRunner } from './aiJobs.js';
+import { getAiProviderPreference, getAiProviderState } from './aiProvider.js';
 import {
   AssistantError, assistantEmailRequestFingerprint, assistantKnowledgeRequestFingerprint,
   assistantIntelligenceSnapshot, assistantWorkProductRequestFingerprint, consumeNylasOAuthState,
@@ -365,7 +366,23 @@ assistantRouter.get('/overview', async (request, response) => {
   try {
     const { user, space } = identity(request);
     const credentialsConfigured = nylasConfigured(); const encryptionConfigured = nylasSecretEncryptionConfigured();
-    const terraStatus = await getTerraStatus() as any;
+    const preference = getAiProviderPreference(user.id, space.id);
+    const [terraStatus, providerState] = await Promise.all([
+      getTerraStatus() as Promise<any>,
+      preference.provider === 'codex' ? getAiProviderState(user.id, space.id) : Promise.resolve(null)
+    ]);
+    const aiStatus = preference.provider === 'codex' ? {
+      ready: providerState?.codex.account.connected === true,
+      providerLabel: 'ChatGPT / Codex',
+      model: providerState?.codex.selectedModel || preference.codexModel,
+      error: providerState?.codex.error || providerState?.codex.account.loginError
+        || (providerState?.codex.account.connected ? null : 'ChatGPT is not connected.')
+    } : {
+      ready: terraStatus.ready === true,
+      providerLabel: terraStatus.providerLabel || terraStatus.provider?.label || null,
+      model: terraStatus.model || terraStatus.health?.model || null,
+      error: terraStatus.error || (terraStatus.ready === true ? null : 'The local AI runtime is not ready.')
+    };
     return response.json({
       configured: credentialsConfigured && encryptionConfigured,
       callbackUrl: nylasRedirectUri(),
@@ -373,6 +390,7 @@ assistantRouter.get('/overview', async (request, response) => {
         : !encryptionConfigured ? 'Nylas credential encryption is not configured.' : null,
       connections: listNylasConnections(user.id, space.id),
       worker: assistantWorkerStatus(user.id, space.id),
+      ai: aiStatus,
       terra: {
         ready: terraStatus.ready === true,
         providerLabel: terraStatus.providerLabel || terraStatus.provider?.label || null,

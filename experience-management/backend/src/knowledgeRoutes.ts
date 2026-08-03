@@ -4,6 +4,7 @@ import path from 'node:path';
 import express from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import { completeWithAi } from './aiProvider.js';
 import { currentSessionUser } from './auth.js';
 import { config } from './config.js';
 import { publishEvent } from './events.js';
@@ -18,7 +19,7 @@ import {
   type KnowledgeCitation, type KnowledgeDocumentRecord, type KnowledgeJobRecord
 } from './knowledgeRepository.js';
 import { resolveRequestSpace, SpaceError } from './spaces.js';
-import { completeWithTerra, TerraError } from './terraClient.js';
+import { TerraError } from './terraClient.js';
 
 const router = express.Router();
 
@@ -440,7 +441,8 @@ router.post('/:id/search', async (request, response) => {
       requestedBy: user.id, query: input.query, knowledgeBases: refs, citations: retrieved.citations,
       contextText: evidence, metrics: retrieved.metrics });
     if (input.includeAnswer !== false && retrieved.citations.length) {
-      const result = await completeWithTerra({
+      const result = await completeWithAi({
+        spaceId: space.id, userId: user.id,
         activity: 'experience.knowledge_answer', requestId, schemaName: 'experience_knowledge_answer',
         jsonSchema: {
           type: 'object', additionalProperties: false, required: ['answer', 'citationSourceRefs'], properties: {
@@ -454,7 +456,7 @@ router.post('/:id/search', async (request, response) => {
         ]
       });
       const parsed = answerSchema.safeParse(result.data);
-      if (!parsed.success) throw new KnowledgeError('Terra returned an invalid knowledge answer.', 502, 'KNOWLEDGE_ANSWER_INVALID');
+      if (!parsed.success) throw new KnowledgeError('The AI provider returned an invalid knowledge answer.', 502, 'KNOWLEDGE_ANSWER_INVALID');
       validateGroundedAnswer(parsed.data, retrieved.citations);
       answer = parsed.data.answer; answerRuntime = result.runtime;
     }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { completeWithAi, type AiProviderSnapshot } from './aiProvider.js';
 import {
   AssistantError, assistantRunExecutionInput, assistantRunId, completeAssistantRun, publishAssistantChanged
 } from './assistant.js';
@@ -7,7 +8,7 @@ import {
   assistantWorkProductResult
 } from './assistantSchemas.js';
 import { getJobProviderResult, saveJobProviderResult, updateJob } from './database.js';
-import { completeWithTerra, TerraError } from './terraClient.js';
+import { TerraError } from './terraClient.js';
 import type { AiJob } from './types.js';
 
 type JobOutput = { output: unknown; runtime: unknown };
@@ -111,7 +112,7 @@ async function structuredAssistant<T>(input: {
   reasoningEffort?: 'medium' | 'high';
   maxTokens?: number;
 }): Promise<JobOutput> {
-  updateJob(input.job.id, { stage: 'running_terra', progress: 35 });
+  updateJob(input.job.id, { stage: 'running_ai', progress: 35 });
   publishAssistantChanged(input.job.spaceId);
   const journaled = getJobProviderResult(input.job.id);
   if (journaled?.activity === input.activity && journaled.schemaName === input.schemaName) {
@@ -121,7 +122,10 @@ async function structuredAssistant<T>(input: {
       return completeAssistantRun(input.runId, input.job.spaceId, parsed.data, journaled.runtime);
     }
   }
-  const result = await completeWithTerra({
+  const result = await completeWithAi({
+    spaceId: input.job.spaceId,
+    userId: input.job.requestedBy,
+    providerSnapshot: input.job.input._aiRuntime as AiProviderSnapshot | undefined,
     activity: input.activity,
     requestId: input.job.id,
     schemaName: input.schemaName,
@@ -134,8 +138,8 @@ async function structuredAssistant<T>(input: {
   const parsed = input.validator.safeParse(result.data);
   if (!parsed.success) {
     throw new TerraError(
-      `Terra returned invalid ${input.schemaName}: ${parsed.error.issues.slice(0, 5).map((issue) => issue.message).join('; ')}`,
-      'TERRA_SCHEMA_INVALID', 502, false
+      `The AI provider returned invalid ${input.schemaName}: ${parsed.error.issues.slice(0, 5).map((issue) => issue.message).join('; ')}`,
+      'AI_SCHEMA_INVALID', 502, false
     );
   }
   input.validate?.(parsed.data);

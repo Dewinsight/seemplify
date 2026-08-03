@@ -163,7 +163,7 @@ function RuntimeFootnote({ run }: { run: AssistantRun }) {
   const usage = run.runtime.usage || {};
   const tokens = usage.totalTokens ?? usage.total_tokens;
   return <div className="border-t pt-3 text-xs text-muted-foreground">
-    Runtime: {run.runtime.providerLabel || run.runtime.provider || run.runtime.model || 'Terra'}
+    Runtime: {run.runtime.providerLabel || run.runtime.provider || run.runtime.model || 'AI runtime'}
     {tokens ? ` · ${tokens} tokens` : ''}{run.runtime.latencyMs ? ` · ${run.runtime.latencyMs} ms` : ''}
   </div>;
 }
@@ -732,7 +732,7 @@ export function PersonalAssistantPage() {
 
   async function askThread(value = threadQuestion) {
     const question = value.trim();
-    if (!question) { toast.error('Ask Terra a question about this conversation.'); return; }
+    if (!question) { toast.error('Ask the AI assistant a question about this conversation.'); return; }
     await startRun('email-summary', {
       instructions: `Answer this user question using only the supplied email thread: ${question}`
     });
@@ -841,7 +841,8 @@ export function PersonalAssistantPage() {
     setSelectedRunId(id);
   }
 
-  const runtimeReady = overview?.terra?.ready === true;
+  const assistantRuntime = overview?.ai || overview?.terra;
+  const runtimeReady = assistantRuntime?.ready === true;
   const workerBusy = (overview?.worker?.active || 0) + (overview?.worker?.queued || 0);
   const connectedCount = overview?.connections.filter((connection) => connection.status === 'connected').length || 0;
   const activeMailbox = overview?.connections.find((connection) => connection.id === connectionId) || null;
@@ -850,7 +851,7 @@ export function PersonalAssistantPage() {
 
   return <div className="space-y-3">
     <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-      <div><h1 className="text-2xl font-semibold tracking-tight">Personal assistant</h1><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Read, understand, and reply to important conversations with Terra. Every provider action requires your review.</p></div>
+      <div><h1 className="text-2xl font-semibold tracking-tight">Personal assistant</h1><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Read, understand, and reply to important conversations with the selected AI runtime. Every provider action requires your review.</p></div>
       <Button size="sm" variant="outline" onClick={() => { void loadWorkspace(); void loadThreads(); }}><RefreshCw />Refresh</Button>
     </header>
 
@@ -861,7 +862,7 @@ export function PersonalAssistantPage() {
       : <>
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-y py-2.5 text-xs text-muted-foreground">
       <ServiceStatus ready={Boolean(overview.configured)} text={`${connectedCount} mailbox${connectedCount === 1 ? '' : 'es'} connected`} />
-      <ServiceStatus ready={runtimeReady} text={runtimeReady ? `${overview.terra?.providerLabel || overview.terra?.model || 'Terra'} ready` : 'Terra unavailable'} />
+      <ServiceStatus ready={runtimeReady} text={runtimeReady ? `${assistantRuntime?.providerLabel || assistantRuntime?.model || 'AI runtime'} ready` : `${assistantRuntime?.providerLabel || 'AI runtime'} unavailable`} />
       <ServiceStatus ready={overview?.worker?.running !== false} text={workerBusy ? `${workerBusy} assistant request${workerBusy === 1 ? '' : 's'} active` : 'Assistant queue idle'} />
       <span className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5" />Human review required</span>
     </div>
@@ -1101,7 +1102,7 @@ function WorkProductsPane({
     <Card>
       <CardHeader className="border-b">
         <CardTitle>Create a work product</CardTitle>
-        <CardDescription>Choose the output and the approved evidence Terra may use. Every request remains a human-reviewed draft.</CardDescription>
+        <CardDescription>Choose the output and the approved evidence the selected AI runtime may use. Every request remains a human-reviewed draft.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5 pt-5">
         <div>
@@ -1281,7 +1282,7 @@ function WorkProductDetail({
       </div>
       {(run.state === 'queued' || run.state === 'processing') && <div className="flex items-center gap-3 border px-4 py-5 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Terra is preparing this durable request.
+        The AI runtime is preparing this durable request.
         <span className="ml-auto text-xs">{run.progress}%</span>
       </div>}
       {run.error && <div className="border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{run.error}</div>}
@@ -1797,7 +1798,7 @@ function ConversationReader({ thread, detail, loading, error, retry, mobileView,
         {thread && <p className="mt-1 truncate text-xs text-muted-foreground">{thread.participants.map(participantLabel).join(', ')} · {totalMessageCount} message{totalMessageCount === 1 ? '' : 's'}</p>}
       </div>
       <div className="flex shrink-0 gap-2">
-        <Button type="button" size="sm" variant="outline" aria-label="Open assistant" onClick={openAssistant}><Sparkles /><span className="hidden xl:inline">Ask Terra</span></Button>
+        <Button type="button" size="sm" variant="outline" aria-label="Open assistant" onClick={openAssistant}><Sparkles /><span className="hidden xl:inline">Ask AI</span></Button>
         <Button type="button" size="sm" disabled={!thread} onClick={openReply}><FilePenLine />Reply</Button>
       </div>
     </header>
@@ -1814,7 +1815,7 @@ function ConversationReader({ thread, detail, loading, error, retry, mobileView,
           ? ` ${formatFileSize(detail.loadedMessageBytes)} of the ${formatFileSize(detail.threadByteLimit)} thread budget was loaded.`
           : ''}
       </div>}
-      {!thread ? <div className="grid h-full min-h-[320px] place-items-center px-6 text-center"><div><MailOpen className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">Choose a conversation</div><p className="mt-1 text-sm text-muted-foreground">Read the thread, ask Terra, or prepare a reviewed reply.</p></div></div>
+      {!thread ? <div className="grid h-full min-h-[320px] place-items-center px-6 text-center"><div><MailOpen className="mx-auto h-6 w-6 text-muted-foreground" /><div className="mt-3 text-sm font-medium">Choose a conversation</div><p className="mt-1 text-sm text-muted-foreground">Read the thread, ask the AI assistant, or prepare a reviewed reply.</p></div></div>
         : loading || !detail && !error ? <ConversationSkeleton />
           : error ? <div className="mx-auto max-w-xl px-6 py-12 text-center"><CircleAlert className="mx-auto h-5 w-5 text-amber-700" /><div className="mt-3 text-sm font-semibold">Conversation unavailable</div><p className="mt-1 text-sm leading-6 text-muted-foreground">{error}</p><Button className="mt-4" size="sm" variant="outline" onClick={retry}>Retry conversation</Button>{thread.snippet && <p className="mt-6 border-l-2 pl-4 text-left text-sm leading-6 text-muted-foreground">{thread.snippet}</p>}</div>
             : detail?.messages.length ? <div className="mx-auto max-w-4xl">{detail.messages.map((message) => <MailboxMessage key={message.id} message={message} bodyByteLimit={detail.messageBodyByteLimit} />)}</div>
@@ -1874,10 +1875,10 @@ function MailboxAssistantPanel({
   ] as const;
   return <aside className="absolute inset-y-0 right-0 z-20 flex w-full flex-col border-l bg-card shadow-panel sm:w-[430px] 2xl:relative 2xl:z-0 2xl:w-[420px] 2xl:shadow-none" aria-label="Mailbox assistant">
     <header className="flex h-16 shrink-0 items-center justify-between border-b px-4">
-      <div><div className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4" />Terra</div><div className="mt-0.5 text-xs text-muted-foreground">Grounded in this conversation</div></div>
+      <div><div className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4" />AI assistant</div><div className="mt-0.5 text-xs text-muted-foreground">Grounded in this conversation</div></div>
       <Button type="button" size="icon" variant="ghost" aria-label="Close assistant" onClick={close}><PanelRightClose /></Button>
     </header>
-    <div className="grid h-11 shrink-0 grid-cols-2 border-b" role="tablist" aria-label="Terra conversation tools">
+    <div className="grid h-11 shrink-0 grid-cols-2 border-b" role="tablist" aria-label="AI conversation tools">
       <button type="button" role="tab" aria-selected={mode === 'insights'} className={cn('border-b-2 border-transparent text-sm text-muted-foreground hover:text-foreground', mode === 'insights' && 'border-foreground font-medium text-foreground')} onClick={() => setMode('insights')}>Insights</button>
       <button type="button" role="tab" aria-selected={mode === 'reply'} className={cn('border-b-2 border-transparent text-sm text-muted-foreground hover:text-foreground', mode === 'reply' && 'border-foreground font-medium text-foreground')} onClick={() => setMode('reply')}>Reply</button>
     </div>
@@ -1887,7 +1888,7 @@ function MailboxAssistantPanel({
           <div>
             <Label htmlFor="assistant-thread-question">Ask about this thread</Label>
             <Textarea id="assistant-thread-question" className="mt-2 min-h-20" placeholder="What has been agreed, and what still needs a decision?" value={question} maxLength={1500} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void askThread(); }} />
-            <div className="mt-2 flex justify-end"><Button size="sm" disabled={!thread || busy || !question.trim()} onClick={() => void askThread()}>{working === 'email-summary' ? <Loader2 className="animate-spin" /> : <Sparkles />}Ask Terra</Button></div>
+            <div className="mt-2 flex justify-end"><Button size="sm" disabled={!thread || busy || !question.trim()} onClick={() => void askThread()}>{working === 'email-summary' ? <Loader2 className="animate-spin" /> : <Sparkles />}Ask AI</Button></div>
           </div>
           <div className="flex flex-wrap gap-2">
             {quickQuestions.map(([label, prompt]) => <Button key={label} type="button" size="sm" variant="outline" disabled={!thread || busy} onClick={() => { setQuestion(prompt); void askThread(prompt); }}>{label}</Button>)}
@@ -1895,7 +1896,7 @@ function MailboxAssistantPanel({
           </div>
         </div>
         {summaryRun ? <RunDetail embedded run={summaryRun} draftSubject="" draftBody="" setDraftSubject={() => undefined} setDraftBody={() => undefined} saveDraft={() => undefined} saving={false} />
-          : <AssistantEmpty thread={thread} text="Ask a question or create a concise summary. Terra will use only the loaded thread." />}
+          : <AssistantEmpty thread={thread} text="Ask a question or create a concise summary. The selected AI runtime will use only the loaded thread." />}
       </> : <>
         <div className="space-y-4 border-b p-4">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
@@ -1906,7 +1907,7 @@ function MailboxAssistantPanel({
           {draftRun && <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={busy} onClick={() => void startRun('email-draft', { instructions: `${instructions}\nMake the reply materially shorter.` })}>Make shorter</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => void startRun('email-draft', { instructions: `${instructions}\nMake the reply warmer while preserving every fact.` })}>Make warmer</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => void startRun('email-draft', { instructions: `${instructions}\nMake the requested next step explicit.` })}>Clarify next step</Button></div>}
         </div>
         {draftRun ? <RunDetail embedded run={draftRun} draftSubject={draftSubject} draftBody={draftBody} setDraftSubject={setDraftSubject} setDraftBody={setDraftBody} saveDraft={saveDraft} saving={working === 'save-draft'} />
-          : <AssistantEmpty thread={thread} text="Set the tone and outcome, then ask Terra for an editable reply." />}
+          : <AssistantEmpty thread={thread} text="Set the tone and outcome, then ask the AI assistant for an editable reply." />}
       </>}
     </div>
     {mode === 'reply' && draftRun?.draft && !draftRun.delivery?.sentAt && <div className="shrink-0 space-y-3 border-t bg-background p-4">
@@ -1921,7 +1922,7 @@ function MailboxAssistantPanel({
 }
 
 function AssistantEmpty({ thread, text }: { thread: AssistantThread | null; text: string }) {
-  return <div className="px-5 py-12 text-center"><MessageSquareText className="mx-auto h-5 w-5 text-muted-foreground" /><div className="mt-3 text-sm font-medium">{thread ? 'Terra is ready' : 'Select a conversation'}</div><p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-muted-foreground">{thread ? text : 'Choose a thread before asking Terra to help.'}</p></div>;
+  return <div className="px-5 py-12 text-center"><MessageSquareText className="mx-auto h-5 w-5 text-muted-foreground" /><div className="mt-3 text-sm font-medium">{thread ? 'AI assistant ready' : 'Select a conversation'}</div><p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-muted-foreground">{thread ? text : 'Choose a thread before asking the AI assistant to help.'}</p></div>;
 }
 
 function SourceGroup({ title, sources, selected, toggle }: { title: string; sources: IntelligenceSource[]; selected: string[]; toggle: (ref: string) => void }) {
@@ -1973,11 +1974,11 @@ function RunDetail({ run, draftSubject, draftBody, setDraftSubject, setDraftBody
   const summary = output.summary;
   const emailDraft = ['assistant.email_draft', 'email_draft'].includes(run.kind);
   return <Card className={cn(embedded && 'rounded-none border-0 shadow-none')} data-testid="assistant-run-detail"><CardHeader className="border-b"><div className="flex items-start justify-between gap-3"><div><CardTitle>{runTitle(run)}</CardTitle><CardDescription className="mt-1">{formatDateTime(run.createdAt)} · Saved assistant output</CardDescription></div><RunBadge run={run} /></div></CardHeader><CardContent className="space-y-5 pt-5">
-    {(run.state === 'queued' || run.state === 'processing') && <div className="flex items-center gap-3 border px-4 py-5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{run.stage?.startsWith('waiting_for_') ? run.stage.replaceAll('_', ' ') : 'Terra is processing this durable request.'}<span className="ml-auto text-xs">{run.progress}%</span></div>}
+    {(run.state === 'queued' || run.state === 'processing') && <div className="flex items-center gap-3 border px-4 py-5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{run.stage?.startsWith('waiting_for_') ? run.stage.replaceAll('_', ' ') : 'The AI runtime is processing this durable request.'}<span className="ml-auto text-xs">{run.progress}%</span></div>}
     {run.error && <div className="border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{run.error}</div>}
     {emailDraft && run.draft ? <div className="space-y-4">
       {run.delivery?.sentAt ? <div className="flex gap-3 border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950"><MailCheck className="mt-0.5 h-4 w-4 shrink-0" /><div><div className="font-semibold">Reply sent</div><p className="mt-1 text-xs leading-5">Sent {formatDateTime(run.delivery.sentAt)} to {run.delivery.recipients.join(', ')}.</p></div></div>
-        : <div className="flex gap-3 border bg-muted/20 px-4 py-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><div><div className="font-semibold">Review required</div><p className="mt-1 text-xs leading-5 text-muted-foreground">Terra prepared this draft. Saving it does not send anything.</p></div></div>}
+        : <div className="flex gap-3 border bg-muted/20 px-4 py-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><div><div className="font-semibold">Review required</div><p className="mt-1 text-xs leading-5 text-muted-foreground">The AI assistant prepared this draft. Saving it does not send anything.</p></div></div>}
       <div><Label htmlFor={`draft-subject-${run.id}`}>Subject</Label><Input id={`draft-subject-${run.id}`} className="mt-2" value={draftSubject} maxLength={500} disabled={Boolean(run.delivery?.sentAt)} onChange={(event) => setDraftSubject(event.target.value)} /></div>
       <div><Label className="mb-2 block" htmlFor={`draft-body-${run.id}`}>Reply</Label><RichEmailEditor id={`draft-body-${run.id}`} value={draftBody} maxLength={12_000} disabled={Boolean(run.delivery?.sentAt)} onChange={setDraftBody} /></div>
       {!run.delivery?.sentAt && <div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Revision {run.draft.revision} · Generated copy is retained for audit.</span><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => { void navigator.clipboard.writeText(`${draftSubject}\n\n${emailBodyToPlainText(draftBody)}`); toast.success('Draft copied.'); }}><Copy />Copy</Button><Button size="sm" disabled={saving || !draftSubject.trim() || !emailBodyToPlainText(draftBody)} onClick={saveDraft}>{saving ? <Loader2 className="animate-spin" /> : <Save />}Save draft</Button></div></div>}

@@ -12,6 +12,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@openai/codex": "^0.146.0",
     "better-sqlite3": "^12.2.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
