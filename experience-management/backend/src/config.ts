@@ -257,6 +257,9 @@ export const config = {
   databasePath: resolveFromBackend(
     process.env.DATABASE_PATH || '../../.local-runtime/experience-management/experience.sqlite'
   ),
+  codexRuntimeDir: resolveFromBackend(
+    process.env.CODEX_RUNTIME_DIR || '../../.local-runtime/experience-management/codex'
+  ),
   databaseProvider: databaseProvider(process.env.DATABASE_PROVIDER),
   postgres: {
     host: String(process.env.POSTGRES_HOST || '127.0.0.1').trim(),

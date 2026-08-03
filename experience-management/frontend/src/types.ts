@@ -202,6 +202,7 @@ export interface AssistantRun {
 export interface AssistantOverview {
   configured: boolean; callbackUrl?: string; configurationError?: string | null; connections: AssistantConnection[];
   worker?: { running: boolean; active: number; queued: number; concurrency: number };
+  ai?: { ready: boolean; providerLabel?: string; model?: string; error?: string | null };
   terra?: { ready: boolean; providerLabel?: string; model?: string; error?: string | null };
 }
 export type AssistantActionStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
@@ -268,8 +269,8 @@ export interface KnowledgeGraph {
 }
 export interface JourneyStage { name: string; goal: string; touchpoints: string[]; customerActions: string[]; emotions: string[]; painPoints: string[]; metrics: string[]; opportunities: string[]; recommendedActions: string[] }
 export interface JourneyProvenance {
-  origin: 'workspace' | 'terra' | 'legacy';
-  lastModifiedBy: 'workspace' | 'terra' | 'unknown';
+  origin: 'workspace' | 'terra' | 'codex' | 'legacy';
+  lastModifiedBy: 'workspace' | 'terra' | 'codex' | 'unknown';
   evidenceBasis: 'brief_only' | 'workspace_authored' | 'knowledge_grounded' | 'unknown';
   evidenceLevel: 'hypothesis';
   generatedAt: string | null;
@@ -280,8 +281,8 @@ export interface Journey {
   createdAt: string; updatedAt: string; provenance?: JourneyProvenance;
 }
 export interface JourneyVersion {
-  id: string; journeyId: string; reason: 'workspace_edit' | 'terra_optimize' | 'restore_displaced';
-  actor: 'workspace' | 'terra'; sourceJobId: string | null; name: string; stageCount: number;
+  id: string; journeyId: string; reason: 'workspace_edit' | 'terra_optimize' | 'codex_optimize' | 'restore_displaced';
+  actor: 'workspace' | 'terra' | 'codex'; sourceJobId: string | null; name: string; stageCount: number;
   snapshotUpdatedAt: string; createdAt: string;
 }
 export type CampaignStatus = 'draft' | 'active' | 'paused' | 'completed';

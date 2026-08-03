@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { aiProviderSnapshot } from './aiProvider.js';
 import { config } from './config.js';
 import { createDatabase } from './databaseAdapter.js';
 import type { AiJob, Collector, Journey, JourneyProvenance, JourneyVersion, JourneyVersionSummary, Question, ResponseRecord, SocialMention, Survey } from './types.js';
@@ -1620,8 +1621,9 @@ export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, s
   }
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const queuedInput = { ...input, _aiRuntime: aiProviderSnapshot(requestedBy, spaceId) };
   db.prepare(`INSERT INTO ai_jobs (id,space_id,kind,survey_id,response_id,requested_by,state,stage,progress,attempt,input_json,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,'queued','queued',0,0,?,?,?)`).run(id, spaceId, kind, surveyId || null, responseId || null, requestedBy || null, JSON.stringify(input), now, now);
+    VALUES (?,?,?,?,?,?,'queued','queued',0,0,?,?,?)`).run(id, spaceId, kind, surveyId || null, responseId || null, requestedBy || null, JSON.stringify(queuedInput), now, now);
   return getJob(id)!;
 }
 
@@ -1835,14 +1837,16 @@ export const applyGeneratedJourney = db.transaction((jobId: string, spaceId: str
 });
 
 export const applyOptimizedJourney = db.transaction((jobId: string, spaceId: string, journeyId: string,
-  input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, runtime: unknown):
+  input: Partial<Omit<Journey, 'id' | 'createdAt' | 'updatedAt'>>, expectedUpdatedAt: string, runtime: unknown,
+  actor: 'terra' | 'codex'):
   { status: 'applied' | 'replayed'; result: JourneyJobOutput } | { status: 'conflict' | 'not_found' } => {
   const previous = getJourneyAiApplication(jobId);
   if (previous) return { status: 'replayed', result: previous };
   const current = getJourney(journeyId, spaceId);
   if (!current) return { status: 'not_found' };
   if (current.updatedAt !== expectedUpdatedAt) return { status: 'conflict' };
-  const journey = updateJourneyRecord(journeyId, input, expectedUpdatedAt, { reason: 'terra_optimize', actor: 'terra', sourceJobId: jobId }, spaceId);
+  const reason = actor === 'codex' ? 'codex_optimize' : 'terra_optimize';
+  const journey = updateJourneyRecord(journeyId, input, expectedUpdatedAt, { reason, actor, sourceJobId: jobId }, spaceId);
   if (!journey) return { status: 'conflict' };
   const result: JourneyJobOutput = { output: { journey }, runtime };
   db.prepare(`INSERT INTO journey_ai_applications (job_id,journey_id,kind,result_json,created_at) VALUES (?,?,'journey.optimize',?,?)`)

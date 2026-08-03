@@ -62,6 +62,7 @@ if (liveKnowledge) {
 }
 Object.assign(process.env, {
   HOST: '127.0.0.1', PORT: '5412', PUBLIC_URL: 'http://127.0.0.1:5412', DATABASE_PATH: path.join(state, 'e2e.sqlite'), UPLOAD_DIR: path.join(state, 'uploads'),
+  CODEX_RUNTIME_DIR: path.join(state, 'codex'),
   DATABASE_PROVIDER: e2eDatabaseProvider,
   SUBSCRIPTION_ENFORCEMENT_ENABLED: 'true',
   ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', AI_WORKER_CONCURRENCY: '1', LOCAL_LLM_BASE_URL: 'http://127.0.0.1:9',
@@ -167,6 +168,7 @@ const fakeTerra = http.createServer(async (request, response) => {
 await listen(fakeNylas, 5492);
 if (!liveKnowledge) await listen(fakeTerra, 5493);
 const { app } = await import('../src/app.js'); const { aiJobRunner } = await import('../src/aiJobs.js');
+const { stopCodexClients } = await import('../src/codexAppServer.js');
 const { bootstrapAdminAccount, currentSessionUser, issueEmailVerificationToken } = await import('../src/auth.js');
 const { campaignRunner } = await import('../src/campaigns.js');
 const { db } = await import('../src/database.js');
@@ -262,6 +264,7 @@ async function disposeLiveApplicationState() {
   if (!liveKnowledge || liveStateDisposed) return;
   liveStateDisposed = true;
   aiJobRunner.stop(); knowledgeJobRunner.stop();
+  await stopCodexClients();
   await Promise.allSettled([campaignRunner.stop(), esignWorker.stop()]);
   try { db.close(); } catch { /* already closed during Playwright teardown */ }
   fs.rmSync(state, { recursive: true, force: true });
@@ -328,6 +331,7 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   aiJobRunner.stop(); knowledgeJobRunner.stop();
+  await stopCodexClients();
   await Promise.allSettled([campaignRunner.stop(), esignWorker.stop()]);
   if (liveKnowledge) await cleanupLiveKnowledgeTenant().catch((error) => console.error(error));
   if (liveKnowledge) await disposeLiveApplicationState();

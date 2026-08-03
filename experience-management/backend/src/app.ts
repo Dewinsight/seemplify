@@ -7,6 +7,8 @@ import multer from 'multer';
 import { z } from 'zod';
 import { aiJobRunner } from './aiJobs.js';
 import { AiJobRetryError, aiJobRetryStatus, retryFailedAiJob } from './aiJobRetry.js';
+import { getAiProviderPreference, getAiProviderState } from './aiProvider.js';
+import { aiProviderRouter } from './aiProviderRoutes.js';
 import {
   accountProfile, completeAccountOnboarding, currentSessionUser, forgotPassword, login, logout,
   requireAdmin, resendEmailVerification, resetPassword, session, signup, updateAccountProfile, verifyEmail
@@ -484,6 +486,7 @@ app.get('/health', (_request, response) => {
 });
 app.use('/api/platform-admin', platformAdminRouter);
 app.use('/api/subscriptions', subscriptionRouter);
+app.use('/api/ai-provider', aiProviderRouter);
 app.use('/api/esign', esignRouter);
 app.use('/api/public/esign', esignPublicRouter);
 app.use('/api/assistant', assistantRouter);
@@ -502,8 +505,15 @@ app.get('/api/events', (request, response) => {
 });
 app.get('/api/runtime', noStore, async (request, response) => {
   const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
-  const [terra, knowledgeRuntime] = await Promise.all([getTerraStatus(), getKnowledgeRuntimeStatus()]);
-  response.json({ terra, email: emailStatus(), worker: aiJobRunner.status(space.id, user.id),
+  const preference = getAiProviderPreference(user.id, space.id);
+  const [terra, knowledgeRuntime, ai] = await Promise.all([
+    getTerraStatus(),
+    getKnowledgeRuntimeStatus(),
+    preference.provider === 'codex'
+      ? getAiProviderState(user.id, space.id)
+      : Promise.resolve({ preference, codex: null })
+  ]);
+  response.json({ terra, ai, email: emailStatus(), worker: aiJobRunner.status(space.id, user.id),
     knowledge: { runtime: knowledgeRuntime, worker: knowledgeJobRunner.status(space.id) } });
 });
 app.get('/api/bootstrap', noStore, (request, response) => {

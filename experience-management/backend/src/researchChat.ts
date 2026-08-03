@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
+import { completeWithAi } from './aiProvider.js';
 import type { SessionUser } from './auth.js';
 import { getIntelligenceReport, IntelligenceError, resolveIntelligenceSourceSnapshots } from './intelligence.js';
 import { retrieveKnowledge } from './knowledgeClient.js';
@@ -7,7 +8,6 @@ import {
   auditKnowledge, KnowledgeError, resolveKnowledgeBaseRefs, saveKnowledgeQuerySnapshot,
   type KnowledgeCitation
 } from './knowledgeRepository.js';
-import { completeWithTerra } from './terraClient.js';
 
 const answerSchema = z.object({
   answer: z.string().trim().min(1).max(12_000),
@@ -168,7 +168,8 @@ export async function answerResearchQuestion(user: SessionUser, spaceId: string,
     content: message.content.slice(0, 4000)
   }));
   const context = evidenceContext(citations);
-  const result = await completeWithTerra({
+  const result = await completeWithAi({
+    spaceId, userId: user.id,
     activity: 'experience.knowledge_answer',
     requestId,
     schemaName: 'experience_research_chat_answer',
@@ -194,7 +195,7 @@ export async function answerResearchQuestion(user: SessionUser, spaceId: string,
     ]
   });
   const parsed = answerSchema.safeParse(result.data);
-  if (!parsed.success) throw new IntelligenceError('Terra returned an invalid research answer.', 502);
+  if (!parsed.success) throw new IntelligenceError('The AI provider returned an invalid research answer.', 502);
   validateAnswer(parsed.data, citations);
   const used = new Set(parsed.data.citationSourceRefs);
   return {

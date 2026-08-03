@@ -192,6 +192,7 @@ function EvidenceNotice({ journey }: { journey: Journey }) {
 
 function versionReason(reason: JourneyVersion['reason']) {
   if (reason === 'terra_optimize') return 'Before a Terra audit';
+  if (reason === 'codex_optimize') return 'Before a Codex audit';
   if (reason === 'restore_displaced') return 'Before a version restore';
   return 'Before a workspace edit';
 }
