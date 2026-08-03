@@ -78,9 +78,8 @@ test('multi-account X listening shows billing waits and keeps reply drafts human
   await page.route(/\/api\/social\/mentions\/[^/]+\/reply-drafts$/, async (route) => {
     replyRequest = route.request().postDataJSON();
     replyDrafts = [{ id: 'draft-beta', mentionId: 'beta-post', connectionId: betaId, tone: replyRequest.tone,
-      instructions: replyRequest.instructions, state: 'ready', generatedContent: 'Sorry about the setup trouble. We can help you get unblocked.',
-      content: 'Sorry about the setup trouble. We can help you get unblocked.', rationale: 'Acknowledges the issue and offers help.',
-      safetyFlags: [], runtime: { provider: 'terra' }, aiJobId: 'reply-job', error: null, createdAt: now, completedAt: now, updatedAt: now }];
+      instructions: replyRequest.instructions, state: 'queued', generatedContent: '', content: '', rationale: '',
+      safetyFlags: [], runtime: null, aiJobId: 'reply-job', error: null, createdAt: now, completedAt: null, updatedAt: now }];
     await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ draft: replyDrafts[0] }) });
   });
   await page.route(/\/api\/social\/reply-drafts\/[^/]+$/, async (route) => {
@@ -122,8 +121,14 @@ test('multi-account X listening shows billing waits and keeps reply drafts human
   await expect(page.getByText('Seemplify does not post, like, follow, or message on X.')).toBeVisible();
   expect(replyRequest).toEqual({ tone: 'empathetic', instructions: 'Acknowledge the delay and offer a setup call.' });
 
+  await expect(page.getByText('Terra is generating a draft.')).toBeVisible();
+  replyDrafts = replyDrafts.map((draft) => ({ ...draft, state: 'ready',
+    generatedContent: 'Sorry about the setup trouble. We can help you get unblocked.',
+    content: 'Sorry about the setup trouble. We can help you get unblocked.',
+    rationale: 'Acknowledges the issue and offers help.', runtime: { provider: 'terra' }, completedAt: now, updatedAt: now }));
+
   const editor = page.getByLabel('Editable draft');
-  await expect(editor).toHaveValue('Sorry about the setup trouble. We can help you get unblocked.');
+  await expect(editor).toHaveValue('Sorry about the setup trouble. We can help you get unblocked.', { timeout: 8_000 });
   await editor.fill('Sorry about the setup trouble. Our team can help you get unblocked today.');
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect(page.getByText('Reply draft saved.')).toBeVisible();
