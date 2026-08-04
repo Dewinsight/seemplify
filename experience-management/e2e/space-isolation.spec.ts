@@ -8,11 +8,9 @@ async function signUp(page: Page, values: { name: string; email: string; spaceNa
 }
 
 async function activeSpace(page: Page) {
-  return page.evaluate(async () => {
-    const response = await fetch('/api/auth/session');
-    if (!response.ok) throw new Error(`Could not load session: ${response.status}`);
-    return (await response.json()).activeSpace as { id: string; name: string; role: string };
-  });
+  const response = await page.request.get('/api/auth/session');
+  if (!response.ok()) throw new Error(`Could not load session: ${response.status()}`);
+  return (await response.json()).activeSpace as { id: string; name: string; role: string };
 }
 
 async function switchSpace(page: Page, spaceId: string) {
@@ -115,6 +113,10 @@ test('spaces isolate surveys until invitation acceptance and revoke access after
       await expect(invitationBar.getByText(accountA.spaceName, { exact: true })).toBeVisible();
       await expect(invitationBar.getByText('Accepting adds and opens the space. Its content remains private until then.')).toBeVisible();
       await invitationBar.getByRole('button', { name: `Accept invitation to ${accountA.spaceName} and open it`, exact: true }).click();
+      await expect.poll(async () => (await activeSpace(pageB)).id).toBe(ownerSpaceId);
+      const sharedSpaceRuntime = await pageB.request.patch('/api/ai-provider', { data: { provider: 'terra' } });
+      expect(sharedSpaceRuntime.status(), await sharedSpaceRuntime.text()).toBe(200);
+      await pageB.reload();
       await expect(pageB.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
       await expect(pageB.locator('#active-space-desktop')).toHaveValue(ownerSpaceId);
 

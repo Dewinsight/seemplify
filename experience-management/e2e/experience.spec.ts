@@ -641,15 +641,16 @@ test('root administration manages a user role and workspace access with an audit
   await expect(userRow).toBeVisible();
   await userRow.getByRole('link', { name: 'Open' }).click();
 
-  await page.getByLabel('Role to grant').selectOption('analyst');
+  await page.getByLabel('Role to assign').selectOption({ label: 'Editor' });
   await page.getByLabel('Required reason for role changes').fill('Temporary analytics access for the browser test.');
   page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Grant role' }).click();
-  await expect(page.getByText('analyst', { exact: true }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Assign role' }).click();
+  const revokeEditorRole = page.getByRole('button', { name: 'Revoke Editor role' });
+  await expect(revokeEditorRole).toBeVisible();
 
   await page.getByLabel('Required reason for role changes').fill('Remove temporary analytics access after verification.');
   page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Revoke analyst role' }).click();
+  await revokeEditorRole.click();
   await expect(page.getByText('revoked', { exact: true }).first()).toBeVisible();
 
   await page.getByLabel('Account status').selectOption('suspended');

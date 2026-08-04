@@ -58,20 +58,19 @@ export async function verifyEmailAndOnboard(page: Page, values: SignupValues) {
   if (values.jobTitle) await page.getByLabel('Job title (optional)', { exact: true }).fill(values.jobTitle);
   if (values.organizationName) await page.getByLabel('Organisation (optional)', { exact: true }).fill(values.organizationName);
   await page.getByRole('radio', { name: /Customer experience/ }).check();
-  // Signup tests exercise onboarding and first-visit tutorials, not the
-  // ChatGPT-first runtime gate. Hold the successful onboarding response long
-  // enough to make their runtime choice explicit before its redirect mounts
-  // the protected application shell. Protected APIs correctly reject this
-  // PATCH until the onboarding transaction itself has completed.
-  await page.route('**/api/account/onboarding', async (route) => {
-    const response = await route.fetch();
-    if (response.ok()) {
-      const runtimeResponse = await page.request.patch('/api/ai-provider', { data: { provider: 'terra' } });
-      expect(runtimeResponse.status(), 'could not select the local AI runtime for the signup fixture').toBe(200);
-    }
-    await route.fulfill({ response });
-  }, { times: 1 });
+  // Signup workflow tests exercise onboarding and first-visit tutorials, not
+  // the ChatGPT-first runtime gate. Let onboarding finish normally, then make
+  // the fixture's runtime choice explicit before checking protected content.
+  // Performing another request from inside a route handler can deadlock the
+  // navigation on slower CI runners.
+  const onboardingResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/account/onboarding');
   await page.getByRole('button', { name: 'Finish setup' }).click();
+  expect((await onboardingResponse).status(), 'onboarding did not complete').toBe(200);
+  const runtimeResponse = await page.request.patch('/api/ai-provider', { data: { provider: 'terra' } });
+  expect(runtimeResponse.status(), 'could not select the local AI runtime for the signup fixture').toBe(200);
+  await page.goto('/');
   const firstVisitTutorial = page.getByRole('dialog');
   await expect(firstVisitTutorial).toBeVisible();
   await firstVisitTutorial.getByRole('button', { name: 'Maybe later' }).click();

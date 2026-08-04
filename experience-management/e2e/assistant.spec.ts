@@ -158,7 +158,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
   await openMailboxAssistant(page, thread.id);
 
   await page.getByLabel('Ask about this thread').fill('What needs a reply?');
-  await page.getByRole('button', { name: 'Ask Terra', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
   await expect(page.getByText('The revised customer-risk section needs a reply by Friday.')).toBeVisible();
   await expect(page.getByText('412 tokens')).toBeVisible();
 
