@@ -319,6 +319,7 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
 };
 
 const { app } = await import('../src/app.js');
+const { stopCodexClients } = await import('../src/codexAppServer.js');
 const { createJob, db, getJob, insertInsight, updateJob } = await import('../src/database.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
 const { assistantEmailExecutionSnapshot, publishAssistantChanged } = await import('../src/assistant.js');
@@ -326,7 +327,8 @@ const { boundedEvidence } = await import('../src/assistantRoutes.js');
 const { assistantEmailSummaryResult } = await import('../src/assistantSchemas.js');
 const { createKnowledgeBase } = await import('../src/knowledgeRepository.js');
 
-after(() => {
+after(async () => {
+  await stopCodexClients();
   globalThis.fetch = originalFetch;
   db.close();
   fs.rmSync(root, { recursive: true, force: true });

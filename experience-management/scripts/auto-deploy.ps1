@@ -39,10 +39,14 @@ function Invoke-IsolatedTests {
     $inherited[$variable.Name] = $variable.Value
     Remove-Item -LiteralPath "Env:$($variable.Name)"
   }
+  $env:CODEX_CLI_PATH = Join-Path $PWD 'backend\test\fixtures\fake-codex-app-server.js'
+  $env:CODEX_RUNTIME_DIR = Join-Path $PWD '.test-runtime\codex'
   try {
     & npm.cmd test
     if ($LASTEXITCODE -ne 0) { throw 'tests failed' }
   } finally {
+    Remove-Item -LiteralPath 'Env:CODEX_CLI_PATH' -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath 'Env:CODEX_RUNTIME_DIR' -ErrorAction SilentlyContinue
     foreach ($name in $inherited.Keys) { Set-Item -LiteralPath "Env:$name" -Value $inherited[$name] }
   }
 }
