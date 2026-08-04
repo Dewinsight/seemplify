@@ -129,11 +129,11 @@ test('exposes multi-account X listening, human-reviewed replies, cross-source in
   assert.match(social, /selectedConnectionId/);
   assert.match(social, /selectedConnectionRef/);
   assert.doesNotMatch(social, /Import pasted text|Choose CSV, JSON or TXT/);
-  for (const endpoint of ['/api/intelligence/sources', '/api/intelligence/reports']) assert.match(intelligence, new RegExp(endpoint.replaceAll('/', '\\/')));
+  for (const endpoint of ['/api/intelligence/sources', '/api/intelligence/reports', '/api/intelligence/deep-runs']) assert.match(intelligence, new RegExp(endpoint.replaceAll('/', '\\/')));
   assert.match(researchChat, /\/api\/intelligence\/chat/);
-  for (const feature of ['Build an analysis', 'Choose 2', 'Source snapshots are captured', 'Survey intelligence', 'Social intelligence', 'Knowledge bases', 'Ask selected sources', 'Run analysis', 'Executive summary', 'Where sources converge', 'Where sources diverge', 'Limitations', 'Ask this analysis']) assert.match(intelligence, new RegExp(feature));
-  assert.match(intelligence, /selectedRefs\.length < 2/);
-  assert.match(intelligence, /current\.length < 12/);
+  for (const feature of ['Build an analysis', 'Choose', 'Source snapshots are captured', 'Survey intelligence', 'Social intelligence', 'Knowledge bases', 'Ask selected sources', 'Run analysis', 'Deep analysis runs', 'Exhaustive', 'Pause', 'Resume', 'Cancel', 'Executive summary', 'Where sources converge', 'Where sources diverge', 'Limitations', 'Ask this analysis']) assert.match(intelligence, new RegExp(feature));
+  assert.match(intelligence, /analysisDepth === 'fast' \? 2 : 1/);
+  assert.match(intelligence, /analysisDepth === 'fast' \? 12 : 50/);
   assert.match(shell, /label: 'Intelligence'/);
   assert.match(journeys, /\/api\/ai\/journeys/);
   assert.match(journeys, /Journey stages/);
@@ -334,8 +334,8 @@ test('refuses an incompatible rollback after a PostgreSQL runtime upgrade starts
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
   assert.match(deploy, /started runtime upgrade/);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 9,
-    maximumRuntimeSchemaVersion: 9,
+    minimumRuntimeSchemaVersion: 11,
+    maximumRuntimeSchemaVersion: 11,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });

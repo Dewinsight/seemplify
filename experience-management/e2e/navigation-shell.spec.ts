@@ -97,3 +97,34 @@ test('cold sidebar chunks keep the current shell mounted without a document navi
   expect(afterTransition).toEqual({ windowSentinel: true, sameSidebar: true });
   expect(documentRequests).toEqual([]);
 });
+
+test('plan-disabled features are absent from navigation and direct routes redirect', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('qa@seemplify.local');
+  await page.getByLabel('Password', { exact: true }).fill('Playwright-Test-Password-2026!');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  const session = await page.evaluate(async () => (await fetch('/api/auth/session')).json());
+  await page.route(/\/api\/auth\/session(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ...session,
+      subscription: {
+        ...session.subscription,
+        features: { ...session.subscription.features, surveys: false, campaigns: false }
+      }
+    })
+  }));
+
+  await page.goto('/campaigns');
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' });
+  if (await openNavigation.isVisible()) await openNavigation.click();
+  const navigation = page.getByRole('navigation', { name: 'Primary navigation' });
+  await expect(navigation.getByRole('link', { name: 'Surveys', exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole('link', { name: 'Campaigns', exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole('link', { name: 'Agreements', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'New survey' })).toHaveCount(0);
+});

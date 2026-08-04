@@ -85,6 +85,7 @@ export type AiJobKind =
   | 'social.report'
   | 'social.reply_draft'
   | 'intelligence.synthesize'
+  | 'intelligence.deep_analysis'
   | 'journey.generate'
   | 'journey.optimize'
   | 'assistant.email_summary'
@@ -182,7 +183,7 @@ export interface AiJob {
   surveyId: string | null;
   responseId: string | null;
   requestedBy: string | null;
-  state: 'queued' | 'processing' | 'completed' | 'failed';
+  state: 'queued' | 'processing' | 'paused' | 'completed' | 'failed' | 'cancelled';
   stage: string;
   progress: number;
   attempt: number;

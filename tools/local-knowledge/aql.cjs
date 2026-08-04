@@ -193,6 +193,19 @@ const AQL = Object.freeze({
       LIMIT @candidateLimit
       RETURN KEEP(chunk, '_key', 'spaceId', 'knowledgeBaseId', 'documentId', 'documentName', 'indexVersion', 'text', 'page', 'section', 'embedding', 'entityRefs')
   `,
+  scanDocumentChunks: `
+    FOR chunk IN chunks
+      FILTER chunk.spaceId == @spaceId
+      FILTER chunk.knowledgeBaseId == @knowledgeBaseId
+      FILTER chunk.documentId == @documentId
+      FILTER chunk.indexVersion <= @indexVersion
+      FILTER chunk.activeUntil == null OR chunk.activeUntil > @indexVersion
+        OR (chunk.supersededByReceiptKey != null AND DOCUMENT('operation_receipts', chunk.supersededByReceiptKey) == null)
+      FILTER chunk.receiptKey == null OR DOCUMENT('operation_receipts', chunk.receiptKey) != null
+      SORT chunk.ordinal, chunk._key
+      LIMIT @offset, @limit
+      RETURN KEEP(chunk, '_key', 'knowledgeBaseId', 'documentId', 'documentName', 'indexVersion', 'ordinal', 'text', 'tokenEstimate', 'page', 'section', 'contentHash')
+  `,
   eligibleChunkCount: `
     RETURN LENGTH(
       FOR chunk IN chunks

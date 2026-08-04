@@ -14,6 +14,7 @@ async function withServer(run) {
     index: async () => ({ document: { chunkCount: 1, relationshipCount: 1 }, metrics: {} }),
     backfill: async (input) => ({ jobId: input.jobId, written: 1, complete: false }),
     retrieve: async () => ({ citations: [], metrics: {} }),
+    scan: async (input) => ({ requestId: input.requestId, items: [], offset: input.offset, nextOffset: null, complete: true }),
     remove: async () => ({ deleted: true }),
     graph: async () => ({ nodes: [], edges: [], metrics: {} }),
     migrationControl: async (input) => ({ action: input.action, controlledBy: input.source }),
@@ -41,6 +42,9 @@ test('signed status and graph endpoints are loopback service contracts', async (
   const backfill = await signedPost(base, '/v1/backfill', { jobId: 'backfill_1', spaceId: 'space_1', batchSize: 32 });
   assert.equal(backfill.status, 200);
   assert.deepEqual(await backfill.json(), { jobId: 'backfill_1', written: 1, complete: false });
+  const scan = await signedPost(base, '/v1/scan', { requestId: 'scan_1', spaceId: 'space_1', knowledgeBaseId: 'base_1', documentId: 'document_1', indexVersion: 1, offset: 0, limit: 16 });
+  assert.equal(scan.status, 200);
+  assert.deepEqual(await scan.json(), { requestId: 'scan_1', items: [], offset: 0, nextOffset: null, complete: true });
   const migration = await signedPost(base, '/v1/migration', { source: 'control-center', action: 'pause', reason: 'operator-test' });
   assert.equal(migration.status, 200);
   assert.deepEqual(await migration.json(), { action: 'pause', controlledBy: 'control-center' });
@@ -71,7 +75,7 @@ test('GET and unsigned mutations are rejected', async () => withServer(async (ba
 test('replay nonce survives a server restart', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'knowledge-restart-replay-'));
   const replayFilename = path.join(directory, 'replay.json');
-  const runtime = { index: async () => ({}), backfill: async () => ({}), retrieve: async () => ({}), remove: async () => ({}), graph: async () => ({}), migrationControl: async () => ({}), cleanupTestTenant: async () => ({}), status: async () => ({ ready: true, healthy: true }) };
+  const runtime = { index: async () => ({}), backfill: async () => ({}), retrieve: async () => ({}), scan: async () => ({}), remove: async () => ({}), graph: async () => ({}), migrationControl: async () => ({}), cleanupTestTenant: async () => ({}), status: async () => ({ ready: true, healthy: true }) };
   const timestamp = String(Date.now());
   const nonce = 'restartpersistnonce';
   const body = JSON.stringify({ source: 'knowledge-live-benchmark' });

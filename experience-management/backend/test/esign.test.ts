@@ -17,6 +17,7 @@ Object.assign(process.env, {
   DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: path.join(root, 'missing-frontend'),
   PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile,
   EMAIL_MODE: 'log', ESIGN_STORAGE_DIR: path.join(root, 'esign'), ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, ESIGN_WORKER_POLL_MS: '250',
+  KNOWLEDGE_STORAGE_DIR: path.join(root, 'knowledge'), KNOWLEDGE_RUNTIME_BASE_URL: 'http://127.0.0.1:1', KNOWLEDGE_WORKER_POLL_MS: '60000',
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, X_SEED_CONSUMER_KEY_FILE: path.join(root, 'missing-x-key'), X_SEED_CONSUMER_SECRET_FILE: path.join(root, 'missing-x-secret'),
   X_SEED_BEARER_TOKEN_FILE: path.join(root, 'missing-x-bearer'), X_SEED_ACCESS_TOKEN_FILE: path.join(root, 'missing-x-token'), X_SEED_ACCESS_TOKEN_SECRET_FILE: path.join(root, 'missing-x-token-secret')
 });
@@ -110,6 +111,23 @@ test('securely completes a routed two-signer envelope and verifies its certifica
   const completedPdf = completed.artifacts.find((artifact: any) => artifact.kind === 'completed_pdf');
   const certificate = completed.artifacts.find((artifact: any) => artifact.kind === 'completion_certificate');
   await owner.get(`/api/esign/envelopes/${envelopeId}/artifacts/${completedPdf.id}/content`).expect(200).expect('Content-Type', /application\/pdf/);
+  await owner.get(`/api/esign/envelopes/${envelopeId}/artifacts/${completedPdf.id}/content?preview=1`).expect(200)
+    .expect('Content-Disposition', /^inline;/);
+  const ownerUser = db.prepare('SELECT id FROM users WHERE email=?').get('owner@example.com') as { id: string };
+  const ownerSpace = db.prepare('SELECT space_id FROM space_memberships WHERE user_id=? AND role=?').get(ownerUser.id, 'owner') as { space_id: string };
+  db.prepare("UPDATE platform_subscriptions SET plan_code='enterprise' WHERE space_id=?").run(ownerSpace.space_id);
+  const knowledgeBase = await owner.post('/api/knowledge-bases').send({
+    name: 'Signed agreements', description: 'Completed contractual records', privacy: 'private', terraContextEnabled: true
+  }).expect(201);
+  const importPath = `/api/knowledge-bases/${knowledgeBase.body.knowledgeBase.id}/agreements/${envelopeId}/artifacts/${completedPdf.id}`;
+  const imported = await owner.post(importPath).set('idempotency-key', `agreement:${envelopeId}:${completedPdf.id}:test`).expect(202);
+  assert.equal(imported.body.document.name, completedPdf.name);
+  assert.equal((db.prepare('SELECT sha256 FROM knowledge_documents WHERE id=?').get(imported.body.document.id) as { sha256: string }).sha256, completedPdf.sha256);
+  await owner.post(importPath).set('idempotency-key', `agreement:${envelopeId}:${completedPdf.id}:test`).expect(202);
+  const knowledgeDocuments = await owner.get(`/api/knowledge-bases/${knowledgeBase.body.knowledgeBase.id}/documents`).expect(200);
+  assert.equal(knowledgeDocuments.body.documents.length, 1);
+  const importedDetail = await owner.get(`/api/esign/envelopes/${envelopeId}`).expect(200);
+  assert.equal(importedDetail.body.audit.some((event: any) => event.action === 'knowledge.document_added'), true);
   const verification = await request(app).get(`/api/public/esign/certificates/${certificate.certificateId}`).expect(200);
   assert.equal(verification.body.valid, true); assert.equal(verification.body.participants[0].maskedEmail, 'a***@example.com');
   assert.equal(JSON.stringify(verification.body).includes('Ada First'), false);

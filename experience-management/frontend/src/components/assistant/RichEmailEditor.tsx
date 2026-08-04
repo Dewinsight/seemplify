@@ -46,8 +46,8 @@ function ToolbarButton({ editor, label, active = false, disabled = false, onClic
   >{children}</button>;
 }
 
-export function RichEmailEditor({ id, value, onChange, disabled = false, maxLength = 12_000, placeholder = 'Write your reply…' }: {
-  id: string; value: string; onChange: (value: string) => void; disabled?: boolean; maxLength?: number; placeholder?: string;
+export function RichEmailEditor({ id, value, onChange, disabled = false, maxLength = 12_000, placeholder = 'Write your reply…', ariaLabel = 'Reply' }: {
+  id: string; value: string; onChange: (value: string) => void; disabled?: boolean; maxLength?: number; placeholder?: string; ariaLabel?: string;
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
@@ -69,7 +69,7 @@ export function RichEmailEditor({ id, value, onChange, disabled = false, maxLeng
       attributes: {
         id,
         role: 'textbox',
-        'aria-label': 'Reply',
+        'aria-label': ariaLabel,
         'aria-multiline': 'true',
         class: 'tiptap min-h-52 px-4 py-3 text-sm leading-6 outline-none'
       }
@@ -111,7 +111,7 @@ export function RichEmailEditor({ id, value, onChange, disabled = false, maxLeng
   }
 
   return <div className={cn('email-editor overflow-hidden rounded-md border bg-background focus-within:border-ring focus-within:ring-1 focus-within:ring-ring', disabled && 'bg-muted/20')}>
-    <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto border-b bg-muted/20 px-2 py-1" role="toolbar" aria-label="Reply formatting">
+    <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto border-b bg-muted/20 px-2 py-1" role="toolbar" aria-label={`${ariaLabel} formatting`}>
       <ToolbarButton editor={editor} label="Undo" disabled={!editor.can().chain().focus().undo().run()} onClick={() => editor.chain().focus().undo().run()}><Undo2 className="h-4 w-4" /></ToolbarButton>
       <ToolbarButton editor={editor} label="Redo" disabled={!editor.can().chain().focus().redo().run()} onClick={() => editor.chain().focus().redo().run()}><Redo2 className="h-4 w-4" /></ToolbarButton>
       <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden="true" />

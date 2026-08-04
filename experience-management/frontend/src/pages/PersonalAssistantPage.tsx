@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, BookOpenCheck, CalendarDays, CheckSquare, ChevronRight, CircleAlert, Clock3, Copy, FilePenLine,
-  FileText, Inbox, ListTodo, Loader2, MailCheck, MailOpen, MessageSquareText, PanelRightClose,
+  FileText, Inbox, ListTodo, Loader2, MailCheck, MailOpen, MailPlus, MessageSquareText, PanelRightClose,
   Paperclip, Plus, RefreshCw, Save, Search, Send, ShieldCheck, Sparkles, Square, Star, Users
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, json } from '@/lib/api';
+import { api, ApiError, json } from '@/lib/api';
 import { getKnowledgeBases } from '@/lib/knowledgeBases';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
@@ -89,7 +89,7 @@ function formatMailboxDate(value?: string | null) {
 
 function runTitle(run: AssistantRun) {
   if (run.kind === 'assistant.email_summary' || run.kind === 'email_summary') return 'Email summary';
-  if (run.kind === 'assistant.email_draft' || run.kind === 'email_draft') return 'Email draft';
+  if (run.kind === 'assistant.email_draft' || run.kind === 'email_draft') return run.subjectRef ? 'Email draft' : 'New email';
   if (run.kind === 'assistant.work_product' || run.kind === 'work_product') return run.title || workProductTypes.find((item) => item.value === run.documentType)?.label || 'Work product';
   return 'Knowledge answer';
 }
@@ -126,6 +126,27 @@ function connectionCanSend(connection?: AssistantConnection | null) {
     ? scopes.has('mail.send')
     : scopes.has('https://www.googleapis.com/auth/gmail.send')
       || scopes.has('https://www.googleapis.com/auth/gmail.modify');
+}
+
+function connectionHasCalendarAccess(connection?: AssistantConnection | null) {
+  if (!connection?.scopes?.length) return true;
+  const scopes = new Set(connection.scopes.map((scope) => scope.toLocaleLowerCase('en-US')));
+  return connection.provider === 'microsoft'
+    ? scopes.has('calendars.read') || scopes.has('calendars.readwrite')
+    : scopes.has('https://www.googleapis.com/auth/calendar.readonly')
+      || scopes.has('https://www.googleapis.com/auth/calendar');
+}
+
+function parseEmailRecipients(value: string) {
+  const recipients: Array<{ name?: string; email: string }> = [];
+  const invalid: string[] = [];
+  for (const token of value.split(/[;,\n]+/u).map((item) => item.trim()).filter(Boolean)) {
+    const named = token.match(/^(.+?)\s*<([^<>]+)>$/u);
+    const email = (named?.[2] || token).trim().toLocaleLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) { invalid.push(token); continue; }
+    recipients.push({ email, ...(named?.[1]?.trim() ? { name: named[1].trim() } : {}) });
+  }
+  return { recipients: [...new Map(recipients.map((item) => [item.email, item])).values()], invalid };
 }
 
 function replyRecipientPreview(detail: AssistantThreadDetail | null, mailboxEmail: string, mode: 'reply' | 'reply_all') {
@@ -196,6 +217,16 @@ export function PersonalAssistantPage() {
   const [threadQuestion, setThreadQuestion] = useState('');
   const [replyMode, setReplyMode] = useState<'reply' | 'reply_all'>('reply');
   const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeReview, setComposeReview] = useState(false);
+  const [composeTo, setComposeTo] = useState('');
+  const [composeCc, setComposeCc] = useState('');
+  const [composeBcc, setComposeBcc] = useState('');
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const [composeInstructions, setComposeInstructions] = useState('');
+  const [composeTone, setComposeTone] = useState('professional');
+  const [composeDraftRunId, setComposeDraftRunId] = useState('');
   const [selectedRunId, setSelectedRunId] = useState('');
   const [instructions, setInstructions] = useState('Draft a concise, professional response. Do not make commitments that are not in the thread.');
   const [tone, setTone] = useState('professional');
@@ -222,6 +253,7 @@ export function PersonalAssistantPage() {
   const [calendarEnd, setCalendarEnd] = useState(() => new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString().slice(0, 10));
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState('');
+  const [calendarErrorCode, setCalendarErrorCode] = useState('');
   const [auditEvents, setAuditEvents] = useState<AssistantAuditEvent[]>([]);
   const [draftSubject, setDraftSubject] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -243,6 +275,8 @@ export function PersonalAssistantPage() {
   const runRequest = useRef({ fingerprint: '', key: '' });
   const workProductRequest = useRef({ fingerprint: '', key: '' });
   const sendRequest = useRef({ fingerprint: '', key: '' });
+  const composeDraftRequest = useRef({ fingerprint: '', key: '' });
+  const composeSendRequest = useRef({ fingerprint: '', key: '' });
 
   const loadWorkspace = useCallback(async (quiet = false) => {
     const requestId = ++workspaceRequest.current;
@@ -320,9 +354,9 @@ export function PersonalAssistantPage() {
     const requestedConnection = calendarConnectionId;
     const requestId = ++calendarListRequest.current;
     calendarEventRequest.current += 1;
-    if (!requestedConnection) { setCalendars([]); setCalendarId(''); setCalendarEvents([]); return; }
+    if (!requestedConnection) { setCalendars([]); setCalendarId(''); setCalendarEvents([]); setCalendarErrorCode(''); return; }
     setCalendarEvents([]);
-    setCalendarLoading(true); setCalendarError('');
+    setCalendarLoading(true); setCalendarError(''); setCalendarErrorCode('');
     try {
       const result = await api<{ items?: AssistantCalendar[] } | AssistantCalendar[]>(`/api/assistant/calendar/calendars?connectionId=${encodeURIComponent(requestedConnection)}`);
       if (requestId !== calendarListRequest.current) return;
@@ -334,6 +368,7 @@ export function PersonalAssistantPage() {
       if (requestId !== calendarListRequest.current) return;
       setCalendars([]); setCalendarId('');
       setCalendarError(reason instanceof Error ? reason.message : 'Calendars could not load.');
+      setCalendarErrorCode(reason instanceof ApiError ? reason.code || '' : '');
     } finally {
       if (requestId === calendarListRequest.current) setCalendarLoading(false);
     }
@@ -346,7 +381,7 @@ export function PersonalAssistantPage() {
     const requestedEnd = calendarEnd;
     const requestId = ++calendarEventRequest.current;
     if (!requestedConnection || !requestedCalendar || !requestedStart || !requestedEnd) { setCalendarEvents([]); return; }
-    setCalendarLoading(true); setCalendarError('');
+    setCalendarLoading(true); setCalendarError(''); setCalendarErrorCode('');
     try {
       const start = new Date(`${requestedStart}T00:00:00`);
       const end = new Date(`${requestedEnd}T23:59:59`);
@@ -361,6 +396,7 @@ export function PersonalAssistantPage() {
       if (requestId !== calendarEventRequest.current) return;
       setCalendarEvents([]);
       setCalendarError(reason instanceof Error ? reason.message : 'Calendar events could not load.');
+      setCalendarErrorCode(reason instanceof ApiError ? reason.code || '' : '');
     } finally {
       if (requestId === calendarEventRequest.current) setCalendarLoading(false);
     }
@@ -514,13 +550,21 @@ export function PersonalAssistantPage() {
   const draftDirty = Boolean(editableRun?.draft && (
     currentDraftSubject !== (editableRun.draft.subject || '') || currentDraftBody !== (editableRun.draft.body || '')
   ));
-  useUnsavedChanges(draftDirty);
+  const composeDirty = Boolean(composeOpen && (composeTo.trim() || composeCc.trim() || composeBcc.trim()
+    || composeSubject.trim() || emailBodyToPlainText(composeBody) || composeInstructions.trim()));
+  useUnsavedChanges(draftDirty || composeDirty);
   useLayoutEffect(() => {
     if (!editableRun?.draft) return;
     setDraftSubject(editableRun.draft.subject || '');
     setDraftBody(editableRun.draft.body || '');
     setDraftRevision(editableRun.draft.revision || 0);
   }, [editableRun?.id, editableRun?.draft?.revision, editableRun?.draft?.subject, editableRun?.draft?.body]);
+  const composeDraftRun = runs.find((run) => run.id === composeDraftRunId) || null;
+  useEffect(() => {
+    if (!composeOpen || !composeDraftRun?.draft) return;
+    setComposeSubject(composeDraftRun.draft.subject || '');
+    setComposeBody(composeDraftRun.draft.body || '');
+  }, [composeDraftRun?.draft?.body, composeDraftRun?.draft?.subject, composeDraftRun?.id, composeOpen]);
 
   const groupedSources = useMemo(() => ({
     survey: sources.filter((source) => source.type === 'survey'),
@@ -769,6 +813,86 @@ export function PersonalAssistantPage() {
     } finally { setWorking(''); }
   }
 
+  function composeRecipients() {
+    const to = parseEmailRecipients(composeTo);
+    const cc = parseEmailRecipients(composeCc);
+    const bcc = parseEmailRecipients(composeBcc);
+    const invalid = [...to.invalid, ...cc.invalid, ...bcc.invalid];
+    return { to: to.recipients, cc: cc.recipients, bcc: bcc.recipients, invalid };
+  }
+
+  async function draftComposeWithAi() {
+    if (!activeMailbox) return;
+    const recipients = composeRecipients();
+    if (!recipients.to.length || recipients.invalid.length) {
+      return toast.error(recipients.invalid.length
+        ? `Check these recipient addresses: ${recipients.invalid.join(', ')}`
+        : 'Add at least one valid recipient before asking the AI assistant.');
+    }
+    if (composeInstructions.trim().length < 3) return toast.error('Tell the AI assistant what this email should achieve.');
+    const input = {
+      connectionId: activeMailbox.id, to: recipients.to, cc: recipients.cc, bcc: recipients.bcc,
+      subject: composeSubject.trim() || undefined, instructions: composeInstructions.trim(), tone: composeTone
+    };
+    const fingerprint = JSON.stringify(input);
+    if (composeDraftRequest.current.fingerprint !== fingerprint) {
+      composeDraftRequest.current = { fingerprint, key: crypto.randomUUID() };
+    }
+    setWorking('compose-ai');
+    try {
+      const result = await api<{ run?: AssistantRun; jobId: string }>('/api/assistant/runs/email-compose-draft', {
+        ...json('POST', input), headers: { 'idempotency-key': composeDraftRequest.current.key }
+      });
+      if (result.run) {
+        setComposeDraftRunId(result.run.id);
+        if (result.run.draft) {
+          setComposeSubject(result.run.draft.subject || ''); setComposeBody(result.run.draft.body || '');
+        }
+      }
+      await loadWorkspace(true);
+      toast.success('AI draft created for your review. Nothing was sent.');
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'The AI email draft could not be created.'); }
+    finally { setWorking(''); }
+  }
+
+  function reviewComposedEmail() {
+    const recipients = composeRecipients();
+    if (recipients.invalid.length) return toast.error(`Check these recipient addresses: ${recipients.invalid.join(', ')}`);
+    if (!recipients.to.length) return toast.error('Add at least one recipient.');
+    if (!composeSubject.trim() || !emailBodyToPlainText(composeBody)) return toast.error('Add a subject and email body.');
+    setComposeReview(true);
+  }
+
+  async function sendComposedEmail() {
+    if (!activeMailbox) return;
+    const recipients = composeRecipients();
+    const input = {
+      connectionId: activeMailbox.id, to: recipients.to, cc: recipients.cc, bcc: recipients.bcc,
+      subject: composeSubject.trim(), body: composeBody, confirmation: 'send'
+    };
+    const fingerprint = JSON.stringify(input);
+    if (composeSendRequest.current.fingerprint !== fingerprint) {
+      composeSendRequest.current = { fingerprint, key: crypto.randomUUID() };
+    }
+    setWorking('compose-send');
+    try {
+      await api('/api/assistant/mailbox/messages/send', {
+        ...json('POST', input), headers: { 'idempotency-key': composeSendRequest.current.key }
+      });
+      composeSendRequest.current = { fingerprint: '', key: '' };
+      resetCompose();
+      await Promise.all([loadWorkspace(true), loadThreads(false), loadAssistantOperations()]);
+      toast.success('Email sent from your connected mailbox and recorded in the assistant audit.');
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'The email could not be sent.'); }
+    finally { setWorking(''); }
+  }
+
+  function resetCompose() {
+    setComposeOpen(false); setComposeReview(false); setComposeTo(''); setComposeCc(''); setComposeBcc('');
+    setComposeSubject(''); setComposeBody(''); setComposeInstructions(''); setComposeTone('professional');
+    setComposeDraftRunId(''); composeDraftRequest.current = { fingerprint: '', key: '' };
+  }
+
   function toggleSource(ref: string) {
     setSourceRefs((current) => current.includes(ref) ? current.filter((item) => item !== ref) : current.length < 12 ? [...current, ref] : current);
   }
@@ -848,6 +972,7 @@ export function PersonalAssistantPage() {
   const activeMailbox = overview?.connections.find((connection) => connection.id === connectionId) || null;
   const activeMailboxCanSend = connectionCanSend(activeMailbox);
   const sendRecipients = replyRecipientPreview(detail, activeMailbox?.email || '', replyMode);
+  const composedRecipients = composeRecipients();
 
   return <div className="space-y-3">
     <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
@@ -889,6 +1014,9 @@ export function PersonalAssistantPage() {
             loading={loading || threadLoading} error={threadError} retry={() => void loadThreads()}
             nextCursor={threadCursor} loadingMore={threadLoadingMore} loadMore={() => void loadMoreThreads()}
             mobileView={mobileMailboxView}
+            compose={() => activeMailboxCanSend ? setComposeOpen(true)
+              : void connect(activeMailbox?.provider === 'microsoft' ? 'microsoft' : 'google')}
+            canCompose={activeMailboxCanSend}
           />
           <ConversationReader
             thread={readerThread} detail={detail} loading={threadDetailLoading} error={threadDetailError}
@@ -943,7 +1071,8 @@ export function PersonalAssistantPage() {
           connectionId={calendarConnectionId} setConnectionId={setCalendarConnectionId}
           calendars={calendars} calendarId={calendarId} setCalendarId={setCalendarId}
           events={calendarEvents} start={calendarStart} setStart={setCalendarStart}
-          end={calendarEnd} setEnd={setCalendarEnd} loading={calendarLoading} error={calendarError}
+          end={calendarEnd} setEnd={setCalendarEnd} loading={calendarLoading} error={calendarError} errorCode={calendarErrorCode}
+          reconnect={connect} reconnecting={working.startsWith('connect:')}
           refresh={() => void (calendarId ? loadCalendarEvents() : loadCalendars())} useEvent={useCalendarEvent}
         />
       </TabsContent>
@@ -1013,6 +1142,62 @@ export function PersonalAssistantPage() {
         <DialogFooter>
           <Button variant="outline" disabled={working === 'send-reply'} onClick={() => setSendConfirmOpen(false)}>Keep editing</Button>
           <Button disabled={working === 'send-reply' || !sendRecipients.length} onClick={() => void sendSavedReply()}>{working === 'send-reply' ? <Loader2 className="animate-spin" /> : <Send />}Send reply</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={composeOpen} onOpenChange={(open) => {
+      if (working === 'compose-send' || working === 'compose-ai') return;
+      if (!open && composeDirty && !window.confirm('Discard this unsent email?')) return;
+      if (open) setComposeOpen(true); else resetCompose();
+    }}>
+      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{composeReview ? 'Review email' : 'New email'}</DialogTitle>
+          <DialogDescription>{composeReview
+            ? 'Confirm the recipients and final content before Nylas sends from your connected mailbox.'
+            : `Compose from ${activeMailbox?.email || 'the selected mailbox'}. AI can prepare a draft, but only you can send it.`}</DialogDescription>
+        </DialogHeader>
+        {composeReview ? <div className="space-y-4 text-sm">
+          <div className="grid gap-3 border-b pb-4 sm:grid-cols-[90px_minmax(0,1fr)]">
+            <div className="text-muted-foreground">From</div><div>{activeMailbox?.email}</div>
+            <div className="text-muted-foreground">To</div><div className="break-words">{composedRecipients.to.map((item) => item.email).join(', ')}</div>
+            {composedRecipients.cc.length > 0 && <><div className="text-muted-foreground">Cc</div><div className="break-words">{composedRecipients.cc.map((item) => item.email).join(', ')}</div></>}
+            {composedRecipients.bcc.length > 0 && <><div className="text-muted-foreground">Bcc</div><div className="break-words">{composedRecipients.bcc.map((item) => item.email).join(', ')}</div></>}
+            <div className="text-muted-foreground">Subject</div><div className="break-words font-medium">{composeSubject}</div>
+          </div>
+          <div className="max-h-72 overflow-y-auto border bg-muted/10 p-4 leading-6 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_ul]:list-disc" dangerouslySetInnerHTML={{ __html: emailBodyToHtml(composeBody) }} />
+          <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />Sending is idempotent and records the provider message ID, recipients, and content hashes in the assistant audit.</div>
+        </div> : <div className="space-y-4">
+          <div>
+            <Label htmlFor="assistant-compose-to">To</Label>
+            <Input id="assistant-compose-to" className="mt-2" value={composeTo} onChange={(event) => setComposeTo(event.target.value)} placeholder="name@example.com, Person <person@example.com>" autoComplete="off" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div><Label htmlFor="assistant-compose-cc">Cc</Label><Input id="assistant-compose-cc" className="mt-2" value={composeCc} onChange={(event) => setComposeCc(event.target.value)} placeholder="Optional" autoComplete="off" /></div>
+            <div><Label htmlFor="assistant-compose-bcc">Bcc</Label><Input id="assistant-compose-bcc" className="mt-2" value={composeBcc} onChange={(event) => setComposeBcc(event.target.value)} placeholder="Optional" autoComplete="off" /></div>
+          </div>
+          {composedRecipients.invalid.length > 0 && <p className="text-xs text-destructive" role="alert">Check: {composedRecipients.invalid.join(', ')}</p>}
+          <div><Label htmlFor="assistant-compose-subject">Subject</Label><Input id="assistant-compose-subject" className="mt-2" value={composeSubject} maxLength={500} onChange={(event) => setComposeSubject(event.target.value)} /></div>
+          <section className="border bg-muted/10 p-4" aria-labelledby="assistant-compose-ai-title">
+            <div className="flex items-center gap-2"><Sparkles className="h-4 w-4" /><h3 id="assistant-compose-ai-title" className="text-sm font-semibold">Draft with AI</h3></div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[150px_minmax(0,1fr)]">
+              <div><Label htmlFor="assistant-compose-tone">Tone</Label><select id="assistant-compose-tone" className="mt-2 h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={composeTone} onChange={(event) => setComposeTone(event.target.value)}><option value="professional">Professional</option><option value="warm">Warm</option><option value="concise">Concise</option><option value="direct">Direct</option><option value="empathetic">Empathetic</option></select></div>
+              <div><Label htmlFor="assistant-compose-instructions">What should the email achieve?</Label><Textarea id="assistant-compose-instructions" className="mt-2 min-h-20" value={composeInstructions} maxLength={2_000} onChange={(event) => setComposeInstructions(event.target.value)} placeholder="Explain the purpose, relevant facts, and the response you need." /></div>
+            </div>
+            <div className="mt-3 flex justify-end"><Button type="button" size="sm" variant="outline" disabled={working !== '' || !composeInstructions.trim() || !composedRecipients.to.length || composedRecipients.invalid.length > 0} onClick={() => void draftComposeWithAi()}>{working === 'compose-ai' ? <Loader2 className="animate-spin" /> : <Sparkles />}Draft with AI</Button></div>
+          </section>
+          <div><Label className="mb-2 block" htmlFor="assistant-compose-body">Email body</Label><RichEmailEditor id="assistant-compose-body" ariaLabel="Email body" value={composeBody} onChange={setComposeBody} maxLength={12_000} placeholder="Write your email…" /></div>
+        </div>}
+        <DialogFooter>
+          {composeReview ? <>
+            <Button variant="outline" disabled={working === 'compose-send'} onClick={() => setComposeReview(false)}>Back to editing</Button>
+            <Button disabled={working === 'compose-send'} onClick={() => void sendComposedEmail()}>{working === 'compose-send' ? <Loader2 className="animate-spin" /> : <Send />}Send email</Button>
+          </> : <>
+            <Button variant="outline" disabled={working !== ''} onClick={() => {
+              if (!composeDirty || window.confirm('Discard this unsent email?')) resetCompose();
+            }}>Cancel</Button>
+            <Button disabled={working !== '' || !composedRecipients.to.length || composedRecipients.invalid.length > 0 || !composeSubject.trim() || !emailBodyToPlainText(composeBody)} onClick={reviewComposedEmail}>Review email</Button>
+          </>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1564,7 +1749,7 @@ function ReminderEditor({
 
 function CalendarPane({
   connections, connectionId, setConnectionId, calendars, calendarId, setCalendarId,
-  events, start, setStart, end, setEnd, loading, error, refresh, useEvent
+  events, start, setStart, end, setEnd, loading, error, errorCode, reconnect, reconnecting, refresh, useEvent
 }: {
   connections: AssistantConnection[];
   connectionId: string;
@@ -1579,9 +1764,15 @@ function CalendarPane({
   setEnd: (value: string) => void;
   loading: boolean;
   error: string;
+  errorCode: string;
+  reconnect: (provider: 'google' | 'microsoft') => Promise<void>;
+  reconnecting: boolean;
   refresh: () => void;
   useEvent: (event: AssistantCalendarEvent, documentType: 'meeting_pack' | 'scheduling_proposal') => void;
 }) {
+  const selectedConnection = connections.find((connection) => connection.id === connectionId) || null;
+  const calendarPermissionRequired = Boolean(selectedConnection)
+    && (!connectionHasCalendarAccess(selectedConnection) || errorCode === 'NYLAS_CALENDAR_SCOPE_REQUIRED');
   return <div className="mt-4 space-y-4">
     <Card>
       <CardHeader className="border-b">
@@ -1618,7 +1809,15 @@ function CalendarPane({
       </CardContent>
     </Card>
 
-    {error && <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert">{error}</div>}
+    {calendarPermissionRequired && selectedConnection ? <div className="flex flex-col justify-between gap-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center" role="alert">
+      <div className="flex items-start gap-3">
+        <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+        <div><p className="font-medium">Calendar permission is not connected</p><p className="mt-1 text-amber-900">Reconnect {selectedConnection.email} and approve read-only calendar access. Email access will remain connected.</p></div>
+      </div>
+      <Button type="button" size="sm" variant="outline" className="shrink-0 border-amber-400 bg-white" disabled={reconnecting} onClick={() => void reconnect(selectedConnection.provider === 'microsoft' ? 'microsoft' : 'google')}>
+        {reconnecting ? <Loader2 className="animate-spin" /> : <CalendarDays />}Reconnect mailbox
+      </Button>
+    </div> : error && <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert">{error}</div>}
     <Card>
       <CardHeader className="border-b"><CardTitle>Events</CardTitle><CardDescription>Use an event as read-only evidence for a meeting pack or scheduling proposal.</CardDescription></CardHeader>
       <CardContent className="p-0">
@@ -1676,7 +1875,8 @@ function ServiceStatus({ ready, text }: { ready: boolean; text: string }) {
 }
 
 function MailboxThreadList({ activeConnection, connections, selectedConnection, setSelectedConnection, configured, connect, disconnect, working,
-  search, setSearch, filter, setFilter, threads, selectedThread, selectThread, loading, error, retry, nextCursor, loadingMore, loadMore, mobileView }: {
+  search, setSearch, filter, setFilter, threads, selectedThread, selectThread, loading, error, retry, nextCursor, loadingMore, loadMore, mobileView,
+  compose, canCompose }: {
   activeConnection: AssistantConnection | null; connections: AssistantConnection[]; selectedConnection: string;
   setSelectedConnection: (id: string) => void; configured: boolean;
   connect: (provider: 'google' | 'microsoft') => Promise<void>; disconnect: (connection: AssistantConnection) => Promise<void>; working: string;
@@ -1684,6 +1884,7 @@ function MailboxThreadList({ activeConnection, connections, selectedConnection, 
   filter: MailboxThreadFilter; setFilter: (value: MailboxThreadFilter) => void;
   selectThread: (id: string) => void; loading: boolean; error: string; retry: () => void;
   nextCursor: string | null; loadingMore: boolean; loadMore: () => void; mobileView: MobileMailboxView;
+  compose: () => void; canCompose: boolean;
 }) {
   return <section className={cn(
     'min-w-0 flex-col border-r bg-card md:flex md:w-[340px] md:shrink-0 xl:w-[360px]',
@@ -1712,6 +1913,9 @@ function MailboxThreadList({ activeConnection, connections, selectedConnection, 
           </div>
         </details>
       </div>
+      <Button type="button" className="mb-3 w-full" size="sm" variant="outline" disabled={!activeConnection || working !== ''} onClick={compose}>
+        <MailPlus />{canCompose ? 'Compose email' : 'Enable sending'}
+      </Button>
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

@@ -8,10 +8,11 @@ import { completeWithAi } from './aiProvider.js';
 import { currentSessionUser } from './auth.js';
 import { config } from './config.js';
 import { publishEvent } from './events.js';
+import { EsignError, getOwnedCompletedDocumentArtifact, recordEsignAudit } from './esign.js';
 import { getKnowledgeGraph, retrieveKnowledge } from './knowledgeClient.js';
 import { knowledgeJobRunner } from './knowledgeJobs.js';
 import {
-  auditKnowledge, createKnowledgeBase, createKnowledgeDocuments, getKnowledgeBase, getKnowledgeDocument,
+  auditKnowledge, createKnowledgeBase, createKnowledgeBinaryDocument, createKnowledgeDocuments, getKnowledgeBase, getKnowledgeDocument,
   getKnowledgeJob, knowledgeQueueStatus, listKnowledgeAudit, listKnowledgeBases,
   knowledgeJobAudienceUserId, listKnowledgeDocuments, listKnowledgeJobs, KnowledgeError, queueKnowledgeBaseDelete,
   queueKnowledgeDocumentDelete, queueKnowledgeDocumentReindex, replaceSurveyKnowledgeBases,
@@ -19,7 +20,7 @@ import {
   type KnowledgeCitation, type KnowledgeDocumentRecord, type KnowledgeJobRecord
 } from './knowledgeRepository.js';
 import { resolveRequestSpace, SpaceError } from './spaces.js';
-import { consumeDirectAiAction, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
+import { assertSubscriptionFeature, consumeDirectAiAction, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import { TerraError } from './terraClient.js';
 
 const router = express.Router();
@@ -65,6 +66,7 @@ function sendKnowledgeError(response: express.Response, error: unknown) {
   if (error instanceof z.ZodError) return response.status(400).json({ error: 'Validation failed.', details: error.issues });
   if (error instanceof KnowledgeError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof SpaceError) return response.status(error.status).json({ error: error.message, code: error.code });
+  if (error instanceof EsignError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof SubscriptionEntitlementError) {
     return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
   }
@@ -310,6 +312,46 @@ router.get('/:id/documents', (request, response) => {
 
 router.post('/:id/documents', (request, response, next) => {
   knowledgeUpload.array('files', 25)(request, response, (error) => error ? next(error) : void uploadDocuments(request, response));
+});
+
+router.post('/:id/agreements/:envelopeId/artifacts/:artifactId', (request, response) => {
+  try {
+    const { user, space, knowledgeBase } = requireVisibleBase(request);
+    assertSubscriptionFeature(space.id, 'agreements');
+    const artifact = getOwnedCompletedDocumentArtifact(
+      String(request.params.envelopeId), String(request.params.artifactId), space.id
+    );
+    const result = createKnowledgeBinaryDocument({
+      spaceId: space.id,
+      knowledgeBaseId: knowledgeBase.id,
+      userId: user.id,
+      originalName: artifact.fileName,
+      mimeType: artifact.mimeType,
+      bytes: artifact.bytes,
+      idempotencyKey: requestIdempotencyKey(request),
+      metadata: {
+        source: 'signed_agreement',
+        envelopeId: artifact.envelopeId,
+        artifactId: artifact.id,
+        artifactSha256: artifact.sha256
+      }
+    });
+    recordEsignAudit(artifact.envelopeId, 'knowledge.document_added', {
+      userId: user.id, actorType: 'user', ip: request.ip || null,
+      userAgent: String(request.headers['user-agent'] || '').slice(0, 500) || null
+    }, { knowledgeBaseId: knowledgeBase.id, knowledgeDocumentId: result.document.id, deduplicated: result.deduplicated });
+    if (result.job) {
+      publishEvent('knowledge-job', result.job, space.id, knowledgeJobAudienceUserId(result.job));
+      void knowledgeJobRunner.pump();
+    }
+    publishEvent('data-changed', { reason: 'signed-agreement-added-to-knowledge' }, space.id);
+    return response.status(result.job ? 202 : 200).json({
+      document: documentResponse(result.document, result.job ? [result.job] : []),
+      job: result.job,
+      deduplicated: result.deduplicated,
+      statusUrl: result.job ? `/api/knowledge-bases/${knowledgeBase.id}/indexing-jobs` : null
+    });
+  } catch (error) { return sendKnowledgeError(response, error); }
 });
 
 async function uploadDocuments(request: express.Request, response: express.Response) {

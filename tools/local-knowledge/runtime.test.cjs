@@ -10,7 +10,7 @@ const { createReplayGuard, signRequest, tenantDatabaseName, verifyRequest } = re
 const {
   BENCHMARK_CLEANUP_CONFIRMATION, blendRetrievalScore, chunkText, createKnowledgeRuntime, groundedMentions,
   normalizeRawRerankerScore, purgeKnowledgeEvidence, rerank,
-  selectDeclaredBindVars, upstreamResponseError, validateRetrieveInput, validateTestCleanupInput, vectorIndexState, weightedReciprocalRankFusion,
+  selectDeclaredBindVars, upstreamResponseError, validateRetrieveInput, validateScanInput, validateTestCleanupInput, vectorIndexState, weightedReciprocalRankFusion,
 } = require('./runtime.cjs');
 
 test('AQL requests send exactly their declared bind parameters', () => {
@@ -54,6 +54,21 @@ test('retrieval enforces five bases and graph depth two', () => {
   assert.equal(validateRetrieveInput({ ...base, knowledgeBases }).knowledgeBases.length, 5);
   assert.throws(() => validateRetrieveInput({ ...base, knowledgeBases: [...knowledgeBases, { id: 'base_6', indexVersion: 1 }] }), /1 to 5/);
   assert.throws(() => validateRetrieveInput({ ...base, knowledgeBases, graphDepth: 3 }), /between 0 and 2/);
+});
+
+test('corpus scanning is bounded and the static query retains tenant, base, document, and version filters', () => {
+  const input = validateScanInput({ requestId: 'scan_1', spaceId: 'space_1', knowledgeBaseId: 'base_1',
+    documentId: 'document_1', indexVersion: 4, offset: 32, limit: 16 });
+  assert.deepEqual(input, { requestId: 'scan_1', spaceId: 'space_1', knowledgeBaseId: 'base_1',
+    documentId: 'document_1', indexVersion: 4, offset: 32, limit: 16 });
+  assert.throws(() => validateScanInput({ ...input, offset: -1 }), /non-negative integer/);
+  assert.throws(() => validateScanInput({ ...input, limit: 51 }), /positive integer/);
+  assert.match(AQL.scanDocumentChunks, /chunk\.spaceId == @spaceId/);
+  assert.match(AQL.scanDocumentChunks, /chunk\.knowledgeBaseId == @knowledgeBaseId/);
+  assert.match(AQL.scanDocumentChunks, /chunk\.documentId == @documentId/);
+  assert.match(AQL.scanDocumentChunks, /chunk\.indexVersion <= @indexVersion/);
+  assert.match(AQL.scanDocumentChunks, /LIMIT @offset, @limit/);
+  assert.doesNotMatch(AQL.scanDocumentChunks, /embedding/);
 });
 
 test('structure-aware chunking preserves headings, pages, tables, overlap, and deterministic hashes', () => {

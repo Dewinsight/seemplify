@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react';
-import { Link, NavLink, useLocation } from '@/lib/router';
+import { Link, Navigate, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
 import { cn } from '@/lib/utils';
@@ -15,22 +15,36 @@ import {
   type AiProviderState
 } from '@/lib/aiProvider';
 import { tutorialForPath } from '@/lib/tutorials';
-import type { AuthSession, PendingSpaceInvitation, SpaceSession } from '@/types';
+import type { AuthSession, PendingSpaceInvitation, SpaceSession, SubscriptionFeatures } from '@/types';
 
-const navigation = [
+type SubscriptionFeature = keyof SubscriptionFeatures;
+
+const navigation: Array<{ to: string; label: string; icon: typeof Gauge; end?: boolean; feature?: SubscriptionFeature }> = [
   { to: '/', label: 'Overview', icon: Gauge, end: true },
-  { to: '/surveys', label: 'Surveys', icon: ClipboardList },
-  { to: '/campaigns', label: 'Campaigns', icon: Megaphone },
-  { to: '/agreements', label: 'Agreements', icon: FileSignature },
-  { to: '/social-listening', label: 'Social listening', icon: Radar },
-  { to: '/intelligence', label: 'Intelligence', icon: BrainCircuit },
-  { to: '/assistant', label: 'Personal assistant', icon: MailCheck },
-  { to: '/knowledge-bases', label: 'Knowledge bases', icon: BookOpenText },
-  { to: '/journeys', label: 'Journey maps', icon: Route },
-  { to: '/ai-queue', label: 'AI queue', icon: Sparkles },
-  { to: '/tickets', label: 'Service recovery', icon: Inbox },
+  { to: '/surveys', label: 'Surveys', icon: ClipboardList, feature: 'surveys' },
+  { to: '/campaigns', label: 'Campaigns', icon: Megaphone, feature: 'campaigns' },
+  { to: '/agreements', label: 'Agreements', icon: FileSignature, feature: 'agreements' },
+  { to: '/social-listening', label: 'Social listening', icon: Radar, feature: 'socialListening' },
+  { to: '/intelligence', label: 'Intelligence', icon: BrainCircuit, feature: 'terra' },
+  { to: '/assistant', label: 'Personal assistant', icon: MailCheck, feature: 'terra' },
+  { to: '/knowledge-bases', label: 'Knowledge bases', icon: BookOpenText, feature: 'knowledgeBases' },
+  { to: '/journeys', label: 'Journey maps', icon: Route, feature: 'terra' },
+  { to: '/ai-queue', label: 'AI queue', icon: Sparkles, feature: 'terra' },
+  { to: '/tickets', label: 'Service recovery', icon: Inbox, feature: 'serviceRecovery' },
   { to: '/settings/space', label: 'Space settings', icon: Settings2 }
 ];
+
+function featureEnabled(session: AuthSession | null, feature?: SubscriptionFeature) {
+  if (!feature) return true;
+  if (!session) return false;
+  return session.subscription ? session.subscription.features[feature] === true : true;
+}
+
+function routeFeature(path: string): SubscriptionFeature | undefined {
+  return navigation
+    .filter((item) => item.feature && (path === item.to || path.startsWith(`${item.to}/`)))
+    .sort((left, right) => right.to.length - left.to.length)[0]?.feature;
+}
 
 function Brand() {
   return <Link to="/" className="flex h-16 shrink-0 items-center gap-3 border-b px-5">
@@ -120,7 +134,7 @@ function SidebarContent({ close, runtimeState, runtimeLabel, session, switching,
       </div>
     </div>
     <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary navigation">
-      {navigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={close} className={({ isActive }) => cn('flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', isActive && 'bg-secondary text-secondary-foreground')}>
+      {navigation.filter((item) => featureEnabled(session, item.feature)).map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={close} className={({ isActive }) => cn('flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', isActive && 'bg-secondary text-secondary-foreground')}>
         <Icon className="h-4 w-4" />{label}
       </NavLink>)}
     </nav>
@@ -131,7 +145,7 @@ function SidebarContent({ close, runtimeState, runtimeLabel, session, switching,
         <div className="mt-0.5 truncate text-[11px] text-muted-foreground" title={session?.user?.email || ''}>{session?.user?.email || 'Loading account…'}</div>
       </Link>
       <Link to="/my-documents" onClick={close} className="mb-1 flex h-9 items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"><FileCheck2 className="h-4 w-4" />My signed documents</Link>
-      <Link
+      {featureEnabled(session, 'terra') && <Link
         to="/ai-queue"
         onClick={close}
         data-testid="sidebar-runtime-status"
@@ -156,7 +170,7 @@ function SidebarContent({ close, runtimeState, runtimeLabel, session, switching,
           </span>
           <span data-testid="sidebar-runtime-provider" className="mt-0.5 block truncate text-[11px] text-muted-foreground" title={runtimeLabel}>{runtimeSummary(runtimeLabel)}</span>
         </span>
-      </Link>
+      </Link>}
       <button onClick={signOut} className="mt-1 flex h-9 w-full items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><LogOut className="h-4 w-4" />Sign out</button>
       <div className="flex gap-3 px-2 pt-1 text-[11px] text-muted-foreground"><Link className="hover:text-foreground hover:underline" to="/legal/terms">Terms</Link><Link className="hover:text-foreground hover:underline" to="/legal/privacy">Privacy</Link></div>
     </div>
@@ -176,7 +190,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const routePath = location.pathname.split(/[?#]/, 1)[0];
   const tutorial = tutorialForPath(routePath);
-  const providerGateExempt = routePath === '/settings/space';
+  const terraEnabled = featureEnabled(session, 'terra');
+  const providerGateExempt = routePath === '/settings/space' || Boolean(session && !terraEnabled);
   useEffect(() => { setMobileOpen(false); }, [routePath]);
   useEffect(() => {
     if (!mobileOpen) return;
@@ -243,7 +258,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           window.location.assign('/login');
           return;
         }
-        setSession((current) => current ? { ...current, permissions: next.permissions, pendingSpaceInvitations: next.pendingSpaceInvitations } : current);
+        setSession((current) => current ? {
+          ...current,
+          permissions: next.permissions,
+          pendingSpaceInvitations: next.pendingSpaceInvitations,
+          subscription: next.subscription
+        } : current);
       }).catch(() => undefined);
     }, 30_000);
     return () => window.clearInterval(timer);
@@ -292,16 +312,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const runtimeLabel = codexSelected
     ? `ChatGPT / Codex${runtime?.ai?.codex?.selectedModel ? ` · ${runtime.ai.codex.selectedModel}` : ''}`
     : runtime?.terra?.providerLabel || 'Experience AI';
-  const creationAction = routePath.startsWith('/agreements')
+  const creationAction = routePath.startsWith('/agreements') && featureEnabled(session, 'agreements')
     ? { to: '/agreements/new', label: 'New agreement' }
-    : routePath === '/' || routePath.startsWith('/surveys')
+    : (routePath === '/' || routePath.startsWith('/surveys')) && featureEnabled(session, 'surveys')
       ? { to: '/surveys/new', label: 'New survey' }
       : null;
   const providerSetupRequired = Boolean(providerState && requiresChatGptSetup(providerState));
   const providerExperienceReady = !providerStateLoading && !providerStateError && !providerSetupRequired;
   const providerGateBlocking = !providerGateExempt
     && (providerStateLoading || Boolean(providerStateError) || providerSetupRequired);
-  const guardedChildren = providerGateBlocking
+  const routeBlockedByPlan = Boolean(session && !featureEnabled(session, routeFeature(routePath)));
+  const guardedChildren = routeBlockedByPlan
+    ? <Navigate to="/" />
+    : providerGateBlocking
     ? (providerStateLoading
       ? <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="h-4 w-4 animate-spin" />Checking your AI runtime&hellip;</div>
       : null)

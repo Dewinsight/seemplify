@@ -1280,6 +1280,44 @@ export function createKnowledgeMarkdownDocument(input: {
   }
 }
 
+/**
+ * Stage trusted, server-produced bytes through the normal knowledge indexing
+ * pipeline. The caller is responsible for authorizing the source artifact;
+ * quotas, deduplication, immutable hashing, jobs, and audit remain enforced here.
+ */
+export function createKnowledgeBinaryDocument(input: {
+  spaceId: string; knowledgeBaseId: string; userId: string; originalName: string;
+  mimeType: string; bytes: Buffer; metadata?: Record<string, unknown>; idempotencyKey?: string;
+}) {
+  if (!input.bytes.length) throw new KnowledgeError('Generated knowledge content cannot be empty.', 400, 'KNOWLEDGE_DOCUMENT_EMPTY');
+  if (input.bytes.length > config.knowledgeMaxDocumentBytes) {
+    throw new KnowledgeError('The generated knowledge document exceeds the document size limit.', 413, 'KNOWLEDGE_DOCUMENT_TOO_LARGE');
+  }
+  const safeBase = path.basename(input.originalName).replace(/[\r\n]/gu, ' ').trim().slice(0, 252) || 'Signed agreement.pdf';
+  const extension = path.extname(safeBase).toLowerCase();
+  const originalName = extension ? safeBase : `${safeBase}.pdf`;
+  const storedFilename = `${crypto.randomUUID()}${extension || '.pdf'}`;
+  const stagedPath = path.resolve(config.knowledgeStorageDir, storedFilename);
+  const storageRoot = `${path.resolve(config.knowledgeStorageDir)}${path.sep}`.toLowerCase();
+  if (!stagedPath.toLowerCase().startsWith(storageRoot)) {
+    throw new KnowledgeError('The generated knowledge storage path is invalid.', 500, 'KNOWLEDGE_STORAGE_PATH_INVALID');
+  }
+  const sha256 = crypto.createHash('sha256').update(input.bytes).digest('hex');
+  fs.writeFileSync(stagedPath, input.bytes, { flag: 'wx' });
+  try {
+    const created = createKnowledgeDocument({
+      spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBaseId, userId: input.userId,
+      storedFilename, originalName, mimeType: input.mimeType, sizeBytes: input.bytes.length, sha256,
+      metadata: input.metadata || {}, idempotencyKey: input.idempotencyKey
+    });
+    if (created.deduplicated) fs.rmSync(stagedPath, { force: true });
+    return { ...created, sha256 };
+  } catch (error) {
+    fs.rmSync(stagedPath, { force: true });
+    throw error;
+  }
+}
+
 export function queueKnowledgeDocumentReindex(documentId: string, knowledgeBaseId: string, spaceId: string, userId: string, idempotencyKey?: string) {
   const replay = idempotentKnowledgeJob({ spaceId, knowledgeBaseId, documentId, requestedBy: userId,
     kind: 'document.reindex', idempotencyKey, values: {} });

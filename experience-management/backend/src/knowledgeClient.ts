@@ -101,6 +101,26 @@ const retrieveResponse = z.object({
   metrics: retrievalMetricsSchema
 });
 
+const scanResponse = z.object({
+  requestId: z.string().trim().min(1).max(300),
+  items: z.array(z.object({
+    sourceRef: z.string().trim().min(1).max(300),
+    knowledgeBaseId: z.string().trim().min(1).max(100),
+    documentId: z.string().trim().min(1).max(100),
+    documentName: z.string().trim().min(1).max(255),
+    indexVersion: z.number().int().positive(),
+    ordinal: z.number().int().nonnegative(),
+    text: z.string().min(1).max(20_000),
+    tokenEstimate: z.number().int().nonnegative().max(20_000),
+    page: z.number().int().positive().nullable().optional(),
+    section: z.string().trim().max(500).nullable().optional(),
+    contentHash: z.string().trim().max(128)
+  }).strict()).max(50),
+  offset: z.number().int().nonnegative(),
+  nextOffset: z.number().int().positive().nullable(),
+  complete: z.boolean()
+}).strict();
+
 const graphResponse = z.object({
   nodes: z.array(z.object({
     id: z.string().trim().min(1).max(300), type: z.string().trim().min(1).max(100),
@@ -326,6 +346,20 @@ export async function retrieveKnowledge(input: {
     citations.push({ ...citation, documentName: document.originalName });
   }
   return { citations, metrics: parsed.data.metrics };
+}
+
+export async function scanKnowledgeDocument(input: {
+  requestId: string; spaceId: string; knowledgeBaseId: string; documentId: string;
+  indexVersion: number; offset: number; limit: number;
+}) {
+  const raw = await postRuntime('/v1/scan', input, 120_000);
+  const parsed = scanResponse.safeParse(raw);
+  if (!parsed.success) throw invalidRuntimeOutput('knowledge scan result', parsed.error);
+  if (parsed.data.requestId !== input.requestId || parsed.data.offset !== input.offset) {
+    throw new KnowledgeError('The local knowledge runtime returned a mismatched corpus scan response.',
+      502, 'KNOWLEDGE_RUNTIME_OUTPUT_INVALID', false);
+  }
+  return parsed.data;
 }
 
 export async function deleteKnowledgeIndex(input: {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, BarChart3, BookOpenText, Check, CheckCircle2, CheckSquare, ChevronRight,
   CircleAlert, ClipboardList, Clock3, Copy, FileSearch, FileText, Layers3, Loader2,
-  MessageSquare, RefreshCw, Search, Send, Square, X
+  MessageSquare, Pause, Play, RefreshCw, Search, Send, Square, StopCircle, X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, json } from '@/lib/api';
@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import type { IntelligenceReport, IntelligenceSource, ResearchChatResult } from '@/types';
+import type { DeepAnalysisMode, DeepAnalysisRun, IntelligenceReport, IntelligenceSource, ResearchChatResult } from '@/types';
 
 type SourceFilter = 'all' | IntelligenceSource['type'] | 'selected';
 type ReportFilter = 'all' | IntelligenceReport['state'];
@@ -58,8 +58,11 @@ function countLabel(count: number, singular: string, plural = `${singular}s`) {
 export function IntelligencePage() {
   const [sources, setSources] = useState<IntelligenceSource[]>([]);
   const [reports, setReports] = useState<IntelligenceReport[]>([]);
+  const [deepRuns, setDeepRuns] = useState<DeepAnalysisRun[]>([]);
   const [selectedRefs, setSelectedRefs] = useState<string[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [selectedDeepRunId, setSelectedDeepRunId] = useState<string | null>(null);
+  const [analysisDepth, setAnalysisDepth] = useState<'fast' | DeepAnalysisMode>('fast');
   const [mode, setMode] = useState<'analysis' | 'chat'>('analysis');
   const [title, setTitle] = useState('Combined experience intelligence');
   const [objective, setObjective] = useState('Identify the strongest shared signals, disagreements, risks, and actions across the selected research.');
@@ -76,9 +79,10 @@ export function IntelligencePage() {
   const reportRequest = useRef({ fingerprint: '', key: '' });
 
   const load = useCallback(async () => {
-    const [sourceResult, reportResult] = await Promise.allSettled([
+    const [sourceResult, reportResult, deepResult] = await Promise.allSettled([
       api<IntelligenceSource[]>('/api/intelligence/sources'),
-      api<IntelligenceReport[]>('/api/intelligence/reports')
+      api<IntelligenceReport[]>('/api/intelligence/reports'),
+      api<DeepAnalysisRun[]>('/api/intelligence/deep-runs')
     ]);
     if (sourceResult.status === 'fulfilled') setSources(sourceResult.value);
     if (reportResult.status === 'fulfilled') {
@@ -86,7 +90,12 @@ export function IntelligencePage() {
       setSelectedReportId((current) => current && reportResult.value.some((report) => report.id === current)
         ? current : reportResult.value[0]?.id || null);
     }
-    const failures = [sourceResult, reportResult].filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
+    if (deepResult.status === 'fulfilled') {
+      setDeepRuns(deepResult.value);
+      setSelectedDeepRunId((current) => current && deepResult.value.some((run) => run.id === current)
+        ? current : deepResult.value[0]?.id || null);
+    }
+    const failures = [sourceResult, reportResult, deepResult].filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
     setError(failures.map((failure) => failure.reason instanceof Error ? failure.reason.message : 'Intelligence data could not load.').join(' '));
     setLoading(false);
   }, []);
@@ -114,15 +123,17 @@ export function IntelligencePage() {
   }, [historyFilter, historySearch, reports]);
 
   const selectedReport = reports.find((report) => report.id === selectedReportId) || null;
+  const selectedDeepRun = deepRuns.find((run) => run.id === selectedDeepRunId) || null;
   const selectedSources = selectedRefs.map((ref) => sources.find((source) => source.ref === ref)).filter(Boolean) as IntelligenceSource[];
   const availableSourceCount = sources.filter((source) => source.available !== false).length;
 
   function toggle(ref: string) {
     const source = sources.find((item) => item.ref === ref);
     if (source?.available === false) return;
+    const maximum = analysisDepth === 'fast' ? 12 : 50;
     setSelectedRefs((current) => current.includes(ref)
       ? current.filter((item) => item !== ref)
-      : current.length < 12 ? [...current, ref] : current);
+      : current.length < maximum ? [...current, ref] : current);
   }
 
   async function enableKnowledge(source: IntelligenceSource) {
@@ -131,7 +142,7 @@ export function IntelligencePage() {
     try {
       await updateKnowledgeBase(source.knowledgeBaseId, { terraContextEnabled: true });
       await load();
-      setSelectedRefs((current) => current.includes(source.ref) || current.length >= 12 ? current : [...current, source.ref]);
+      setSelectedRefs((current) => current.includes(source.ref) || current.length >= (analysisDepth === 'fast' ? 12 : 50) ? current : [...current, source.ref]);
       toast.success(`${source.title} can now be used by Terra and has been selected.`);
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : 'Terra context could not be enabled.');
@@ -139,20 +150,24 @@ export function IntelligencePage() {
   }
 
   async function createReport() {
-    if (selectedRefs.length < 2) return toast.error('Select at least two evidence sources.');
+    if (selectedRefs.length < (analysisDepth === 'fast' ? 2 : 1)) return toast.error(analysisDepth === 'fast' ? 'Select at least two evidence sources.' : 'Select at least one evidence source.');
     setWorking(true);
     try {
       const body = { title: title.trim(), objective: objective.trim(), sourceRefs: selectedRefs };
-      const fingerprint = JSON.stringify(body);
+      const fingerprint = JSON.stringify({ ...body, analysisDepth });
       if (reportRequest.current.fingerprint !== fingerprint) reportRequest.current = { fingerprint, key: crypto.randomUUID() };
-      const result = await api<{ report: IntelligenceReport }>('/api/intelligence/reports', {
-        ...json('POST', body), headers: { 'idempotency-key': reportRequest.current.key }
-      });
+      const result = analysisDepth === 'fast'
+        ? await api<{ report: IntelligenceReport }>('/api/intelligence/reports', {
+          ...json('POST', body), headers: { 'idempotency-key': reportRequest.current.key }
+        })
+        : await api<{ run: DeepAnalysisRun }>('/api/intelligence/deep-runs', {
+          ...json('POST', { ...body, mode: analysisDepth }), headers: { 'idempotency-key': reportRequest.current.key }
+        });
       reportRequest.current = { fingerprint: '', key: '' };
-      setSelectedReportId(result.report.id);
+      if ('report' in result) setSelectedReportId(result.report.id); else setSelectedDeepRunId(result.run.id);
       setSelectedRefs([]);
       await load();
-      toast.success('Combined intelligence queued durably.');
+      toast.success(analysisDepth === 'fast' ? 'Combined intelligence queued durably.' : `${analysisDepth === 'exhaustive' ? 'Exhaustive' : 'Deep'} analysis queued durably.`);
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'Could not queue combined intelligence.'); }
     finally { setWorking(false); }
   }
@@ -193,9 +208,11 @@ export function IntelligencePage() {
       />
 
       {mode === 'analysis'
-        ? <AnalysisBrief title={title} objective={objective} selectedSources={selectedSources} working={working} onTitle={setTitle} onObjective={setObjective} onRun={() => void createReport()} />
+        ? <AnalysisBrief title={title} objective={objective} selectedSources={selectedSources} working={working} depth={analysisDepth} onDepth={setAnalysisDepth} onTitle={setTitle} onObjective={setObjective} onRun={() => void createReport()} />
         : <div className="xl:sticky xl:top-20"><ResearchChat sourceRefs={selectedRefs} title="Ask the selected evidence" description="Terra answers from this evidence set only and cites the exact reports or indexed passages it used." /></div>}
     </div>
+
+    {mode === 'analysis' && deepRuns.length > 0 && <DeepAnalysisWorkspace runs={deepRuns} selected={selectedDeepRun} onSelect={setSelectedDeepRunId} onChanged={load} />}
 
     {mode === 'analysis' && <section className="space-y-4" aria-labelledby="saved-analysis-heading">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -283,12 +300,15 @@ function SourceGroup({ title, icon: Icon, sources, selected, toggle, enablingId,
   </section>;
 }
 
-function AnalysisBrief({ title, objective, selectedSources, working, onTitle, onObjective, onRun }: {
+function AnalysisBrief({ title, objective, selectedSources, working, depth, onDepth, onTitle, onObjective, onRun }: {
   title: string; objective: string; selectedSources: IntelligenceSource[]; working: boolean;
+  depth: 'fast' | DeepAnalysisMode; onDepth: (value: 'fast' | DeepAnalysisMode) => void;
   onTitle: (value: string) => void; onObjective: (value: string) => void; onRun: () => void;
 }) {
   const selectedCounts = sourceGroups.map((group) => ({ ...group, count: selectedSources.filter((source) => source.type === group.type).length }));
-  const ready = selectedSources.length >= 2 && title.trim().length >= 2 && objective.trim().length >= 3;
+  const minimum = depth === 'fast' ? 2 : 1;
+  const maximum = depth === 'fast' ? 12 : 50;
+  const ready = selectedSources.length >= minimum && title.trim().length >= 2 && objective.trim().length >= 3;
   return <section className="border bg-card xl:sticky xl:top-20" aria-labelledby="analysis-brief-heading">
     <header className="border-b px-4 py-4">
       <div className="flex items-center gap-2"><FileText className="h-4 w-4 text-muted-foreground" /><h2 id="analysis-brief-heading" className="text-sm font-semibold">Build an analysis</h2></div>
@@ -297,15 +317,55 @@ function AnalysisBrief({ title, objective, selectedSources, working, onTitle, on
     <div className="space-y-4 p-4">
       <div><Label className="field-label" htmlFor="intelligence-title">Report title</Label><Input id="intelligence-title" value={title} maxLength={180} onChange={(event) => onTitle(event.target.value)} /></div>
       <div><Label className="field-label" htmlFor="intelligence-objective">Analysis objective</Label><Textarea id="intelligence-objective" className="min-h-28 resize-y" value={objective} maxLength={1000} onChange={(event) => onObjective(event.target.value)} /></div>
+      <fieldset><legend className="field-label">Analysis depth</legend><div className="divide-y border">{([
+        ['fast', 'Fast', 'One retrieval and synthesis pass.'],
+        ['deep', 'Deep', 'Every selected document is partitioned and hierarchically analyzed.'],
+        ['exhaustive', 'Exhaustive', 'Deep analysis plus contradiction, coverage, and independent verification passes.']
+      ] as const).map(([value, label, description]) => <label className="flex cursor-pointer gap-3 px-3 py-2.5" key={value}><input type="radio" name="analysis-depth" value={value} checked={depth === value} onChange={() => onDepth(value)} /><span><span className="block text-xs font-medium">{label}</span><span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{description}</span></span></label>)}</div></fieldset>
       <div className="border-t pt-3">
-        <div className="mb-2 flex items-center justify-between text-xs"><span className="font-medium">Evidence set</span><span className="text-muted-foreground">{selectedSources.length} of 12</span></div>
+        <div className="mb-2 flex items-center justify-between text-xs"><span className="font-medium">Evidence set</span><span className="text-muted-foreground">{selectedSources.length} of {maximum}</span></div>
         <div className="divide-y border-y">{selectedCounts.map((item) => <div className="flex items-center gap-2 py-2 text-xs" key={item.type}><item.icon className="h-3.5 w-3.5 text-muted-foreground" /><span>{item.title}</span><span className={cn('ml-auto font-medium', item.count ? 'text-foreground' : 'text-muted-foreground')}>{item.count}</span></div>)}</div>
       </div>
     </div>
     <footer className="border-t p-4">
       <Button className="w-full" disabled={working || !ready} onClick={onRun}>{working ? <Loader2 className="animate-spin" /> : <FileSearch />}{working ? 'Queueing analysis' : 'Run analysis'}</Button>
-      <p className={cn('mt-2 text-center text-xs leading-5', selectedSources.length < 2 ? 'text-muted-foreground' : 'text-emerald-700')}>{selectedSources.length < 2 ? `Choose 2 or more sources · ${2 - selectedSources.length} still needed` : <><Check className="mr-1 inline h-3.5 w-3.5" />Ready to snapshot {selectedSources.length} sources</>}</p>
+      <p className={cn('mt-2 text-center text-xs leading-5', selectedSources.length < minimum ? 'text-muted-foreground' : 'text-emerald-700')}>{selectedSources.length < minimum ? `Choose ${minimum} or more source${minimum === 1 ? '' : 's'} · ${minimum - selectedSources.length} still needed` : <><Check className="mr-1 inline h-3.5 w-3.5" />Ready to snapshot {selectedSources.length} sources</>}</p>
     </footer>
+  </section>;
+}
+
+function DeepAnalysisWorkspace({ runs, selected, onSelect, onChanged }: {
+  runs: DeepAnalysisRun[]; selected: DeepAnalysisRun | null; onSelect: (id: string) => void; onChanged: () => Promise<void>;
+}) {
+  const [mutating, setMutating] = useState('');
+  async function mutate(action: 'pause' | 'resume' | 'cancel') {
+    if (!selected) return;
+    setMutating(action);
+    try {
+      await api(`/api/intelligence/deep-runs/${selected.id}/${action}`, json('POST', {}));
+      await onChanged();
+      toast.success(action === 'pause' ? 'Analysis paused.' : action === 'resume' ? 'Analysis resumed.' : 'Analysis cancelled.');
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : `Could not ${action} the analysis.`); }
+    finally { setMutating(''); }
+  }
+  const estimate = selected?.estimate || {};
+  const duration = estimate.estimatedDurationSeconds ? Math.max(1, Math.round(estimate.estimatedDurationSeconds / 60)) : null;
+  const findings = Array.isArray(selected?.result?.findings) ? selected.result.findings : [];
+  const recommendations = Array.isArray(selected?.result?.recommendations) ? selected.result.recommendations : [];
+  return <section className="space-y-4" aria-labelledby="deep-analysis-heading">
+    <div><h2 id="deep-analysis-heading" className="section-title">Deep analysis runs</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Long-running corpus analysis with bounded partitions, checkpoints, and measured coverage.</p></div>
+    <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[292px_minmax(0,1fr)]">
+      <aside className="max-h-[520px] divide-y overflow-y-auto border bg-card" aria-label="Deep analysis history">{runs.map((run) => <button type="button" className={cn('flex w-full items-start gap-3 px-3 py-3 text-left hover:bg-muted/30', selected?.id === run.id && 'bg-accent/35')} key={run.id} onClick={() => onSelect(run.id)}><span className="mt-1">{run.state === 'completed' ? <CheckCircle2 className="h-4 w-4 text-emerald-700" /> : run.state === 'failed' || run.state === 'cancelled' ? <CircleAlert className="h-4 w-4 text-destructive" /> : run.state === 'paused' ? <Pause className="h-4 w-4 text-muted-foreground" /> : <Loader2 className="h-4 w-4 animate-spin text-amber-700" />}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{run.title}</span><span className="mt-1 block text-xs capitalize text-muted-foreground">{run.mode} · {run.stage.replaceAll('_', ' ')}</span><span className="mt-1 block text-[11px] text-muted-foreground">{run.completedPartitions} of {run.totalPartitions} steps · {run.progress}%</span></span></button>)}</aside>
+      {selected && <div className="border bg-card">
+        <header className="flex flex-col justify-between gap-3 border-b px-4 py-4 sm:flex-row sm:items-start"><div><div className="flex items-center gap-2"><FileSearch className="h-4 w-4 text-muted-foreground" /><h3 className="text-sm font-semibold">{selected.title}</h3><Badge variant={selected.state === 'completed' ? 'success' : selected.state === 'failed' || selected.state === 'cancelled' ? 'destructive' : 'warning'}>{selected.state}</Badge></div><p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">{selected.objective}</p></div><div className="flex gap-2">{['queued', 'processing'].includes(selected.state) && <Button size="sm" variant="outline" disabled={Boolean(mutating)} onClick={() => void mutate('pause')}><Pause />Pause</Button>}{selected.state === 'paused' && <Button size="sm" variant="outline" disabled={Boolean(mutating)} onClick={() => void mutate('resume')}><Play />Resume</Button>}{['queued', 'processing', 'paused'].includes(selected.state) && <Button size="sm" variant="outline" disabled={Boolean(mutating)} onClick={() => void mutate('cancel')}><StopCircle />Cancel</Button>}</div></header>
+        <div className="space-y-5 p-4">
+          <div><div className="mb-2 flex justify-between text-xs"><span className="font-medium capitalize">{selected.stage.replaceAll('_', ' ')}</span><span className="text-muted-foreground">{selected.progress}%</span></div><progress className="h-2 w-full" max={100} value={selected.progress} /></div>
+          <dl className="grid gap-x-6 gap-y-3 border-y py-3 text-xs sm:grid-cols-2 lg:grid-cols-4"><div><dt className="text-muted-foreground">Estimated input</dt><dd className="mt-1 font-medium">{Number(estimate.estimatedInputTokens || 0).toLocaleString()} tokens</dd></div><div><dt className="text-muted-foreground">Planned calls</dt><dd className="mt-1 font-medium">{Number(estimate.estimatedCalls || 0).toLocaleString()}</dd></div><div><dt className="text-muted-foreground">Map partitions</dt><dd className="mt-1 font-medium">{Number(estimate.mapPartitions || 0).toLocaleString()}</dd></div><div><dt className="text-muted-foreground">Initial estimate</dt><dd className="mt-1 font-medium">{duration ? `About ${duration} min` : 'Calculating'}</dd></div></dl>
+          {selected.error && <div className="border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">{selected.error}</div>}
+          {selected.result && <div className="space-y-5"><div><h4 className="text-sm font-semibold">Executive summary</h4><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{selected.result.executiveSummary}</p></div>{findings.length > 0 && <div><h4 className="text-sm font-semibold">Findings</h4><div className="mt-2 divide-y border-y">{findings.map((finding: any, index: number) => <article className="py-3" key={`${finding.kind}-${index}`}><div className="flex justify-between gap-3"><span className="text-sm font-medium">{finding.statement}</span><span className="shrink-0 text-xs text-muted-foreground">{Math.round(Number(finding.confidence || 0) * 100)}%</span></div><p className="mt-1 text-xs leading-5 text-muted-foreground">{finding.significance}</p><div className="mt-2 text-[11px] text-muted-foreground">{finding.citations?.length || 0} citation{finding.citations?.length === 1 ? '' : 's'}</div></article>)}</div></div>}{recommendations.length > 0 && <div><h4 className="text-sm font-semibold">Recommendations</h4><ol className="mt-2 divide-y border-y">{recommendations.map((item: any, index: number) => <li className="py-3 text-sm" key={index}><span className="font-medium">{item.action}</span><p className="mt-1 text-xs leading-5 text-muted-foreground">{item.rationale}</p></li>)}</ol></div>}</div>}
+        </div>
+      </div>}
+    </div>
   </section>;
 }
 

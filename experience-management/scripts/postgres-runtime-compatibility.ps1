@@ -24,6 +24,8 @@ function Test-ProjectSupportsPostgresRuntimeVersion([string]$ProjectDir, [int]$R
   if ($RequiredVersion -ge 7 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0007_assistant_reviewed_replies.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 8 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0008_admin_control_plane.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 9 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0009_managed_subscription_plans.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 10 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0010_deep_corpus_analysis.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 11 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0011_bounded_active_request_indexes.sql') -PathType Leaf)) { return $false }
   return $true
 }
 

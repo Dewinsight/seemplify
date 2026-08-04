@@ -84,10 +84,29 @@ test('runtime schema 3 migration is additive and carries durable rollout state',
   ]) assert.match(migration, new RegExp(contract, 'u'));
   assert.match(migration, /ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS/u);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 9,
-    maximumRuntimeSchemaVersion: 9,
+    minimumRuntimeSchemaVersion: 11,
+    maximumRuntimeSchemaVersion: 11,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
+});
+
+test('runtime schema 11 bounds active AI request indexes for PostgreSQL', () => {
+  const migrationRoot = path.resolve(process.cwd(), 'migrations', 'postgres');
+  const migration = fs.readFileSync(path.join(migrationRoot, '0011_bounded_active_request_indexes.sql'), 'utf8');
+  const migrator = fs.readFileSync(path.resolve(process.cwd(), '..', 'scripts', 'migrate-sqlite-to-postgres.mjs'), 'utf8');
+  for (const index of [
+    'social_reply_drafts_one_active_request',
+    'social_intelligence_reports_one_active_request',
+    'intelligence_reports_one_active_request'
+  ]) {
+    assert.match(migration, new RegExp(`DROP INDEX IF EXISTS ${index}`, 'u'));
+    assert.match(migration, new RegExp(`CREATE UNIQUE INDEX ${index}`, 'u'));
+    assert.match(migrator, new RegExp(`${index}: \\[`, 'u'));
+  }
+  assert.match(migration, /md5\(mention_ids_json\)/u);
+  assert.match(migration, /md5\(instructions\)/u);
+  assert.match(migration, /md5\(source_refs_json\)/u);
+  assert.doesNotMatch(migration, /title,mention_ids_json\)/u);
 });
 
 test('ordinary knowledge dispatch SQL is deterministic and PostgreSQL portable', () => {

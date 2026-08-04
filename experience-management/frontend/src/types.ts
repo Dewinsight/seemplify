@@ -11,6 +11,17 @@ export interface AuthSession {
   emailVerified: boolean; onboardingRequired: boolean; profile: UserProfile | null;
   permissions?: { platformAdmin: boolean; rootPlatformAdmin: boolean; platformRoles: Array<'superadmin' | 'support' | 'billing_approver' | 'analyst'> };
   spaces: SpaceSummary[]; activeSpace: SpaceSummary | null; pendingSpaceInvitations: PendingSpaceInvitation[];
+  subscription?: {
+    planCode: 'starter' | 'team' | 'enterprise'; planName: string;
+    features: SubscriptionFeatures;
+    limits: { seats: number; activeSurveys: number; monthlyAiActions: number; knowledgeStorageBytes: number };
+    status: 'active' | 'suspended' | 'cancelled' | null;
+    source: 'managed' | 'managed_fallback' | 'legacy_grandfathered';
+  } | null;
+}
+export interface SubscriptionFeatures {
+  surveys: boolean; campaigns: boolean; agreements: boolean; serviceRecovery: boolean;
+  socialListening: boolean; knowledgeBases: boolean; terra: boolean;
 }
 export interface SpaceSession { spaces: SpaceSummary[]; activeSpace: SpaceSummary }
 export interface PendingSpaceInvitation {
@@ -133,6 +144,18 @@ export interface IntelligenceSource {
   available?: boolean; disabledReason?: string; knowledgeBaseId?: string; documentCount?: number; terraContextEnabled?: boolean;
 }
 export interface IntelligenceReport { id: string; title: string; objective: string; sourceRefs: { survey: string[]; social: string[] }; knowledgeBaseIds: string[]; state: 'queued' | 'completed' | 'failed'; result: any; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
+export type DeepAnalysisMode = 'deep' | 'exhaustive';
+export type DeepAnalysisState = 'queued' | 'processing' | 'paused' | 'completed' | 'failed' | 'cancelled';
+export interface DeepAnalysisRun {
+  id: string; title: string; objective: string; mode: DeepAnalysisMode; state: DeepAnalysisState; stage: string; progress: number;
+  sourceRefs: string[]; knowledgeBaseIds: string[]; manifest: Record<string, any>;
+  estimate: { estimatedInputTokens?: number; mapPartitions?: number; reductionPartitions?: number; specialistPartitions?: number;
+    estimatedCalls?: number; estimatedDurationSeconds?: number; estimatedDurationRangeSeconds?: number[] };
+  result: any; runtime: any; error: string | null; totalPartitions: number; completedPartitions: number; failedPartitions: number;
+  partitions?: Array<{ id: string; ordinal: number; level: number; kind: string; state: string; tokenEstimate: number; error: string | null }>;
+  evidence?: Array<{ id: string; kind: string; statement: string; confidence: number; citations: Array<{ sourceRef: string; excerpt: string }> }>;
+  createdAt: string; startedAt: string | null; completedAt: string | null; updatedAt: string;
+}
 export interface ResearchChatCitation {
   sourceRef: string; title: string; kind: 'survey' | 'social' | 'knowledge' | 'intelligence'; excerpt: string;
   knowledgeBaseId?: string; documentId?: string; documentName?: string; page?: number | null; section?: string | null;
@@ -194,12 +217,12 @@ export interface AssistantRuntime {
   latencyMs?: number; queueWaitMs?: number;
 }
 export interface AssistantRun {
-  id: string; jobId: string; kind: AssistantRunKind; state: 'queued' | 'processing' | 'completed' | 'failed';
+  id: string; jobId: string | null; kind: AssistantRunKind; state: 'queued' | 'processing' | 'completed' | 'failed';
   stage: string; progress: number; attempt?: number; connectionId?: string | null; subjectRef?: string | null; sourceRefs?: string[];
   knowledgeBaseIds?: string[]; documentType?: AssistantDocumentType | null; title?: string | null;
   output?: AssistantOutput | null; runtime?: AssistantRuntime | null; draft?: AssistantDraft | null;
   generatedDraft?: Pick<AssistantDraft, 'subject' | 'body'> | null; advisoryOnly?: boolean; externalDispatched?: boolean;
-  delivery?: { sentAt: string; messageId?: string | null; recipients: string[]; mode: 'reply' | 'reply_all' } | null;
+  delivery?: { sentAt: string; messageId?: string | null; recipients: string[]; mode: 'reply' | 'reply_all' | 'compose' } | null;
   error: string | null; createdAt: string; startedAt?: string | null; completedAt: string | null; updatedAt: string;
 }
 export interface AssistantOverview {

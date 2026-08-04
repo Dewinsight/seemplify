@@ -770,6 +770,8 @@ function requestedFeature(request: Request): SubscriptionFeature | null {
   if (path.includes('/esign')) return 'agreements';
   if (path.includes('/campaigns')) return 'campaigns';
   if (path.includes('/tickets')) return 'serviceRecovery';
+  if (path.includes('/assistant') || path.includes('/intelligence') || path.includes('/journeys')
+    || path.includes('/ai-provider')) return 'terra';
   if (path.includes('/ai/') || path.endsWith('/ai') || path.includes('/runtime')) return 'terra';
   if (path.includes('/surveys') || path.includes('/collectors') || path.includes('/responses')) return 'surveys';
   return null;

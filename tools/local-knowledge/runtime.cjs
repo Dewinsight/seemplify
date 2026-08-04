@@ -218,6 +218,22 @@ function validateRetrieveInput(input, config = CONFIG) {
   };
 }
 
+function validateScanInput(input) {
+  const offset = Number(input?.offset ?? 0);
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw runtimeError('offset must be a non-negative integer.', { code: 'INVALID_REQUEST', status: 400 });
+  }
+  return {
+    requestId: assertId(input?.requestId, 'requestId'),
+    spaceId: assertId(input?.spaceId, 'spaceId'),
+    knowledgeBaseId: assertId(input?.knowledgeBaseId, 'knowledgeBaseId'),
+    documentId: assertId(input?.documentId, 'documentId'),
+    indexVersion: positiveInteger(input?.indexVersion, 'indexVersion'),
+    offset,
+    limit: positiveInteger(input?.limit, 'limit', 50),
+  };
+}
+
 function validateDeleteInput(input) {
   return {
     jobId: assertId(input?.jobId, 'jobId'),
@@ -1533,6 +1549,34 @@ function createKnowledgeRuntime(options = {}) {
     });
   }
 
+  async function scan(rawInput) {
+    const input = validateScanInput(rawInput);
+    return queue.schedule('retrieve', input.requestId, async () => {
+      const database = await tenant(input.spaceId);
+      const chunks = await app.query(database, AQL.scanDocumentChunks, input);
+      const items = chunks.map((chunk) => ({
+        sourceRef: `${chunk.knowledgeBaseId}:${chunk.documentId}:${chunk._key}`,
+        knowledgeBaseId: chunk.knowledgeBaseId,
+        documentId: chunk.documentId,
+        documentName: chunk.documentName,
+        indexVersion: Number(chunk.indexVersion),
+        ordinal: Number(chunk.ordinal),
+        text: String(chunk.text || ''),
+        tokenEstimate: Math.max(0, Number(chunk.tokenEstimate || 0)),
+        page: chunk.page == null ? null : Number(chunk.page),
+        section: chunk.section == null ? null : String(chunk.section),
+        contentHash: String(chunk.contentHash || ''),
+      }));
+      return {
+        requestId: input.requestId,
+        items,
+        offset: input.offset,
+        nextOffset: items.length === input.limit ? input.offset + items.length : null,
+        complete: items.length < input.limit,
+      };
+    });
+  }
+
   async function remove(rawInput) {
     const input = validateDeleteInput(rawInput);
     return queue.schedule('delete', input.jobId, async () => {
@@ -1674,11 +1718,11 @@ function createKnowledgeRuntime(options = {}) {
     return { closed: true, drained };
   }
 
-  return { index, backfill, retrieve, remove, graph, status, migrationControl, start, close, cleanupTestTenant, queue, tenantDatabaseName: (spaceId) => tenantDatabaseName(spaceId, config.database.prefix) };
+  return { index, backfill, retrieve, scan, remove, graph, status, migrationControl, start, close, cleanupTestTenant, queue, tenantDatabaseName: (spaceId) => tenantDatabaseName(spaceId, config.database.prefix) };
 }
 
 module.exports = {
   ArangoClient, BENCHMARK_CLEANUP_CONFIRMATION, BENCHMARK_SPACE_PATTERN, GRAPH_SCHEMA, WorkQueue, canonicalizeGraph, chunkText, createKnowledgeRuntime, ensureTenantDatabase,
-  blendRetrievalScore, embeddingProfiles, extractDocument, extractGraph, groundedMentions, normalizeRawRerankerScore, purgeKnowledgeEvidence, rerank, resolveEmbeddingProfile, runtimeError, selectDeclaredBindVars, upstreamResponseError, validateBackfillInput, validateDeleteInput, validateGraphInput, validateIndexInput, validateMigrationControlInput, validateRetrieveInput, validateTestCleanupInput,
+  blendRetrievalScore, embeddingProfiles, extractDocument, extractGraph, groundedMentions, normalizeRawRerankerScore, purgeKnowledgeEvidence, rerank, resolveEmbeddingProfile, runtimeError, selectDeclaredBindVars, upstreamResponseError, validateBackfillInput, validateDeleteInput, validateGraphInput, validateIndexInput, validateMigrationControlInput, validateRetrieveInput, validateScanInput, validateTestCleanupInput,
   vectorIndexState, weightedReciprocalRankFusion,
 };

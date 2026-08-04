@@ -127,7 +127,7 @@ esignRouter.post('/envelopes/:id/recipients/:recipientId/resend', (request, resp
 esignRouter.post('/envelopes/:id/void', (request, response) => { try { const scope = authenticatedScope(request); const input = z.object({ reason: z.string().trim().min(2).max(1000) }).parse(request.body); return response.json(voidEnvelope(String(request.params.id), scope.spaceId, scope.userId, input.reason, actor(request))); } catch (caught) { return error(response, caught); } });
 esignRouter.post('/envelopes/:id/clone', (request, response) => { try { const scope = authenticatedScope(request); const input = z.object({ title: z.string().trim().min(2).max(180).optional() }).parse(request.body || {}); return response.status(201).json(cloneEnvelope(String(request.params.id), scope.spaceId, scope.userId, input.title, actor(request))); } catch (caught) { return error(response, caught); } });
 esignRouter.post('/envelopes/:id/retry-finalization', (request, response) => { try { const scope = authenticatedScope(request); return response.status(202).json(retryEnvelopeFinalization(String(request.params.id), scope.spaceId, scope.userId, actor(request))); } catch (caught) { return error(response, caught); } });
-esignRouter.get('/envelopes/:id/artifacts/:artifactId/content', (request, response) => { try { const scope = authenticatedScope(request); return fileResponse(response, getOwnedArtifactContent(String(request.params.id), String(request.params.artifactId), scope.spaceId), 'attachment'); } catch (caught) { return error(response, caught); } });
+esignRouter.get('/envelopes/:id/artifacts/:artifactId/content', (request, response) => { try { const scope = authenticatedScope(request); return fileResponse(response, getOwnedArtifactContent(String(request.params.id), String(request.params.artifactId), scope.spaceId), request.query.preview === '1' ? 'inline' : 'attachment'); } catch (caught) { return error(response, caught); } });
 
 esignRecipientRouter.use((_request, response, next) => { response.setHeader('Cache-Control', 'private, no-store'); next(); });
 esignRecipientRouter.get('/', (request, response) => {
@@ -168,7 +168,7 @@ esignRecipientRouter.get('/envelopes/:id/artifacts/:artifactId/content', (reques
     return fileResponse(response, getRecipientArtifactContent(user.email, String(request.params.id), String(request.params.artifactId), {
       userId: user.id, actorType: 'user', ip: request.ip || null,
       userAgent: String(request.headers['user-agent'] || '').slice(0, 500) || null
-    }), 'attachment');
+    }), request.query.preview === '1' ? 'inline' : 'attachment');
   } catch (caught) { return error(response, caught); }
 });
 

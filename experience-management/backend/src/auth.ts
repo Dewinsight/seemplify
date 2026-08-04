@@ -15,7 +15,9 @@ import { ensureConfiguredRootPlatformRole } from './platformSchema.js';
 import {
   activeControlPlaneRoleIds, controlPlanePermissionsForUser, platformPermissionCatalog
 } from './platformRbac.js';
-import { ensureConfiguredAdministratorEnterprise, ensureExistingSubscriptionsGrandfathered } from './subscriptionEntitlements.js';
+import {
+  effectiveSubscriptionForSpace, ensureConfiguredAdministratorEnterprise, ensureExistingSubscriptionsGrandfathered
+} from './subscriptionEntitlements.js';
 
 const cookieName = 'seemplify_experience_session';
 const resetLifetimeMs = 30 * 60_000;
@@ -164,6 +166,8 @@ function onboardingRequired(profile: AccountProfile) {
 
 function sessionPayload(user: SessionUser) {
   const profile = profileForUser(user);
+  const spaces = spaceSession(user.id);
+  const effectiveSubscription = spaces.activeSpace ? effectiveSubscriptionForSpace(spaces.activeSpace.id) : null;
   const platformRoles = platformRolesForUser(user.id);
   const adminRoles = activeControlPlaneRoleIds(user.id);
   const adminPermissions = isRootPlatformAdmin(user.id)
@@ -183,7 +187,15 @@ function sessionPayload(user: SessionUser) {
       adminRoles,
       adminPermissions
     },
-    ...spaceSession(user.id),
+    ...spaces,
+    subscription: effectiveSubscription ? {
+      planCode: effectiveSubscription.plan.code,
+      planName: effectiveSubscription.plan.name,
+      features: effectiveSubscription.plan.features,
+      limits: effectiveSubscription.plan.limits,
+      status: effectiveSubscription.subscriptionStatus,
+      source: effectiveSubscription.source
+    } : null,
     pendingSpaceInvitations: user.emailVerifiedAt ? listPendingSpaceInvitationsForAccount(user) : []
   };
 }
@@ -1054,6 +1066,7 @@ export function session(request: Request, response: Response) {
     permissions: { platformAdmin: false, rootPlatformAdmin: false, platformRoles: [] },
     spaces: [],
     activeSpace: null,
+    subscription: null,
     pendingSpaceInvitations: []
   });
 }

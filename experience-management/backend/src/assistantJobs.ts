@@ -168,10 +168,13 @@ export async function executeAssistantJob(job: AiJob): Promise<JobOutput> {
     });
   }
   if (job.kind === 'assistant.email_draft') {
+    const compose = snapshot.compose === true;
     return structuredAssistant({
       job, runId, activity: 'experience.assistant.email_draft', schemaName: 'experience_assistant_email_draft',
       jsonSchema: assistantJsonSchemas.emailDraft, validator: assistantEmailDraftResult,
-      prompt: `Draft a reply to this immutable email-thread snapshot for human review. Respect the requested tone and instructions, but never claim the reply was sent and do not introduce facts absent from the thread. The body must be plain text.\nThread snapshot and drafting preferences: ${boundedPrompt(snapshot)}`,
+      prompt: compose
+        ? `Draft a new email for human review using only the supplied recipients, subject hint, instructions, and tone. Do not invent facts, commitments, dates, or prior conversation. Never claim the email was sent. The body must be plain text.\nCompose request: ${boundedPrompt(snapshot)}`
+        : `Draft a reply to this immutable email-thread snapshot for human review. Respect the requested tone and instructions, but never claim the reply was sent and do not introduce facts absent from the thread. The body must be plain text.\nThread snapshot and drafting preferences: ${boundedPrompt(snapshot)}`,
       maxTokens: 4_000
     });
   }

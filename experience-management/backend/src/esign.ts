@@ -1155,6 +1155,18 @@ export function getOwnedArtifactContent(envelopeId: string, artifactId: string, 
   return { bytes, fileName: row.file_name, mimeType: row.mime_type, sha256: row.sha256 };
 }
 
+export function getOwnedCompletedDocumentArtifact(envelopeId: string, artifactId: string, spaceId: string) {
+  const envelope = requireSpaceEnvelope(envelopeId, spaceId);
+  if (envelope.status !== 'completed') {
+    throw new EsignError('The signed document is not ready yet.', 409, 'SIGNED_DOCUMENT_NOT_READY');
+  }
+  const row = db.prepare("SELECT * FROM esign_artifacts WHERE id=? AND envelope_id=? AND kind='completed_pdf' AND state='ready'")
+    .get(artifactId, envelopeId) as any;
+  if (!row) throw new EsignError('Signed document not found.', 404, 'SIGNED_DOCUMENT_NOT_FOUND');
+  const content = getOwnedArtifactContent(envelopeId, artifactId, spaceId);
+  return { ...artifactRow(row), ...content };
+}
+
 export function getPublicArtifactContent(rawToken: string, artifactId: string) {
   const session = signingSession(rawToken);
   if (!session.authenticated) throw new EsignError('Enter the access code first.', 401, 'ACCESS_CODE_REQUIRED');

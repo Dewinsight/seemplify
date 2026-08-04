@@ -507,6 +507,57 @@ export interface NylasReplyRecipient {
   email: string;
 }
 
+function normalizeNylasRecipients(values: NylasReplyRecipient[] = []) {
+  const seen = new Set<string>();
+  return values
+    .map((value) => ({
+      email: cleanText(value.email, 254).toLocaleLowerCase('en-US'),
+      ...(cleanText(value.name, 200) ? { name: cleanText(value.name, 200) } : {})
+    }))
+    .filter((value) => {
+      if (!value.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value.email) || seen.has(value.email)) return false;
+      seen.add(value.email); return true;
+    });
+}
+
+export async function sendNylasMessage(grantId: string, input: {
+  to: NylasReplyRecipient[];
+  cc?: NylasReplyRecipient[];
+  bcc?: NylasReplyRecipient[];
+  subject: string;
+  body: string;
+  idempotencyKey: string;
+}) {
+  const subject = cleanText(input.subject, 500);
+  const body = normalizeEmailDraftHtml(input.body);
+  const to = normalizeNylasRecipients(input.to);
+  const cc = normalizeNylasRecipients(input.cc);
+  const bcc = normalizeNylasRecipients(input.bcc);
+  if (!subject || !body || !to.length || to.length + cc.length + bcc.length > 50) {
+    throw new NylasError('The email is missing a recipient, subject, or body.', 400, 'NYLAS_MESSAGE_INVALID');
+  }
+  const payload = await nylasRequest(
+    `/v3/grants/${encodeURIComponent(grantId)}/messages/send?fields=include_basic_headers`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${config.nylasApiKey}`,
+        'content-type': 'application/json',
+        'idempotency-key': cleanText(input.idempotencyKey, 256)
+      },
+      body: JSON.stringify({
+        to, ...(cc.length ? { cc } : {}), ...(bcc.length ? { bcc } : {}),
+        subject, body, is_plaintext: false
+      })
+    },
+    512 * 1024
+  );
+  const message = payloadData(payload);
+  const id = cleanText(message?.id || message?.message_id, 300);
+  if (!id) throw new NylasError('Nylas accepted the email but returned no message identifier.', 502, 'NYLAS_MESSAGE_RESPONSE_INVALID');
+  return { id, threadId: cleanText(message?.thread_id, 300) || null };
+}
+
 export async function sendNylasReply(grantId: string, input: {
   replyToMessageId: string;
   to: NylasReplyRecipient[];
@@ -518,14 +569,8 @@ export async function sendNylasReply(grantId: string, input: {
   const replyToMessageId = cleanText(input.replyToMessageId, 300);
   const subject = cleanText(input.subject, 500);
   const body = normalizeEmailDraftHtml(input.body);
-  const normalizeRecipients = (values: NylasReplyRecipient[] = []) => values
-    .map((value) => ({
-      email: cleanText(value.email, 254).toLocaleLowerCase('en-US'),
-      ...(cleanText(value.name, 200) ? { name: cleanText(value.name, 200) } : {})
-    }))
-    .filter((value) => value.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value.email));
-  const to = normalizeRecipients(input.to);
-  const cc = normalizeRecipients(input.cc);
+  const to = normalizeNylasRecipients(input.to);
+  const cc = normalizeNylasRecipients(input.cc);
   if (!replyToMessageId || !subject || !body || !to.length) {
     throw new NylasError('The reply is missing a recipient, subject, body, or source message.', 400, 'NYLAS_REPLY_INVALID');
   }

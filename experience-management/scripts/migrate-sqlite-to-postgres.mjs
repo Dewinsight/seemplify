@@ -562,7 +562,13 @@ function createTableSql(schema, table) {
 function createIndexSql(schema, table, index) {
   const unique = index.unique ? 'UNIQUE ' : '';
   const where = index.predicate ? ` WHERE ${index.predicate}` : '';
-  return `CREATE ${unique}INDEX ${q(index.name)} ON ${q(schema)}.${q(table.name)} (${index.terms.join(',')})${where}`;
+  const boundedTerms = {
+    social_reply_drafts_one_active_request: ['space_id', 'requested_by', 'mention_id', 'tone', 'md5(instructions)'],
+    social_intelligence_reports_one_active_request: ['space_id', 'user_id', 'connection_id', 'title', 'md5(mention_ids_json)'],
+    intelligence_reports_one_active_request: ['space_id', 'user_id', 'title', 'md5(objective)', 'md5(source_refs_json)', 'md5(knowledge_refs_json)']
+  }[index.name];
+  const terms = boundedTerms || index.terms;
+  return `CREATE ${unique}INDEX ${q(index.name)} ON ${q(schema)}.${q(table.name)} (${terms.join(',')})${where}`;
 }
 
 function createFkSql(schema, table, fk) {

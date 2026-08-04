@@ -8,7 +8,7 @@ This design keeps the application database as the source of truth. ArangoDB is a
 
 ## Runtime boundary
 
-The browser and hosted API never connect to ArangoDB, the embedding server, the reranker, or Docling. The Experience backend calls a signed loopback knowledge runtime. That runtime owns all database credentials and exposes only four bounded operations: status, index, retrieve, and delete.
+The browser and hosted API never connect to ArangoDB, the embedding server, the reranker, or Docling. The Experience backend calls a signed loopback knowledge runtime. That runtime owns all database credentials and exposes bounded status, index, retrieve, scan, and delete operations. Scan is restricted to tenant-, base-, document-, and version-pinned pagination for durable corpus analysis; it is never exposed to the browser.
 
 | Component | Binding | Purpose | GPU |
 | --- | --- | --- | --- |
@@ -49,6 +49,12 @@ Deletion first makes the document unavailable in the control plane, then removes
 The runtime obtains independent candidate lists from vector similarity and ArangoSearch BM25. It expands high-confidence entities by at most two graph hops, with tenant, knowledge-base, version, edge-confidence, breadth, and time limits. Weighted reciprocal-rank fusion combines the lists. A local cross-encoder reranks the best candidates, and the context builder selects a diverse evidence set with source, page, section, chunk, and score citations.
 
 Small or newly rebuilt corpora use exact cosine scoring until a trained vector index is beneficial. Answers never cite a source that was not present in the persisted retrieval snapshot.
+
+## Deep corpus analysis
+
+Interactive activities continue to use compact hybrid retrieval. Deep and exhaustive intelligence runs use a separate durable workflow: they pin a corpus manifest, estimate tokens and bounded model calls, scan every selected document in small pages, map each partition into cited findings, hierarchically reduce those findings, and persist an evidence ledger. Exhaustive mode adds independent contradiction, coverage-gap, and verification passes before final synthesis.
+
+No model request is allowed to become a multi-hour request. Individual partitions remain bounded and retryable while the overall run may continue for hours. Runs expose measured document, chunk, partition, failure, and token coverage and support pause, resume, cancellation, restart recovery, and deterministic provider-result replay.
 
 ## Supported product surfaces
 

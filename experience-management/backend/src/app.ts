@@ -62,6 +62,10 @@ import {
 import { tutorialProgressRouter } from './tutorialProgress.js';
 import { answerResearchQuestion } from './researchChat.js';
 import {
+  cancelDeepAnalysisRun, createDeepAnalysisRun, DeepAnalysisError, getDeepAnalysisRun,
+  listDeepAnalysisRuns, pauseDeepAnalysisRun, resolveDeepKnowledgeRefs, resumeDeepAnalysisRun
+} from './deepAnalysis.js';
+import {
   createRecoveryTicket, getRecoveryTicket, listRecoveryTickets, recordRecoveryTicketEvent, RecoveryTicketError, updateRecoveryTicket
 } from './recovery.js';
 import { platformAdminRouter, subscriptionRouter } from './platformAdmin.js';
@@ -184,6 +188,7 @@ function intelligenceError(response: express.Response, error: unknown) {
   if (error instanceof z.ZodError) return sendError(response, error);
   if (error instanceof SubscriptionEntitlementError) return sendError(response, error);
   if (error instanceof IntelligenceError) return response.status(error.status).json({ error: error.message });
+  if (error instanceof DeepAnalysisError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof KnowledgeError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof TerraError) return response.status(error.status).json({ error: error.message, code: error.code });
   return response.status(500).json({ error: error instanceof Error ? error.message : 'The intelligence request could not be completed.' });
@@ -981,6 +986,58 @@ app.post('/api/intelligence/reports', (request, response) => {
     return response.status(202).json({ report: created.report, jobId: created.job.id, state: created.job.state, deduplicated: !created.created, statusUrl: `/api/ai/jobs/${created.job.id}` });
   } catch (error) { return intelligenceError(response, error); }
 });
+
+app.get('/api/intelligence/deep-runs', noStore, (request, response) => {
+  try {
+    const user = authenticatedUser(request); const space = authenticatedSpace(request);
+    return response.json(listDeepAnalysisRuns(space.id, user.id));
+  } catch (error) { return intelligenceError(response, error); }
+});
+
+app.get('/api/intelligence/deep-runs/:id', noStore, (request, response) => {
+  try {
+    const user = authenticatedUser(request); const space = authenticatedSpace(request);
+    return response.json(getDeepAnalysisRun(space.id, user.id, String(request.params.id)));
+  } catch (error) { return intelligenceError(response, error); }
+});
+
+app.post('/api/intelligence/deep-runs', (request, response) => {
+  try {
+    const input = z.object({
+      title: z.string().trim().min(2).max(180), objective: z.string().trim().min(3).max(2000),
+      mode: z.enum(['deep', 'exhaustive']).default('deep'),
+      sourceRefs: z.array(z.string().trim().min(3).max(200)).max(50).default([]),
+      knowledgeBaseIds: z.array(z.string().uuid()).max(50).default([])
+    }).strict().parse(request.body || {});
+    const user = authenticatedUser(request); const space = authenticatedSpace(request);
+    const knowledgeSourceIds = input.sourceRefs.flatMap((ref) => {
+      const match = /^knowledge-base:([0-9a-f-]{36})$/iu.exec(ref); return match ? [match[1]] : [];
+    });
+    const knowledgeBaseIds = [...new Set([...input.knowledgeBaseIds, ...knowledgeSourceIds])];
+    const historicalSourceRefs = input.sourceRefs.filter((ref) => !ref.startsWith('knowledge-base:'));
+    const created = createDeepAnalysisRun(user, space.id, { title: input.title, objective: input.objective, mode: input.mode,
+      sourceRefs: historicalSourceRefs, knowledgeBaseRefs: resolveDeepKnowledgeRefs(space.id, knowledgeBaseIds, user.id),
+      idempotencyKey: idempotencyKey(request) });
+    for (const job of created.jobs) publishEvent('ai-job', job, space.id);
+    void aiJobRunner.pump();
+    return response.status(202).json({ run: created.run, deduplicated: !created.created,
+      statusUrl: `/api/intelligence/deep-runs/${created.run.id}` });
+  } catch (error) { return intelligenceError(response, error); }
+});
+
+for (const [action, mutate] of [
+  ['pause', pauseDeepAnalysisRun], ['resume', resumeDeepAnalysisRun], ['cancel', cancelDeepAnalysisRun]
+] as const) {
+  app.post(`/api/intelligence/deep-runs/:id/${action}`, (request, response) => {
+    try {
+      const user = authenticatedUser(request); const space = authenticatedSpace(request);
+      const run = mutate(space.id, user.id, String(request.params.id));
+      if (action === 'resume') void aiJobRunner.pump();
+      publishEvent('data-changed', { reason: `deep-analysis-${action}`, runId: run.id }, space.id);
+      return response.json(run);
+    } catch (error) { return intelligenceError(response, error); }
+  });
+}
 
 app.post('/api/intelligence/chat', async (request, response) => {
   try {

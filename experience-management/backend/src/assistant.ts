@@ -6,7 +6,10 @@ import { createJob, db, getJob } from './database.js';
 import { publishEvent } from './events.js';
 import { IntelligenceError, resolveIntelligenceSourceSnapshots } from './intelligence.js';
 import { decryptNylasSecret, encryptNylasSecret, fingerprintNylasGrant } from './nylasSecrets.js';
-import { providerHtmlToText, redactProviderSecrets, type AssistantThreadSnapshot, type NylasProvider } from './nylasClient.js';
+import {
+  providerHtmlToText, redactProviderSecrets, type AssistantThreadSnapshot,
+  type NylasProvider, type NylasReplyRecipient
+} from './nylasClient.js';
 import { recordAssistantAudit } from './assistantOperations.js';
 import { assertCanQueueAiAction } from './subscriptionEntitlements.js';
 import type { AssistantDocumentType } from './assistantSchemas.js';
@@ -403,6 +406,7 @@ function assistantRunRow(id: string, spaceId?: string, userId?: string) {
 
 function runResponse(row: any) {
   const state = String(row.job_state || row.state);
+  const output = parseJson<any>(row.output_json, null);
   const draftCapable = row.kind === 'email_draft' || row.kind === 'work_product';
   const hasDraft = draftCapable && row.draft_revision > 0;
   return {
@@ -415,7 +419,7 @@ function runResponse(row: any) {
     knowledgeBaseIds: parseJson<string[]>(row.knowledge_base_ids_json, []),
     documentType: row.document_type ? String(row.document_type) : null,
     title: row.title ? String(row.title) : null,
-    output: parseJson(row.output_json, null), runtime: parseJson(row.runtime_json, null),
+    output, runtime: parseJson(row.runtime_json, null),
     generatedDraft: draftCapable && row.generated_subject && row.generated_body ? {
       subject: String(row.generated_subject), body: String(row.generated_body)
     } : null,
@@ -424,17 +428,83 @@ function runResponse(row: any) {
       revision: Number(row.draft_revision), updatedAt: row.draft_updated_at
     } : null,
     advisoryOnly: Number(row.advisory_only ?? 1) === 1,
-    externalDispatched: Number(row.external_dispatched || 0) === 1 || Boolean(row.delivery_sent_at),
+    externalDispatched: Number(row.external_dispatched || 0) === 1 || Boolean(row.delivery_sent_at) || Boolean(output?.composeDelivery),
     delivery: row.delivery_sent_at ? {
       sentAt: String(row.delivery_sent_at),
       messageId: row.delivery_message_id ? String(row.delivery_message_id) : null,
       recipients: parseJson<string[]>(row.delivery_recipients_json, []),
       mode: row.delivery_mode === 'reply_all' ? 'reply_all' : 'reply'
-    } : null,
+    } : output?.composeDelivery ? { ...output.composeDelivery, mode: 'compose' } : null,
     error: row.job_error || row.error || null, retryAt: row.job_retry_at || null,
     createdAt: String(row.created_at), startedAt: row.started_at || null,
     completedAt: row.completed_at || null, updatedAt: String(row.updated_at)
   };
+}
+
+export function assistantComposeRequestFingerprint(input: {
+  connectionId: string; to: NylasReplyRecipient[]; cc?: NylasReplyRecipient[]; bcc?: NylasReplyRecipient[];
+  subject: string; body: string;
+}) {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    connectionId: input.connectionId,
+    to: input.to, cc: input.cc || [], bcc: input.bcc || [],
+    subject: input.subject, body: input.body
+  })).digest('hex');
+}
+
+export function createAssistantComposeRun(input: {
+  user: SessionUser; spaceId: string; connectionId: string; to: NylasReplyRecipient[];
+  cc?: NylasReplyRecipient[]; bcc?: NylasReplyRecipient[]; subject: string; body: string;
+  idempotencyKey: string; requestFingerprint: string;
+}) {
+  const subject = providerHtmlToText(input.subject, 500);
+  const body = normalizeEmailDraftHtml(input.body);
+  const bodyText = emailDraftPlainText(body);
+  if (!subject || !bodyText || bodyText.length > 12_000 || body.length > 48_000) {
+    throw new AssistantError('Email subject and body are required and must stay within the editor limit.', 400, 'ASSISTANT_COMPOSE_INVALID');
+  }
+  return db.transaction(() => {
+    const existing = db.prepare(`SELECT * FROM assistant_runs
+      WHERE space_id=? AND requested_by=? AND idempotency_key=?`).get(input.spaceId, input.user.id, input.idempotencyKey) as any;
+    if (existing) {
+      if (existing.kind !== 'email_draft' || existing.request_fingerprint !== input.requestFingerprint || existing.subject_ref) {
+        throw new AssistantError('This idempotency key was already used for another assistant request.', 409, 'ASSISTANT_IDEMPOTENCY_CONFLICT');
+      }
+      return { run: runResponse(assistantRunRow(existing.id)), created: false };
+    }
+    const id = crypto.randomUUID(); const timestamp = new Date().toISOString();
+    const snapshotJson = JSON.stringify({ kind: 'compose', to: input.to, cc: input.cc || [], bcc: input.bcc || [] });
+    const snapshotHash = crypto.createHash('sha256').update(snapshotJson).digest('hex');
+    const encryptedSnapshot = encryptNylasSecret(snapshotJson, snapshotContext(id, input.spaceId, input.user.id));
+    db.prepare(`INSERT INTO assistant_runs
+      (id,space_id,requested_by,kind,connection_id,subject_ref,source_refs_json,knowledge_base_ids_json,
+       input_snapshot_json,input_sha256,request_fingerprint,state,output_json,generated_subject,generated_body,
+       draft_subject,draft_body,draft_revision,draft_updated_at,advisory_only,external_dispatched,idempotency_key,
+       created_at,completed_at,updated_at)
+      VALUES (?,?,?,?,?,NULL,'[]','[]',?,?,?,'completed',?,?,?,?,?,1,?,1,0,?,?,?,?)`).run(
+      id, input.spaceId, input.user.id, 'email_draft', input.connectionId,
+      encryptedSnapshot, snapshotHash, input.requestFingerprint, JSON.stringify({ compose: true, subject, body }),
+      subject, body, subject, body, timestamp, input.idempotencyKey, timestamp, timestamp, timestamp
+    );
+    return { run: runResponse(assistantRunRow(id)), created: true };
+  })();
+}
+
+export function completeAssistantComposeDelivery(id: string, spaceId: string, userId: string, delivery: {
+  sentAt: string; messageId: string; recipients: string[];
+}) {
+  const current = assistantRunRow(id, spaceId, userId);
+  if (!current || current.subject_ref) throw new AssistantError('Composed email not found.', 404, 'ASSISTANT_COMPOSE_NOT_FOUND');
+  const output = { ...parseJson(current.output_json, {}), composeDelivery: { ...delivery, mode: 'compose' } };
+  db.prepare(`UPDATE assistant_runs SET output_json=?,error=NULL,updated_at=?
+    WHERE id=? AND space_id=? AND requested_by=?`).run(JSON.stringify(output), delivery.sentAt, id, spaceId, userId);
+  publishAssistantChanged(spaceId);
+  return runResponse(assistantRunRow(id, spaceId, userId));
+}
+
+export function failAssistantComposeDelivery(id: string, spaceId: string, userId: string, code: string) {
+  db.prepare(`UPDATE assistant_runs SET error=?,updated_at=? WHERE id=? AND space_id=? AND requested_by=? AND external_dispatched=0`)
+    .run(cleanText(code, 300), new Date().toISOString(), id, spaceId, userId);
 }
 
 export function getAssistantRun(id: string, spaceId: string, userId: string) {
@@ -622,6 +692,36 @@ export function createAssistantEmailRun(input: {
   });
 }
 
+export function assistantComposeDraftRequestFingerprint(input: {
+  connectionId: string; to: NylasReplyRecipient[]; cc?: NylasReplyRecipient[]; bcc?: NylasReplyRecipient[];
+  subject?: string; instructions: string; tone?: string;
+}) {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    kind: 'compose_draft', connectionId: input.connectionId,
+    to: input.to, cc: input.cc || [], bcc: input.bcc || [],
+    subject: cleanText(input.subject, 500), instructions: cleanText(input.instructions, 2_000),
+    tone: cleanText(input.tone || 'professional', 80)
+  })).digest('hex');
+}
+
+export function createAssistantComposeDraftRun(input: {
+  user: SessionUser; spaceId: string; connectionId: string; to: NylasReplyRecipient[];
+  cc?: NylasReplyRecipient[]; bcc?: NylasReplyRecipient[]; subject?: string;
+  instructions: string; tone?: string; idempotencyKey?: string;
+}) {
+  const requestFingerprint = assistantComposeDraftRequestFingerprint(input);
+  return createRun({
+    kind: 'email_draft', spaceId: input.spaceId, userId: input.user.id,
+    connectionId: input.connectionId, subjectRef: null, idempotencyKey: input.idempotencyKey,
+    requestFingerprint,
+    snapshot: {
+      compose: true, to: input.to, cc: input.cc || [], bcc: input.bcc || [],
+      subject: cleanText(input.subject, 500), instructions: cleanText(input.instructions, 2_000),
+      tone: cleanText(input.tone || 'professional', 80)
+    }
+  });
+}
+
 export type AssistantEvidenceSnapshot = {
   sourceRef: string;
   type: 'survey' | 'social' | 'knowledge' | 'email' | 'calendar';
@@ -805,7 +905,8 @@ export function failAssistantRun(id: string, spaceId: string, message: string) {
 export function updateAssistantDraft(id: string, spaceId: string, userId: string, input: { subject: string; body: string; revision: number }) {
   const current = assistantRunRow(id, spaceId, userId);
   if (!current) throw new AssistantError('Assistant run not found.', 404, 'ASSISTANT_RUN_NOT_FOUND');
-  if (!['email_draft', 'work_product'].includes(String(current.kind)) || current.job_state !== 'completed' || Number(current.draft_revision) < 1) {
+  if (!['email_draft', 'work_product'].includes(String(current.kind))
+    || String(current.job_state || current.state) !== 'completed' || Number(current.draft_revision) < 1) {
     throw new AssistantError('This assistant run does not have an editable draft.', 409, 'ASSISTANT_DRAFT_NOT_READY');
   }
   const subject = providerHtmlToText(input.subject, 500);

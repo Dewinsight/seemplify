@@ -35,6 +35,7 @@ Headers are `x-seemplify-timestamp`, `x-seemplify-nonce`, and `x-seemplify-signa
 - `/v1/index` for a validated staged source reference. Documents are capped at 50 MB. PDF, DOCX, PPTX, XLSX, HTML, CSV, Markdown, text, PNG, JPEG, and TIFF are accepted; archives are rejected.
 - `/v1/backfill` for a bounded, resumable batch of existing chunks into the parallel GTE index. Interactive query and live-index work have priority over backfill work.
 - `/v1/retrieve` for up to five pinned bases and graph depth zero through two.
+- `/v1/scan` for bounded, tenant/base/document/version-pinned corpus pagination used by durable deep analysis.
 - `/v1/graph` for a bounded node/edge snapshot with source support counts and grounded edge provenance.
 - `/v1/delete` for verified physical document or base purging, including text, embeddings, claims, relations, scoped index receipts, entity provenance, and unsupported entities.
 - `/v1/status` for signed operational telemetry.

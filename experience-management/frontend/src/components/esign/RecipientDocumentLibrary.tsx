@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Clock3, Download, FileCheck2, Loader2, RefreshCw, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, Clock3, Download, Eye, FileCheck2, Loader2, RefreshCw, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PdfPreviewDialog } from '@/components/esign/PdfPreviewDialog';
 import { api } from '@/lib/api';
+import { artifactPreviewUrl } from '@/lib/esign';
 import { cn } from '@/lib/utils';
 import type {
   RecipientDocument,
@@ -99,6 +101,7 @@ export function RecipientDocumentLibrary({ accountEmail, showRefresh = true }: R
   const [filter, setFilter] = useState<DocumentFilter>('all');
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [preview, setPreview] = useState<{ name: string; previewUrl: string; downloadUrl: string } | null>(null);
 
   const load = useCallback(async (quiet = false) => {
     try {
@@ -152,7 +155,10 @@ export function RecipientDocumentLibrary({ accountEmail, showRefresh = true }: R
           return <article className="bg-card px-4 py-5 sm:px-5" key={document.id} data-testid="recipient-document-row">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0"><div className={cn('flex items-center gap-1.5 text-xs font-semibold', presentation.className)}><StateIcon className="h-3.5 w-3.5" />{presentation.label}<span className="font-normal text-muted-foreground">· {presentation.detail}</span></div><h2 className="mt-2 truncate text-base font-semibold" title={document.title}>{document.title}</h2><p className="mt-1 text-sm text-muted-foreground">From {document.sender.name} · {document.sender.spaceName}</p><dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:flex sm:flex-wrap sm:gap-x-8"><div><dt className="text-muted-foreground">Your role</dt><dd className="mt-0.5 font-medium text-foreground">{roleLabel(document.recipient.role)}</dd></div><div><dt className="text-muted-foreground">You signed</dt><dd className="mt-0.5 font-medium text-foreground">{formatDate(document.signedAt)}</dd></div>{document.completedAt && <div><dt className="text-muted-foreground">Completed</dt><dd className="mt-0.5 font-medium text-foreground">{formatDate(document.completedAt)}</dd></div>}</dl></div>
-              <div className="flex min-w-0 flex-col gap-2 lg:w-64 lg:items-stretch">{document.artifacts.length ? document.artifacts.map((artifact) => <Button key={artifact.id} variant="outline" size="sm" className="min-w-0 justify-start" asChild><a href={artifact.contentUrl}><Download className="shrink-0" /><span className="truncate">{artifact.kind === 'completion_certificate' ? 'Completion certificate' : 'Completed document'}</span></a></Button>) : <p className="text-xs leading-5 text-muted-foreground">Final files will appear when every required signer has finished.</p>}</div>
+              <div className="flex min-w-0 flex-col gap-2 lg:w-64 lg:items-stretch">{document.artifacts.length ? document.artifacts.map((artifact) => {
+                const label = artifact.kind === 'completion_certificate' ? 'Completion certificate' : 'Completed document';
+                return <div key={artifact.id} className="grid grid-cols-2 gap-2"><Button variant="outline" size="sm" className="min-w-0" onClick={() => setPreview({ name: artifact.name || label, previewUrl: artifactPreviewUrl(artifact.contentUrl || ''), downloadUrl: artifact.contentUrl || '' })}><Eye />Preview</Button><Button variant="outline" size="sm" className="min-w-0" asChild><a href={artifact.contentUrl}><Download /><span className="sr-only">Download {label}</span>Download</a></Button></div>;
+              }) : <p className="text-xs leading-5 text-muted-foreground">Final files will appear when every required signer has finished.</p>}</div>
             </div>
             <DocumentActivity document={document} presentation={presentation} />
           </article>;
@@ -160,5 +166,6 @@ export function RecipientDocumentLibrary({ accountEmail, showRefresh = true }: R
       </div>}
 
     <footer className="mt-8 border-t pt-5 text-xs leading-5 text-muted-foreground">Only agreements addressed to your verified email are shown. Signing activity remains governed by the original envelope and its audit certificate.</footer>
+    {preview && <PdfPreviewDialog open onOpenChange={(open) => { if (!open) setPreview(null); }} name={preview.name} previewUrl={preview.previewUrl} downloadUrl={preview.downloadUrl} />}
   </div>;
 }

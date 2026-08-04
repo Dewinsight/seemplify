@@ -44,6 +44,11 @@ export const codexActionCatalog: CodexActionDefinition[] = [
     description: 'Combine selected survey and social research.', defaultReasoningEffort: 'high'
   },
   {
+    id: 'intelligence.deep_analysis', group: 'Research intelligence', label: 'Deep corpus analysis',
+    description: 'Runs bounded map, reduction, verification, and final synthesis steps over a pinned evidence corpus.',
+    defaultReasoningEffort: 'high'
+  },
+  {
     id: 'social.analyze', group: 'Social and journeys', label: 'Social listening analysis',
     description: 'Analyse collected posts and mentions.', defaultReasoningEffort: 'high'
   },

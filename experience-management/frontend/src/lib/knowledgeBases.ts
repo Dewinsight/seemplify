@@ -87,6 +87,18 @@ export async function uploadKnowledgeDocuments(id: string, files: File[]) {
   return api<unknown>(`/api/knowledge-bases/${encodeURIComponent(id)}/documents`, multipart('POST', body));
 }
 
+export async function addSignedAgreementToKnowledge(input: {
+  knowledgeBaseId: string; envelopeId: string; artifactId: string;
+}) {
+  return api<unknown>(
+    `/api/knowledge-bases/${encodeURIComponent(input.knowledgeBaseId)}/agreements/${encodeURIComponent(input.envelopeId)}/artifacts/${encodeURIComponent(input.artifactId)}`,
+    {
+      method: 'POST',
+      headers: { 'idempotency-key': `agreement:${input.envelopeId}:${input.artifactId}:${input.knowledgeBaseId}` }
+    }
+  );
+}
+
 export async function deleteKnowledgeDocument(knowledgeBaseId: string, documentId: string) {
   await api(`/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' });
 }

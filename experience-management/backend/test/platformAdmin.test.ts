@@ -74,6 +74,18 @@ app.get('/api/social/check', (request, response) => {
     throw error;
   }
 });
+for (const path of ['/api/assistant/check', '/api/intelligence/check']) {
+  app.get(path, (request, response) => {
+    try {
+      const user = currentSessionUser(request);
+      if (!user) return response.status(401).json({ error: 'Authentication required.' });
+      return response.json({ space: resolveRequestSpace(request, user.id) });
+    } catch (error) {
+      if (error instanceof SpaceError) return response.status(error.status).json({ error: error.message, code: error.code });
+      throw error;
+    }
+  });
+}
 
 function seedUser(email: string, name: string, verified = true) {
   const id = crypto.randomUUID(); const now = new Date().toISOString();
@@ -457,16 +469,25 @@ test('subscription plans are versioned, editable, propagated, resettable, and au
     name: 'Starter managed',
     description: 'A managed starter plan used by smaller workspaces.',
     requestable: true,
-    features: { ...current.features, socialListening: true },
+    features: { ...current.features, socialListening: true, terra: false },
     limits: { ...current.limits, monthlyAiActions: 1, knowledgeStorageBytes: 4 },
     expectedVersion: current.version,
     reason: 'Enable starter social listening for the managed plan test.'
   }).expect(200);
   assert.equal(updated.body.plan.name, 'Starter managed');
   assert.equal(updated.body.plan.features.socialListening, true);
+  assert.equal(updated.body.plan.features.terra, false);
   assert.equal(updated.body.plan.limits.monthlyAiActions, 1);
   assert.equal(updated.body.plan.version, current.version + 1);
   await starterAgent.get('/api/social/check').set('X-Seemplify-Space', starter.spaceId).expect(200);
+  const starterSession = await starterAgent.get('/session').expect(200);
+  assert.equal(starterSession.body.subscription.planCode, 'starter');
+  assert.equal(starterSession.body.subscription.features.socialListening, true);
+  assert.equal(starterSession.body.subscription.features.terra, false);
+  await starterAgent.get('/api/assistant/check').set('X-Seemplify-Space', starter.spaceId).expect(403)
+    .expect(({ body }) => assert.equal(body.code, 'SUBSCRIPTION_FEATURE_REQUIRED'));
+  await starterAgent.get('/api/intelligence/check').set('X-Seemplify-Space', starter.spaceId).expect(403)
+    .expect(({ body }) => assert.equal(body.code, 'SUBSCRIPTION_FEATURE_REQUIRED'));
   const stored = db.prepare('SELECT features_json,limits_json FROM platform_subscriptions WHERE space_id=?').get(starter.spaceId) as any;
   assert.equal(JSON.parse(stored.features_json).socialListening, true);
   assert.equal(JSON.parse(stored.limits_json).monthlyAiActions, 1);

@@ -63,6 +63,16 @@ export function adminArtifactContentUrl(envelopeId: string, artifactId: string) 
   return spaceScopedApiUrl(`/api/esign/envelopes/${encodeURIComponent(envelopeId)}/artifacts/${encodeURIComponent(artifactId)}/content`);
 }
 
+export function adminArtifactPreviewUrl(envelopeId: string, artifactId: string) {
+  return spaceScopedApiUrl(`/api/esign/envelopes/${encodeURIComponent(envelopeId)}/artifacts/${encodeURIComponent(artifactId)}/content?preview=1`);
+}
+
+export function artifactPreviewUrl(contentUrl: string) {
+  const url = new URL(contentUrl, window.location.origin);
+  url.searchParams.set('preview', '1');
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export function publicDocumentContentUrl(documentId: string) {
   return `/api/public/esign/documents/${encodeURIComponent(documentId)}/content`;
 }

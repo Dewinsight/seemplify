@@ -47,6 +47,7 @@ function createKnowledgeServer({ config = CONFIG, runtime = createKnowledgeRunti
     '/v1/index': (input) => runtime.index(input),
     '/v1/backfill': (input) => runtime.backfill(input),
     '/v1/retrieve': (input) => runtime.retrieve(input),
+    '/v1/scan': (input) => runtime.scan(input),
     '/v1/delete': (input) => runtime.remove(input),
     '/v1/graph': (input) => runtime.graph(input),
     '/v1/migration': (input) => runtime.migrationControl(input),

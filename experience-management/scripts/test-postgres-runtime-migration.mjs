@@ -43,7 +43,7 @@ function dockerPsql(databaseName, sql, allowFailure = false) {
 function runUpgrade(extra = [], expectedStatus = 0) {
   const result = spawnSync(process.execPath, [
     path.join(projectDir, 'scripts', 'upgrade-postgres-schema.mjs'),
-    '--target-version', '9',
+    '--target-version', '11',
     '--expected-source-version', '1',
     '--expected-source-sha256', sourceSha256,
     '--pg-host', host,
@@ -86,6 +86,24 @@ try {
     CREATE TABLE spaces (id TEXT PRIMARY KEY);
     CREATE TABLE tickets (id TEXT PRIMARY KEY);
     CREATE TABLE ai_jobs (id TEXT PRIMARY KEY);
+    CREATE TABLE social_reply_drafts (
+      id TEXT PRIMARY KEY,space_id TEXT NOT NULL,requested_by TEXT NOT NULL,mention_id TEXT NOT NULL,
+      tone TEXT NOT NULL,instructions TEXT NOT NULL,state TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX social_reply_drafts_one_active_request
+      ON social_reply_drafts(space_id,requested_by,mention_id,tone,instructions) WHERE state='queued';
+    CREATE TABLE social_intelligence_reports (
+      id TEXT PRIMARY KEY,space_id TEXT NOT NULL,user_id TEXT NOT NULL,connection_id TEXT,
+      title TEXT NOT NULL,mention_ids_json TEXT NOT NULL,state TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX social_intelligence_reports_one_active_request
+      ON social_intelligence_reports(space_id,user_id,connection_id,title,mention_ids_json) WHERE state='queued';
+    CREATE TABLE intelligence_reports (
+      id TEXT PRIMARY KEY,space_id TEXT NOT NULL,user_id TEXT NOT NULL,title TEXT NOT NULL,
+      objective TEXT NOT NULL,source_refs_json TEXT NOT NULL,knowledge_refs_json TEXT NOT NULL,state TEXT NOT NULL
+    );
+    CREATE UNIQUE INDEX intelligence_reports_one_active_request
+      ON intelligence_reports(space_id,user_id,title,objective,source_refs_json,knowledge_refs_json) WHERE state='queued';
     CREATE TABLE knowledge_bases (
       id TEXT PRIMARY KEY, space_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
       current_version INTEGER NOT NULL DEFAULT 0, last_indexed_at TEXT,
@@ -134,8 +152,20 @@ try {
 
   runUpgrade();
   runUpgrade();
-  await assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 9 });
-  assert.equal(Number((await ownerClient.query('SELECT MAX(version) version FROM experience_runtime_schema_version')).rows[0].version), 9);
+  await assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 11 });
+  assert.equal(Number((await ownerClient.query('SELECT MAX(version) version FROM experience_runtime_schema_version')).rows[0].version), 11);
+  const largeSelection = JSON.stringify(Array.from({ length: 200 }, (_, index) =>
+    `${String(index).padStart(8, '0')}-0000-4000-8000-${String(index).padStart(12, '0')}`));
+  await ownerClient.query(`INSERT INTO social_intelligence_reports
+    (id,space_id,user_id,connection_id,title,mention_ids_json,state) VALUES ('large-report','legacy-space','user','connection','Large report',$1,'failed')`, [largeSelection]);
+  await ownerClient.query("UPDATE social_intelligence_reports SET state='queued' WHERE id='large-report'");
+  await ownerClient.query(`INSERT INTO social_reply_drafts
+    (id,space_id,requested_by,mention_id,tone,instructions,state) VALUES ('large-reply','legacy-space','user','mention','helpful',$1,'queued')`, ['x'.repeat(32_000)]);
+  await ownerClient.query(`INSERT INTO intelligence_reports
+    (id,space_id,user_id,title,objective,source_refs_json,knowledge_refs_json,state)
+    VALUES ('large-intelligence','legacy-space','user','Large intelligence',$1,$2,$3,'queued')`,
+  ['o'.repeat(16_000), largeSelection, largeSelection]);
+  emit('bounded_active_request_indexes_passed');
   const managedPlans = await ownerClient.query(`SELECT code,requestable,version FROM platform_subscription_plans ORDER BY display_order`);
   assert.deepEqual(managedPlans.rows.map((row) => [row.code, Number(row.requestable), Number(row.version)]), [
     ['starter', 1, 1], ['team', 1, 1], ['enterprise', 1, 1]
@@ -194,7 +224,7 @@ try {
   emit('upgrade_and_idempotency_passed');
 
   const wrongSource = spawnSync(process.execPath, [
-    path.join(projectDir, 'scripts', 'upgrade-postgres-schema.mjs'), '--target-version', '9',
+    path.join(projectDir, 'scripts', 'upgrade-postgres-schema.mjs'), '--target-version', '10',
     '--expected-source-version', '1', '--expected-source-sha256', 'f'.repeat(64),
     '--pg-host', host, '--pg-port', String(port), '--pg-database', database,
     '--pg-user', ownerRole, '--pg-password-file', passwordFile, '--pg-ssl', 'disable', '--json'
@@ -219,12 +249,16 @@ try {
   fs.writeFileSync(path.join(migrationDir, '0008_admin_control_plane.sql'), adminControlMigration.replace(/\r?\n/gu, '\r\n'));
   const managedPlanMigration = fs.readFileSync(path.join(projectDir, 'backend', 'migrations', 'postgres', '0009_managed_subscription_plans.sql'), 'utf8');
   fs.writeFileSync(path.join(migrationDir, '0009_managed_subscription_plans.sql'), managedPlanMigration.replace(/\r?\n/gu, '\r\n'));
+  const deepAnalysisMigration = fs.readFileSync(path.join(projectDir, 'backend', 'migrations', 'postgres', '0010_deep_corpus_analysis.sql'), 'utf8');
+  fs.writeFileSync(path.join(migrationDir, '0010_deep_corpus_analysis.sql'), deepAnalysisMigration.replace(/\r?\n/gu, '\r\n'));
+  const boundedIndexMigration = fs.readFileSync(path.join(projectDir, 'backend', 'migrations', 'postgres', '0011_bounded_active_request_indexes.sql'), 'utf8');
+  fs.writeFileSync(path.join(migrationDir, '0011_bounded_active_request_indexes.sql'), boundedIndexMigration.replace(/\r?\n/gu, '\r\n'));
   runUpgrade(['--migrations-dir', migrationDir]);
-  fs.writeFileSync(path.join(migrationDir, '0010_intentional_failure.sql'), `CREATE TABLE should_rollback(id TEXT PRIMARY KEY);\nSELECT * FROM definitely_missing_table;\n`);
-  const failedUpgrade = runUpgrade(['--target-version', '10', '--migrations-dir', migrationDir], 1);
+  fs.writeFileSync(path.join(migrationDir, '0012_intentional_failure.sql'), `CREATE TABLE should_rollback(id TEXT PRIMARY KEY);\nSELECT * FROM definitely_missing_table;\n`);
+  const failedUpgrade = runUpgrade(['--target-version', '12', '--migrations-dir', migrationDir], 1);
   assert.match(failedUpgrade.stderr, /definitely_missing_table/u);
   assert.equal((await ownerClient.query("SELECT to_regclass('public.should_rollback') name")).rows[0].name, null);
-  assert.equal(Number((await ownerClient.query('SELECT MAX(version) version FROM experience_runtime_schema_version')).rows[0].version), 9);
+  assert.equal(Number((await ownerClient.query('SELECT MAX(version) version FROM experience_runtime_schema_version')).rows[0].version), 11);
   emit('checksum_normalization_and_rollback_passed');
 
   let privilegeSql = fs.readFileSync(path.join(projectDir, 'backend', 'migrations', 'postgres', 'runtime_privileges.sql'), 'utf8');
@@ -244,7 +278,7 @@ try {
   try {
     await ownerClient.query('ALTER TABLE assistant_runs DROP COLUMN output_json');
     await assert.rejects(
-      assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 9 }),
+      assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 11 }),
       (error) => error?.code === 'RUNTIME_SCHEMA_COLUMN_MISMATCH'
     );
   } finally { await ownerClient.query('ROLLBACK'); }
@@ -252,7 +286,7 @@ try {
 
   await ownerClient.query('DROP INDEX platform_audit_events_target');
   await assert.rejects(
-    assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 9 }),
+    assertRuntimeSchemaContract((sql) => ownerClient.query(sql), { schema: 'public', runtimeVersion: 11 }),
     (error) => error?.code === 'RUNTIME_SCHEMA_INDEX_MISMATCH'
   );
   emit('schema_drift_detection_passed');

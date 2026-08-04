@@ -4,9 +4,11 @@ import { z } from 'zod';
 import { aiJobRunner } from './aiJobs.js';
 import { getAiProviderPreference, getAiProviderState } from './aiProvider.js';
 import {
-  AssistantError, assistantEmailRequestFingerprint, assistantKnowledgeRequestFingerprint,
+  AssistantError, assistantComposeDraftRequestFingerprint, assistantComposeRequestFingerprint,
+  assistantEmailRequestFingerprint, assistantKnowledgeRequestFingerprint,
   assistantIntelligenceSnapshot, assistantWorkProductRequestFingerprint, consumeNylasOAuthState,
-  createAssistantEmailRun, createAssistantKnowledgeRun, createAssistantWorkProductRun,
+  completeAssistantComposeDelivery, createAssistantComposeDraftRun, createAssistantComposeRun, createAssistantEmailRun,
+  createAssistantKnowledgeRun, createAssistantWorkProductRun, failAssistantComposeDelivery,
   createNylasOAuthState, getAssistantRun, listAssistantRuns, listNylasConnections,
   markNylasConnectionRevoked, ownedNylasConnection, publishAssistantChanged, replayAssistantIdempotency,
   saveNylasConnection, updateAssistantDraft, type AssistantEvidenceSnapshot
@@ -27,7 +29,7 @@ import {
 import {
   createNylasAuthorizeUrl, exchangeNylasCode, getNylasCalendarEvent, getNylasThreadSnapshot,
   listNylasCalendarEvents, listNylasCalendars, listNylasFolders, listNylasThreadPage, listNylasThreads,
-  NylasError, nylasConfigured, nylasRedirectUri, revokeNylasGrant, sendNylasReply,
+  NylasError, nylasConfigured, nylasRedirectUri, revokeNylasGrant, sendNylasMessage, sendNylasReply,
   type AssistantThreadSnapshot, type NylasReplyRecipient
 } from './nylasClient.js';
 import { nylasSecretEncryptionConfigured } from './nylasSecrets.js';
@@ -84,6 +86,41 @@ const replyInput = z.object({
   mode: z.enum(['reply', 'reply_all']).default('reply'),
   confirmation: z.literal('send')
 }).strict();
+const composeRecipient = z.object({
+  email: z.string().trim().email().max(254), name: z.string().trim().max(200).optional()
+}).strict();
+const composeInput = z.object({
+  connectionId: z.string().uuid(),
+  to: z.array(composeRecipient).min(1).max(50),
+  cc: z.array(composeRecipient).max(49).default([]),
+  bcc: z.array(composeRecipient).max(49).default([]),
+  subject: z.string().trim().min(1).max(500),
+  body: z.string().trim().min(1).max(48_000),
+  confirmation: z.literal('send')
+}).strict().superRefine((value, context) => {
+  const recipients = [...value.to, ...value.cc, ...value.bcc];
+  if (recipients.length > 50) context.addIssue({ code: 'custom', message: 'An email can contain at most 50 recipients.' });
+  const addresses = recipients.map((recipient) => recipient.email.toLocaleLowerCase('en-US'));
+  if (new Set(addresses).size !== addresses.length) {
+    context.addIssue({ code: 'custom', message: 'Each recipient address can appear only once.' });
+  }
+});
+const composeDraftInput = z.object({
+  connectionId: z.string().uuid(),
+  to: z.array(composeRecipient).min(1).max(50),
+  cc: z.array(composeRecipient).max(49).default([]),
+  bcc: z.array(composeRecipient).max(49).default([]),
+  subject: z.string().trim().max(500).optional(),
+  instructions: z.string().trim().min(3).max(2_000),
+  tone: z.string().trim().min(1).max(80).default('professional')
+}).strict().superRefine((value, context) => {
+  const recipients = [...value.to, ...value.cc, ...value.bcc];
+  if (recipients.length > 50) context.addIssue({ code: 'custom', message: 'An email can contain at most 50 recipients.' });
+  const addresses = recipients.map((recipient) => recipient.email.toLocaleLowerCase('en-US'));
+  if (new Set(addresses).size !== addresses.length) {
+    context.addIssue({ code: 'custom', message: 'Each recipient address can appear only once.' });
+  }
+});
 const workProductInput = z.object({
   documentType: assistantDocumentType,
   title: z.string().trim().min(2).max(500),
@@ -229,6 +266,24 @@ function connectionCanSend(connection: { provider: string; scopes: string[] }) {
     ? scopes.has('mail.send')
     : scopes.has('https://www.googleapis.com/auth/gmail.send')
       || scopes.has('https://www.googleapis.com/auth/gmail.modify');
+}
+
+function connectionCanReadCalendar(connection: { provider: string; scopes: string[] }) {
+  const scopes = new Set(connection.scopes.map((scope) => scope.toLocaleLowerCase('en-US')));
+  return connection.provider === 'microsoft'
+    ? scopes.has('calendars.read') || scopes.has('calendars.readwrite')
+    : scopes.has('https://www.googleapis.com/auth/calendar.readonly')
+      || scopes.has('https://www.googleapis.com/auth/calendar');
+}
+
+function requireCalendarAccess(connection: { provider: string; scopes: string[] }) {
+  if (!connectionCanReadCalendar(connection)) {
+    throw new AssistantError(
+      'Reconnect this mailbox to approve calendar access.',
+      409,
+      'NYLAS_CALENDAR_SCOPE_REQUIRED'
+    );
+  }
 }
 
 function replyTarget(snapshot: AssistantThreadSnapshot, mailboxEmail: string, mode: 'reply' | 'reply_all') {
@@ -468,6 +523,61 @@ assistantRouter.get('/mailbox/threads/:threadId', async (request, response) => {
   } catch (error) { return assistantError(response, error); }
 });
 
+assistantRouter.post('/mailbox/messages/send', async (request, response) => {
+  let composeIdentity: { id: string; spaceId: string; userId: string } | null = null;
+  try {
+    const { user, space } = identity(request);
+    const input = composeInput.parse(request.body);
+    const key = idempotencyKey(request);
+    if (!key) throw new AssistantError('An idempotency key is required to send email.', 400, 'ASSISTANT_IDEMPOTENCY_REQUIRED');
+    const connection = ownedNylasConnection(user.id, space.id, input.connectionId);
+    if (!connectionCanSend(connection)) {
+      throw new AssistantError('Reconnect this mailbox to approve send access.', 409, 'NYLAS_SEND_SCOPE_REQUIRED');
+    }
+    const requestFingerprint = assistantComposeRequestFingerprint(input);
+    const composed = createAssistantComposeRun({
+      user, spaceId: space.id, connectionId: connection.id,
+      to: input.to, cc: input.cc, bcc: input.bcc,
+      subject: input.subject, body: input.body, idempotencyKey: key, requestFingerprint
+    });
+    composeIdentity = { id: composed.run.id, spaceId: space.id, userId: user.id };
+    if (composed.run.externalDispatched && composed.run.delivery) {
+      return response.json({ run: composed.run, delivery: composed.run.delivery, idempotent: true });
+    }
+    const sent = await sendNylasMessage(connection.grantId, {
+      to: input.to, cc: input.cc, bcc: input.bcc,
+      subject: input.subject, body: input.body, idempotencyKey: composed.run.id
+    });
+    const sentAt = new Date().toISOString();
+    const recipientEmails = [...input.to, ...input.cc, ...input.bcc].map((recipient) => recipient.email.toLocaleLowerCase('en-US'));
+    const run = completeAssistantComposeDelivery(composed.run.id, space.id, user.id, {
+      sentAt, messageId: sent.id, recipients: recipientEmails
+    });
+    recordAssistantAudit({
+      spaceId: space.id, actorUserId: user.id, action: 'assistant.mailbox.message_sent',
+      targetType: 'mailbox_message', targetId: sent.id,
+      detail: {
+        connectionId: connection.id, runId: run.id, recipientCount: recipientEmails.length,
+        providerMessageId: sent.id, providerThreadId: sent.threadId,
+        subjectSha256: crypto.createHash('sha256').update(input.subject).digest('hex'),
+        bodySha256: crypto.createHash('sha256').update(normalizeEmailDraftHtml(input.body)).digest('hex')
+      }
+    });
+    return response.status(201).json({ run, delivery: run.delivery, idempotent: false });
+  } catch (error) {
+    if (composeIdentity) {
+      const code = error instanceof AssistantError || error instanceof NylasError ? error.code : 'ASSISTANT_MESSAGE_SEND_FAILED';
+      failAssistantComposeDelivery(composeIdentity.id, composeIdentity.spaceId, composeIdentity.userId, code);
+      recordAssistantAudit({
+        spaceId: composeIdentity.spaceId, actorUserId: composeIdentity.userId,
+        action: 'assistant.mailbox.message_failed', targetType: 'run', targetId: composeIdentity.id,
+        detail: { code }
+      });
+    }
+    return assistantError(response, error);
+  }
+});
+
 assistantRouter.post('/mailbox/threads/:threadId/reply', async (request, response) => {
   let outboundId = '';
   let auditIdentity: { spaceId: string; userId: string; runId: string; threadId: string } | null = null;
@@ -673,6 +783,27 @@ assistantRouter.post('/runs/email-draft', async (request, response) => {
   } catch (error) { return assistantError(response, error); }
 });
 
+assistantRouter.post('/runs/email-compose-draft', async (request, response) => {
+  try {
+    const { user, space } = identity(request); const input = composeDraftInput.parse(request.body);
+    const key = idempotencyKey(request);
+    const fingerprint = assistantComposeDraftRequestFingerprint(input);
+    const replay = replayAssistantIdempotency({
+      spaceId: space.id, userId: user.id, kind: 'email_draft', idempotencyKey: key, requestFingerprint: fingerprint
+    });
+    if (replay) { queueCreated(replay, space.id); return response.status(202).json(statusPayload(replay)); }
+    assertCanQueueAiAction(space.id);
+    const connection = ownedNylasConnection(user.id, space.id, input.connectionId);
+    const created = createAssistantComposeDraftRun({
+      user, spaceId: space.id, connectionId: connection.id,
+      to: input.to, cc: input.cc, bcc: input.bcc,
+      subject: input.subject, instructions: input.instructions, tone: input.tone, idempotencyKey: key
+    });
+    queueCreated(created, space.id);
+    return response.status(202).json(statusPayload(created));
+  } catch (error) { return assistantError(response, error); }
+});
+
 assistantRouter.post('/runs/knowledge-answer', async (request, response) => {
   try {
     const { user, space } = identity(request); const input = knowledgeInput.parse(request.body);
@@ -787,6 +918,7 @@ assistantRouter.post('/runs/work-product', async (request, response) => {
         ? threadConnection
         : ownedNylasConnection(user.id, space.id, calendarConnectionId))
       : null;
+    if (calendarConnection) requireCalendarAccess(calendarConnection);
     if (input.threadId && threadConnection) {
       const snapshot = await getNylasThreadSnapshot(threadConnection.grantId, input.threadId);
       sources.push(...emailEvidence(snapshot));
@@ -951,6 +1083,7 @@ assistantRouter.get('/calendar/calendars', async (request, response) => {
   try {
     const { user, space } = identity(request); const input = calendarConnectionQuery.parse(request.query);
     const connection = ownedNylasConnection(user.id, space.id, input.connectionId);
+    requireCalendarAccess(connection);
     const items = await listNylasCalendars(connection.grantId);
     recordAssistantAudit({
       spaceId: space.id, actorUserId: user.id, action: 'assistant.calendar.calendars_read',
@@ -964,6 +1097,7 @@ assistantRouter.get('/calendar/events', async (request, response) => {
   try {
     const { user, space } = identity(request); const input = calendarEventsQuery.parse(request.query);
     const connection = ownedNylasConnection(user.id, space.id, input.connectionId);
+    requireCalendarAccess(connection);
     const page = await listNylasCalendarEvents(connection.grantId, {
       calendarId: input.calendarId,
       start: new Date(input.start),

@@ -10,6 +10,7 @@ import { computeAnalytics } from './analytics.js';
 import { completeWithAi, type AiProviderSnapshot } from './aiProvider.js';
 import { AssistantError, assistantRunId, failAssistantRun, markAssistantRunRetrying, publishAssistantChanged } from './assistant.js';
 import { executeAssistantJob } from './assistantJobs.js';
+import { DeepAnalysisError, executeDeepAnalysisJob, failDeepAnalysisJob, recoverDeepAnalysisRuns } from './deepAnalysis.js';
 import {
   applyGeneratedJourney, applyOptimizedJourney, applySurveyTranslation, claimNextJob, clearJobProviderResult, createCollector, db, getCollector, getJob, getJobProviderResult, getJourney, getJourneyAiApplication, getResponse, getSurvey, insertInsight,
   listInsights, listResponses, listSocialMentionsByIdsForSpace, listSocialMentionsForSpace, saveJobProviderResult, saveSurvey, setResponseAnalysis,
@@ -255,6 +256,7 @@ const applyGeneratedSurvey = db.transaction((job: AiJob, generated: z.infer<type
 });
 
 export async function executeAiJob(job: AiJob): Promise<JobOutput> {
+  if (job.kind === 'intelligence.deep_analysis') return executeDeepAnalysisJob(job);
   if (job.kind.startsWith('assistant.')) return executeAssistantJob(job);
   if (job.kind === 'survey.generate') {
     const previouslyAppliedSurvey = generatedSurveyApplication(job);
@@ -459,6 +461,7 @@ export class AiJobRunner {
   private stopped = true;
 
   start() {
+    recoverDeepAnalysisRuns();
     if (!this.stopped) return;
     this.stopped = false;
     this.timer = setInterval(() => this.pump(), 500);
@@ -498,8 +501,9 @@ export class AiJobRunner {
       const terminalIntelligenceError = error instanceof IntelligenceError && [400, 404, 409, 413].includes(error.status);
       const terminalKnowledgeError = error instanceof KnowledgeError && !error.retryable;
       const terminalAssistantError = error instanceof AssistantError && [400, 404, 409, 413].includes(error.status);
+      const terminalDeepAnalysisError = error instanceof DeepAnalysisError && [400, 404, 409, 413, 422].includes(error.status);
       const runId = assistantRunId(job);
-      if (!terminalTerraError && !terminalIntelligenceError && !terminalKnowledgeError && !terminalAssistantError && (retryable || attempts < 3)) {
+      if (!terminalTerraError && !terminalIntelligenceError && !terminalKnowledgeError && !terminalAssistantError && !terminalDeepAnalysisError && (retryable || attempts < 3)) {
         const delayMs = retryable ? Math.min(300_000, 15_000 * Math.max(1, attempts)) : Math.min(60_000, 2 ** attempts * 1000);
         const queued = updateJob(job.id, {
           state: 'queued', stage: error instanceof KnowledgeError && error.retryable ? 'waiting_for_knowledge_runtime' : retryable ? 'waiting_for_runtime' : 'retrying', progress: 0,
@@ -509,6 +513,7 @@ export class AiJobRunner {
         publishJobState(queued, job.spaceId);
       } else {
         failIntelligenceArtifact(job.kind, job.input, message, job.spaceId);
+        if (job.kind === 'intelligence.deep_analysis') failDeepAnalysisJob(job, message);
         if (runId) failAssistantRun(runId, job.spaceId, message);
         const failed = updateJob(job.id, { state: 'failed', stage: 'failed', progress: 100, error: message.slice(0, 1000), completedAt: new Date().toISOString() });
         publishJobState(failed, job.spaceId);

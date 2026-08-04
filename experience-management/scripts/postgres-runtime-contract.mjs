@@ -23,18 +23,19 @@ const BASE_RUNTIME_EXTENSION_TABLES = Object.freeze([
   'assistant_audit_events'
 ]);
 
-export function runtimeExtensionTables(runtimeVersion = 9) {
+export function runtimeExtensionTables(runtimeVersion = 11) {
   const tables = [...BASE_RUNTIME_EXTENSION_TABLES];
   if (runtimeVersion >= 6) tables.push('social_intelligence_publications');
   if (runtimeVersion >= 7) tables.push('assistant_outbound_messages');
   if (runtimeVersion >= 8) tables.push('platform_rbac_roles', 'platform_rbac_role_permissions', 'platform_rbac_user_roles');
   if (runtimeVersion >= 9) tables.push('platform_subscription_plans');
+  if (runtimeVersion >= 10) tables.push('deep_analysis_runs', 'deep_analysis_partitions', 'deep_analysis_evidence');
   return tables;
 }
 
-export const RUNTIME_EXTENSION_TABLES = Object.freeze(runtimeExtensionTables(9));
+export const RUNTIME_EXTENSION_TABLES = Object.freeze(runtimeExtensionTables(10));
 
-export function runtimeTableSetDifference(sourceTableNames, actualTableNames, runtimeVersion = 9) {
+export function runtimeTableSetDifference(sourceTableNames, actualTableNames, runtimeVersion = 11) {
   const expectedTables = new Set([...sourceTableNames, ...runtimeExtensionTables(runtimeVersion)]);
   return {
     unknownTables: actualTableNames.filter((name) => !expectedTables.has(name)),
@@ -173,6 +174,30 @@ const managedPlanExactColumns = Object.freeze({
   ]
 });
 
+const deepAnalysisExactColumns = Object.freeze({
+  deep_analysis_runs: [
+    ['id', 'text', false], ['space_id', 'text', false], ['user_id', 'text', false], ['title', 'text', false],
+    ['objective', 'text', false], ['mode', 'text', false], ['state', 'text', false], ['stage', 'text', false],
+    ['progress', 'integer', false], ['source_refs_json', 'text', false], ['knowledge_refs_json', 'text', false],
+    ['corpus_manifest_json', 'text', false], ['estimate_json', 'text', false], ['result_json', 'text', true],
+    ['runtime_json', 'text', true], ['error', 'text', true], ['idempotency_key', 'text', true],
+    ['total_partitions', 'integer', false], ['completed_partitions', 'integer', false], ['failed_partitions', 'integer', false],
+    ['created_at', 'text', false], ['started_at', 'text', true], ['completed_at', 'text', true], ['updated_at', 'text', false]
+  ],
+  deep_analysis_partitions: [
+    ['id', 'text', false], ['run_id', 'text', false], ['space_id', 'text', false], ['ordinal', 'integer', false],
+    ['level', 'integer', false], ['kind', 'text', false], ['state', 'text', false], ['ai_job_id', 'text', true],
+    ['source_json', 'text', false], ['input_json', 'text', false], ['output_json', 'text', true], ['runtime_json', 'text', true],
+    ['token_estimate', 'integer', false], ['error', 'text', true], ['created_at', 'text', false], ['started_at', 'text', true],
+    ['completed_at', 'text', true], ['updated_at', 'text', false]
+  ],
+  deep_analysis_evidence: [
+    ['id', 'text', false], ['run_id', 'text', false], ['partition_id', 'text', false], ['space_id', 'text', false],
+    ['kind', 'text', false], ['statement', 'text', false], ['confidence', 'double precision', false],
+    ['citations_json', 'text', false], ['metadata_json', 'text', false], ['created_at', 'text', false]
+  ]
+});
+
 const additiveColumns = Object.freeze({
   users: [
     ['account_status', 'text', false], ['last_login_at', 'text', true], ['suspended_at', 'text', true],
@@ -219,6 +244,9 @@ const adminControlPrimaryKeys = Object.freeze({
 });
 
 const managedPlanPrimaryKeys = Object.freeze({ platform_subscription_plans: ['code'] });
+const deepAnalysisPrimaryKeys = Object.freeze({
+  deep_analysis_runs: ['id'], deep_analysis_partitions: ['id'], deep_analysis_evidence: ['id']
+});
 
 const requiredForeignKeys = Object.freeze([
   ['users', 'suspended_by_user_id', 'users', 'id', 'n'],
@@ -290,6 +318,17 @@ const adminControlRequiredForeignKeys = Object.freeze([
   ['platform_rbac_user_roles', 'revoked_by_user_id', 'users', 'id', 'n']
 ]);
 
+const deepAnalysisRequiredForeignKeys = Object.freeze([
+  ['deep_analysis_runs', 'space_id', 'spaces', 'id', 'c'],
+  ['deep_analysis_runs', 'user_id', 'users', 'id', 'c'],
+  ['deep_analysis_partitions', 'run_id', 'deep_analysis_runs', 'id', 'c'],
+  ['deep_analysis_partitions', 'space_id', 'spaces', 'id', 'c'],
+  ['deep_analysis_partitions', 'ai_job_id', 'ai_jobs', 'id', 'n'],
+  ['deep_analysis_evidence', 'run_id', 'deep_analysis_runs', 'id', 'c'],
+  ['deep_analysis_evidence', 'partition_id', 'deep_analysis_partitions', 'id', 'c'],
+  ['deep_analysis_evidence', 'space_id', 'spaces', 'id', 'c']
+]);
+
 const requiredIndexes = Object.freeze({
   platform_role_assignments_active: ['create unique index', '(user_id, role)', 'where (revoked_at is null)'],
   platform_role_assignments_user: ['(user_id, granted_at desc)'],
@@ -340,6 +379,27 @@ const reviewedReplyRequiredIndexes = Object.freeze({
 const adminControlRequiredIndexes = Object.freeze({
   platform_rbac_user_roles_active: ['create unique index', '(user_id, role_id)', 'where (revoked_at is null)'],
   platform_rbac_user_roles_user: ['(user_id, assigned_at desc)']
+});
+
+const deepAnalysisRequiredIndexes = Object.freeze({
+  deep_analysis_runs_idempotency: ['create unique index', '(space_id, user_id, idempotency_key)', 'where (idempotency_key is not null)'],
+  deep_analysis_runs_space_state: ['(space_id, state, created_at)'],
+  deep_analysis_partitions_run_id_ordinal_key: ['create unique index', '(run_id, ordinal)'],
+  deep_analysis_partitions_run_state: ['(run_id, state, level, ordinal)'],
+  deep_analysis_evidence_run_kind: ['(run_id, kind, created_at)']
+});
+
+const boundedActiveRequestRequiredIndexes = Object.freeze({
+  social_reply_drafts_one_active_request: [
+    'create unique index', '(space_id, requested_by, mention_id, tone, md5(instructions))', "where (state = 'queued'::text)"
+  ],
+  social_intelligence_reports_one_active_request: [
+    'create unique index', '(space_id, user_id, connection_id, title, md5(mention_ids_json))', "where (state = 'queued'::text)"
+  ],
+  intelligence_reports_one_active_request: [
+    'create unique index', '(space_id, user_id, title, md5(objective), md5(source_refs_json), md5(knowledge_refs_json))',
+    "where (state = 'queued'::text)"
+  ]
 });
 
 const requiredDefaults = Object.freeze({
@@ -400,6 +460,26 @@ const managedPlanRequiredDefaults = Object.freeze({
   'platform_subscription_plans.requestable': '1',
   'platform_subscription_plans.display_order': '0',
   'platform_subscription_plans.version': '1'
+});
+
+const deepAnalysisRequiredDefaults = Object.freeze({
+  'deep_analysis_runs.state': "'queued'::text",
+  'deep_analysis_runs.stage': "'planning'::text",
+  'deep_analysis_runs.progress': '0',
+  'deep_analysis_runs.source_refs_json': "'[]'::text",
+  'deep_analysis_runs.knowledge_refs_json': "'[]'::text",
+  'deep_analysis_runs.corpus_manifest_json': "'{}'::text",
+  'deep_analysis_runs.estimate_json': "'{}'::text",
+  'deep_analysis_runs.total_partitions': '0',
+  'deep_analysis_runs.completed_partitions': '0',
+  'deep_analysis_runs.failed_partitions': '0',
+  'deep_analysis_partitions.level': '0',
+  'deep_analysis_partitions.state': "'queued'::text",
+  'deep_analysis_partitions.source_json': "'{}'::text",
+  'deep_analysis_partitions.input_json': "'{}'::text",
+  'deep_analysis_partitions.token_estimate': '0',
+  'deep_analysis_evidence.citations_json': "'[]'::text",
+  'deep_analysis_evidence.metadata_json': "'{}'::text"
 });
 
 const adminControlRequiredChecks = Object.freeze({
@@ -502,11 +582,13 @@ async function rows(query, sql) {
 export async function assertRuntimeSchemaContract(query, options = {}) {
   const schema = String(options.schema || 'public');
   if (!IDENTIFIER.test(schema)) throw contractError('RUNTIME_SCHEMA_IDENTIFIER_INVALID', `Unsafe PostgreSQL schema identifier: ${schema}`);
-  const runtimeVersion = Number(options.runtimeVersion ?? 9);
+  const runtimeVersion = Number(options.runtimeVersion ?? 11);
   if (!Number.isSafeInteger(runtimeVersion) || runtimeVersion < 1) {
     throw contractError('RUNTIME_SCHEMA_VERSION_INVALID', 'Runtime schema contract version must be a positive integer.');
   }
-  const exactColumnContract = runtimeVersion >= 9
+  const exactColumnContract = runtimeVersion >= 10
+    ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns, ...reviewedReplyExactColumns, ...adminControlExactColumns, ...managedPlanExactColumns, ...deepAnalysisExactColumns }
+    : runtimeVersion >= 9
     ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns, ...reviewedReplyExactColumns, ...adminControlExactColumns, ...managedPlanExactColumns }
     : runtimeVersion >= 8
     ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns, ...reviewedReplyExactColumns, ...adminControlExactColumns }
@@ -516,7 +598,9 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
     ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns }
     : runtimeVersion >= 5 ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns }
     : runtimeVersion >= 4 ? { ...exactColumns, ...assistantExactColumns } : exactColumns;
-  const primaryKeyContract = runtimeVersion >= 9
+  const primaryKeyContract = runtimeVersion >= 10
+    ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys, ...reviewedReplyPrimaryKeys, ...adminControlPrimaryKeys, ...managedPlanPrimaryKeys, ...deepAnalysisPrimaryKeys }
+    : runtimeVersion >= 9
     ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys, ...reviewedReplyPrimaryKeys, ...adminControlPrimaryKeys, ...managedPlanPrimaryKeys }
     : runtimeVersion >= 8
     ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys, ...reviewedReplyPrimaryKeys, ...adminControlPrimaryKeys }
@@ -526,7 +610,9 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
     ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys }
     : runtimeVersion >= 5 ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys }
     : runtimeVersion >= 4 ? { ...primaryKeys, ...assistantPrimaryKeys } : primaryKeys;
-  const foreignKeyContract = runtimeVersion >= 8
+  const foreignKeyContract = runtimeVersion >= 10
+    ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys, ...reviewedReplyRequiredForeignKeys, ...adminControlRequiredForeignKeys, ...deepAnalysisRequiredForeignKeys]
+    : runtimeVersion >= 8
     ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys, ...reviewedReplyRequiredForeignKeys, ...adminControlRequiredForeignKeys]
     : runtimeVersion >= 7
     ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys, ...reviewedReplyRequiredForeignKeys]
@@ -534,7 +620,11 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
     ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys]
     : runtimeVersion >= 5 ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys]
     : runtimeVersion >= 4 ? [...requiredForeignKeys, ...assistantRequiredForeignKeys] : requiredForeignKeys;
-  const indexContract = runtimeVersion >= 8
+  const indexContract = runtimeVersion >= 11
+    ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes, ...reviewedReplyRequiredIndexes, ...adminControlRequiredIndexes, ...deepAnalysisRequiredIndexes, ...boundedActiveRequestRequiredIndexes }
+    : runtimeVersion >= 10
+    ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes, ...reviewedReplyRequiredIndexes, ...adminControlRequiredIndexes, ...deepAnalysisRequiredIndexes }
+    : runtimeVersion >= 8
     ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes, ...reviewedReplyRequiredIndexes, ...adminControlRequiredIndexes }
     : runtimeVersion >= 7
     ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes, ...reviewedReplyRequiredIndexes }
@@ -542,7 +632,9 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
     ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes }
     : runtimeVersion >= 5 ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes }
     : runtimeVersion >= 4 ? { ...requiredIndexes, ...assistantRequiredIndexes } : requiredIndexes;
-  const defaultContract = runtimeVersion >= 9
+  const defaultContract = runtimeVersion >= 10
+    ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults, ...reviewedIntelligenceRequiredDefaults, ...reviewedReplyRequiredDefaults, ...adminControlRequiredDefaults, ...managedPlanRequiredDefaults, ...deepAnalysisRequiredDefaults }
+    : runtimeVersion >= 9
     ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults, ...reviewedIntelligenceRequiredDefaults, ...reviewedReplyRequiredDefaults, ...adminControlRequiredDefaults, ...managedPlanRequiredDefaults }
     : runtimeVersion >= 8
     ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults, ...reviewedIntelligenceRequiredDefaults, ...reviewedReplyRequiredDefaults, ...adminControlRequiredDefaults }
@@ -654,7 +746,7 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
   for (const [name, fragments] of Object.entries(indexContract)) {
     const definition = actualIndexes.get(name) || '';
     if (!definition || fragments.some((fragment) => !definition.includes(normalized(fragment)))) {
-      throw contractError('RUNTIME_SCHEMA_INDEX_MISMATCH', `Index ${schema}.${name} is missing or does not match its runtime contract.`);
+      throw contractError('RUNTIME_SCHEMA_INDEX_MISMATCH', `Index ${schema}.${name} is missing or does not match its runtime contract.${definition ? ` Actual definition: ${definition}` : ''}`);
     }
   }
 

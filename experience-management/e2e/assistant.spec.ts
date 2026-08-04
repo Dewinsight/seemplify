@@ -71,6 +71,7 @@ async function selectMailbox(page: Page, id: string, accessibleName: RegExp) {
 test('personal assistant summarises mail, preserves an editable draft, and cites selected Experience evidence', async ({ page }, testInfo) => {
   let runs: any[] = [];
   let savedDraftBody = '';
+  let composedEmailSent = false;
   const overview = {
     configured: true,
     callbackUrl: 'http://127.0.0.1:5412/api/integrations/nylas/callback',
@@ -122,6 +123,21 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
     runs = [run, ...runs];
     return json(route, { run, jobId: run.jobId, state: run.state, statusUrl: `/api/assistant/runs/${run.id}` }, 202);
   });
+  await page.route(/\/api\/assistant\/runs\/email-compose-draft$/, async (route) => {
+    const request = await route.request().postDataJSON();
+    expect(request.connectionId).toBe(connectionId);
+    expect(request.to).toEqual([{ email: 'new.customer@example.com' }]);
+    const run = {
+      id: '88888888-8888-4888-8888-888888888880', jobId: '88888888-8888-4888-8888-888888888881',
+      kind: 'assistant.email_draft', state: 'completed', stage: 'completed', progress: 100,
+      connectionId, subjectRef: null,
+      draft: { subject: 'Customer account review', body: '<p>Hello,</p><p>Your account review is ready.</p>', revision: 1, updatedAt: now },
+      runtime: { provider: 'terra', model: 'gpt-5.6-terra' }, error: null,
+      createdAt: now, completedAt: now, updatedAt: now
+    };
+    runs = [run, ...runs];
+    return json(route, { run, jobId: run.jobId, state: run.state, statusUrl: `/api/assistant/runs/${run.id}` }, 202);
+  });
   await page.route(`**/api/assistant/runs/${draftRunId}/draft`, async (route) => {
     const body = await route.request().postDataJSON();
     savedDraftBody = body.body;
@@ -136,6 +152,20 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
     run.externalDispatched = true;
     run.delivery = { sentAt: now, messageId: 'sent-message-1', recipients: ['ada@example.com'], mode: 'reply' };
     return json(route, { run, delivery: run.delivery, idempotent: false }, 201);
+  });
+  await page.route(/\/api\/assistant\/mailbox\/messages\/send$/, async (route) => {
+    const body = await route.request().postDataJSON();
+    expect(body).toMatchObject({
+      connectionId, to: [{ email: 'new.customer@example.com' }],
+      subject: 'Customer account review', confirmation: 'send'
+    });
+    expect(String(body.body)).toContain('Your account review is ready.');
+    composedEmailSent = true;
+    return json(route, {
+      run: { id: '88888888-8888-4888-8888-888888888882', externalDispatched: true },
+      delivery: { sentAt: now, messageId: 'new-message-1', recipients: ['new.customer@example.com'], mode: 'compose' },
+      idempotent: false
+    }, 201);
   });
   await page.route(/\/api\/assistant\/runs\/knowledge-answer$/, async (route) => {
     const request = await route.request().postDataJSON();
@@ -186,6 +216,22 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
   await page.getByRole('button', { name: 'Send reply' }).click();
   await expect(page.getByTestId('assistant-run-detail').getByText('Reply sent', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close assistant' }).click();
+  const compose = page.getByRole('button', { name: 'Compose email' });
+  if (!await compose.isVisible()) await page.getByRole('button', { name: 'Back to conversations' }).click();
+  await compose.click();
+  await expect(page.getByRole('heading', { name: 'New email' })).toBeVisible();
+  await page.getByRole('textbox', { name: 'To', exact: true }).fill('new.customer@example.com');
+  await page.getByLabel('What should the email achieve?').fill('Tell the customer that their account review is ready.');
+  await page.getByRole('button', { name: 'Draft with AI', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Email body' })).toContainText('Your account review is ready.');
+  await expect(page.getByRole('toolbar', { name: 'Email body formatting' })).toBeVisible();
+  await page.getByRole('button', { name: 'Review email' }).click();
+  await expect(page.getByRole('heading', { name: 'Review email' })).toBeVisible();
+  await page.getByRole('button', { name: 'Send email' }).click();
+  await expect.poll(() => composedEmailSent).toBe(true);
+  if (!await page.getByRole('button', { name: 'Open assistant' }).isVisible()) {
+    await page.getByTestId(`assistant-thread-${thread.id}`).click();
+  }
   await expect(page.getByRole('button', { name: 'Open assistant' })).toBeVisible();
   await page.getByRole('button', { name: 'Open assistant' }).click();
   await expect(page.getByLabel('Mailbox assistant')).toBeVisible();
@@ -321,4 +367,40 @@ test('personal assistant explains missing Nylas setup without exposing a doomed 
   await expect(page.getByRole('button', { name: 'Connect Microsoft' })).toBeDisabled();
   await expect(page.getByRole('tab')).toHaveCount(0);
   await expect(page.getByLabel('Mailbox conversations')).toHaveCount(0);
+});
+
+test('calendar explains an older mailbox grant and offers reconnection', async ({ page }) => {
+  const mailbox = {
+    id: connectionId,
+    email: 'calendar-owner@example.com',
+    displayName: 'Calendar owner',
+    provider: 'google',
+    status: 'connected',
+    scopes: ['https://www.googleapis.com/auth/gmail.readonly']
+  };
+  await page.route(/\/api\/assistant\/overview(?:\?.*)?$/, (route) => json(route, {
+    configured: true,
+    callbackUrl: 'http://127.0.0.1:5412/api/integrations/nylas/callback',
+    connections: [mailbox],
+    worker: { running: true, active: 0, queued: 0, concurrency: 4 },
+    terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
+  }));
+  await page.route(/\/api\/assistant\/mailbox\/threads(?:\?.*)?$/, (route) => json(route, { items: [], nextCursor: null }));
+  await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, []));
+  await page.route(/\/api\/assistant\/(actions|audit)(?:\?.*)?$/, (route) => json(route, { items: [] }));
+  await page.route(/\/api\/intelligence\/sources(?:\?.*)?$/, (route) => json(route, []));
+  await page.route(/\/api\/knowledge-bases(?:\?.*)?$/, (route) => json(route, { knowledgeBases: [] }));
+  await page.route(/\/api\/assistant\/calendar\/calendars(?:\?.*)?$/, (route) => json(route, {
+    error: 'Reconnect this mailbox to approve calendar access.',
+    code: 'NYLAS_CALENDAR_SCOPE_REQUIRED'
+  }, 409));
+
+  await signIn(page);
+  await openAssistant(page);
+  await page.getByRole('tab', { name: 'Calendar' }).click();
+
+  await expect(page.getByText('Calendar permission is not connected')).toBeVisible();
+  await expect(page.getByText(/Reconnect calendar-owner@example\.com and approve read-only calendar access/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reconnect mailbox' })).toBeEnabled();
+  await expect(page.getByText('Nylas rejected the request.')).toHaveCount(0);
 });

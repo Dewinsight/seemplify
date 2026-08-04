@@ -115,15 +115,17 @@ test('signed status surfaces migration, GTE, queue, backfill, provider, and reso
   assert.match(manager, /models\\transformers|Join-Path \$modelRoot 'transformers'/);
 });
 
-test('managed PostgreSQL runtime and isolated harnesses target additive schema five', () => {
-  assert.match(experienceManager, /\$PostgresRuntimeSchemaVersion = 5/);
-  assert.match(experienceManager, /postgres-runtime-schema-v5-started/);
-  assert.match(postgresE2e, /POSTGRES_RUNTIME_SCHEMA_VERSION: '5'/);
-  assert.match(postgresE2e, /'--target-version', '5'/);
-  assert.match(postgresMigrationTest, /'--target-version', '5'/);
+test('managed PostgreSQL runtime and isolated harnesses target additive schema eleven', () => {
+  assert.match(experienceManager, /\$PostgresRuntimeSchemaVersion = 11/);
+  assert.match(experienceManager, /postgres-runtime-schema-v11-started/);
+  assert.match(postgresE2e, /POSTGRES_RUNTIME_SCHEMA_VERSION: '11'/);
+  assert.match(postgresE2e, /'--target-version', '10'/);
+  assert.match(postgresMigrationTest, /'--target-version', '11'/);
   assert.match(postgresMigrationTest, /0003_knowledge_embedding_profiles\.sql/);
   assert.match(postgresMigrationTest, /0004_experience_assistant\.sql/);
-  assert.match(postgresMigrationTest, /0006_intentional_failure\.sql/);
+  assert.match(postgresMigrationTest, /0012_intentional_failure\.sql/);
   assert.match(postgresMigrationTest, /knowledge_backfill_runs/);
   assert.match(postgresMigrationTest, /assistant_runs/);
+  assert.match(postgresMigrationTest, /0010_deep_corpus_analysis\.sql/);
+  assert.match(postgresMigrationTest, /0011_bounded_active_request_indexes\.sql/);
 });

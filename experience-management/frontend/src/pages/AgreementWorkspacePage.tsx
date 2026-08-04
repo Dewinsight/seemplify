@@ -1,13 +1,15 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, FileText, History, Loader2, Mail, Plus, RefreshCw, Save, Send, ShieldCheck, Trash2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Download, Eye, FileText, History, LibraryBig, Loader2, Mail, Plus, RefreshCw, Save, Send, ShieldCheck, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, json } from '@/lib/api';
-import { adminArtifactContentUrl, adminDocumentContentUrl, esignStatusLabel, normalizeEnvelopeDetail, signingRoles } from '@/lib/esign';
+import { adminArtifactContentUrl, adminArtifactPreviewUrl, adminDocumentContentUrl, esignStatusLabel, normalizeEnvelopeDetail, signingRoles } from '@/lib/esign';
+import { addSignedAgreementToKnowledge, getKnowledgeBases } from '@/lib/knowledgeBases';
 import { formatDateTime } from '@/lib/utils';
 import { Link, useParams } from '@/lib/router';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { AgreementFieldsStep } from '@/components/esign/AgreementFieldsStep';
+import { PdfPreviewDialog } from '@/components/esign/PdfPreviewDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import type { ESignEnvelope, ESignEnvelopeDetail, ESignRecipient, ESignRecipientRole, ESignWorkflowSectionKey } from '@/types';
+import type { ESignArtifact, ESignEnvelope, ESignEnvelopeDetail, ESignRecipient, ESignRecipientRole, ESignWorkflowSectionKey, KnowledgeBase } from '@/types';
 
 type RecipientDraft = Pick<ESignRecipient, 'id' | 'name' | 'email' | 'role' | 'routingOrder' | 'accessCodeSet'> & { accessCode: string };
 type WorkspaceTab = ESignWorkflowSectionKey | 'review' | 'activity';
@@ -145,6 +147,62 @@ function readableStatus(value: string) {
   return value.replaceAll('_', ' ').replaceAll('.', ' · ');
 }
 
+function AgreementArtifactActions({ artifact, envelopeId }: { artifact: ESignArtifact; envelopeId: string }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [knowledgeBaseId, setKnowledgeBaseId] = useState('');
+  const [loadingBases, setLoadingBases] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const downloadUrl = adminArtifactContentUrl(envelopeId, artifact.id);
+  const isSignedDocument = artifact.kind === 'completed_pdf' || artifact.kind === 'completed_document';
+
+  async function openKnowledge() {
+    setKnowledgeOpen(true);
+    if (knowledgeBases.length || loadingBases) return;
+    try {
+      setLoadingBases(true);
+      const bases = await getKnowledgeBases();
+      setKnowledgeBases(bases);
+      setKnowledgeBaseId(bases[0]?.id || '');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Knowledge bases could not be loaded.');
+      setKnowledgeOpen(false);
+    } finally { setLoadingBases(false); }
+  }
+
+  async function addToKnowledge() {
+    if (!knowledgeBaseId) return;
+    try {
+      setAdding(true);
+      await addSignedAgreementToKnowledge({ knowledgeBaseId, envelopeId, artifactId: artifact.id });
+      toast.success('Signed agreement added to the knowledge base. Indexing will continue in the background.');
+      setKnowledgeOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The signed agreement could not be added.');
+    } finally { setAdding(false); }
+  }
+
+  return <div className="border p-2.5">
+    <div className="truncate text-sm font-medium" title={artifact.name}>{artifact.name}</div>
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}><Eye />Preview</Button>
+      <Button variant="outline" size="sm" asChild><a href={adminArtifactContentUrl(envelopeId, artifact.id)} aria-label={`Download ${artifact.name}`}><Download />Download</a></Button>
+    </div>
+    {isSignedDocument && <Button variant="ghost" size="sm" className="mt-1 w-full justify-start" onClick={() => void openKnowledge()}><LibraryBig />Add to knowledge base</Button>}
+    <PdfPreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} name={artifact.name} previewUrl={adminArtifactPreviewUrl(envelopeId, artifact.id)} downloadUrl={downloadUrl} />
+    <Dialog open={knowledgeOpen} onOpenChange={setKnowledgeOpen}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Add signed agreement to knowledge</DialogTitle><DialogDescription>The final signed PDF will be indexed with its source envelope and integrity hash. Existing identical documents are not duplicated.</DialogDescription></DialogHeader>
+        {loadingBases ? <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground"><Loader2 className="animate-spin" />Loading knowledge bases…</div>
+          : knowledgeBases.length ? <div><Label htmlFor={`agreement-knowledge-${artifact.id}`}>Knowledge base</Label><select id={`agreement-knowledge-${artifact.id}`} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={knowledgeBaseId} onChange={(event) => setKnowledgeBaseId(event.target.value)}>{knowledgeBases.map((base) => <option key={base.id} value={base.id}>{base.name}{base.privacy === 'private' ? ' · Private' : ''}</option>)}</select></div>
+            : <div className="border border-dashed px-4 py-6 text-sm text-muted-foreground">Create a knowledge base first, then return here to add the signed agreement.</div>}
+        <DialogFooter><Button variant="outline" onClick={() => setKnowledgeOpen(false)} disabled={adding}>Cancel</Button><Button onClick={() => void addToKnowledge()} disabled={adding || !knowledgeBaseId}>{adding ? <Loader2 className="animate-spin" /> : <LibraryBig />}Add and index</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </div>;
+}
+
 function ActivityStep({ detail, envelopeId, working, onRetryFinalization }: {
   detail: ESignEnvelopeDetail; envelopeId: string; working: boolean; onRetryFinalization: () => Promise<void>;
 }) {
@@ -174,7 +232,7 @@ function ActivityStep({ detail, envelopeId, working, onRetryFinalization }: {
     </tr>)}</tbody></table></div> : <div className="px-5 pb-8 text-sm text-muted-foreground">No emails have been queued. Delivery attempts appear after the agreement is sent.</div>}</CardContent></Card>
 
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]"><Card><CardHeader><CardTitle>Signing history</CardTitle></CardHeader><CardContent className="px-0 pb-0">{detail.audit.length ? <div className="overflow-x-auto"><table className="data-table"><thead><tr><th>Event</th><th>Actor</th><th>When</th></tr></thead><tbody>{detail.audit.map((event) => <tr key={event.id}><td className="font-medium capitalize">{readableStatus(event.action)}</td><td>{event.actorName || event.actorType || 'System'}</td><td>{formatDateTime(event.createdAt)}</td></tr>)}</tbody></table></div> : <div className="px-5 pb-8 text-sm text-muted-foreground">Activity appears here as documents are sent, viewed and completed.</div>}</CardContent></Card>
-      <Card className="h-fit"><CardHeader><CardTitle>Files and evidence</CardTitle></CardHeader><CardContent className="space-y-2">{detail.artifacts.length ? detail.artifacts.map((artifact) => <Button key={artifact.id} variant="outline" className="w-full justify-start" asChild><a href={adminArtifactContentUrl(envelopeId, artifact.id)}><Download />{artifact.name}</a></Button>) : <div className="flex gap-3 text-sm text-muted-foreground"><ShieldCheck className="h-4 w-4 shrink-0" />Completed documents and the completion certificate will appear here.</div>}</CardContent></Card>
+      <Card className="h-fit"><CardHeader><CardTitle>Files and evidence</CardTitle></CardHeader><CardContent className="space-y-2">{detail.artifacts.length ? detail.artifacts.map((artifact) => <AgreementArtifactActions key={artifact.id} artifact={artifact} envelopeId={envelopeId} />) : <div className="flex gap-3 text-sm text-muted-foreground"><ShieldCheck className="h-4 w-4 shrink-0" />Completed documents and the completion certificate will appear here.</div>}</CardContent></Card>
     </div>
   </div>;
 }

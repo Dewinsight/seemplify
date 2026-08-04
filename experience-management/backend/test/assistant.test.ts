@@ -344,7 +344,7 @@ async function finishJob(jobId: string) {
   return result;
 }
 
-test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only explicitly reviewed replies', async () => {
+test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only explicitly reviewed email', async () => {
   const longEmailSnapshot = assistantEmailExecutionSnapshot({
     thread: {
       id: 'long-thread',
@@ -606,6 +606,21 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
   assert.ok(calendarRead);
   assert.equal(new URL(calendarRead.url).searchParams.get('calendar_id'), 'calendar-1');
 
+  const connectedScopes = connectionRow.scopes_json;
+  db.prepare('UPDATE assistant_nylas_connections SET scopes_json=? WHERE id=?')
+    .run(JSON.stringify(['https://www.googleapis.com/auth/gmail.readonly']), firstConnectionId);
+  const calendarCallsBeforeScopeGuard = fetchCalls.filter((call) => /\/v3\/grants\/[^/]+\/(calendars|events)/u.test(call.url)).length;
+  const calendarScopeRequired = await owner.get('/api/assistant/calendar/calendars')
+    .query({ connectionId: firstConnectionId }).expect(409);
+  assert.equal(calendarScopeRequired.body.code, 'NYLAS_CALENDAR_SCOPE_REQUIRED');
+  assert.equal(calendarScopeRequired.body.error, 'Reconnect this mailbox to approve calendar access.');
+  assert.equal(
+    fetchCalls.filter((call) => /\/v3\/grants\/[^/]+\/(calendars|events)/u.test(call.url)).length,
+    calendarCallsBeforeScopeGuard
+  );
+  db.prepare('UPDATE assistant_nylas_connections SET scopes_json=? WHERE id=?')
+    .run(connectedScopes, firstConnectionId);
+
   const summaryIdempotency = '10000000-0000-4000-8000-000000000001';
   const summaryCreated = await owner.post('/api/assistant/runs/email-summary').set('idempotency-key', summaryIdempotency)
     .send({ connectionId: firstConnectionId, threadId: 'thread-1' }).expect(202);
@@ -713,6 +728,53 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
   }).expect(200);
   assert.equal(idempotentReply.body.idempotent, true);
   assert.equal(fetchCalls.filter((call) => new URL(call.url).pathname.endsWith('/messages/send')).length, 1);
+
+  const aiCompose = await owner.post('/api/assistant/runs/email-compose-draft')
+    .set('idempotency-key', '10000000-0000-4000-8000-000000000098').send({
+      connectionId: firstConnectionId,
+      to: [{ name: 'New Customer', email: 'new.customer@example.test' }],
+      cc: [], bcc: [], subject: 'Account review', tone: 'warm',
+      instructions: 'Invite the customer to review the attached account summary next Tuesday.'
+    }).expect(202);
+  assert.equal(aiCompose.body.run.subjectRef, null);
+  await finishJob(aiCompose.body.jobId);
+  const aiComposeDraft = await owner.get(`/api/assistant/runs/${aiCompose.body.run.id}`).expect(200);
+  assert.equal(aiComposeDraft.body.draft.revision, 1);
+  const composeAiCall = fetchCalls.filter((call) => call.body?.activity === 'experience.assistant.email_draft').at(-1)!;
+  assert.match(JSON.stringify(composeAiCall.body.messages), /Draft a new email for human review/u);
+  assert.match(JSON.stringify(composeAiCall.body.messages), /new\.customer@example\.test/u);
+
+  const composeKey = '10000000-0000-4000-8000-000000000099';
+  const composeInput = {
+    connectionId: firstConnectionId,
+    to: [{ name: 'New Customer', email: 'new.customer@example.test' }],
+    cc: [{ email: 'account.team@example.test' }],
+    bcc: [],
+    subject: 'Welcome to the account review',
+    body: '<p>Hello,</p><p>Your account review is ready.</p>',
+    confirmation: 'send'
+  };
+  const sentMessage = await owner.post('/api/assistant/mailbox/messages/send')
+    .set('idempotency-key', composeKey).send(composeInput).expect(201);
+  assert.equal(sentMessage.body.run.subjectRef, null);
+  assert.equal(sentMessage.body.run.externalDispatched, true);
+  assert.equal(sentMessage.body.delivery.mode, 'compose');
+  assert.deepEqual(sentMessage.body.delivery.recipients,
+    ['new.customer@example.test', 'account.team@example.test']);
+  const composeProviderCall = fetchCalls.filter((call) => new URL(call.url).pathname.endsWith('/messages/send')).at(-1)!;
+  assert.deepEqual(composeProviderCall.body.to, [{ name: 'New Customer', email: 'new.customer@example.test' }]);
+  assert.deepEqual(composeProviderCall.body.cc, [{ email: 'account.team@example.test' }]);
+  assert.equal('reply_to_message_id' in composeProviderCall.body, false);
+  const composeRow = db.prepare('SELECT input_snapshot_json FROM assistant_runs WHERE id=?')
+    .get(sentMessage.body.run.id) as { input_snapshot_json: string };
+  assert.equal(composeRow.input_snapshot_json.includes('new.customer@example.test'), false);
+  await owner.post('/api/assistant/mailbox/messages/send')
+    .set('idempotency-key', composeKey).send(composeInput).expect(200)
+    .expect(({ body }) => assert.equal(body.idempotent, true));
+  assert.equal(fetchCalls.filter((call) => new URL(call.url).pathname.endsWith('/messages/send')).length, 2);
+  await owner.post('/api/assistant/mailbox/messages/send')
+    .set('idempotency-key', composeKey).send({ ...composeInput, subject: 'Changed intent' }).expect(409);
+  assert.equal(fetchCalls.filter((call) => new URL(call.url).pathname.endsWith('/messages/send')).length, 2);
 
   const survey = await owner.post('/api/surveys').send({ title: 'Grounded assistant evidence', questions: [] }).expect(201);
   const insight = insertInsight(survey.body.id, 'ai_insights', {
@@ -1082,6 +1144,7 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
     'assistant.run.completed',
     'assistant.draft.edited',
     'assistant.mailbox.reply_sent',
+    'assistant.mailbox.message_sent',
     'assistant.action.promoted',
     'assistant.action.updated',
     'assistant.reminder.created',
@@ -1093,7 +1156,7 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
   const runs = await owner.get('/api/assistant/runs').expect(200);
   assert.ok(Array.isArray(runs.body)); assert.ok(runs.body.length >= 4);
   assert.ok(runs.body.every((run: any) => run.advisoryOnly === true));
-  assert.equal(runs.body.filter((run: any) => run.externalDispatched).length, 1);
+  assert.equal(runs.body.filter((run: any) => run.externalDispatched).length, 2);
 
   const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
   let monthlyJobs = Number((db.prepare('SELECT COUNT(*) count FROM ai_jobs WHERE space_id=? AND created_at>=?')
@@ -1210,6 +1273,7 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
       && url.pathname !== '/v3/connect/token';
   });
   assert.deepEqual(providerWrites.map((call) => new URL(call.url).pathname), [
+    '/v3/grants/grant-private-123/messages/send',
     '/v3/grants/grant-private-123/messages/send'
   ]);
 
