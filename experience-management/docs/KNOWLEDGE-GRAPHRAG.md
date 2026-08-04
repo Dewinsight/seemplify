@@ -52,7 +52,7 @@ Small or newly rebuilt corpora use exact cosine scoring until a trained vector i
 
 ## Deep corpus analysis
 
-Interactive activities continue to use compact hybrid retrieval. Deep and exhaustive intelligence runs use a separate durable workflow: they pin a corpus manifest, estimate tokens and bounded model calls, scan every selected document in small pages, map each partition into cited findings, hierarchically reduce those findings, and persist an evidence ledger. Exhaustive mode adds independent contradiction, coverage-gap, and verification passes before final synthesis.
+Interactive activities continue to use compact hybrid retrieval. Deep and exhaustive intelligence runs use a separate durable workflow: they pin a corpus manifest, estimate tokens and bounded model calls, scan every selected document in small pages, map each partition into cited findings, hierarchically reduce those findings, and persist an evidence ledger. Each selected knowledge base also gets a version-pinned graph-topology pass. It prioritizes broadly supported entities, measures connected components and isolated nodes, identifies hubs and relationship clusters, persists the exact bounded graph evidence before inference, and carries grounded relationship findings into final synthesis. Exhaustive mode adds independent contradiction, coverage-gap, and verification passes across both document and graph evidence.
 
 No model request is allowed to become a multi-hour request. Individual partitions remain bounded and retryable while the overall run may continue for hours. Runs expose measured document, chunk, partition, failure, and token coverage and support pause, resume, cancellation, restart recovery, and deterministic provider-result replay.
 

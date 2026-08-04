@@ -509,10 +509,11 @@ const AQL = Object.freeze({
         FILTER entity.spaceId == @spaceId
         FILTER entity.knowledgeBaseId == @knowledgeBaseId
         FILTER entity._key IN refs
-        SORT entity.name ASC
+        LET supportingSourceCount = LENGTH(UNIQUE((entity.mentions || [])[*].documentId))
+        SORT supportingSourceCount DESC, entity.name ASC
         LIMIT @limit
         RETURN MERGE(KEEP(entity, '_key', 'type', 'name', 'aliases'), {
-          supportingSourceCount: LENGTH(UNIQUE((entity.mentions || [])[*].documentId))
+          supportingSourceCount
         })
     )
     LET nodeKeys = nodes[*]._key

@@ -149,7 +149,7 @@ export type DeepAnalysisState = 'queued' | 'processing' | 'paused' | 'completed'
 export interface DeepAnalysisRun {
   id: string; title: string; objective: string; mode: DeepAnalysisMode; state: DeepAnalysisState; stage: string; progress: number;
   sourceRefs: string[]; knowledgeBaseIds: string[]; manifest: Record<string, any>;
-  estimate: { estimatedInputTokens?: number; mapPartitions?: number; reductionPartitions?: number; specialistPartitions?: number;
+  estimate: { estimatedInputTokens?: number; mapPartitions?: number; graphPartitions?: number; reductionPartitions?: number; specialistPartitions?: number;
     estimatedCalls?: number; estimatedDurationSeconds?: number; estimatedDurationRangeSeconds?: number[] };
   result: any; runtime: any; error: string | null; totalPartitions: number; completedPartitions: number; failedPartitions: number;
   partitions?: Array<{ id: string; ordinal: number; level: number; kind: string; state: string; tokenEstimate: number; error: string | null }>;

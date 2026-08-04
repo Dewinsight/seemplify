@@ -5,7 +5,7 @@ import { completeWithAi, type AiProviderSnapshot } from './aiProvider.js';
 import { createJob, db, getJobProviderResult, saveJobProviderResult } from './database.js';
 import { publishEvent } from './events.js';
 import { resolveIntelligenceSourceSnapshots } from './intelligence.js';
-import { scanKnowledgeDocument } from './knowledgeClient.js';
+import { getKnowledgeGraph, scanKnowledgeDocument } from './knowledgeClient.js';
 import {
   getKnowledgeBase, listKnowledgeDocuments, type KnowledgeBaseRef
 } from './knowledgeRepository.js';
@@ -15,12 +15,16 @@ import type { AiJob } from './types.js';
 
 export type DeepAnalysisMode = 'deep' | 'exhaustive';
 export type DeepAnalysisState = 'queued' | 'processing' | 'paused' | 'completed' | 'failed' | 'cancelled';
-type PartitionKind = 'map' | 'reduce' | 'specialist' | 'final';
+type PartitionKind = 'map' | 'graph' | 'reduce' | 'specialist' | 'final';
 
 const mapChunkLimit = 16;
 const reductionFanIn = 6;
 const historicalPartitionCharacters = 48_000;
 const maximumDeepSources = 50;
+const graphSnapshotNodeLimit = 160;
+const graphEvidenceEdgeLimit = 140;
+const graphEvidenceCharacterLimit = 120_000;
+const graphPartitionTokenEstimate = 12_000;
 
 const citationResult = z.object({
   sourceRef: z.string().trim().min(1).max(300),
@@ -69,6 +73,10 @@ const finalResult = z.object({
     partitionsCompleted: z.number().int().nonnegative(),
     partitionsFailed: z.number().int().nonnegative(),
     estimatedInputTokens: z.number().int().nonnegative(),
+    graphBasesScheduled: z.number().int().nonnegative(),
+    graphBasesAnalyzed: z.number().int().nonnegative(),
+    graphNodesAnalyzed: z.number().int().nonnegative(),
+    graphEdgesAnalyzed: z.number().int().nonnegative(),
     exhaustive: z.boolean()
   }).strict()
 }).strict();
@@ -112,12 +120,15 @@ const finalJsonSchema = {
     limitations: { type: 'array', items: { type: 'string' } },
     openQuestions: { type: 'array', items: { type: 'string' } },
     coverage: { type: 'object', additionalProperties: false,
-      required: ['documentsScheduled', 'documentsAnalyzed', 'chunksScheduled', 'chunksAnalyzed', 'partitionsCompleted', 'partitionsFailed', 'estimatedInputTokens', 'exhaustive'],
+      required: ['documentsScheduled', 'documentsAnalyzed', 'chunksScheduled', 'chunksAnalyzed', 'partitionsCompleted', 'partitionsFailed', 'estimatedInputTokens', 'graphBasesScheduled', 'graphBasesAnalyzed', 'graphNodesAnalyzed', 'graphEdgesAnalyzed', 'exhaustive'],
       properties: {
         documentsScheduled: { type: 'integer', minimum: 0 }, documentsAnalyzed: { type: 'integer', minimum: 0 },
         chunksScheduled: { type: 'integer', minimum: 0 }, chunksAnalyzed: { type: 'integer', minimum: 0 },
         partitionsCompleted: { type: 'integer', minimum: 0 }, partitionsFailed: { type: 'integer', minimum: 0 },
-        estimatedInputTokens: { type: 'integer', minimum: 0 }, exhaustive: { type: 'boolean' }
+        estimatedInputTokens: { type: 'integer', minimum: 0 },
+        graphBasesScheduled: { type: 'integer', minimum: 0 }, graphBasesAnalyzed: { type: 'integer', minimum: 0 },
+        graphNodesAnalyzed: { type: 'integer', minimum: 0 }, graphEdgesAnalyzed: { type: 'integer', minimum: 0 },
+        exhaustive: { type: 'boolean' }
       } }
   }
 };
@@ -277,20 +288,23 @@ export function createDeepAnalysisRun(user: SessionUser, spaceId: string, input:
   const knowledgeMapCalls = documents.reduce((sum, document) => sum + Math.ceil(document.chunkCount / mapChunkLimit), 0);
   const mapCalls = knowledgeMapCalls + historicalGroups.length;
   if (!mapCalls) throw new DeepAnalysisError('The selected sources contain no analyzable evidence.', 422, 'DEEP_ANALYSIS_EMPTY');
+  const graphCalls = input.knowledgeBaseRefs.length;
   const estimatedTokens = documents.reduce((sum, document) => sum + document.chunkCount * 750, 0)
-    + historicalGroups.reduce((sum, group) => sum + Math.ceil(JSON.stringify(group.records).length / 4), 0);
-  const reduceCalls = reductionCallCount(mapCalls);
+    + historicalGroups.reduce((sum, group) => sum + Math.ceil(JSON.stringify(group.records).length / 4), 0)
+    + graphCalls * graphPartitionTokenEstimate;
+  const reduceCalls = reductionCallCount(mapCalls + graphCalls);
   const specialistCalls = input.mode === 'exhaustive' ? 3 : 0;
-  const estimatedCalls = mapCalls + reduceCalls + specialistCalls + 1;
+  const estimatedCalls = mapCalls + graphCalls + reduceCalls + specialistCalls + 1;
   const estimatedDurationSeconds = Math.ceil(estimatedCalls / 4) * 90;
   const manifest = {
     version: 1, pinnedAt: new Date().toISOString(), requestFingerprint: crypto.createHash('sha256').update(fingerprint).digest('hex'),
     sources: savedSources.map((source) => ({ ref: source.ref, type: source.type, title: source.title, createdAt: source.createdAt })),
     knowledgeBases: input.knowledgeBaseRefs, documents,
-    coverageTarget: { documents: documents.length, chunks: documents.reduce((sum, item) => sum + item.chunkCount, 0), historicalSources: savedSources.length }
+    coverageTarget: { documents: documents.length, chunks: documents.reduce((sum, item) => sum + item.chunkCount, 0),
+      historicalSources: savedSources.length, graphBases: input.knowledgeBaseRefs.length }
   };
   const estimate = { estimatedInputTokens: estimatedTokens, mapPartitions: mapCalls, reductionPartitions: reduceCalls,
-    specialistPartitions: specialistCalls, estimatedCalls, estimatedDurationSeconds,
+    graphPartitions: graphCalls, specialistPartitions: specialistCalls, estimatedCalls, estimatedDurationSeconds,
     estimatedDurationRangeSeconds: [Math.ceil(estimatedDurationSeconds * 0.6), Math.ceil(estimatedDurationSeconds * 1.8)],
     assumptions: { mapChunkLimit, reductionFanIn, concurrentWorkers: 4, secondsPerCall: 90 } };
   const id = crypto.randomUUID(); const timestamp = new Date().toISOString(); const jobs: AiJob[] = [];
@@ -313,6 +327,12 @@ export function createDeepAnalysisRun(user: SessionUser, spaceId: string, input:
         tokenEstimate: Math.ceil(JSON.stringify(group.records).length / 4), source: { type: 'historical', ...group } });
       jobs.push(queued.job);
     }
+    for (const knowledgeBase of input.knowledgeBaseRefs) {
+      const queued = queuePartition(run, { kind: 'graph', level: 0, tokenEstimate: graphPartitionTokenEstimate,
+        source: { type: 'graph', knowledgeBaseId: knowledgeBase.id, knowledgeBaseName: knowledgeBase.name,
+          indexVersion: knowledgeBase.indexVersion, knowledgeBase } });
+      jobs.push(queued.job);
+    }
   })();
   publishEvent('data-changed', { reason: 'deep-analysis-created', runId: id }, spaceId);
   return { run: rowRun(db.prepare('SELECT * FROM deep_analysis_runs WHERE id=?').get(id)), created: true, jobs };
@@ -328,6 +348,76 @@ function partitionEvidence(partition: ReturnType<typeof rowPartition>) {
       output: parseJson(child.output_json, {}) }));
   }
   return [];
+}
+
+function graphTopologyRecords(partition: ReturnType<typeof rowPartition>, graph: Awaited<ReturnType<typeof getKnowledgeGraph>>) {
+  const nodeIds = new Set(graph.nodes.map((node) => node.id));
+  const adjacency = new Map(graph.nodes.map((node) => [node.id, new Set<string>()]));
+  const degree = new Map(graph.nodes.map((node) => [node.id, 0]));
+  const relationshipTypes = new Map<string, number>();
+  for (const edge of graph.edges) {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
+    adjacency.get(edge.source)?.add(edge.target); adjacency.get(edge.target)?.add(edge.source);
+    degree.set(edge.source, (degree.get(edge.source) || 0) + 1); degree.set(edge.target, (degree.get(edge.target) || 0) + 1);
+    relationshipTypes.set(edge.label, (relationshipTypes.get(edge.label) || 0) + 1);
+  }
+  const seen = new Set<string>(); const componentSizes: number[] = [];
+  for (const node of graph.nodes) {
+    if (seen.has(node.id)) continue;
+    let size = 0; const pending = [node.id]; seen.add(node.id);
+    while (pending.length) {
+      const current = pending.pop()!; size += 1;
+      for (const neighbor of adjacency.get(current) || []) if (!seen.has(neighbor)) { seen.add(neighbor); pending.push(neighbor); }
+    }
+    componentSizes.push(size);
+  }
+  componentSizes.sort((left, right) => right - left);
+  const hubs = [...graph.nodes].sort((left, right) => (degree.get(right.id) || 0) - (degree.get(left.id) || 0)
+    || Number((right.metadata as any)?.supportingSourceCount || 0) - Number((left.metadata as any)?.supportingSourceCount || 0)
+    || left.label.localeCompare(right.label)).slice(0, 20).map((node) => ({ id: node.id, label: node.label, kind: node.kind,
+      degree: degree.get(node.id) || 0, supportingSources: Number((node.metadata as any)?.supportingSourceCount || 0) }));
+  const relationCounts = [...relationshipTypes.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 30).map(([type, count]) => ({ type, count }));
+  const groundedEdgeCandidates = graph.edges.filter((edge) => edge.excerpt && (edge.metadata as any)?.sourceRef)
+    .sort((left, right) => Number(right.confidence || 0) - Number(left.confidence || 0) || left.id.localeCompare(right.id));
+  const baseId = String(partition.source.knowledgeBaseId); const baseName = String(partition.source.knowledgeBaseName || baseId);
+  const topologyExcerpt = `Graph topology snapshot for ${baseName} contains ${graph.nodes.length} entities, ${graph.edges.length} relationships, ${componentSizes.length} connected components, and ${componentSizes.filter((size) => size === 1).length} isolated entities.`;
+  const topology: Record<string, unknown> = {
+    sourceRef: `graph:${baseId}:topology`, excerpt: topologyExcerpt, type: 'graph-topology', knowledgeBaseId: baseId,
+    indexVersion: Number(partition.source.indexVersion), nodeCount: graph.nodes.length, edgeCount: graph.edges.length,
+    componentCount: componentSizes.length, isolatedEntityCount: componentSizes.filter((size) => size === 1).length,
+    largestComponentSizes: componentSizes.slice(0, 20), hubs, relationshipTypes: relationCounts,
+    truncated: false
+  };
+  const records: Array<Record<string, unknown>> = [topology]; const groundedEdges = [];
+  let evidenceCharacters = JSON.stringify(topology).length;
+  for (const edge of groundedEdgeCandidates.slice(0, graphEvidenceEdgeLimit)) {
+    const record = { sourceRef: String((edge.metadata as any).sourceRef), excerpt: String(edge.excerpt), type: 'graph-relationship',
+      relationshipId: edge.id, sourceEntity: graph.nodes.find((node) => node.id === edge.source)?.label || edge.source,
+      targetEntity: graph.nodes.find((node) => node.id === edge.target)?.label || edge.target,
+      relationship: edge.label, confidence: edge.confidence, documentId: edge.documentId, documentName: edge.documentName,
+      page: edge.page, section: (edge.metadata as any)?.section || null };
+    const nextCharacters = JSON.stringify(record).length;
+    if (evidenceCharacters + nextCharacters > graphEvidenceCharacterLimit) break;
+    records.push(record); groundedEdges.push(edge); evidenceCharacters += nextCharacters;
+  }
+  topology.truncated = graph.metrics.truncated === true || graph.edges.length > groundedEdges.length;
+  const snapshotCore = { knowledgeBaseId: baseId, indexVersion: Number(partition.source.indexVersion), metrics: graph.metrics,
+    nodes: graph.nodes, edges: groundedEdges, topology };
+  return { records, snapshot: { capturedAt: new Date().toISOString(),
+    sha256: crypto.createHash('sha256').update(JSON.stringify(snapshotCore)).digest('hex'), ...snapshotCore } };
+}
+
+async function graphEvidenceForPrompt(partition: ReturnType<typeof rowPartition>) {
+  if (Array.isArray(partition.source.snapshotRecords) && partition.source.snapshotRecords.length) return partition.source.snapshotRecords;
+  const knowledgeBase = partition.source.knowledgeBase as KnowledgeBaseRef;
+  const graph = await getKnowledgeGraph({ requestId: `${partition.id}:graph`, spaceId: partition.spaceId,
+    knowledgeBase, limit: graphSnapshotNodeLimit });
+  const captured = graphTopologyRecords(partition, graph);
+  const persistedSource = { ...partition.source, graphSnapshot: captured.snapshot, snapshotRecords: captured.records };
+  db.prepare('UPDATE deep_analysis_partitions SET source_json=?,updated_at=? WHERE id=? AND run_id=?')
+    .run(JSON.stringify(persistedSource), new Date().toISOString(), partition.id, partition.runId);
+  return captured.records;
 }
 
 function allCitations(value: unknown): Array<{ sourceRef: string; excerpt: string }> {
@@ -375,10 +465,13 @@ function progressRun(runId: string) {
 
 function rootPartitionIds(runId: string) {
   const highest = db.prepare(`SELECT COALESCE(MAX(level),0) level FROM deep_analysis_partitions
-    WHERE run_id=? AND kind IN ('map','reduce') AND state='completed'`).get(runId) as any;
-  const kind = Number(highest.level) > 0 ? 'reduce' : 'map';
-  return (db.prepare(`SELECT id FROM deep_analysis_partitions WHERE run_id=? AND kind=? AND level=? AND state='completed' ORDER BY ordinal`)
-    .all(runId, kind, Number(highest.level)) as Array<{ id: string }>).map((item) => item.id);
+    WHERE run_id=? AND kind IN ('map','graph','reduce') AND state='completed'`).get(runId) as any;
+  if (Number(highest.level) > 0) {
+    return (db.prepare("SELECT id FROM deep_analysis_partitions WHERE run_id=? AND kind='reduce' AND level=? AND state='completed' ORDER BY ordinal")
+      .all(runId, Number(highest.level)) as Array<{ id: string }>).map((item) => item.id);
+  }
+  return (db.prepare("SELECT id FROM deep_analysis_partitions WHERE run_id=? AND kind IN ('map','graph') AND level=0 AND state='completed' ORDER BY ordinal")
+    .all(runId) as Array<{ id: string }>).map((item) => item.id);
 }
 
 function scheduleReduction(run: any, childIds: string[], level: number) {
@@ -447,6 +540,7 @@ function advanceRun(runId: string) {
 }
 
 function evidenceForPrompt(partition: ReturnType<typeof rowPartition>, run: any) {
+  if (partition.kind === 'graph') return graphEvidenceForPrompt(partition);
   if (partition.kind === 'map' && partition.source.type === 'historical') return Promise.resolve(partition.source.records || []);
   if (partition.kind === 'map' && partition.source.type === 'knowledge') {
     return scanKnowledgeDocument({ requestId: `${partition.id}:scan`, spaceId: partition.spaceId,
@@ -465,6 +559,7 @@ function evidenceForPrompt(partition: ReturnType<typeof rowPartition>, run: any)
 
 function stepInstruction(partition: ReturnType<typeof rowPartition>) {
   if (partition.kind === 'map') return 'Analyze every supplied evidence record. Extract important findings, contradictions, risks, changes, opportunities, and gaps. Do not omit a record merely because it appears less relevant.';
+  if (partition.kind === 'graph') return 'Analyze this version-pinned knowledge-graph topology. Identify supported entity hubs, relationship clusters, cross-document connections, disconnected components, and structural anomalies. Treat truncation as a limitation. Cite topology metrics for structural claims and grounded relationship records for semantic claims.';
   if (partition.kind === 'reduce') return 'Combine these completed child analyses without losing minority, contradictory, or low-frequency findings. Deduplicate only genuinely equivalent claims and preserve original citations.';
   if (partition.kind === 'specialist') {
     const specialty = String(partition.input.specialty || 'independent_verification');
@@ -480,11 +575,17 @@ function finalCoverage(run: any) {
   const target = manifest.coverageTarget || {};
   const stats = db.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN state='completed' THEN 1 ELSE 0 END) completed,
     SUM(CASE WHEN state='failed' THEN 1 ELSE 0 END) failed FROM deep_analysis_partitions WHERE run_id=?`).get(run.id) as any;
+  const graphPartitions = db.prepare("SELECT state,source_json FROM deep_analysis_partitions WHERE run_id=? AND kind='graph'").all(run.id) as any[];
+  const graphSnapshots = graphPartitions.filter((partition) => partition.state === 'completed')
+    .map((partition) => parseJson<Record<string, any>>(partition.source_json, {}).graphSnapshot).filter(Boolean);
   return { documentsScheduled: Number(target.documents || 0), documentsAnalyzed: Number(target.documents || 0),
     chunksScheduled: Number(target.chunks || 0), chunksAnalyzed: Number(target.chunks || 0),
     partitionsCompleted: Math.max(0, Number(run.total_partitions || stats.total || 0) - Number(stats.failed || 0)),
     partitionsFailed: Number(stats.failed || 0),
     estimatedInputTokens: Number(parseJson<Record<string, any>>(run.estimate_json, {}).estimatedInputTokens || 0),
+    graphBasesScheduled: Number(target.graphBases || 0), graphBasesAnalyzed: graphSnapshots.length,
+    graphNodesAnalyzed: graphSnapshots.reduce((sum, snapshot) => sum + Number(snapshot.nodes?.length || 0), 0),
+    graphEdgesAnalyzed: graphSnapshots.reduce((sum, snapshot) => sum + Number(snapshot.edges?.length || 0), 0),
     exhaustive: run.mode === 'exhaustive' };
 }
 

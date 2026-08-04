@@ -91,21 +91,22 @@ test('exhaustive analysis fans out every chunk, checkpoints lifecycle actions, v
   const replay = await owner.post('/api/intelligence/deep-runs').set('Idempotency-Key', requestKey).send(requestBody).expect(202);
   assert.equal(replay.body.run.id, queued.body.run.id);
   assert.equal(replay.body.deduplicated, true);
-  assert.equal(queued.body.run.estimate.estimatedInputTokens, 24_750);
+  assert.equal(queued.body.run.estimate.estimatedInputTokens, 36_750);
   assert.equal(queued.body.run.estimate.mapPartitions, 3);
+  assert.equal(queued.body.run.estimate.graphPartitions, 1);
   assert.equal(queued.body.run.estimate.specialistPartitions, 3);
-  assert.equal(queued.body.run.totalPartitions, 3);
+  assert.equal(queued.body.run.totalPartitions, 4);
 
   await owner.post(`/api/intelligence/deep-runs/${queued.body.run.id}/pause`).send({}).expect(200);
-  assert.equal(Number((db.prepare("SELECT COUNT(*) count FROM ai_jobs WHERE kind='intelligence.deep_analysis' AND state='paused'").get() as any).count), 3);
+  assert.equal(Number((db.prepare("SELECT COUNT(*) count FROM ai_jobs WHERE kind='intelligence.deep_analysis' AND state='paused'").get() as any).count), 4);
   await owner.post(`/api/intelligence/deep-runs/${queued.body.run.id}/resume`).send({}).expect(200);
-  assert.equal(Number((db.prepare("SELECT COUNT(*) count FROM ai_jobs WHERE kind='intelligence.deep_analysis' AND state='queued'").get() as any).count), 3);
+  assert.equal(Number((db.prepare("SELECT COUNT(*) count FROM ai_jobs WHERE kind='intelligence.deep_analysis' AND state='queued'").get() as any).count), 4);
 
   const cancelled = await owner.post('/api/intelligence/deep-runs').set('Idempotency-Key', crypto.randomUUID()).send({
     ...requestBody, title: 'Cancelled enterprise audit', mode: 'deep'
   }).expect(202);
   await owner.post(`/api/intelligence/deep-runs/${cancelled.body.run.id}/cancel`).send({}).expect(200);
-  assert.equal(Number((db.prepare("SELECT COUNT(*) count FROM deep_analysis_partitions WHERE run_id=? AND state='cancelled'").get(cancelled.body.run.id) as any).count), 3);
+  assert.equal(Number((db.prepare("SELECT COUNT(*) count FROM deep_analysis_partitions WHERE run_id=? AND state='cancelled'").get(cancelled.body.run.id) as any).count), 4);
 
   const outsider = request.agent(app);
   await signupVerifyAndOnboard(outsider, { name: 'Deep Outsider', email: 'deep-outsider@seemplify.local', password: 'Deep-Outsider-Test-Password-2026!' });
@@ -114,8 +115,22 @@ test('exhaustive analysis fans out every chunk, checkpoints lifecycle actions, v
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input)); const body = JSON.parse(String(init?.body || '{}')) as any;
     if (url.hostname === 'knowledge.test') {
-      assert.equal(url.pathname, '/v1/scan');
-      assert.equal(body.spaceId, user.active_space_id); assert.equal(body.knowledgeBaseId, baseId); assert.equal(body.documentId, documentId);
+      assert.equal(body.spaceId, user.active_space_id);
+      if (url.pathname === '/v1/graph') {
+        assert.equal(body.knowledgeBase.id, baseId); assert.equal(body.knowledgeBase.indexVersion, 1); assert.equal(body.limit, 160);
+        return new Response(JSON.stringify({
+          nodes: [
+            { id: 'policy', type: 'control', name: 'Material exception policy', aliases: [], supportingSourceCount: 3 },
+            { id: 'committee', type: 'organization', name: 'Approval committee', aliases: [], supportingSourceCount: 2 },
+            { id: 'orphan', type: 'risk', name: 'Disconnected legacy risk', aliases: [], supportingSourceCount: 1 }
+          ],
+          edges: [{ id: 'requires', source: 'policy', target: 'committee', type: 'requires approval from', confidence: 0.96,
+            supports: [{ documentId, documentName: 'enterprise-policy.md', sourceRef: `${baseId}:${documentId}:chunk-4`,
+              quote: 'Document evidence chunk 4 states that dual approval is required for material policy exceptions.', page: 1, section: 'Policy 4' }] }],
+          metrics: { indexVersion: 1, truncated: false }
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      assert.equal(url.pathname, '/v1/scan'); assert.equal(body.knowledgeBaseId, baseId); assert.equal(body.documentId, documentId);
       const items = Array.from({ length: body.limit }, (_, index) => {
         const ordinal = body.offset + index;
         return { sourceRef: `${baseId}:${documentId}:chunk-${ordinal}`, knowledgeBaseId: baseId, documentId,
@@ -155,15 +170,23 @@ test('exhaustive analysis fans out every chunk, checkpoints lifecycle actions, v
   const completed = await owner.get(`/api/intelligence/deep-runs/${queued.body.run.id}`).expect(200);
   assert.equal(completed.body.state, 'completed');
   assert.equal(completed.body.stage, 'completed');
-  assert.equal(completed.body.totalPartitions, 7);
-  assert.equal(completed.body.completedPartitions, 7);
+  assert.equal(completed.body.totalPartitions, 8);
+  assert.equal(completed.body.completedPartitions, 8);
   assert.equal(completed.body.failedPartitions, 0);
   assert.equal(completed.body.result.coverage.documentsScheduled, 1);
   assert.equal(completed.body.result.coverage.chunksScheduled, 33);
   assert.equal(completed.body.result.coverage.chunksAnalyzed, 33);
+  assert.equal(completed.body.result.coverage.graphBasesScheduled, 1);
+  assert.equal(completed.body.result.coverage.graphBasesAnalyzed, 1);
+  assert.equal(completed.body.result.coverage.graphNodesAnalyzed, 3);
+  assert.equal(completed.body.result.coverage.graphEdgesAnalyzed, 1);
   assert.equal(completed.body.result.coverage.exhaustive, true);
   assert.ok(completed.body.evidence.length >= 6);
   assert.equal(Number((db.prepare('SELECT COUNT(*) count FROM deep_analysis_partitions WHERE run_id=? AND kind=?').get(queued.body.run.id, 'specialist') as any).count), 3);
+  const graphPartition = db.prepare('SELECT source_json FROM deep_analysis_partitions WHERE run_id=? AND kind=?').get(queued.body.run.id, 'graph') as any;
+  assert.ok(JSON.parse(graphPartition.source_json).graphSnapshot.capturedAt);
+  assert.match(JSON.parse(graphPartition.source_json).graphSnapshot.sha256, /^[a-f0-9]{64}$/u);
+  assert.equal(JSON.parse(graphPartition.source_json).snapshotRecords[0].componentCount, 2);
   assert.equal(Number((db.prepare('SELECT COUNT(*) count FROM deep_analysis_partitions WHERE run_id=? AND kind=?').get(queued.body.run.id, 'final') as any).count), 1);
 
   const recovering = await owner.post('/api/intelligence/deep-runs').set('Idempotency-Key', crypto.randomUUID()).send({

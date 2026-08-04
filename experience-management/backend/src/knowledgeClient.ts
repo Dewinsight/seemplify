@@ -124,7 +124,8 @@ const scanResponse = z.object({
 const graphResponse = z.object({
   nodes: z.array(z.object({
     id: z.string().trim().min(1).max(300), type: z.string().trim().min(1).max(100),
-    name: z.string().trim().min(1).max(500), aliases: z.array(z.string().trim().min(1).max(500)).max(50).optional().default([])
+    name: z.string().trim().min(1).max(500), aliases: z.array(z.string().trim().min(1).max(500)).max(50).optional().default([]),
+    supportingSourceCount: z.number().int().nonnegative().optional().default(0)
   })).max(500),
   edges: z.array(z.object({
     id: z.string().trim().min(1).max(300), source: z.string().trim().min(1).max(300),
@@ -479,7 +480,7 @@ export async function getKnowledgeGraph(input: {
   }
   return {
     nodes: parsed.data.nodes.map((node) => ({ id: node.id, label: node.name, kind: node.type,
-      metadata: node.aliases.length ? { aliases: node.aliases } : undefined })),
+      metadata: { aliases: node.aliases, supportingSourceCount: node.supportingSourceCount } })),
     edges: parsed.data.edges.map((edge) => {
       const support = edge.supports?.[0];
       return {
