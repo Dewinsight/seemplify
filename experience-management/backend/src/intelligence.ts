@@ -169,13 +169,25 @@ function artifactJob(row: any) {
   return job && job.spaceId === row.space_id ? job : null;
 }
 
+function replyPublicationForDraft(row: any) {
+  if (row.state !== 'published') return null;
+  const receipt = db.prepare(`SELECT after_json,created_at FROM platform_audit_events
+    WHERE space_id=? AND target_type='social_reply_draft' AND target_id=? AND action='social_reply.published'
+    ORDER BY created_at DESC,id DESC LIMIT 1`).get(row.space_id, row.id) as { after_json: string; created_at: string } | undefined;
+  if (!receipt) return null;
+  const detail = parseJson<Record<string, unknown>>(receipt.after_json, {});
+  return { tweetId: String(detail.tweetId || ''), url: String(detail.url || ''),
+    postedBy: String(detail.postedBy || ''), postedAt: receipt.created_at };
+}
+
 function rowReplyDraft(row: any) {
   const job = artifactJob(row);
   return {
     id: row.id, mentionId: row.mention_id, connectionId: row.connection_id, tone: row.tone, instructions: row.instructions,
     state: job?.state === 'failed' ? 'failed' : row.state, generatedContent: row.generated_content, content: row.content,
     rationale: row.rationale, safetyFlags: parseJson<string[]>(row.safety_flags_json, []), runtime: parseJson(row.runtime_json, null),
-    aiJobId: row.ai_job_id, error: job?.error || row.error, createdAt: row.created_at, completedAt: row.completed_at, updatedAt: row.updated_at
+    aiJobId: row.ai_job_id, error: job?.error || row.error, publication: replyPublicationForDraft(row),
+    createdAt: row.created_at, completedAt: row.completed_at, updatedAt: row.updated_at
   };
 }
 
@@ -226,6 +238,9 @@ export function updateSocialReplyDraft(_user: SessionUser, spaceId: string, id: 
   const row = db.prepare('SELECT * FROM social_reply_drafts WHERE id=? AND space_id=?').get(id, spaceId) as any;
   if (!row) throw new IntelligenceError('Reply draft not found.', 404);
   if (row.state === 'queued') throw new IntelligenceError('Wait for Terra to finish before editing or archiving this draft.', 409);
+  if (['publishing', 'published', 'publish_unknown'].includes(row.state)) {
+    throw new IntelligenceError('A reply cannot be edited after publication has started.', 409);
+  }
   if (input.content !== undefined && !cleanText(input.content, 280)) throw new IntelligenceError('A reply draft cannot be empty.');
   const state = input.archived ? 'archived' : input.content !== undefined ? 'edited' : row.state;
   db.prepare('UPDATE social_reply_drafts SET content=?,state=?,updated_at=? WHERE id=?')
@@ -247,7 +262,7 @@ export function completeSocialReplyDraft(id: string, output: { reply: string; ra
     ? db.prepare('SELECT * FROM social_reply_drafts WHERE id=? AND space_id=?').get(id, spaceId) as any
     : db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id) as any;
   if (!current) throw new IntelligenceError('Reply draft was deleted.', 404);
-  if (current && ['ready', 'edited', 'archived'].includes(current.state) && current.generated_content) return rowReplyDraft(current);
+  if (current && ['ready', 'edited', 'archived', 'publishing', 'published', 'publish_failed', 'publish_unknown'].includes(current.state) && current.generated_content) return rowReplyDraft(current);
   const timestamp = now();
   const changed = db.prepare(`UPDATE social_reply_drafts SET state='ready',generated_content=?,content=?,rationale=?,safety_flags_json=?,runtime_json=?,error=NULL,
     completed_at=?,updated_at=? WHERE id=? AND state='queued'`).run(output.reply, output.reply, output.rationale, JSON.stringify(output.safetyFlags), JSON.stringify(runtime), timestamp, timestamp, id).changes;

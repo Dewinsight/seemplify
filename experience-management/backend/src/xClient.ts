@@ -134,7 +134,7 @@ export async function requestOAuthToken(credentials: { consumerKey: string; cons
   // X defines x_auth_access_type as a request parameter. Keeping it in the URL
   // also makes it part of the OAuth signature base while avoiding a
   // provider-specific extension inside the OAuth Authorization header.
-  const url = `${config.xOAuthBaseUrl}/oauth/request_token?x_auth_access_type=read`;
+  const url = `${config.xOAuthBaseUrl}/oauth/request_token?x_auth_access_type=write`;
   const authorization = buildOAuthAuthorization({ method: 'POST', url, ...credentials, oauth: { oauth_callback: callbackUrl } });
   const result = await xPost(url, authorization); const parsed = parseForm(result.body);
   if (!parsed.oauth_token || !parsed.oauth_token_secret || parsed.oauth_callback_confirmed !== 'true') {
@@ -228,4 +228,42 @@ export async function getXJson<T>(input: {
   const result = await xFetch(url, authorization);
   try { return { data: JSON.parse(result.body) as T, rate: result.rate }; }
   catch { throw new XApiError('X returned malformed data.', 502, 'provider'); }
+}
+
+export async function postXJson<T>(input: {
+  path: string;
+  body: Record<string, unknown>;
+  consumerKey?: string;
+  consumerSecret?: string;
+  accessToken?: string;
+  accessTokenSecret?: string;
+  bearerToken?: string;
+}) {
+  const url = `${config.xApiBaseUrl}${input.path.startsWith('/') ? input.path : `/${input.path}`}`;
+  let authorization = '';
+  if (input.bearerToken) authorization = `Bearer ${input.bearerToken}`;
+  else if (input.consumerKey && input.consumerSecret && input.accessToken && input.accessTokenSecret) {
+    authorization = buildOAuthAuthorization({
+      method: 'POST', url, consumerKey: input.consumerKey, consumerSecret: input.consumerSecret,
+      token: input.accessToken, tokenSecret: input.accessTokenSecret
+    });
+  } else throw new XApiError('X authentication is not configured for this request.', 503, 'authentication');
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(requestTimeoutMs),
+      headers: {
+        accept: 'application/json', 'content-type': 'application/json', authorization,
+        'user-agent': 'Seemplify-Experience/1.0'
+      },
+      body: JSON.stringify(input.body)
+    });
+  } catch {
+    throw new XApiError('X could not confirm whether the reply was posted. Check the account on X before taking any further action.', 503, 'network', false);
+  }
+  const rate = rateLimit(response); const body = await readBounded(response);
+  if (!response.ok) throw providerError(response, rate, body);
+  try { return { data: JSON.parse(body) as T, rate }; }
+  catch { throw new XApiError('X accepted the request but returned malformed reply data. Check the account on X before retrying.', 502, 'provider'); }
 }

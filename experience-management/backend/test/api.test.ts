@@ -976,7 +976,7 @@ test('connects X with a one-time OAuth handshake, encrypts secrets, and durably 
     assert.deepEqual((await platformAdmin.get('/api/integrations/x/mentions?limit=1000').expect(200)).body, []);
     assert.equal(xMentions.find((mention: any) => mention.externalId === '1001').content, '<script>untrusted post text</script>');
     const duplicate = ownerScopedMentions.find((mention: any) => mention.externalId === '1002'); assert.deepEqual(duplicate.metadata.x.streams.sort(), ['mention', 'search']);
-    assert.ok(requests.some((item) => item.url.includes('/oauth/request_token?x_auth_access_type=read') && item.authorization.includes('oauth_callback') && !item.authorization.includes('x_auth_access_type')));
+    assert.ok(requests.some((item) => item.url.includes('/oauth/request_token?x_auth_access_type=write') && item.authorization.includes('oauth_callback') && !item.authorization.includes('x_auth_access_type')));
     assert.ok(requests.some((item) => item.url.includes('/2/users/1221648900181962758/tweets') && item.authorization.startsWith('OAuth ')));
     assert.ok(requests.some((item) => item.url.includes('/2/tweets/search/recent') && item.authorization === `Bearer ${sentinels.bearerToken}`));
     for (const item of requests) assert.doesNotMatch(item.url, /test-consumer-secret|test-access-secret/);

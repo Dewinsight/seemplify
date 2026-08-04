@@ -15,7 +15,8 @@ async function signIn(page: Page) {
 
 function connection(id: string, username: string, name: string, collected: number) {
   return {
-    id, status: 'connected', authType: 'oauth2', scopes: ['tweet.read', 'users.read', 'offline.access'],
+    id, status: 'connected', authType: 'oauth2', scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+    canPublishReplies: true, publishBlockedReason: null,
     tokenExpiresAt: '2026-08-01T12:00:00.000Z', account: { id: `${id}-x`, username, name, profileImageUrl: null },
     autoSync: true, syncIntervalMinutes: 60, nextSyncAt: '2026-07-29T13:00:00.000Z', lastSyncAt: now,
     lastSuccessAt: now, lastError: null, rateLimits: {}, createdAt: now, updatedAt: now,
@@ -42,6 +43,7 @@ test('multi-account X listening shows billing waits and keeps reply drafts human
   let replyDrafts: any[] = [];
   let replyRequest: any = null;
   let savedReply = '';
+  let postedReply = '';
   let syncConnectionId = '';
 
   await page.route(/\/api\/integrations\/x(?:\?.*)?$/, async (route) => {
@@ -87,6 +89,12 @@ test('multi-account X listening shows billing waits and keeps reply drafts human
     replyDrafts = replyDrafts.map((draft) => ({ ...draft, state: 'edited', content: body.content, updatedAt: now }));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(replyDrafts[0]) });
   });
+  await page.route(/\/api\/social\/reply-drafts\/[^/]+\/publish$/, async (route) => {
+    const body = route.request().postDataJSON(); postedReply = body.content;
+    const publication = { tweetId: '9876543210', url: 'https://x.com/researchbeta/status/9876543210', postedBy: 'qa-user', postedAt: now };
+    replyDrafts = replyDrafts.map((draft) => ({ ...draft, state: 'published', content: body.content, publication, error: null, updatedAt: now }));
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ publication, replayed: false }) });
+  });
 
   await signIn(page);
   await page.goto('/social-listening');
@@ -112,16 +120,16 @@ test('multi-account X listening shows billing waits and keeps reply drafts human
 
   await expect(page.getByText('I am blocked during workspace setup and need help.')).toBeVisible();
   await page.getByRole('button', { name: 'Draft reply' }).click();
-  const replyDialog = page.getByRole('dialog', { name: 'Draft a reply with Terra' });
+  const replyDialog = page.getByRole('dialog', { name: 'Draft a reply with AI' });
   await expect(replyDialog.getByText('Nothing is posted to X.')).toBeVisible();
   await replyDialog.getByLabel('Tone').selectOption('empathetic');
   await replyDialog.getByLabel('Optional guidance').fill('Acknowledge the delay and offer a setup call.');
   await replyDialog.getByRole('button', { name: 'Generate draft' }).click();
   await expect(page.getByRole('heading', { name: 'Reply assistant' })).toBeVisible();
-  await expect(page.getByText('Seemplify does not post, like, follow, or message on X.')).toBeVisible();
+  await expect(page.getByText('Seemplify never publishes a reply without your explicit confirmation.')).toBeVisible();
   expect(replyRequest).toEqual({ tone: 'empathetic', instructions: 'Acknowledge the delay and offer a setup call.' });
 
-  await expect(page.getByText('Terra is generating a draft.')).toBeVisible();
+  await expect(page.getByText('AI is generating a draft.')).toBeVisible();
   replyDrafts = replyDrafts.map((draft) => ({ ...draft, state: 'ready',
     generatedContent: 'Sorry about the setup trouble. We can help you get unblocked.',
     content: 'Sorry about the setup trouble. We can help you get unblocked.',
@@ -133,7 +141,15 @@ test('multi-account X listening shows billing waits and keeps reply drafts human
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect(page.getByText('Reply draft saved.')).toBeVisible();
   expect(savedReply).toBe('Sorry about the setup trouble. Our team can help you get unblocked today.');
-  await expect(page.getByText(/Draft only .* never posted automatically/)).toBeVisible();
+  await expect(page.getByText(/Nothing is posted until you confirm/)).toBeVisible();
+  await page.getByRole('button', { name: 'Post reply', exact: true }).click();
+  const publishDialog = page.getByRole('dialog', { name: 'Post this reply on X?' });
+  await expect(publishDialog).toContainText('Our team can help you get unblocked today.');
+  await publishDialog.getByRole('button', { name: 'Post reply on X' }).click();
+  await expect(page.getByText('Reply posted on X.')).toBeVisible();
+  expect(postedReply).toBe('Sorry about the setup trouble. Our team can help you get unblocked today.');
+  await expect(page.getByText('published', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'View reply' })).toHaveAttribute('href', 'https://x.com/researchbeta/status/9876543210');
 
   const viewport = await page.evaluate(() => ({ documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth }));
   expect(viewport.documentWidth).toBeLessThanOrEqual(viewport.viewportWidth + 1);

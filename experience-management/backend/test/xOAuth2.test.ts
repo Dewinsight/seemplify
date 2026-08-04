@@ -50,7 +50,7 @@ Object.assign(process.env, {
 });
 
 const { app } = await import('../src/app.js');
-const { db } = await import('../src/database.js');
+const { db, insertSocialMentions } = await import('../src/database.js');
 const { xSyncRunner } = await import('../src/xIntegration.js');
 
 const owner = request.agent(app);
@@ -123,7 +123,7 @@ test('uses PKCE to connect two OAuth 2 X accounts without exposing stored secret
         token_type: 'bearer', expires_in: 7200,
         access_token: `oauth2-access-${suffix}-not-real`,
         refresh_token: `oauth2-refresh-${suffix}-not-real`,
-        scope: 'tweet.read users.read offline.access'
+        scope: 'tweet.read tweet.write users.read offline.access'
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     if (url.includes('/2/users/me')) {
@@ -147,7 +147,7 @@ test('uses PKCE to connect two OAuth 2 X accounts without exposing stored secret
       assert.equal(authorizeUrl.searchParams.get('response_type'), 'code');
       assert.equal(authorizeUrl.searchParams.get('client_id'), oauthApp.clientId);
       assert.equal(authorizeUrl.searchParams.get('redirect_uri'), 'http://127.0.0.1:5413/api/integrations/x/callback');
-      assert.equal(authorizeUrl.searchParams.get('scope'), 'tweet.read users.read offline.access');
+      assert.equal(authorizeUrl.searchParams.get('scope'), 'tweet.read tweet.write users.read offline.access');
       assert.equal(authorizeUrl.searchParams.get('code_challenge_method'), 'S256');
       assert.ok(authorizeUrl.searchParams.get('state'));
       assert.ok(authorizeUrl.searchParams.get('code_challenge'));
@@ -200,7 +200,7 @@ test('uses PKCE to connect two OAuth 2 X accounts without exposing stored secret
   for (const [index, row] of storedConnections.entries()) {
     assert.notEqual(row.access_token_enc, `oauth2-access-${index ? 'two' : 'one'}-not-real`);
     assert.notEqual(row.refresh_token_enc, `oauth2-refresh-${index ? 'two' : 'one'}-not-real`);
-    assert.deepEqual(JSON.parse(row.scopes_json), ['tweet.read', 'users.read', 'offline.access']);
+    assert.deepEqual(JSON.parse(row.scopes_json), ['tweet.read', 'tweet.write', 'users.read', 'offline.access']);
   }
 
   const oauthRows = db.prepare("SELECT request_token_hash,request_secret_enc,consumed_at FROM x_oauth_requests WHERE flow='oauth2'").all() as any[];
@@ -211,6 +211,75 @@ test('uses PKCE to connect two OAuth 2 X accounts without exposing stored secret
   await member.get(`/api/integrations/x?connectionId=${encodeURIComponent(connectionIds[0])}`).expect(404);
   const memberStatus = await member.get('/api/integrations/x').expect(200);
   assert.deepEqual(memberStatus.body.connections, []);
+});
+
+test('publishes a reviewed reply exactly once and preserves its X receipt', async () => {
+  const connectionId = connectionIds[0];
+  const connection = db.prepare('SELECT space_id,user_id FROM x_connections WHERE id=?').get(connectionId) as { space_id: string; user_id: string };
+  const mentionId = crypto.randomUUID(); const draftId = crypto.randomUUID(); const timestamp = new Date().toISOString();
+  insertSocialMentions([{
+    id: mentionId, source: 'x', externalId: '1888888888888888888', xConnectionId: connectionId,
+    ingestionKind: 'mention', author: '@customer', content: 'Could someone help me finish setup?',
+    url: 'https://x.com/customer/status/1888888888888888888', language: 'en', publishedAt: timestamp
+  }], connection.space_id);
+  db.prepare(`INSERT INTO x_connection_mentions (connection_id,mention_id,streams_json,query_ids_json,discovered_at,last_seen_at)
+    VALUES (?,?,'["mention"]','[]',?,?)`).run(connectionId, mentionId, timestamp, timestamp);
+  db.prepare(`INSERT INTO social_reply_drafts
+    (id,space_id,mention_id,connection_id,requested_by,tone,instructions,source_snapshot_json,state,generated_content,content,rationale,safety_flags_json,created_at,completed_at,updated_at)
+    VALUES (?,?,?,?,?,'helpful','','{}','edited',?,?,?,'[]',?,?,?)`).run(
+    draftId, connection.space_id, mentionId, connectionId, connection.user_id,
+    'We can help you complete setup today.', 'We can help you complete setup today.', 'Clear and helpful.', timestamp, timestamp, timestamp
+  );
+
+  const originalFetch = globalThis.fetch; let publishCalls = 0; let failAmbiguously = false;
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input); const headers = new Headers(init?.headers);
+    if (url.endsWith('/2/tweets') && init?.method === 'POST') {
+      publishCalls += 1;
+      if (failAmbiguously) throw new TypeError('Simulated connection loss after dispatch.');
+      assert.match(String(headers.get('authorization')), /^Bearer oauth2-access-/);
+      assert.equal(headers.get('content-type'), 'application/json');
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        text: 'We can help you complete setup today.', reply: { in_reply_to_tweet_id: '1888888888888888888' }
+      });
+      return new Response(JSON.stringify({ data: { id: '1999999999999999999', text: 'We can help you complete setup today.' } }), {
+        status: 201, headers: { 'content-type': 'application/json', 'x-rate-limit-limit': '200', 'x-rate-limit-remaining': '199' }
+      });
+    }
+    return new Response(JSON.stringify({ title: 'Unexpected test request' }), { status: 500, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const posted = await owner.post(`/api/social/reply-drafts/${draftId}/publish`)
+      .set('x-request-id', 'reply-publication-test').send({ content: 'We can help you complete setup today.', confirmation: true }).expect(201);
+    assert.equal(posted.body.replayed, false);
+    assert.equal(posted.body.publication.tweetId, '1999999999999999999');
+    assert.equal(posted.body.publication.url, 'https://x.com/research_account_one/status/1999999999999999999');
+    const replay = await owner.post(`/api/social/reply-drafts/${draftId}/publish`)
+      .send({ content: 'We can help you complete setup today.', confirmation: true }).expect(200);
+    assert.equal(replay.body.replayed, true);
+    assert.equal(publishCalls, 1);
+    const saved = (await owner.get('/api/social/reply-drafts').expect(200)).body.find((item: any) => item.id === draftId);
+    assert.equal(saved.state, 'published');
+    assert.equal(saved.publication.tweetId, '1999999999999999999');
+    assert.equal((db.prepare("SELECT COUNT(*) count FROM platform_audit_events WHERE target_id=? AND action='social_reply.published'").get(draftId) as any).count, 1);
+
+    const uncertainDraftId = crypto.randomUUID();
+    db.prepare(`INSERT INTO social_reply_drafts
+      (id,space_id,mention_id,connection_id,requested_by,tone,instructions,source_snapshot_json,state,generated_content,content,rationale,safety_flags_json,created_at,completed_at,updated_at)
+      VALUES (?,?,?,?,?,'helpful','','{}','edited',?,?,?,'[]',?,?,?)`).run(
+      uncertainDraftId, connection.space_id, mentionId, connectionId, connection.user_id,
+      'Please check your direct messages for help.', 'Please check your direct messages for help.', 'Offers a support path.', timestamp, timestamp, timestamp
+    );
+    failAmbiguously = true;
+    const uncertain = await owner.post(`/api/social/reply-drafts/${uncertainDraftId}/publish`)
+      .send({ content: 'Please check your direct messages for help.', confirmation: true }).expect(409);
+    assert.match(uncertain.body.error, /did not confirm whether the reply was posted/i);
+    assert.equal((db.prepare('SELECT state FROM social_reply_drafts WHERE id=?').get(uncertainDraftId) as any).state, 'publish_unknown');
+    await owner.post(`/api/social/reply-drafts/${uncertainDraftId}/publish`)
+      .send({ content: 'Please check your direct messages for help.', confirmation: true }).expect(409);
+    assert.equal(publishCalls, 2, 'an ambiguous result must never be automatically retried');
+    assert.equal((db.prepare("SELECT COUNT(*) count FROM platform_audit_events WHERE target_id=? AND action='social_reply.publication_unknown'").get(uncertainDraftId) as any).count, 1);
+  } finally { globalThis.fetch = originalFetch; }
 });
 
 test('fans billing failure across accounts and releases every durable waiter after one successful credit probe', async () => {

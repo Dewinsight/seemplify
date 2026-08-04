@@ -7,7 +7,7 @@ import { createJob, db, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
 import { decryptSecret, encryptSecret } from './secureSecrets.js';
 import {
-  exchangeOAuth2Code, exchangeOAuthToken, getXJson, refreshOAuth2Token, requestOAuthToken, revokeOAuth2Token,
+  exchangeOAuth2Code, exchangeOAuthToken, getXJson, postXJson, refreshOAuth2Token, requestOAuthToken, revokeOAuth2Token,
   XApiError, type XOAuth2Token, type XRateLimit
 } from './xClient.js';
 
@@ -181,8 +181,14 @@ function rowSyncJob(row: any) {
 }
 function publicConnection(row: XConnectionRow | undefined) {
   if (!row) return null;
+  const scopes = parseJson<string[]>(row.scopes_json, []);
+  const canPublishReplies = row.status === 'connected' && scopes.includes('tweet.write');
   return {
-    id: row.id, status: row.status, authType: row.auth_type, scopes: parseJson<string[]>(row.scopes_json, []), tokenExpiresAt: row.token_expires_at,
+    id: row.id, status: row.status, authType: row.auth_type, scopes, tokenExpiresAt: row.token_expires_at,
+    canPublishReplies,
+    publishBlockedReason: canPublishReplies ? null : row.status !== 'connected'
+      ? 'Reconnect this X account before posting replies.'
+      : 'Reconnect this X account to grant the tweet.write permission.',
     account: row.x_user_id ? { id: row.x_user_id, username: row.username,
       name: row.display_name, profileImageUrl: row.profile_image_url } : null,
     autoSync: Boolean(row.auto_sync), syncIntervalMinutes: Number(row.sync_interval_minutes), nextSyncAt: row.next_sync_at,
@@ -550,7 +556,7 @@ export async function startXOAuth(user: SessionUser, spaceId: string) {
     })();
     const parameters = new URLSearchParams({
       response_type: 'code', client_id: credentials.clientId, redirect_uri: callback,
-      scope: 'tweet.read users.read offline.access', state, code_challenge: challenge, code_challenge_method: 'S256'
+      scope: 'tweet.read tweet.write users.read offline.access', state, code_challenge: challenge, code_challenge_method: 'S256'
     });
     return { authorizeUrl: `${config.xOAuth2AuthorizeBaseUrl}/i/oauth2/authorize?${parameters}`, cookie: oauthCookie(handshake, Math.floor(oauthLifetimeMs / 1000), state), flow: 'oauth2' as const };
   }
@@ -646,12 +652,12 @@ export async function finishXOAuth(input: { oauthToken?: string; oauthVerifier?:
       if (!connectionSnapshotUnchanged(pending.space_id, snapshot) || !pendingUserCanManageSpaceX(pending)) throw new XSyncCancelledError();
       const finalTimestamp = now(); const id = existing?.id || crypto.randomUUID();
       if (existing) {
-        db.prepare(`UPDATE x_connections SET app_id=?,access_token_enc=?,access_token_secret_enc=?,refresh_token_enc=NULL,auth_type='oauth1',scopes_json='[]',token_expires_at=NULL,x_user_id=?,username=?,display_name=?,profile_image_url=?,status='connected',generation=generation+1,auto_sync=0,next_sync_at=NULL,last_error=NULL,updated_at=? WHERE id=?`)
+        db.prepare(`UPDATE x_connections SET app_id=?,access_token_enc=?,access_token_secret_enc=?,refresh_token_enc=NULL,auth_type='oauth1',scopes_json='["tweet.read","tweet.write","users.read"]',token_expires_at=NULL,x_user_id=?,username=?,display_name=?,profile_image_url=?,status='connected',generation=generation+1,auto_sync=0,next_sync_at=NULL,last_error=NULL,updated_at=? WHERE id=?`)
           .run(appId, encryptSecret(exchanged.accessToken, connectionContext(id, 'access-token')), encryptSecret(exchanged.accessTokenSecret, connectionContext(id, 'access-token-secret')),
             account.id, account.username, account.name || account.username, account.profile_image_url || null, finalTimestamp, id);
         cancelConnectionSyncs(id, 'X account credentials changed.', finalTimestamp);
-      } else db.prepare(`INSERT INTO x_connections (id,space_id,user_id,app_id,access_token_enc,access_token_secret_enc,auth_type,x_user_id,username,display_name,profile_image_url,status,auto_sync,sync_interval_minutes,rate_limit_json,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,'oauth1',?,?,?,?,'connected',0,60,'{}',?,?)`).run(id, pending.space_id, pending.user_id, appId,
+      } else db.prepare(`INSERT INTO x_connections (id,space_id,user_id,app_id,access_token_enc,access_token_secret_enc,auth_type,scopes_json,x_user_id,username,display_name,profile_image_url,status,auto_sync,sync_interval_minutes,rate_limit_json,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,'oauth1','["tweet.read","tweet.write","users.read"]',?,?,?,?,'connected',0,60,'{}',?,?)`).run(id, pending.space_id, pending.user_id, appId,
         encryptSecret(exchanged.accessToken, connectionContext(id, 'access-token')), encryptSecret(exchanged.accessTokenSecret, connectionContext(id, 'access-token-secret')),
         account.id, account.username, account.name || account.username, account.profile_image_url || null, finalTimestamp, finalTimestamp);
       return true;
@@ -992,6 +998,116 @@ async function connectionDataAuth(connection: XConnectionRow, app: XAppRow): Pro
   if (!accountSecrets.accessTokenSecret) throw new XApiError('The X account credentials are incomplete. Reconnect the account.', 401, 'authentication');
   return { consumerKey: appSecrets.consumerKey, consumerSecret: appSecrets.consumerSecret,
     accessToken: accountSecrets.accessToken, accessTokenSecret: accountSecrets.accessTokenSecret };
+}
+
+function replyPublication(spaceId: string, draftId: string) {
+  const row = db.prepare(`SELECT after_json,created_at FROM platform_audit_events
+    WHERE space_id=? AND target_type='social_reply_draft' AND target_id=? AND action='social_reply.published'
+    ORDER BY created_at DESC,id DESC LIMIT 1`).get(spaceId, draftId) as { after_json: string; created_at: string } | undefined;
+  if (!row) return null;
+  const detail = parseJson<Record<string, unknown>>(row.after_json, {});
+  return {
+    tweetId: String(detail.tweetId || ''), url: String(detail.url || ''),
+    postedBy: String(detail.postedBy || ''), postedAt: row.created_at
+  };
+}
+
+function recordReplyPublicationAudit(input: {
+  user: SessionUser; spaceId: string; draftId: string; action: string; reason?: string;
+  before?: Record<string, unknown>; after?: Record<string, unknown>;
+  requestId?: string; ipAddress?: string; userAgent?: string;
+}) {
+  const membership = db.prepare('SELECT role FROM space_memberships WHERE space_id=? AND user_id=?')
+    .get(input.spaceId, input.user.id) as { role: string } | undefined;
+  db.prepare(`INSERT INTO platform_audit_events
+    (id,actor_user_id,actor_role,action,target_type,target_id,space_id,reason,before_json,after_json,request_id,ip_address,user_agent,created_at)
+    VALUES (?,?,?,?, 'social_reply_draft',?,?,?,?,?,?,?,?,?)`).run(
+    crypto.randomUUID(), input.user.id, membership?.role || input.user.role, input.action, input.draftId, input.spaceId,
+    String(input.reason || '').slice(0, 1000), JSON.stringify(input.before || {}), JSON.stringify(input.after || {}),
+    String(input.requestId || '').slice(0, 120) || crypto.randomUUID(), String(input.ipAddress || '').slice(0, 100),
+    String(input.userAgent || '').slice(0, 500), now()
+  );
+}
+
+export async function publishSocialReplyDraft(user: SessionUser, spaceId: string, draftId: string, input: {
+  content: string; requestId?: string; ipAddress?: string; userAgent?: string;
+}) {
+  requireSpaceXManager(user, spaceId, 'publish replies on X');
+  const draft = db.prepare(`SELECT d.*,m.external_id,c.username,c.status connection_status,c.auth_type,c.scopes_json
+    FROM social_reply_drafts d
+    JOIN social_mentions m ON m.id=d.mention_id AND m.space_id=d.space_id
+    JOIN x_connections c ON c.id=d.connection_id AND c.space_id=d.space_id
+    WHERE d.id=? AND d.space_id=? AND m.source='x'`).get(draftId, spaceId) as any;
+  if (!draft) throw new XIntegrationError('Reply draft not found for this X account.', 404);
+  if (draft.state === 'published') {
+    const publication = replyPublication(spaceId, draftId);
+    if (!publication) throw new XIntegrationError('This reply was posted, but its publication receipt is unavailable. Check the account on X.', 409);
+    return { publication, replayed: true };
+  }
+  if (draft.state === 'publishing') throw new XIntegrationError('This reply is already being posted. Wait for its publication status.', 409);
+  if (draft.state === 'publish_unknown') {
+    throw new XIntegrationError('X did not confirm the previous publication result. Check the account on X before taking any further action.', 409);
+  }
+  if (!['ready', 'edited', 'publish_failed'].includes(String(draft.state))) {
+    throw new XIntegrationError('Only a completed, reviewed reply draft can be posted.', 409);
+  }
+  const content = String(input.content || '').trim();
+  if (!content || Array.from(content).length > 280) throw new XIntegrationError('The reviewed reply must contain between 1 and 280 characters.');
+  if (!draft.external_id) throw new XIntegrationError('The saved X post has no provider identifier and cannot be replied to.', 409);
+  if (draft.connection_status !== 'connected') throw new XIntegrationError('Reconnect this X account before posting replies.', 409);
+  const scopes = parseJson<string[]>(draft.scopes_json, []);
+  if (!scopes.includes('tweet.write')) throw new XIntegrationError('Reconnect this X account to grant the tweet.write permission before posting replies.', 409);
+
+  const timestamp = now();
+  const claimed = db.prepare(`UPDATE social_reply_drafts SET content=?,state='publishing',error=NULL,updated_at=?
+    WHERE id=? AND space_id=? AND state IN ('ready','edited','publish_failed')`).run(content, timestamp, draftId, spaceId).changes;
+  if (!claimed) throw new XIntegrationError('This reply draft changed before it could be posted. Refresh and review its status.', 409);
+  const auditBase = {
+    user, spaceId, draftId, requestId: input.requestId, ipAddress: input.ipAddress, userAgent: input.userAgent,
+    before: { state: draft.state, connectionId: draft.connection_id, sourceTweetId: draft.external_id, contentSha256: sha256(content) }
+  };
+  let postStarted = false;
+  try {
+    const connection = spaceOwnsConnection(spaceId, draft.connection_id); const app = getApp();
+    if (!app) throw new XIntegrationError('The X developer app is not configured.', 409);
+    const auth = await connectionDataAuth(connection, app);
+    postStarted = true;
+    const posted = await postXJson<{ data?: { id?: string; text?: string } }>({
+      path: '/2/tweets', body: { text: content, reply: { in_reply_to_tweet_id: String(draft.external_id) } }, ...auth
+    });
+    const tweetId = String(posted.data.data?.id || '').trim();
+    if (!tweetId) throw new XApiError('X accepted the request but did not return a reply identifier. Check the account on X before retrying.', 502, 'provider');
+    const url = draft.username ? `https://x.com/${encodeURIComponent(String(draft.username))}/status/${encodeURIComponent(tweetId)}`
+      : `https://x.com/i/web/status/${encodeURIComponent(tweetId)}`;
+    db.transaction(() => {
+      const updated = db.prepare("UPDATE social_reply_drafts SET state='published',error=NULL,updated_at=? WHERE id=? AND space_id=? AND state='publishing'")
+        .run(now(), draftId, spaceId).changes;
+      if (!updated) throw new Error('The reply publication state changed unexpectedly.');
+      recordReplyPublicationAudit({ ...auditBase, action: 'social_reply.published', after: {
+        state: 'published', tweetId, url, postedBy: user.id, connectionId: draft.connection_id,
+        sourceTweetId: draft.external_id, contentSha256: sha256(content)
+      } });
+    })();
+    publishEvent('data-changed', { reason: 'social-reply-published', draftId, tweetId }, spaceId);
+    return { publication: replyPublication(spaceId, draftId), replayed: false };
+  } catch (error) {
+    const xError = error instanceof XApiError ? error : null;
+    const ambiguous = postStarted && Boolean(xError && (xError.code === 'network' || xError.status >= 500));
+    const state = ambiguous ? 'publish_unknown' : 'publish_failed';
+    const message = ambiguous
+      ? 'X did not confirm whether the reply was posted. Check the account on X before taking any further action.'
+      : error instanceof Error ? error.message : 'X could not publish this reply.';
+    db.transaction(() => {
+      db.prepare("UPDATE social_reply_drafts SET state=?,error=?,updated_at=? WHERE id=? AND space_id=? AND state='publishing'")
+        .run(state, message.slice(0, 1000), now(), draftId, spaceId);
+      recordReplyPublicationAudit({ ...auditBase, action: ambiguous ? 'social_reply.publication_unknown' : 'social_reply.publication_failed',
+        reason: message, after: { state, providerCode: xError?.code || null, providerStatus: xError?.status || null } });
+    })();
+    publishEvent('data-changed', { reason: `social-reply-${state}`, draftId }, spaceId);
+    const responseStatus = error instanceof XIntegrationError ? error.status
+      : xError?.status && xError.status < 500 ? xError.status : 502;
+    throw new XIntegrationError(message, ambiguous ? 409 : responseStatus);
+  }
 }
 async function fetchPostPage(input: {
   path: string; parameters: Record<string, string | null | undefined>; auth: XDataAuth;

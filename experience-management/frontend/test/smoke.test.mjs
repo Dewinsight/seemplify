@@ -119,7 +119,8 @@ test('exposes multi-account X listening, human-reviewed replies, cross-source in
   assert.match(social, /planFingerprint: expansionEstimate\.planFingerprint/);
   assert.match(social, /connections\/\$\{connection\.id\}\/queries/);
   assert.match(social, /mentions\/\$\{replyMention\.id\}\/reply-drafts/);
-  for (const feature of ['X accounts', 'Add X account', 'X API credits are depleted', 'Sync latest 50', 'posts saved in this space', 'Estimate &amp; fetch older', 'Fetch older posts from X', 'Payable-post upper bound', 'Latest 50 saved (default)', 'Show {Math.min', 'Listening queries', 'Reply assistant', 'Draft a reply with Terra', 'Draft only', 'Sync history', 'Automatic sync', 'Bearer token', 'Delete X history', 'Platform X settings', 'Remove platform X app', 'waiting_billing']) assert.match(social, new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(social, /reply-drafts\/\$\{publishDraft\.id\}\/publish/);
+  for (const feature of ['X accounts', 'Add X account', 'X API credits are depleted', 'Sync latest 50', 'posts saved in this space', 'Estimate &amp; fetch older', 'Fetch older posts from X', 'Payable-post upper bound', 'Latest 50 saved (default)', 'Show {Math.min', 'Listening queries', 'Reply assistant', 'Draft a reply with AI', 'Nothing is posted until you confirm', 'Post this reply on X?', 'Post reply on X', 'Sync history', 'Automatic sync', 'Bearer token', 'Delete X history', 'Platform X settings', 'Remove platform X app', 'waiting_billing']) assert.match(social, new RegExp(feature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(social, /mentionIds: reportMentionIds/);
   assert.doesNotMatch(social, /latest 200 posts/);
   assert.match(social, /Promise\.allSettled/);

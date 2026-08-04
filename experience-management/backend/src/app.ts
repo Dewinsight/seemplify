@@ -50,7 +50,7 @@ import {
 import { QUESTION_TYPES, type AiJob, type AiJobKind, type Collector, type LogicRule, type Question, type ResponseRecord, type SocialMention, type Survey } from './types.js';
 import {
   clearXOAuthCookie, createXQuery, deleteXCollectedHistory, deleteXConfiguration, deleteXQuery, disconnectXAccount, enqueueXExpansion, enqueueXSync,
-  estimateXExpansion, finishXOAuth, getXIntegrationStatus, listXCollectedMentions, saveXConfiguration, startXOAuth, updateXConnectionSettings, updateXQuery,
+  estimateXExpansion, finishXOAuth, getXIntegrationStatus, listXCollectedMentions, publishSocialReplyDraft, saveXConfiguration, startXOAuth, updateXConnectionSettings, updateXQuery,
   XIntegrationError, xOAuthCookieFromHeader
 } from './xIntegration.js';
 import {
@@ -868,6 +868,16 @@ app.patch('/api/social/reply-drafts/:id', (request, response) => {
       .refine((value) => value.content !== undefined || value.archived !== undefined, 'Provide a draft change.').parse(request.body || {});
     return response.json(updateSocialReplyDraft(authenticatedUser(request), authenticatedSpace(request).id, String(request.params.id), input));
   } catch (error) { return intelligenceError(response, error); }
+});
+app.post('/api/social/reply-drafts/:id/publish', async (request, response) => {
+  try {
+    const input = z.object({ content: z.string().trim().min(1).max(280), confirmation: z.literal(true) }).strict().parse(request.body || {});
+    const result = await publishSocialReplyDraft(authenticatedUser(request), authenticatedSpace(request).id, String(request.params.id), {
+      content: input.content, requestId: String(request.get('x-request-id') || ''),
+      ipAddress: String(request.ip || ''), userAgent: String(request.get('user-agent') || '')
+    });
+    return response.status(result.replayed ? 200 : 201).json(result);
+  } catch (error) { return xError(response, error); }
 });
 app.get('/api/social/reports', noStore, (request, response) => {
   try { return response.json(listSocialIntelligenceReports(authenticatedUser(request), authenticatedSpace(request).id, typeof request.query.connectionId === 'string' ? request.query.connectionId : undefined)); }

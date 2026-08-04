@@ -98,6 +98,7 @@ export interface XExpansionEstimate {
 }
 export interface XConnection {
   id: string; status: string; authType: 'oauth1' | 'oauth2'; scopes: string[]; tokenExpiresAt: string | null;
+  canPublishReplies?: boolean; publishBlockedReason?: string | null;
   account: null | { id: string; username: string | null; name: string | null; profileImageUrl: string | null };
   autoSync: boolean; syncIntervalMinutes: number; nextSyncAt: string | null; lastSyncAt: string | null; lastSuccessAt: string | null; lastError: string | null;
   cursors?: { latestPostId: string | null; latestMentionId: string | null; oldestPostId: string | null; oldestMentionId: string | null };
@@ -115,7 +116,8 @@ export interface XIntegrationStatus {
   counts: { collected: number; accountPosts: number; mentions: number; searchResults: number; analyzed: number };
   aggregateCounts: { collected: number; accountPosts: number; mentions: number; searchResults: number; analyzed: number };
 }
-export interface SocialReplyDraft { id: string; mentionId: string; connectionId: string | null; tone: string; instructions: string; state: 'queued' | 'ready' | 'edited' | 'archived' | 'failed'; generatedContent: string; content: string; rationale: string; safetyFlags: string[]; runtime: any; aiJobId: string; error: string | null; createdAt: string; completedAt: string | null; updatedAt: string }
+export interface SocialReplyDraftPublication { tweetId: string; url: string; postedBy: string; postedAt: string }
+export interface SocialReplyDraft { id: string; mentionId: string; connectionId: string | null; tone: string; instructions: string; state: 'queued' | 'ready' | 'edited' | 'archived' | 'failed' | 'publishing' | 'published' | 'publish_failed' | 'publish_unknown'; generatedContent: string; content: string; rationale: string; safetyFlags: string[]; runtime: any; aiJobId: string; error: string | null; publication?: SocialReplyDraftPublication | null; createdAt: string; completedAt: string | null; updatedAt: string }
 export interface SocialIntelligenceObservationWindow {
   periodStart: string | null; periodEnd: string | null; asOf: string | null; postCount: number;
   breakdown: { accountPosts: number; mentions: number; searchResults: number; unclassified: number };
