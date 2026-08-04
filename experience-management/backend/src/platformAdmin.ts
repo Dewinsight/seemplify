@@ -19,8 +19,8 @@ import {
   controlPlaneRoleAssignments, hasControlPlanePermission, platformPermissionCatalog
 } from './platformRbac.js';
 import {
-  effectiveSubscriptionForSpace, publicSubscriptionPlan, subscriptionCatalogVersion,
-  subscriptionPlanCatalog as planCatalog, subscriptionPlanCodes, subscriptionPlanSnapshot,
+  defaultSubscriptionPlanCatalog, effectiveSubscriptionForSpace, listSubscriptionPlans, publicSubscriptionPlan,
+  subscriptionCatalogVersion, subscriptionPlanCodes, subscriptionPlanSnapshot,
   validatedSubscriptionPlanSnapshot
 } from './subscriptionEntitlements.js';
 
@@ -41,6 +41,25 @@ const planCodeSchema = z.enum(subscriptionPlanCodes);
 const uuidSchema = z.string().uuid();
 const reasonSchema = z.string().trim().min(5).max(1_000);
 const noteSchema = z.string().trim().min(5).max(2_000);
+const planFeaturesSchema = z.object({
+  surveys: z.boolean(), campaigns: z.boolean(), agreements: z.boolean(), serviceRecovery: z.boolean(),
+  socialListening: z.boolean(), knowledgeBases: z.boolean(), terra: z.boolean()
+}).strict();
+const planLimitsSchema = z.object({
+  seats: z.number().int().min(1).max(100_000),
+  activeSurveys: z.number().int().min(0).max(1_000_000),
+  monthlyAiActions: z.number().int().min(0).max(10_000_000),
+  knowledgeStorageBytes: z.number().int().min(0).max(10 * 1024 * 1024 * 1024 * 1024)
+}).strict();
+const managedPlanSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  description: z.string().trim().max(300),
+  requestable: z.boolean(),
+  features: planFeaturesSchema,
+  limits: planLimitsSchema,
+  expectedVersion: z.number().int().min(1),
+  reason: reasonSchema
+}).strict();
 const promotionGateSchema = z.object({
   realDataEvaluation: z.object({
     queryCount: z.number().int().min(100).max(10_000),
@@ -103,6 +122,26 @@ function parseJson<T>(value: unknown, fallback: T): T {
 
 function publicPlan(code: string) {
   return publicSubscriptionPlan(code);
+}
+
+function managedPlanRow(row: any) {
+  const plan = publicPlan(String(row.code));
+  if (!plan) throw new PlatformAdminError('The managed plan definition is invalid.', 503, 'SUBSCRIPTION_PLAN_INVALID');
+  return {
+    ...plan,
+    displayOrder: Number(row.display_order), version: Number(row.version),
+    createdAt: safeTimestamp(row.created_at), updatedAt: safeTimestamp(row.updated_at),
+    activeSubscriptions: Number(row.active_subscriptions || 0),
+    pendingRequests: Number(row.pending_requests || 0)
+  };
+}
+
+function managedPlanByCode(code: string) {
+  const row = db.prepare(`SELECT plan.*,
+      (SELECT COUNT(*) FROM platform_subscriptions subscription WHERE subscription.plan_code=plan.code AND subscription.status='active') active_subscriptions,
+      (SELECT COUNT(*) FROM platform_subscription_requests request WHERE request.requested_plan_code=plan.code AND request.status='pending') pending_requests
+    FROM platform_subscription_plans plan WHERE plan.code=?`).get(code) as any;
+  return row ? managedPlanRow(row) : null;
 }
 
 function safeTimestamp(value: unknown) {
@@ -955,6 +994,85 @@ platformAdminRouter.get('/subscriptions', requirePlatformCapability('readSubscri
   } catch (error) { return sendPlatformError(response, error); }
 });
 
+platformAdminRouter.get('/plans', requirePlatformCapability('readSubscriptions'), (_request, response) => {
+  try {
+    const rows = db.prepare(`SELECT plan.*,
+        (SELECT COUNT(*) FROM platform_subscriptions subscription WHERE subscription.plan_code=plan.code AND subscription.status='active') active_subscriptions,
+        (SELECT COUNT(*) FROM platform_subscription_requests request WHERE request.requested_plan_code=plan.code AND request.status='pending') pending_requests
+      FROM platform_subscription_plans plan ORDER BY plan.display_order,plan.code`).all() as any[];
+    return response.json({ plans: rows.map(managedPlanRow) });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.put('/plans/:code', (request, response) => {
+  try {
+    const actor = requireControlPermission(request, response, 'subscriptions.manage'); if (!actor) return;
+    const code = planCodeSchema.parse(request.params.code);
+    const input = managedPlanSchema.parse(request.body);
+    const plan = db.transaction(() => {
+      const currentRow = db.prepare('SELECT * FROM platform_subscription_plans WHERE code=?').get(code) as any;
+      if (!currentRow) throw new PlatformAdminError('Subscription plan not found.', 404, 'SUBSCRIPTION_PLAN_NOT_FOUND');
+      const current = managedPlanRow(currentRow);
+      const now = new Date().toISOString();
+      const changed = db.prepare(`UPDATE platform_subscription_plans SET name=?,description=?,requestable=?,features_json=?,
+        limits_json=?,version=version+1,updated_at=? WHERE code=? AND version=?`).run(
+        input.name, input.description, input.requestable ? 1 : 0, JSON.stringify(input.features),
+        JSON.stringify(input.limits), now, code, input.expectedVersion
+      ).changes;
+      if (changed !== 1) throw new PlatformAdminError('The plan changed before this update.', 409, 'SUBSCRIPTION_PLAN_VERSION_CONFLICT');
+      const affectedSubscriptions = db.prepare(`UPDATE platform_subscriptions SET features_json=?,limits_json=?,
+        version=version+1,updated_at=? WHERE plan_code=?`).run(
+        JSON.stringify(input.features), JSON.stringify(input.limits), now, code
+      ).changes;
+      const pendingRequests = Number((db.prepare(`SELECT COUNT(*) count FROM platform_subscription_requests
+        WHERE requested_plan_code=? AND status='pending'`).get(code) as { count?: number } | undefined)?.count || 0);
+      recordAudit(request, actor, {
+        action: 'subscription_plan.updated', targetType: 'subscription_plan', targetId: code, reason: input.reason,
+        before: { name: current.name, description: current.description, requestable: current.requestable,
+          features: current.features, limits: current.limits, version: current.version },
+        after: { name: input.name, description: input.description, requestable: input.requestable,
+          features: input.features, limits: input.limits, version: input.expectedVersion + 1,
+          affectedSubscriptions, pendingRequestsRequireResubmission: pendingRequests }
+      });
+      return managedPlanByCode(code)!;
+    })();
+    return response.json({ plan });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.post('/plans/:code/reset', (request, response) => {
+  try {
+    const actor = requireControlPermission(request, response, 'subscriptions.manage'); if (!actor) return;
+    const code = planCodeSchema.parse(request.params.code);
+    const input = z.object({ expectedVersion: z.number().int().min(1), reason: reasonSchema }).strict().parse(request.body);
+    const defaults = defaultSubscriptionPlanCatalog.find((plan) => plan.code === code)!;
+    const plan = db.transaction(() => {
+      const currentRow = db.prepare('SELECT * FROM platform_subscription_plans WHERE code=?').get(code) as any;
+      if (!currentRow) throw new PlatformAdminError('Subscription plan not found.', 404, 'SUBSCRIPTION_PLAN_NOT_FOUND');
+      const current = managedPlanRow(currentRow);
+      const now = new Date().toISOString();
+      const changed = db.prepare(`UPDATE platform_subscription_plans SET name=?,description=?,requestable=?,features_json=?,
+        limits_json=?,version=version+1,updated_at=? WHERE code=? AND version=?`).run(
+        defaults.name, defaults.description, defaults.requestable ? 1 : 0, JSON.stringify(defaults.features),
+        JSON.stringify(defaults.limits), now, code, input.expectedVersion
+      ).changes;
+      if (changed !== 1) throw new PlatformAdminError('The plan changed before this reset.', 409, 'SUBSCRIPTION_PLAN_VERSION_CONFLICT');
+      const affectedSubscriptions = db.prepare(`UPDATE platform_subscriptions SET features_json=?,limits_json=?,
+        version=version+1,updated_at=? WHERE plan_code=?`).run(
+        JSON.stringify(defaults.features), JSON.stringify(defaults.limits), now, code
+      ).changes;
+      recordAudit(request, actor, {
+        action: 'subscription_plan.reset', targetType: 'subscription_plan', targetId: code, reason: input.reason,
+        before: { name: current.name, description: current.description, requestable: current.requestable,
+          features: current.features, limits: current.limits, version: current.version },
+        after: { ...defaults, version: input.expectedVersion + 1, affectedSubscriptions }
+      });
+      return managedPlanByCode(code)!;
+    })();
+    return response.json({ plan });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
 platformAdminRouter.patch('/spaces/:id/subscription', (request, response) => {
   try {
     const actor = requireBillingActor(request, response); if (!actor) return;
@@ -1164,7 +1282,7 @@ subscriptionRouter.use((request, response, next) => {
   next();
 });
 
-subscriptionRouter.get('/plans', (_request, response) => response.json({ plans: planCatalog }));
+subscriptionRouter.get('/plans', (_request, response) => response.json({ plans: listSubscriptionPlans() }));
 
 subscriptionRouter.get('/current', (request, response) => {
   const context = tenantContext(request, response); if (!context) return;

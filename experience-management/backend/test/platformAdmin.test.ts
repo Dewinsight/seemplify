@@ -49,6 +49,10 @@ const { platformAdminRouter, subscriptionRouter } = await import('../src/platfor
 const { adminControlPlaneRouter } = await import('../src/adminControlPlane.js');
 const { stopCodexClients } = await import('../src/codexAppServer.js');
 const { createSpace, resolveRequestSpace, SpaceError } = await import('../src/spaces.js');
+const {
+  assertCanQueueAiAction, consumeDirectAiAction, currentMonthlyAiActions, SubscriptionEntitlementError
+} = await import('../src/subscriptionEntitlements.js');
+const { assertKnowledgeStorageAllowance, KnowledgeError } = await import('../src/knowledgeRepository.js');
 
 const rootUserId = bootstrapAdminAccount();
 const app = express();
@@ -420,6 +424,79 @@ test('subscription requests are durable, versioned, approved explicitly, and aud
   assert.ok(audit.body.events.some((event: any) => event.action === 'subscription_request.approved'));
   assert.ok(audit.body.events.some((event: any) => event.action === 'subscription_request.break_glass_used'));
   assert.ok(audit.body.events.every((event: any) => !('before' in event) && !('after' in event)));
+});
+
+test('subscription plans are versioned, editable, propagated, resettable, and audited', async () => {
+  const rootAgent = await loginAs('platform-admin@seemplify.local');
+  const starter = seedUser('managed-plan-owner@example.test', 'Managed Plan Owner');
+  const durableQuota = seedUser('managed-plan-durable-quota@example.test', 'Durable Quota');
+  const directQuota = seedUser('managed-plan-direct-quota@example.test', 'Direct Quota');
+  const storageQuota = seedUser('managed-plan-storage-quota@example.test', 'Storage Quota');
+  const starterAgent = await loginAs(starter.email);
+  await starterAgent.get('/api/social/check').set('X-Seemplify-Space', starter.spaceId).expect(403)
+    .expect(({ body }) => assert.equal(body.code, 'SUBSCRIPTION_FEATURE_REQUIRED'));
+
+  const catalog = await rootAgent.get('/api/platform-admin/plans').expect(200);
+  const current = catalog.body.plans.find((plan: any) => plan.code === 'starter');
+  assert.equal(current.activeSubscriptions >= 1, true);
+  assert.equal(current.features.socialListening, false);
+
+  const updated = await rootAgent.put('/api/platform-admin/plans/starter').send({
+    name: 'Starter managed',
+    description: 'A managed starter plan used by smaller workspaces.',
+    requestable: true,
+    features: { ...current.features, socialListening: true },
+    limits: { ...current.limits, monthlyAiActions: 1, knowledgeStorageBytes: 4 },
+    expectedVersion: current.version,
+    reason: 'Enable starter social listening for the managed plan test.'
+  }).expect(200);
+  assert.equal(updated.body.plan.name, 'Starter managed');
+  assert.equal(updated.body.plan.features.socialListening, true);
+  assert.equal(updated.body.plan.limits.monthlyAiActions, 1);
+  assert.equal(updated.body.plan.version, current.version + 1);
+  await starterAgent.get('/api/social/check').set('X-Seemplify-Space', starter.spaceId).expect(200);
+  const stored = db.prepare('SELECT features_json,limits_json FROM platform_subscriptions WHERE space_id=?').get(starter.spaceId) as any;
+  assert.equal(JSON.parse(stored.features_json).socialListening, true);
+  assert.equal(JSON.parse(stored.limits_json).monthlyAiActions, 1);
+
+  const reserved = createJob('survey.improve', { quotaFixture: true }, durableQuota.spaceId, null, null, durableQuota.id);
+  assert.equal(currentMonthlyAiActions(durableQuota.spaceId), 1);
+  assert.throws(() => assertCanQueueAiAction(durableQuota.spaceId), (error: unknown) =>
+    error instanceof SubscriptionEntitlementError && error.code === 'SUBSCRIPTION_QUOTA_EXCEEDED');
+  db.prepare('UPDATE ai_jobs SET attempt=2 WHERE id=?').run(reserved.id);
+  assert.equal(currentMonthlyAiActions(durableQuota.spaceId), 2, 'started retries count as additional AI actions');
+
+  consumeDirectAiAction({
+    spaceId: directQuota.spaceId, userId: directQuota.id, actionId: 'knowledge.answer', requestKey: 'direct-usage-1'
+  });
+  consumeDirectAiAction({
+    spaceId: directQuota.spaceId, userId: directQuota.id, actionId: 'knowledge.answer', requestKey: 'direct-usage-1'
+  });
+  assert.equal(currentMonthlyAiActions(directQuota.spaceId), 1, 'replayed direct requests are not charged twice');
+  assert.throws(() => consumeDirectAiAction({
+    spaceId: directQuota.spaceId, userId: directQuota.id, actionId: 'knowledge.answer', requestKey: 'direct-usage-2'
+  }), (error: unknown) => error instanceof SubscriptionEntitlementError && error.code === 'SUBSCRIPTION_QUOTA_EXCEEDED');
+
+  assert.throws(() => assertKnowledgeStorageAllowance(storageQuota.spaceId, 5), (error: unknown) =>
+    error instanceof KnowledgeError && error.code === 'KNOWLEDGE_PLAN_STORAGE_QUOTA');
+
+  await rootAgent.put('/api/platform-admin/plans/starter').send({
+    name: 'Stale update', description: '', requestable: true,
+    features: current.features, limits: current.limits, expectedVersion: current.version,
+    reason: 'Prove stale plan changes cannot overwrite newer terms.'
+  }).expect(409).expect(({ body }) => assert.equal(body.code, 'SUBSCRIPTION_PLAN_VERSION_CONFLICT'));
+
+  const reset = await rootAgent.post('/api/platform-admin/plans/starter/reset').send({
+    expectedVersion: updated.body.plan.version,
+    reason: 'Restore the system Starter defaults after plan management testing.'
+  }).expect(200);
+  assert.equal(reset.body.plan.name, 'Starter');
+  assert.equal(reset.body.plan.features.socialListening, false);
+  await starterAgent.get('/api/social/check').set('X-Seemplify-Space', starter.spaceId).expect(403);
+
+  const audit = await rootAgent.get('/api/platform-admin/audit-events?search=subscription_plan').expect(200);
+  assert.ok(audit.body.events.some((event: any) => event.action === 'subscription_plan.updated'));
+  assert.ok(audit.body.events.some((event: any) => event.action === 'subscription_plan.reset'));
 });
 
 test('delegated platform roles are least-privileged and cannot self-approve billing', async () => {

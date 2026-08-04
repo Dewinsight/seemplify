@@ -324,7 +324,7 @@ test('isolates deployment tests from inherited live service configuration', () =
   const build = deploy.indexOf('& npm.cmd run build', deploymentCall);
   assert.ok(testFunction >= 0 && deploymentCall > testFunction && build > deploymentCall);
 });
-test('refuses an incompatible rollback after the PostgreSQL runtime-v5 upgrade starts', () => {
+test('refuses an incompatible rollback after a PostgreSQL runtime upgrade starts', () => {
   const deploy = fs.readFileSync(path.resolve(source, '..', '..', 'scripts', 'auto-deploy.ps1'), 'utf8');
   const compatibility = JSON.parse(fs.readFileSync(path.resolve(source, '..', '..', 'backend', 'migrations', 'postgres', 'runtime-compatibility.json'), 'utf8'));
   assert.match(deploy, /postgres-runtime-schema-v5-started/);
@@ -334,8 +334,8 @@ test('refuses an incompatible rollback after the PostgreSQL runtime-v5 upgrade s
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
   assert.match(deploy, /started runtime upgrade/);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 8,
-    maximumRuntimeSchemaVersion: 8,
+    minimumRuntimeSchemaVersion: 9,
+    maximumRuntimeSchemaVersion: 9,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });
@@ -369,6 +369,7 @@ test('ships capability-scoped platform administration and subscription controls'
   const shell = fs.readFileSync(path.join(source, 'components', 'platform-admin', 'PlatformAdminShell.tsx'), 'utf8');
   const user = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'UserDetailPage.tsx'), 'utf8');
   const subscriptions = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'SubscriptionsPage.tsx'), 'utf8');
+  const plans = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'PlansPage.tsx'), 'utf8');
   const requestDetail = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'SubscriptionRequestDetailPage.tsx'), 'utf8');
   const analytics = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'AnalyticsPage.tsx'), 'utf8');
   const users = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'UsersPage.tsx'), 'utf8');
@@ -379,8 +380,11 @@ test('ships capability-scoped platform administration and subscription controls'
   for (const capability of ['users.read', 'roles.read', 'spaces.read', 'subscriptions.read', 'analytics.read', 'jobs.read', 'activity.read', 'ai_defaults.read', 'audit.read']) assert.match(shell, new RegExp(capability.replace('.', '\\.')));
   assert.match(shell, /routeAllowed/);
   assert.match(app, /\/admin\/subscriptions/);
-  for (const route of ['/admin/roles', '/admin/jobs', '/admin/activity', '/admin/ai-defaults']) assert.match(app, new RegExp(route.replaceAll('/', '\\/')));
+  for (const route of ['/admin/roles', '/admin/plans', '/admin/jobs', '/admin/activity', '/admin/ai-defaults']) assert.match(app, new RegExp(route.replaceAll('/', '\\/')));
   assert.match(subscriptions, /\/api\/platform-admin\/subscriptions/);
+  assert.match(plans, /\/api\/platform-admin\/plans/);
+  assert.match(plans, /Restore defaults/);
+  assert.match(plans, /Social Listening/);
   assert.match(users, /\/api\/platform-admin\/users/);
   assert.match(users, /Create and invite user/);
   assert.match(user, /Assign role/);

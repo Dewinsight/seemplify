@@ -9,7 +9,16 @@ export type SubscriptionPlanCode = 'starter' | 'team' | 'enterprise';
 
 export const subscriptionCatalogVersion = '2026-07-30.1';
 
-export const subscriptionPlanCatalog = [
+export type SubscriptionPlan = {
+  code: SubscriptionPlanCode;
+  name: string;
+  description: string;
+  requestable: boolean;
+  features: Record<SubscriptionFeature, boolean>;
+  limits: Record<SubscriptionQuota, number>;
+};
+
+export const defaultSubscriptionPlanCatalog: readonly SubscriptionPlan[] = [
   {
     code: 'starter',
     name: 'Starter',
@@ -46,7 +55,6 @@ export const subscriptionPlanCatalog = [
 ] as const;
 
 export const subscriptionPlanCodes = ['starter', 'team', 'enterprise'] as const;
-export type SubscriptionPlan = (typeof subscriptionPlanCatalog)[number];
 
 export class SubscriptionEntitlementError extends Error {
   constructor(
@@ -60,8 +68,51 @@ export class SubscriptionEntitlementError extends Error {
   }
 }
 
+function defaultPlan(code: string): SubscriptionPlan | null {
+  return defaultSubscriptionPlanCatalog.find((plan) => plan.code === code) || null;
+}
+
+function planTableReady() {
+  try { db.prepare('SELECT 1 FROM platform_subscription_plans LIMIT 1').get(); return true; }
+  catch { return false; }
+}
+
+function planFromRow(row: any): SubscriptionPlan | null {
+  const fallback = defaultPlan(String(row?.code || ''));
+  if (!fallback) return null;
+  let features: unknown; let limits: unknown;
+  try { features = JSON.parse(String(row.features_json)); limits = JSON.parse(String(row.limits_json)); }
+  catch { return null; }
+  if (!features || typeof features !== 'object' || !limits || typeof limits !== 'object') return null;
+  const featureValues = features as Record<string, unknown>;
+  const limitValues = limits as Record<string, unknown>;
+  const normalizedFeatures = Object.fromEntries(Object.keys(fallback.features).map((key) => [key, featureValues[key] === true])) as
+    Record<SubscriptionFeature, boolean>;
+  const normalizedLimits = Object.fromEntries(Object.keys(fallback.limits).map((key) => [key, Number(limitValues[key])])) as
+    Record<SubscriptionQuota, number>;
+  if (Object.values(normalizedLimits).some((value) => !Number.isSafeInteger(value) || value < 0)) return null;
+  return {
+    code: fallback.code,
+    name: String(row.name || '').trim(),
+    description: String(row.description || '').trim(),
+    requestable: Boolean(row.requestable),
+    features: normalizedFeatures,
+    limits: normalizedLimits
+  };
+}
+
+export function listSubscriptionPlans(): SubscriptionPlan[] {
+  if (!planTableReady()) return defaultSubscriptionPlanCatalog.map((plan) => structuredClone(plan));
+  const rows = db.prepare(`SELECT code,name,description,requestable,features_json,limits_json
+    FROM platform_subscription_plans ORDER BY display_order,code`).all() as any[];
+  const plans = rows.map(planFromRow).filter((plan): plan is SubscriptionPlan => Boolean(plan));
+  return plans.length === subscriptionPlanCodes.length
+    ? plans
+    : defaultSubscriptionPlanCatalog.map((plan) => structuredClone(plan));
+}
+
 export function publicSubscriptionPlan(code: string): SubscriptionPlan | null {
-  return subscriptionPlanCatalog.find((plan) => plan.code === code) || null;
+  return listSubscriptionPlans().find((plan) => plan.code === code) || null;
 }
 
 export function subscriptionPlanSnapshot(plan: SubscriptionPlan) {
@@ -222,9 +273,45 @@ export function assertSubscriptionQuota(spaceId: string, quota: SubscriptionQuot
 }
 
 export function assertCanQueueAiAction(spaceId: string) {
+  return assertSubscriptionQuota(spaceId, 'monthlyAiActions', currentMonthlyAiActions(spaceId), 1);
+}
+
+function currentMonthStart() {
   const start = new Date();
   start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
-  const current = Number((db.prepare('SELECT COUNT(*) count FROM ai_jobs WHERE space_id=? AND created_at>=?')
-    .get(spaceId, start.toISOString()) as { count?: number } | undefined)?.count || 0);
-  return assertSubscriptionQuota(spaceId, 'monthlyAiActions', current, 1);
+  return start.toISOString();
+}
+
+export function currentMonthlyAiActions(spaceId: string) {
+  const start = currentMonthStart();
+  // Every queued durable job reserves one action. Each started retry is an
+  // additional action because the worker increments attempt before execution.
+  const durable = Number((db.prepare(`SELECT COALESCE(SUM(CASE WHEN attempt > 0 THEN attempt ELSE 1 END),0) count
+    FROM ai_jobs WHERE space_id=? AND created_at>=?`).get(spaceId, start) as { count?: number } | undefined)?.count || 0);
+  const direct = Number((db.prepare(`SELECT COUNT(*) count FROM platform_subscription_events
+    WHERE space_id=? AND event_type='usage.ai_action' AND created_at>=?`).get(spaceId, start) as { count?: number } | undefined)?.count || 0);
+  return durable + direct;
+}
+
+/** Reserve one synchronous AI call. Durable worker jobs are counted from ai_jobs. */
+export function consumeDirectAiAction(input: {
+  spaceId: string; userId: string | null; actionId: string; requestKey: string;
+}) {
+  const metadata = JSON.stringify({ actionId: input.actionId, requestKey: input.requestKey });
+  return db.transaction(() => {
+    // Serialize quota decisions per space in PostgreSQL. SQLite write
+    // transactions are already serialized by the local database runtime.
+    if (db.provider === 'postgres') db.prepare('SELECT id FROM spaces WHERE id=? FOR UPDATE').get(input.spaceId);
+    const replay = db.prepare(`SELECT id FROM platform_subscription_events
+      WHERE space_id=? AND event_type='usage.ai_action' AND metadata_json=? LIMIT 1`)
+      .get(input.spaceId, metadata) as { id?: string } | undefined;
+    if (replay?.id) return { id: replay.id, replayed: true };
+    assertSubscriptionQuota(input.spaceId, 'monthlyAiActions', currentMonthlyAiActions(input.spaceId), 1);
+    const id = crypto.randomUUID();
+    db.prepare(`INSERT INTO platform_subscription_events
+      (id,space_id,subscription_id,request_id,event_type,actor_user_id,metadata_json,created_at)
+      VALUES (?,?,NULL,NULL,'usage.ai_action',?,?,?)`)
+      .run(id, input.spaceId, input.userId, metadata, new Date().toISOString());
+    return { id, replayed: false };
+  })();
 }

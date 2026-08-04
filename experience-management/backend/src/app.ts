@@ -182,6 +182,7 @@ function xError(response: express.Response, error: unknown) {
 }
 function intelligenceError(response: express.Response, error: unknown) {
   if (error instanceof z.ZodError) return sendError(response, error);
+  if (error instanceof SubscriptionEntitlementError) return sendError(response, error);
   if (error instanceof IntelligenceError) return response.status(error.status).json({ error: error.message });
   if (error instanceof KnowledgeError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof TerraError) return response.status(error.status).json({ error: error.message, code: error.code });

@@ -6,6 +6,7 @@ import {
   type KnowledgeEmbeddingProfile
 } from './config.js';
 import { db } from './database.js';
+import { assertSubscriptionQuota, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import './spaces.js';
 
 export type KnowledgeBaseStatus = 'empty' | 'indexing' | 'ready' | 'degraded' | 'deleting' | 'deleted';
@@ -1099,6 +1100,21 @@ export function knowledgeSpaceBytes(spaceId: string) {
     WHERE space_id=? AND deleted_at IS NULL`).get(spaceId) as { bytes?: number } | undefined)?.bytes || 0);
 }
 
+export function assertKnowledgeStorageAllowance(spaceId: string, additionalBytes: number) {
+  const current = knowledgeSpaceBytes(spaceId);
+  if (current + additionalBytes > config.knowledgeMaxSpaceBytes) {
+    throw new KnowledgeError('This space has reached its knowledge storage allowance.', 413, 'KNOWLEDGE_SPACE_QUOTA');
+  }
+  try {
+    return assertSubscriptionQuota(spaceId, 'knowledgeStorageBytes', current, additionalBytes);
+  } catch (error) {
+    if (error instanceof SubscriptionEntitlementError && error.code === 'SUBSCRIPTION_QUOTA_EXCEEDED') {
+      throw new KnowledgeError('This space has reached its plan knowledge storage allowance.', 413, 'KNOWLEDGE_PLAN_STORAGE_QUOTA');
+    }
+    throw error;
+  }
+}
+
 function insertKnowledgeJob(input: {
   spaceId: string; knowledgeBaseId: string; documentId?: string | null; requestedBy?: string | null;
   kind: KnowledgeJobKind; idempotencyKey?: string | null; values?: Record<string, unknown>;
@@ -1192,6 +1208,8 @@ export function createKnowledgeDocument(input: {
     return { document: rowDocument(existing), job: active ? rowJob(active) : null, deduplicated: true };
   }
   return db.transaction(() => {
+    if (db.provider === 'postgres') db.prepare('SELECT id FROM spaces WHERE id=? FOR UPDATE').get(input.spaceId);
+    assertKnowledgeStorageAllowance(input.spaceId, input.sizeBytes);
     const id = crypto.randomUUID(); const now = new Date().toISOString();
     db.prepare(`INSERT INTO knowledge_documents
       (id,space_id,knowledge_base_id,created_by,stored_filename,original_name,mime_type,size_bytes,sha256,state,created_at,updated_at)
@@ -1227,10 +1245,6 @@ export function createKnowledgeMarkdownDocument(input: {
   if (bytes.length > config.knowledgeMaxDocumentBytes) {
     throw new KnowledgeError('The generated knowledge document exceeds the document size limit.', 413, 'KNOWLEDGE_DOCUMENT_TOO_LARGE');
   }
-  if (knowledgeSpaceBytes(input.spaceId) + bytes.length > config.knowledgeMaxSpaceBytes) {
-    throw new KnowledgeError('This space has reached its knowledge storage allowance.', 413, 'KNOWLEDGE_SPACE_QUOTA');
-  }
-
   const originalBase = path.basename(input.originalName).replace(/[\r\n]/gu, ' ').trim().slice(0, 252) || 'Derived intelligence';
   const originalName = originalBase.toLowerCase().endsWith('.md') ? originalBase : `${originalBase}.md`;
   const storedFilename = `${crypto.randomUUID()}.md`;

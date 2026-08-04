@@ -74,6 +74,14 @@ async function loginRoot(page: Page) {
 }
 
 async function installControlPlaneMocks(page: Page) {
+  let plans = [{
+    code: 'starter', name: 'Starter', description: 'Core experience management for a small team.', requestable: true,
+    features: { surveys: true, campaigns: true, agreements: true, serviceRecovery: true, socialListening: false, knowledgeBases: false, terra: true },
+    limits: { seats: 3, activeSurveys: 10, monthlyAiActions: 100, knowledgeStorageBytes: 0 },
+    displayOrder: 10, version: 1, activeSubscriptions: 4, pendingRequests: 0,
+    createdAt: '2026-08-04T00:00:00.000Z', updatedAt: '2026-08-04T00:00:00.000Z'
+  }];
+  const planWrites: unknown[] = [];
   let defaults: Defaults = {
     codexModel: null,
     codexReasoningEffort: null,
@@ -130,6 +138,13 @@ async function installControlPlaneMocks(page: Page) {
       return json(route, { items: [], requests: [], total: 0,
         pagination: { limit: 1, offset: 0, total: 0, hasMore: false } });
     }
+    if (path === '/api/platform-admin/plans' && method === 'GET') return json(route, { plans });
+    if (path === '/api/platform-admin/plans/starter' && method === 'PUT') {
+      const input = request.postDataJSON();
+      planWrites.push(structuredClone(input));
+      plans = [{ ...plans[0], ...input, version: plans[0].version + 1, updatedAt: '2026-08-04T01:30:00.000Z' }];
+      return json(route, { plan: plans[0] });
+    }
     if (path === '/api/platform-admin/rbac' && method === 'GET') {
       return json(route, { permissions: permissionCatalog, roles: seededRoles });
     }
@@ -182,7 +197,7 @@ async function installControlPlaneMocks(page: Page) {
     unhandled.push(`${method} ${path}`);
     return json(route, { error: `Unhandled deterministic control-plane route: ${method} ${path}` }, 501);
   });
-  return { writes, unhandled };
+  return { writes, planWrites, unhandled };
 }
 
 test.describe('platform administrator control plane', () => {
@@ -195,10 +210,33 @@ test.describe('platform administrator control plane', () => {
     const mock = await installControlPlaneMocks(page);
     await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Platform overview' })).toBeVisible();
-    for (const link of ['Users', 'Roles & permissions', 'AI queue', 'Activity', 'AI defaults', 'Audit log']) {
+    for (const link of ['Users', 'Roles & permissions', 'Plans', 'AI queue', 'Activity', 'AI defaults', 'Audit log']) {
       await expect(page.getByRole('link', { name: link, exact: true })).toBeVisible();
     }
     await expect(page.getByText('18', { exact: true }).first()).toBeVisible();
+    expect(mock.unhandled).toEqual([]);
+  });
+
+  test('subscription plans expose live feature and quota management', async ({ page }) => {
+    const mock = await installControlPlaneMocks(page);
+    await page.goto('/admin/plans');
+    await expect(page.getByRole('heading', { name: 'Plans' })).toBeVisible();
+    const starter = page.getByRole('row').filter({ hasText: 'Starter' });
+    await expect(starter).toContainText('100');
+    await starter.getByRole('button', { name: 'Edit' }).click();
+    await page.getByLabel('Plan name').fill('Starter Plus');
+    await page.getByLabel('Social Listening').check();
+    await page.getByLabel('AI actions per month').fill('250');
+    await page.getByLabel('Reason for this change').fill('Expand the Starter plan for the new workspace rollout.');
+    await page.getByRole('button', { name: 'Save plan' }).click();
+    await expect(page.getByText('Starter Plus plan saved.')).toBeVisible();
+    expect(mock.planWrites).toHaveLength(1);
+    expect(mock.planWrites[0]).toMatchObject({
+      name: 'Starter Plus',
+      features: { socialListening: true },
+      limits: { monthlyAiActions: 250 },
+      expectedVersion: 1
+    });
     expect(mock.unhandled).toEqual([]);
   });
 

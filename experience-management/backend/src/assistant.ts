@@ -8,6 +8,7 @@ import { IntelligenceError, resolveIntelligenceSourceSnapshots } from './intelli
 import { decryptNylasSecret, encryptNylasSecret, fingerprintNylasGrant } from './nylasSecrets.js';
 import { providerHtmlToText, redactProviderSecrets, type AssistantThreadSnapshot, type NylasProvider } from './nylasClient.js';
 import { recordAssistantAudit } from './assistantOperations.js';
+import { assertCanQueueAiAction } from './subscriptionEntitlements.js';
 import type { AssistantDocumentType } from './assistantSchemas.js';
 import './spaces.js';
 import type { AiJob, AiJobKind } from './types.js';
@@ -479,6 +480,7 @@ function createRun(input: {
         return { run: runResponse(assistantRunRow(existing.id)), job, created: false };
       }
     }
+    assertCanQueueAiAction(input.spaceId);
     db.prepare(`INSERT INTO assistant_runs
       (id,space_id,requested_by,kind,connection_id,subject_ref,source_refs_json,knowledge_base_ids_json,document_type,title,
        input_snapshot_json,input_sha256,request_fingerprint,state,idempotency_key,created_at,updated_at)

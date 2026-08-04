@@ -56,7 +56,7 @@ export function PlatformAdminSubscriptionsPage() {
     <AdminPageHeader
       title="Subscriptions"
       description="Managed plans, effective dates, and account state across customer spaces."
-      actions={<div className="flex gap-2"><Button asChild size="sm" variant="outline"><Link to="/admin/subscription-requests">Review requests</Link></Button><Button size="sm" variant="outline" disabled={refreshing} onClick={() => void load()}><RefreshCw className={refreshing ? 'animate-spin' : ''} />Refresh</Button></div>}
+      actions={<div className="flex gap-2">{access.capabilities.manageSubscriptions && <Button asChild size="sm" variant="outline"><Link to="/admin/plans">Manage plans</Link></Button>}<Button asChild size="sm" variant="outline"><Link to="/admin/subscription-requests">Review requests</Link></Button><Button size="sm" variant="outline" disabled={refreshing} onClick={() => void load()}><RefreshCw className={refreshing ? 'animate-spin' : ''} />Refresh</Button></div>}
     />
     <form onSubmit={search} className="flex flex-col gap-3 rounded-lg border bg-card p-4 sm:flex-row sm:items-end">
       <div className="min-w-0 flex-1"><label htmlFor="admin-subscription-search" className="field-label">Search subscriptions</label><Input id="admin-subscription-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Space or plan" /></div>

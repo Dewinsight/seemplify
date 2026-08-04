@@ -24,6 +24,7 @@ $PostgresRuntime5UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-
 $PostgresRuntime6UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v6-started'
 $PostgresRuntime7UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v7-started'
 $PostgresRuntime8UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v8-started'
+$PostgresRuntime9UpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v9-started'
 $DeploymentsDir = Join-Path $RuntimeDir 'deployments'
 New-Item -ItemType Directory -Force $RuntimeDir | Out-Null
 
@@ -163,37 +164,44 @@ function Invoke-Deployment([switch]$ForceDeploy) {
       Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL cutover has started and this release is SQLite-only."
       return
     }
-    if (Test-Path -LiteralPath $PostgresRuntime8UpgradeMarker -PathType Leaf) {
-      if (-not (Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 8)) {
-        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 8 has started and this release is not runtime-v8-compatible."
+    if (Test-Path -LiteralPath $PostgresRuntime9UpgradeMarker -PathType Leaf) {
+      if (-not (Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 9)) {
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 9 has started and this release is not runtime-v9-compatible."
+        return
+      }
+    } elseif (Test-Path -LiteralPath $PostgresRuntime8UpgradeMarker -PathType Leaf) {
+      $runsOnVersion8 = Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 8
+      $upgradesVersion8 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 8 -TargetVersion 9
+      if (-not $runsOnVersion8 -and -not $upgradesVersion8) {
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 8 has started and this release can neither run on schema 8 nor upgrade it to schema 9."
         return
       }
     } elseif (Test-Path -LiteralPath $PostgresRuntime7UpgradeMarker -PathType Leaf) {
       $runsOnVersion7 = Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 7
-      $upgradesVersion7 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 7 -TargetVersion 8
+      $upgradesVersion7 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 7 -TargetVersion 9
       if (-not $runsOnVersion7 -and -not $upgradesVersion7) {
-        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 7 has started and this release can neither run on schema 7 nor upgrade it to schema 8."
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 7 has started and this release can neither run on schema 7 nor upgrade it to schema 9."
         return
       }
     } elseif (Test-Path -LiteralPath $PostgresRuntime6UpgradeMarker -PathType Leaf) {
       $runsOnVersion6 = Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 6
-      $upgradesVersion6 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 6 -TargetVersion 8
+      $upgradesVersion6 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 6 -TargetVersion 9
       if (-not $runsOnVersion6 -and -not $upgradesVersion6) {
-        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 6 has started and this release can neither run on schema 6 nor upgrade it to schema 8."
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 6 has started and this release can neither run on schema 6 nor upgrade it to schema 9."
         return
       }
     } elseif (Test-Path -LiteralPath $PostgresRuntime5UpgradeMarker -PathType Leaf) {
       $runsOnVersion5 = Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 5
-      $upgradesVersion5 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 5 -TargetVersion 8
+      $upgradesVersion5 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 5 -TargetVersion 9
       if (-not $runsOnVersion5 -and -not $upgradesVersion5) {
-        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 5 has started and this release can neither run on schema 5 nor upgrade it to schema 8."
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 5 has started and this release can neither run on schema 5 nor upgrade it to schema 9."
         return
       }
     } elseif (Test-Path -LiteralPath $PostgresRuntime4UpgradeMarker -PathType Leaf) {
       $runsOnVersion4 = Test-CommitSupportsPostgresRuntime -Commit $commit -RequiredVersion 4
-      $upgradesVersion4 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 4 -TargetVersion 8
+      $upgradesVersion4 = Test-CommitCanUpgradePostgresRuntime -Commit $commit -SourceVersion 4 -TargetVersion 9
       if (-not $runsOnVersion4 -and -not $upgradesVersion4) {
-        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 4 has started and this release can neither run on schema 4 nor upgrade it to schema 8."
+        Write-DeployLog "Skipped incompatible deployment $commit from ${DeploymentRef}: PostgreSQL runtime schema 4 has started and this release can neither run on schema 4 nor upgrade it to schema 9."
         return
       }
     }

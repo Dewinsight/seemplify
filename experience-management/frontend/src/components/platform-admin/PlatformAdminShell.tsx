@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from 'react';
-import { Activity, ArrowLeft, BarChart3, Building2, ClipboardCheck, CreditCard, FileClock, LayoutDashboard, ListTodo, LogOut, Menu, Shield, ShieldCheck, SlidersHorizontal, Users, X, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowLeft, BarChart3, Building2, ClipboardCheck, CreditCard, FileClock, LayoutDashboard, ListTodo, LogOut, Menu, Package, Shield, ShieldCheck, SlidersHorizontal, Users, X, type LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
@@ -18,6 +18,7 @@ const navigation: Array<{ to: string; label: string; icon: LucideIcon; end: bool
   { to: '/admin/users', label: 'Users', icon: Users, end: false, capability: 'users.read' },
   { to: '/admin/roles', label: 'Roles & permissions', icon: Shield, end: false, capability: 'roles.read' },
   { to: '/admin/spaces', label: 'Spaces', icon: Building2, end: false, capability: 'spaces.read' },
+  { to: '/admin/plans', label: 'Plans', icon: Package, end: false, capability: 'subscriptions.read' },
   { to: '/admin/subscriptions', label: 'Subscriptions', icon: CreditCard, end: false, capability: 'subscriptions.read' },
   { to: '/admin/subscription-requests', label: 'Subscription requests', icon: ClipboardCheck, end: false, capability: 'subscriptions.read' },
   { to: '/admin/analytics', label: 'Analytics', icon: BarChart3, end: false, capability: 'analytics.read' },
@@ -130,7 +131,7 @@ export function PlatformAdminShell({ children }: { children: ReactNode }) {
       ? 'roles.read'
     : location.pathname.startsWith('/admin/spaces')
       ? 'spaces.read'
-      : location.pathname.startsWith('/admin/subscriptions') || location.pathname.startsWith('/admin/subscription-requests')
+      : location.pathname.startsWith('/admin/plans') || location.pathname.startsWith('/admin/subscriptions') || location.pathname.startsWith('/admin/subscription-requests')
         ? 'subscriptions.read'
         : location.pathname.startsWith('/admin/analytics')
           ? 'analytics.read'

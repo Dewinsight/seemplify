@@ -178,6 +178,34 @@ export interface PlatformUserDetail {
   adminRoleAssignments: PlatformAdminRoleAssignment[];
 }
 
+export interface PlatformManagedPlan extends PlatformPlan {
+  code: 'starter' | 'team' | 'enterprise';
+  name: string;
+  description: string;
+  requestable: boolean;
+  features: {
+    surveys: boolean;
+    campaigns: boolean;
+    agreements: boolean;
+    serviceRecovery: boolean;
+    socialListening: boolean;
+    knowledgeBases: boolean;
+    terra: boolean;
+  };
+  limits: {
+    seats: number;
+    activeSurveys: number;
+    monthlyAiActions: number;
+    knowledgeStorageBytes: number;
+  };
+  displayOrder: number;
+  version: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+  activeSubscriptions: number;
+  pendingRequests: number;
+}
+
 export interface PlatformSpaceSummary {
   id: string;
   name: string;

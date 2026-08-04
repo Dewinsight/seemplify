@@ -41,6 +41,7 @@ const PlatformAdminUsersPage = lazy(() => import('@/pages/platform-admin/UsersPa
 const PlatformAdminUserDetailPage = lazy(() => import('@/pages/platform-admin/UserDetailPage').then((module) => ({ default: module.PlatformAdminUserDetailPage })));
 const PlatformAdminSpacesPage = lazy(() => import('@/pages/platform-admin/SpacesPage').then((module) => ({ default: module.PlatformAdminSpacesPage })));
 const PlatformAdminSpaceDetailPage = lazy(() => import('@/pages/platform-admin/SpaceDetailPage').then((module) => ({ default: module.PlatformAdminSpaceDetailPage })));
+const PlatformAdminPlansPage = lazy(() => import('@/pages/platform-admin/PlansPage').then((module) => ({ default: module.PlatformAdminPlansPage })));
 const PlatformAdminSubscriptionsPage = lazy(() => import('@/pages/platform-admin/SubscriptionsPage').then((module) => ({ default: module.PlatformAdminSubscriptionsPage })));
 const PlatformAdminSubscriptionRequestsPage = lazy(() => import('@/pages/platform-admin/SubscriptionRequestsPage').then((module) => ({ default: module.PlatformAdminSubscriptionRequestsPage })));
 const PlatformAdminSubscriptionRequestDetailPage = lazy(() => import('@/pages/platform-admin/SubscriptionRequestDetailPage').then((module) => ({ default: module.PlatformAdminSubscriptionRequestDetailPage })));
@@ -63,6 +64,7 @@ function PlatformAdminRoutes() {
     <Route path="/admin/users"><PlatformAdminUsersPage /></Route>
     <Route path="/admin/spaces/:id"><PlatformAdminSpaceDetailPage /></Route>
     <Route path="/admin/spaces"><PlatformAdminSpacesPage /></Route>
+    <Route path="/admin/plans"><PlatformAdminPlansPage /></Route>
     <Route path="/admin/subscriptions"><PlatformAdminSubscriptionsPage /></Route>
     <Route path="/admin/subscription-requests/:id"><PlatformAdminSubscriptionRequestDetailPage /></Route>
     <Route path="/admin/subscription-requests"><PlatformAdminSubscriptionRequestsPage /></Route>

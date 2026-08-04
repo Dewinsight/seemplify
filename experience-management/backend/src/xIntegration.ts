@@ -5,6 +5,7 @@ import { aiJobRunner } from './aiJobs.js';
 import { config } from './config.js';
 import { createJob, db, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
+import { assertCanQueueAiAction, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import { decryptSecret, encryptSecret } from './secureSecrets.js';
 import {
   exchangeOAuth2Code, exchangeOAuthToken, getXJson, postXJson, refreshOAuth2Token, requestOAuthToken, revokeOAuth2Token,
@@ -954,7 +955,15 @@ function persistCollectedBatch(input: {
     const analysisIds = input.autoAnalyze === false ? [] : insertedIds.slice(0, normalSyncLimit);
     const analysisJobs: ReturnType<typeof createJob>[] = [];
     for (let index = 0; index < analysisIds.length; index += normalSyncLimit) {
-      analysisJobs.push(createJob('social.analyze', { mentionIds: analysisIds.slice(index, index + normalSyncLimit), source: 'x-sync', xSyncJobId: input.jobId }, input.connection.space_id, null, null, input.connection.user_id));
+      try {
+        assertCanQueueAiAction(input.connection.space_id);
+        analysisJobs.push(createJob('social.analyze', { mentionIds: analysisIds.slice(index, index + normalSyncLimit), source: 'x-sync', xSyncJobId: input.jobId }, input.connection.space_id, null, null, input.connection.user_id));
+      } catch (error) {
+        // Preserve the collected posts when the AI allowance is exhausted;
+        // only their automatic analysis is deferred.
+        if (error instanceof SubscriptionEntitlementError && error.code === 'SUBSCRIPTION_QUOTA_EXCEEDED') break;
+        throw error;
+      }
     }
     input.afterPersist?.();
     db.prepare('UPDATE x_sync_jobs SET imported_count=imported_count+?,reused_count=reused_count+?,analysis_job_id=COALESCE(analysis_job_id,?),updated_at=? WHERE id=?')

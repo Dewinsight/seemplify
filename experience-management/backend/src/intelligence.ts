@@ -8,6 +8,7 @@ import {
 } from './knowledgeRepository.js';
 import { createJob, db, getJob, getJobProviderResult, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
+import { assertCanQueueAiAction } from './subscriptionEntitlements.js';
 import './spaces.js';
 
 if (db.provider === 'sqlite') {
@@ -224,6 +225,7 @@ export function createSocialReplyDraft(user: SessionUser, spaceId: string, input
       db.prepare("UPDATE social_reply_drafts SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
+    assertCanQueueAiAction(spaceId);
     db.prepare(`INSERT INTO social_reply_drafts (id,space_id,mention_id,connection_id,requested_by,tone,instructions,source_snapshot_json,state,idempotency_key,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, mention.id, connection.id, user.id, input.tone, instructions, JSON.stringify(source), input.idempotencyKey || null, timestamp, timestamp);
     const job = createJob('social.reply_draft', { draftId: id }, spaceId, null, null, user.id);
@@ -385,6 +387,7 @@ export function createSocialIntelligenceReport(user: SessionUser, spaceId: strin
       db.prepare("UPDATE social_intelligence_reports SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
+    assertCanQueueAiAction(spaceId);
     db.prepare(`INSERT INTO social_intelligence_reports (id,space_id,user_id,connection_id,title,mention_ids_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, input.connectionId, title, idsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
     const job = createJob('social.report', {
@@ -823,6 +826,7 @@ export function createIntelligenceReport(user: SessionUser, spaceId: string, inp
       db.prepare("UPDATE intelligence_reports SET state='failed',error='The previous queue record was no longer active.',updated_at=? WHERE id=?")
         .run(timestamp, existing.id);
     }
+    assertCanQueueAiAction(spaceId);
     db.prepare(`INSERT INTO intelligence_reports (id,space_id,user_id,title,objective,source_refs_json,source_snapshot_json,knowledge_refs_json,state,idempotency_key,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, title, objective, refsJson, snapshotJson,
         knowledgeRefsJson, input.idempotencyKey || null, timestamp, timestamp);

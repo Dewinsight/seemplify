@@ -78,6 +78,19 @@ export function ensurePlatformSchema() {
     CREATE INDEX IF NOT EXISTS platform_rbac_user_roles_user
       ON platform_rbac_user_roles(user_id,assigned_at DESC);
 
+    CREATE TABLE IF NOT EXISTS platform_subscription_plans (
+      code TEXT PRIMARY KEY CHECK(code IN ('starter','team','enterprise')),
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      requestable INTEGER NOT NULL DEFAULT 1 CHECK(requestable IN (0,1)),
+      features_json TEXT NOT NULL,
+      limits_json TEXT NOT NULL,
+      display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0),
+      version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS platform_subscription_requests (
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -174,12 +187,33 @@ export function ensurePlatformSchema() {
 
   `);
 
+  const planSeededAt = '2026-08-04T00:00:00.000Z';
+  const planSeed = [
+    ['starter', 'Starter', 'Core experience management for a small team.', 1,
+      { surveys: true, campaigns: true, agreements: true, serviceRecovery: true, socialListening: false, knowledgeBases: false, terra: true },
+      { seats: 3, activeSurveys: 10, monthlyAiActions: 100, knowledgeStorageBytes: 0 }, 10],
+    ['team', 'Team', 'Collaboration, intelligence, listening, and knowledge workflows.', 1,
+      { surveys: true, campaigns: true, agreements: true, serviceRecovery: true, socialListening: true, knowledgeBases: true, terra: true },
+      { seats: 25, activeSurveys: 250, monthlyAiActions: 5_000, knowledgeStorageBytes: 20 * 1024 * 1024 * 1024 }, 20],
+    ['enterprise', 'Enterprise', 'Managed limits and governance for larger organisations.', 1,
+      { surveys: true, campaigns: true, agreements: true, serviceRecovery: true, socialListening: true, knowledgeBases: true, terra: true },
+      { seats: 250, activeSurveys: 5_000, monthlyAiActions: 100_000, knowledgeStorageBytes: 200 * 1024 * 1024 * 1024 }, 30]
+  ] as const;
+  const insertPlan = db.prepare(`INSERT OR IGNORE INTO platform_subscription_plans
+    (code,name,description,requestable,features_json,limits_json,display_order,version,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,1,?,?)`);
+  for (const [code, name, description, requestable, features, limits, displayOrder] of planSeed) {
+    insertPlan.run(code, name, description, requestable, JSON.stringify(features), JSON.stringify(limits), displayOrder, planSeededAt, planSeededAt);
+  }
+
   addColumn('platform_rbac_user_roles', 'revocation_reason', 'TEXT');
 
   db.prepare('INSERT OR IGNORE INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
     .run(15, 'platform_administration_and_recovery_history', new Date().toISOString());
   db.prepare('INSERT OR IGNORE INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
     .run(16, 'administrator_rbac_control_plane', new Date().toISOString());
+  db.prepare('INSERT OR IGNORE INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(17, 'managed_subscription_plan_catalog', new Date().toISOString());
   seedControlPlaneRoles();
 }
 

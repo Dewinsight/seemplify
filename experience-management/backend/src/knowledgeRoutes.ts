@@ -12,13 +12,14 @@ import { getKnowledgeGraph, retrieveKnowledge } from './knowledgeClient.js';
 import { knowledgeJobRunner } from './knowledgeJobs.js';
 import {
   auditKnowledge, createKnowledgeBase, createKnowledgeDocuments, getKnowledgeBase, getKnowledgeDocument,
-  getKnowledgeJob, knowledgeQueueStatus, knowledgeSpaceBytes, listKnowledgeAudit, listKnowledgeBases,
+  getKnowledgeJob, knowledgeQueueStatus, listKnowledgeAudit, listKnowledgeBases,
   knowledgeJobAudienceUserId, listKnowledgeDocuments, listKnowledgeJobs, KnowledgeError, queueKnowledgeBaseDelete,
   queueKnowledgeDocumentDelete, queueKnowledgeDocumentReindex, replaceSurveyKnowledgeBases,
   resolveKnowledgeBaseRefs, saveKnowledgeQuerySnapshot, surveyKnowledgeBaseIds, updateKnowledgeBase,
   type KnowledgeCitation, type KnowledgeDocumentRecord, type KnowledgeJobRecord
 } from './knowledgeRepository.js';
 import { resolveRequestSpace, SpaceError } from './spaces.js';
+import { consumeDirectAiAction, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import { TerraError } from './terraClient.js';
 
 const router = express.Router();
@@ -64,6 +65,9 @@ function sendKnowledgeError(response: express.Response, error: unknown) {
   if (error instanceof z.ZodError) return response.status(400).json({ error: 'Validation failed.', details: error.issues });
   if (error instanceof KnowledgeError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof SpaceError) return response.status(error.status).json({ error: error.message, code: error.code });
+  if (error instanceof SubscriptionEntitlementError) {
+    return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
+  }
   if (error instanceof TerraError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof multer.MulterError) {
     const message = error.code === 'LIMIT_FILE_SIZE'
@@ -316,9 +320,6 @@ async function uploadDocuments(request: express.Request, response: express.Respo
     if (!files.length) throw new KnowledgeError('Choose at least one supported document.', 400, 'KNOWLEDGE_DOCUMENT_REQUIRED');
     const metadata = parseMetadata(request.body?.metadata);
     const nextBytes = files.reduce((sum, file) => sum + file.size, 0);
-    if (knowledgeSpaceBytes(space.id) + nextBytes > config.knowledgeMaxSpaceBytes) {
-      throw new KnowledgeError('This space has reached its knowledge storage allowance.', 413, 'KNOWLEDGE_SPACE_QUOTA');
-    }
     try {
       const disk = fs.statfsSync(config.knowledgeStorageDir);
       if (Number(disk.bavail) * Number(disk.bsize) < nextBytes + 512 * 1024 * 1024) {
@@ -441,6 +442,7 @@ router.post('/:id/search', async (request, response) => {
       requestedBy: user.id, query: input.query, knowledgeBases: refs, citations: retrieved.citations,
       contextText: evidence, metrics: retrieved.metrics });
     if (input.includeAnswer !== false && retrieved.citations.length) {
+      consumeDirectAiAction({ spaceId: space.id, userId: user.id, actionId: 'knowledge.answer', requestKey: requestId });
       const result = await completeWithAi({
         spaceId: space.id, userId: user.id,
         actionId: 'knowledge.answer',

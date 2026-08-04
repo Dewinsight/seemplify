@@ -8,6 +8,7 @@ import {
   auditKnowledge, KnowledgeError, resolveKnowledgeBaseRefs, saveKnowledgeQuerySnapshot,
   type KnowledgeCitation
 } from './knowledgeRepository.js';
+import { consumeDirectAiAction } from './subscriptionEntitlements.js';
 
 const answerSchema = z.object({
   answer: z.string().trim().min(1).max(12_000),
@@ -168,6 +169,7 @@ export async function answerResearchQuestion(user: SessionUser, spaceId: string,
     content: message.content.slice(0, 4000)
   }));
   const context = evidenceContext(citations);
+  consumeDirectAiAction({ spaceId, userId: user.id, actionId: 'knowledge.answer', requestKey: requestId });
   const result = await completeWithAi({
     spaceId, userId: user.id,
     actionId: 'knowledge.answer',
