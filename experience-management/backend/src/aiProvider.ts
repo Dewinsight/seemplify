@@ -7,6 +7,17 @@ import { completeWithTerra, TerraError, type TerraCompletionInput } from './terr
 
 export type AiProvider = 'terra' | 'codex';
 export type AiRuntimeChoice = 'local' | 'chatgpt' | null;
+export type AiRuntimePolicy = {
+  localEnabled: boolean;
+  chatgptEnabled: boolean;
+  defaultRuntime: Exclude<AiRuntimeChoice, null>;
+};
+
+const defaultAiRuntimePolicy: AiRuntimePolicy = {
+  localEnabled: true,
+  chatgptEnabled: true,
+  defaultRuntime: 'chatgpt'
+};
 
 export type CodexActionOverride = {
   model: string | null;
@@ -20,12 +31,14 @@ export type CodexDefaultsInput = {
   codexModel?: string | null;
   codexReasoningEffort?: string | null;
   codexActionOverrides?: CodexActionOverrides;
+  runtimePolicy?: Partial<AiRuntimePolicy>;
 };
 
 export type AdminCodexDefaults = {
   codexModel: string | null;
   codexReasoningEffort: string | null;
   codexActionOverrides: CodexActionOverrides;
+  runtimePolicy: AiRuntimePolicy;
   updatedAt: string | null;
 };
 
@@ -94,6 +107,17 @@ function optionalString(value: unknown) {
   return trimmed ? trimmed : null;
 }
 
+function normaliseRuntimePolicy(value: unknown): AiRuntimePolicy {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { ...defaultAiRuntimePolicy };
+  const candidate = value as Partial<AiRuntimePolicy>;
+  return {
+    localEnabled: typeof candidate.localEnabled === 'boolean' ? candidate.localEnabled : defaultAiRuntimePolicy.localEnabled,
+    chatgptEnabled: typeof candidate.chatgptEnabled === 'boolean' ? candidate.chatgptEnabled : defaultAiRuntimePolicy.chatgptEnabled,
+    defaultRuntime: candidate.defaultRuntime === 'local' || candidate.defaultRuntime === 'chatgpt'
+      ? candidate.defaultRuntime : defaultAiRuntimePolicy.defaultRuntime
+  };
+}
+
 function choiceForProvider(provider: AiProvider): Exclude<AiRuntimeChoice, null> {
   return provider === 'codex' ? 'chatgpt' : 'local';
 }
@@ -157,8 +181,34 @@ export function getAdminCodexDefaults(): AdminCodexDefaults {
     codexModel: optionalString(stored?.codexModel),
     codexReasoningEffort: optionalString(stored?.codexReasoningEffort),
     codexActionOverrides: normaliseActionOverrides(stored?.codexActionOverrides),
+    runtimePolicy: normaliseRuntimePolicy(stored?.runtimePolicy),
     updatedAt: typeof stored?.updatedAt === 'string' ? stored.updatedAt : null
   };
+}
+
+export function getAiRuntimePolicy() {
+  return getAdminCodexDefaults().runtimePolicy;
+}
+
+function providerEnabled(provider: AiProvider, policy: AiRuntimePolicy) {
+  return provider === 'terra' ? policy.localEnabled : policy.chatgptEnabled;
+}
+
+function providerForChoice(choice: Exclude<AiRuntimeChoice, null>): AiProvider {
+  return choice === 'local' ? 'terra' : 'codex';
+}
+
+export function effectiveAiProvider(preference: Pick<AiProviderPreference, 'provider' | 'runtimeChoice'>) {
+  const policy = getAiRuntimePolicy();
+  if (!policy.localEnabled && !policy.chatgptEnabled) {
+    throw new TerraError('AI runtimes are currently disabled by a platform administrator.',
+      'AI_RUNTIMES_DISABLED', 503, false);
+  }
+  const selected = preference.runtimeChoice
+    ? providerForChoice(preference.runtimeChoice)
+    : providerForChoice(policy.defaultRuntime);
+  if (providerEnabled(selected, policy)) return selected;
+  return policy.localEnabled ? 'terra' : 'codex';
 }
 
 export function getAiProviderPreference(userId: string, spaceId: string): AiProviderPreference {
@@ -253,11 +303,20 @@ export function aiProviderSnapshot(
   spaceId: string,
   actionId?: CodexActionId | null
 ): AiProviderSnapshot {
-  if (!userId) return { provider: 'terra', codexModel: null, codexDataSharingAcknowledgedAt: null };
+  if (!userId) {
+    const policy = getAiRuntimePolicy();
+    if (policy.localEnabled) return { provider: 'terra', codexModel: null, codexDataSharingAcknowledgedAt: null };
+    throw new TerraError(
+      policy.chatgptEnabled
+        ? 'This automated AI action has no connected ChatGPT account and the local runtime is disabled.'
+        : 'AI runtimes are currently disabled by a platform administrator.',
+      policy.chatgptEnabled ? 'AI_RUNTIME_ACCOUNT_REQUIRED' : 'AI_RUNTIMES_DISABLED', 503, false
+    );
+  }
   const preference = getAiProviderPreference(userId, spaceId);
   const ordered = codexCandidates(preference, getAdminCodexDefaults(), actionId);
   return {
-    provider: preference.provider,
+    provider: effectiveAiProvider(preference),
     codexModel: ordered.models[0]?.value || null,
     codexReasoningEffort: ordered.efforts[0]?.value || null,
     codexModelCandidates: ordered.models,
@@ -450,6 +509,16 @@ const emptyCodexPreference = {
  */
 export async function updateAdminCodexDefaults(validatingUserId: string, input: CodexDefaultsInput) {
   if (input.codexActionOverrides !== undefined) assertKnownActionOverrides(input.codexActionOverrides);
+  const current = getAdminCodexDefaults();
+  const runtimePolicy = normaliseRuntimePolicy({ ...current.runtimePolicy, ...input.runtimePolicy });
+  const changesCodexDefaults = input.codexModel !== undefined
+    || input.codexReasoningEffort !== undefined || input.codexActionOverrides !== undefined;
+  if (!changesCodexDefaults) {
+    const next = { ...current, runtimePolicy, updatedAt: new Date().toISOString() };
+    const file = readPreferences();
+    writePreferences({ ...file, adminCodexDefaults: next });
+    return next;
+  }
   const client = codexClientForUser(validatingUserId);
   const account = await client.accountStatus().catch((error) => {
     throw new TerraError(`Codex is unavailable: ${codexRuntimeError(error)}`, 'CODEX_UNAVAILABLE', 503, true);
@@ -464,13 +533,13 @@ export async function updateAdminCodexDefaults(validatingUserId: string, input: 
     throw new TerraError(`Codex models could not be loaded: ${codexRuntimeError(error)}`,
       'CODEX_MODELS_UNAVAILABLE', 503, true);
   }
-  const current = getAdminCodexDefaults();
   const draft: AdminCodexDefaults = {
     codexModel: input.codexModel === undefined ? current.codexModel : optionalString(input.codexModel),
     codexReasoningEffort: input.codexReasoningEffort === undefined
       ? current.codexReasoningEffort : optionalString(input.codexReasoningEffort),
     codexActionOverrides: input.codexActionOverrides === undefined
       ? current.codexActionOverrides : normaliseActionOverrides(input.codexActionOverrides),
+    runtimePolicy,
     updatedAt: current.updatedAt
   };
   const global = resolveCodexConfiguration({
@@ -504,6 +573,7 @@ export function resetAdminCodexDefaults(): AdminCodexDefaults {
     codexModel: null,
     codexReasoningEffort: null,
     codexActionOverrides: {},
+    runtimePolicy: { ...defaultAiRuntimePolicy },
     updatedAt: new Date().toISOString()
   };
   const file = readPreferences();
@@ -529,13 +599,16 @@ function effectiveCodexConfiguration(
 export async function getAiProviderState(userId: string, spaceId: string) {
   const preference = getAiProviderPreference(userId, spaceId);
   const adminDefaults = getAdminCodexDefaults();
+  let effectiveProvider: AiProvider | null = null;
+  try { effectiveProvider = effectiveAiProvider(preference); } catch { /* both runtimes disabled */ }
   try {
     const client = codexClientForUser(userId);
     const account = await client.accountStatus();
     const models = account.connected ? visibleModels(await client.models()) : [];
     const effectiveConfiguration = effectiveCodexConfiguration(preference, adminDefaults, models);
     return {
-      preference,
+      preference: { ...preference, effectiveProvider },
+      runtimePolicy: { ...adminDefaults.runtimePolicy, effectiveProvider },
       codex: {
         available: true,
         account,
@@ -549,7 +622,8 @@ export async function getAiProviderState(userId: string, spaceId: string) {
     };
   } catch (error) {
     return {
-      preference,
+      preference: { ...preference, effectiveProvider },
+      runtimePolicy: { ...adminDefaults.runtimePolicy, effectiveProvider },
       codex: {
         available: false,
         account: {
@@ -614,6 +688,13 @@ export async function chooseAiProvider(userId: string, spaceId: string, input: {
     return setAiProviderPreference(userId, spaceId, {
       provider: 'terra', runtimeChoice: 'local', codexDataSharingAcknowledgedAt: null
     });
+  }
+  const policy = getAiRuntimePolicy();
+  if (!providerEnabled(input.provider, policy)) {
+    throw new TerraError(
+      `${input.provider === 'codex' ? 'ChatGPT / Codex' : 'The local AI runtime'} is disabled by a platform administrator.`,
+      'AI_RUNTIME_DISABLED', 403, false
+    );
   }
   if (input.codexActionOverrides !== undefined) assertKnownActionOverrides(input.codexActionOverrides);
   const normalisedRequestedOverrides = input.codexActionOverrides === undefined
@@ -705,12 +786,22 @@ export function effectiveAiProviderSnapshot(
   recorded?: AiProviderSnapshot,
   actionId?: CodexActionId
 ): AiProviderSnapshot {
-  if (!userId) return { provider: 'terra', codexModel: null, codexDataSharingAcknowledgedAt: null };
-  const snapshot = recorded || aiProviderSnapshot(userId, spaceId, actionId);
+  if (!userId) return aiProviderSnapshot(userId, spaceId, actionId);
+  const policy = getAiRuntimePolicy();
+  if (!policy.localEnabled && !policy.chatgptEnabled) {
+    throw new TerraError('AI runtimes are currently disabled by a platform administrator.',
+      'AI_RUNTIMES_DISABLED', 503, false);
+  }
+  let snapshot = recorded || aiProviderSnapshot(userId, spaceId, actionId);
+  if (!providerEnabled(snapshot.provider, policy)) snapshot = aiProviderSnapshot(userId, spaceId, actionId);
   // Provider/model are durable job inputs, but privacy revocation is an immediate
   // override: queued or retried work must return to Terra once consent is removed.
   if (snapshot.provider === 'codex' && !getAiProviderPreference(userId, spaceId).codexDataSharingAcknowledgedAt) {
-    return { provider: 'terra', codexModel: null, codexDataSharingAcknowledgedAt: null };
+    if (policy.localEnabled) return { provider: 'terra', codexModel: null, codexDataSharingAcknowledgedAt: null };
+    throw new TerraError(
+      'ChatGPT data sharing is no longer acknowledged and the local AI runtime is disabled.',
+      'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED', 409, false
+    );
   }
   return snapshot;
 }

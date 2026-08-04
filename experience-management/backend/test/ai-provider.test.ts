@@ -180,6 +180,17 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
   }).expect(200);
   assert.equal(getAiProviderPreference(userId, spaceId).codexDataSharingAcknowledgedAt, null);
   assert.equal(effectiveAiProviderSnapshot(userId, spaceId, (queued.input as any)._aiRuntime).provider, 'terra');
+  await updateAdminCodexDefaults(userId, {
+    runtimePolicy: { localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+  });
+  assert.throws(
+    () => effectiveAiProviderSnapshot(userId, spaceId, (queued.input as any)._aiRuntime),
+    (error: unknown) => (error as { code?: string }).code
+      === 'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED'
+  );
+  await updateAdminCodexDefaults(userId, {
+    runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+  });
   assert.equal((queued.input as any)._aiRuntime.provider, 'codex');
   assert.equal((queued.input as any)._aiRuntime.codexModel, 'gpt-test-codex-fast');
 
@@ -369,6 +380,32 @@ test('admin defaults inherit field-by-field, user reset is narrow, and queued ca
   assert.equal(getAdminCodexDefaults().codexModel, 'gpt-test-codex-minimal');
   await agent.patch('/api/ai-provider').send({ provider: 'terra' }).expect(200);
   assert.equal(aiProviderSnapshot(userId, spaceId, 'analyst.chat').provider, 'terra');
+
+  await updateAdminCodexDefaults(userId, {
+    runtimePolicy: { localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+  });
+  assert.equal(getAiProviderPreference(userId, spaceId).provider, 'terra', 'the user selection remains durable');
+  assert.equal(aiProviderSnapshot(userId, spaceId, 'analyst.chat').provider, 'codex', 'disabled selections fall back');
+  await agent.patch('/api/ai-provider').send({ provider: 'terra' }).expect(403)
+    .expect(({ body }) => assert.equal(body.code, 'AI_RUNTIME_DISABLED'));
+
+  await updateAdminCodexDefaults(userId, {
+    runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'local' }
+  });
+  assert.equal(aiProviderSnapshot(userId, 'runtime-policy-unconfigured', 'analyst.chat').provider, 'terra',
+    'the administrator default applies only when a user has no explicit runtime choice');
+
+  await updateAdminCodexDefaults(userId, {
+    runtimePolicy: { localEnabled: false, chatgptEnabled: false, defaultRuntime: 'local' }
+  });
+  assert.throws(() => aiProviderSnapshot(userId, spaceId, 'analyst.chat'), (error: unknown) =>
+    error instanceof Error && 'code' in error && error.code === 'AI_RUNTIMES_DISABLED');
+  const resetPolicy = await updateAdminCodexDefaults(userId, {
+    runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+  });
+  assert.deepEqual(resetPolicy.runtimePolicy, {
+    localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt'
+  });
 });
 
 test('App Server completes structured turns and recovers after an unexpected exit', async () => {

@@ -39,12 +39,19 @@ type ResolvedCodexSetting = {
 type AiProviderState = {
   preference: {
     provider: 'terra' | 'codex';
+    effectiveProvider?: 'terra' | 'codex' | null;
     runtimeChoice?: 'local' | 'chatgpt' | null;
     codexModel: string | null;
     codexReasoningEffort: string | null;
     codexActionOverrides: Record<string, CodexActionOverride>;
     codexDataSharingAcknowledgedAt: string | null;
     updatedAt: string | null;
+  };
+  runtimePolicy?: {
+    localEnabled: boolean;
+    chatgptEnabled: boolean;
+    defaultRuntime: 'local' | 'chatgpt';
+    effectiveProvider: 'terra' | 'codex' | null;
   };
   codex: {
     available: boolean;
@@ -496,7 +503,10 @@ export function AiProviderSettings() {
   }
 
   const codexConnected = state?.codex.account.connected === true;
-  const codexSelected = state?.preference.provider === 'codex';
+  const effectiveProvider = state?.preference.effectiveProvider || state?.preference.provider;
+  const codexSelected = effectiveProvider === 'codex';
+  const localEnabled = state?.runtimePolicy?.localEnabled !== false;
+  const chatgptEnabled = state?.runtimePolicy?.chatgptEnabled !== false;
   const preferredModel = state?.preference.codexModel || '';
   const selectedModel = state?.codex.models.some((model) => model.id === preferredModel)
     ? preferredModel : (state?.codex.selectedModel || '');
@@ -550,22 +560,26 @@ export function AiProviderSettings() {
     </div>
     {!state && !error ? <div className="flex items-center gap-2 p-5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Checking available runtimes…</div> : <div className="space-y-5 p-5">
       <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="AI runtime">
-        <button type="button" aria-pressed={state?.preference.provider === 'terra'} onClick={() => void chooseProvider('terra')} disabled={Boolean(working)} className={`min-h-24 border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${state?.preference.provider === 'terra' ? 'border-foreground/40 bg-muted/35' : 'hover:border-foreground/25 hover:bg-muted/20'}`}>
-          <span className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Local AI runtime</span>{state?.preference.provider === 'terra' && <Check className="h-4 w-4" />}</span>
+        <button type="button" aria-pressed={effectiveProvider === 'terra'} onClick={() => void chooseProvider('terra')} disabled={!localEnabled || Boolean(working)} className={`min-h-24 border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${effectiveProvider === 'terra' ? 'border-foreground/40 bg-muted/35' : 'hover:border-foreground/25 hover:bg-muted/20'}`}>
+          <span className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Local AI runtime</span>{effectiveProvider === 'terra' && <Check className="h-4 w-4" />}</span>
           <span className="mt-2 block text-xs leading-5 text-muted-foreground">Uses the existing managed Terra runtime and keeps the current behaviour.</span>
+          {!localEnabled && <span className="mt-2 block text-xs font-medium">Disabled by platform administrator</span>}
         </button>
-        <button type="button" aria-pressed={codexSelected} onClick={() => void chooseProvider('codex')} disabled={!codexConnected || !acknowledged || !selectedModel || Boolean(working)} className={`min-h-24 border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${codexSelected ? 'border-foreground/40 bg-muted/35' : 'hover:border-foreground/25 hover:bg-muted/20'}`}>
+        <button type="button" aria-pressed={codexSelected} onClick={() => void chooseProvider('codex')} disabled={!chatgptEnabled || !codexConnected || !acknowledged || !selectedModel || Boolean(working)} className={`min-h-24 border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 ${codexSelected ? 'border-foreground/40 bg-muted/35' : 'hover:border-foreground/25 hover:bg-muted/20'}`}>
           <span className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">ChatGPT / Codex</span>{codexSelected && <Check className="h-4 w-4" />}</span>
           <span className="mt-2 block text-xs leading-5 text-muted-foreground">Runs new AI tasks with a Codex model available to your connected ChatGPT account.</span>
           <OpenAiAttribution compact className="mt-3" />
+          {!chatgptEnabled && <span className="mt-2 block text-xs font-medium">Disabled by platform administrator</span>}
         </button>
       </div>
+
+      {state?.runtimePolicy && !state.runtimePolicy.localEnabled && !state.runtimePolicy.chatgptEnabled && <div className="border border-amber-500/35 bg-background p-3 text-sm text-amber-900" role="alert">AI is currently unavailable because both runtimes have been disabled by a platform administrator.</div>}
 
       {error && <div className="border border-destructive/35 bg-background p-3 text-sm text-destructive" role="alert">{error}</div>}
       {state?.codex.error && <div className="border border-amber-500/35 bg-background p-3 text-sm text-amber-800" role="status">Codex is unavailable locally: {state.codex.error}</div>}
       {codexConnected && state?.codex.models.length === 0 && <div className="border border-amber-500/35 bg-background p-3 text-sm text-amber-800" role="status">No Codex models are available to this ChatGPT account right now.</div>}
 
-      {!codexConnected && !loginPending && <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
+      {chatgptEnabled && !codexConnected && !loginPending && <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
         <div><p className="text-sm font-medium">Connect your ChatGPT account</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Experience Management receives the connection status and runs Codex through its backend. By continuing, prompts and authorised knowledge excerpts for this space may be sent to OpenAI using your connected account. A successful sign-in selects ChatGPT for this space.</p></div>
         <Button type="button" variant="outline" disabled={!state?.codex.available || Boolean(working)} onClick={() => void startLogin()}>{working === 'login' ? <Loader2 className="animate-spin" /> : null}Connect ChatGPT</Button>
       </div>}

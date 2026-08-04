@@ -284,7 +284,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
   const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(routePath);
   const title = routePath === '/' ? 'Overview' : routePath === '/settings/profile' ? 'Your profile' : routePath.startsWith('/surveys/') ? 'Survey workspace' : routePath.startsWith('/campaigns/') ? 'Campaign workspace' : routePath.startsWith('/agreements/') ? 'Agreement workspace' : routePath.startsWith('/knowledge-bases/') ? 'Knowledge base workspace' : navigation.find((item) => item.to === routePath)?.label || 'Seemplify Experience';
-  const codexSelected = runtime?.ai?.preference?.provider === 'codex';
+  const codexSelected = (runtime?.ai?.preference?.effectiveProvider || runtime?.ai?.preference?.provider) === 'codex';
   const runtimeReady = codexSelected
     ? runtime?.ai?.codex?.account?.connected === true
     : runtime?.terra?.ready === true;

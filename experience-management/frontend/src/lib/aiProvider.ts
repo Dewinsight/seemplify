@@ -31,6 +31,7 @@ export type ResolvedCodexSetting = {
 export type AiProviderState = {
   preference: {
     provider: 'terra' | 'codex';
+    effectiveProvider?: 'terra' | 'codex' | null;
     /**
      * Absent on responses created before the ChatGPT-first setup flow. The
      * guard deliberately fails open for those legacy response fixtures.
@@ -41,6 +42,12 @@ export type AiProviderState = {
     codexActionOverrides: Record<string, CodexActionOverride>;
     codexDataSharingAcknowledgedAt: string | null;
     updatedAt: string | null;
+  };
+  runtimePolicy?: {
+    localEnabled: boolean;
+    chatgptEnabled: boolean;
+    defaultRuntime: 'local' | 'chatgpt';
+    effectiveProvider: 'terra' | 'codex' | null;
   };
   codex: {
     available: boolean;
@@ -85,7 +92,10 @@ export function notifyAiProviderChanged(state?: AiProviderState) {
 
 export function requiresChatGptSetup(state: AiProviderState | null | undefined) {
   if (!state || !Object.prototype.hasOwnProperty.call(state.preference, 'runtimeChoice')) return false;
-  if (state.preference.runtimeChoice !== null && state.preference.runtimeChoice !== 'chatgpt') return false;
+  if (state.runtimePolicy) {
+    if (!state.runtimePolicy.chatgptEnabled || !state.runtimePolicy.effectiveProvider) return false;
+    if (state.runtimePolicy.effectiveProvider !== 'codex') return false;
+  } else if (state.preference.runtimeChoice !== null && state.preference.runtimeChoice !== 'chatgpt') return false;
 
   const selectedModel = String(state.codex.selectedModel || '').trim();
   const selectedModelAvailable = Boolean(selectedModel

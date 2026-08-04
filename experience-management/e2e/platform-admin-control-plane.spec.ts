@@ -58,6 +58,7 @@ type Defaults = {
   codexModel: string | null;
   codexReasoningEffort: string | null;
   codexActionOverrides: Record<string, { model: string | null; reasoningEffort: string | null }>;
+  runtimePolicy: { localEnabled: boolean; chatgptEnabled: boolean; defaultRuntime: 'local' | 'chatgpt' };
   updatedAt: string | null;
 };
 
@@ -86,6 +87,7 @@ async function installControlPlaneMocks(page: Page) {
     codexModel: null,
     codexReasoningEffort: null,
     codexActionOverrides: {},
+    runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt' },
     updatedAt: null
   };
   const writes: Defaults[] = [];
@@ -191,7 +193,8 @@ async function installControlPlaneMocks(page: Page) {
       return json(route, defaultsState());
     }
     if (path === '/api/platform-admin/ai-defaults' && method === 'DELETE') {
-      defaults = { codexModel: null, codexReasoningEffort: null, codexActionOverrides: {}, updatedAt: '2026-08-04T01:20:00.000Z' };
+      defaults = { codexModel: null, codexReasoningEffort: null, codexActionOverrides: {},
+        runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt' }, updatedAt: '2026-08-04T01:20:00.000Z' };
       return json(route, { defaults });
     }
     unhandled.push(`${method} ${path}`);
@@ -281,7 +284,8 @@ test.describe('platform administrator control plane', () => {
     await page.getByLabel('Default reasoning effort').selectOption('max');
     await page.getByLabel('Model for Analyst chat').selectOption('gpt-5.6-luna');
     await page.getByLabel('Effort for Analyst chat').selectOption('xhigh');
-    await page.getByRole('button', { name: 'Save defaults' }).click();
+    await page.getByRole('checkbox', { name: /Local AI runtime/ }).uncheck();
+    await page.getByRole('button', { name: 'Save policy' }).click();
     await expect(page.getByText('Platform Codex defaults saved.')).toBeVisible();
     expect(mock.writes).toHaveLength(1);
     expect(mock.writes[0]).toMatchObject({
@@ -289,12 +293,13 @@ test.describe('platform administrator control plane', () => {
       codexReasoningEffort: 'max',
       codexActionOverrides: {
         'analyst.chat': { model: 'gpt-5.6-luna', reasoningEffort: 'xhigh' }
-      }
+      },
+      runtimePolicy: { localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
     });
 
     page.once('dialog', (dialog) => dialog.accept());
-    await page.getByRole('button', { name: 'Clear defaults' }).click();
-    await expect(page.getByText('Platform Codex defaults cleared.')).toBeVisible();
+    await page.getByRole('button', { name: 'Reset' }).click();
+    await expect(page.getByText('Platform AI defaults reset.')).toBeVisible();
     await expect(page.getByLabel('Default Codex model')).toHaveValue('');
     await expect(page.getByLabel('Default reasoning effort')).toHaveValue('');
     expect(mock.unhandled).toEqual([]);

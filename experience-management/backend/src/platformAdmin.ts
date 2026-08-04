@@ -687,12 +687,12 @@ platformAdminRouter.get('/analytics/timeseries', requirePlatformCapability('read
     ];
     const days = new Map<string, Record<string, number>>();
     for (const metric of metrics) {
-      const rows = db.prepare(`SELECT substr(${metric.timestamp},1,10) day,COUNT(*) count FROM ${metric.table}
+      const rows = db.prepare(`SELECT substr(${metric.timestamp},1,10) AS bucket_day,COUNT(*) AS metric_count FROM ${metric.table}
         WHERE ${metric.timestamp}>=? AND ${metric.timestamp}<=?${metric.where ? ` AND ${metric.where}` : ''}
-        GROUP BY substr(${metric.timestamp},1,10) ORDER BY day`).all(from, to) as any[];
+        GROUP BY substr(${metric.timestamp},1,10) ORDER BY bucket_day`).all(from, to) as any[];
       for (const row of rows) {
-        const day = String(row.day); const current = days.get(day) || {};
-        current[metric.key] = Number(row.count); days.set(day, current);
+        const day = String(row.bucket_day); const current = days.get(day) || {};
+        current[metric.key] = Number(row.metric_count); days.set(day, current);
       }
     }
     const series: Array<Record<string, string | number>> = [];

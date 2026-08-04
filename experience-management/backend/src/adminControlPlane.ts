@@ -440,7 +440,11 @@ adminControlPlaneRouter.put('/ai-defaults', requirePermission('ai_defaults.manag
       codexModel: setting.optional(), codexReasoningEffort: setting.optional(),
       codexActionOverrides: z.record(z.string().trim().min(1).max(100), z.object({
         model: setting.optional(), reasoningEffort: setting.optional(), reasoningEffortAuto: z.boolean().optional()
-      }).strict()).refine((value) => Object.keys(value).length <= 100, 'Too many action overrides.').optional()
+      }).strict()).refine((value) => Object.keys(value).length <= 100, 'Too many action overrides.').optional(),
+      runtimePolicy: z.object({
+        localEnabled: z.boolean(), chatgptEnabled: z.boolean(),
+        defaultRuntime: z.enum(['local', 'chatgpt'])
+      }).strict().optional()
     }).strict().parse(request.body);
     const defaults = await updateAdminCodexDefaults(actor.id, input);
     recordAudit(request, actor, { action: 'ai_defaults.updated', targetType: 'ai_defaults', targetId: 'platform',

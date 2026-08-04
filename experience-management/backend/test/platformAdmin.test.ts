@@ -246,13 +246,25 @@ test('AI defaults separate read and manage permissions and audit only successful
   assert.equal(editorMe.body.capabilities.manageAiDefaults, true);
   const auditBefore = Number((db.prepare(`SELECT COUNT(*) count FROM platform_audit_events
     WHERE action='ai_defaults.updated'`).get() as any).count);
+  const policyOnly = await editorAgent.put('/api/platform-admin/ai-defaults').send({
+    runtimePolicy: { localEnabled: true, chatgptEnabled: false, defaultRuntime: 'local' }
+  }).expect(200);
+  assert.deepEqual(policyOnly.body.defaults.runtimePolicy, {
+    localEnabled: true, chatgptEnabled: false, defaultRuntime: 'local'
+  });
+  const auditAfterPolicy = Number((db.prepare(`SELECT COUNT(*) count FROM platform_audit_events
+    WHERE action='ai_defaults.updated'`).get() as any).count);
+  assert.equal(auditAfterPolicy, auditBefore + 1);
   await editorAgent.put('/api/platform-admin/ai-defaults').send({ codexModel: 'gpt-disconnected-test' })
     .expect(409).expect(({ body }) => assert.equal(body.code, 'CODEX_NOT_CONNECTED'));
   const auditAfter = Number((db.prepare(`SELECT COUNT(*) count FROM platform_audit_events
     WHERE action='ai_defaults.updated'`).get() as any).count);
-  assert.equal(auditAfter, auditBefore);
+  assert.equal(auditAfter, auditAfterPolicy);
   const reset = await editorAgent.delete('/api/platform-admin/ai-defaults').expect(200);
   assert.equal(reset.body.defaults.codexModel, null);
+  assert.deepEqual(reset.body.defaults.runtimePolicy, {
+    localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt'
+  });
   assert.ok(db.prepare(`SELECT 1 FROM platform_audit_events WHERE action='ai_defaults.reset'
     AND actor_user_id=?`).get(editor.id));
 });
@@ -529,6 +541,11 @@ test('delegated platform roles are least-privileged and cannot self-approve bill
   await supportAgent.get('/api/platform-admin/audit-events').expect(403);
   const analystAgent = await loginAs(analyst.email);
   await analystAgent.get('/api/platform-admin/analytics/overview').expect(200);
+  const series = await analystAgent.get('/api/platform-admin/analytics/timeseries')
+    .query({ from: '2026-07-06', to: '2026-08-04' }).expect(200);
+  assert.equal(series.body.series.length, 30);
+  assert.deepEqual(Object.keys(series.body.series[0]),
+    ['day', 'accounts', 'spaces', 'responses', 'aiJobs', 'agreements', 'campaigns']);
   await analystAgent.get('/api/platform-admin/users').expect(403);
 });
 
