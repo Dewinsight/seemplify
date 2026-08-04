@@ -443,6 +443,7 @@ router.post('/:id/search', async (request, response) => {
     if (input.includeAnswer !== false && retrieved.citations.length) {
       const result = await completeWithAi({
         spaceId: space.id, userId: user.id,
+        actionId: 'knowledge.answer',
         activity: 'experience.knowledge_answer', requestId, schemaName: 'experience_knowledge_answer',
         jsonSchema: {
           type: 'object', additionalProperties: false, required: ['answer', 'citationSourceRefs'], properties: {

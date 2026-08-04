@@ -15,12 +15,16 @@ test('AI queue retries an eligible failed job once and explains ineligible failu
   const eligible = {
     id: eligibleId, kind: 'social.analyze', surveyId: null, responseId: null,
     state: 'failed', stage: 'failed', progress: 100, attempt: 3, input: { mentionIds: ['saved-post-1'] }, result: null,
+    runtime: { source: 'provider_result', status: 'actual', provider: 'terra', providerLabel: 'Terra test runtime',
+      model: 'gpt-5.6-terra', reasoningEffort: null, actionId: 'social.analyze' },
     error: 'Terra returned evidence outside the saved sources.', retryAt: null, createdAt: now, startedAt: now,
     completedAt: now, updatedAt: now, retry: { eligible: true, reason: null }, knowledgeContext: null
   };
   const ineligible = {
     id: ineligibleId, kind: 'survey.translate', surveyId: 'survey-1', responseId: null,
     state: 'failed', stage: 'failed', progress: 100, attempt: 1, input: {}, result: null,
+    runtime: { source: 'job_snapshot', status: 'planned', provider: 'codex', providerLabel: 'ChatGPT / Codex',
+      model: 'gpt-5.6-sol', reasoningEffort: 'max', actionId: 'survey.translate' },
     error: 'The survey changed after this request.', retryAt: null, createdAt: now, startedAt: now,
     completedAt: now, updatedAt: now,
     retry: { eligible: false, reason: 'Restart this translation from the survey so it uses the current saved version.' }, knowledgeContext: null
@@ -63,11 +67,17 @@ test('AI queue retries an eligible failed job once and explains ineligible failu
   const eligibleRow = page.getByRole('row').filter({ hasText: 'Social listening analysis' }).first();
   const ineligibleRow = page.getByRole('row').filter({ hasText: 'Survey translation' }).first();
 
+  await expect(page.getByRole('columnheader', { name: 'Model' })).toBeVisible();
+  await expect(eligibleRow).toContainText('gpt-5.6-terra');
+  await expect(eligibleRow).toContainText('Used · Terra test runtime');
+  await expect(ineligibleRow).toContainText('gpt-5.6-sol');
+  await expect(ineligibleRow).toContainText('Planned · ChatGPT / Codex');
   await expect(eligibleRow.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
   await expect(ineligibleRow.getByRole('button', { name: 'Retry', exact: true })).toBeDisabled();
   await expect(ineligibleRow.getByText('Restart this translation from the survey so it uses the current saved version.')).toBeVisible();
 
   await eligibleRow.getByRole('button', { name: 'Details' }).click();
+  await expect(page.getByText('Model used', { exact: true })).toBeVisible();
   await expect(page.getByText('Recorded failure', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Retry status')).toContainText('same durable job and saved inputs');
 

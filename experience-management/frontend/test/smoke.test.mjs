@@ -333,8 +333,8 @@ test('refuses an incompatible rollback after the PostgreSQL runtime-v5 upgrade s
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
   assert.match(deploy, /started runtime upgrade/);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 7,
-    maximumRuntimeSchemaVersion: 7,
+    minimumRuntimeSchemaVersion: 8,
+    maximumRuntimeSchemaVersion: 8,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });
@@ -370,13 +370,29 @@ test('ships capability-scoped platform administration and subscription controls'
   const subscriptions = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'SubscriptionsPage.tsx'), 'utf8');
   const requestDetail = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'SubscriptionRequestDetailPage.tsx'), 'utf8');
   const analytics = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'AnalyticsPage.tsx'), 'utf8');
-  for (const capability of ['readUsers', 'readSpaces', 'readSubscriptions', 'readAnalytics', 'readAudit']) assert.match(shell, new RegExp(capability));
+  const users = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'UsersPage.tsx'), 'utf8');
+  const roles = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'RolesPage.tsx'), 'utf8');
+  const jobs = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'JobsPage.tsx'), 'utf8');
+  const activity = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'ActivityPage.tsx'), 'utf8');
+  const aiDefaults = fs.readFileSync(path.join(source, 'pages', 'platform-admin', 'AiDefaultsPage.tsx'), 'utf8');
+  for (const capability of ['users.read', 'roles.read', 'spaces.read', 'subscriptions.read', 'analytics.read', 'jobs.read', 'activity.read', 'ai_defaults.read', 'audit.read']) assert.match(shell, new RegExp(capability.replace('.', '\\.')));
   assert.match(shell, /routeAllowed/);
   assert.match(app, /\/admin\/subscriptions/);
+  for (const route of ['/admin/roles', '/admin/jobs', '/admin/activity', '/admin/ai-defaults']) assert.match(app, new RegExp(route.replaceAll('/', '\\/')));
   assert.match(subscriptions, /\/api\/platform-admin\/subscriptions/);
-  assert.match(user, /Grant role/);
+  assert.match(users, /\/api\/platform-admin\/users/);
+  assert.match(users, /Create and invite user/);
+  assert.match(user, /Assign role/);
   assert.match(user, /Revoke .* role/);
-  assert.match(user, /manageRoles/);
+  assert.match(user, /\/admin-roles/);
+  assert.match(roles, /\/api\/platform-admin\/rbac/);
+  assert.match(roles, /roles\.manage/);
+  assert.match(jobs, /\/api\/platform-admin\/jobs/);
+  assert.match(jobs, /data-testid="platform-admin-jobs"/);
+  assert.match(activity, /\/api\/platform-admin\/activity/);
+  assert.match(activity, /data-testid="platform-admin-activity"/);
+  assert.match(aiDefaults, /\/api\/platform-admin\/ai-defaults/);
+  assert.match(aiDefaults, /ai_defaults\.manage/);
   assert.match(requestDetail, /Use root break-glass approval/);
   assert.match(requestDetail, /breakGlass:/);
   assert.match(analytics, /<Legend/);
@@ -397,7 +413,7 @@ test('ships persistent section tutorials with every referenced lesson image', ()
   const component = fs.readFileSync(path.join(source, 'components', 'tutorials', 'SectionTutorial.tsx'), 'utf8');
   const registry = fs.readFileSync(path.join(source, 'lib', 'tutorials.ts'), 'utf8');
   assert.match(shell, /SectionTutorial/);
-  assert.match(shell, /tutorialForPath\(location\.pathname\)/);
+  assert.match(shell, /tutorialForPath\(routePath\)/);
   assert.match(shell, /max-\[439px\]:sr-only/);
   assert.match(shell, /min-w-0 truncate text-sm font-semibold/);
   for (const feature of ['/api/tutorials/progress', 'Maybe later', 'Previous', 'Next', 'Finish tutorial', 'aria-label="Tutorial"']) {

@@ -165,6 +165,16 @@ export interface JourneyVersionSummary {
   createdAt: string;
 }
 
+export interface AiJobRuntime {
+  source: 'provider_result' | 'job_result' | 'job_snapshot' | 'legacy_default';
+  status: 'actual' | 'planned' | 'unknown';
+  provider: string | null;
+  providerLabel: string | null;
+  model: string | null;
+  reasoningEffort: string | null;
+  actionId: string | null;
+}
+
 export interface AiJob {
   id: string;
   spaceId: string;
@@ -178,6 +188,7 @@ export interface AiJob {
   attempt: number;
   input: Record<string, unknown>;
   result: unknown;
+  runtime: AiJobRuntime;
   error: string | null;
   retryAt: string | null;
   createdAt: string;

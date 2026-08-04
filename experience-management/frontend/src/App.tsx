@@ -45,6 +45,11 @@ const PlatformAdminSubscriptionsPage = lazy(() => import('@/pages/platform-admin
 const PlatformAdminSubscriptionRequestsPage = lazy(() => import('@/pages/platform-admin/SubscriptionRequestsPage').then((module) => ({ default: module.PlatformAdminSubscriptionRequestsPage })));
 const PlatformAdminSubscriptionRequestDetailPage = lazy(() => import('@/pages/platform-admin/SubscriptionRequestDetailPage').then((module) => ({ default: module.PlatformAdminSubscriptionRequestDetailPage })));
 const PlatformAdminAnalyticsPage = lazy(() => import('@/pages/platform-admin/AnalyticsPage').then((module) => ({ default: module.PlatformAdminAnalyticsPage })));
+const PlatformAdminJobsPage = lazy(() => import('@/pages/platform-admin/JobsPage').then((module) => ({ default: module.PlatformAdminJobsPage })));
+const PlatformAdminJobDetailPage = lazy(() => import('@/pages/platform-admin/JobDetailPage').then((module) => ({ default: module.PlatformAdminJobDetailPage })));
+const PlatformAdminActivityPage = lazy(() => import('@/pages/platform-admin/ActivityPage').then((module) => ({ default: module.PlatformAdminActivityPage })));
+const PlatformAdminRolesPage = lazy(() => import('@/pages/platform-admin/RolesPage').then((module) => ({ default: module.PlatformAdminRolesPage })));
+const PlatformAdminAiDefaultsPage = lazy(() => import('@/pages/platform-admin/AiDefaultsPage').then((module) => ({ default: module.PlatformAdminAiDefaultsPage })));
 const PlatformAdminAuditPage = lazy(() => import('@/pages/platform-admin/AuditPage').then((module) => ({ default: module.PlatformAdminAuditPage })));
 const PlatformAdminAuditDetailPage = lazy(() => import('@/pages/platform-admin/AuditDetailPage').then((module) => ({ default: module.PlatformAdminAuditDetailPage })));
 
@@ -62,6 +67,11 @@ function PlatformAdminRoutes() {
     <Route path="/admin/subscription-requests/:id"><PlatformAdminSubscriptionRequestDetailPage /></Route>
     <Route path="/admin/subscription-requests"><PlatformAdminSubscriptionRequestsPage /></Route>
     <Route path="/admin/analytics"><PlatformAdminAnalyticsPage /></Route>
+    <Route path="/admin/jobs/:id"><PlatformAdminJobDetailPage /></Route>
+    <Route path="/admin/jobs"><PlatformAdminJobsPage /></Route>
+    <Route path="/admin/activity"><PlatformAdminActivityPage /></Route>
+    <Route path="/admin/roles"><PlatformAdminRolesPage /></Route>
+    <Route path="/admin/ai-defaults"><PlatformAdminAiDefaultsPage /></Route>
     <Route path="/admin/audit/:id"><PlatformAdminAuditDetailPage /></Route>
     <Route path="/admin/audit"><PlatformAdminAuditPage /></Route>
     <Route path="/admin"><PlatformAdminOverviewPage /></Route>

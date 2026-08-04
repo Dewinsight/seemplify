@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import './spaces.js';
 import { db } from './database.js';
+import { seedControlPlaneRoles } from './platformRbac.js';
 
 function tableColumns(table: string) {
   return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name));
@@ -44,6 +45,38 @@ export function ensurePlatformSchema() {
       ON platform_role_assignments(user_id,role) WHERE revoked_at IS NULL;
     CREATE INDEX IF NOT EXISTS platform_role_assignments_user
       ON platform_role_assignments(user_id,granted_at DESC);
+
+    CREATE TABLE IF NOT EXISTS platform_rbac_roles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      built_in INTEGER NOT NULL DEFAULT 1,
+      version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS platform_rbac_role_permissions (
+      role_id TEXT NOT NULL REFERENCES platform_rbac_roles(id) ON DELETE CASCADE,
+      permission TEXT NOT NULL,
+      granted_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      granted_at TEXT NOT NULL,
+      PRIMARY KEY(role_id,permission)
+    );
+    CREATE TABLE IF NOT EXISTS platform_rbac_user_roles (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role_id TEXT NOT NULL REFERENCES platform_rbac_roles(id) ON DELETE CASCADE,
+      assigned_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      assigned_at TEXT NOT NULL,
+      revoked_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      revoked_at TEXT,
+      reason TEXT,
+      revocation_reason TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS platform_rbac_user_roles_active
+      ON platform_rbac_user_roles(user_id,role_id) WHERE revoked_at IS NULL;
+    CREATE INDEX IF NOT EXISTS platform_rbac_user_roles_user
+      ON platform_rbac_user_roles(user_id,assigned_at DESC);
 
     CREATE TABLE IF NOT EXISTS platform_subscription_requests (
       id TEXT PRIMARY KEY,
@@ -141,8 +174,13 @@ export function ensurePlatformSchema() {
 
   `);
 
+  addColumn('platform_rbac_user_roles', 'revocation_reason', 'TEXT');
+
   db.prepare('INSERT OR IGNORE INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
     .run(15, 'platform_administration_and_recovery_history', new Date().toISOString());
+  db.prepare('INSERT OR IGNORE INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)')
+    .run(16, 'administrator_rbac_control_plane', new Date().toISOString());
+  seedControlPlaneRoles();
 }
 
 ensurePlatformSchema();

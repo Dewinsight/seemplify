@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { Link, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
@@ -7,6 +7,13 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SectionTutorial } from '@/components/tutorials/SectionTutorial';
+import { OpenAiAttribution } from '@/components/brand/OpenAiAttribution';
+import { ChatGptConnectionGate } from '@/components/settings/ChatGptConnectionGate';
+import {
+  AI_PROVIDER_CHANGED_EVENT,
+  requiresChatGptSetup,
+  type AiProviderState
+} from '@/lib/aiProvider';
 import { tutorialForPath } from '@/lib/tutorials';
 import type { AuthSession, PendingSpaceInvitation, SpaceSession } from '@/types';
 
@@ -159,20 +166,37 @@ function SidebarContent({ close, runtimeState, runtimeLabel, session, switching,
 export function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [runtime, setRuntime] = useState<any>(null);
+  const [providerState, setProviderState] = useState<AiProviderState | null>(null);
+  const [providerStateLoading, setProviderStateLoading] = useState(true);
+  const [providerStateError, setProviderStateError] = useState('');
   const [session, setSession] = useState<AuthSession | null>(null);
   const [switching, setSwitching] = useState(false);
   const [acceptingInvitationId, setAcceptingInvitationId] = useState('');
   const [invitationError, setInvitationError] = useState('');
   const location = useLocation();
-  const tutorial = tutorialForPath(location.pathname);
-  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+  const routePath = location.pathname.split(/[?#]/, 1)[0];
+  const tutorial = tutorialForPath(routePath);
+  const providerGateExempt = routePath === '/settings/space';
+  useEffect(() => { setMobileOpen(false); }, [routePath]);
   useEffect(() => {
     if (!mobileOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = previousOverflow; };
   }, [mobileOpen]);
-  useEffect(() => { api<any>('/api/runtime').then(setRuntime).catch(() => setRuntime({ terra: { reachable: false } })); const timer = setInterval(() => api<any>('/api/runtime').then(setRuntime).catch(() => null), 30_000); return () => clearInterval(timer); }, []);
+  const loadRuntime = useCallback(async () => {
+    try { setRuntime(await api<any>('/api/runtime')); }
+    catch { setRuntime({ terra: { reachable: false } }); }
+  }, []);
+  const loadProviderState = useCallback(async () => {
+    setProviderStateLoading(true);
+    setProviderStateError('');
+    try { setProviderState(await api<AiProviderState>('/api/ai-provider')); }
+    catch (reason) {
+      setProviderStateError(reason instanceof Error ? reason.message : 'Could not check your ChatGPT connection.');
+    } finally { setProviderStateLoading(false); }
+  }, []);
+  useEffect(() => { void loadRuntime(); const timer = setInterval(() => void loadRuntime(), 30_000); return () => clearInterval(timer); }, [loadRuntime]);
   useEffect(() => {
     let cancelled = false;
     void api<AuthSession>('/api/auth/session').then(async (nextSession) => {
@@ -198,6 +222,18 @@ export function AppShell({ children }: { children: ReactNode }) {
     }).catch(() => null);
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => {
+    if (!session?.activeSpace?.id) return;
+    void loadProviderState();
+  }, [loadProviderState, session?.activeSpace?.id]);
+  useEffect(() => {
+    const reloadProvider = () => {
+      void loadProviderState();
+      void loadRuntime();
+    };
+    window.addEventListener(AI_PROVIDER_CHANGED_EVENT, reloadProvider);
+    return () => window.removeEventListener(AI_PROVIDER_CHANGED_EVENT, reloadProvider);
+  }, [loadProviderState, loadRuntime]);
   useEffect(() => {
     if (!session?.authenticated) return;
     const timer = window.setInterval(() => {
@@ -246,8 +282,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       setAcceptingInvitationId('');
     }
   }
-  const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(location.pathname);
-  const title = location.pathname === '/' ? 'Overview' : location.pathname === '/settings/profile' ? 'Your profile' : location.pathname.startsWith('/surveys/') ? 'Survey workspace' : location.pathname.startsWith('/campaigns/') ? 'Campaign workspace' : location.pathname.startsWith('/agreements/') ? 'Agreement workspace' : location.pathname.startsWith('/knowledge-bases/') ? 'Knowledge base workspace' : navigation.find((item) => item.to === location.pathname)?.label || 'Seemplify Experience';
+  const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(routePath);
+  const title = routePath === '/' ? 'Overview' : routePath === '/settings/profile' ? 'Your profile' : routePath.startsWith('/surveys/') ? 'Survey workspace' : routePath.startsWith('/campaigns/') ? 'Campaign workspace' : routePath.startsWith('/agreements/') ? 'Agreement workspace' : routePath.startsWith('/knowledge-bases/') ? 'Knowledge base workspace' : navigation.find((item) => item.to === routePath)?.label || 'Seemplify Experience';
   const codexSelected = runtime?.ai?.preference?.provider === 'codex';
   const runtimeReady = codexSelected
     ? runtime?.ai?.codex?.account?.connected === true
@@ -256,12 +292,34 @@ export function AppShell({ children }: { children: ReactNode }) {
   const runtimeLabel = codexSelected
     ? `ChatGPT / Codex${runtime?.ai?.codex?.selectedModel ? ` · ${runtime.ai.codex.selectedModel}` : ''}`
     : runtime?.terra?.providerLabel || 'Experience AI';
-  const creationAction = location.pathname.startsWith('/agreements')
+  const creationAction = routePath.startsWith('/agreements')
     ? { to: '/agreements/new', label: 'New agreement' }
-    : location.pathname === '/' || location.pathname.startsWith('/surveys')
+    : routePath === '/' || routePath.startsWith('/surveys')
       ? { to: '/surveys/new', label: 'New survey' }
       : null;
-  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex min-h-[52px] items-center justify-between gap-3 border-b bg-card px-4 py-2"><Link to="/agreements" className="flex min-w-0 items-center gap-2"><div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="truncate text-sm font-semibold">Seemplify Experience</span></Link><div className="flex shrink-0 items-center gap-2"><span className="hidden text-xs font-medium text-muted-foreground sm:inline">Agreement field editor</span><SectionTutorial tutorial={tutorial} /></div></header><main>{children}</main></div>;
+  const providerSetupRequired = Boolean(providerState && requiresChatGptSetup(providerState));
+  const providerExperienceReady = !providerStateLoading && !providerStateError && !providerSetupRequired;
+  const providerGateBlocking = !providerGateExempt
+    && (providerStateLoading || Boolean(providerStateError) || providerSetupRequired);
+  const guardedChildren = providerGateBlocking
+    ? (providerStateLoading
+      ? <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="h-4 w-4 animate-spin" />Checking your AI runtime&hellip;</div>
+      : null)
+    : children;
+  const providerGate = <ChatGptConnectionGate
+    state={providerState}
+    loading={providerStateLoading}
+    error={providerStateError}
+    exempt={providerGateExempt}
+    onStateChange={(next) => {
+      setProviderState(next);
+      setProviderStateError('');
+      setProviderStateLoading(false);
+      void loadRuntime();
+    }}
+    onRetry={() => void loadProviderState()}
+  />;
+  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex min-h-[52px] items-center justify-between gap-3 border-b bg-card px-4 py-2"><Link to="/agreements" className="flex min-w-0 items-center gap-2"><div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="truncate text-sm font-semibold">Seemplify Experience</span></Link><div className="flex shrink-0 items-center gap-2"><span className="hidden text-xs font-medium text-muted-foreground sm:inline">Agreement field editor</span>{providerExperienceReady && <SectionTutorial tutorial={tutorial} />}</div></header><main>{guardedChildren}</main>{providerGate}</div>;
   return <div className="min-h-screen bg-background">
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col overflow-hidden border-r bg-card md:flex"><SidebarContent selectorId="active-space-desktop" runtimeState={runtimeState} runtimeLabel={runtimeLabel} session={session} switching={switching} onSwitch={switchSpace} /></aside>
     {mobileOpen && <div className="fixed inset-0 z-50 md:hidden">
@@ -272,13 +330,19 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 flex h-16 min-w-0 items-center justify-between gap-2 overflow-hidden border-b bg-background/95 px-4 backdrop-blur sm:gap-3 sm:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3"><Button className="shrink-0 md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</div></div>
         <div className="flex shrink-0 items-center gap-2">
-          <SectionTutorial tutorial={tutorial} />
-          <Badge variant={runtimeState === 'ready' ? 'success' : runtimeState === 'checking' ? 'outline' : 'warning'} className="hidden sm:inline-flex" title={runtimeLabel}>{runtimeName(runtimeLabel)} {runtimeState}</Badge>
+          {providerExperienceReady && <SectionTutorial tutorial={tutorial} />}
+          {codexSelected
+            ? <div className="hidden min-w-0 items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 sm:flex" title={runtimeLabel}>
+              <OpenAiAttribution compact showModel model={runtime?.ai?.codex?.selectedModel || undefined} />
+              <span className={cn('shrink-0 text-[11px] font-medium capitalize', runtimeState === 'ready' ? 'text-emerald-700' : runtimeState === 'checking' ? 'text-muted-foreground' : 'text-amber-700')}>{runtimeState}</span>
+            </div>
+            : <Badge variant={runtimeState === 'ready' ? 'success' : runtimeState === 'checking' ? 'outline' : 'warning'} className="hidden sm:inline-flex" title={runtimeLabel}>{runtimeName(runtimeLabel)} {runtimeState}</Badge>}
           {creationAction && <Button asChild size="sm" className="max-[439px]:w-8 max-[439px]:px-0"><Link to={creationAction.to} aria-label={creationAction.label} title={creationAction.label}><Plus /><span className="max-[439px]:sr-only">{creationAction.label}</span></Link></Button>}
         </div>
       </header>
       <PendingInvitationBar invitations={session?.pendingSpaceInvitations || []} acceptingId={acceptingInvitationId} error={invitationError} onAccept={(invitation) => void acceptInvitation(invitation)} />
-      <main className="mx-auto min-w-0 w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      <main className="mx-auto min-w-0 w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{guardedChildren}</main>
     </div>
+    {providerGate}
   </div>;
 }

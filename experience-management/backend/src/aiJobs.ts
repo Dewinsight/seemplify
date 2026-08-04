@@ -175,6 +175,7 @@ async function structured<T>(
   const result = await completeWithAi({
     spaceId: job.spaceId,
     userId: job.requestedBy,
+    actionId: job.kind,
     providerSnapshot: job.input._aiRuntime as AiProviderSnapshot | undefined,
     activity, requestId: job.id, executionRevision: terraExecutionGeneration(job), schemaName, jsonSchema,
     reasoningEffort: ['experience.insight_generation', 'experience.report_generation', 'experience.social_listening', 'experience.journey_mapping', 'experience.cross_source_intelligence'].includes(activity) ? 'high' : 'medium',

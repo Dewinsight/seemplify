@@ -168,6 +168,7 @@ const fakeTerra = http.createServer(async (request, response) => {
 await listen(fakeNylas, 5492);
 if (!liveKnowledge) await listen(fakeTerra, 5493);
 const { app } = await import('../src/app.js'); const { aiJobRunner } = await import('../src/aiJobs.js');
+const { setAiProviderPreference } = await import('../src/aiProvider.js');
 const { stopCodexClients } = await import('../src/codexAppServer.js');
 const { bootstrapAdminAccount, currentSessionUser, issueEmailVerificationToken } = await import('../src/auth.js');
 const { campaignRunner } = await import('../src/campaigns.js');
@@ -304,6 +305,12 @@ if (liveKnowledge) {
     }
   });
 }
+const bootstrapSpace = db.prepare('SELECT active_space_id FROM users WHERE id=?')
+  .get(bootstrapUserId) as { active_space_id: string | null } | undefined;
+if (!bootstrapSpace?.active_space_id) throw new Error('The E2E bootstrap account has no active space.');
+setAiProviderPreference(bootstrapUserId, bootstrapSpace.active_space_id, {
+  provider: 'terra', runtimeChoice: 'local'
+});
 app.post('/__e2e__/auth/verification-token', (request, response) => {
   const issued = issueEmailVerificationToken(String(request.body?.email || ''), {
     requestId: request.body?.requestId ? String(request.body.requestId) : undefined

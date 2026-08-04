@@ -345,15 +345,31 @@ export class CodexAppServerClient {
   }
 
   async models(): Promise<CodexModel[]> {
-    const result = await this.request('model/list', { limit: 100, includeHidden: false }, 30_000);
-    return Array.isArray(result?.data) ? result.data : [];
+    const models: CodexModel[] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | null = null;
+    do {
+      const result = await this.request('model/list', {
+        limit: 100,
+        includeHidden: false,
+        ...(cursor ? { cursor } : {})
+      }, 30_000);
+      if (Array.isArray(result?.data)) models.push(...result.data);
+      const nextCursor = typeof result?.nextCursor === 'string' && result.nextCursor ? result.nextCursor : null;
+      if (!nextCursor || seenCursors.has(nextCursor)) break;
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    } while (cursor);
+    return models;
   }
 
   async complete(input: {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
     jsonSchema?: Record<string, unknown>;
     model: string;
-    reasoningEffort: 'low' | 'medium' | 'high';
+    reasoningEffort: string;
+    action?: string;
+    requestId?: string;
     timeoutMs: number;
   }) {
     const run = this.completionTail.then(async () => {
@@ -369,7 +385,9 @@ export class CodexAppServerClient {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
     jsonSchema?: Record<string, unknown>;
     model: string;
-    reasoningEffort: 'low' | 'medium' | 'high';
+    reasoningEffort: string;
+    action?: string;
+    requestId?: string;
     timeoutMs: number;
   }) {
     const account = await this.accountStatus();
@@ -398,6 +416,7 @@ export class CodexAppServerClient {
       const prompt = input.messages.map((message) => `${message.role.toUpperCase()}:\n${message.content}`).join('\n\n');
       const started = await this.request('turn/start', {
         threadId,
+        ...(input.requestId ? { clientUserMessageId: input.requestId } : {}),
         input: [{ type: 'text', text: prompt }],
         model: input.model,
         effort: input.reasoningEffort,
@@ -429,6 +448,9 @@ export class CodexAppServerClient {
           providerLabel: 'ChatGPT / Codex',
           engine: 'codex-app-server',
           model: input.model,
+          reasoningEffort: input.reasoningEffort,
+          action: input.action || null,
+          requestId: input.requestId || null,
           planType: account.planType
         }
       };

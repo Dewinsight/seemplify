@@ -98,6 +98,11 @@ test('retries only failed same-space social analysis jobs with bounded, auditabl
 
   const detail = await owner.get(`/api/ai/jobs/${job.id}`).expect(200);
   assert.deepEqual(detail.body.retry, { eligible: true, reason: null });
+  assert.equal(detail.body.runtime.source, 'provider_result');
+  assert.equal(detail.body.runtime.status, 'actual');
+  assert.equal(detail.body.runtime.model, 'gpt-5.6-terra');
+  const listed = await owner.get('/api/ai/jobs').expect(200);
+  assert.equal(listed.body.find((item: any) => item.id === job.id)?.runtime.model, 'gpt-5.6-terra');
   await owner.post(`/api/ai/jobs/${job.id}/retry`).send({ force: true }).expect(400);
   const retries = await Promise.all([
     owner.post(`/api/ai/jobs/${job.id}/retry`).send({}),

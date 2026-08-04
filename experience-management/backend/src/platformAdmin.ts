@@ -15,6 +15,10 @@ import {
 import { KnowledgeError } from './knowledgeRepository.js';
 import { resolveRequestSpace, type SpaceContext, SpaceError } from './spaces.js';
 import {
+  activeControlPlaneRoleIds, activeControlPlaneRolesForUsers, controlPlanePermissionsForUser,
+  controlPlaneRoleAssignments, hasControlPlanePermission, platformPermissionCatalog
+} from './platformRbac.js';
+import {
   effectiveSubscriptionForSpace, publicSubscriptionPlan, subscriptionCatalogVersion,
   subscriptionPlanCatalog as planCatalog, subscriptionPlanCodes, subscriptionPlanSnapshot,
   validatedSubscriptionPlanSnapshot
@@ -175,22 +179,31 @@ function activeRoleNames(userId: string) {
     .all(userId) as Array<{ role: string }>).map((row) => String(row.role));
 }
 
-type PlatformCapability = 'readUsers' | 'readSpaces' | 'readSubscriptions' | 'readAnalytics' | 'readAudit';
+type PlatformCapability = 'readPlatform' | 'readUsers' | 'readSpaces' | 'readSubscriptions' | 'readAnalytics' | 'readAudit';
 
 function platformCapabilities(user: SessionUser) {
   const root = isRootPlatformAdmin(user.id);
   const roles = new Set(activeRoleNames(user.id));
+  const allowed = (permission: Parameters<typeof hasControlPlanePermission>[1]) => root
+    || hasControlPlanePermission(user.id, permission);
   return {
-    readPlatform: true,
-    readUsers: root || roles.has('support'),
-    readSpaces: root || roles.has('support') || roles.has('billing_approver'),
-    readSubscriptions: root || roles.has('support') || roles.has('billing_approver'),
-    readAnalytics: root || roles.has('analyst'),
-    readAudit: root,
-    manageAccounts: root,
-    manageRoles: root,
-    manageSpaces: root,
-    decideSubscriptions: root || roles.has('billing_approver')
+    readPlatform: root || roles.size > 0 || allowed('analytics.read'),
+    readUsers: root || roles.has('support') || allowed('users.read'),
+    createUsers: allowed('users.create'),
+    manageAccounts: allowed('users.manage'),
+    readRoles: allowed('roles.read'),
+    manageRoles: allowed('roles.manage'),
+    readSpaces: root || roles.has('support') || roles.has('billing_approver') || allowed('spaces.read'),
+    manageSpaces: allowed('spaces.manage'),
+    readSubscriptions: root || roles.has('support') || roles.has('billing_approver') || allowed('subscriptions.read'),
+    manageSubscriptions: allowed('subscriptions.manage'),
+    decideSubscriptions: root || roles.has('billing_approver') || allowed('subscriptions.manage'),
+    readAnalytics: root || roles.has('analyst') || allowed('analytics.read'),
+    readJobs: allowed('jobs.read'),
+    readActivity: allowed('activity.read'),
+    readAudit: allowed('audit.read'),
+    readAiDefaults: allowed('ai_defaults.read'),
+    manageAiDefaults: allowed('ai_defaults.manage')
   };
 }
 
@@ -208,14 +221,26 @@ function requirePlatformCapability(capability: PlatformCapability) {
 
 function actorRole(user: SessionUser) {
   if (isRootPlatformAdmin(user.id)) return 'superadmin';
-  return activeRoleNames(user.id)[0] || 'workspace_user';
+  return activeControlPlaneRoleIds(user.id)[0] || activeRoleNames(user.id)[0] || 'workspace_user';
 }
 
 function requireBillingActor(request: Request, response: Response) {
   const user = platformActor(request, response);
   if (!user) return null;
-  if (!isRootPlatformAdmin(user.id) && !activeRoleNames(user.id).includes('billing_approver')) {
+  if (!isRootPlatformAdmin(user.id) && !activeRoleNames(user.id).includes('billing_approver')
+    && !hasControlPlanePermission(user.id, 'subscriptions.manage')) {
     response.status(403).json({ error: 'Subscription approval access is required.', code: 'SUBSCRIPTION_APPROVER_REQUIRED' });
+    return null;
+  }
+  return user;
+}
+
+function requireControlPermission(request: Request, response: Response, permission: Parameters<typeof hasControlPlanePermission>[1]) {
+  const user = platformActor(request, response);
+  if (!user) return null;
+  if (!isRootPlatformAdmin(user.id) && !hasControlPlanePermission(user.id, permission)) {
+    response.status(403).json({ error: 'This administrator role does not grant the requested permission.',
+      code: 'ADMIN_PERMISSION_REQUIRED', permission });
     return null;
   }
   return user;
@@ -312,7 +337,7 @@ function activeAssignmentsForUsers(userIds: string[]) {
   return result;
 }
 
-function userSummary(row: any, roles: string[] = []) {
+function userSummary(row: any, roles: string[] = [], adminRoles: string[] = []) {
   const accountStatus = String(row.account_status || 'active') as AccountStatus;
   const emailVerified = Boolean(row.email_verified_at);
   const displayStatus = accountStatus === 'active' && !emailVerified ? 'pending' : accountStatus;
@@ -322,6 +347,7 @@ function userSummary(row: any, roles: string[] = []) {
     accountStatus, status: displayStatus,
     emailVerified, onboardingCompleted: Boolean(row.onboarding_completed_at),
     platformRoles: roles,
+    adminRoles,
     rootPlatformAdmin: roles.includes('superadmin') || String(row.email).toLowerCase() === config.adminEmail,
     rootSource: String(row.email).toLowerCase() === config.adminEmail ? 'configured' : roles.includes('superadmin') ? 'assigned' : null,
     spaceCount: Number(row.space_count || 0),
@@ -419,6 +445,10 @@ platformAdminRouter.get('/me', (request, response) => {
   return response.json({
     user: { id: actor.id, name: actor.name, email: actor.email },
     roles: activeRoleNames(actor.id), root: isRootPlatformAdmin(actor.id),
+    adminRoles: activeControlPlaneRoleIds(actor.id),
+    permissions: isRootPlatformAdmin(actor.id)
+      ? platformPermissionCatalog.map((permission) => permission.id)
+      : controlPlanePermissionsForUser(actor.id),
     effectiveRootCount: effectiveRootCount(),
     capabilities: platformCapabilities(actor)
   });
@@ -591,7 +621,7 @@ function platformOverview() {
   };
 }
 
-platformAdminRouter.get('/overview', (_request, response) => response.json(platformOverview()));
+platformAdminRouter.get('/overview', requirePlatformCapability('readPlatform'), (_request, response) => response.json(platformOverview()));
 platformAdminRouter.get('/analytics/overview', requirePlatformCapability('readAnalytics'), (_request, response) => response.json(platformOverview()));
 
 const dateRangeSchema = z.object({
@@ -657,7 +687,9 @@ platformAdminRouter.get('/users', requirePlatformCapability('readUsers'), (reque
       ORDER BY u.created_at DESC,u.id DESC LIMIT ? OFFSET ?`).all(...parameters, page.limit, page.offset) as any[];
     const total = Number((db.prepare(`SELECT COUNT(*) count FROM users u WHERE ${where}`).get(...parameters) as any)?.count || 0);
     const assignments = activeAssignmentsForUsers(rows.map((row) => String(row.id)));
-    const users = rows.map((row) => userSummary(row, assignments.get(String(row.id)) || []));
+    const adminAssignments = activeControlPlaneRolesForUsers(rows.map((row) => String(row.id)));
+    const users = rows.map((row) => userSummary(row, assignments.get(String(row.id)) || [],
+      adminAssignments.get(String(row.id)) || []));
     return response.json(paged('users', users, page, total));
   } catch (error) { return sendPlatformError(response, error); }
 });
@@ -682,7 +714,7 @@ platformAdminRouter.get('/users/:id', requirePlatformCapability('readUsers'), (r
         space: { id: String(membership.id), name: String(membership.name), slug: String(membership.slug), status: String(membership.status) },
         role: String(membership.role), joinedAt: membership.joined_at
       }));
-    const summary = userSummary(row, activeRoleNames(id));
+    const summary = userSummary(row, activeRoleNames(id), activeControlPlaneRoleIds(id));
     const primarySubscription = row.primary_plan_code ? {
       planName: publicPlan(String(row.primary_plan_code))?.name || String(row.primary_plan_code),
       status: row.primary_subscription_status || null,
@@ -697,6 +729,7 @@ platformAdminRouter.get('/users/:id', requirePlatformCapability('readUsers'), (r
       user: summary,
       memberships,
       roleAssignments: rolesForUser(id),
+      adminRoleAssignments: controlPlaneRoleAssignments(id),
       profile: { jobTitle: row.job_title || '', organizationName: row.organization_name || '', timezone: row.timezone || '' },
       spaces: memberships.map((membership) => ({ ...membership.space, role: membership.role, joinedAt: membership.joinedAt })),
       subscription: primarySubscription,
@@ -707,11 +740,14 @@ platformAdminRouter.get('/users/:id', requirePlatformCapability('readUsers'), (r
 
 platformAdminRouter.patch('/users/:id/status', (request, response) => {
   try {
-    const actor = requireRootActor(request, response); if (!actor) return;
+    const actor = requireControlPermission(request, response, 'users.manage'); if (!actor) return;
     const id = uuidSchema.parse(request.params.id);
     const input = z.object({ status: z.enum(accountStatuses), reason: reasonSchema }).strict().parse(request.body);
     if (id === actor.id && input.status !== 'active') {
       throw new PlatformAdminError('Use another root administrator to restrict your own account.', 409, 'ADMIN_SELF_RESTRICTION_BLOCKED');
+    }
+    if (!isRootPlatformAdmin(actor.id) && isRootPlatformAdmin(id)) {
+      throw new PlatformAdminError('Only a root administrator can restrict a root administrator account.', 403, 'ROOT_PLATFORM_ADMIN_REQUIRED');
     }
     const updated = db.transaction(() => {
       const current = db.prepare('SELECT id,COALESCE(account_status,\'active\') account_status FROM users WHERE id=?').get(id) as any;
@@ -733,9 +769,12 @@ platformAdminRouter.patch('/users/:id/status', (request, response) => {
 
 platformAdminRouter.post('/users/:id/revoke-sessions', (request, response) => {
   try {
-    const actor = requireRootActor(request, response); if (!actor) return;
+    const actor = requireControlPermission(request, response, 'users.manage'); if (!actor) return;
     const id = uuidSchema.parse(request.params.id);
     const input = z.object({ reason: reasonSchema }).strict().parse(request.body);
+    if (!isRootPlatformAdmin(actor.id) && isRootPlatformAdmin(id)) {
+      throw new PlatformAdminError('Only a root administrator can revoke a root administrator session.', 403, 'ROOT_PLATFORM_ADMIN_REQUIRED');
+    }
     const changed = db.transaction(() => {
       const exists = db.prepare('SELECT id FROM users WHERE id=?').get(id);
       if (!exists) throw new PlatformAdminError('User not found.', 404, 'USER_NOT_FOUND');
@@ -878,7 +917,7 @@ platformAdminRouter.get('/spaces/:id', requirePlatformCapability('readSpaces'), 
 
 platformAdminRouter.patch('/spaces/:id/status', (request, response) => {
   try {
-    const actor = requireRootActor(request, response); if (!actor) return;
+    const actor = requireControlPermission(request, response, 'spaces.manage'); if (!actor) return;
     const id = uuidSchema.parse(request.params.id);
     const input = z.object({ status: z.enum(spaceStatuses), reason: reasonSchema }).strict().parse(request.body);
     const result = db.transaction(() => {

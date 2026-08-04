@@ -22,6 +22,7 @@ function Test-ProjectSupportsPostgresRuntimeVersion([string]$ProjectDir, [int]$R
   if ($RequiredVersion -ge 5 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0005_experience_assistant_phase1.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 6 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0006_reviewed_social_intelligence_publications.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 7 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0007_assistant_reviewed_replies.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 8 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0008_admin_control_plane.sql') -PathType Leaf)) { return $false }
   return $true
 }
 

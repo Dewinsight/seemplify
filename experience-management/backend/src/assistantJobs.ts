@@ -125,6 +125,7 @@ async function structuredAssistant<T>(input: {
   const result = await completeWithAi({
     spaceId: input.job.spaceId,
     userId: input.job.requestedBy,
+    actionId: input.job.kind,
     providerSnapshot: input.job.input._aiRuntime as AiProviderSnapshot | undefined,
     activity: input.activity,
     requestId: input.job.id,

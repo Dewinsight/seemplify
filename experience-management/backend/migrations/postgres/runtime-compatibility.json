@@ -1,5 +1,5 @@
 {
-  "minimumRuntimeSchemaVersion": 7,
-  "maximumRuntimeSchemaVersion": 7,
+  "minimumRuntimeSchemaVersion": 8,
+  "maximumRuntimeSchemaVersion": 8,
   "minimumUpgradeSourceRuntimeSchemaVersion": 4
 }

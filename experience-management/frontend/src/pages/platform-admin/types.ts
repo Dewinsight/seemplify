@@ -1,30 +1,119 @@
 export type AdminRecordStatus = 'active' | 'suspended' | 'disabled' | 'archived' | 'pending' | 'approved' | 'rejected' | 'cancelled' | string;
 
-export type PlatformAdminCapability =
-  | 'readUsers'
-  | 'readSpaces'
-  | 'readSubscriptions'
-  | 'readAnalytics'
-  | 'readAudit';
+export type PlatformPermissionId =
+  | 'users.read'
+  | 'users.create'
+  | 'users.manage'
+  | 'roles.read'
+  | 'roles.manage'
+  | 'spaces.read'
+  | 'spaces.manage'
+  | 'subscriptions.read'
+  | 'subscriptions.manage'
+  | 'analytics.read'
+  | 'ai_defaults.read'
+  | 'ai_defaults.manage'
+  | 'jobs.read'
+  | 'activity.read'
+  | 'audit.read';
+
+export type PlatformAdminCapability = PlatformPermissionId;
 
 export interface PlatformAdminCapabilities {
-  readUsers: boolean;
-  readSpaces: boolean;
-  readSubscriptions: boolean;
-  readAnalytics: boolean;
-  readAudit: boolean;
-  manageAccounts: boolean;
-  manageRoles: boolean;
-  manageSpaces: boolean;
-  decideSubscriptions: boolean;
+  readPlatform?: boolean;
+  readUsers?: boolean;
+  createUsers?: boolean;
+  manageAccounts?: boolean;
+  readRoles?: boolean;
+  manageRoles?: boolean;
+  readSpaces?: boolean;
+  manageSpaces?: boolean;
+  readSubscriptions?: boolean;
+  manageSubscriptions?: boolean;
+  decideSubscriptions?: boolean;
+  readAnalytics?: boolean;
+  readAiDefaults?: boolean;
+  manageAiDefaults?: boolean;
+  readJobs?: boolean;
+  readActivity?: boolean;
+  readAudit?: boolean;
 }
 
 export interface PlatformAdminMe {
   user: { id: string; name: string; email: string };
   roles: string[];
+  permissions?: PlatformPermissionId[];
+  adminRoles?: string[];
+  adminPermissions?: PlatformPermissionId[];
   isRoot?: boolean;
   root?: boolean;
   capabilities: PlatformAdminCapabilities;
+}
+
+const legacyPermissionCapability: Record<PlatformPermissionId, keyof PlatformAdminCapabilities> = {
+  'users.read': 'readUsers',
+  'users.create': 'createUsers',
+  'users.manage': 'manageAccounts',
+  'roles.read': 'readRoles',
+  'roles.manage': 'manageRoles',
+  'spaces.read': 'readSpaces',
+  'spaces.manage': 'manageSpaces',
+  'subscriptions.read': 'readSubscriptions',
+  'subscriptions.manage': 'manageSubscriptions',
+  'analytics.read': 'readAnalytics',
+  'ai_defaults.read': 'readAiDefaults',
+  'ai_defaults.manage': 'manageAiDefaults',
+  'jobs.read': 'readJobs',
+  'activity.read': 'readActivity',
+  'audit.read': 'readAudit'
+};
+
+export function platformAdminHasPermission(access: PlatformAdminMe | null | undefined, permission: PlatformPermissionId) {
+  if (!access) return false;
+  if (access.root || access.isRoot) return true;
+  const permissions = access.permissions || access.adminPermissions || [];
+  if (permissions.includes(permission)) return true;
+  const legacy = legacyPermissionCapability[permission];
+  if (access.capabilities?.[legacy]) return true;
+  // Older servers exposed role management without a separate read flag.
+  if (permission === 'roles.read' && access.capabilities?.manageRoles) return true;
+  if (permission === 'subscriptions.manage' && access.capabilities?.decideSubscriptions) return true;
+  return false;
+}
+
+export interface PlatformPermissionDefinition {
+  id: PlatformPermissionId;
+  label: string;
+  description: string;
+}
+
+export interface PlatformAdminRole {
+  id: string;
+  name: string;
+  description: string;
+  builtIn: boolean;
+  version: number;
+  permissions: PlatformPermissionId[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformRbacCatalog {
+  permissions: PlatformPermissionDefinition[];
+  roles: PlatformAdminRole[];
+}
+
+export interface PlatformAdminRoleAssignment {
+  id: string;
+  roleId: string;
+  roleName: string;
+  active: boolean;
+  assignedByUserId: string | null;
+  assignedAt: string;
+  revokedByUserId: string | null;
+  revokedAt: string | null;
+  reason: string;
+  revocationReason?: string | null;
 }
 
 export interface PlatformPlan {
@@ -61,6 +150,7 @@ export interface PlatformUserSummary {
   emailVerified: boolean;
   onboardingCompleted: boolean;
   platformRoles: string[];
+  adminRoles: string[];
   spaceCount: number;
   lastLoginAt: string | null;
   createdAt: string;
@@ -85,6 +175,7 @@ export interface PlatformUserDetail {
     revokedAt: string | null;
     reason: string;
   }>;
+  adminRoleAssignments: PlatformAdminRoleAssignment[];
 }
 
 export interface PlatformSpaceSummary {
@@ -191,4 +282,98 @@ export interface PlatformAnalyticsSeries {
     agreements: number;
     campaigns: number;
   }>;
+}
+
+export interface PlatformAdminJob {
+  id: string;
+  kind: string;
+  state: AdminRecordStatus;
+  stage: string;
+  progress: number;
+  attempt: number;
+  requester: { id: string; name: string; email?: string } | null;
+  requesterRestricted?: boolean;
+  space: { id: string; name: string } | null;
+  runtime: {
+    source: string | null;
+    status: 'actual' | 'planned' | 'unknown';
+    provider: string | null;
+    providerLabel: string | null;
+    model: string | null;
+    reasoningEffort: string | null;
+    actionId: string | null;
+  };
+  retryAt: string | null;
+  error: { code: string; message: string } | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  updatedAt: string;
+}
+
+export interface PlatformAdminJobSummary {
+  total: number;
+  active: number;
+  failed: number;
+  byState: Record<string, number>;
+}
+
+export interface PlatformActivityItem {
+  id: string;
+  type: string;
+  entityType: string;
+  entityId: string;
+  status: AdminRecordStatus | null;
+  kind: string | null;
+  actor: { id: string; name: string; email?: string } | null;
+  actorRestricted?: boolean;
+  space: { id: string; name: string } | null;
+  occurredAt: string;
+}
+
+export interface PlatformCodexModel {
+  id: string;
+  displayName: string;
+  isDefault: boolean;
+  defaultReasoningEffort?: string;
+  supportedReasoningEfforts?: Array<{ reasoningEffort: string; description?: string }>;
+}
+
+export interface PlatformCodexAction {
+  id: string;
+  group: string;
+  label: string;
+  description: string;
+  defaultReasoningEffort: string;
+}
+
+export interface PlatformCodexActionOverride {
+  model: string | null;
+  reasoningEffort: string | null;
+  reasoningEffortAuto?: true;
+}
+
+export interface PlatformAiDefaults {
+  codexModel: string | null;
+  codexReasoningEffort: string | null;
+  codexActionOverrides: Record<string, PlatformCodexActionOverride>;
+  updatedAt: string | null;
+}
+
+export interface PlatformAiDefaultsState {
+  defaults: PlatformAiDefaults;
+  codex: {
+    available: boolean;
+    account: {
+      connected: boolean;
+      email: string | null;
+      planType: string | null;
+      authMode?: string | null;
+      pendingLogin?: boolean;
+      loginError?: string | null;
+    };
+    models: PlatformCodexModel[];
+    actions: PlatformCodexAction[];
+    error: string | null;
+  };
 }

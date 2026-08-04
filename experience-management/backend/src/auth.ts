@@ -12,6 +12,9 @@ import {
   renamePersonalSpaceForUser, spaceSession
 } from './spaces.js';
 import { ensureConfiguredRootPlatformRole } from './platformSchema.js';
+import {
+  activeControlPlaneRoleIds, controlPlanePermissionsForUser, platformPermissionCatalog
+} from './platformRbac.js';
 import { ensureConfiguredAdministratorEnterprise, ensureExistingSubscriptionsGrandfathered } from './subscriptionEntitlements.js';
 
 const cookieName = 'seemplify_experience_session';
@@ -162,6 +165,10 @@ function onboardingRequired(profile: AccountProfile) {
 function sessionPayload(user: SessionUser) {
   const profile = profileForUser(user);
   const platformRoles = platformRolesForUser(user.id);
+  const adminRoles = activeControlPlaneRoleIds(user.id);
+  const adminPermissions = isRootPlatformAdmin(user.id)
+    ? platformPermissionCatalog.map((permission) => permission.id)
+    : controlPlanePermissionsForUser(user.id);
   return {
     authenticated: true,
     user: { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -170,9 +177,11 @@ function sessionPayload(user: SessionUser) {
     onboardingRequired: onboardingRequired(profile),
     profile,
     permissions: {
-      platformAdmin: platformRoles.length > 0 || isRootPlatformAdmin(user.id),
+      platformAdmin: platformRoles.length > 0 || adminRoles.length > 0 || isRootPlatformAdmin(user.id),
       rootPlatformAdmin: isRootPlatformAdmin(user.id),
-      platformRoles
+      platformRoles,
+      adminRoles,
+      adminPermissions
     },
     ...spaceSession(user.id),
     pendingSpaceInvitations: user.emailVerifiedAt ? listPendingSpaceInvitationsForAccount(user) : []
@@ -224,7 +233,8 @@ export function isRootPlatformAdmin(userId: string) {
 }
 
 export function isPlatformAdmin(userId: string) {
-  return isRootPlatformAdmin(userId) || platformRolesForUser(userId).length > 0;
+  return isRootPlatformAdmin(userId) || platformRolesForUser(userId).length > 0
+    || activeControlPlaneRoleIds(userId).length > 0;
 }
 
 function createUser(email: string, name: string, password: string, spaceName?: unknown, options: { verified?: boolean; onboarded?: boolean } = {}) {
@@ -242,6 +252,55 @@ function createUser(email: string, name: string, password: string, spaceName?: u
     ensureDefaultSpaceForUser({ id, name }, spaceName);
   })();
   return { id, email, name, role, sessionVersion: 1, emailVerifiedAt: verifiedAt } satisfies SessionUser;
+}
+
+export class AccountProvisionError extends Error {
+  status: number;
+  code: string;
+
+  constructor(message: string, status = 400, code = 'ACCOUNT_PROVISION_FAILED') {
+    super(message);
+    this.name = 'AccountProvisionError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+export async function provisionUserInvitation(input: { email: string; name: string; spaceName?: string }) {
+  const email = normalizeEmail(input.email);
+  const name = String(input.name || '').trim().replace(/\s+/g, ' ');
+  const spaceName = input.spaceName === undefined ? undefined : String(input.spaceName || '').trim().replace(/\s+/g, ' ');
+  if (!email) throw new AccountProvisionError('Enter a valid email address.', 400, 'USER_EMAIL_INVALID');
+  if (name.length < 2 || name.length > 100) {
+    throw new AccountProvisionError('Name must be between 2 and 100 characters.', 400, 'USER_NAME_INVALID');
+  }
+  if (spaceName !== undefined && spaceName && (spaceName.length < 2 || spaceName.length > 100)) {
+    throw new AccountProvisionError('Space name must be between 2 and 100 characters.', 400, 'SPACE_NAME_INVALID');
+  }
+  if (userByEmail(email)) throw new AccountProvisionError('A user with that email already exists.', 409, 'USER_EMAIL_EXISTS');
+  const created = db.transaction(() => {
+    const unusablePassword = `Provisioned-${crypto.randomBytes(32).toString('base64url')}-7aA`;
+    const user = createUser(email, name, unusablePassword, spaceName);
+    db.prepare('UPDATE users SET password_claim_required=1,updated_at=? WHERE id=?')
+      .run(new Date().toISOString(), user.id);
+    const verification = createEmailVerificationToken(user, null, false, true, null);
+    return { user, verification };
+  })();
+  let delivery: 'sent' | 'failed' = 'sent';
+  try { await deliverEmailVerification(created.verification); }
+  catch (error) {
+    delivery = 'failed';
+    console.error('Provisioned user invitation delivery failed:', error instanceof Error ? error.message : String(error));
+  }
+  return {
+    user: { id: created.user.id, email: created.user.email, name: created.user.name },
+    invitation: {
+      requestId: created.verification.id,
+      expiresAt: created.verification.expiresAt,
+      delivery: { state: delivery },
+      requiresPasswordSetup: true
+    }
+  };
 }
 
 function markBootstrapAccountReady(userId: string) {

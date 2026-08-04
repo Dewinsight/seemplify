@@ -1,7 +1,8 @@
 import express from 'express';
 import { z } from 'zod';
 import {
-  cancelCodexDeviceLogin, chooseAiProvider, disconnectCodex, getAiProviderState, startCodexDeviceLogin
+  cancelCodexDeviceLogin, chooseAiProvider, disconnectCodex, getAiProviderState,
+  resetUserCodexDefaults, startCodexDeviceLogin
 } from './aiProvider.js';
 import { currentSessionUser } from './auth.js';
 import { resolveRequestSpace } from './spaces.js';
@@ -31,12 +32,30 @@ aiProviderRouter.get('/', async (request, response) => {
 aiProviderRouter.patch('/', async (request, response) => {
   try {
     const { user, space } = context(request);
+    const optionalCodexSetting = z.string().trim().min(1).max(200).nullable();
     const input = z.object({
       provider: z.enum(['terra', 'codex']),
-      codexModel: z.string().trim().min(1).max(200).nullable().optional(),
+      codexModel: optionalCodexSetting.optional(),
+      codexReasoningEffort: optionalCodexSetting.optional(),
+      codexActionOverrides: z.record(
+        z.string().trim().min(1).max(100),
+        z.object({
+          model: optionalCodexSetting.optional(),
+          reasoningEffort: optionalCodexSetting.optional(),
+          reasoningEffortAuto: z.boolean().optional()
+        }).strict()
+      ).refine((value) => Object.keys(value).length <= 50, 'Too many Codex action overrides.').optional(),
       codexDataSharingAcknowledged: z.boolean().optional()
     }).parse(request.body);
     await chooseAiProvider(user.id, space.id, input);
+    return response.json(await getAiProviderState(user.id, space.id));
+  } catch (error) { return sendError(response, error); }
+});
+
+aiProviderRouter.post('/reset-codex-defaults', async (request, response) => {
+  try {
+    const { user, space } = context(request);
+    resetUserCodexDefaults(user.id, space.id);
     return response.json(await getAiProviderState(user.id, space.id));
   } catch (error) { return sendError(response, error); }
 });

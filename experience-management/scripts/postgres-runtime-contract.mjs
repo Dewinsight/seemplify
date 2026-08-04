@@ -23,16 +23,17 @@ const BASE_RUNTIME_EXTENSION_TABLES = Object.freeze([
   'assistant_audit_events'
 ]);
 
-export function runtimeExtensionTables(runtimeVersion = 7) {
+export function runtimeExtensionTables(runtimeVersion = 8) {
   const tables = [...BASE_RUNTIME_EXTENSION_TABLES];
   if (runtimeVersion >= 6) tables.push('social_intelligence_publications');
   if (runtimeVersion >= 7) tables.push('assistant_outbound_messages');
+  if (runtimeVersion >= 8) tables.push('platform_rbac_roles', 'platform_rbac_role_permissions', 'platform_rbac_user_roles');
   return tables;
 }
 
-export const RUNTIME_EXTENSION_TABLES = Object.freeze(runtimeExtensionTables(7));
+export const RUNTIME_EXTENSION_TABLES = Object.freeze(runtimeExtensionTables(8));
 
-export function runtimeTableSetDifference(sourceTableNames, actualTableNames, runtimeVersion = 7) {
+export function runtimeTableSetDifference(sourceTableNames, actualTableNames, runtimeVersion = 8) {
   const expectedTables = new Set([...sourceTableNames, ...runtimeExtensionTables(runtimeVersion)]);
   return {
     unknownTables: actualTableNames.filter((name) => !expectedTables.has(name)),
@@ -146,6 +147,22 @@ const reviewedReplyExactColumns = Object.freeze({
   ]
 });
 
+const adminControlExactColumns = Object.freeze({
+  platform_rbac_roles: [
+    ['id', 'text', false], ['name', 'text', false], ['description', 'text', false], ['built_in', 'integer', false],
+    ['version', 'integer', false], ['created_at', 'text', false], ['updated_at', 'text', false]
+  ],
+  platform_rbac_role_permissions: [
+    ['role_id', 'text', false], ['permission', 'text', false], ['granted_by_user_id', 'text', true],
+    ['granted_at', 'text', false]
+  ],
+  platform_rbac_user_roles: [
+    ['id', 'text', false], ['user_id', 'text', false], ['role_id', 'text', false],
+    ['assigned_by_user_id', 'text', true], ['assigned_at', 'text', false], ['revoked_by_user_id', 'text', true],
+    ['revoked_at', 'text', true], ['reason', 'text', true], ['revocation_reason', 'text', true]
+  ]
+});
+
 const additiveColumns = Object.freeze({
   users: [
     ['account_status', 'text', false], ['last_login_at', 'text', true], ['suspended_at', 'text', true],
@@ -184,6 +201,12 @@ const reviewedIntelligencePrimaryKeys = Object.freeze({
 });
 
 const reviewedReplyPrimaryKeys = Object.freeze({ assistant_outbound_messages: ['id'] });
+
+const adminControlPrimaryKeys = Object.freeze({
+  platform_rbac_roles: ['id'],
+  platform_rbac_role_permissions: ['role_id', 'permission'],
+  platform_rbac_user_roles: ['id']
+});
 
 const requiredForeignKeys = Object.freeze([
   ['users', 'suspended_by_user_id', 'users', 'id', 'n'],
@@ -246,6 +269,15 @@ const reviewedReplyRequiredForeignKeys = Object.freeze([
   ['assistant_outbound_messages', 'connection_id', 'assistant_nylas_connections', 'id', 'r']
 ]);
 
+const adminControlRequiredForeignKeys = Object.freeze([
+  ['platform_rbac_role_permissions', 'role_id', 'platform_rbac_roles', 'id', 'c'],
+  ['platform_rbac_role_permissions', 'granted_by_user_id', 'users', 'id', 'n'],
+  ['platform_rbac_user_roles', 'user_id', 'users', 'id', 'c'],
+  ['platform_rbac_user_roles', 'role_id', 'platform_rbac_roles', 'id', 'c'],
+  ['platform_rbac_user_roles', 'assigned_by_user_id', 'users', 'id', 'n'],
+  ['platform_rbac_user_roles', 'revoked_by_user_id', 'users', 'id', 'n']
+]);
+
 const requiredIndexes = Object.freeze({
   platform_role_assignments_active: ['create unique index', '(user_id, role)', 'where (revoked_at is null)'],
   platform_role_assignments_user: ['(user_id, granted_at desc)'],
@@ -293,6 +325,11 @@ const reviewedReplyRequiredIndexes = Object.freeze({
   assistant_outbound_messages_owner: ['(space_id, user_id, created_at desc, id)']
 });
 
+const adminControlRequiredIndexes = Object.freeze({
+  platform_rbac_user_roles_active: ['create unique index', '(user_id, role_id)', 'where (revoked_at is null)'],
+  platform_rbac_user_roles_user: ['(user_id, assigned_at desc)']
+});
+
 const requiredDefaults = Object.freeze({
   'users.account_status': "'active'::text",
   'spaces.status': "'active'::text",
@@ -338,6 +375,16 @@ const reviewedIntelligenceRequiredDefaults = Object.freeze({
 
 const reviewedReplyRequiredDefaults = Object.freeze({
   'assistant_outbound_messages.recipients_json': "'[]'::text"
+});
+
+const adminControlRequiredDefaults = Object.freeze({
+  'platform_rbac_roles.description': "''::text",
+  'platform_rbac_roles.built_in': '1',
+  'platform_rbac_roles.version': '1'
+});
+
+const adminControlRequiredChecks = Object.freeze({
+  platform_rbac_roles: [['version', '> 0']]
 });
 
 const requiredChecks = Object.freeze({
@@ -427,41 +474,53 @@ async function rows(query, sql) {
 export async function assertRuntimeSchemaContract(query, options = {}) {
   const schema = String(options.schema || 'public');
   if (!IDENTIFIER.test(schema)) throw contractError('RUNTIME_SCHEMA_IDENTIFIER_INVALID', `Unsafe PostgreSQL schema identifier: ${schema}`);
-  const runtimeVersion = Number(options.runtimeVersion ?? 7);
+  const runtimeVersion = Number(options.runtimeVersion ?? 8);
   if (!Number.isSafeInteger(runtimeVersion) || runtimeVersion < 1) {
     throw contractError('RUNTIME_SCHEMA_VERSION_INVALID', 'Runtime schema contract version must be a positive integer.');
   }
-  const exactColumnContract = runtimeVersion >= 7
+  const exactColumnContract = runtimeVersion >= 8
+    ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns, ...reviewedReplyExactColumns, ...adminControlExactColumns }
+    : runtimeVersion >= 7
     ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns, ...reviewedReplyExactColumns }
     : runtimeVersion >= 6
     ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns, ...reviewedIntelligenceExactColumns }
     : runtimeVersion >= 5 ? { ...exactColumns, ...assistantExactColumns, ...assistantPhase1ExactColumns }
     : runtimeVersion >= 4 ? { ...exactColumns, ...assistantExactColumns } : exactColumns;
-  const primaryKeyContract = runtimeVersion >= 7
+  const primaryKeyContract = runtimeVersion >= 8
+    ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys, ...reviewedReplyPrimaryKeys, ...adminControlPrimaryKeys }
+    : runtimeVersion >= 7
     ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys, ...reviewedReplyPrimaryKeys }
     : runtimeVersion >= 6
     ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys, ...reviewedIntelligencePrimaryKeys }
     : runtimeVersion >= 5 ? { ...primaryKeys, ...assistantPrimaryKeys, ...assistantPhase1PrimaryKeys }
     : runtimeVersion >= 4 ? { ...primaryKeys, ...assistantPrimaryKeys } : primaryKeys;
-  const foreignKeyContract = runtimeVersion >= 7
+  const foreignKeyContract = runtimeVersion >= 8
+    ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys, ...reviewedReplyRequiredForeignKeys, ...adminControlRequiredForeignKeys]
+    : runtimeVersion >= 7
     ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys, ...reviewedReplyRequiredForeignKeys]
     : runtimeVersion >= 6
     ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys, ...reviewedIntelligenceRequiredForeignKeys]
     : runtimeVersion >= 5 ? [...requiredForeignKeys, ...assistantRequiredForeignKeys, ...assistantPhase1RequiredForeignKeys]
     : runtimeVersion >= 4 ? [...requiredForeignKeys, ...assistantRequiredForeignKeys] : requiredForeignKeys;
-  const indexContract = runtimeVersion >= 7
+  const indexContract = runtimeVersion >= 8
+    ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes, ...reviewedReplyRequiredIndexes, ...adminControlRequiredIndexes }
+    : runtimeVersion >= 7
     ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes, ...reviewedReplyRequiredIndexes }
     : runtimeVersion >= 6
     ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes, ...reviewedIntelligenceRequiredIndexes }
     : runtimeVersion >= 5 ? { ...requiredIndexes, ...assistantRequiredIndexes, ...assistantPhase1RequiredIndexes }
     : runtimeVersion >= 4 ? { ...requiredIndexes, ...assistantRequiredIndexes } : requiredIndexes;
-  const defaultContract = runtimeVersion >= 7
+  const defaultContract = runtimeVersion >= 8
+    ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults, ...reviewedIntelligenceRequiredDefaults, ...reviewedReplyRequiredDefaults, ...adminControlRequiredDefaults }
+    : runtimeVersion >= 7
     ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults, ...reviewedIntelligenceRequiredDefaults, ...reviewedReplyRequiredDefaults }
     : runtimeVersion >= 6
     ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults, ...reviewedIntelligenceRequiredDefaults }
     : runtimeVersion >= 5 ? { ...requiredDefaults, ...assistantRequiredDefaults, ...assistantPhase1RequiredDefaults }
     : runtimeVersion >= 4 ? { ...requiredDefaults, ...assistantRequiredDefaults } : requiredDefaults;
-  const checkContract = runtimeVersion >= 7
+  const checkContract = runtimeVersion >= 8
+    ? { ...requiredChecks, ...assistantRequiredChecks, ...assistantPhase1RequiredChecks, ...reviewedIntelligenceRequiredChecks, ...reviewedReplyRequiredChecks, ...adminControlRequiredChecks }
+    : runtimeVersion >= 7
     ? { ...requiredChecks, ...assistantRequiredChecks, ...assistantPhase1RequiredChecks, ...reviewedIntelligenceRequiredChecks, ...reviewedReplyRequiredChecks }
     : runtimeVersion >= 6
     ? { ...requiredChecks, ...assistantRequiredChecks, ...assistantPhase1RequiredChecks, ...reviewedIntelligenceRequiredChecks }
@@ -578,7 +637,10 @@ export async function assertRuntimePrivileges(query, runtimeRole, options = {}) 
     ['platform_audit_events', true, true, false, false],
     ['platform_subscription_events', true, true, false, false],
     ['ticket_events', true, true, false, false],
-    ['assistant_audit_events', true, true, false, false]
+    ['assistant_audit_events', true, true, false, false],
+    ['platform_rbac_roles', true, true, true, true],
+    ['platform_rbac_role_permissions', true, true, true, true],
+    ['platform_rbac_user_roles', true, true, true, true]
   ];
   for (const [table, select, insert, update, remove] of expectations) {
     const qualified = `${schema}.${table}`;

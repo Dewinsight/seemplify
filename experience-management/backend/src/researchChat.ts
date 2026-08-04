@@ -170,6 +170,7 @@ export async function answerResearchQuestion(user: SessionUser, spaceId: string,
   const context = evidenceContext(citations);
   const result = await completeWithAi({
     spaceId, userId: user.id,
+    actionId: 'knowledge.answer',
     activity: 'experience.knowledge_answer',
     requestId,
     schemaName: 'experience_research_chat_answer',

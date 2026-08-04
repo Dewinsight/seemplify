@@ -65,6 +65,7 @@ import {
   createRecoveryTicket, getRecoveryTicket, listRecoveryTickets, recordRecoveryTicketEvent, RecoveryTicketError, updateRecoveryTicket
 } from './recovery.js';
 import { platformAdminRouter, subscriptionRouter } from './platformAdmin.js';
+import { adminControlPlaneRouter } from './adminControlPlane.js';
 import {
   assertCanQueueAiAction, assertSubscriptionQuota, SubscriptionEntitlementError
 } from './subscriptionEntitlements.js';
@@ -485,6 +486,7 @@ app.get('/health', (_request, response) => {
   });
 });
 app.use('/api/platform-admin', platformAdminRouter);
+app.use('/api/platform-admin', adminControlPlaneRouter);
 app.use('/api/subscriptions', subscriptionRouter);
 app.use('/api/ai-provider', aiProviderRouter);
 app.use('/api/esign', esignRouter);

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
 import express from 'express';
 import request from 'supertest';
@@ -24,6 +25,8 @@ Object.assign(process.env, {
   LOCAL_LLM_SHARED_SECRET_FILE: sessionFile,
   KNOWLEDGE_RUNTIME_BASE_URL: 'http://knowledge-admin.test',
   KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: sessionFile,
+  CODEX_RUNTIME_DIR: path.join(root, 'codex'),
+  CODEX_CLI_PATH: fileURLToPath(new URL('./fixtures/fake-codex-app-server.js', import.meta.url)),
   EMAIL_MODE: 'log'
 });
 const originalFetch = globalThis.fetch;
@@ -37,12 +40,14 @@ globalThis.fetch = async (input) => {
   throw new Error(`Unexpected platform admin test request: ${String(input)}`);
 };
 
-const { db } = await import('../src/database.js');
+const { db, createJob } = await import('../src/database.js');
 const {
   bootstrapAdminAccount, currentSessionUser, issueEmailVerificationToken, issuePasswordResetToken,
   login, resetPassword, session, verifyEmail
 } = await import('../src/auth.js');
 const { platformAdminRouter, subscriptionRouter } = await import('../src/platformAdmin.js');
+const { adminControlPlaneRouter } = await import('../src/adminControlPlane.js');
+const { stopCodexClients } = await import('../src/codexAppServer.js');
 const { createSpace, resolveRequestSpace, SpaceError } = await import('../src/spaces.js');
 
 const rootUserId = bootstrapAdminAccount();
@@ -53,6 +58,7 @@ app.post('/reset-password', resetPassword);
 app.post('/verify-email', verifyEmail);
 app.get('/session', session);
 app.use('/api/platform-admin', platformAdminRouter);
+app.use('/api/platform-admin', adminControlPlaneRouter);
 app.use('/api/subscription', subscriptionRouter);
 app.get('/api/social/check', (request, response) => {
   try {
@@ -81,7 +87,8 @@ async function loginAs(email: string) {
   return agent;
 }
 
-after(() => {
+after(async () => {
+  await stopCodexClients();
   globalThis.fetch = originalFetch;
   db.close();
   fs.rmSync(root, { recursive: true, force: true });
@@ -128,6 +135,226 @@ test('platform administration is authenticated and exposes privacy-safe operatio
   await tenantAgent.post('/api/platform-admin/knowledge-backfills').send({}).expect(403);
   const audit = await agent.get('/api/platform-admin/audit-events?search=knowledge').expect(200);
   assert.ok(Array.isArray(audit.body.events));
+});
+
+test('seeded and custom control-plane roles enforce durable permissions without replacing legacy roles', async () => {
+  const rootAgent = await loginAs('platform-admin@seemplify.local');
+  const rbac = await rootAgent.get('/api/platform-admin/rbac').expect(200);
+  assert.deepEqual(rbac.body.roles.slice(0, 3).map((role: any) => role.id), ['admin', 'editor', 'viewer']);
+  assert.ok(rbac.body.permissions.some((permission: any) => permission.id === 'jobs.read'));
+  assert.ok(rbac.body.permissions.some((permission: any) => permission.id === 'ai_defaults.manage'));
+
+  const custom = await rootAgent.post('/api/platform-admin/rbac/roles').send({
+    name: 'Operations observer',
+    description: 'A custom privacy-safe operational role.',
+    permissions: ['roles.read', 'jobs.read', 'activity.read']
+  }).expect(201);
+  assert.equal(custom.body.role.builtIn, false);
+  assert.match(custom.body.role.id, /^[0-9a-f-]{36}$/u);
+
+  const viewer = seedUser('control-viewer@example.test', 'Control Viewer');
+  const assignment = await rootAgent.post(`/api/platform-admin/users/${viewer.id}/admin-roles`).send({
+    roleId: 'viewer', reason: 'Grant read-only administrator access for coverage.'
+  }).expect(201);
+  assert.equal(assignment.body.assignment.roleId, 'viewer');
+  assert.equal((await rootAgent.get(`/api/platform-admin/users/${viewer.id}`).expect(200)).body.user.adminRoles[0], 'viewer');
+
+  const viewerAgent = await loginAs(viewer.email);
+  const me = await viewerAgent.get('/api/platform-admin/me').expect(200);
+  assert.ok(me.body.adminRoles.includes('viewer'));
+  assert.ok(me.body.permissions.includes('jobs.read'));
+  assert.equal(me.body.capabilities.readJobs, true);
+  assert.equal(me.body.capabilities.manageRoles, false);
+  await viewerAgent.get('/api/platform-admin/jobs').expect(200);
+  await viewerAgent.get('/api/platform-admin/activity').expect(200);
+  await viewerAgent.post('/api/platform-admin/rbac/roles').send({ name: 'Forbidden', permissions: [] }).expect(403);
+
+  const operator = seedUser('control-admin@example.test', 'Control Admin');
+  const operatorAssignment = await rootAgent.post(`/api/platform-admin/users/${operator.id}/admin-roles`).send({
+    roleId: 'admin', reason: 'Grant full administrator access for self-lockout coverage.'
+  }).expect(201);
+  const operatorAgent = await loginAs(operator.email);
+  const adminRole = (await operatorAgent.get('/api/platform-admin/rbac/roles').expect(200)).body.roles
+    .find((role: any) => role.id === 'admin');
+  await operatorAgent.put('/api/platform-admin/rbac/roles/admin/permissions').send({
+    permissions: adminRole.permissions.filter((permission: string) => permission !== 'roles.manage'),
+    expectedVersion: adminRole.version
+  }).expect(409).expect(({ body }) => assert.equal(body.code, 'ADMIN_ROLE_SELF_LOCKOUT_BLOCKED'));
+  await operatorAgent.delete(`/api/platform-admin/users/${operator.id}/admin-roles/${operatorAssignment.body.assignment.id}`).send({
+    reason: 'Attempt to revoke the final role-management path must be blocked.'
+  }).expect(409).expect(({ body }) => assert.equal(body.code, 'ADMIN_ROLE_SELF_LOCKOUT_BLOCKED'));
+
+  const delegatedRole = await rootAgent.post('/api/platform-admin/rbac/roles').send({
+    name: 'Role delegator', description: 'Can administer roles only within its own permission ceiling.',
+    permissions: ['roles.read', 'roles.manage']
+  }).expect(201);
+  const delegator = seedUser('role-delegator@example.test', 'Role Delegator');
+  await rootAgent.post(`/api/platform-admin/users/${delegator.id}/admin-roles`).send({
+    roleId: delegatedRole.body.role.id, reason: 'Exercise non-root delegation limits.'
+  }).expect(201);
+  const delegatorAgent = await loginAs(delegator.email);
+  await delegatorAgent.post('/api/platform-admin/rbac/roles').send({
+    name: 'Escalated role', permissions: ['roles.read', 'users.manage']
+  }).expect(403).expect(({ body }) => assert.equal(body.code, 'ADMIN_PERMISSION_GRANT_EXCEEDS_ACTOR'));
+  await delegatorAgent.post(`/api/platform-admin/users/${viewer.id}/admin-roles`).send({
+    roleId: 'admin', reason: 'Attempt to assign permissions the delegator does not hold.'
+  }).expect(403).expect(({ body }) => assert.equal(body.code, 'ADMIN_PERMISSION_GRANT_EXCEEDS_ACTOR'));
+  await delegatorAgent.delete(`/api/platform-admin/users/${operator.id}/admin-roles/${operatorAssignment.body.assignment.id}`).send({
+    reason: 'Attempt to revoke permissions the delegator does not hold.'
+  }).expect(403).expect(({ body }) => assert.equal(body.code, 'ADMIN_PERMISSION_GRANT_EXCEEDS_ACTOR'));
+
+  const historyUser = seedUser('custom-role-history@example.test', 'Custom Role History');
+  const customAssignment = await rootAgent.post(`/api/platform-admin/users/${historyUser.id}/admin-roles`).send({
+    roleId: custom.body.role.id, reason: 'Create durable custom-role assignment history.'
+  }).expect(201);
+  await rootAgent.delete(`/api/platform-admin/users/${historyUser.id}/admin-roles/${customAssignment.body.assignment.id}`).send({
+    reason: 'Revoke the custom role while retaining its history.'
+  }).expect(204);
+  const history = (await rootAgent.get(`/api/platform-admin/users/${historyUser.id}/admin-roles`).expect(200)).body.assignments
+    .find((item: any) => item.id === customAssignment.body.assignment.id);
+  assert.equal(history.reason, 'Create durable custom-role assignment history.');
+  assert.equal(history.revocationReason, 'Revoke the custom role while retaining its history.');
+  await rootAgent.delete(`/api/platform-admin/rbac/roles/${custom.body.role.id}`).send({
+    reason: 'Deletion must not cascade durable assignment history.'
+  }).expect(409).expect(({ body }) => assert.equal(body.code, 'ADMIN_ROLE_HAS_HISTORY'));
+});
+
+test('AI defaults separate read and manage permissions and audit only successful mutations', async () => {
+  const rootAgent = await loginAs('platform-admin@seemplify.local');
+  const viewer = seedUser('ai-defaults-viewer@example.test', 'AI Defaults Viewer');
+  await rootAgent.post(`/api/platform-admin/users/${viewer.id}/admin-roles`).send({
+    roleId: 'viewer', reason: 'Read-only AI-default coverage.'
+  }).expect(201);
+  const viewerAgent = await loginAs(viewer.email);
+  const viewerDefaults = await viewerAgent.get('/api/platform-admin/ai-defaults').expect(200);
+  assert.ok(Array.isArray(viewerDefaults.body.codex.actions));
+  assert.equal((await viewerAgent.get('/api/platform-admin/me').expect(200)).body.capabilities.manageAiDefaults, false);
+  await viewerAgent.put('/api/platform-admin/ai-defaults').send({ codexModel: 'gpt-not-allowed' }).expect(403);
+  await viewerAgent.delete('/api/platform-admin/ai-defaults').expect(403);
+
+  const editor = seedUser('ai-defaults-editor@example.test', 'AI Defaults Editor');
+  await rootAgent.post(`/api/platform-admin/users/${editor.id}/admin-roles`).send({
+    roleId: 'editor', reason: 'AI-default management coverage.'
+  }).expect(201);
+  const editorAgent = await loginAs(editor.email);
+  const editorMe = await editorAgent.get('/api/platform-admin/me').expect(200);
+  assert.equal(editorMe.body.capabilities.readAiDefaults, true);
+  assert.equal(editorMe.body.capabilities.manageAiDefaults, true);
+  const auditBefore = Number((db.prepare(`SELECT COUNT(*) count FROM platform_audit_events
+    WHERE action='ai_defaults.updated'`).get() as any).count);
+  await editorAgent.put('/api/platform-admin/ai-defaults').send({ codexModel: 'gpt-disconnected-test' })
+    .expect(409).expect(({ body }) => assert.equal(body.code, 'CODEX_NOT_CONNECTED'));
+  const auditAfter = Number((db.prepare(`SELECT COUNT(*) count FROM platform_audit_events
+    WHERE action='ai_defaults.updated'`).get() as any).count);
+  assert.equal(auditAfter, auditBefore);
+  const reset = await editorAgent.delete('/api/platform-admin/ai-defaults').expect(200);
+  assert.equal(reset.body.defaults.codexModel, null);
+  assert.ok(db.prepare(`SELECT 1 FROM platform_audit_events WHERE action='ai_defaults.reset'
+    AND actor_user_id=?`).get(editor.id));
+});
+
+test('administrator provisioning uses password-claim invitations and records role assignment', async () => {
+  const rootAgent = await loginAs('platform-admin@seemplify.local');
+  const response = await rootAgent.post('/api/platform-admin/users').send({
+    name: 'Invited Administrator', email: 'invited-administrator@example.test',
+    spaceName: 'Invited administrator workspace', roleId: 'editor'
+  }).expect(201);
+  assert.equal(response.body.invitation.requiresPasswordSetup, true);
+  assert.ok(['sent', 'failed'].includes(response.body.invitation.delivery.state));
+  assert.equal(response.body.assignment.roleId, 'editor');
+  assert.equal(JSON.stringify(response.body).includes('token'), false);
+  assert.equal(JSON.stringify(response.body).includes('password'), false);
+  const stored = db.prepare(`SELECT email_verified_at,password_claim_required FROM users WHERE id=?`).get(response.body.user.id) as any;
+  assert.equal(stored.email_verified_at, null);
+  assert.equal(Number(stored.password_claim_required), 1);
+  assert.ok(db.prepare(`SELECT 1 FROM platform_rbac_user_roles WHERE user_id=? AND role_id='editor' AND revoked_at IS NULL`)
+    .get(response.body.user.id));
+  await rootAgent.post('/api/platform-admin/users').send({
+    name: 'Duplicate Administrator', email: 'invited-administrator@example.test'
+  }).expect(409).expect(({ body }) => assert.equal(body.code, 'USER_EMAIL_EXISTS'));
+  const audit = await rootAgent.get('/api/platform-admin/audit-events?search=user.provisioned').expect(200);
+  assert.ok(audit.body.events.some((event: any) => event.targetId === response.body.user.id));
+});
+
+test('global AI jobs and product activity expose only privacy-safe operational metadata', async () => {
+  const rootAgent = await loginAs('platform-admin@seemplify.local');
+  const account = seedUser('queue-requester@example.test', 'Queue Requester');
+  const job = createJob('analyst.chat', {
+    prompt: 'PRIVATE CUSTOMER PROMPT MUST NOT LEAK',
+    evidence: 'PRIVATE CUSTOMER EVIDENCE MUST NOT LEAK'
+  }, account.spaceId, null, null, account.id);
+  const persistedInput = JSON.parse((db.prepare('SELECT input_json FROM ai_jobs WHERE id=?').get(job.id) as any).input_json);
+  persistedInput._aiRuntime = {
+    provider: 'codex', codexModel: 'gpt-operational-test', codexReasoningEffort: 'max',
+    codexActionId: 'analyst.chat', codexDataSharingAcknowledgedAt: new Date().toISOString()
+  };
+  const providerResult = JSON.stringify({
+    activity: 'experience.analyst_chat', schemaName: 'experience_analyst_answer', output: {},
+    runtime: { provider: 'openai-codex', providerLabel: 'ChatGPT / Codex', model: 'gpt-operational-actual',
+      reasoningEffort: 'high', action: 'analyst.chat' }
+  });
+  db.prepare(`UPDATE ai_jobs SET input_json=?,provider_result_json=?,state='failed',stage='provider_error',progress=100,attempt=2,
+    error=?,updated_at=? WHERE id=?`).run(JSON.stringify(persistedInput), providerResult,
+      'provider token=secret-value failed safely', new Date().toISOString(), job.id);
+
+  const list = await rootAgent.get('/api/platform-admin/jobs').query({ state: 'failed', provider: 'codex',
+    search: 'Queue Requester', limit: 10 }).expect(200);
+  const row = list.body.jobs.find((item: any) => item.id === job.id);
+  assert.ok(row);
+  assert.deepEqual(row.runtime, {
+    source: 'provider_result', status: 'actual', provider: 'codex', providerLabel: 'ChatGPT / Codex',
+    model: 'gpt-operational-actual', reasoningEffort: 'high', actionId: 'analyst.chat'
+  });
+  assert.equal(row.requester.email, account.email);
+  assert.equal(row.space.id, account.spaceId);
+  assert.deepEqual(row.error, {
+    code: 'AI_JOB_FAILED', message: 'The AI job failed. Use the job ID to inspect protected service logs.'
+  });
+  assert.equal(JSON.stringify(row.error).includes('secret-value'), false);
+  assert.equal(JSON.stringify(list.body).includes('PRIVATE CUSTOMER'), false);
+  assert.ok(list.body.summary.failed >= 1);
+  const detail = await rootAgent.get(`/api/platform-admin/jobs/${job.id}`).expect(200);
+  assert.equal(detail.body.job.id, job.id);
+  assert.equal('input' in detail.body.job, false);
+  assert.equal('result' in detail.body.job, false);
+
+  const activity = await rootAgent.get('/api/platform-admin/activity').query({ type: 'ai_job', search: 'failed' }).expect(200);
+  const event = activity.body.activity.find((item: any) => item.entityId === job.id);
+  assert.ok(event);
+  assert.equal(event.kind, 'analyst.chat');
+  assert.equal(event.status, 'failed');
+  assert.equal(event.actor.id, account.id);
+  assert.equal(event.space.id, account.spaceId);
+  assert.equal(JSON.stringify(activity.body).includes('PRIVATE CUSTOMER'), false);
+
+  const privacyRole = await rootAgent.post('/api/platform-admin/rbac/roles').send({
+    name: 'Queue metadata only', description: 'Operational access without user identity access.',
+    permissions: ['jobs.read', 'activity.read']
+  }).expect(201);
+  const monitor = seedUser('queue-monitor@example.test', 'Queue Monitor');
+  await rootAgent.post(`/api/platform-admin/users/${monitor.id}/admin-roles`).send({
+    roleId: privacyRole.body.role.id, reason: 'Verify identity redaction boundaries.'
+  }).expect(201);
+  const monitorAgent = await loginAs(monitor.email);
+  await monitorAgent.get('/api/platform-admin/overview').expect(403);
+  const restrictedJobs = await monitorAgent.get('/api/platform-admin/jobs').query({ search: job.id }).expect(200);
+  const restrictedJob = restrictedJobs.body.jobs.find((item: any) => item.id === job.id);
+  assert.equal(restrictedJob.requester, null);
+  assert.equal(restrictedJob.requesterRestricted, true);
+  assert.equal((await monitorAgent.get('/api/platform-admin/jobs')
+    .query({ search: account.email }).expect(200)).body.total, 0);
+  const restrictedActivity = await monitorAgent.get('/api/platform-admin/activity')
+    .query({ search: job.id }).expect(200);
+  const restrictedEvent = restrictedActivity.body.activity.find((item: any) => item.entityId === job.id);
+  assert.equal(restrictedEvent.actor, null);
+  assert.equal(restrictedEvent.actorRestricted, true);
+  assert.equal((await monitorAgent.get('/api/platform-admin/activity')
+    .query({ search: account.email }).expect(200)).body.total, 0);
+
+  const malformed = createJob('analyst.chat', { safe: true }, account.spaceId, null, null, account.id);
+  db.prepare(`UPDATE ai_jobs SET input_json='{' WHERE id=?`).run(malformed.id);
+  const legacyJobs = await rootAgent.get('/api/platform-admin/jobs').query({ provider: 'terra', search: malformed.id }).expect(200);
+  assert.ok(legacyJobs.body.jobs.some((item: any) => item.id === malformed.id));
 });
 
 test('subscription requests are durable, versioned, approved explicitly, and audited', async () => {

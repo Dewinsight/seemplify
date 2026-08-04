@@ -30,3 +30,15 @@ test('AI queue retry exposes pending, ineligible, failure, and audit states', ()
   assert.match(page, /Recorded failure/);
   assert.match(page, /This activity cannot be retried safely from the queue\./);
 });
+
+test('AI queue shows the durable model used and distinguishes planned execution', () => {
+  const page = read('pages', 'AiQueuePage.tsx');
+  const types = read('types.ts');
+
+  assert.match(types, /interface AiJobRuntime/);
+  assert.match(page, /<th>Model<\/th>/);
+  assert.match(page, /runtime\?\.status === 'actual' \? 'Used'/);
+  assert.match(page, /runtime\?\.model/);
+  assert.match(page, /Model used/);
+  assert.match(page, /colSpan=\{11\}/);
+});

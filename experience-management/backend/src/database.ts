@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { aiProviderSnapshot } from './aiProvider.js';
+import { aiJobRuntime } from './aiJobRuntime.js';
 import { config } from './config.js';
 import { createDatabase } from './databaseAdapter.js';
 import type { AiJob, Collector, Journey, JourneyProvenance, JourneyVersion, JourneyVersionSummary, Question, ResponseRecord, SocialMention, Survey } from './types.js';
@@ -1565,10 +1566,14 @@ export const applySurveyTranslation = db.transaction((input: {
 });
 
 export function rowJob(row: any): AiJob {
+  const input = parseJson<Record<string, unknown>>(row.input_json, {});
+  const result = parseJson(row.result_json, null);
   return {
     id: row.id, spaceId: row.space_id, kind: row.kind, surveyId: row.survey_id, responseId: row.response_id, requestedBy: row.requested_by, state: row.state,
-    stage: row.stage, progress: row.progress, attempt: row.attempt, input: parseJson(row.input_json, {}),
-    result: parseJson(row.result_json, null), error: row.error, retryAt: row.retry_at,
+    stage: row.stage, progress: row.progress, attempt: row.attempt, input,
+    result, runtime: aiJobRuntime({ jobInput: input, jobResult: result,
+      providerResult: row.provider_result_json, actionId: String(row.kind) }),
+    error: row.error, retryAt: row.retry_at,
     createdAt: row.created_at, startedAt: row.started_at, completedAt: row.completed_at, updatedAt: row.updated_at
   };
 }
@@ -1621,7 +1626,7 @@ export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, s
   }
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  const queuedInput = { ...input, _aiRuntime: aiProviderSnapshot(requestedBy, spaceId) };
+  const queuedInput = { ...input, _aiRuntime: aiProviderSnapshot(requestedBy, spaceId, kind) };
   db.prepare(`INSERT INTO ai_jobs (id,space_id,kind,survey_id,response_id,requested_by,state,stage,progress,attempt,input_json,created_at,updated_at)
     VALUES (?,?,?,?,?,?,'queued','queued',0,0,?,?,?)`).run(id, spaceId, kind, surveyId || null, responseId || null, requestedBy || null, JSON.stringify(queuedInput), now, now);
   return getJob(id)!;
