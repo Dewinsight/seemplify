@@ -4,7 +4,7 @@ import {
   db, getJobForSpace, getJobProviderResult, listSocialMentionsByIdsForSpace
 } from './database.js';
 import { publishEvent } from './events.js';
-import { validateSocialListeningEvidence } from './intelligence.js';
+import { intelligenceExecutionInput, validateSocialListeningEvidence } from './intelligence.js';
 import { pinnedKnowledgeRefs } from './knowledgeContext.js';
 import { getKnowledgeContext, resolveKnowledgeBaseRefs } from './knowledgeRepository.js';
 import type { AiJob } from './types.js';
@@ -43,7 +43,7 @@ function explicitMentionIds(job: AiJob) {
 function unsupportedReason(job: AiJob) {
   if (job.kind === 'social.report') return 'Retry this report from its Social listening report card.';
   if (job.kind.startsWith('assistant.')) return 'Private assistant runs do not yet support retry from the shared AI queue.';
-  if (['social.reply_draft', 'intelligence.synthesize'].includes(job.kind)) {
+  if (job.kind === 'social.reply_draft') {
     return 'This activity requires a paired artifact retry and cannot be retried from the AI queue.';
   }
   return 'This activity does not have a retry-safe immutable source snapshot. Start a new request instead.';
@@ -53,8 +53,10 @@ export function aiJobRetryStatus(job: AiJob, viewerUserId: string) {
   if (job.kind.startsWith('assistant.') && job.requestedBy !== viewerUserId) {
     return { eligible: false, reason: 'This private assistant job is not available to this user.' };
   }
-  if (job.kind !== 'social.analyze') return { eligible: false, reason: unsupportedReason(job) };
-  if (!explicitMentionIds(job).length) {
+  if (!['social.analyze', 'intelligence.synthesize'].includes(job.kind)) {
+    return { eligible: false, reason: unsupportedReason(job) };
+  }
+  if (job.kind === 'social.analyze' && !explicitMentionIds(job).length) {
     return { eligible: false, reason: 'This legacy analysis has no explicit durable source IDs. Start a new analysis instead.' };
   }
   if (job.state === 'completed') return { eligible: false, reason: 'Completed jobs cannot be retried.' };
@@ -65,7 +67,8 @@ export function aiJobRetryStatus(job: AiJob, viewerUserId: string) {
     return { eligible: false, reason: 'This job has reached its limit of three manual retries.' };
   }
   try {
-    preflight(job, viewerUserId);
+    if (job.kind === 'intelligence.synthesize') intelligencePreflight(job, viewerUserId);
+    else preflight(job, viewerUserId);
   } catch (error) {
     return {
       eligible: false,
@@ -122,6 +125,30 @@ function preflight(job: AiJob, viewerUserId: string) {
   return mentions;
 }
 
+function intelligencePreflight(job: AiJob, viewerUserId: string) {
+  const reportId = String(job.input.reportId || '');
+  const row = db.prepare(`SELECT id,state,ai_job_id FROM intelligence_reports
+    WHERE id=? AND space_id=?`).get(reportId, job.spaceId) as { id: string; state: string; ai_job_id: string | null } | undefined;
+  if (!row || row.ai_job_id !== job.id) {
+    throw new AiJobRetryError('The immutable intelligence artifact for this job is unavailable.', 409,
+      'AI_JOB_SOURCE_SNAPSHOT_UNAVAILABLE');
+  }
+  if (row.state !== 'failed') {
+    throw new AiJobRetryError('Only a failed intelligence analysis can be retried.', 409, 'AI_JOB_NOT_FAILED');
+  }
+  const execution = intelligenceExecutionInput(reportId, job.spaceId);
+  const knowledgeRefs = pinnedKnowledgeRefs(job.input);
+  if (execution.sources.length + knowledgeRefs.length < 2) {
+    throw new AiJobRetryError('This analysis no longer has at least two immutable evidence sources.', 409,
+      'AI_JOB_SOURCE_SNAPSHOT_UNAVAILABLE');
+  }
+  knowledgePreflight(job, viewerUserId);
+  return [
+    ...execution.sources.map((source) => source.ref),
+    ...knowledgeRefs.map((ref) => `knowledge-base:${ref.id}`)
+  ];
+}
+
 function validProviderJournal(job: AiJob, mentions: ReturnType<typeof sourcePreflight>) {
   const journal = getJobProviderResult(job.id);
   if (journal?.activity !== 'experience.social_listening' || journal.schemaName !== 'experience_social_listening') return null;
@@ -153,7 +180,7 @@ export function retryFailedAiJob(jobId: string, spaceId: string, viewerUserId: s
       AND (kind NOT LIKE 'assistant.%' OR requested_by=?)${lock}`).get(jobId, spaceId, viewerUserId);
     if (!locked) throw new AiJobRetryError('AI job not found.', 404, 'AI_JOB_NOT_FOUND');
     const job = getJobForSpace(jobId, spaceId, viewerUserId)!;
-    if (job.kind !== 'social.analyze') {
+    if (!['social.analyze', 'intelligence.synthesize'].includes(job.kind)) {
       throw new AiJobRetryError(unsupportedReason(job), 409, 'AI_JOB_RETRY_UNSUPPORTED');
     }
     if (job.state === 'completed') {
@@ -172,6 +199,49 @@ export function retryFailedAiJob(jobId: string, spaceId: string, viewerUserId: s
         409,
         'AI_JOB_RETRY_EXHAUSTED'
       );
+    }
+
+    if (job.kind === 'intelligence.synthesize') {
+      const sourceRefs = intelligencePreflight(job, viewerUserId);
+      const currentGeneration = generation(job);
+      if (currentGeneration >= Number.MAX_SAFE_INTEGER) {
+        throw new AiJobRetryError('This analysis has exhausted its safe retry identities.', 409, 'AI_JOB_RETRY_EXHAUSTED');
+      }
+      const timestamp = new Date().toISOString();
+      const historyEntry: RetryHistoryEntry = {
+        generation: currentGeneration,
+        attempt: job.attempt,
+        failedAt: job.completedAt || job.updatedAt,
+        retriedAt: timestamp,
+        retriedBy: viewerUserId,
+        error: job.error ? job.error.slice(0, 1_000) : null,
+        providerJournalRetained: false,
+        sourceIdsSha256: crypto.createHash('sha256').update(JSON.stringify(sourceRefs)).digest('hex')
+      };
+      const nextInput = {
+        ...job.input,
+        terraExecutionGeneration: currentGeneration + 1,
+        terraExecutionReason: 'manual_retry',
+        terraCorrectionRequired: false,
+        terraSemanticCorrectionCount: 0,
+        terraManualRetryCount: priorManualRetries + 1,
+        terraManualRetryHistory: retryHistory(job, historyEntry)
+      };
+      const jobChanged = db.prepare(`UPDATE ai_jobs SET state='queued',stage='queued',progress=0,attempt=0,result_json=NULL,error=NULL,
+        retry_at=NULL,started_at=NULL,completed_at=NULL,provider_result_json=NULL,input_json=?,updated_at=?
+        WHERE id=? AND space_id=? AND kind='intelligence.synthesize' AND state='failed'`)
+        .run(JSON.stringify(nextInput), timestamp, job.id, job.spaceId).changes;
+      const reportChanged = db.prepare(`UPDATE intelligence_reports SET state='queued',result_json=NULL,runtime_json=NULL,error=NULL,
+        completed_at=NULL,updated_at=? WHERE id=? AND space_id=? AND ai_job_id=? AND state='failed'`)
+        .run(timestamp, String(job.input.reportId || ''), job.spaceId, job.id).changes;
+      if (jobChanged !== 1 || reportChanged !== 1) {
+        throw new AiJobRetryError('The analysis changed while it was being retried.', 409, 'AI_JOB_RETRY_CONFLICT');
+      }
+      return {
+        job: getJobForSpace(job.id, job.spaceId, viewerUserId)!,
+        restarted: true,
+        journalReused: false
+      };
     }
 
     // This is intentionally a full preflight, not only a count check: the

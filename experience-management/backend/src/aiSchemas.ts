@@ -135,7 +135,7 @@ export const socialReplyDraftResult = z.object({
 });
 
 const intelligenceEvidence = z.object({
-  sourceRef: z.string().trim().min(1).max(200), excerpt: z.string().trim().min(12).max(1000), relevance: z.string().trim().min(3).max(1000)
+  sourceRef: z.string().trim().min(1).max(300), excerpt: z.string().trim().min(12).max(1000), relevance: z.string().trim().min(3).max(1000)
 });
 const intelligenceFinding = z.object({
   title: z.string().trim().min(1).max(300), detail: z.string().trim().min(1).max(4000),
@@ -179,7 +179,7 @@ const finiteObject = (properties: Record<string, unknown>, required = Object.key
 });
 const arrayOf = (items: unknown) => ({ type: 'array', items });
 const intelligenceEvidenceJson = finiteObject({
-  sourceRef: { type: 'string', minLength: 1, maxLength: 200 },
+  sourceRef: { type: 'string', minLength: 1, maxLength: 300 },
   excerpt: { type: 'string', minLength: 12, maxLength: 1000 },
   relevance: { type: 'string', minLength: 3, maxLength: 1000 }
 });
@@ -296,5 +296,20 @@ export function socialListeningJsonSchemaFor(sourceRefs: string[]): Record<strin
   schema.properties.mentions.maxItems = references.length;
   schema.properties.mentions.items.properties.mentionId = referenceSchema();
   schema.properties.mentions.items.properties.evidence = referenceSchema();
+  return schema;
+}
+
+export function crossSourceIntelligenceJsonSchemaFor(sourceRefs: string[]): Record<string, unknown> {
+  const references = [...new Set(sourceRefs.map((value) => String(value).trim()).filter(Boolean))];
+  if (!references.length) throw new Error('At least one intelligence source reference is required.');
+  const schema = structuredClone(aiJsonSchemas.crossSourceIntelligence) as any;
+  const sections = ['themes', 'convergence', 'divergence', 'risks', 'opportunities', 'recommendations'];
+  for (const section of sections) {
+    schema.properties[section].items.properties.evidence.items.properties.sourceRef = {
+      type: 'string',
+      enum: references,
+      description: 'Copy one exact bare sourceRef from the supplied evidence catalog. Do not add brackets, quotes, or labels.'
+    };
+  }
   return schema;
 }

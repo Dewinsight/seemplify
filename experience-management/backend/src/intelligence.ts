@@ -30,6 +30,20 @@ function parseJson<T>(value: unknown, fallback: T): T { try { return value ? JSO
 function cleanText(value: unknown, maximum: number) { return String(value || '').trim().replace(/\s+/gu, ' ').slice(0, maximum); }
 function sha256(value: string) { return crypto.createHash('sha256').update(value, 'utf8').digest('hex'); }
 
+function canonicalEvidenceSourceRef(value: unknown, sources: Map<string, unknown>) {
+  const original = String(value || '').trim();
+  if (sources.has(original)) return original;
+  let candidate = original;
+  const wrappers: Array<[string, string]> = [['[', ']'], ['`', '`'], ['"', '"'], ["'", "'"]];
+  for (let depth = 0; depth < 3; depth += 1) {
+    const wrapper = wrappers.find(([start, end]) => candidate.startsWith(start) && candidate.endsWith(end));
+    if (!wrapper || candidate.length <= wrapper[0].length + wrapper[1].length) break;
+    candidate = candidate.slice(wrapper[0].length, -wrapper[1].length).trim();
+    if (sources.has(candidate)) return candidate;
+  }
+  return original;
+}
+
 export type SocialObservationWindow = {
   periodStart: string | null;
   periodEnd: string | null;
@@ -840,17 +854,16 @@ export function completeIntelligenceReport(id: string, output: any, runtime: unk
   const findings = [...(output.themes || []), ...(output.convergence || []), ...(output.divergence || []), ...(output.risks || []),
     ...(output.opportunities || []), ...(output.recommendations || [])];
   for (const finding of findings) for (const evidence of finding.evidence || []) {
-    const source = sources.get(String(evidence.sourceRef));
+    const sourceRef = canonicalEvidenceSourceRef(evidence.sourceRef, sources);
+    evidence.sourceRef = sourceRef;
+    const source = sources.get(sourceRef);
     if (!source) throw new IntelligenceError(`Terra cited an unknown report: ${String(evidence.sourceRef)}`);
     const excerpt = cleanText(evidence.excerpt, 1000).toLocaleLowerCase('en-US');
     if (excerpt.length < 12 || !source.body.includes(excerpt)) {
-      throw new IntelligenceError(`Terra returned evidence that was not present in ${String(evidence.sourceRef)}.`);
+      throw new IntelligenceError(`Terra returned evidence that was not present in ${sourceRef}.`);
     }
   }
-  const selectedTypes = new Set([
-    ...input.sources.map((source) => source.type),
-    ...(input.knowledgeBaseIds.length ? ['knowledge'] : [])
-  ]);
+  const selectedTypes = new Set([...sources.values()].map((source) => source.type));
   for (const finding of [...(output.convergence || []), ...(output.divergence || [])]) {
     const references = new Set<string>((finding.evidence || []).map((evidence: any) => String(evidence.sourceRef)));
     const sourceGroups = new Set([...references].map((reference) => sources.get(reference)?.groupRef).filter(Boolean));

@@ -35,7 +35,9 @@ Object.assign(process.env, {
 const { app } = await import('../src/app.js');
 const { createJob, db, getJob, insertInsight, updateJob } = await import('../src/database.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
-const { socialListeningJsonSchemaFor, socialListeningResult, socialListeningResultFor } = await import('../src/aiSchemas.js');
+const {
+  crossSourceIntelligenceJsonSchemaFor, socialListeningJsonSchemaFor, socialListeningResult, socialListeningResultFor
+} = await import('../src/aiSchemas.js');
 const { createSocialReplyDraft, IntelligenceError, validateSocialListeningEvidence } = await import('../src/intelligence.js');
 const originalFetch = globalThis.fetch;
 
@@ -398,6 +400,8 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
     assert.deepEqual(metrics.embeddingProfile, gteProfile);
     assert.deepEqual(metrics.reranker, bgeReranker);
     assert.match(context.context_text, /Approved support guidance/u);
+    assert.match(context.context_text, /"sourceRef":"[^"]+:support"/u);
+    assert.doesNotMatch(context.context_text, /\[[^\]]+:support\]/u);
     const sourceRef = activeGroundedJob!.kind === 'social.report' ? `x-post:${mentionId}` : mentionId;
     return terraResponse({
       executiveSummary: 'One saved X post reports onboarding friction.',
@@ -494,6 +498,55 @@ test('combines selected historical survey and social reports with immutable evid
   assert.deepEqual(reportAndKnowledge.body.report.knowledgeBaseIds, [knowledgeBase.id]);
   assert.deepEqual((getJob(reportAndKnowledge.body.jobId)?.input.knowledgeBaseRefs as any[]).map((ref) => ref.id), [knowledgeBase.id]);
 
+  const knowledgeDocument = db.prepare(`SELECT id FROM knowledge_documents
+    WHERE knowledge_base_id=? AND state='ready' ORDER BY created_at LIMIT 1`).get(knowledgeBase.id) as { id: string };
+  assert.ok(knowledgeDocument);
+  const knowledgeSourceRef = `${knowledgeBase.id}:${knowledgeDocument.id}:support-synthesis`;
+  const knowledgeEvidence = 'Approved support guidance requires acknowledging onboarding friction.';
+  let synthesisRequest: any = null;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'knowledge.test') {
+      return new Response(JSON.stringify({
+        citations: [{ sourceRef: knowledgeSourceRef, knowledgeBaseId: knowledgeBase.id,
+          documentId: knowledgeDocument.id, documentName: 'support-policy.md', page: 1,
+          excerpt: knowledgeEvidence, score: 0.97 }],
+        metrics: { fusion: 'weighted-rrf+local-reranker', rerankedCount: 1,
+          timings: { vectorMs: 2, bm25Ms: 1, rrfMs: 1, rerankerMs: 3 }, reranker: bgeReranker,
+          embeddingProfile: gteProfile, providerFallback: null, providerRouting: null }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    synthesisRequest = JSON.parse(String(init?.body || '{}'));
+    return terraResponse({
+      title: 'Survey plus policy synthesis', executiveSummary: 'Observed friction conflicts with the desired support experience.', confidence: 0.81,
+      themes: [{ title: 'Onboarding support', detail: 'Users report unclear guidance while policy requires acknowledgement.', confidence: 0.81,
+        evidence: [{ sourceRef: surveyRef, excerpt: surveySummary, relevance: 'Observed survey signal.' },
+          { sourceRef: knowledgeSourceRef, excerpt: knowledgeEvidence, relevance: 'Approved policy context.' }] }],
+      convergence: [{ title: 'Need for clearer support', detail: 'Research and policy both support an onboarding intervention.', confidence: 0.79,
+        evidence: [{ sourceRef: surveyRef, excerpt: surveySummary, relevance: 'Observed research.' },
+          { sourceRef: knowledgeSourceRef, excerpt: knowledgeEvidence, relevance: 'Required response.' }] }],
+      divergence: [], risks: [], opportunities: [],
+      recommendations: [{ action: 'Test clearer onboarding guidance.', priority: 'now', rationale: 'It addresses observed friction and policy expectations.',
+        evidence: [{ sourceRef: surveyRef, excerpt: surveySummary, relevance: 'Observed research.' },
+          { sourceRef: knowledgeSourceRef, excerpt: knowledgeEvidence, relevance: 'Required response.' }] }],
+      limitations: ['One survey summary and one retrieved policy excerpt were supplied.']
+    });
+  };
+  const synthesisJob = getJob(reportAndKnowledge.body.jobId); assert.ok(synthesisJob);
+  const synthesis = await executeAiJob(synthesisJob);
+  assert.ok(synthesisRequest);
+  const sourceRefSchema = synthesisRequest.jsonSchema.properties.themes.items.properties.evidence.items.properties.sourceRef;
+  assert.deepEqual(new Set(sourceRefSchema.enum), new Set([surveyRef, knowledgeSourceRef]));
+  const synthesisPrompt = synthesisRequest.messages.find((message: any) => message.role === 'user')?.content || '';
+  assert.match(synthesisPrompt, /<saved_research_evidence_records>/u);
+  assert.match(synthesisPrompt, new RegExp(`"sourceRef":"${knowledgeSourceRef}"`, 'u'));
+  assert.doesNotMatch(synthesisPrompt, new RegExp(`\\[${knowledgeSourceRef.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}\\]`, 'u'));
+  updateJob(synthesisJob.id, { state: 'completed', stage: 'completed', progress: 100, result: synthesis,
+    completedAt: new Date().toISOString() });
+  const groundedSynthesis = await owner.get(`/api/intelligence/reports/${reportAndKnowledge.body.report.id}`).expect(200);
+  assert.equal(groundedSynthesis.body.state, 'completed');
+  assert.equal(groundedSynthesis.body.result.convergence[0].evidence[1].sourceRef, knowledgeSourceRef);
+
   const secondBase = await owner.post('/api/knowledge-bases').send({
     name: 'Product handbook', description: 'Approved product guidance', privacy: 'space', terraContextEnabled: true
   }).expect(201);
@@ -540,7 +593,7 @@ test('combines selected historical survey and social reports with immutable evid
   await completeQueuedJob(queued.body.jobId, {
     title: 'Onboarding evidence synthesis', executiveSummary: 'Survey and social evidence both identify onboarding friction.', confidence: 0.84,
     themes: [{ title: 'Onboarding clarity', detail: 'Both sources identify setup difficulty.', confidence: 0.84,
-      evidence: [{ sourceRef: surveyRef, excerpt: surveyEvidence, relevance: 'Direct survey finding.' }, { sourceRef: socialRef, excerpt: socialEvidence, relevance: 'Direct social report summary.' }] }],
+      evidence: [{ sourceRef: `[[${surveyRef}]]`, excerpt: surveyEvidence, relevance: 'Direct survey finding.' }, { sourceRef: socialRef, excerpt: socialEvidence, relevance: 'Direct social report summary.' }] }],
     convergence: [{ title: 'Shared friction', detail: 'The sources converge on onboarding.', confidence: 0.8,
       evidence: [{ sourceRef: surveyRef, excerpt: surveyEvidence, relevance: 'Survey signal.' }, { sourceRef: socialRef, excerpt: socialEvidence, relevance: 'Social signal.' }] }],
     divergence: [], risks: [], opportunities: [],
@@ -552,6 +605,7 @@ test('combines selected historical survey and social reports with immutable evid
   assert.equal(history.body[0].state, 'completed');
   assert.equal(history.body[0].runtime.usage.total_tokens, 200);
   assert.deepEqual(history.body[0].sourceRefs, { survey: [surveyRef], social: [socialRef] });
+  assert.equal(history.body[0].result.themes[0].evidence[0].sourceRef, surveyRef);
   const completedReplay = await owner.post('/api/intelligence/reports').set('Idempotency-Key', combinedKey).send({
     title: 'Onboarding evidence synthesis', objective: 'Find shared onboarding risks.', sourceRefs: [surveyRef, socialRef]
   }).expect(202);
@@ -566,6 +620,23 @@ test('combines selected historical survey and social reports with immutable evid
     convergence: [], divergence: [], risks: [], opportunities: [], recommendations: [], limitations: []
   });
   await assert.rejects(executeAiJob(invalidJob), (error: unknown) => error instanceof IntelligenceError && error.status === 400);
+  const invalidJournal = db.prepare('SELECT provider_result_json FROM ai_jobs WHERE id=?').get(invalidJob.id) as any;
+  assert.ok(invalidJournal.provider_result_json,
+    'the invalid provider result is journaled before artifact grounding rejects it');
+  const failedAt = new Date().toISOString();
+  updateJob(invalidJob.id, { state: 'failed', stage: 'failed', error: 'Terra returned invalid evidence.', completedAt: failedAt });
+  db.prepare(`UPDATE intelligence_reports SET state='failed',error=?,updated_at=? WHERE id=?`)
+    .run('Terra returned invalid evidence.', failedAt, invalid.body.report.id);
+  const failedJobDetail = await owner.get(`/api/ai/jobs/${invalidJob.id}`).expect(200);
+  assert.equal(failedJobDetail.body.retry.eligible, true);
+  const retried = await owner.post(`/api/ai/jobs/${invalidJob.id}/retry`).send({}).expect(202);
+  assert.equal(retried.body.restarted, true);
+  assert.equal(retried.body.journalReused, false);
+  assert.equal(retried.body.job.input.terraManualRetryCount, 1);
+  const clearedJournal = db.prepare('SELECT provider_result_json FROM ai_jobs WHERE id=?').get(invalidJob.id) as any;
+  assert.equal(clearedJournal.provider_result_json, null);
+  const retriedReport = db.prepare('SELECT state,error FROM intelligence_reports WHERE id=?').get(invalid.body.report.id) as any;
+  assert.deepEqual(retriedReport, { state: 'queued', error: null });
 });
 
 test('pins the social-listening JSON schema to the exact saved source set', () => {
@@ -580,6 +651,19 @@ test('pins the social-listening JSON schema to the exact saved source set', () =
   assert.deepEqual(schema.properties.mentions.items.properties.mentionId.enum, expected);
   assert.deepEqual(schema.properties.mentions.items.properties.evidence.enum, expected);
   assert.throws(() => socialListeningJsonSchemaFor([]), /At least one social source reference/u);
+});
+
+test('pins every cross-source intelligence citation to the exact evidence catalog', () => {
+  const schema = crossSourceIntelligenceJsonSchemaFor([
+    'survey-insight:survey-1', ' knowledge-base:document-1:chunk-1 ', 'survey-insight:survey-1'
+  ]) as any;
+  const expected = ['survey-insight:survey-1', 'knowledge-base:document-1:chunk-1'];
+  for (const section of ['themes', 'convergence', 'divergence', 'risks', 'opportunities', 'recommendations']) {
+    const sourceRef = schema.properties[section].items.properties.evidence.items.properties.sourceRef;
+    assert.deepEqual(sourceRef.enum, expected);
+    assert.match(sourceRef.description, /exact bare sourceRef/u);
+  }
+  assert.throws(() => crossSourceIntelligenceJsonSchemaFor([]), /At least one intelligence source reference/u);
 });
 
 test('canonicalizes oversized grounded social evidence without weakening source validation', () => {
