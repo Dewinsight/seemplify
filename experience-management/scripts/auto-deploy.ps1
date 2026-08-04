@@ -32,7 +32,7 @@ function Invoke-IsolatedTests {
   # A watcher can be started by a shell that previously managed the live
   # service. Never let those inherited credentials, database selectors, or
   # integration settings leak into the deployment's isolated unit tests.
-  $serviceEnvironmentPattern = '^(DATABASE_PROVIDER|DATABASE_PATH|POSTGRES_.+|SUBSCRIPTION_.+|ADMIN_.+|SESSION_.+|PUBLIC_URL|UPLOAD_DIR|EMAIL_MODE|AI_WORKER_.+|X_.+|NYLAS_.+|TERRA_.+|KNOWLEDGE_.+|ESIGN_.+|BREVO_.+|EXPERIENCE_.+)$'
+  $serviceEnvironmentPattern = '^(DATABASE_PROVIDER|DATABASE_PATH|POSTGRES_.+|SUBSCRIPTION_.+|ADMIN_.+|SESSION_.+|PUBLIC_URL|UPLOAD_DIR|EMAIL_MODE|AI_WORKER_.+|CODEX_.+|X_.+|NYLAS_.+|TERRA_.+|KNOWLEDGE_.+|ESIGN_.+|BREVO_.+|EXPERIENCE_.+)$'
   $inherited = @{}
   foreach ($variable in @(Get-ChildItem Env:)) {
     if ($variable.Name -notmatch $serviceEnvironmentPattern) { continue }
