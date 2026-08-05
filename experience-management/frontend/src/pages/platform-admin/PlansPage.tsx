@@ -17,13 +17,56 @@ const featureOptions: Array<{ key: keyof PlatformManagedPlan['features']; label:
   { key: 'serviceRecovery', label: 'Service recovery', description: 'Open and manage recovery cases.' },
   { key: 'socialListening', label: 'Social Listening', description: 'Connect X accounts and run social workflows.' },
   { key: 'knowledgeBases', label: 'Knowledge Bases', description: 'Store, index, and retrieve workspace knowledge.' },
-  { key: 'terra', label: 'AI runtime', description: 'Use local or connected ChatGPT intelligence actions.' }
+  { key: 'terra', label: 'AI runtime', description: 'Use local or connected ChatGPT intelligence actions.' },
+  { key: 'journeyDesign', label: 'Journey design', description: 'Build and own journey maps by hand, with or without AI.' },
+  { key: 'journeyAi', label: 'Journey AI', description: 'Generate reviewed journey and persona suggestions using the selected AI runtime.' },
+  { key: 'journeyPersonas', label: 'Journey personas', description: 'Maintain a reusable, evidence-backed persona library.' },
+  { key: 'journeyEvidence', label: 'Journey evidence', description: 'Link authorised research to journey claims and cards.' },
+  { key: 'journeyTemplates', label: 'Journey templates', description: 'Use governed system and organisation journey templates.' },
+  { key: 'journeyExports', label: 'Journey exports', description: 'Generate governed journey data, image, document, and presentation exports.' },
+  { key: 'journeyMetrics', label: 'Journey metrics', description: 'Bind governed metrics and observations to journey stages.' },
+  { key: 'journeyRichCards', label: 'Rich journey cards', description: 'Use reusable channels and touchpoints, emotional curves, and governed card media.' },
+  { key: 'journeySavedViews', label: 'Journey saved views', description: 'Persist governed map filters, comparisons, and presentation settings.' },
+  { key: 'journeyPortfolio', label: 'Journey portfolio', description: 'Manage reusable pain points, opportunities, solutions, and initiatives.' },
+  { key: 'journeyCollaboration', label: 'Journey collaboration', description: 'Use comments, mentions, watchers, and approval workflows.' },
+  { key: 'journeyHierarchy', label: 'Journey hierarchy', description: 'Link macro journeys, subjourneys, variants, and handoffs.' },
+  { key: 'journeyBlueprints', label: 'Service blueprints', description: 'Connect customer experience to frontstage and backstage operations.' },
+  { key: 'journeyConnected', label: 'Connected journeys', description: 'Collect governed events and map observed journey instances.' },
+  { key: 'journeyProfiles', label: 'Customer profiles', description: 'Use permissioned profiles, accounts, consent, and Customer 360.' },
+  { key: 'journeyActualPaths', label: 'Actual path analytics', description: 'Analyse cohorts, actual paths, anomalies, and designed-versus-observed differences.' },
+  { key: 'journeyOrchestration', label: 'Journey orchestration', description: 'Author and run consent-aware, governed closed-loop workflows.' },
+  { key: 'mobileSdks', label: 'Mobile SDKs', description: 'Use supported React Native, Swift, and Kotlin event SDKs.' },
+  { key: 'journeyConnectors', label: 'Journey connectors', description: 'Connect approved external event and action systems.' }
 ];
 
 const limitOptions: Array<{ key: Exclude<keyof PlatformManagedPlan['limits'], 'knowledgeStorageBytes'>; label: string }> = [
   { key: 'seats', label: 'Seats' },
   { key: 'activeSurveys', label: 'Active surveys' },
-  { key: 'monthlyAiActions', label: 'AI actions per month' }
+  { key: 'monthlyAiActions', label: 'AI actions per month' },
+  { key: 'journeyMaps', label: 'Journey maps' },
+  { key: 'journeyPersonas', label: 'Personas' },
+  { key: 'journeyTemplates', label: 'Published journey templates' },
+  { key: 'journeyShares', label: 'Active journey shares' },
+  { key: 'eventSources', label: 'Event sources' },
+  { key: 'monthlyTrackedEvents', label: 'Accepted events per month' },
+  { key: 'retainedProfiles', label: 'Retained profiles' },
+  { key: 'eventRetentionDays', label: 'Event retention days' },
+  { key: 'activeJourneyRuleSets', label: 'Active mapping rule sets' },
+  { key: 'activeJourneyOrchestrations', label: 'Active journey workflows' },
+  { key: 'monthlyOrchestrationActions', label: 'Workflow actions per month' },
+  { key: 'schemaDefinitions', label: 'Event schema definitions' },
+  { key: 'webhookDestinations', label: 'Webhook destinations' },
+  { key: 'monthlyJourneyExports', label: 'Journey exports per month' },
+  { key: 'journeyMetricDefinitions', label: 'Journey metric definitions' },
+  { key: 'journeyMetricBindings', label: 'Journey metric source bindings' },
+  { key: 'journeyMetricSegments', label: 'Journey metric segments' },
+  { key: 'journeyMetricAlertDefinitions', label: 'Journey metric alert definitions' },
+  { key: 'monthlyJourneyMetricImports', label: 'Journey metric imports per month' },
+  { key: 'journeyChannels', label: 'Journey channels' },
+  { key: 'journeyTouchpoints', label: 'Journey touchpoints' },
+  { key: 'journeyCardAssets', label: 'Journey card assets' },
+  { key: 'journeyCardAssetBytes', label: 'Journey card asset storage (bytes)' },
+  { key: 'journeySavedViews', label: 'Journey saved views' }
 ];
 
 const gigabyte = 1024 * 1024 * 1024;

@@ -53,7 +53,9 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "https:", "http:", "blob:"],
-      connectSrc: ["'self'", "https://api.nylas.com", "https://api.brevo.com", "https://*.seemplifyai.com", "https://*.aiinnigeria.com", "wss:", "ws:", "http://localhost:*", "https://thesmarthr.netlify.app"],
+      // The mail service is only ever called server-side, so it needs no
+      // connect-src entry. The previous Brevo origin is no longer contacted.
+      connectSrc: ["'self'", "https://api.nylas.com", "https://*.seemplifyai.com", "https://*.aiinnigeria.com", "wss:", "ws:", "http://localhost:*", "https://thesmarthr.netlify.app"],
       mediaSrc: ["'self'", "blob:"],
       objectSrc: ["'none'"],
       frameSrc: ["'self'", "https://api.nylas.com"],
@@ -274,6 +276,7 @@ app.use('/api/subscription', require('./routes/subscription')); // Subscription 
 app.use('/api/plans', require('./routes/plan')); // Subscription plan management routes
 app.use('/api/credits', require('./routes/credits')); // Credits management routes
 app.use('/api/credit-packs', require('./routes/creditPacks')); // Credit pack purchase routes
+app.use('/api/ai-account', require('./routes/aiAccount')); // Per-user ChatGPT runtime connection
 
 // Admin portal routes
 app.use('/api/admin/ai-interviews', require('./routes/adminAIInterviews')); // Platform AI interview monitoring

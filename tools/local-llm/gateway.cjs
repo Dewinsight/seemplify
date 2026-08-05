@@ -20,6 +20,7 @@ const {
   ActivityQueueScheduler
 } = require('./activity-queue.cjs');
 const { BoundedFixedWindowRateLimiter } = require('./bounded-rate-limit.cjs');
+const codexSessions = require('./codex-session-manager.cjs');
 const {
   LocalExecutionReceiptStore,
   canonicalRequestFingerprint
@@ -1041,6 +1042,60 @@ async function ensurePreparedUsageIsDurable(prepared) {
   }
 }
 
+// Codex subject control plane. Subject identity, the source-app allowlist, and
+// claim validation live in codex-session-manager.cjs so they stay testable
+// without booting this server.
+const codexLoginLimiter = new BoundedFixedWindowRateLimiter({
+  windowMs: Number(process.env.CODEX_LOGIN_WINDOW_MS || 10 * 60_000),
+  requests: Number(process.env.CODEX_LOGIN_REQUESTS || 5),
+  maxKeys: 5_000
+});
+
+function codexSubjectFromBody(rawBody) {
+  let input;
+  try { input = JSON.parse(rawBody || '{}'); }
+  catch { return { error: { status: 400, code: 'INVALID_JSON' } }; }
+  return { ...codexSessions.resolveSubjectRequest(input), input };
+}
+
+async function handleCodexControl(request, response, rawBody, operation, requestPath) {
+  if (!withinRateLimit(request)) {
+    return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
+  }
+  const verified = await verifySignature(request.headers, request.method, requestPath, rawBody);
+  if (!verified.ok) return sendJson(response, 401, { code: verified.code, message: 'Request authentication failed' });
+  if (!codexSessions.perUserSessionsEnabled()) {
+    return sendJson(response, 503, {
+      code: 'CODEX_PER_USER_DISABLED',
+      message: 'Per-user Codex sessions are not enabled on this gateway host'
+    });
+  }
+  const resolved = codexSubjectFromBody(rawBody);
+  if (resolved.error) return sendJson(response, resolved.error.status, { code: resolved.error.code });
+  const { subjectKey } = resolved;
+  // Device logins are the expensive, abusable operation: one pending login per
+  // subject already blocks a second, but a caller could otherwise churn them.
+  if (operation === 'login/start' && !codexLoginLimiter.consume(subjectKey)) {
+    return sendJson(response, 429, { code: 'CODEX_LOGIN_RATE_LIMITED', retryable: true });
+  }
+  try {
+    if (operation === 'login/start') return sendJson(response, 200, await codexSessions.startDeviceLogin(subjectKey));
+    if (operation === 'login/cancel') return sendJson(response, 200, await codexSessions.cancelDeviceLogin(subjectKey));
+    if (operation === 'account') return sendJson(response, 200, await codexSessions.accountStatusForSubject(subjectKey));
+    if (operation === 'models') {
+      return sendJson(response, 200, { models: await codexSessions.modelsForSubject(subjectKey) });
+    }
+    if (operation === 'logout') return sendJson(response, 200, await codexSessions.forgetSubject(subjectKey));
+    return sendJson(response, 404, { code: 'CODEX_OPERATION_UNKNOWN' });
+  } catch (error) {
+    const code = error.code || 'CODEX_CONTROL_FAILED';
+    const status = code === 'CODEX_NOT_INSTALLED' ? 503
+      : code === 'CODEX_LOGIN_PENDING' ? 409
+      : code === 'CODEX_SESSIONS_EXHAUSTED' ? 503 : 502;
+    return sendJson(response, status, { code, message: error.message, retryable: status === 503 });
+  }
+}
+
 async function handleCompletion(request, response, rawBody, { cvOnly = false } = {}) {
   if (!withinRateLimit(request)) {
     return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
@@ -1081,6 +1136,27 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   const requestSource = String(input.requestSource || (cvOnly ? 'cv-route' : 'local-route'))
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .slice(0, 64);
+  // A subject key is always derived here, never accepted from the body. A
+  // caller able to supply one directly could address any session on the host.
+  delete input.codexSubject;
+  if (input.codexSubjectId !== undefined) {
+    if (!codexSessions.perUserSessionsEnabled()) {
+      return sendJson(response, 503, { code: 'CODEX_PER_USER_DISABLED', retryable: true });
+    }
+    const resolvedSubject = codexSessions.resolveSubjectRequest({
+      sourceApp: input.codexSourceApp, subjectId: input.codexSubjectId
+    });
+    if (resolvedSubject.error) {
+      return sendJson(response, resolvedSubject.error.status, { code: resolvedSubject.error.code });
+    }
+    if (String(input.requiredEngine || '').trim().toLowerCase() !== 'codex') {
+      return sendJson(response, 400, {
+        code: 'CODEX_SUBJECT_ENGINE_MISMATCH',
+        message: 'A per-user Codex subject may only be used with the codex engine'
+      });
+    }
+    input.codexSubject = resolvedSubject.subjectKey;
+  }
   let metering;
   try {
     metering = meteringContext(input, requestSource);
@@ -1694,6 +1770,18 @@ const server = http.createServer(async (request, response) => {
         message: error.message,
         ...(error.details ? { concurrency: error.details } : {})
       });
+    }
+  }
+  const codexControlOperation = request.method === 'POST' && url.pathname.startsWith('/v1/codex/')
+    ? url.pathname.slice('/v1/codex/'.length)
+    : '';
+  if (codexControlOperation) {
+    try {
+      return await handleCodexControl(
+        request, response, await readBody(request), codexControlOperation, url.pathname
+      );
+    } catch (error) {
+      return sendJson(response, error.code === 'BODY_TOO_LARGE' ? 413 : 500, { code: error.code || 'GATEWAY_ERROR' });
     }
   }
   if (request.method === 'POST' && url.pathname === '/v1/cv/analyze') {

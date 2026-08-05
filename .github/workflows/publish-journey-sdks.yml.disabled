@@ -1,0 +1,63 @@
+# DISABLED TEMPLATE: GitHub does not load workflow files with this suffix.
+#
+# Do not rename this file until:
+# - the npm-production environment exists and has required reviewers;
+# - npm Trusted Publishing trusts this exact repository/workflow/environment;
+# - every SDK has an approved licence and is intentionally no longer private;
+# - Connected Journey release gates and the SDK release checklist are complete.
+
+name: Publish Journey SDKs
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact coordinated package version
+        required: true
+        type: string
+      confirmation:
+        description: Type PUBLISH_JOURNEY_SDKS
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      inputs.confirmation == 'PUBLISH_JOURNEY_SDKS'
+    runs-on: ubuntu-latest
+    environment: npm-production
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: experience-management
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: experience-management/package-lock.json
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci
+      - run: npm run clean:sdk
+      - run: npm run typecheck:sdk
+      - run: npm run test:sdk
+      - run: npm run build:sdk
+      - run: npx playwright install --with-deps chromium
+      - run: npm run verify:sdk:live-ingest
+      - name: Assert explicit publication gates
+        env:
+          SDK_PUBLISH_CONFIRM: ${{ inputs.confirmation }}
+          SDK_RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/sdk-package-tools.mjs release-ready
+      - run: npm publish --workspace @seemplify/journey-event-protocol --access public --tag next --provenance
+      - run: npm publish --workspace @seemplify/journey-browser-sdk --access public --tag next --provenance
+      - run: npm publish --workspace @seemplify/journey-node --access public --tag next --provenance
+      - run: npm publish --workspace @seemplify/journey-react-native --access public --tag next --provenance
+      - run: npm publish --workspace @seemplify/journey-react --access public --tag next --provenance

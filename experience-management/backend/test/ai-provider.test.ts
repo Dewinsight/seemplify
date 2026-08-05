@@ -37,7 +37,8 @@ const {
   getAiProviderPreference, resetAiProviderPreferenceCacheForTests,
   setAiProviderPreference, updateAdminCodexDefaults
 } = await import('../src/aiProvider.js');
-const { createJob, db } = await import('../src/database.js');
+const { db } = await import('../src/database.js');
+const { createAiJobFixture } = await import('./aiJobFixtures.js');
 
 after(async () => {
   await stopCodexClients();
@@ -140,10 +141,10 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
     codexDataSharingAcknowledged: true
   }).expect(200);
 
-  const defaultQueued = createJob('report.generate', { brief: 'Snapshot the default effort.' }, spaceId, null, null, userId);
+  const defaultQueued = createAiJobFixture('report.generate', { brief: 'Snapshot the default effort.' }, spaceId, null, null, userId);
   assert.equal((defaultQueued.input as any)._aiRuntime.codexReasoningEffort, 'max');
 
-  const queued = createJob('analyst.chat', { question: 'Test the recorded runtime.' }, spaceId, null, null, userId);
+  const queued = createAiJobFixture('analyst.chat', { question: 'Test the recorded runtime.' }, spaceId, null, null, userId);
   assert.deepEqual((queued.input as any)._aiRuntime, aiProviderSnapshot(userId, spaceId, 'analyst.chat'));
   assert.equal((queued.input as any)._aiRuntime.codexModel, 'gpt-test-codex-fast');
   assert.equal((queued.input as any)._aiRuntime.codexReasoningEffort, 'focused');
@@ -194,7 +195,7 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
   assert.equal((queued.input as any)._aiRuntime.provider, 'codex');
   assert.equal((queued.input as any)._aiRuntime.codexModel, 'gpt-test-codex-fast');
 
-  const automatic = createJob('response.analyze', {}, spaceId, null, null, null);
+  const automatic = createAiJobFixture('response.analyze', {}, spaceId, null, null, null);
   assert.equal((automatic.input as any)._aiRuntime.provider, 'terra');
 
   setAiProviderPreference(userId, 'another-space', {
@@ -327,7 +328,7 @@ test('admin defaults inherit field-by-field, user reset is narrow, and queued ca
   assert.equal(reset.codexReasoningEffort, null);
   assert.deepEqual(reset.codexActionOverrides, {});
 
-  const queued = createJob('analyst.chat', { question: 'Keep the inherited admin runtime.' },
+  const queued = createAiJobFixture('analyst.chat', { question: 'Keep the inherited admin runtime.' },
     spaceId, null, null, userId);
   const queuedRuntime = (queued.input as any)._aiRuntime;
   assert.deepEqual(queuedRuntime.codexModelCandidates, [

@@ -1,0 +1,51 @@
+name: Private Journey Swift foundation CI
+
+on:
+  push:
+    paths:
+      - "experience-management/packages/journey-swift/**"
+      - "experience-management/packages/journey-event-protocol/**"
+      - "experience-management/scripts/sdk-swift-contract.mjs"
+      - "experience-management/package.json"
+      - ".github/workflows/journey-swift-ci.yml"
+  pull_request:
+    paths:
+      - "experience-management/packages/journey-swift/**"
+      - "experience-management/packages/journey-event-protocol/**"
+      - "experience-management/scripts/sdk-swift-contract.mjs"
+      - "experience-management/package.json"
+      - ".github/workflows/journey-swift-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: journey-swift-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift-foundation:
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_15.4.app/Contents/Developer
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Verify pinned Swift toolchain
+        run: |
+          swift --version
+          swift --version | grep "Swift version 5.10"
+
+      - name: Verify protocol and private-package contract
+        run: node experience-management/scripts/sdk-swift-contract.mjs
+
+      - name: Validate Swift package manifest
+        run: swift package dump-package --package-path experience-management/packages/journey-swift
+
+      - name: Run Swift package tests
+        run: swift test --package-path experience-management/packages/journey-swift --parallel
+
+      - name: Build release configuration
+        run: swift build --package-path experience-management/packages/journey-swift -c release

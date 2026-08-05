@@ -221,6 +221,7 @@ const applyKnowledgeSchema = db.transaction(() => {
       deleted_at TEXT,
       FOREIGN KEY(knowledge_base_id,space_id) REFERENCES knowledge_bases(id,space_id) ON DELETE CASCADE,
       UNIQUE(id,space_id),
+      UNIQUE(id,knowledge_base_id,space_id),
       UNIQUE(knowledge_base_id,sha256,deleted_at)
     );
     CREATE INDEX knowledge_documents_base_created ON knowledge_documents(knowledge_base_id,created_at DESC);
@@ -315,6 +316,8 @@ const applyKnowledgeSchema = db.transaction(() => {
     .run(9, 'knowledge_graph_rag_control_plane', new Date().toISOString());
 });
 if (db.provider === 'sqlite') applyKnowledgeSchema();
+if (db.provider === 'sqlite') db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS knowledge_documents_research_tenant_identity
+  ON knowledge_documents(id,knowledge_base_id,space_id);`);
 
 if (db.provider === 'sqlite') db.exec(`CREATE TABLE IF NOT EXISTS social_intelligence_publications (
     -- report_id deliberately remains a provenance tombstone rather than a
@@ -1238,7 +1241,7 @@ export const createKnowledgeDocuments = db.transaction((inputs: Parameters<typeo
  */
 export function createKnowledgeMarkdownDocument(input: {
   spaceId: string; knowledgeBaseId: string; userId: string; originalName: string;
-  markdown: string; metadata?: Record<string, unknown>;
+  markdown: string; metadata?: Record<string, unknown>; idempotencyKey?: string;
 }) {
   const bytes = Buffer.from(input.markdown, 'utf8');
   if (!bytes.length) throw new KnowledgeError('Generated knowledge content cannot be empty.', 400, 'KNOWLEDGE_DOCUMENT_EMPTY');
@@ -1247,24 +1250,55 @@ export function createKnowledgeMarkdownDocument(input: {
   }
   const originalBase = path.basename(input.originalName).replace(/[\r\n]/gu, ' ').trim().slice(0, 252) || 'Derived intelligence';
   const originalName = originalBase.toLowerCase().endsWith('.md') ? originalBase : `${originalBase}.md`;
-  const storedFilename = `${crypto.randomUUID()}.md`;
+  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+  const base = getKnowledgeBase(input.knowledgeBaseId, input.spaceId);
+  if (!base) throw new KnowledgeError('Knowledge base not found.', 404, 'KNOWLEDGE_BASE_NOT_FOUND');
+  const jobValues = snapshotKnowledgeJobValues(base,
+    { metadata: input.metadata || {}, sha256, mimeType: 'text/markdown', sizeBytes: bytes.length });
+  const replay = idempotentKnowledgeJob({
+    spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBaseId, requestedBy: input.userId,
+    kind: 'document.index', idempotencyKey: input.idempotencyKey, values: jobValues, acceptAnyDocument: true
+  });
+  if (replay?.documentId) {
+    const document = getKnowledgeDocument(replay.documentId, input.knowledgeBaseId, input.spaceId, true);
+    if (!document) throw new KnowledgeError('The original idempotent document is no longer available.', 409,
+      'KNOWLEDGE_IDEMPOTENCY_ORPHANED');
+    return { document, job: replay, deduplicated: true, sha256 };
+  }
+  // A stable staging name closes the filesystem/database crash window for
+  // resumable server-generated publications. A retry reuses the exact bytes
+  // instead of leaving an unbounded series of orphaned UUID files.
+  const stableName = input.idempotencyKey
+    ? crypto.createHash('sha256').update(`${input.spaceId}\0${input.knowledgeBaseId}\0${input.idempotencyKey}`).digest('hex')
+    : crypto.randomUUID();
+  const storedFilename = `${stableName}.md`;
   const stagedPath = path.resolve(config.knowledgeStorageDir, storedFilename);
   const storageRoot = `${path.resolve(config.knowledgeStorageDir)}${path.sep}`.toLowerCase();
   if (!stagedPath.toLowerCase().startsWith(storageRoot)) {
     throw new KnowledgeError('The generated knowledge storage path is invalid.', 500, 'KNOWLEDGE_STORAGE_PATH_INVALID');
   }
-  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-  fs.writeFileSync(stagedPath, bytes, { flag: 'wx' });
+  try { fs.writeFileSync(stagedPath, bytes, { flag: 'wx' }); }
+  catch (error) {
+    if (String((error as NodeJS.ErrnoException)?.code) !== 'EEXIST') throw error;
+    const existingBytes = fs.readFileSync(stagedPath);
+    const existingSha = crypto.createHash('sha256').update(existingBytes).digest('hex');
+    if (existingSha !== sha256) throw new KnowledgeError(
+      'The idempotent generated-document staging reservation has different content.', 409,
+      'KNOWLEDGE_IDEMPOTENCY_CONFLICT');
+  }
   try {
     const created = createKnowledgeDocument({
       spaceId: input.spaceId, knowledgeBaseId: input.knowledgeBaseId, userId: input.userId,
       storedFilename, originalName, mimeType: 'text/markdown', sizeBytes: bytes.length, sha256,
-      metadata: input.metadata || {}
+      metadata: input.metadata || {}, idempotencyKey: input.idempotencyKey
     });
-    if (created.deduplicated) fs.rmSync(stagedPath, { force: true });
+    if (created.deduplicated) {
+      const stored = db.prepare('SELECT stored_filename FROM knowledge_documents WHERE id=? AND space_id=?')
+        .get(created.document.id, input.spaceId) as { stored_filename: string } | undefined;
+      if (stored?.stored_filename !== storedFilename) fs.rmSync(stagedPath, { force: true });
+    }
     return { ...created, sha256 };
   } catch (error) {
-    fs.rmSync(stagedPath, { force: true });
     // A concurrent publisher may have committed the identical immutable
     // artifact after our preflight but before our insert. Resolve that race as
     // a normal deduplicated publication rather than surfacing a transient
@@ -1272,10 +1306,16 @@ export function createKnowledgeMarkdownDocument(input: {
     const existing = db.prepare(`SELECT * FROM knowledge_documents WHERE knowledge_base_id=? AND space_id=?
       AND sha256=? AND deleted_at IS NULL`).get(input.knowledgeBaseId, input.spaceId, sha256) as any;
     if (existing) {
-      const active = db.prepare(`SELECT * FROM knowledge_jobs WHERE document_id=? AND state IN ('queued','processing')
-        ORDER BY created_at LIMIT 1`).get(existing.id) as any;
-      return { document: rowDocument(existing), job: active ? rowJob(active) : null, deduplicated: true, sha256 };
+      // Never remove the deterministic path if another replica has committed
+      // it as the authoritative document between our preflight and insert.
+      if (existing.stored_filename !== storedFilename) fs.rmSync(stagedPath, { force: true });
+      const job = input.idempotencyKey
+        ? db.prepare(`SELECT * FROM knowledge_jobs WHERE space_id=? AND idempotency_key=?`).get(input.spaceId, input.idempotencyKey) as any
+        : db.prepare(`SELECT * FROM knowledge_jobs WHERE document_id=? AND state IN ('queued','processing')
+            ORDER BY created_at LIMIT 1`).get(existing.id) as any;
+      return { document: rowDocument(existing), job: job ? rowJob(job) : null, deduplicated: true, sha256 };
     }
+    fs.rmSync(stagedPath, { force: true });
     throw error;
   }
 }

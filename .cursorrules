@@ -102,8 +102,12 @@ LMS_URL=https://lms.seemplifyai.com               # Learning platform
 # SAME in both dev and production
 AZURE_OPENAI_API_KEY=<same-key>
 AZURE_OPENAI_ENDPOINT=<same-endpoint>
-BREVO_API_KEY=<same-key>
-BREVO_FROM_EMAIL=<same-email>
+# Outbound transactional email: self-hosted Seemplify mail service.
+# See docs/TRANSACTIONAL-EMAIL.md. BREVO_API_KEY is now only for the Identity
+# Provider's Brevo MARKETING campaign platform.
+MAIL_API_BASE_URL=<mail-service-origin>
+MAIL_API_TOKEN=<keyId>.<secret>
+MAIL_FROM_EMAIL=<same-email>
 NYLAS_API_KEY=<same-key>
 ```
 
@@ -134,7 +138,9 @@ NODE_ENV=production|development
 OIDC_CLIENT_ID=<from-clients.json>
 OIDC_CLIENT_SECRET=<from-clients.json>
 AZURE_OPENAI_API_KEY=<shared-key>
-BREVO_API_KEY=<shared-key>
+MAIL_API_BASE_URL=<mail-service-origin>
+MAIL_API_TOKEN=<keyId>.<secret>
+MAIL_FROM_EMAIL=<verified-sender>
 ```
 
 ### Required Build Args (All Frontends):

@@ -1,9 +1,10 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { BarChart3, BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Code2, Cpu, FileCheck2, FileSearch, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, UsersRound, X } from 'lucide-react';
 import { Link, Navigate, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
 import { cn } from '@/lib/utils';
+import { AuthSessionProvider } from '@/lib/authSessionContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SectionTutorial } from '@/components/tutorials/SectionTutorial';
@@ -28,9 +29,14 @@ const navigation: Array<{ to: string; label: string; icon: typeof Gauge; end?: b
   { to: '/intelligence', label: 'Intelligence', icon: BrainCircuit, feature: 'terra' },
   { to: '/assistant', label: 'Personal assistant', icon: MailCheck, feature: 'terra' },
   { to: '/knowledge-bases', label: 'Knowledge bases', icon: BookOpenText, feature: 'knowledgeBases' },
-  { to: '/journeys', label: 'Journey maps', icon: Route, feature: 'terra' },
+  { to: '/journey-maps', label: 'Journey maps', icon: Route, feature: 'journeyDesign' },
+  { to: '/journey-personas', label: 'Personas', icon: UsersRound, feature: 'journeyPersonas' },
+  { to: '/journey-research', label: 'Journey research', icon: FileSearch, feature: 'journeyEvidence' },
+  { to: '/journey-metrics', label: 'Journey metrics', icon: BarChart3, feature: 'journeyMetrics' },
+  { to: '/journeys', label: 'Journey maps (classic)', icon: Route, feature: 'terra' },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles, feature: 'terra' },
   { to: '/tickets', label: 'Service recovery', icon: Inbox, feature: 'serviceRecovery' },
+  { to: '/settings/developer', label: 'Developer', icon: Code2, feature: 'journeyConnected' },
   { to: '/settings/space', label: 'Space settings', icon: Settings2 }
 ];
 
@@ -191,7 +197,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const routePath = location.pathname.split(/[?#]/, 1)[0];
   const tutorial = tutorialForPath(routePath);
   const terraEnabled = featureEnabled(session, 'terra');
-  const providerGateExempt = routePath === '/settings/space' || Boolean(session && !terraEnabled);
+  const providerGateExempt = routePath === '/settings/space' || routePath === '/settings/developer' || Boolean(session && !terraEnabled);
   useEffect(() => { setMobileOpen(false); }, [routePath]);
   useEffect(() => {
     if (!mobileOpen) return;
@@ -329,6 +335,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       ? <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="h-4 w-4 animate-spin" />Checking your AI runtime&hellip;</div>
       : null)
     : children;
+  const sessionChildren = <AuthSessionProvider session={session}>{guardedChildren}</AuthSessionProvider>;
   const providerGate = <ChatGptConnectionGate
     state={providerState}
     loading={providerStateLoading}
@@ -342,7 +349,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     }}
     onRetry={() => void loadProviderState()}
   />;
-  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex min-h-[52px] items-center justify-between gap-3 border-b bg-card px-4 py-2"><Link to="/agreements" className="flex min-w-0 items-center gap-2"><div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="truncate text-sm font-semibold">Seemplify Experience</span></Link><div className="flex shrink-0 items-center gap-2"><span className="hidden text-xs font-medium text-muted-foreground sm:inline">Agreement field editor</span>{providerExperienceReady && <SectionTutorial tutorial={tutorial} />}</div></header><main>{guardedChildren}</main>{providerGate}</div>;
+  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex min-h-[52px] items-center justify-between gap-3 border-b bg-card px-4 py-2"><Link to="/agreements" className="flex min-w-0 items-center gap-2"><div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="truncate text-sm font-semibold">Seemplify Experience</span></Link><div className="flex shrink-0 items-center gap-2"><span className="hidden text-xs font-medium text-muted-foreground sm:inline">Agreement field editor</span>{providerExperienceReady && <SectionTutorial tutorial={tutorial} />}</div></header><main>{sessionChildren}</main>{providerGate}</div>;
   return <div className="min-h-screen bg-background">
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col overflow-hidden border-r bg-card md:flex"><SidebarContent selectorId="active-space-desktop" runtimeState={runtimeState} runtimeLabel={runtimeLabel} session={session} switching={switching} onSwitch={switchSpace} /></aside>
     {mobileOpen && <div className="fixed inset-0 z-50 md:hidden">
@@ -364,7 +371,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <PendingInvitationBar invitations={session?.pendingSpaceInvitations || []} acceptingId={acceptingInvitationId} error={invitationError} onAccept={(invitation) => void acceptInvitation(invitation)} />
-      <main className="mx-auto min-w-0 w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{guardedChildren}</main>
+      <main className="mx-auto min-w-0 w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{sessionChildren}</main>
     </div>
     {providerGate}
   </div>;

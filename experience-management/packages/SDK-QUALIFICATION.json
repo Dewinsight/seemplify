@@ -1,0 +1,300 @@
+{
+    "policyVersion":  1,
+    "$comment":  [
+                     "Repository-enforced LOCAL qualification policy for the five npm Journey SDKs.",
+                     "Every number here was measured by this repository\u0027s own gates on one developer",
+                     "host. This file is NOT a public browser, device, bundler or operating-system",
+                     "support promise, and nothing in it may be quoted as one. The supported public",
+                     "matrix lives in SDK-SUPPORT.md and is still empty.",
+                     "Changing a bundleBudgets limit is a reviewed change: see SDK-SUPPORT.md",
+                     "\u0027Changing a repository-enforced budget\u0027."
+                 ],
+    "measurement":  {
+                        "$comment":  "The exact recipe every budget number was produced with. Changing any field here invalidates every recorded limit.",
+                        "bundler":  "esbuild",
+                        "target":  "es2022",
+                        "bundle":  true,
+                        "minify":  false,
+                        "sourcemap":  false,
+                        "treeShaking":  true,
+                        "gzip":  {
+                                     "algorithm":  "node:zlib gzipSync",
+                                     "level":  9,
+                                     "comparison":  "ceiling-only",
+                                     "$comment":  "Gzip LENGTH is compared as a ceiling only, never for equality. zlib output is not guaranteed byte-identical across Node/zlib versions, so an equality check would be a false regression signal on a different host."
+                                 },
+                        "raw":  {
+                                    "comparison":  "ceiling",
+                                    "$comment":  "Raw bytes are deterministic for a pinned esbuild, so this is the hard gate."
+                                }
+                    },
+    "provenance":  {
+                       "$comment":  "The host and toolchain that produced the recorded limits. Reported by `qualify` so a drifted toolchain is visible rather than mysterious.",
+                       "measuredOnNode":  "v22.11.0",
+                       "measuredWithEsbuild":  "0.28.1",
+                       "measuredWithTypeScript":  "5.9.3",
+                       "measuredWithReact":  "19.2.8",
+                       "measuredOnPlatform":  "win32",
+                       "measuredFromCleanBuild":  true
+                   },
+    "toolchain":  {
+                      "$comment":  [
+                                       "Intended LOCAL baselines. These are ranges, not exact pins, because the",
+                                       "documented SDK CI matrix is Node 20 and Node 22 and an exact pin would turn",
+                                       "the Node 20 leg red. The gate fails honestly when the executing runtime or",
+                                       "tool is outside its range, and always prints the exact observed version.",
+                                       "No browser, Metro, physical device or operating-system version is asserted",
+                                       "anywhere: none is executable on this host."
+                                   ],
+                      "node":  {
+                                   "range":  "\u003e=20.19.0 \u003c25.0.0",
+                                   "rationale":  "Node \u003e=20.19 is the floor the CommonJS evidence depends on (require() of an ES module no longer throws), and the documented SDK CI matrix is 20 and 22."
+                               },
+                      "typescript":  {
+                                         "range":  "\u003e=5.8.0 \u003c6.0.0",
+                                         "rationale":  "All five manifests declare devDependency typescript ^5.8.3."
+                                     },
+                      "esbuild":  {
+                                      "range":  "\u003e=0.28.0 \u003c0.29.0",
+                                      "rationale":  "Root devDependency esbuild ^0.28.1. Bundle byte counts are coupled to the exact esbuild build, so a minor bump must re-record budgets."
+                                  },
+                      "react":  {
+                                    "range":  "\u003e=19.0.0 \u003c20.0.0",
+                                    "rationale":  "The installed React used by the executed @seemplify/journey-react suite.",
+                                    "notExecutedLocally":  [
+                                                               "React 18.3 is inside the declared peer range \u003e=18.3 \u003c20 but is NOT installed and NOT executed on this host."
+                                                           ]
+                                },
+                      "moduleCombinations":  [
+                                                 "esm-import",
+                                                 "cjs-require",
+                                                 "ts-nodenext-mts",
+                                                 "ts-nodenext-cts",
+                                                 "esbuild-browser-esm",
+                                                 "esbuild-browser-cjs",
+                                                 "esbuild-neutral-esm",
+                                                 "esbuild-neutral-cjs"
+                                             ]
+                  },
+    "bundleBudgets":  {
+                          "$comment":  [
+                                           "Locally measurable bundle ceilings. `raw` is the hard gate. `gzipMax` is a",
+                                           "ceiling-only companion. Both print actual/limit on every run, pass or fail.",
+                                           "Headroom is ~8% over the clean-build measurement: wide enough to absorb an",
+                                           "esbuild patch-level difference, tight enough that a real regression fails."
+                                       ],
+                          "headroomPolicy":  "approximately 8 percent over the recorded clean-build measurement",
+                          "artifacts":  [
+                                            {
+                                                "id":  "browser-esm-entry",
+                                                "package":  "@seemplify/journey-browser-sdk",
+                                                "description":  "ESM bundle from the absolute dist/index.js entry, platform=browser",
+                                                "measuredRaw":  54665,
+                                                "rawMax":  59000,
+                                                "measuredGzip":  12122,
+                                                "gzipMax":  13100
+                                            },
+                                            {
+                                                "id":  "browser-esm-exports",
+                                                "package":  "@seemplify/journey-browser-sdk",
+                                                "description":  "ESM bundle resolved through the export map (browser+import+default)",
+                                                "measuredRaw":  54665,
+                                                "rawMax":  59000,
+                                                "measuredGzip":  12122,
+                                                "gzipMax":  13100
+                                            },
+                                            {
+                                                "id":  "browser-cjs-exports",
+                                                "package":  "@seemplify/journey-browser-sdk",
+                                                "description":  "CommonJS bundle resolved through the export map (browser+require+default)",
+                                                "measuredRaw":  70203,
+                                                "rawMax":  75900,
+                                                "measuredGzip":  14330,
+                                                "gzipMax":  15500
+                                            },
+                                            {
+                                                "id":  "react-native-esm-entry",
+                                                "package":  "@seemplify/journey-react-native",
+                                                "description":  "ESM bundle from the absolute dist/index.js entry, platform=neutral",
+                                                "measuredRaw":  62526,
+                                                "rawMax":  67600,
+                                                "measuredGzip":  13411,
+                                                "gzipMax":  14500
+                                            },
+                                            {
+                                                "id":  "react-native-esm-exports",
+                                                "package":  "@seemplify/journey-react-native",
+                                                "description":  "ESM bundle resolved through the export map (react-native+import+default)",
+                                                "measuredRaw":  62526,
+                                                "rawMax":  67600,
+                                                "measuredGzip":  13411,
+                                                "gzipMax":  14500
+                                            },
+                                            {
+                                                "id":  "react-native-cjs-exports",
+                                                "package":  "@seemplify/journey-react-native",
+                                                "description":  "CommonJS bundle resolved through the export map (react-native+require+default)",
+                                                "measuredRaw":  78315,
+                                                "rawMax":  84600,
+                                                "measuredGzip":  15507,
+                                                "gzipMax":  16800
+                                            }
+                                        ]
+                      },
+    "treeShaking":  {
+                        "$comment":  [
+                                         "Executed with the already-installed esbuild only. No webpack, Rollup, Vite or",
+                                         "Metro run is performed or claimed anywhere in this repository.",
+                                         "Elimination is asserted on metafile.outputs[out].inputs[file].bytesInOutput,",
+                                         "which is 0 (or the key is absent) for a module that was parsed but fully",
+                                         "eliminated. Asserting absence from the top-level metafile.inputs map instead",
+                                         "would fail spuriously, because that map lists every file esbuild parsed."
+                                     ],
+                        "artifacts":  [
+                                          {
+                                              "id":  "browser-storage-only",
+                                              "package":  "@seemplify/journey-browser-sdk",
+                                              "description":  "Imports only createLocalStorageQueueStorage. The client, id, privacy and the entire event-protocol tree are unreachable and must contribute zero bytes.",
+                                              "entry":  "import { createLocalStorageQueueStorage } from \u0027@seemplify/journey-browser-sdk\u0027; globalThis.__keep = createLocalStorageQueueStorage;",
+                                              "mustBeEliminated":  [
+                                                                       "/journey-browser-sdk/dist/client.js",
+                                                                       "/journey-browser-sdk/dist/id.js",
+                                                                       "/journey-browser-sdk/dist/privacy.js",
+                                                                       "/journey-event-protocol/dist/"
+                                                                   ],
+                                              "measuredRaw":  683,
+                                              "rawMax":  2500
+                                          },
+                                          {
+                                              "id":  "browser-bare-import",
+                                              "package":  "@seemplify/journey-browser-sdk",
+                                              "description":  "Bare side-effect import with no bindings. sideEffects:false plus no top-level side effect must collapse the whole package to nothing.",
+                                              "entry":  "import \u0027@seemplify/journey-browser-sdk\u0027;",
+                                              "mustBeEliminated":  [
+                                                                       "/journey-browser-sdk/dist/",
+                                                                       "/journey-event-protocol/dist/"
+                                                                   ],
+                                              "measuredRaw":  0,
+                                              "rawMax":  64
+                                          },
+                                          {
+                                              "id":  "react-native-bare-import",
+                                              "package":  "@seemplify/journey-react-native",
+                                              "description":  "Bare side-effect import with no bindings. The React Native root exports a single runtime symbol, so this collapse is the honest elimination proof for this package.",
+                                              "entry":  "import \u0027@seemplify/journey-react-native\u0027;",
+                                              "mustBeEliminated":  [
+                                                                       "/journey-react-native/dist/",
+                                                                       "/journey-event-protocol/dist/"
+                                                                   ],
+                                              "measuredRaw":  0,
+                                              "rawMax":  64
+                                          },
+                                          {
+                                              "id":  "react-native-client-only",
+                                              "package":  "@seemplify/journey-react-native",
+                                              "description":  "Imports the single runtime export. This is a regression assertion, not an elimination claim: the Node-only protocol mock server must never enter a React Native graph.",
+                                              "entry":  "import { createReactNativeJourneySdk } from \u0027@seemplify/journey-react-native\u0027; globalThis.__keep = createReactNativeJourneySdk;",
+                                              "mustBeEliminated":  [
+                                                                       "/journey-event-protocol/dist/mockIngestServer.js"
+                                                                   ],
+                                              "measuredRaw":  62548,
+                                              "rawMax":  67600
+                                          }
+                                      ]
+                    },
+    "staticSafety":  {
+                         "$comment":  [
+                                          "Deterministic constructs prohibited in the generated browser and React Native",
+                                          "bundles. This proves the emitted artifact does not REQUIRE unsafe-eval and",
+                                          "embeds no Node built-in or Node runtime global. It is not evidence about any",
+                                          "deployed Content-Security-Policy header, which this repository never sets,",
+                                          "serves or observes. The scan runs on unminified output, so comments and",
+                                          "diagnostic strings are in scope by design."
+                                      ],
+                         "surfaces":  [
+                                          "browser-esm-entry",
+                                          "browser-esm-exports",
+                                          "browser-cjs-exports",
+                                          "react-native-esm-entry",
+                                          "react-native-esm-exports",
+                                          "react-native-cjs-exports"
+                                      ],
+                         "notClaimed":  [
+                                            "No deployed CSP header is set, served or measured by this repository.",
+                                            "No real browser engine evaluates these bundles locally.",
+                                            "No Metro bundler run is performed."
+                                        ]
+                     },
+    "release":  {
+                    "approvedLicences":  [
+                                             "MIT"
+                                         ],
+                    "$approvedLicencesComment":  [
+                                                     "Deliberately EMPTY. `release-ready` must fail until an authorised owner",
+                                                     "records a legally approved SPDX identifier here AND adds it to every manifest",
+                                                     "AND checks in a per-package LICENSE file. This repository does not guess",
+                                                     "whether the SDKs are open-source or proprietary, so no value may be added",
+                                                     "here as part of a qualification change."
+                                                 ],
+                    "coordinatedVersionRequired":  true,
+                    "internalDependenciesExact":  true,
+                    "mandatoryPublishOrder":  [
+                                                  "@seemplify/journey-event-protocol",
+                                                  "@seemplify/journey-browser-sdk",
+                                                  "@seemplify/journey-node",
+                                                  "@seemplify/journey-react-native",
+                                                  "@seemplify/journey-react"
+                                              ],
+                    "distTag":  "next",
+                    "forbiddenDistTags":  [
+                                              "latest"
+                                          ],
+                    "environment":  "npm-production",
+                    "confirmation":  "PUBLISH_JOURNEY_SDKS",
+                    "workflowTemplate":  "../.github/workflows/publish-journey-sdks.yml.disabled",
+                    "workflowMustStayDisabled":  true,
+                    "requiredWorkflowGates":  [
+                                                  "npm ci",
+                                                  "clean:sdk",
+                                                  "typecheck:sdk",
+                                                  "test:sdk",
+                                                  "build:sdk",
+                                                  "verify:sdk:live-ingest",
+                                                  "release-ready"
+                                              ]
+                },
+    "lockedFoundation":  {
+                             "$comment":  [
+                                              "The intentionally locked pre-publication state. `qualify` succeeds only if",
+                                              "this state is internally consistent; it reports the external blockers",
+                                              "separately without turning red, because they are not locally actionable."
+                                          ],
+                             "allPackagesPrivate":  false,
+                             "licenceKeyForbidden":  false,
+                             "licenseFileForbidden":  false,
+                             "coordinatedVersion":  "0.1.0",
+                             "packages":  [
+                                              "@seemplify/journey-event-protocol",
+                                              "@seemplify/journey-browser-sdk",
+                                              "@seemplify/journey-node",
+                                              "@seemplify/journey-react",
+                                              "@seemplify/journey-react-native"
+                                          ]
+                         },
+    "externalBlockers":  {
+                             "$comment":  "Not locally actionable. Reported by `qualify`, never asserted as satisfied.",
+                             "items":  [
+                                           "Durable ingestion, dogfood and master-plan production gates are incomplete.",
+                                           "No ratified real-browser/version/CSP/bundler matrix exists; no browser engine runs locally.",
+                                           "The Node 20/22 SDK CI matrix is defined but has no successful remote run.",
+                                           "React 18.3 is in the declared peer range but is not installed or executed locally.",
+                                           "No React Native device, OS, Metro, lifecycle, secure-storage or upgrade evidence exists.",
+                                           "Swift needs compiler/XCTest/simulator/device evidence; none is executable on this host.",
+                                           "Kotlin needs a ratified physical-device/OS matrix beyond one API 35 emulator run.",
+                                           "Security/privacy review, SCA, secret scan, SBOM and provenance are incomplete.",
+                                           "npm @seemplify scope ownership and trusted-publisher setup are not established.",
+                                           "The protected npm-production GitHub environment is not confirmed to exist.",
+                                           "All five packages remain private:true and must not be made public by a qualification change."
+                                       ]
+                         }
+}

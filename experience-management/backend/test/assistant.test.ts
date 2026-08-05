@@ -320,7 +320,8 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
 
 const { app } = await import('../src/app.js');
 const { stopCodexClients } = await import('../src/codexAppServer.js');
-const { createJob, db, getJob, insertInsight, updateJob } = await import('../src/database.js');
+const { db, getJob, insertInsight, updateJob } = await import('../src/database.js');
+const { createAiJobFixture } = await import('./aiJobFixtures.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
 const { assistantEmailExecutionSnapshot, publishAssistantChanged } = await import('../src/assistant.js');
 const { boundedEvidence } = await import('../src/assistantRoutes.js');
@@ -1162,7 +1163,7 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
   let monthlyJobs = Number((db.prepare('SELECT COUNT(*) count FROM ai_jobs WHERE space_id=? AND created_at>=?')
     .get(ownerSpace.id, monthStart.toISOString()) as any).count);
   while (monthlyJobs < 100) {
-    const filler = createJob('survey.improve', { quotaFixture: monthlyJobs }, ownerSpace.id, null, null, ownerId);
+    const filler = createAiJobFixture('survey.improve', { quotaFixture: monthlyJobs }, ownerSpace.id, null, null, ownerId);
     updateJob(filler.id, { state: 'completed', stage: 'completed', progress: 100, completedAt: new Date().toISOString() });
     monthlyJobs += 1;
   }

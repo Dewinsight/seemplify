@@ -1,49 +1,53 @@
-const axios = require('axios');
+const crypto = require('crypto');
+const { isMailConfigured, sendMail } = require('./mailClient');
 
 /**
  * Notification Service
- * Handles email notifications via Brevo (formerly Sendinblue)
+ * Handles email notifications through the self-hosted Seemplify mail service.
  */
 class NotificationService {
   constructor() {
-    this.apiKey = process.env.BREVO_API_KEY;
-    this.baseUrl = 'https://api.brevo.com/v3';
-    this.fromEmail = process.env.NOTIFICATION_FROM_EMAIL || 'noreply@smarthr.com';
-    this.fromName = process.env.NOTIFICATION_FROM_NAME || 'SmartHR Performance';
+    this.fromEmail = process.env.MAIL_FROM_EMAIL || process.env.NOTIFICATION_FROM_EMAIL || 'noreply@smarthr.com';
+    this.fromName = process.env.MAIL_FROM_NAME || process.env.NOTIFICATION_FROM_NAME || 'SmartHR Performance';
+  }
+
+  /** True when the mail service URL, credential and sender are all present. */
+  isConfigured() {
+    return isMailConfigured();
   }
 
   /**
-   * Send email via Brevo API
+   * Send one email through the Seemplify mail service.
+   * @param {string} to
+   * @param {string} subject
+   * @param {string} htmlContent
+   * @param {string|null} [textContent]
+   * @param {{ idempotencyKey?: string, tag?: string }} [options]
    */
-  async sendEmail(to, subject, htmlContent, textContent = null) {
-    if (!this.apiKey) {
-      console.warn('Brevo API key not configured. Skipping email notification.');
+  async sendEmail(to, subject, htmlContent, textContent = null, options = {}) {
+    if (!this.isConfigured()) {
+      console.warn('The Seemplify mail service is not configured. Skipping email notification.');
       return { success: false, error: 'Email service not configured' };
     }
 
     try {
-      const response = await axios.post(
-        `${this.baseUrl}/smtp/email`,
-        {
-          sender: { email: this.fromEmail, name: this.fromName },
-          to: [{ email: to }],
-          subject,
-          htmlContent,
-          textContent: textContent || this.stripHtml(htmlContent)
-        },
-        {
-          headers: {
-            'api-key': this.apiKey,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      const result = await sendMail({
+        from: this.fromEmail,
+        fromName: this.fromName,
+        to: [to],
+        subject,
+        html: htmlContent,
+        text: textContent || this.stripHtml(htmlContent),
+        tag: options.tag || 'performance_notification',
+        idempotencyKey: String(options.idempotencyKey || '').trim() || crypto.randomUUID()
+      });
 
       console.log(`Email sent to ${to}: ${subject}`);
-      return { success: true, messageId: response.data.messageId };
+      return { success: true, messageId: result.messageId };
     } catch (error) {
-      console.error('Error sending email:', error.response?.data || error.message);
-      return { success: false, error: error.message };
+      // Only the classified message is logged: never the token or the body.
+      console.error('Error sending email:', error.message);
+      return { success: false, error: error.message, retryable: Boolean(error.retryable) };
     }
   }
 

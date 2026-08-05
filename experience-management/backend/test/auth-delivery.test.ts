@@ -12,6 +12,8 @@ let failDelivery = true;
 let holdDelivery = false;
 let deliveryRequests = 0;
 const deliveryBodies: string[] = [];
+const deliveryPaths: string[] = [];
+const deliveryHeaders: Array<Record<string, string | string[] | undefined>> = [];
 const heldDeliveryResponses: Array<() => void> = [];
 const mailServer = http.createServer((request, response) => {
   const chunks: Buffer[] = [];
@@ -19,12 +21,16 @@ const mailServer = http.createServer((request, response) => {
   request.on('end', () => {
     deliveryRequests += 1;
     deliveryBodies.push(Buffer.concat(chunks).toString('utf8'));
+    deliveryPaths.push(String(request.url || ''));
+    deliveryHeaders.push(request.headers);
     const requestNumber = deliveryRequests;
     const shouldFail = failDelivery;
     const complete = () => {
-      response.statusCode = shouldFail ? 503 : 201;
+      response.statusCode = shouldFail ? 503 : 202;
       response.setHeader('Content-Type', 'application/json');
-      response.end(JSON.stringify(shouldFail ? { message: 'Simulated delivery failure' } : { messageId: `test-${requestNumber}` }));
+      response.end(JSON.stringify(shouldFail
+        ? { code: 'sending_disabled', message: 'Simulated delivery failure' }
+        : { status: 'accepted', messageId: `test-${requestNumber}` }));
     };
     if (holdDelivery) heldDeliveryResponses.push(complete);
     else complete();
@@ -51,8 +57,8 @@ Object.assign(process.env, {
   ADMIN_PASSWORD_FILE: passwordFile,
   SESSION_SECRET_FILE: sessionFile,
   EMAIL_MODE: 'send',
-  BREVO_API_KEY: 'auth-delivery-test-key',
-  BREVO_API_URL: `http://127.0.0.1:${address.port}/email`,
+  MAIL_API_TOKEN: 'auth-delivery-key.test-secret',
+  MAIL_API_BASE_URL: `http://127.0.0.1:${address.port}`,
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile,
   ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile,
@@ -95,15 +101,15 @@ function activeTokenCount(email: string) {
 }
 
 function verificationTokenFromDelivery(body: string) {
-  const payload = JSON.parse(body) as { textContent?: string };
-  const match = String(payload.textContent || '').match(/verify-email\?token=([A-Za-z0-9_-]{40,100})/);
+  const payload = JSON.parse(body) as { text?: string };
+  const match = String(payload.text || '').match(/verify-email\?token=([A-Za-z0-9_-]{40,100})/);
   assert.ok(match, 'the captured email should contain a verification token');
   return match[1];
 }
 
 function passwordResetTokenFromDelivery(body: string) {
-  const payload = JSON.parse(body) as { textContent?: string };
-  const match = String(payload.textContent || '').match(/reset-password\?token=([A-Za-z0-9_-]{40,100})/);
+  const payload = JSON.parse(body) as { text?: string };
+  const match = String(payload.text || '').match(/reset-password\?token=([A-Za-z0-9_-]{40,100})/);
   assert.ok(match, 'the captured email should contain a password reset token');
   return match[1];
 }
@@ -211,6 +217,10 @@ test('a failed verification request grants only one immediate resend exemption',
   }).expect(202);
   await waitFor(() => deliveryBodies.length > deliveryIndex);
   const replacementToken = verificationTokenFromDelivery(deliveryBodies[deliveryIndex]);
+  assert.equal(deliveryPaths[deliveryIndex], '/v1/messages');
+  assert.equal(deliveryHeaders[deliveryIndex].authorization, 'Bearer auth-delivery-key.test-secret');
+  assert.match(String(deliveryHeaders[deliveryIndex]['idempotency-key']), /^[0-9a-f-]{36}$/i);
+  assert.equal(deliveryHeaders[deliveryIndex]['content-type'], 'application/json');
 
   const deliveriesAfterExemption = deliveryRequests;
   const second = await request(app).post('/api/auth/resend-verification').set('x-forwarded-for', '198.51.100.92').send({

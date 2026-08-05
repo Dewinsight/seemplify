@@ -268,7 +268,7 @@ export default function StandaloneAdminPage() {
             <div className={`${panelClass} p-5`}>
               <div className="flex items-center gap-2 text-lg font-semibold"><Mail className="h-5 w-5 text-blue-600" />Email delivery</div>
               <div className="mt-4 grid gap-2 text-sm">
-                <div className="rounded-2xl bg-slate-50 p-3"><span className="font-semibold">Brevo configured:</span> {emailStatus?.configured ? "Yes" : "No"}</div>
+                <div className="rounded-2xl bg-slate-50 p-3"><span className="font-semibold">Mail service configured:</span> {emailStatus?.configured ? "Yes" : "No"}</div>
                 <div className="rounded-2xl bg-slate-50 p-3"><span className="font-semibold">Mode:</span> {emailStatus?.mode || "unknown"}</div>
                 <div className="rounded-2xl bg-slate-50 p-3"><span className="font-semibold">From:</span> {emailStatus?.fromName} &lt;{emailStatus?.fromEmail}&gt;</div>
               </div>

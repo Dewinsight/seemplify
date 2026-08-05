@@ -879,7 +879,7 @@ export async function forgotPassword(request: Request, response: Response) {
   const attemptId = user ? beginAccountEmailAttempt(user.id, 'password_reset', true) : null;
   if (user && attemptId) {
     const issued = createPasswordResetToken(user, null, false);
-    void sendPasswordResetEmail({ email: issued.user.email, name: issued.user.name, token: issued.token }).then(() => {
+    void sendPasswordResetEmail({ resetId: issued.id, email: issued.user.email, name: issued.user.name, token: issued.token }).then(() => {
       const deliveredAt = new Date().toISOString();
       db.transaction(() => {
         // A replacement becomes authoritative only after the provider accepts

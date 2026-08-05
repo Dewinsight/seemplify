@@ -7,7 +7,7 @@ Standalone Simple LMS application with its own authentication, organization/team
 - Organization + team hierarchy setup workspace
 - Full Simple LMS workspace (courses, programs, assignments, requests)
 - Banner uploads via Cloudinary
-- Email notifications via Brevo (optional)
+- Email notifications via the Seemplify transactional mail service (optional)
 - Dokploy deployment workflow
 
 ## Run Locally
@@ -23,9 +23,10 @@ Standalone Simple LMS application with its own authentication, organization/team
 - `PORT`
 - `MONGODB_URI`
 - `SESSION_SECRET`
-- `BREVO_API_KEY` (optional, needed for real emails)
-- `SENDER_EMAIL`
-- `SENDER_NAME`
+- `MAIL_API_BASE_URL` (optional, needed for real emails; local default `http://127.0.0.1:5020`)
+- `MAIL_API_TOKEN` (`<keyId>.<secret>`, from the secret store)
+- `MAIL_FROM_EMAIL`
+- `MAIL_FROM_NAME`
 - `APP_BASE_URL`
 - `CLOUDINARY_URL` (required for banner uploads)
 

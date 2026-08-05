@@ -1,0 +1,40 @@
+# DISABLED TEMPLATE — verification only; GitHub does not load this suffix.
+# Keep disabled until native SDK release governance and CI ownership are approved.
+name: Journey Kotlin Android foundation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - experience-management/packages/journey-kotlin/**
+      - experience-management/packages/journey-event-protocol/fixtures/v1/**
+
+permissions:
+  contents: read
+
+jobs:
+  verify-jvm-and-compile-android-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: experience-management/packages/journey-kotlin
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+      - name: Install pinned Android build inputs
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Validate wrapper
+        uses: gradle/actions/wrapper-validation@017a9effdb900e5b5b2fddfb590a105619dca3c3a # v4.4.2
+      - name: Verify without publishing
+        run: >-
+          ./gradlew --no-daemon clean verifyCanonicalFixtures verifyUnreleased
+          testDebugUnitTest lintDebug assembleRelease assembleDebugAndroidTest
+          generatePomFileForReleasePublication generateMetadataFileForReleasePublication
+      - name: Assert no registry publication task ran
+        run: test ! -d build/repos && test ! -d build/publications/release/repository

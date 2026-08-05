@@ -1,0 +1,128 @@
+{
+  "fixtureVersion": "journey-operational-measures-golden/v1",
+  "cases": [
+    {
+      "name": "stage conversion applies corrections before period filtering",
+      "request": {
+        "definition": {
+          "measureId": "activation-conversion",
+          "definitionVersion": "measure/v3",
+          "label": "Evaluate to buy conversion",
+          "kind": "stage_conversion",
+          "subjectType": "journey_instance",
+          "sourceLineages": [{
+            "sourceRef": "events:product",
+            "sourceVersion": "source/v2",
+            "schemaVersion": "schema/v4",
+            "projectionVersion": "projection/v5",
+            "journeyId": "activation",
+            "journeyVersion": "journey/v7",
+            "ruleSetVersion": "rules/v3"
+          }],
+          "minimumSampleSize": 3,
+          "freshnessMaxAgeSeconds": 86400,
+          "decimalPlaces": 1,
+          "stageId": "evaluate",
+          "targetStageId": "buy",
+          "populationEventType": "journey.eligible",
+          "entryEventType": "stage.entry",
+          "completionEventType": "stage.complete",
+          "dropoutEventType": "stage.dropout"
+        },
+        "period": { "start": "2026-08-01T00:00:00.000Z", "end": "2026-08-02T00:00:00.000Z", "timezone": "UTC" },
+        "asOf": "2026-08-02T00:00:00.000Z",
+        "observations": [
+          { "observationId": "c-target", "sourceRecordId": "record-c-target", "subjectId": "instance-c", "subjectType": "journey_instance", "eventType": "stage.entry", "stageId": "buy", "occurredAt": "2026-08-01T10:00:00.000Z", "sourceLineage": { "sourceRef": "events:product", "sourceVersion": "source/v2", "schemaVersion": "schema/v4", "projectionVersion": "projection/v5", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v3" } },
+          { "observationId": "b-target", "revision": 2, "sourceRecordId": "record-b-target-v2", "subjectId": "instance-b", "subjectType": "journey_instance", "eventType": "stage.entry", "stageId": "buy", "occurredAt": "2026-07-31T23:00:00.000Z", "sourceLineage": { "sourceRef": "events:product", "sourceVersion": "source/v2", "schemaVersion": "schema/v4", "projectionVersion": "projection/v5", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v3" } },
+          { "observationId": "a-source", "sourceRecordId": "record-a-source", "subjectId": "instance-a", "subjectType": "journey_instance", "eventType": "stage.entry", "stageId": "evaluate", "occurredAt": "2026-08-01T08:00:00.000Z", "sourceLineage": { "sourceRef": "events:product", "sourceVersion": "source/v2", "schemaVersion": "schema/v4", "projectionVersion": "projection/v5", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v3" } },
+          { "observationId": "c-source", "sourceRecordId": "record-c-source", "subjectId": "instance-c", "subjectType": "journey_instance", "eventType": "stage.entry", "stageId": "evaluate", "occurredAt": "2026-08-01T08:00:00.000Z", "sourceLineage": { "sourceRef": "events:product", "sourceVersion": "source/v2", "schemaVersion": "schema/v4", "projectionVersion": "projection/v5", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v3" } },
+          { "observationId": "b-target", "revision": 1, "sourceRecordId": "record-b-target-v1", "subjectId": "instance-b", "subjectType": "journey_instance", "eventType": "stage.entry", "stageId": "buy", "occurredAt": "2026-08-01T09:00:00.000Z", "sourceLineage": { "sourceRef": "events:product", "sourceVersion": "source/v2", "schemaVersion": "schema/v4", "projectionVersion": "projection/v5", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v3" } },
+          { "observationId": "a-target", "sourceRecordId": "record-a-target", "subjectId": "instance-a", "subjectType": "journey_instance", "eventType": "stage.entry", "stageId": "buy", "occurredAt": "2026-08-01T09:00:00.000Z", "sourceLineage": { "sourceRef": "events:product", "sourceVersion": "source/v2", "schemaVersion": "schema/v4", "projectionVersion": "projection/v5", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v3" } },
+          { "observationId": "b-source", "sourceRecordId": "record-b-source", "subjectId": "instance-b", "subjectType": "journey_instance", "eventType": "stage.entry", "stageId": "evaluate", "occurredAt": "2026-08-01T08:00:00.000Z", "sourceLineage": { "sourceRef": "events:product", "sourceVersion": "source/v2", "schemaVersion": "schema/v4", "projectionVersion": "projection/v5", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v3" } }
+        ]
+      },
+      "expectedSha256": "db88c0cda45104e56e80455f25b7a27abc42b49032deeb4b6f2e51e4bcfee372"
+    },
+    {
+      "name": "sentiment trend compares equal windows without significance claims",
+      "request": {
+        "definition": {
+          "measureId": "social-sentiment-trend",
+          "definitionVersion": "measure/v1",
+          "label": "Social sentiment trend",
+          "kind": "sentiment_trend",
+          "subjectType": "social_post",
+          "sourceLineages": [{
+            "sourceRef": "social:x",
+            "sourceVersion": "api/v2",
+            "schemaVersion": "sentiment/v1",
+            "projectionVersion": "projection/v1",
+            "journeyId": null,
+            "journeyVersion": null,
+            "ruleSetVersion": null
+          }],
+          "minimumSampleSize": 4,
+          "freshnessMaxAgeSeconds": 604800,
+          "decimalPlaces": 1,
+          "sentimentEventType": "sentiment.observed",
+          "comparisonPeriod": { "start": "2026-07-25T00:00:00.000Z", "end": "2026-08-01T00:00:00.000Z", "timezone": "UTC" }
+        },
+        "period": { "start": "2026-08-01T00:00:00.000Z", "end": "2026-08-08T00:00:00.000Z", "timezone": "UTC" },
+        "asOf": "2026-08-09T00:00:00.000Z",
+        "observations": [
+          { "observationId": "current-1", "sourceRecordId": "post-current-1", "subjectId": "post-current-1", "subjectType": "social_post", "eventType": "sentiment.observed", "sentiment": "positive", "occurredAt": "2026-08-02T00:00:00.000Z", "sourceLineage": { "sourceRef": "social:x", "sourceVersion": "api/v2", "schemaVersion": "sentiment/v1", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "previous-1", "sourceRecordId": "post-previous-1", "subjectId": "post-previous-1", "subjectType": "social_post", "eventType": "sentiment.observed", "sentiment": "negative", "occurredAt": "2026-07-26T00:00:00.000Z", "sourceLineage": { "sourceRef": "social:x", "sourceVersion": "api/v2", "schemaVersion": "sentiment/v1", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "current-2", "sourceRecordId": "post-current-2", "subjectId": "post-current-2", "subjectType": "social_post", "eventType": "sentiment.observed", "sentiment": "negative", "occurredAt": "2026-08-03T00:00:00.000Z", "sourceLineage": { "sourceRef": "social:x", "sourceVersion": "api/v2", "schemaVersion": "sentiment/v1", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "previous-2", "sourceRecordId": "post-previous-2", "subjectId": "post-previous-2", "subjectType": "social_post", "eventType": "sentiment.observed", "sentiment": "negative", "occurredAt": "2026-07-27T00:00:00.000Z", "sourceLineage": { "sourceRef": "social:x", "sourceVersion": "api/v2", "schemaVersion": "sentiment/v1", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "current-3", "sourceRecordId": "post-current-3", "subjectId": "post-current-3", "subjectType": "social_post", "eventType": "sentiment.observed", "sentiment": "neutral", "occurredAt": "2026-08-04T00:00:00.000Z", "sourceLineage": { "sourceRef": "social:x", "sourceVersion": "api/v2", "schemaVersion": "sentiment/v1", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "previous-3", "sourceRecordId": "post-previous-3", "subjectId": "post-previous-3", "subjectType": "social_post", "eventType": "sentiment.observed", "sentiment": "neutral", "occurredAt": "2026-07-28T00:00:00.000Z", "sourceLineage": { "sourceRef": "social:x", "sourceVersion": "api/v2", "schemaVersion": "sentiment/v1", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "current-4", "sourceRecordId": "post-current-4", "subjectId": "post-current-4", "subjectType": "social_post", "eventType": "sentiment.observed", "sentiment": "positive", "occurredAt": "2026-08-05T00:00:00.000Z", "sourceLineage": { "sourceRef": "social:x", "sourceVersion": "api/v2", "schemaVersion": "sentiment/v1", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "previous-4", "sourceRecordId": "post-previous-4", "subjectId": "post-previous-4", "subjectType": "social_post", "eventType": "sentiment.observed", "sentiment": "positive", "occurredAt": "2026-07-29T00:00:00.000Z", "sourceLineage": { "sourceRef": "social:x", "sourceVersion": "api/v2", "schemaVersion": "sentiment/v1", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "current-invalid", "sourceRecordId": "post-current-invalid", "subjectId": "post-current-invalid", "subjectType": "social_post", "eventType": "sentiment.observed", "sentiment": "mixed", "occurredAt": "2026-08-06T00:00:00.000Z", "sourceLineage": { "sourceRef": "social:x", "sourceVersion": "api/v2", "schemaVersion": "sentiment/v1", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } }
+        ]
+      },
+      "expectedSha256": "84887c306e5d720206e05fef93a2a57384f3cb29bd5ed5a7799e86fbf32f7978"
+    },
+    {
+      "name": "safe custom duration reports distribution and rejected pairs",
+      "request": {
+        "definition": {
+          "measureId": "checkout-duration",
+          "definitionVersion": "measure/v2",
+          "label": "Checkout duration",
+          "kind": "custom_duration",
+          "subjectType": "custom",
+          "sourceLineages": [{
+            "sourceRef": "events:checkout",
+            "sourceVersion": "source/v1",
+            "schemaVersion": "schema/v2",
+            "projectionVersion": "projection/v1",
+            "journeyId": null,
+            "journeyVersion": null,
+            "ruleSetVersion": null
+          }],
+          "minimumSampleSize": 3,
+          "freshnessMaxAgeSeconds": 86400,
+          "decimalPlaces": 0,
+          "startEventType": "checkout.started",
+          "endEventType": "checkout.finished",
+          "maximumDurationMs": 14400000
+        },
+        "period": { "start": "2026-08-01T00:00:00.000Z", "end": "2026-08-02T00:00:00.000Z", "timezone": "UTC" },
+        "asOf": "2026-08-02T00:00:00.000Z",
+        "observations": [
+          { "observationId": "a-start", "sourceRecordId": "record-a-start", "subjectId": "a", "subjectType": "custom", "eventType": "checkout.started", "occurredAt": "2026-08-01T08:00:00.000Z", "sourceLineage": { "sourceRef": "events:checkout", "sourceVersion": "source/v1", "schemaVersion": "schema/v2", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "a-end", "sourceRecordId": "record-a-end", "subjectId": "a", "subjectType": "custom", "eventType": "checkout.finished", "occurredAt": "2026-08-01T09:00:00.000Z", "sourceLineage": { "sourceRef": "events:checkout", "sourceVersion": "source/v1", "schemaVersion": "schema/v2", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "b-start", "sourceRecordId": "record-b-start", "subjectId": "b", "subjectType": "custom", "eventType": "checkout.started", "occurredAt": "2026-08-01T08:00:00.000Z", "sourceLineage": { "sourceRef": "events:checkout", "sourceVersion": "source/v1", "schemaVersion": "schema/v2", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "b-end", "sourceRecordId": "record-b-end", "subjectId": "b", "subjectType": "custom", "eventType": "checkout.finished", "occurredAt": "2026-08-01T10:00:00.000Z", "sourceLineage": { "sourceRef": "events:checkout", "sourceVersion": "source/v1", "schemaVersion": "schema/v2", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "c-start", "sourceRecordId": "record-c-start", "subjectId": "c", "subjectType": "custom", "eventType": "checkout.started", "occurredAt": "2026-08-01T08:00:00.000Z", "sourceLineage": { "sourceRef": "events:checkout", "sourceVersion": "source/v1", "schemaVersion": "schema/v2", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "c-end", "sourceRecordId": "record-c-end", "subjectId": "c", "subjectType": "custom", "eventType": "checkout.finished", "occurredAt": "2026-08-01T11:00:00.000Z", "sourceLineage": { "sourceRef": "events:checkout", "sourceVersion": "source/v1", "schemaVersion": "schema/v2", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "d-start", "sourceRecordId": "record-d-start", "subjectId": "d", "subjectType": "custom", "eventType": "checkout.started", "occurredAt": "2026-08-01T08:00:00.000Z", "sourceLineage": { "sourceRef": "events:checkout", "sourceVersion": "source/v1", "schemaVersion": "schema/v2", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "e-start", "sourceRecordId": "record-e-start", "subjectId": "e", "subjectType": "custom", "eventType": "checkout.started", "occurredAt": "2026-08-01T08:00:00.000Z", "sourceLineage": { "sourceRef": "events:checkout", "sourceVersion": "source/v1", "schemaVersion": "schema/v2", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } },
+          { "observationId": "e-end", "sourceRecordId": "record-e-end", "subjectId": "e", "subjectType": "custom", "eventType": "checkout.finished", "occurredAt": "2026-08-01T18:00:00.000Z", "sourceLineage": { "sourceRef": "events:checkout", "sourceVersion": "source/v1", "schemaVersion": "schema/v2", "projectionVersion": "projection/v1", "journeyId": null, "journeyVersion": null, "ruleSetVersion": null } }
+        ]
+      },
+      "expectedSha256": "a23af0caa6a171fb6977d054bfbff489fc95245cd92cf64604ea13d780c376e2"
+    }
+  ]
+}

@@ -47,7 +47,7 @@ export default function RecruiterLoginPage() {
             </div>
             <h1 className="mt-8 max-w-md text-4xl font-bold leading-tight">Create voice-led AI interviews and send secure candidate links.</h1>
             <p className="mt-4 max-w-md text-sm leading-6 text-slate-300">
-              This is the standalone app, backed by its own Mongo database, wallet billing, Brevo invites, scoring, and proctoring.
+              This is the standalone app, backed by its own Mongo database, wallet billing, email invites, scoring, and proctoring.
             </p>
           </div>
           <form onSubmit={submit} className="p-6 sm:p-10">

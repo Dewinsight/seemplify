@@ -31,14 +31,18 @@ $PostgresContainer = 'xplorer-postgres'
 $PostgresDatabase = 'seemplify_experience'
 $PostgresRole = 'seemplify_experience_app'
 $PostgresOwnerRole = 'seemplify_experience_owner'
-$PostgresRuntimeSchemaVersion = 11
+$PostgresRuntimeSchemaVersion = 20
 $PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
 $PostgresCutoverState = Join-Path $RuntimeDir 'postgres-cutover-state-v1'
-$PostgresRuntimeUpgradeMarker = Join-Path $RuntimeDir 'postgres-runtime-schema-v11-started'
+$PostgresRuntimeUpgradeMarker = Join-Path $RuntimeDir "postgres-runtime-schema-v$PostgresRuntimeSchemaVersion-started"
 $PostgresMigrationLog = Join-Path $RuntimeDir 'postgres-migration.log'
 $PidFile = Join-Path $RuntimeDir 'server.pid'
 $PasswordFile = Join-Path $RuntimeDir 'admin-password'
 $SessionSecretFile = Join-Path $RuntimeDir 'session-secret'
+$ConfiguredJourneyIdentityHashKeyFile = [string][Environment]::GetEnvironmentVariable('JOURNEY_IDENTITY_HASH_KEY_FILE')
+$JourneyIdentityHashKeyFile = if ([string]::IsNullOrWhiteSpace($ConfiguredJourneyIdentityHashKeyFile)) {
+  Join-Path $RuntimeDir 'journey-identity-hash-key'
+} else { [IO.Path]::GetFullPath($ConfiguredJourneyIdentityHashKeyFile) }
 $BrevoWebhookSecretFile = Join-Path $RuntimeDir 'brevo-webhook-secret'
 $XCredentialEncryptionKeyFile = Join-Path $RuntimeDir 'x-credential-encryption-key'
 $NylasCredentialEncryptionKeyFile = Join-Path $RuntimeDir 'nylas-credential-encryption-key'
@@ -227,6 +231,10 @@ function Get-NylasEnvironmentFile {
 function Initialize-Runtime {
   if (-not (Test-Path -LiteralPath $PasswordFile)) { Set-Content -LiteralPath $PasswordFile -Value (New-RandomSecret 24) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $SessionSecretFile)) { Set-Content -LiteralPath $SessionSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $JourneyIdentityHashKeyFile)) {
+    New-Item -ItemType Directory -Force (Split-Path -Parent $JourneyIdentityHashKeyFile) | Out-Null
+    Set-Content -LiteralPath $JourneyIdentityHashKeyFile -Value (New-RandomSecret 48) -Encoding ascii
+  }
   if (-not (Test-Path -LiteralPath $PostgresPasswordFile)) { Set-Content -LiteralPath $PostgresPasswordFile -Value (New-RandomSecret 48) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $PostgresOwnerPasswordFile)) { Set-Content -LiteralPath $PostgresOwnerPasswordFile -Value (New-RandomSecret 48) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $BrevoWebhookSecretFile)) { Set-Content -LiteralPath $BrevoWebhookSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
@@ -237,7 +245,7 @@ function Initialize-Runtime {
   New-Item -ItemType Directory -Force $KnowledgeStorageDir | Out-Null
   New-Item -ItemType Directory -Force $KnowledgeRuntimeDir | Out-Null
   foreach ($secretFile in @(
-    $PasswordFile, $SessionSecretFile, $PostgresPasswordFile, $PostgresOwnerPasswordFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $NylasCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
+    $PasswordFile, $SessionSecretFile, $JourneyIdentityHashKeyFile, $PostgresPasswordFile, $PostgresOwnerPasswordFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $NylasCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
     $XConsumerKeyFile, $XConsumerSecretFile, $XBearerTokenFile, $XAccessTokenFile,
     $XAccessTokenSecretFile, $XClientIdFile, $XClientSecretFile, $CloudflareTunnelTokenFile, $ExperienceNylasEnvFile
   )) { Protect-RuntimeSecret $secretFile }
@@ -545,6 +553,7 @@ function Start-Server {
   Initialize-PostgresCutover $ProjectDir
   $env:HOST='127.0.0.1'; $env:PORT='5410'; $env:PUBLIC_URL='https://experience.aiinnigeria.com'
   $env:ADMIN_PASSWORD_FILE=$PasswordFile; $env:SESSION_SECRET_FILE=$SessionSecretFile
+  $env:JOURNEY_IDENTITY_HASH_KEY_FILE=$JourneyIdentityHashKeyFile
   $env:BREVO_WEBHOOK_SECRET_FILE=$BrevoWebhookSecretFile
   $env:X_CREDENTIAL_ENCRYPTION_KEY_FILE=$XCredentialEncryptionKeyFile
   $env:NYLAS_CREDENTIAL_ENCRYPTION_KEY_FILE=$NylasCredentialEncryptionKeyFile
@@ -561,11 +570,11 @@ function Start-Server {
   $env:X_SEED_CLIENT_ID_FILE=$XClientIdFile; $env:X_SEED_CLIENT_SECRET_FILE=$XClientSecretFile
   $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
   $env:TERRA_GATEWAY_BASE_URL='http://127.0.0.1:11435'; $env:TERRA_GATEWAY_SHARED_SECRET_FILE=(Join-Path $RepositoryDir '.local-runtime\llm\service-secret')
-  # The shared CRM file supplies Brevo credentials only. Experience owns its
+  # The shared CRM file supplies the mail service credential only. Experience owns its
   # sender identity so an isolated deployment cannot inherit another product's branding.
-  $env:BREVO_FROM_NAME='Seemplify Experience'; $env:BREVO_FROM_EMAIL='no-reply@seemplifyai.com'
-  $sharedBrevo = Join-Path (Split-Path -Parent $RepositoryDir) 'crm\Xplorer-Full-backend\.env'
-  if (Test-Path -LiteralPath $sharedBrevo) { $env:BREVO_ENV_FILE=$sharedBrevo }
+  $env:MAIL_FROM_NAME='Seemplify Experience'; $env:MAIL_FROM_EMAIL='no-reply@seemplifyai.com'
+  $sharedMailEnv = Join-Path (Split-Path -Parent $RepositoryDir) 'crm\Xplorer-Full-backend\.env'
+  if (Test-Path -LiteralPath $sharedMailEnv) { $env:MAIL_ENV_FILE=$sharedMailEnv }
   $process = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList @('backend/dist/server.js') -WorkingDirectory $ProjectDir -WindowStyle Hidden -RedirectStandardOutput $StdoutLog -RedirectStandardError $StderrLog -PassThru
   Set-Content -LiteralPath $PidFile -Value $process.Id -Encoding ascii
   $deadline = (Get-Date).AddSeconds(20); do { Start-Sleep -Milliseconds 400; try { if ((Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:5410/health' -TimeoutSec 2).StatusCode -eq 200) { return } } catch {} } while ((Get-Date) -lt $deadline)

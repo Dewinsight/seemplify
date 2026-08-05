@@ -6,6 +6,31 @@ on:
   pull_request:
     paths: ['experience-management/**', 'recruiter/backend/config/aiRuntimeCatalog.js', '.github/workflows/experience-management-ci.yml']
 jobs:
+  sdk-runtime-matrix:
+    name: SDK runtime (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    defaults:
+      run:
+        working-directory: experience-management
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: experience-management/package-lock.json
+      - run: npm ci
+      - run: npm run qualify:sdk
+      - run: npm run typecheck:sdk
+      - run: npm run test:sdk
+      - run: npm run build:sdk
+      - run: npm run test:sdk:browser-compat
+      - run: npm run test:sdk:consumer
+
   verify:
     runs-on: ubuntu-latest
     defaults:
@@ -19,7 +44,9 @@ jobs:
           cache: npm
           cache-dependency-path: experience-management/package-lock.json
       - run: npm ci
+      - run: npm run qualify:sdk
       - run: npx playwright install --with-deps chromium
+      - run: npm run validate:journey-plan
       - run: npm run test:all
       - uses: actions/upload-artifact@v4
         if: failure()

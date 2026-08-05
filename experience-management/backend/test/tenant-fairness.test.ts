@@ -14,7 +14,8 @@ Object.assign(process.env, {
   EMAIL_MODE: 'log'
 });
 
-const { db, claimNextJob, createJob, updateJob } = await import('../src/database.js');
+const { db, updateJob } = await import('../src/database.js');
+const { claimNextAiJobFixture, createAiJobFixture } = await import('./aiJobFixtures.js');
 const createdAt = '2026-07-01T09:00:00.000Z';
 db.prepare(`INSERT INTO users (id,email,name,password_hash,role,session_version,created_at,updated_at)
   VALUES ('fair-a','fair-a@example.test','Fair A','hash','owner',1,?,?),
@@ -30,15 +31,15 @@ after(() => {
 });
 
 test('AI dispatch gives another waiting space a slot before taking the first space backlog', () => {
-  const firstA = createJob('social.analyze', {}, spaceA, null, null, 'fair-a');
-  const secondA = createJob('social.analyze', {}, spaceA, null, null, 'fair-a');
-  const firstB = createJob('social.analyze', {}, spaceB, null, null, 'fair-b');
+  const firstA = createAiJobFixture('social.analyze', {}, spaceA, null, null, 'fair-a');
+  const secondA = createAiJobFixture('social.analyze', {}, spaceA, null, null, 'fair-a');
+  const firstB = createAiJobFixture('social.analyze', {}, spaceB, null, null, 'fair-b');
 
-  assert.equal(claimNextJob()?.id, firstA.id);
-  assert.equal(claimNextJob()?.id, firstB.id);
+  assert.equal(claimNextAiJobFixture()?.id, firstA.id);
+  assert.equal(claimNextAiJobFixture()?.id, firstB.id);
   updateJob(firstA.id, { state: 'completed', stage: 'completed', progress: 100, completedAt: new Date().toISOString() });
   updateJob(firstB.id, { state: 'completed', stage: 'completed', progress: 100, completedAt: new Date().toISOString() });
-  assert.equal(claimNextJob()?.id, secondA.id);
+  assert.equal(claimNextAiJobFixture()?.id, secondA.id);
 });
 
 function insertCampaignFixture(prefix: string, spaceId: string, deliveryTimes: string[]) {

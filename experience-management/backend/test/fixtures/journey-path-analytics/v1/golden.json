@@ -1,0 +1,72 @@
+{
+  "fixtureVersion": "journey-path-analytics-golden/v1",
+  "cases": [
+    {
+      "name": "corrected and out-of-order visits produce deterministic privacy-safe path tables",
+      "request": {
+        "lineage": {
+          "journeyId": "activation",
+          "journeyVersion": "journey/v7",
+          "ruleSetVersion": "rules/v4",
+          "projectionVersion": "projection/v2"
+        },
+        "designedStageOrder": ["discover", "evaluate", "buy", "onboard"],
+        "period": {
+          "start": "2026-08-01T00:00:00.000Z",
+          "end": "2026-08-02T00:00:00.000Z",
+          "timezone": "UTC"
+        },
+        "asOf": "2026-08-03T00:00:00.000Z",
+        "cohortId": "enterprise",
+        "minimumCohortSize": 2,
+        "visits": [
+          { "visitId": "i3-buy", "sourceEventId": "evt-i3-buy", "journeyInstanceId": "i3", "profileId": "p3", "accountId": "a3", "cohortIds": ["uk", "enterprise"], "stageId": "buy", "occurredAt": "2026-08-01T13:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i1-discover", "sourceEventId": "evt-i1-discover", "journeyInstanceId": "i1", "profileId": "p1", "accountId": "a1", "cohortIds": ["enterprise", "uk"], "stageId": "discover", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i5-onboard", "sourceEventId": "evt-i5-onboard", "journeyInstanceId": "i5", "profileId": "p5", "accountId": "a5", "cohortIds": ["enterprise", "uk"], "stageId": "onboard", "occurredAt": "2026-08-01T11:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i2-evaluate", "revision": 1, "sourceEventId": "evt-i2-evaluate-v1", "journeyInstanceId": "i2", "profileId": "p2", "accountId": "a2", "cohortIds": ["enterprise", "uk"], "stageId": "evaluate", "occurredAt": "2026-08-01T10:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i4-evaluate-2", "sourceEventId": "evt-i4-evaluate-2", "journeyInstanceId": "i4", "profileId": "p4", "accountId": "a4", "cohortIds": ["enterprise", "uk"], "stageId": "evaluate", "occurredAt": "2026-08-01T12:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i1-buy", "sourceEventId": "evt-i1-buy", "journeyInstanceId": "i1", "profileId": "p1", "accountId": "a1", "cohortIds": ["enterprise", "uk"], "stageId": "buy", "occurredAt": "2026-08-01T11:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i4-onboard", "sourceEventId": "evt-i4-onboard", "journeyInstanceId": "i4", "profileId": "p4", "accountId": "a4", "cohortIds": ["enterprise", "uk"], "stageId": "onboard", "occurredAt": "2026-08-01T20:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i3-discover-2", "sourceEventId": "evt-i3-discover-2", "journeyInstanceId": "i3", "profileId": "p3", "accountId": "a3", "cohortIds": ["enterprise", "uk"], "stageId": "discover", "occurredAt": "2026-08-01T10:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i2-onboard", "sourceEventId": "evt-i2-onboard", "journeyInstanceId": "i2", "profileId": "p2", "accountId": "a2", "cohortIds": ["enterprise", "uk"], "stageId": "onboard", "occurredAt": "2026-08-01T16:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i3-discover-1", "sourceEventId": "evt-i3-discover-1", "journeyInstanceId": "i3", "profileId": "p3", "accountId": "a3", "cohortIds": ["enterprise", "uk"], "stageId": "discover", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i4-buy", "sourceEventId": "evt-i4-buy", "journeyInstanceId": "i4", "profileId": "p4", "accountId": "a4", "cohortIds": ["enterprise", "uk"], "stageId": "buy", "occurredAt": "2026-08-01T15:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i1-onboard", "sourceEventId": "evt-i1-onboard", "journeyInstanceId": "i1", "profileId": "p1", "accountId": "a1", "cohortIds": ["enterprise", "uk"], "stageId": "onboard", "occurredAt": "2026-08-01T14:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i4-discover-2", "sourceEventId": "evt-i4-discover-2", "journeyInstanceId": "i4", "profileId": "p4", "accountId": "a4", "cohortIds": ["enterprise", "uk"], "stageId": "discover", "occurredAt": "2026-08-01T11:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i2-buy", "sourceEventId": "evt-i2-buy", "journeyInstanceId": "i2", "profileId": "p2", "accountId": "a2", "cohortIds": ["enterprise", "uk"], "stageId": "buy", "occurredAt": "2026-08-01T12:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i3-evaluate-2", "sourceEventId": "evt-i3-evaluate-2", "journeyInstanceId": "i3", "profileId": "p3", "accountId": "a3", "cohortIds": ["enterprise", "uk"], "stageId": "evaluate", "occurredAt": "2026-08-01T11:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i5-buy", "sourceEventId": "evt-i5-buy", "journeyInstanceId": "i5", "profileId": "p5", "accountId": "a5", "cohortIds": ["enterprise", "uk"], "stageId": "buy", "occurredAt": "2026-08-01T10:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i1-evaluate", "sourceEventId": "evt-i1-evaluate", "journeyInstanceId": "i1", "profileId": "p1", "accountId": "a1", "cohortIds": ["enterprise", "uk"], "stageId": "evaluate", "occurredAt": "2026-08-01T09:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i4-discover-1", "sourceEventId": "evt-i4-discover-1", "journeyInstanceId": "i4", "profileId": "p4", "accountId": "a4", "cohortIds": ["enterprise", "uk"], "stageId": "discover", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i3-evaluate-1", "sourceEventId": "evt-i3-evaluate-1", "journeyInstanceId": "i3", "profileId": "p3", "accountId": "a3", "cohortIds": ["enterprise", "uk"], "stageId": "evaluate", "occurredAt": "2026-08-01T09:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i2-evaluate", "revision": 2, "sourceEventId": "evt-i2-evaluate-v2", "journeyInstanceId": "i2", "profileId": "p2", "accountId": "a2", "cohortIds": ["enterprise", "uk"], "stageId": "evaluate", "occurredAt": "2026-08-01T09:30:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i3-onboard", "sourceEventId": "evt-i3-onboard", "journeyInstanceId": "i3", "profileId": "p3", "accountId": "a3", "cohortIds": ["enterprise", "uk"], "stageId": "onboard", "occurredAt": "2026-08-01T17:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i4-evaluate-1", "sourceEventId": "evt-i4-evaluate-1", "journeyInstanceId": "i4", "profileId": "p4", "accountId": "a4", "cohortIds": ["enterprise", "uk"], "stageId": "evaluate", "occurredAt": "2026-08-01T10:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i2-discover", "sourceEventId": "evt-i2-discover", "journeyInstanceId": "i2", "profileId": "p2", "accountId": "a2", "cohortIds": ["enterprise", "uk"], "stageId": "discover", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i5-discover", "sourceEventId": "evt-i5-discover", "journeyInstanceId": "i5", "profileId": "p5", "accountId": "a5", "cohortIds": ["enterprise", "uk"], "stageId": "discover", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i1-buy", "sourceEventId": "evt-i1-buy", "journeyInstanceId": "i1", "profileId": "p1", "accountId": "a1", "cohortIds": ["uk", "enterprise"], "stageId": "buy", "occurredAt": "2026-08-01T11:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "retracted", "sourceEventId": "evt-retracted", "journeyInstanceId": "retracted-instance", "profileId": "retracted-profile", "accountId": null, "cohortIds": ["enterprise"], "stageId": "discover", "occurredAt": "2026-08-01T08:00:00.000Z", "invalidReason": "Source event was withdrawn.", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "conflict", "revision": 2, "sourceEventId": "evt-conflict-a", "journeyInstanceId": "conflict-instance", "profileId": "conflict-profile", "accountId": null, "cohortIds": ["enterprise"], "stageId": "discover", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "conflict", "revision": 2, "sourceEventId": "evt-conflict-b", "journeyInstanceId": "conflict-instance", "profileId": "conflict-profile", "accountId": null, "cohortIds": ["enterprise"], "stageId": "evaluate", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "wrong-lineage", "sourceEventId": "evt-wrong-lineage", "journeyInstanceId": "wrong-lineage-instance", "profileId": "wrong-lineage-profile", "accountId": null, "cohortIds": ["enterprise"], "stageId": "discover", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v6", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "i1-before-period", "sourceEventId": "evt-i1-before-period", "journeyInstanceId": "i1", "profileId": "p1", "accountId": "a1", "cohortIds": ["enterprise", "uk"], "stageId": "discover", "occurredAt": "2026-07-31T23:59:59.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "after-as-of", "sourceEventId": "evt-after-as-of", "journeyInstanceId": "future-instance", "profileId": "future-profile", "accountId": null, "cohortIds": ["enterprise"], "stageId": "discover", "occurredAt": "2026-08-04T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "filtered", "sourceEventId": "evt-filtered", "journeyInstanceId": "filtered-instance", "profileId": "filtered-profile", "accountId": null, "cohortIds": ["consumer"], "stageId": "discover", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" },
+          { "visitId": "invalid", "sourceEventId": "evt-invalid", "journeyInstanceId": "invalid-instance", "profileId": "invalid-profile", "accountId": null, "cohortIds": ["enterprise"], "stageId": "bad stage id", "occurredAt": "2026-08-01T08:00:00.000Z", "journeyId": "activation", "journeyVersion": "journey/v7", "ruleSetVersion": "rules/v4", "projectionVersion": "projection/v2" }
+        ]
+      },
+      "expected": {
+        "sha256": "da6bd04774586d3aee0d5c73ce93f21fed8875fc9069865fff704907ef5d1cc3",
+        "acceptedInstanceCount": 5,
+        "acceptedVisitCount": 23,
+        "visiblePathCount": 2,
+        "visibleTransitionCount": 4,
+        "visibleLoopCount": 1,
+        "visibleRepeatCount": 2,
+        "visibleSkippedTransitionCount": 0,
+        "finalFunnelCompletionNumerator": 4,
+        "discoverDurationP95Ms": 7200000
+      }
+    }
+  ]
+}

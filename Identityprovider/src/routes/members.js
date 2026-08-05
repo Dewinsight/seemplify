@@ -725,7 +725,7 @@ router.post('/:orgId/members/profile-reminders',
   requireOrganizationAdmin,
   async (req, res) => {
     try {
-      if (!emailService.apiKey) {
+      if (!emailService.isConfigured()) {
         return res.status(503).json({ error: 'Email service is not configured' })
       }
 

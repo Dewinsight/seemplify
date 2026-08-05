@@ -7,10 +7,13 @@ const AIUsageEvent = require('../models/AIUsageEvent');
 const AIUsageLogicalRequest = require('../models/AIUsageLogicalRequest');
 const {
   ACTIVITY_DEFINITIONS,
+  CHATGPT_PROVIDER,
   GROQ_120B,
   GROQ_20B,
   createDefaultRuntimeSettings,
-  failoverPolicyForRoute
+  failoverPolicyForRoute,
+  isUserOwnedProvider,
+  normalizeRuntimePolicy
 } = require('../config/aiRuntimeCatalog');
 const { CV_EXTRACTION_SCHEMA } = require('./aiModelService');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
@@ -201,12 +204,45 @@ function assessRouting(settings) {
   };
 }
 
-async function getRuntimeSettings() {
+/**
+ * The models an administrator may choose from are read from that
+ * administrator's own connected ChatGPT account, mirroring Experience
+ * Management. A user on a smaller plan is not blocked by the choice: their
+ * session resolves it against their own catalogue and degrades.
+ *
+ * Never throws — an unreachable gateway or an unconnected administrator must
+ * still be able to open the console and manage every other runtime.
+ */
+async function adminCodexCatalog(req) {
+  const adminId = req?.admin?._id ? String(req.admin._id) : '';
+  if (!adminId) return { available: false, models: [], error: null };
+  try {
+    const { callGateway } = require('./aiRuntime/codexAccountService');
+    const account = await callGateway('account', adminId);
+    if (!account?.connected) {
+      return { available: false, models: [], connected: false, error: null };
+    }
+    const payload = await callGateway('models', adminId);
+    return {
+      available: true,
+      connected: true,
+      email: account.email || null,
+      planType: account.planType || null,
+      models: Array.isArray(payload.models) ? payload.models : [],
+      error: null
+    };
+  } catch (error) {
+    return { available: false, models: [], connected: false, error: String(error?.message || 'unavailable') };
+  }
+}
+
+async function getRuntimeSettings(req) {
   const settings = await aiRuntimeService.getSettings({ force: true });
   const quotaGroups = await sanitizeStoredQuotaGroups(settings);
   return {
     ...settings,
     quotaGroups,
+    chatgptCatalog: await adminCodexCatalog(req),
     routingHealth: assessRouting({ ...settings, quotaGroups }),
     activityDefinitions: Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({ activity, ...definition }))
   };
@@ -316,7 +352,7 @@ async function createQuotaGroup(input, req) {
     action: 'quota_group_created', targetType: 'AIQuotaGroup', targetId: id, quotaGroup: id,
     message: `Created independent Groq quota group ${label}`
   });
-  return getRuntimeSettings();
+  return getRuntimeSettings(req);
 }
 
 function runtimeTestValidationError(message, code) {
@@ -599,14 +635,84 @@ async function revokeCredential(id, req) {
   return { success: true };
 }
 
+/**
+ * The global AI kill switch. `providerEnabled` has always been enforced in
+ * resolveRoute; until now nothing could write it.
+ */
+async function updateProviderEnabled(input, req) {
+  if (typeof input.providerEnabled !== 'boolean') {
+    throw new TypeError('providerEnabled must be true or false');
+  }
+  await AIRuntimeSettings.updateOne({ key: 'global' }, {
+    $set: { providerEnabled: input.providerEnabled, updatedBy: req.admin?._id },
+    $inc: { version: 1 }
+  }, { upsert: true });
+  aiRuntimeService.invalidateSettingsCache();
+  await writeAudit(req, {
+    action: 'provider_enabled_updated',
+    targetType: 'AIRuntimeSettings',
+    targetId: 'global',
+    message: `${input.providerEnabled ? 'Enabled' : 'Disabled'} all AI activity`,
+    metadata: { providerEnabled: input.providerEnabled }
+  });
+  return getRuntimeSettings(req);
+}
+
+/**
+ * Which runtimes users may reach, and which one they get by default.
+ *
+ * Both runtimes off is refused outright: it is indistinguishable from the
+ * global kill switch and would leave two controls meaning the same thing. A
+ * default pointing at a disabled runtime is refused rather than silently
+ * corrected, so the administrator sees what they actually asked for.
+ */
+async function updateRuntimePolicy(input, req) {
+  const current = normalizeRuntimePolicy((await aiRuntimeService.getSettings({ force: true })).runtimePolicy);
+  const localEnabled = typeof input.localEnabled === 'boolean' ? input.localEnabled : current.localEnabled;
+  const chatgptEnabled = typeof input.chatgptEnabled === 'boolean' ? input.chatgptEnabled : current.chatgptEnabled;
+  const defaultRuntime = input.defaultRuntime === undefined ? current.defaultRuntime : String(input.defaultRuntime);
+  if (!['local', 'chatgpt'].includes(defaultRuntime)) {
+    throw new TypeError('The default runtime must be local or chatgpt');
+  }
+  if (!localEnabled && !chatgptEnabled) {
+    throw new TypeError('At least one AI runtime must stay enabled; use the AI kill switch to stop all activity');
+  }
+  if (defaultRuntime === 'chatgpt' && !chatgptEnabled) {
+    throw new TypeError('The ChatGPT runtime must be enabled before it can be the default');
+  }
+  if (defaultRuntime === 'local' && !localEnabled) {
+    throw new TypeError('The local runtime must be enabled before it can be the default');
+  }
+  const runtimePolicy = { localEnabled, chatgptEnabled, defaultRuntime };
+  // Enabling a runtime is meaningless while its models are disabled, so the
+  // ChatGPT catalogue entry follows the switch.
+  const settings = await aiRuntimeService.getSettings({ force: true });
+  const models = settings.models.map((model) => (
+    model.provider === CHATGPT_PROVIDER ? { ...model, enabled: chatgptEnabled } : model
+  ));
+  await AIRuntimeSettings.updateOne({ key: 'global' }, {
+    $set: { runtimePolicy, models, updatedBy: req.admin?._id },
+    $inc: { version: 1 }
+  }, { upsert: true });
+  aiRuntimeService.invalidateSettingsCache();
+  await writeAudit(req, {
+    action: 'runtime_policy_updated',
+    targetType: 'AIRuntimeSettings',
+    targetId: 'global',
+    message: `AI runtimes: local ${localEnabled ? 'on' : 'off'}, ChatGPT ${chatgptEnabled ? 'on' : 'off'}, default ${defaultRuntime}`,
+    metadata: runtimePolicy
+  });
+  return getRuntimeSettings(req);
+}
+
 async function updateRoute(activity, input, req) {
   if (!ACTIVITY_DEFINITIONS[activity]) throw new TypeError('Unknown AI activity');
   const settings = await aiRuntimeService.getSettings({ force: true });
   const model = settings.models.find((item) => item.id === input.model && item.enabled !== false);
   if (!model) throw new TypeError('Selected model is not enabled');
   const definition = ACTIVITY_DEFINITIONS[activity];
-  if (definition.lockedProvider && model.provider !== definition.provider) {
-    throw new TypeError(`${activity} is locked to ${definition.provider}`);
+  if (definition.lockedProvider && model.provider !== definition.provider && !isUserOwnedProvider(model.provider)) {
+    throw new TypeError(`${activity} is locked to ${definition.provider} or a connected ChatGPT account`);
   }
   if (model.provider === 'groq' && model.available !== true) throw new TypeError('Sync Groq models and verify access before assigning this model');
   const missingCapabilities = aiRuntimeService.requiredCapabilitiesForActivity(activity)
@@ -616,10 +722,17 @@ async function updateRoute(activity, input, req) {
   }
   const effort = String(input.reasoningEffort || 'medium');
   if (!['low', 'medium', 'high'].includes(effort)) throw new TypeError('Reasoning effort must be low, medium, or high');
+  // For a user-owned route the platform model id is only a placeholder; the
+  // real choice is a model from the connected ChatGPT catalogue, kept as an
+  // ordered preference that each user's own plan resolves.
+  const codexModel = isUserOwnedProvider(model.provider)
+    ? String(input.codexModel || '').trim().slice(0, 200)
+    : '';
   const routes = settings.routes.map((route) => route.activity === activity ? {
     ...route,
     provider: model.provider,
     model: model.id,
+    codexModel,
     reasoningEffort: effort,
     enabled: input.enabled !== false,
     failoverPolicy: failoverPolicyForRoute(activity, model.provider),
@@ -632,9 +745,10 @@ async function updateRoute(activity, input, req) {
   aiRuntimeService.invalidateSettingsCache();
   await writeAudit(req, {
     action: 'route_updated', targetType: 'AIActivityRoute', targetId: activity, model: model.id,
-    message: `Updated ${activity} to ${model.id}`, metadata: { reasoningEffort: effort, enabled: input.enabled !== false }
+    message: `Updated ${activity} to ${codexModel || model.id}`,
+    metadata: { reasoningEffort: effort, enabled: input.enabled !== false, codexModel: codexModel || undefined }
   });
-  return getRuntimeSettings();
+  return getRuntimeSettings(req);
 }
 
 async function updateAlerts(input, req) {
@@ -665,7 +779,7 @@ async function updateAlerts(input, req) {
     action: 'alerts_updated', targetType: 'AIRuntimeSettings', targetId: 'global',
     message: 'Updated AI runtime alert settings', metadata: { enabled: alerts.enabled, recipientCount: alerts.recipients.length, monthlyBudgetUsd: alerts.monthlyBudgetUsd }
   });
-  return getRuntimeSettings();
+  return getRuntimeSettings(req);
 }
 
 async function updateRollout(input, req) {
@@ -694,7 +808,7 @@ async function updateRollout(input, req) {
       : `Set deterministic Groq canary to ${groqPercent}%`,
     metadata: { groqPercent, azureBaselineEnabled: rollout.azureBaselineEnabled }
   });
-  return getRuntimeSettings();
+  return getRuntimeSettings(req);
 }
 
 function rangeStart(range) {
@@ -1427,6 +1541,8 @@ async function getAuditDetail(id) {
 
 module.exports = {
   assessRouting,
+  updateProviderEnabled,
+  updateRuntimePolicy,
   createCredential,
   createQuotaGroup,
   getAuditDetail,

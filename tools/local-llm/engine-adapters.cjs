@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { resolveExecutionPolicy } = require('./execution-policy.cjs');
+const codexSessions = require('./codex-session-manager.cjs');
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(workspaceRoot, '.local-runtime', 'llm');
@@ -996,7 +997,67 @@ async function removeCodexRequestDir(requestDir, {
   }
 }
 
+/**
+ * A subject turn runs on that person's own ChatGPT account through a long-lived
+ * app-server session rather than the shared `codex exec` process. Parsing and
+ * the response envelope are deliberately identical to the shared path so a
+ * caller cannot tell the two apart except by `runtimeOwner`.
+ */
+async function runCodexSubjectTurn(input, state) {
+  const engine = engineSettings({ ...state, selectedEngine: 'codex' });
+  const effectiveInput = prepareInferenceInput(input);
+  const startedAt = Date.now();
+  await effectiveInput.onProviderDispatch?.();
+  // Ordered candidates rather than one model: the session resolves them
+  // against this account's own catalogue and degrades instead of failing when
+  // the caller's preference is not on the connected plan.
+  const turn = await codexSessions.runSubjectTurn(input.codexSubject, {
+    prompt: codexPrompt(effectiveInput),
+    modelCandidates: input.codexModelCandidates,
+    effortCandidates: input.codexEffortCandidates
+      || (input.reasoningEffort ? [{ value: String(input.reasoningEffort), source: 'admin_action' }] : []),
+    jsonSchema: effectiveInput.jsonSchema,
+    requestId: input.requestId,
+    timeoutMs: Number(input.timeoutMs || 240_000)
+  });
+  const { usage, usageReported } = normalizedCodexUsage(turn.rawUsage || {});
+  let parsed;
+  try {
+    parsed = effectiveInput.jsonSchema
+      ? parseStructuredContent(turn.content, 'Codex App Server')
+      : { content: stripThinkingText(turn.content), data: undefined };
+    if (!parsed.content) throw new Error('Codex App Server returned an empty response');
+  } catch (error) {
+    throw attachUsageEnvelope(error, {
+      id: crypto.randomUUID(), engine: 'codex', model: turn.model, usage, usageReported
+    });
+  }
+  return {
+    id: crypto.randomUUID(),
+    engine: 'codex',
+    model: turn.model,
+    ...finalizeOutput(parsed, effectiveInput),
+    usage,
+    usageReported,
+    runtimeOwner: 'user',
+    planType: turn.planType || null,
+    reasoningEffort: turn.reasoningEffort,
+    modelSource: turn.modelSource,
+    reasoningEffortSource: turn.reasoningEffortSource,
+    degraded: turn.degraded,
+    metrics: { latencyMs: Date.now() - startedAt }
+  };
+}
+
 async function runCodex(input, state) {
+  if (input.codexSubject) {
+    if (!codexSessions.perUserSessionsEnabled()) {
+      const error = new Error('Per-user Codex sessions are not enabled on this gateway host');
+      error.code = 'CODEX_PER_USER_DISABLED';
+      throw error;
+    }
+    return runCodexSubjectTurn(input, state);
+  }
   const engine = engineSettings({ ...state, selectedEngine: 'codex' });
   if (!fs.existsSync(codexScript)) {
     const error = new Error('Codex CLI is not installed for the local CV runtime');
@@ -1437,6 +1498,7 @@ module.exports = {
   responseFormatInstruction,
   removeCodexRequestDir,
   runCodex,
+  runCodexSubjectTurn,
   runOllama,
   runVllm,
   shouldEnvelopeOllamaText,

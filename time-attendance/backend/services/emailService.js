@@ -1,64 +1,33 @@
-const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { format } = require('date-fns');
+const { isMailConfigured, sendMail } = require('./mailClient');
 
 /**
  * Email Service
  *
- * Supports:
- * - Brevo transactional API (preferred when BREVO_API_KEY is set)
- * - SMTP fallback for existing deployments
+ * All outbound mail goes through the self-hosted Seemplify mail service. The
+ * previous Brevo API and SMTP-relay paths were removed: the service is the only
+ * supported transport, so there is no second credential to keep in sync.
  */
 
-let transporter = null;
-let emailProvider = null; // 'brevo' | 'smtp' | null
-
-const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
+let emailConfigured = false;
 
 function getSender() {
-    const smtpFrom = process.env.SMTP_FROM;
-    const smtpMatch = smtpFrom
-        ? smtpFrom.match(/"?([^"<]+)"?\s*<([^>]+)>/)
-        : null;
-
-    const senderEmail = process.env.SENDER_EMAIL || smtpMatch?.[2] || 'noreply@seemplifyai.com';
-    const senderName = process.env.SENDER_NAME || smtpMatch?.[1]?.trim() || 'Time & Attendance';
+    const senderEmail = process.env.MAIL_FROM_EMAIL || process.env.SENDER_EMAIL || 'noreply@seemplifyai.com';
+    const senderName = process.env.MAIL_FROM_NAME || process.env.SENDER_NAME || 'Time & Attendance';
     return { senderEmail, senderName };
 }
 
 function initializeEmailService() {
-    const brevoApiKey = process.env.BREVO_API_KEY;
-
-    if (brevoApiKey) {
-        emailProvider = 'brevo';
-        console.log('Email service initialized (Brevo API)');
+    emailConfigured = isMailConfigured();
+    if (emailConfigured) {
+        console.log('Email service initialized (Seemplify mail service)');
         return true;
     }
-
-    const smtpHost = process.env.SMTP_HOST;
-    const smtpPort = process.env.SMTP_PORT || 465;
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-
-    if (!smtpHost || !smtpUser || !smtpPass) {
-        console.warn('Email service not configured (missing BREVO_API_KEY or SMTP settings)');
-        return false;
-    }
-
-    transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: parseInt(smtpPort, 10),
-        secure: parseInt(smtpPort, 10) === 465,
-        auth: {
-            user: smtpUser,
-            pass: smtpPass,
-        },
-    });
-
-    emailProvider = 'smtp';
-    console.log('Email service initialized (SMTP)');
-    return true;
+    console.warn('Email service not configured (missing MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL)');
+    return false;
 }
 
 function loadTemplate(templateName) {
@@ -93,83 +62,45 @@ function normalizeAttachments(attachments = []) {
         }));
 }
 
-async function sendViaBrevo(to, subject, html, attachments = []) {
-    const apiKey = process.env.BREVO_API_KEY;
-    if (!apiKey) {
-        return { success: false, reason: 'BREVO_API_KEY missing' };
-    }
-
-    const { senderEmail, senderName } = getSender();
-    const safeAttachments = normalizeAttachments(attachments).map((attachment) => ({
-        name: attachment.filename,
-        content: attachment.content.toString('base64'),
-    }));
-
-    const response = await fetch(BREVO_API_URL, {
-        method: 'POST',
-        headers: {
-            accept: 'application/json',
-            'content-type': 'application/json',
-            'api-key': apiKey,
-        },
-        body: JSON.stringify({
-            sender: { email: senderEmail, name: senderName },
-            to: [{ email: to }],
-            subject,
-            htmlContent: html,
-            attachment: safeAttachments.length > 0 ? safeAttachments : undefined,
-        }),
-    });
-
-    if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Brevo send failed (${response.status}): ${errorBody}`);
-    }
-
-    const data = await response.json();
-    return { success: true, messageId: data.messageId || null };
-}
-
-async function sendViaSmtp(to, subject, html, attachments = []) {
-    if (!transporter) {
-        return { success: false, reason: 'SMTP transporter not initialized' };
-    }
-
-    const { senderEmail, senderName } = getSender();
-    const safeAttachments = normalizeAttachments(attachments).map((attachment) => ({
-        filename: attachment.filename,
-        content: attachment.content,
-        contentType: attachment.contentType,
-    }));
-
-    const info = await transporter.sendMail({
-        from: `"${senderName}" <${senderEmail}>`,
-        to,
-        subject,
-        html,
-        attachments: safeAttachments,
-    });
-
-    return { success: true, messageId: info.messageId };
-}
-
+/**
+ * @param {string} to
+ * @param {string} subject
+ * @param {string} html
+ * @param {{ attachments?: Array, idempotencyKey?: string, tag?: string }} [options]
+ *   Pass idempotencyKey when the caller owns a business identifier (a timesheet
+ *   id, for example) so a replay cannot deliver twice.
+ */
 async function sendEmail(to, subject, html, options = {}) {
-    if (!emailProvider) {
+    if (!emailConfigured) {
         console.log(`Email skipped (service not configured): ${subject}`);
         return { success: false, reason: 'Email service not configured' };
     }
 
     try {
-        const attachments = normalizeAttachments(options.attachments || []);
-        const result = emailProvider === 'brevo'
-            ? await sendViaBrevo(to, subject, html, attachments)
-            : await sendViaSmtp(to, subject, html, attachments);
+        const { senderEmail, senderName } = getSender();
+        const attachments = normalizeAttachments(options.attachments || []).map((attachment) => ({
+            name: attachment.filename,
+            contentType: attachment.contentType,
+            data: attachment.content.toString('base64'),
+        }));
 
-        console.log(`Email sent (${emailProvider}): ${subject} -> ${to}`);
-        return result;
+        const result = await sendMail({
+            from: senderEmail,
+            fromName: senderName,
+            to: [to],
+            subject,
+            html,
+            tag: options.tag || 'time_attendance_notification',
+            idempotencyKey: String(options.idempotencyKey || '').trim() || crypto.randomUUID(),
+            attachments: attachments.length > 0 ? attachments : undefined,
+        });
+
+        console.log(`Email sent (seemplify-mail): ${subject} -> ${to}`);
+        return { success: true, messageId: result.messageId || null };
     } catch (error) {
-        console.error(`Failed to send email (${emailProvider}): ${subject}`, error.message);
-        return { success: false, error: error.message };
+        // Only the classified message is logged: never the token or the body.
+        console.error(`Failed to send email: ${subject}`, error.message);
+        return { success: false, error: error.message, retryable: Boolean(error.retryable) };
     }
 }
 

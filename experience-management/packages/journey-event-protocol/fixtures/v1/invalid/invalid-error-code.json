@@ -1,0 +1,8 @@
+{
+  "protocolVersion": "1.0",
+  "error": {
+    "code": "invalid payload",
+    "message": "The payload is invalid.",
+    "retryable": false
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Seemplify Connected Journey Events API contract",
+    "version": "1.0.0-contract",
+    "description": "Future API contract only. No production ingestion service is supplied by this package."
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "servers": [
+    {
+      "url": "https://events.example.invalid",
+      "description": "Non-routable documentation placeholder; not a deployed service."
+    }
+  ],
+  "tags": [
+    {
+      "name": "Events",
+      "description": "Durable event acceptance endpoints planned for a later ingestion implementation."
+    }
+  ],
+  "paths": {
+    "/v1/events": {
+      "post": {
+        "operationId": "acceptJourneyEvent",
+        "summary": "Validate and durably accept one event",
+        "description": "A future implementation returns 202 only after durable append. eventId is the idempotency key.",
+        "tags": ["Events"],
+        "security": [
+          { "publicWriteKey": [] },
+          { "serverSecret": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../schemas/v1/event-envelope.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The eventId was accepted previously; no duplicate processing is created.",
+            "content": {
+              "application/json": { "schema": { "$ref": "../../schemas/v1/event-result.schema.json" } }
+            }
+          },
+          "202": {
+            "description": "The new event was durably accepted for asynchronous processing.",
+            "content": {
+              "application/json": { "schema": { "$ref": "../../schemas/v1/event-result.schema.json" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ProtocolError" },
+          "401": { "$ref": "#/components/responses/ProtocolError" },
+          "403": { "$ref": "#/components/responses/ProtocolError" },
+          "413": { "$ref": "#/components/responses/ProtocolError" },
+          "415": { "$ref": "#/components/responses/ProtocolError" },
+          "422": { "$ref": "#/components/responses/ProtocolError" },
+          "429": { "$ref": "#/components/responses/ProtocolError" },
+          "503": { "$ref": "#/components/responses/ProtocolError" }
+        }
+      }
+    },
+    "/v1/batch": {
+      "post": {
+        "operationId": "acceptJourneyEventBatch",
+        "summary": "Validate and durably accept a bounded event batch",
+        "description": "A future implementation preserves input order and returns a stable result for each eventId.",
+        "tags": ["Events"],
+        "security": [
+          { "publicWriteKey": [] },
+          { "serverSecret": [] }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "../../schemas/v1/event-batch.schema.json" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Every eventId in the batch was accepted previously.",
+            "content": {
+              "application/json": { "schema": { "$ref": "../../schemas/v1/batch-result.schema.json" } }
+            }
+          },
+          "202": {
+            "description": "Every event in the batch was newly and durably accepted.",
+            "content": {
+              "application/json": { "schema": { "$ref": "../../schemas/v1/batch-result.schema.json" } }
+            }
+          },
+          "207": {
+            "description": "The valid batch contains a mixture of newly accepted and duplicate eventIds.",
+            "content": {
+              "application/json": { "schema": { "$ref": "../../schemas/v1/batch-result.schema.json" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ProtocolError" },
+          "401": { "$ref": "#/components/responses/ProtocolError" },
+          "403": { "$ref": "#/components/responses/ProtocolError" },
+          "413": { "$ref": "#/components/responses/ProtocolError" },
+          "415": { "$ref": "#/components/responses/ProtocolError" },
+          "422": { "$ref": "#/components/responses/ProtocolError" },
+          "429": { "$ref": "#/components/responses/ProtocolError" },
+          "503": { "$ref": "#/components/responses/ProtocolError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "publicWriteKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "jpk_dev.<key-id>.<secret>, jpk_stg.<key-id>.<secret>, or jpk_live.<key-id>.<secret>",
+        "description": "Ingestion-only source key. It never grants read access."
+      },
+      "serverSecret": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "scoped server secret",
+        "description": "Server-only scoped secret. It must never be embedded in browser or mobile applications."
+      }
+    },
+    "responses": {
+      "ProtocolError": {
+        "description": "Stable protocol, authentication, scope, size, rate, quota, or availability failure.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "../../schemas/v1/protocol-error.schema.json" }
+          }
+        }
+      }
+    }
+  },
+  "x-seemplify-contract-status": "future-not-deployed"
+}

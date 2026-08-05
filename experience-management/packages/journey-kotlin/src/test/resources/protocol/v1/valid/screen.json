@@ -1,0 +1,12 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f53",
+  "call": "screen",
+  "occurredAt": "2026-08-04T12:35:04.000Z",
+  "anonymousId": "anon_mobile_9b2",
+  "properties": { "name": "Workspace setup" },
+  "context": {
+    "device": { "type": "mobile", "operatingSystem": "Android" },
+    "library": { "name": "@seemplify/react-native", "version": "0.1.0" }
+  }
+}

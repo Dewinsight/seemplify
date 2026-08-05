@@ -23,8 +23,9 @@ Object.assign(process.env, {
   ADMIN_PASSWORD_FILE: passwordFile,
   SESSION_SECRET_FILE: sessionFile,
   EMAIL_MODE: 'log',
-  BREVO_FROM_EMAIL: 'verified-campaign-sender@example.test',
-  BREVO_FROM_NAME: 'Configured Experience Team',
+  MAIL_API_BASE_URL: 'http://127.0.0.1:5020',
+  MAIL_FROM_EMAIL: 'verified-campaign-sender@example.test',
+  MAIL_FROM_NAME: 'Configured Experience Team',
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile,
   ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile,
@@ -71,7 +72,7 @@ test('uses a safe immutable campaign sender identity for tests and durable deliv
   }).expect(201);
   const campaignId = created.body.campaign.id;
   assert.equal(created.body.campaign.senderName, senderName);
-  assert.equal(created.body.campaign.senderEmail, config.brevoFromEmail);
+  assert.equal(created.body.campaign.senderEmail, config.mailFromEmail);
   assert.equal((db.prepare('SELECT sender_name FROM campaigns WHERE id=?').get(campaignId) as any).sender_name, senderName);
 
   for (const invalid of ['Research\r\nBcc: victim@example.test', 'Research\tTeam', `Research\u2028Team`, 'x'.repeat(151)]) {
@@ -89,18 +90,18 @@ test('uses a safe immutable campaign sender identity for tests and durable deliv
   }).expect(201);
 
   const originalMode = config.emailMode;
-  const originalKey = config.brevoApiKey;
+  const originalKey = config.mailApiToken;
   const originalFetch = globalThis.fetch;
   const providerRequests: any[] = [];
   let releaseDelivery!: (response: Response) => void;
   const heldDelivery = new Promise<Response>((resolve) => { releaseDelivery = resolve; });
   config.emailMode = 'send';
-  config.brevoApiKey = 'campaign-sender-test-key';
+  config.mailApiToken = 'campaign-sender-key.test-secret';
   globalThis.fetch = async (_url, init) => {
     providerRequests.push(JSON.parse(String(init?.body || '{}')));
     if (providerRequests.length > 1) return heldDelivery;
-    return new Response(JSON.stringify({ messageId: 'sender-test-message' }), {
-      status: 201, headers: { 'content-type': 'application/json' }
+    return new Response(JSON.stringify({ status: 'accepted', messageId: 'sender-test-message' }), {
+      status: 202, headers: { 'content-type': 'application/json' }
     });
   };
   try {
@@ -111,17 +112,18 @@ test('uses a safe immutable campaign sender identity for tests and durable deliv
     const unchanged = await agent.put(`/api/campaigns/${campaignId}`).send({ senderName }).expect(200);
     assert.equal(unchanged.body.campaign.senderName, senderName);
     assert.equal(unchanged.body.campaign.senderEmail, 'verified-campaign-sender@example.test');
-    releaseDelivery(new Response(JSON.stringify({ messageId: 'sender-delivery-message' }), {
-      status: 201, headers: { 'content-type': 'application/json' }
+    releaseDelivery(new Response(JSON.stringify({ status: 'accepted', messageId: 'sender-delivery-message' }), {
+      status: 202, headers: { 'content-type': 'application/json' }
     }));
     await campaignRunner.pump();
     assert.equal(providerRequests.length, 2);
     for (const payload of providerRequests) {
-      assert.deepEqual(payload.sender, { name: senderName, email: 'verified-campaign-sender@example.test' });
+      assert.equal(payload.from, 'verified-campaign-sender@example.test');
+      assert.equal(payload.fromName, senderName);
     }
   } finally {
     config.emailMode = originalMode;
-    config.brevoApiKey = originalKey;
+    config.mailApiToken = originalKey;
     globalThis.fetch = originalFetch;
   }
 

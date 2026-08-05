@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.seemplify.com/journey-events/v1/event-result.schema.json",
+  "title": "Seemplify Connected Journey per-event ingest result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId", "status", "duplicate", "retryable", "receivedAt"],
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid" },
+    "index": { "type": "integer", "minimum": 0 },
+    "status": { "enum": ["accepted", "duplicate", "quarantined", "rejected"] },
+    "duplicate": { "type": "boolean" },
+    "retryable": { "type": "boolean" },
+    "receivedAt": { "type": "string", "format": "date-time" },
+    "code": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "message": { "type": "string", "minLength": 1, "maxLength": 500 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "duplicate" } }, "required": ["status"] },
+      "then": { "properties": { "duplicate": { "const": true } } },
+      "else": { "properties": { "duplicate": { "const": false } } }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["quarantined", "rejected"] } }, "required": ["status"] },
+      "then": { "required": ["code"] }
+    }
+  ]
+}

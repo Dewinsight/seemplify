@@ -1,12 +1,13 @@
 import crypto from 'node:crypto';
 import { socialListeningResultFor } from './aiSchemas.js';
+import { createAdmittedAiJob, reserveAiJobRetryAttempt } from './aiJobAdmission.js';
 import type { SessionUser } from './auth.js';
 import {
   auditKnowledge, createKnowledgeMarkdownDocument, getKnowledgeBase, getKnowledgeContext, getKnowledgeDocument, getKnowledgeJob,
   listKnowledgeBases,
   type KnowledgeBaseRef, type KnowledgeDocumentRecord, type KnowledgeJobRecord
 } from './knowledgeRepository.js';
-import { createJob, db, getJob, getJobProviderResult, listSocialMentionsByIdsForSpace } from './database.js';
+import { db, getJob, getJobProviderResult, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
 import { assertCanQueueAiAction } from './subscriptionEntitlements.js';
 import './spaces.js';
@@ -228,7 +229,7 @@ export function createSocialReplyDraft(user: SessionUser, spaceId: string, input
     assertCanQueueAiAction(spaceId);
     db.prepare(`INSERT INTO social_reply_drafts (id,space_id,mention_id,connection_id,requested_by,tone,instructions,source_snapshot_json,state,idempotency_key,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, mention.id, connection.id, user.id, input.tone, instructions, JSON.stringify(source), input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('social.reply_draft', { draftId: id }, spaceId, null, null, user.id);
+    const job = createAdmittedAiJob('social.reply_draft', { draftId: id }, spaceId, null, null, user.id);
     db.prepare('UPDATE social_reply_drafts SET ai_job_id=? WHERE id=?').run(job.id, id);
     return { draft: rowReplyDraft(db.prepare('SELECT * FROM social_reply_drafts WHERE id=?').get(id)), job, created: true };
   })();
@@ -390,7 +391,7 @@ export function createSocialIntelligenceReport(user: SessionUser, spaceId: strin
     assertCanQueueAiAction(spaceId);
     db.prepare(`INSERT INTO social_intelligence_reports (id,space_id,user_id,connection_id,title,mention_ids_json,source_snapshot_json,state,idempotency_key,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, input.connectionId, title, idsJson, snapshotJson, input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('social.report', {
+    const job = createAdmittedAiJob('social.report', {
       reportId: id, ...(input.knowledgeBaseRefs?.length ? { knowledgeBaseRefs: input.knowledgeBaseRefs } : {})
     }, spaceId, null, null, user.id);
     db.prepare('UPDATE social_intelligence_reports SET ai_job_id=? WHERE id=?').run(job.id, id);
@@ -462,6 +463,7 @@ export function retrySocialIntelligenceReport(_user: SessionUser, spaceId: strin
       terraCorrectionRequired: false,
       terraSemanticCorrectionCount: 0
     };
+    reserveAiJobRetryAttempt(job, currentGeneration + 1, 1);
     const timestamp = now();
     const jobChanged = db.prepare(`UPDATE ai_jobs SET state='queued',stage='queued',progress=0,attempt=0,result_json=NULL,error=NULL,
       retry_at=NULL,started_at=NULL,completed_at=NULL,provider_result_json=?,input_json=?,updated_at=?
@@ -830,7 +832,7 @@ export function createIntelligenceReport(user: SessionUser, spaceId: string, inp
     db.prepare(`INSERT INTO intelligence_reports (id,space_id,user_id,title,objective,source_refs_json,source_snapshot_json,knowledge_refs_json,state,idempotency_key,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, spaceId, user.id, title, objective, refsJson, snapshotJson,
         knowledgeRefsJson, input.idempotencyKey || null, timestamp, timestamp);
-    const job = createJob('intelligence.synthesize', {
+    const job = createAdmittedAiJob('intelligence.synthesize', {
       reportId: id, ...(input.knowledgeBaseRefs?.length ? { knowledgeBaseRefs: input.knowledgeBaseRefs } : {})
     }, spaceId, null, null, user.id);
     db.prepare('UPDATE intelligence_reports SET ai_job_id=? WHERE id=?').run(job.id, id);

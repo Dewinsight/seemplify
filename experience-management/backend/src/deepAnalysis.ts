@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import type { SessionUser } from './auth.js';
+import { createAdmittedAiJob } from './aiJobAdmission.js';
 import { completeWithAi, type AiProviderSnapshot } from './aiProvider.js';
-import { createJob, db, getJobProviderResult, saveJobProviderResult } from './database.js';
+import { db, getJobProviderResult, saveJobProviderResult } from './database.js';
 import { publishEvent } from './events.js';
 import { resolveIntelligenceSourceSnapshots } from './intelligence.js';
 import { getKnowledgeGraph, scanKnowledgeDocument } from './knowledgeClient.js';
@@ -237,15 +238,18 @@ function nextOrdinal(runId: string) {
 }
 
 function queuePartition(run: any, input: { kind: PartitionKind; level: number; source?: Record<string, unknown>; stepInput?: Record<string, unknown>; tokenEstimate?: number }) {
-  const id = crypto.randomUUID(); const timestamp = new Date().toISOString(); const ordinal = nextOrdinal(run.id);
-  db.prepare(`INSERT INTO deep_analysis_partitions
-    (id,run_id,space_id,ordinal,level,kind,state,source_json,input_json,token_estimate,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?)`).run(id, run.id, run.space_id, ordinal, input.level, input.kind,
-      JSON.stringify(input.source || {}), JSON.stringify(input.stepInput || {}), Math.max(0, Math.round(input.tokenEstimate || 0)), timestamp, timestamp);
-  const job = createJob('intelligence.deep_analysis', { deepRunId: run.id, partitionId: id }, run.space_id, null, null, run.user_id);
-  db.prepare('UPDATE deep_analysis_partitions SET ai_job_id=?,updated_at=? WHERE id=?').run(job.id, timestamp, id);
-  db.prepare('UPDATE deep_analysis_runs SET total_partitions=total_partitions+1,updated_at=? WHERE id=?').run(timestamp, run.id);
-  return { id, job };
+  return db.transaction(() => {
+    const id = crypto.randomUUID(); const timestamp = new Date().toISOString(); const ordinal = nextOrdinal(run.id);
+    db.prepare(`INSERT INTO deep_analysis_partitions
+      (id,run_id,space_id,ordinal,level,kind,state,source_json,input_json,token_estimate,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,'queued',?,?,?,?,?)`).run(id, run.id, run.space_id, ordinal, input.level, input.kind,
+        JSON.stringify(input.source || {}), JSON.stringify(input.stepInput || {}), Math.max(0, Math.round(input.tokenEstimate || 0)), timestamp, timestamp);
+    const job = createAdmittedAiJob('intelligence.deep_analysis', { deepRunId: run.id, partitionId: id },
+      run.space_id, null, null, run.user_id);
+    db.prepare('UPDATE deep_analysis_partitions SET ai_job_id=?,updated_at=? WHERE id=?').run(job.id, timestamp, id);
+    db.prepare('UPDATE deep_analysis_runs SET total_partitions=total_partitions+1,updated_at=? WHERE id=?').run(timestamp, run.id);
+    return { id, job };
+  })();
 }
 
 function reductionCallCount(mapCalls: number) {

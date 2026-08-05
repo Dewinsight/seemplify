@@ -4,7 +4,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Settings, CreditCard, Building2, Bell, Mail, Coins, DollarSign } from "lucide-react"
+import { Settings, CreditCard, Building2, Bell, Mail, Coins, DollarSign, Bot } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { MobileNav } from "@/components/settings/MobileNav"
@@ -18,6 +18,7 @@ const sidebarNavItems = [
   { title: "Credits", href: "/settings/credits", icon: Coins },
   { title: "Organization", href: "/settings/organization", icon: Building2 },
   { title: "Currencies", href: "/settings/currencies", icon: DollarSign },
+  { title: "ChatGPT account", href: "/settings/ai-account", icon: Bot },
   { title: "Notifications", href: "/settings/notifications", icon: Bell },
   { title: "Invitations", href: "/settings/invitations", icon: Mail },
 ]

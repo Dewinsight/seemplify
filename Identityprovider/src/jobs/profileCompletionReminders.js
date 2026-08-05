@@ -113,7 +113,7 @@ async function sendProfileCompletionReminderForAccount(account, options = {}) {
 }
 
 export async function sendProfileCompletionRemindersForAccounts(accounts = [], options = {}) {
-  if (!emailService.apiKey) {
+  if (!emailService.isConfigured()) {
     if (options.throwOnUnconfigured) {
       throw new Error('Email service is not configured')
     }
@@ -161,7 +161,7 @@ export async function sendProfileCompletionReminders() {
     return 0
   }
 
-  if (!emailService.apiKey) {
+  if (!emailService.isConfigured()) {
     console.log('⚠️ [PROFILE] Email service is not configured, skipping reminder run')
     return 0
   }

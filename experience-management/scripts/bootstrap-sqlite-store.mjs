@@ -65,7 +65,9 @@ async function main() {
     throw fail(`Refusing to modify an existing SQLite database: ${args.sqlite}`, 'SQLITE_ALREADY_EXISTS');
   }
 
-  const requiredModules = ['database.js', 'spaces.js', 'knowledgeRepository.js', 'intelligence.js'];
+  const requiredModules = [
+    'database.js', 'spaces.js', 'knowledgeRepository.js', 'intelligence.js', 'journeyPersonaVersions.js'
+  ];
   const missingModules = requiredModules.filter((name) => !fs.existsSync(path.join(backendDist, name)));
   if (missingModules.length) {
     throw fail(
@@ -87,6 +89,7 @@ async function main() {
     await import(pathToFileURL(path.join(backendDist, 'spaces.js')).href);
     await import(pathToFileURL(path.join(backendDist, 'knowledgeRepository.js')).href);
     await import(pathToFileURL(path.join(backendDist, 'intelligence.js')).href);
+    await import(pathToFileURL(path.join(backendDist, 'journeyPersonaVersions.js')).href);
 
     if (db.provider !== 'sqlite') throw fail('Built runtime did not select SQLite.', 'WRONG_DATABASE_PROVIDER');
 

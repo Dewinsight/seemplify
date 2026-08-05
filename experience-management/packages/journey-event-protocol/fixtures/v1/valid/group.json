@@ -1,0 +1,12 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f51",
+  "call": "group",
+  "occurredAt": "2026-08-04T12:35:02.000Z",
+  "userId": "customer_123",
+  "accountId": "company_456",
+  "traits": {
+    "accountPlan": "enterprise",
+    "role": "owner"
+  }
+}

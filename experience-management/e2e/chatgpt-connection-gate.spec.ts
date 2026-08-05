@@ -12,7 +12,8 @@ const codexModel = {
 
 type RuntimeChoice = 'local' | 'chatgpt' | null;
 
-async function installProviderMocks(page: Page) {
+async function installProviderMocks(page: Page, options: { localEnabled?: boolean } = {}) {
+  const localEnabled = options.localEnabled ?? true;
   let provider: 'terra' | 'codex' = 'codex';
   let runtimeChoice: RuntimeChoice = null;
   let connected = false;
@@ -30,6 +31,12 @@ async function installProviderMocks(page: Page) {
       codexActionOverrides: {},
       codexDataSharingAcknowledgedAt: acknowledgedAt,
       updatedAt: acknowledgedAt
+    },
+    runtimePolicy: {
+      localEnabled,
+      chatgptEnabled: true,
+      defaultRuntime: 'chatgpt',
+      effectiveProvider: provider
     },
     codex: {
       available: true,
@@ -174,6 +181,17 @@ test('an unresolved ChatGPT choice blocks protected content until settings expli
   await page.goto('/');
   await expect(page.getByTestId('chatgpt-connection-gate')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+});
+
+test('the ChatGPT gate does not offer local AI when the platform disables it', async ({ page }) => {
+  await installProviderMocks(page, { localEnabled: false });
+  await login(page);
+
+  const gate = page.getByTestId('chatgpt-connection-gate');
+  await expect(gate).toBeVisible();
+  await expect(gate.getByTestId('chatgpt-gate-settings')).toHaveCount(0);
+  await expect(gate.getByText('You can choose the local AI runtime in Space settings instead.')).toHaveCount(0);
+  await expect(gate.getByTestId('chatgpt-gate-connect')).toBeVisible();
 });
 
 test('device sign-in activates ChatGPT, records acknowledgement, and reveals branded protected content', async ({ page }, testInfo) => {

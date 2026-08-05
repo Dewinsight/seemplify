@@ -1,4 +1,6 @@
+const crypto = require('crypto');
 const Handlebars = require('handlebars');
+const { isMailConfigured, mailTransportStatus, sendMail } = require('./mailClient');
 const { decodeHtmlEntities, decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 const {
   resolveOrganizationBrand,
@@ -12,29 +14,123 @@ const {
   htmlToText
 } = require('../utils/emailHtmlSanitizer');
 
+/** Flattens a provider-shaped recipient list into bare mailboxes. */
+function toMailboxList(value) {
+  if (!value) return [];
+  const items = Array.isArray(value) ? value : [value];
+  return items
+    .map((item) => (typeof item === 'string' ? item : item?.email))
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+}
+
+/** Provider attachments carry base64 in `content`; the contract names it `data`. */
+function normalizeProviderAttachments(value) {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const items = value
+    .filter((item) => item && (item.content || item.data) && (item.name || item.filename))
+    .map((item) => ({
+      name: item.name || item.filename,
+      contentType: item.contentType || 'application/octet-stream',
+      data: String(item.data || item.content)
+    }));
+  return items.length > 0 ? items : undefined;
+}
+
+/**
+ * Last-resort idempotency key for send sites that have no business identifier
+ * of their own. Identical content to identical recipients is treated as one
+ * event; any change in recipient, subject or body produces a new key.
+ */
+function messageDigestKey(tag, recipients, subject, html, text) {
+  const digest = crypto.createHash('sha256')
+    .update(JSON.stringify([tag, recipients.map((item) => item.toLowerCase()).sort(), subject || '', html || '', text || '']))
+    .digest('hex');
+  return `${tag}:${digest.slice(0, 32)}`;
+}
+
+/** Minimal fetch-Response stand-in for the provider-shaped call sites. */
+function providerResponse(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body)
+  };
+}
+
 class EmailService {
   constructor() {
     this.templateCache = new Map();
-    this.fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-    this.apiKey = process.env.BREVO_API_KEY;
-    this.apiBaseUrl = 'https://api.brevo.com/v3/smtp/email';
-    
-    // Log configuration status on startup
+    this.apiBaseUrl = mailTransportStatus().baseUrl;
+
+    // Log configuration status on startup. The credential itself is never printed.
     console.log('📧 Email Service Configuration:');
-    console.log('  - API Key:', this.apiKey ? 'Set' : '❌ MISSING');
-    console.log('  - API Base URL:', this.apiBaseUrl);
-    
-    if (!this.apiKey) {
-      console.error('❌ BREVO_API_KEY environment variable is not set! Emails will fail to send.');
+    console.log('  - Mail service:', isMailConfigured() ? 'Configured' : '❌ MISSING');
+    console.log('  - Mail service URL:', this.apiBaseUrl || '(not set)');
+
+    if (!isMailConfigured()) {
+      console.error('❌ MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL are not set! Emails will fail to send.');
+    }
+
+    // Every send site in this service builds one provider-shaped payload and
+    // then inspects a fetch Response. Adapting at that seam keeps all of those
+    // call sites, their error handling and their business semantics unchanged
+    // while the transport underneath becomes the Seemplify mail service.
+    this.fetch = (_url, init) => this.deliverProviderPayload(init);
+  }
+
+  /**
+   * Translates one provider-shaped payload into the mail-service contract and
+   * answers a minimal fetch-Response so existing callers keep working.
+   */
+  async deliverProviderPayload(init) {
+    let payload = {};
+    try {
+      payload = JSON.parse(String(init?.body || '{}'));
+    } catch (error) {
+      return providerResponse(400, { message: 'The email payload was not valid JSON.' });
+    }
+
+    const recipients = toMailboxList(payload.to);
+    const idempotencyKey = String(payload.idempotencyKey || '').trim()
+      // Without a caller-supplied business identifier, derive one from the
+      // message itself so an accidental double submit collapses to one send.
+      || messageDigestKey(payload.tag || 'recruiter_email', recipients, payload.subject, payload.htmlContent, payload.textContent);
+
+    try {
+      const result = await sendMail({
+        from: payload.sender?.email || undefined,
+        fromName: payload.sender?.name || undefined,
+        to: recipients,
+        cc: toMailboxList(payload.cc),
+        bcc: toMailboxList(payload.bcc),
+        replyTo: payload.replyTo?.email || payload.replyTo || undefined,
+        subject: payload.subject,
+        html: payload.htmlContent,
+        text: payload.textContent,
+        tag: payload.tag || undefined,
+        attachments: normalizeProviderAttachments(payload.attachment || payload.attachments),
+        idempotencyKey
+      });
+      return providerResponse(202, { status: result.status, messageId: result.messageId });
+    } catch (error) {
+      // Surface the classification without leaking the token or the body.
+      return providerResponse(error.status || 500, {
+        message: error.message,
+        code: error.code,
+        retryable: Boolean(error.retryable)
+      });
     }
   }
-  
+
   // Diagnostic method to check email service health
   checkConfiguration() {
+    const status = mailTransportStatus();
     return {
-      hasApiKey: !!this.apiKey,
-      apiBaseUrl: this.apiBaseUrl,
-      isConfigured: !!this.apiKey
+      hasApiKey: status.configured,
+      apiBaseUrl: status.baseUrl,
+      isConfigured: status.configured
     };
   }
 
@@ -314,7 +410,6 @@ This email was sent to ${to} because a password reset was requested for your acc
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -378,12 +473,12 @@ This email was sent to ${to} because ${inviterName} invited you to join ${brandN
     emailData.htmlContent = this.applyOrganizationBrand(emailData.htmlContent, brandName);
 
     try {
-      console.log('Sending organization invite email with data:', JSON.stringify(emailData, null, 2));
+      // Recipients and subject only: message bodies are never logged.
+      console.log('Sending organization invite email to:', toMailboxList(emailData.to).join(', '), '|', emailData.subject);
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -495,13 +590,13 @@ This email was sent to ${to} because ${inviterName} invited you to join ${brandN
         emailData.bcc = bccEmails.map(email => ({ email: email }));
       }
       
-      console.log('Sending interview email with data:', JSON.stringify(emailData, null, 2));
+      // Recipients and subject only: message bodies are never logged.
+      console.log('Sending interview email to:', toMailboxList(emailData.to).join(', '), '|', emailData.subject);
       
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -571,7 +666,6 @@ This email was sent to ${to} because ${inviterName} invited you to join ${brandN
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -645,13 +739,13 @@ Best regards,
         htmlContent: this.applyOrganizationBrand(htmlContent, organizationName),
       };
       
-      console.log('Sending interview cancellation email with data:', JSON.stringify(emailData, null, 2));
+      // Recipients and subject only: message bodies are never logged.
+      console.log('Sending interview cancellation email to:', toMailboxList(emailData.to).join(', '), '|', emailData.subject);
       
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -765,7 +859,6 @@ This is an automated email. Please do not reply to this message.
         method: 'POST',
         headers: {
           'accept': 'application/json',
-          'api-key': this.apiKey,
           'content-type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -825,7 +918,6 @@ This is an automated email. Please do not reply to this message.
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'api-key': this.apiKey
         },
         body: JSON.stringify(payload)
       });
@@ -929,7 +1021,6 @@ This is an automated email. Please do not reply to this message.
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'api-key': this.apiKey
         },
         body: JSON.stringify(payload)
       });
@@ -1075,13 +1166,13 @@ This is an automated email. Please do not reply to this message.
         htmlContent: this.applyOrganizationBrand(htmlContent, organizationName),
       };
       
-      console.log('Sending interview notification email with data:', JSON.stringify(emailData, null, 2));
+      // Recipients and subject only: message bodies are never logged.
+      console.log('Sending interview notification email to:', toMailboxList(emailData.to).join(', '), '|', emailData.subject);
       
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -1299,7 +1390,6 @@ ${organizationName} Team
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -1336,8 +1426,8 @@ ${organizationName} Team
    * @returns {Promise} Send result
    */
   async sendEmail({ to, subject, html, text, organizationName = null }) {
-    if (!this.apiKey) {
-      console.error('❌ BREVO_API_KEY environment variable is not set! Email will fail to send.');
+    if (!isMailConfigured()) {
+      console.error('❌ MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL are not set! Email will fail to send.');
       throw new Error('Email service not properly configured');
     }
 
@@ -1364,7 +1454,6 @@ ${organizationName} Team
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData)

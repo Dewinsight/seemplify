@@ -1,0 +1,12 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f52",
+  "call": "page",
+  "occurredAt": "2026-08-04T12:35:03.000Z",
+  "anonymousId": "anon_7fdb",
+  "properties": { "name": "Onboarding" },
+  "context": {
+    "page": { "url": "https://example.com/onboarding" },
+    "library": { "name": "@seemplify/browser", "version": "0.1.0" }
+  }
+}

@@ -1,6 +1,6 @@
 # Seemplify Experience
 
-Seemplify Experience is a standalone experience-management application inspired by XEBO.ai. It has its own Express/PostgreSQL backend and React frontend, while using the shared Seemplify Terra gateway for every generative-AI operation and Brevo for survey email delivery. Local test runs retain isolated SQLite databases; the managed runtime uses the dedicated `seemplify_experience` database in the installed PostgreSQL 16 container.
+Seemplify Experience is a standalone experience-management application inspired by XEBO.ai. It has its own Express/PostgreSQL backend and React frontend, while using the shared Seemplify Terra gateway for every generative-AI operation and the self-hosted Seemplify mail service for survey email delivery. Local test runs retain isolated SQLite databases; the managed runtime uses the dedicated `seemplify_experience` database in the installed PostgreSQL 16 container.
 
 ## Product coverage
 
@@ -8,7 +8,7 @@ Seemplify Experience is a standalone experience-management application inspired 
 - Rich survey builder with NPS, CSAT, CES, choice, rating, matrix, ranking, text, contact, date, file, and media questions.
 - Display and branch logic, page grouping, validation, preview, and a public respondent experience.
 - Web-link, QR, email, API, manual-entry, and kiosk collectors.
-- Brevo invitations with recipient-level delivery tracking, using the shared Seemplify sender configuration.
+- Email invitations with recipient-level delivery tracking, sent through the shared Seemplify mail service (see [docs/TRANSACTIONAL-EMAIL.md](../docs/TRANSACTIONAL-EMAIL.md)).
 - Individual and aggregate response analysis, NPS/CSAT/CES, trends, drop-off, cross-variable breakdowns, and key-driver correlations.
 - Terra sentiment, emotion, topic, intent, risk, recommendation, translation, executive-report, and ask-your-data workflows.
 - Multi-account X social listening through OAuth 2.0 PKCE, with durable credit/rate-limit waits, account-specific cursors, posts, mentions, recent-search queries, and encrypted refresh tokens.

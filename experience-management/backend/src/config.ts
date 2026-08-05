@@ -10,9 +10,16 @@ export const repositoryDir = path.resolve(projectDir, '..');
 
 dotenv.config({ path: path.join(backendDir, '.env') });
 
-function loadSharedBrevoEnvironment() {
-  const configured = process.env.BREVO_ENV_FILE
-    ? path.resolve(backendDir, process.env.BREVO_ENV_FILE)
+const sharedMailEnvironmentKeys = ['MAIL_API_TOKEN', 'MAIL_API_BASE_URL', 'MAIL_FROM_EMAIL', 'MAIL_FROM_NAME'] as const;
+
+/**
+ * Optional compatibility loader for operator-managed shared environment files.
+ * Production deployments should use this application's own MAIL_API_TOKEN or
+ * MAIL_API_TOKEN_FILE so its credential can be rotated/revoked independently.
+ */
+function loadSharedMailEnvironment() {
+  const configured = process.env.MAIL_ENV_FILE
+    ? path.resolve(backendDir, process.env.MAIL_ENV_FILE)
     : null;
   const candidates = [
     configured,
@@ -25,13 +32,16 @@ function loadSharedBrevoEnvironment() {
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue;
     const parsed = dotenv.parse(fs.readFileSync(candidate));
-    if (!process.env.BREVO_API_KEY && parsed.BREVO_API_KEY) { process.env.BREVO_API_KEY = parsed.BREVO_API_KEY; source = candidate; }
-    if (!process.env.BREVO_API_URL && parsed.BREVO_API_URL) process.env.BREVO_API_URL = parsed.BREVO_API_URL;
+    for (const key of sharedMailEnvironmentKeys) {
+      if (process.env[key] || !parsed[key]) continue;
+      process.env[key] = parsed[key];
+      if (key === 'MAIL_API_TOKEN') source = candidate;
+    }
   }
   return source;
 }
 
-export const brevoEnvironmentSource = loadSharedBrevoEnvironment();
+export const mailEnvironmentSource = loadSharedMailEnvironment();
 
 const nylasEnvironmentKeys = [
   'NYLAS_CLIENT_ID',
@@ -73,6 +83,16 @@ export const nylasEnvironmentSource = loadSharedNylasEnvironment();
 function resolveFromBackend(value: string) {
   return path.isAbsolute(value) ? value : path.resolve(backendDir, value);
 }
+
+function readOptionalSecretFile(value: string) {
+  try {
+    return fs.readFileSync(resolveFromBackend(value), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+const isProduction = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
 
 function boundedNumber(value: unknown, fallback: number, minimum: number, maximum: number) {
   const parsed = Number(value);
@@ -271,7 +291,7 @@ export const config = {
     ),
     ssl: postgresSsl(process.env.POSTGRES_SSL),
     schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
-    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 11, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 29, 1, 1_000_000),
     sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
   },
   uploadDir: resolveFromBackend(
@@ -309,6 +329,15 @@ export const config = {
   knowledgeBackfillHeartbeatMs: boundedNumber(process.env.KNOWLEDGE_BACKFILL_HEARTBEAT_MS, 30_000, 5_000, 5 * 60_000),
   knowledgeRetrieveTopK: boundedNumber(process.env.KNOWLEDGE_RETRIEVE_TOP_K, 10, 2, 20),
   knowledgeContextMaxBytes: boundedNumber(process.env.KNOWLEDGE_CONTEXT_MAX_BYTES, 64 * 1024, 8 * 1024, 256 * 1024),
+  journeyIdentityHashKeyFile: resolveFromBackend(
+    process.env.JOURNEY_IDENTITY_HASH_KEY_FILE || '../../.local-runtime/experience-management/journey-identity-hash-key'
+  ),
+  journeyStageWorkerPollMs: boundedNumber(process.env.JOURNEY_STAGE_WORKER_POLL_MS, 750, 100, 60_000),
+  journeyStageWorkerLeaseMs: boundedNumber(process.env.JOURNEY_STAGE_WORKER_LEASE_MS, 60_000, 5_000, 10 * 60_000),
+  journeyStageWorkerBatchSize: boundedNumber(process.env.JOURNEY_STAGE_WORKER_BATCH_SIZE, 25, 1, 100),
+  journeyResearchRefreshPollMs: boundedNumber(process.env.JOURNEY_RESEARCH_REFRESH_POLL_MS, 2_000, 100, 60_000),
+  journeyResearchRefreshLeaseMs: boundedNumber(process.env.JOURNEY_RESEARCH_REFRESH_LEASE_MS, 60_000, 5_000, 10 * 60_000),
+  journeyResearchRefreshBatchSize: boundedNumber(process.env.JOURNEY_RESEARCH_REFRESH_BATCH_SIZE, 10, 1, 100),
   esignStorageDir: resolveFromBackend(
     process.env.ESIGN_STORAGE_DIR || '../../.local-runtime/experience-management/esign'
   ),
@@ -348,14 +377,20 @@ export const config = {
   nylasMaxMessageBodyBytes: boundedNumber(process.env.NYLAS_MAX_MESSAGE_BODY_BYTES, 128 * 1024, 4 * 1024, 512 * 1024),
   nylasMaxThreadBytes: boundedNumber(process.env.NYLAS_MAX_THREAD_BYTES, 1024 * 1024, 128 * 1024, 4 * 1024 * 1024),
   subscriptionEnforcementEnabled: enabled(process.env.SUBSCRIPTION_ENFORCEMENT_ENABLED),
-  brevoApiKey: process.env.BREVO_API_KEY || '',
-  brevoApiUrl: process.env.BREVO_API_URL || 'https://api.brevo.com/v3/smtp/email',
-  brevoFromEmail: process.env.BREVO_FROM_EMAIL || 'no-reply@seemplifyai.com',
-  brevoFromName: process.env.BREVO_FROM_NAME || 'Seemplify Experience',
+  // The local default only exists so a developer can run the mail service on
+  // this workstation. Production must supply the address explicitly; an empty
+  // value fails closed in mailClient.ts rather than sending anywhere.
+  mailApiBaseUrl: String(process.env.MAIL_API_BASE_URL || (isProduction ? '' : 'http://127.0.0.1:5020')).trim().replace(/\/+$/, ''),
+  mailApiToken: process.env.MAIL_API_TOKEN
+    || readOptionalSecretFile(process.env.MAIL_API_TOKEN_FILE || '../../.local-runtime/mail/experience-management.bearer'),
+  mailFromEmail: process.env.MAIL_FROM_EMAIL || 'no-reply@seemplifyai.com',
+  mailFromName: process.env.MAIL_FROM_NAME || 'Seemplify Experience',
+  mailTimeoutMs: boundedNumber(process.env.MAIL_TIMEOUT_MS, 15_000, 2_000, 60_000),
   emailMode: String(process.env.EMAIL_MODE || 'send').toLowerCase(),
-  // Brevo currently retains an idempotency key for 30 minutes. Keep one minute
-  // of safety margin so no retry is dispatched at the documented boundary.
-  brevoIdempotencyTtlMinutes: boundedNumber(process.env.BREVO_IDEMPOTENCY_TTL_MINUTES, 29, 5, 29),
+  // Bound on how long a stored idempotency key is assumed to still deduplicate
+  // at the mail service. A delivery whose outcome is unknown past this window is
+  // failed instead of retried, so an unknown state never becomes a double send.
+  mailIdempotencyTtlMinutes: boundedNumber(process.env.MAIL_IDEMPOTENCY_TTL_MINUTES, 29, 5, 1440),
   brevoWebhookSecretFile: resolveFromBackend(
     process.env.BREVO_WEBHOOK_SECRET_FILE || '../../.local-runtime/experience-management/brevo-webhook-secret'
   ),

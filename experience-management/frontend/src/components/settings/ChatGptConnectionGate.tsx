@@ -35,6 +35,7 @@ export function ChatGptConnectionGate({
   const activationInFlight = useRef(false);
   const open = !exempt && !loading && (Boolean(error) || requiresChatGptSetup(state));
   const connected = state?.codex.account.connected === true;
+  const localAiEnabled = state?.runtimePolicy?.localEnabled !== false;
   const loginPending = Boolean(deviceLogin || state?.codex.account.pendingLogin);
   const displayedError = localError || error || state?.codex.account.loginError || state?.codex.error || '';
 
@@ -188,7 +189,8 @@ export function ChatGptConnectionGate({
 
       <div className="space-y-4">
         <p className="border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground" data-testid="chatgpt-gate-disclosure">
-          Continuing allows AI task prompts and authorised knowledge excerpts from this space to be processed by OpenAI using your connected account. You can choose the local AI runtime in Space settings instead.
+          Continuing allows AI task prompts and authorised knowledge excerpts from this space to be processed by OpenAI using your connected account.
+          {localAiEnabled ? ' You can choose the local AI runtime in Space settings instead.' : null}
         </p>
 
         {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
@@ -239,10 +241,10 @@ export function ChatGptConnectionGate({
         {displayedError && <div className="border border-destructive/35 bg-destructive/5 p-3 text-sm text-destructive" role="alert" data-testid="chatgpt-gate-error">{displayedError}</div>}
       </div>
 
-      <DialogFooter className="sm:items-center sm:justify-between">
-        <Button asChild variant="outline" data-testid="chatgpt-gate-settings">
+      <DialogFooter className={localAiEnabled ? 'sm:items-center sm:justify-between' : 'sm:justify-end'}>
+        {localAiEnabled && <Button asChild variant="outline" data-testid="chatgpt-gate-settings">
           <Link to="/settings/space#ai-runtime">Use local AI in settings</Link>
-        </Button>
+        </Button>}
         {deviceLogin
           ? <Button type="button" variant="ghost" disabled={busy} data-testid="chatgpt-gate-retry" onClick={() => void startLogin(true)}>{working === 'restart' ? <Loader2 className="animate-spin" /> : <RefreshCw />}Restart sign-in</Button>
           : connected && displayedError

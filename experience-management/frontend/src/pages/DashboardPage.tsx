@@ -29,7 +29,7 @@ export function DashboardPage() {
           ['Surveys', data.overview.surveys, `${data.overview.liveSurveys} live`],
           ['Responses', data.overview.responses, 'All collectors'],
           ['Recovery cases', data.overview.openTickets, 'Open or in progress'],
-          ['Email delivery', data.email.configured ? 'Ready' : 'Needs key', data.email.configured ? 'Shared Brevo account' : 'Configure Brevo locally']
+          ['Email delivery', data.email.configured ? 'Ready' : 'Needs key', data.email.configured ? 'Seemplify mail service' : 'Configure the mail service locally']
         ].map(([label, value, note]) => <div className="p-5" key={label}><div className="text-sm text-muted-foreground">{label}</div><div className="metric-value mt-2">{value}</div><div className="mt-1 text-xs text-muted-foreground">{note}</div></div>)}
       </div>
     </Card>
@@ -41,7 +41,7 @@ export function DashboardPage() {
         </CardContent>
       </Card>
       <div className="min-w-0 space-y-6">
-        {!data.email.configured && <div className="flex gap-3 border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><div><div className="font-semibold">Brevo is not configured locally</div><p className="mt-1 text-amber-800">Survey links work now. Email collectors will be ready when the shared Seemplify key is available to this service.</p></div></div>}
+        {!data.email.configured && <div className="flex gap-3 border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><div><div className="font-semibold">The mail service is not configured locally</div><p className="mt-1 text-amber-800">Survey links work now. Email collectors will be ready once MAIL_API_BASE_URL, MAIL_API_TOKEN and MAIL_FROM_EMAIL are available to this service.</p></div></div>}
         <Card><CardHeader><CardTitle>Recent AI work</CardTitle></CardHeader><CardContent className="space-y-0 px-0 pb-0">{data.recentJobs.length ? data.recentJobs.slice(0, 6).map((job) => <Link to="/ai-queue" key={job.id} className="flex items-center justify-between border-t px-5 py-3 text-sm hover:bg-muted/30"><div><div className="font-medium">{humanizeActivity(job.kind)}</div><div className="text-xs text-muted-foreground">{formatDate(job.createdAt)}</div></div><JobStatus job={job} /></Link>) : <div className="border-t px-5 py-8 text-center text-sm text-muted-foreground">Terra activity will appear here.</div>}</CardContent></Card>
         <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1"><Button variant="outline" className="h-auto justify-start py-3" asChild><Link to="/assistant"><MailCheck />Personal assistant</Link></Button><Button variant="outline" className="h-auto justify-start py-3" asChild><Link to="/ai-queue"><MessageSquareText />AI queue</Link></Button><Button variant="outline" className="h-auto justify-start py-3" asChild><Link to="/tickets"><Inbox />Recovery</Link></Button></div>
       </div>

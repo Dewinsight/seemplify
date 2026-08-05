@@ -1,42 +1,56 @@
-const axios = require('axios');
+const crypto = require('crypto');
+const { formatMailAddress, isMailConfigured, isRetryableMailError, sendMail } = require('./mailClient');
 
 const MAX_RETRIES = 3;
 const INITIAL_DELAY_MS = 1000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Derives a stable idempotency key from the business event rather than from the
+ * request, so an accidental replay of the same code or link is collapsed by the
+ * mail service. Secret material is hashed, never transmitted.
+ */
+function businessEventKey(kind, ...parts) {
+    const digest = crypto.createHash('sha256')
+        .update([kind, ...parts.map((part) => String(part == null ? '' : part))].join('\u0000'))
+        .digest('hex');
+    return `${kind}:${digest.slice(0, 32)}`;
+}
+
 class EmailService {
     constructor() {
-        this.apiKey = process.env.BREVO_API_KEY;
-        this.apiUrl = 'https://api.brevo.com/v3/smtp/email';
-        this.senderName = process.env.SENDER_NAME || 'Mosaic';
-        this.senderEmail = process.env.SENDER_EMAIL || null;
+        this.senderName = process.env.MAIL_FROM_NAME || process.env.SENDER_NAME || 'Mosaic';
+        this.senderEmail = process.env.MAIL_FROM_EMAIL || process.env.SENDER_EMAIL || null;
+    }
+
+    /** True when the mail service URL, credential and sender are all present. */
+    isConfigured() {
+        return isMailConfigured();
     }
 
     getSender() {
         if (!this.senderEmail) {
-            throw new Error('SENDER_EMAIL is required. Set it in your environment variables.');
+            throw new Error('MAIL_FROM_EMAIL is required. Set it in your environment variables.');
         }
-        return { name: this.senderName, email: this.senderEmail };
+        return formatMailAddress(this.senderEmail);
     }
 
-    async _sendWithRetry(data, label = 'email') {
+    /**
+     * Retries only what the mail client classified as transient, reusing the
+     * same Idempotency-Key so a retry after an ambiguous failure cannot produce
+     * a second message.
+     */
+    async _sendWithRetry(message, label = 'email') {
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
-                const res = await axios.post(this.apiUrl, data, {
-                    headers: {
-                        'api-key': this.apiKey,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 15000
-                });
-                return { success: true, response: res };
+                const result = await sendMail(message);
+                return { success: true, response: result };
             } catch (error) {
-                const isRetryable = !error.response || (error.response.status >= 500 || error.response.status === 429);
-                const errMsg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
-                console.warn(`[Email] ${label} attempt ${attempt}/${MAX_RETRIES} failed:`, errMsg);
+                // Only the classification is logged: never the token or the body.
+                console.warn(`[Email] ${label} attempt ${attempt}/${MAX_RETRIES} failed:`, error.message);
 
-                if (attempt < MAX_RETRIES && isRetryable) {
+                if (attempt < MAX_RETRIES && isRetryableMailError(error)) {
                     const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
                     console.log(`[Email] Retrying in ${delay}ms...`);
                     await sleep(delay);
@@ -48,8 +62,8 @@ class EmailService {
     }
 
     async sendOtp(email, otp) {
-        if (!this.apiKey) {
-            console.warn('BREVO_API_KEY is missing. OTP will only be logged to console.');
+        if (!this.isConfigured()) {
+            console.warn('The Seemplify mail service is not configured. OTP will only be logged to console.');
             console.log(`[DEV MODE] OTP for ${email}: ${otp}`);
             return;
         }
@@ -90,23 +104,28 @@ class EmailService {
 
         try {
             const data = {
-                sender: this.getSender(),
-                to: [{ email: email }],
+                from: this.getSender(),
+                fromName: this.senderName,
+                to: [email],
                 subject: 'Your Verification Code',
-                htmlContent: otpHtml
+                html: otpHtml,
+                tag: 'otp',
+                // The code itself identifies the business event, so a duplicate
+                // submit of the same OTP cannot deliver two messages.
+                idempotencyKey: businessEventKey('otp', email, otp)
             };
 
             await this._sendWithRetry(data, `OTP to ${email}`);
             console.log(`OTP sent to ${email}`);
         } catch (error) {
-            console.error('Failed to send OTP:', error.response?.data || error.message);
+            console.error('Failed to send OTP:', error.message);
             console.log(`[FALLBACK] OTP for ${email}: ${otp}`);
         }
     }
 
     async sendInvite(email, orgName, invitedByName, hasAccount = false) {
-        if (!this.apiKey) {
-            console.warn('BREVO_API_KEY is missing. Invite will only be logged to console.');
+        if (!this.isConfigured()) {
+            console.warn('The Seemplify mail service is not configured. Invite will only be logged to console.');
             console.log(`[DEV MODE] Invite for ${email} to join "${orgName}" (invited by ${invitedByName})`);
             return;
         }
@@ -161,23 +180,26 @@ class EmailService {
 
         try {
             const data = {
-                sender: this.getSender(),
-                to: [{ email: email }],
+                from: this.getSender(),
+                fromName: this.senderName,
+                to: [email],
                 subject: `You've been invited to join ${orgName} on Mosaic`,
-                htmlContent: inviteHtml
+                html: inviteHtml,
+                tag: 'organization_invite',
+                idempotencyKey: businessEventKey('organization_invite', email, orgName, invitedByName)
             };
 
             await this._sendWithRetry(data, `Invite to ${email}`);
             console.log(`Invite sent to ${email} for org ${orgName}`);
         } catch (error) {
-            console.error('Failed to send invite email:', error.response?.data || error.message);
+            console.error('Failed to send invite email:', error.message);
             console.log(`[FALLBACK] Invite for ${email} to join "${orgName}"`);
         }
     }
 
     async sendPasswordReset(email, otp) {
-        if (!this.apiKey) {
-            console.warn('BREVO_API_KEY is missing. Password reset will only be logged to console.');
+        if (!this.isConfigured()) {
+            console.warn('The Seemplify mail service is not configured. Password reset will only be logged to console.');
             console.log(`[DEV MODE] Password reset OTP for ${email}: ${otp}`);
             return;
         }
@@ -224,16 +246,19 @@ class EmailService {
 
         try {
             const data = {
-                sender: this.getSender(),
-                to: [{ email: email }],
+                from: this.getSender(),
+                fromName: this.senderName,
+                to: [email],
                 subject: 'Reset your Mosaic password',
-                htmlContent: resetHtml
+                html: resetHtml,
+                tag: 'password_reset',
+                idempotencyKey: businessEventKey('password_reset', email, otp)
             };
 
             await this._sendWithRetry(data, `Password reset to ${email}`);
             console.log(`Password reset email sent to ${email}`);
         } catch (error) {
-            console.error('Failed to send password reset email:', error.response?.data || error.message);
+            console.error('Failed to send password reset email:', error.message);
             console.log(`[FALLBACK] Password reset OTP for ${email}: ${otp}`);
         }
     }

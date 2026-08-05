@@ -13,6 +13,8 @@ export type PlatformPermissionId =
   | 'analytics.read'
   | 'ai_defaults.read'
   | 'ai_defaults.manage'
+  | 'journey_templates.read'
+  | 'journey_templates.manage'
   | 'jobs.read'
   | 'activity.read'
   | 'audit.read';
@@ -34,6 +36,8 @@ export interface PlatformAdminCapabilities {
   readAnalytics?: boolean;
   readAiDefaults?: boolean;
   manageAiDefaults?: boolean;
+  readJourneyTemplates?: boolean;
+  manageJourneyTemplates?: boolean;
   readJobs?: boolean;
   readActivity?: boolean;
   readAudit?: boolean;
@@ -63,6 +67,8 @@ const legacyPermissionCapability: Record<PlatformPermissionId, keyof PlatformAdm
   'analytics.read': 'readAnalytics',
   'ai_defaults.read': 'readAiDefaults',
   'ai_defaults.manage': 'manageAiDefaults',
+  'journey_templates.read': 'readJourneyTemplates',
+  'journey_templates.manage': 'manageJourneyTemplates',
   'jobs.read': 'readJobs',
   'activity.read': 'readActivity',
   'audit.read': 'readAudit'
@@ -191,12 +197,55 @@ export interface PlatformManagedPlan extends PlatformPlan {
     socialListening: boolean;
     knowledgeBases: boolean;
     terra: boolean;
+    journeyDesign: boolean;
+    journeyAi: boolean;
+    journeyPersonas: boolean;
+    journeyEvidence: boolean;
+    journeyTemplates: boolean;
+    journeyExports: boolean;
+    journeyMetrics: boolean;
+    journeyRichCards: boolean;
+    journeySavedViews: boolean;
+    journeyPortfolio: boolean;
+    journeyCollaboration: boolean;
+    journeyHierarchy: boolean;
+    journeyBlueprints: boolean;
+    journeyConnected: boolean;
+    journeyProfiles: boolean;
+    journeyActualPaths: boolean;
+    journeyOrchestration: boolean;
+    mobileSdks: boolean;
+    journeyConnectors: boolean;
   };
   limits: {
     seats: number;
     activeSurveys: number;
     monthlyAiActions: number;
     knowledgeStorageBytes: number;
+    journeyMaps: number;
+    journeyPersonas: number;
+    journeyTemplates: number;
+    journeyShares: number;
+    eventSources: number;
+    monthlyTrackedEvents: number;
+    retainedProfiles: number;
+    eventRetentionDays: number;
+    activeJourneyRuleSets: number;
+    activeJourneyOrchestrations: number;
+    monthlyOrchestrationActions: number;
+    schemaDefinitions: number;
+    webhookDestinations: number;
+    monthlyJourneyExports: number;
+    journeyMetricDefinitions: number;
+    journeyMetricBindings: number;
+    journeyMetricSegments: number;
+    journeyMetricAlertDefinitions: number;
+    monthlyJourneyMetricImports: number;
+    journeyChannels: number;
+    journeyTouchpoints: number;
+    journeyCardAssets: number;
+    journeyCardAssetBytes: number;
+    journeySavedViews: number;
   };
   displayOrder: number;
   version: number;
@@ -409,4 +458,72 @@ export interface PlatformAiDefaultsState {
     actions: PlatformCodexAction[];
     error: string | null;
   };
+}
+
+export interface PlatformMailDeliveryTokenView {
+  value: string | null;
+  masked: string | null;
+  keyId: string | null;
+  fingerprint: string | null;
+  source: string | null;
+}
+
+export interface PlatformMailDeliveryEnvironmentView {
+  baseUrl: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+  token: PlatformMailDeliveryTokenView;
+}
+
+export interface PlatformMailDeliveryAppView {
+  id: string;
+  label: string;
+  localEnvPath: string;
+  local: PlatformMailDeliveryEnvironmentView;
+  production: {
+    applicationId: string;
+    applicationName: string;
+    reachable: boolean;
+    environment: PlatformMailDeliveryEnvironmentView | null;
+    error: string | null;
+  };
+}
+
+export interface PlatformMailDeliveryOverview {
+  publicBaseUrl: string;
+  docs: {
+    integrationGuide: string;
+    localServiceRepo: string;
+  };
+  dokploy: {
+    available: boolean;
+    projectId: string | null;
+    projectName: string | null;
+    tokenSource: string | null;
+    tokenFingerprint: string | null;
+    error: string | null;
+  };
+  apps: PlatformMailDeliveryAppView[];
+}
+
+export interface PlatformMailDeliverySyncResult {
+  publicBaseUrl: string;
+  deployed: boolean;
+  syncedAt: string;
+  dokploy: {
+    available: boolean;
+    projectId: string | null;
+    projectName: string | null;
+    tokenSource: string | null;
+  };
+  apps: Array<{
+    id: string;
+    label: string;
+    applicationId: string;
+    applicationName: string;
+    updated: boolean;
+    deployed: boolean;
+    error: string | null;
+    environment: PlatformMailDeliveryEnvironmentView;
+  }>;
 }

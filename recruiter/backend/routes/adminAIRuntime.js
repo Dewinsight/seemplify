@@ -20,6 +20,8 @@ const {
   runRuntimeTest,
   setCredentialEnabled,
   updateAlerts,
+  updateProviderEnabled,
+  updateRuntimePolicy,
   updateRollout,
   updateRoute,
   writeAudit
@@ -140,9 +142,9 @@ router.get('/audit/:id', ...analyticsAccess, async (req, res) => {
   }
 });
 
-router.get('/settings', ...settingsAccess, async (_req, res) => {
+router.get('/settings', ...settingsAccess, async (req, res) => {
   try {
-    res.json(await getRuntimeSettings());
+    res.json(await getRuntimeSettings(req));
   } catch (error) {
     handleError(res, error, 'Failed to load AI runtime settings');
   }
@@ -417,6 +419,22 @@ router.put('/routes/:activity', ...settingsAccess, async (req, res) => {
     res.json({ success: true, ...(await updateRoute(req.params.activity, req.body || {}, req)) });
   } catch (error) {
     handleError(res, error, 'Failed to update AI activity route');
+  }
+});
+
+router.put('/provider', ...settingsAccess, async (req, res) => {
+  try {
+    res.json({ success: true, ...(await updateProviderEnabled(req.body || {}, req)) });
+  } catch (error) {
+    handleError(res, error, 'Failed to update the AI provider switch');
+  }
+});
+
+router.put('/runtime-policy', ...settingsAccess, async (req, res) => {
+  try {
+    res.json({ success: true, ...(await updateRuntimePolicy(req.body || {}, req)) });
+  } catch (error) {
+    handleError(res, error, 'Failed to update the AI runtime policy');
   }
 });
 

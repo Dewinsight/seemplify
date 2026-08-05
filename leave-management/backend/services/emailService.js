@@ -1,27 +1,35 @@
+const crypto = require('crypto');
 const { format } = require('date-fns');
-
-const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
+const { isMailConfigured, sendMail } = require('./mailClient');
 
 let emailEnabled = false;
 
 function getSender() {
   return {
-    email: process.env.SENDER_EMAIL || 'noreply@seemplifyai.com',
-    name: process.env.SENDER_NAME || 'Seemplify Leave Management',
+    email: process.env.MAIL_FROM_EMAIL || process.env.SENDER_EMAIL || 'noreply@seemplifyai.com',
+    name: process.env.MAIL_FROM_NAME || process.env.SENDER_NAME || 'Seemplify Leave Management',
   };
 }
 
 function initializeEmailService() {
-  emailEnabled = Boolean(process.env.BREVO_API_KEY);
+  emailEnabled = isMailConfigured();
   if (emailEnabled) {
-    console.log('Email service initialized (Brevo API)');
+    console.log('Email service initialized (Seemplify mail service)');
   } else {
-    console.warn('Email service disabled (BREVO_API_KEY is missing)');
+    console.warn('Email service disabled (MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL are missing)');
   }
   return emailEnabled;
 }
 
-async function sendEmail(to, subject, htmlContent) {
+/**
+ * @param {string} to
+ * @param {string} subject
+ * @param {string} htmlContent
+ * @param {{ idempotencyKey?: string, tag?: string }} [options]
+ *   Pass idempotencyKey when the caller owns a business identifier (a leave
+ *   request id, for example) so a replay cannot deliver twice.
+ */
+async function sendEmail(to, subject, htmlContent, options = {}) {
   if (!emailEnabled) {
     return { success: false, reason: 'Email service disabled' };
   }
@@ -32,32 +40,32 @@ async function sendEmail(to, subject, htmlContent) {
 
   try {
     const sender = getSender();
-    const response = await fetch(BREVO_API_URL, {
-      method: 'POST',
-      headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
-        'api-key': process.env.BREVO_API_KEY,
-      },
-      body: JSON.stringify({
-        sender,
-        to: [{ email: to }],
-        subject,
-        htmlContent,
-      }),
+    const result = await sendMail({
+      from: sender.email,
+      fromName: sender.name,
+      to: [to],
+      subject,
+      html: htmlContent,
+      tag: options.tag || 'leave_notification',
+      idempotencyKey: String(options.idempotencyKey || '').trim() || crypto.randomUUID(),
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Brevo send failed (${response.status}): ${errorText}`);
-    }
-
-    const data = await response.json();
-    return { success: true, messageId: data.messageId || null };
+    return { success: true, messageId: result.messageId || null };
   } catch (error) {
+    // Only the classified message is logged: never the token or the body.
     console.error(`Leave email send failed: ${subject}`, error.message);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, retryable: Boolean(error.retryable) };
   }
+}
+
+/**
+ * One leave request produces at most one message per lifecycle event per
+ * recipient, so keying on those three values makes an accidental replay a
+ * no-op at the mail service instead of a duplicate inbox entry.
+ */
+function notificationKey(event, request, recipientEmail) {
+  const requestId = String(request?._id || request?.id || '').trim();
+  if (!requestId) return '';
+  return `${event}:${requestId}:${crypto.createHash('sha256').update(String(recipientEmail || '').toLowerCase()).digest('hex').slice(0, 16)}`;
 }
 
 function leaveRange(request) {
@@ -90,7 +98,8 @@ async function sendLeaveRequestSubmittedToRecipient(request, recipient) {
   return sendEmail(
     recipient.userEmail,
     `Leave request submitted by ${request.userName || 'employee'}`,
-    html
+    html,
+    { tag: 'leave_request_submitted', idempotencyKey: notificationKey('leave_request_submitted', request, recipient.userEmail) }
   );
 }
 
@@ -115,7 +124,8 @@ async function sendLeaveRequestCreatedConfirmation(request) {
   return sendEmail(
     request.userEmail,
     `Leave request submitted (${request.leaveType})`,
-    html
+    html,
+    { tag: 'leave_request_created', idempotencyKey: notificationKey('leave_request_created', request, request.userEmail) }
   );
 }
 
@@ -143,7 +153,8 @@ async function sendLeaveRequestApproved(request) {
   return sendEmail(
     request.userEmail,
     `Leave request approved (${request.leaveType})`,
-    html
+    html,
+    { tag: 'leave_request_approved', idempotencyKey: notificationKey('leave_request_approved', request, request.userEmail) }
   );
 }
 
@@ -171,7 +182,8 @@ async function sendLeaveRequestRejected(request) {
   return sendEmail(
     request.userEmail,
     `Leave request rejected (${request.leaveType})`,
-    html
+    html,
+    { tag: 'leave_request_rejected', idempotencyKey: notificationKey('leave_request_rejected', request, request.userEmail) }
   );
 }
 
@@ -198,7 +210,8 @@ async function sendLeaveRequestCancelled(request) {
   return sendEmail(
     approverEmail,
     `Leave request cancelled by ${request.userName || 'employee'}`,
-    html
+    html,
+    { tag: 'leave_request_cancelled', idempotencyKey: notificationKey('leave_request_cancelled', request, approverEmail) }
   );
 }
 
