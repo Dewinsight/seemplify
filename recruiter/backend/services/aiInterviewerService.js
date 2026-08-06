@@ -85,6 +85,10 @@ class AIInterviewerService {
       actorId: interview?.createdBy?._id || interview?.createdBy,
       interviewId: interview?._id,
       sessionId: session?._id,
+      // A live interview turn runs on the candidate's own ChatGPT account.
+      // The runtime resolves that account from the session, so it travels with
+      // every turn — including scoring retried later with no candidate present.
+      interviewSessionId: session?._id ? String(session._id) : undefined,
       candidateId: session?.candidate,
       jobId: interview?.job
     };

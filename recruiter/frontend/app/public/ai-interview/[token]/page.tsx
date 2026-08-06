@@ -46,6 +46,7 @@ import {
 import { AIVoiceAvatar, AIVoiceWave } from "@/components/ai-voice-avatar";
 import { getAIInterviewVoiceAvatar } from "@/lib/aiVoiceAvatars";
 import aiInterviewService, { type AIInterviewProctoringEventType, type PublicAIInterviewState } from "@/services/aiInterviewService";
+import { CandidateChatgptGate } from "@/components/ui/candidate-chatgpt-gate";
 
 function formatSeconds(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds));
@@ -410,6 +411,9 @@ function PublicAIInterviewExperience() {
   const [loading, setLoading] = useState(true);
   const [resettingDemo, setResettingDemo] = useState(false);
   const [starting, setStarting] = useState(false);
+  // The interview runs on the candidate's own ChatGPT account, so it cannot
+  // begin until they have connected one and acknowledged the data notice.
+  const [chatgptReady, setChatgptReady] = useState(false);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState("");
@@ -2227,10 +2231,16 @@ function PublicAIInterviewExperience() {
                         {voiceEnabled ? <Mic className="h-5 w-5" /> : <Play className="h-5 w-5" />}
                       </span>
                     </div>
-                    <Button className="mt-5 h-12 w-full bg-white text-slate-950 hover:bg-slate-100" onClick={start} disabled={starting}>
-                      {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                      Start Interview
-                    </Button>
+                    {chatgptReady ? (
+                      <Button className="mt-5 h-12 w-full bg-white text-slate-950 hover:bg-slate-100" onClick={start} disabled={starting}>
+                        {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                        Start Interview
+                      </Button>
+                    ) : (
+                      <div className="mt-5">
+                        <CandidateChatgptGate token={token} onReady={() => setChatgptReady(true)} />
+                      </div>
+                    )}
                     <p className="mt-3 text-xs leading-5 text-slate-400">
                       Voice reads interviewer messages first, then opens your mic automatically for your answer.
                     </p>

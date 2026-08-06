@@ -350,6 +350,22 @@ async function parseError(response: Response): Promise<Error> {
   return error;
 }
 
+export interface CandidateChatgptAccount {
+  status: 'disconnected' | 'pending' | 'connected' | 'error';
+  connectedEmail: string | null;
+  planType: string | null;
+  dataSharingAcknowledgedAt: string | null;
+  routable: boolean;
+  lastError: string | null;
+}
+
+export interface CandidateChatgptLogin {
+  connected?: boolean;
+  loginId?: string;
+  verificationUrl?: string;
+  userCode?: string;
+}
+
 class AIInterviewService {
   async getOptions(): Promise<{
     voices: AIInterviewVoiceOption[];
@@ -464,6 +480,35 @@ class AIInterviewService {
     if (!response.ok) throw await parseError(response);
     const data = await response.json();
     return data.speech;
+  }
+
+  /** A live interview runs on the candidate's own ChatGPT account, so these
+   * are authenticated by the interview link alone. */
+  async getPublicChatgptAccount(token: string): Promise<{ account: CandidateChatgptAccount }> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/chatgpt`);
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
+  async startPublicChatgptLogin(token: string): Promise<{ login: CandidateChatgptLogin; account: CandidateChatgptAccount }> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/chatgpt/login`, { method: 'POST' });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
+  async cancelPublicChatgptLogin(token: string): Promise<{ account: CandidateChatgptAccount }> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/chatgpt/login/cancel`, { method: 'POST' });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
+  async setPublicChatgptConsent(token: string, acknowledged: boolean): Promise<{ account: CandidateChatgptAccount }> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/chatgpt/consent`, {
+      method: 'POST',
+      body: JSON.stringify({ acknowledged })
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
   }
 
   async startPublic(token: string): Promise<PublicAIInterviewState> {

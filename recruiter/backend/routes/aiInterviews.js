@@ -11,6 +11,12 @@ router.post('/public/:token/speech-transcribe', express.raw({
   type: ['audio/wav', 'audio/x-wav', 'application/octet-stream'],
   limit: '15mb'
 }), aiInterviewController.transcribePublicSpeech);
+// The candidate's own ChatGPT connection for this interview.
+router.get('/public/:token/chatgpt', aiInterviewController.getPublicChatgptAccount);
+router.post('/public/:token/chatgpt/login', aiInterviewController.startPublicChatgptLogin);
+router.post('/public/:token/chatgpt/login/cancel', aiInterviewController.cancelPublicChatgptLogin);
+router.post('/public/:token/chatgpt/consent', aiInterviewController.setPublicChatgptConsent);
+router.delete('/public/:token/chatgpt', aiInterviewController.disconnectPublicChatgpt);
 router.post('/public/:token/start', aiInterviewController.startPublicInterview);
 router.post('/public/:token/message', aiInterviewController.sendPublicMessage);
 router.post('/public/:token/proctoring-event', aiInterviewController.recordPublicProctoringEvent);

@@ -13,6 +13,8 @@ const aiInterviewEmailService = require('../services/aiInterviewEmailService');
 const aiInterviewVoiceLiveService = require('../services/aiInterviewVoiceLiveService');
 const azureSpeechTtsService = require('../services/azureSpeechTtsService');
 const aiInterviewCostService = require('../services/aiInterviewCostService');
+const interviewCodexAccountService = require('../services/aiRuntime/interviewCodexAccountService');
+const { runWithAIRequestContext } = require('../services/aiRuntime/requestContext');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 
 const AI_INTERVIEW_ACTION = 'aiInterviewCandidate';
@@ -967,6 +969,98 @@ exports.resendAIInterviewSessions = async (req, res) => {
   } catch (error) {
     console.error('Resend AI interview sessions error:', error);
     res.status(500).json({ error: 'SERVER_ERROR', message: error.message });
+  }
+};
+
+/**
+ * Live interview turns run on the candidate's own ChatGPT account, so the
+ * session is put on the AI request context and the runtime resolves the
+ * candidate's subject from it. A candidate is not a platform user, so there is
+ * no actor to infer this from.
+ */
+function withCandidateRuntime(session, run) {
+  return runWithAIRequestContext({
+    sourceApp: 'recruiter-ai-interview',
+    interviewSessionId: String(session?._id || ''),
+    organizationId: session?.organization || session?.aiInterview?.organization?._id
+      || session?.aiInterview?.organization || undefined,
+    actorName: 'Interview candidate',
+    interviewId: String(session?.aiInterview?._id || session?.aiInterview || '')
+  }, run);
+}
+
+/**
+ * A candidate's own ChatGPT connection for this interview. Authenticated by
+ * the interview link alone — the candidate has no platform account — so every
+ * handler resolves the session from the token and never trusts a body field.
+ */
+exports.getPublicChatgptAccount = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session) return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    const account = await interviewCodexAccountService.readAccount(session);
+    return res.json({ account: account.toPublicJSON() });
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({
+      error: error.code || 'CHATGPT_STATUS_FAILED',
+      message: error.message || 'The ChatGPT connection could not be checked'
+    });
+  }
+};
+
+exports.startPublicChatgptLogin = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session) return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    const { login, account } = await interviewCodexAccountService.startLogin(session);
+    return res.json({ login, account: account.toPublicJSON() });
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({
+      error: error.code || 'CHATGPT_LOGIN_FAILED',
+      message: error.message || 'ChatGPT sign-in could not be started'
+    });
+  }
+};
+
+exports.cancelPublicChatgptLogin = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session) return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    const account = await interviewCodexAccountService.cancelLogin(session);
+    return res.json({ account: account.toPublicJSON() });
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({
+      error: error.code || 'CHATGPT_CANCEL_FAILED',
+      message: error.message || 'The pending sign-in could not be cancelled'
+    });
+  }
+};
+
+exports.setPublicChatgptConsent = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session) return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    const account = await interviewCodexAccountService.setConsent(session, req.body?.acknowledged === true);
+    return res.json({ account: account.toPublicJSON() });
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({
+      error: error.code || 'CHATGPT_CONSENT_FAILED',
+      message: error.message || 'Your choice could not be saved'
+    });
+  }
+};
+
+exports.disconnectPublicChatgpt = async (req, res) => {
+  try {
+    const session = await findPublicSession(req.params.token);
+    if (!session) return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    const account = await interviewCodexAccountService.disconnect(session);
+    return res.json({ account: account.toPublicJSON() });
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({
+      error: error.code || 'CHATGPT_DISCONNECT_FAILED',
+      message: error.message || 'The ChatGPT account could not be disconnected'
+    });
   }
 };
 

@@ -10,6 +10,7 @@ const {
   GROQ_BASE_URL,
   createDefaultRuntimeSettings,
   failoverPolicyForRoute,
+  isCandidateInterviewActivity,
   isChatgptPinnedActivity,
   isGatewayProvider,
   isManagedLocalProvider,
@@ -355,9 +356,13 @@ class AIRuntimeService {
     azureRollbackAdapter,
     // Required lazily by default: codexAccountService depends on this module
     // for request signing, so importing it at load time would be circular.
-    resolveSubject = (actorId) => require('./codexAccountService').resolveRoutableSubject(actorId)
+    resolveSubject = (actorId) => require('./codexAccountService').resolveRoutableSubject(actorId),
+    resolveInterviewSubject = (sessionId) => (
+      require('./interviewCodexAccountService').resolveRoutableSubject(sessionId)
+    )
   } = {}) {
     this.resolveSubject = resolveSubject;
+    this.resolveInterviewSubject = resolveInterviewSubject;
     this.fetch = fetchImpl;
     this.Credential = credentialModel;
     this.Quota = quotaModel;
@@ -1221,6 +1226,27 @@ class AIRuntimeService {
     // ran before ChatGPT existed.
     if (activity.startsWith('experience.') || activity.startsWith('knowledge.')) {
       return this.managedRuntimeRoute(route, settings, 'chatgpt_cross_product_request', policy);
+    }
+    // A live AI interview runs on the candidate's own connected account and on
+    // nothing else: their answers are their data, so an unconnected candidate
+    // is refused rather than quietly interviewed on someone else's plan.
+    const interviewSessionId = String(context?.interviewSessionId || '').trim();
+    if (isCandidateInterviewActivity(activity)) {
+      const candidateSubject = interviewSessionId
+        ? await this.resolveInterviewSubject(interviewSessionId)
+        : null;
+      if (!candidateSubject) {
+        throw new AIRuntimeError(
+          'This interview runs on the candidate\'s own ChatGPT account, and none is connected.',
+          { code: 'CHATGPT_CANDIDATE_ACCOUNT_REQUIRED', statusCode: 409, retryable: false }
+        );
+      }
+      return {
+        ...route,
+        codexSubjectId: candidateSubject.subjectId,
+        runtimeOwner: 'user',
+        runtimeOwnerKind: 'candidate'
+      };
     }
     // Unattributed work — a public applicant's CV has no account that could
     // ever be connected.
