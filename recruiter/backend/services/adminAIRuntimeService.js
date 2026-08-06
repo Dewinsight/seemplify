@@ -177,8 +177,17 @@ function assessRouting(settings) {
       continue;
     }
     const definition = ACTIVITY_DEFINITIONS[activity];
-    if (definition.lockedProvider && route.provider !== definition.provider) {
-      issues.push({ activity, code: 'invalid_provider', message: `Configured provider must be ${definition.provider}.` });
+    // The lock stops drift onto another shared provider. Running on the
+    // signed-in person's own ChatGPT account is an explicit decision, not
+    // drift, so it satisfies the lock — matching resolveRoute and updateRoute.
+    if (definition.lockedProvider
+      && route.provider !== definition.provider
+      && !isUserOwnedProvider(route.provider)) {
+      issues.push({
+        activity,
+        code: 'invalid_provider',
+        message: `Configured provider must be ${definition.provider} or a connected ChatGPT account.`
+      });
     }
     const model = models.find((item) => item.id === route.model && item.provider === route.provider && item.enabled !== false);
     if (!model) {

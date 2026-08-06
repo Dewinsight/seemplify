@@ -29,6 +29,35 @@ test.after(async () => {
   await mongo.stop();
 });
 
+test('routing health accepts locked CV activities running on a connected ChatGPT account', () => {
+  const { assessRouting } = require('../services/adminAIRuntimeService');
+  const { createDefaultRuntimeSettings, CHATGPT_PROVIDER } = require('../config/aiRuntimeCatalog');
+  const settings = createDefaultRuntimeSettings();
+
+  // The shipped default routes CV parsing to the user's own account, so the
+  // admin console must not report it as an invalid provider.
+  for (const activity of ['candidate.cv_parse', 'ai_interview.cv_parse']) {
+    const route = settings.routes.find((item) => item.activity === activity);
+    assert.equal(route.provider, CHATGPT_PROVIDER, `${activity} ships on ChatGPT`);
+  }
+  const health = assessRouting(settings);
+  const providerIssues = (health.issues || []).filter((issue) => issue.code === 'invalid_provider');
+  assert.deepEqual(providerIssues, [], 'a connected ChatGPT account satisfies the provider lock');
+
+  // Drift onto another shared provider is still reported.
+  const drifted = {
+    ...settings,
+    routes: settings.routes.map((route) => (
+      route.activity === 'candidate.cv_parse'
+        ? { ...route, provider: 'groq', model: 'openai/gpt-oss-120b' }
+        : route
+    ))
+  };
+  const driftedIssues = (assessRouting(drifted).issues || []).filter((issue) => issue.code === 'invalid_provider');
+  assert.equal(driftedIssues.length, 1);
+  assert.equal(driftedIssues[0].activity, 'candidate.cv_parse');
+});
+
 test('every ChatGPT runtime-gate failure defers instead of failing a CV', () => {
   const gateCodes = [
     'AI_RUNTIME_ACCOUNT_REQUIRED',
