@@ -13,6 +13,7 @@ import {
   rejectKnowledgePromotionApproval, resumeKnowledgeBackfill, rollbackKnowledgeBaseToQwen
 } from './knowledgeBackfill.js';
 import { KnowledgeError } from './knowledgeRepository.js';
+import { getMailDeliveryOverview, syncMailDeliveryEnvironment } from './mailDeliveryAdmin.js';
 import { resolveRequestSpace, type SpaceContext, SpaceError } from './spaces.js';
 import {
   activeControlPlaneRoleIds, activeControlPlaneRolesForUsers, controlPlanePermissionsForUser,
@@ -497,6 +498,50 @@ platformAdminRouter.get('/knowledge-runtime', async (request, response) => {
   const actor = requireRootActor(request, response); if (!actor) return;
   try { return response.json({ runtime: await getKnowledgeRuntimeStatus() }); }
   catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.get('/email-delivery', async (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try {
+    return response.json(await getMailDeliveryOverview());
+  } catch (error) {
+    return sendPlatformError(response, error);
+  }
+});
+
+platformAdminRouter.post('/email-delivery/sync', async (request, response) => {
+  const actor = requireRootActor(request, response); if (!actor) return;
+  try {
+    const input = z.object({
+      publicBaseUrl: z.string().trim().url().optional(),
+      deploy: z.boolean().optional(),
+      reason: reasonSchema
+    }).strict().parse(request.body || {});
+    const result = await syncMailDeliveryEnvironment({
+      publicBaseUrl: input.publicBaseUrl,
+      deploy: input.deploy !== false
+    });
+    recordAudit(request, actor, {
+      action: 'mail_delivery.production_env_synced',
+      targetType: 'mail_delivery',
+      targetId: 'seemplify',
+      reason: input.reason,
+      after: {
+        publicBaseUrl: result.publicBaseUrl,
+        deployed: result.deployed,
+        apps: result.apps.map((app) => ({
+          id: app.id,
+          applicationId: app.applicationId,
+          updated: app.updated,
+          deployed: app.deployed,
+          error: app.error
+        }))
+      }
+    });
+    return response.json(result);
+  } catch (error) {
+    return sendPlatformError(response, error);
+  }
 });
 
 platformAdminRouter.post('/knowledge-backfills', (request, response) => {

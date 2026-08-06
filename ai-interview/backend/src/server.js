@@ -22,7 +22,7 @@ const {
 const { estimateAIInterviewWalletCost, findAIInterviewVoiceOption } = require('./aiInterviewVoiceOptions');
 const azureSpeechTtsService = require('./azureSpeechTtsService');
 const azureSpeechSttService = require('./azureSpeechSttService');
-const brevoEmailService = require('./brevoEmailService');
+const mailDeliveryService = require('./mailDeliveryService');
 const questionGeneratorService = require('./questionGeneratorService');
 const cvProcessingQueue = require('./cvProcessingQueueService');
 const cvCandidateResults = require('./cvCandidateResultRepository');
@@ -387,9 +387,9 @@ async function deliverInvite(store, interview, session, token) {
   session.email = session.email || {};
   session.email.attempts = Number(session.email.attempts || 0) + 1;
 
-  if (!brevoEmailService.isConfigured()) {
+  if (!mailDeliveryService.isConfigured()) {
     session.status = 'email_failed';
-    session.email.lastError = 'BREVO_API_KEY is not configured.';
+    session.email.lastError = 'MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL are not configured.';
     store.emailLog.push({
       _id: id('email'),
       sessionId: session._id,
@@ -405,7 +405,7 @@ async function deliverInvite(store, interview, session, token) {
   }
 
   try {
-    const result = await brevoEmailService.sendInvite({
+    const result = await mailDeliveryService.sendInvite({
       candidateEmail: session.candidateSnapshot.email,
       candidateName: session.candidateSnapshot.name,
       organizationName: store.settings.organizationName,
@@ -413,13 +413,14 @@ async function deliverInvite(store, interview, session, token) {
       interviewTitle: interview.title,
       questionCount: interview.questionSnapshots.length,
       expiresAt: interview.schedule.expiresAt,
-      interviewUrl: url
+      interviewUrl: url,
+      invitationId: session._id
     });
     session.status = 'sent';
     session.email.sentAt = iso(new Date());
     session.email.lastError = undefined;
     session.email.messageId = result?.messageId || result?.messageIds?.[0] || result?.messageId;
-    session.email.deliveryMode = result?.mode || 'brevo';
+    session.email.deliveryMode = result?.mode || 'seemplify-mail';
     store.emailLog.push({
       _id: id('email'),
       sessionId: session._id,
@@ -569,7 +570,7 @@ app.get('/health', asyncHandler(async (_req, res) => {
     ok: true,
     app: 'seemplify-ai-interview',
     database: shouldUseMongo() ? getMongoDbName() : 'json-dev-store',
-    emailConfigured: brevoEmailService.isConfigured(),
+    emailConfigured: mailDeliveryService.isConfigured(),
     time: new Date().toISOString()
   });
 }));
@@ -732,9 +733,9 @@ app.post('/api/admin/seed-demo', authenticate, requireRole('admin'), asyncHandle
 }));
 
 app.get('/api/admin/email-status', authenticate, requireRole('admin'), asyncHandler(async (_req, res) => {
-  const config = brevoEmailService.getBrevoConfig();
+  const config = mailDeliveryService.getMailConfig();
   res.json({
-    configured: brevoEmailService.isConfigured(),
+    configured: mailDeliveryService.isConfigured(),
     mode: config.mode,
     fromEmail: config.fromEmail,
     fromName: config.fromName
@@ -1523,7 +1524,7 @@ readStore()
     app.listen(port, () => {
       console.log(`AI Interview standalone backend running on http://localhost:${port}`);
       console.log(`Database: ${shouldUseMongo() ? getMongoDbName() : 'json-dev-store'}`);
-      console.log(`Brevo email configured: ${brevoEmailService.isConfigured() ? 'yes' : 'no'}`);
+      console.log(`Mail service configured: ${mailDeliveryService.isConfigured() ? 'yes' : 'no'}`);
       console.log(`Demo candidate link: ${getFrontendUrl()}/public/ai-interview/demo-token`);
     });
     setInterval(() => {
