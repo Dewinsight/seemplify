@@ -53,7 +53,7 @@ function Ensure-Configuration {
   }
   $configuration = [ordered]@{ config=[ordered]@{ ingress=@(
     [ordered]@{ hostname=$Hostname; path='^/health$'; service='http://localhost:11435'; originRequest=[ordered]@{ connectTimeout=10 } },
-    [ordered]@{ hostname=$Hostname; path='^/v1/(cv/analyze|complete|status|queue-telemetry)$'; service='http://localhost:11435'; originRequest=[ordered]@{ connectTimeout=10 } },
+    [ordered]@{ hostname=$Hostname; path='^/v1/(cv/analyze|complete|status|queue-telemetry|codex/(login/start|login/cancel|account|models|logout))$'; service='http://localhost:11435'; originRequest=[ordered]@{ connectTimeout=10 } },
     [ordered]@{ hostname=$Hostname; service='http_status:404' },
     [ordered]@{ service='http_status:404' }
   ) } }
