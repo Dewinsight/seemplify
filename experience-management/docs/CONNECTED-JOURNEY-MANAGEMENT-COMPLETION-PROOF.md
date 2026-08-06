@@ -64,7 +64,9 @@ than re-invented:
 - `node scripts/test-postgres-e2e.mjs --contract-only`
 - `node scripts/test-postgres-runtime-migration.mjs`
 - `node scripts/journey-postgres-ingest-security-load.mjs`
+- `npm run report:journey:release-gate`
 - `npm run qualify:sdk`
+- `npm run report:journey:closure-blockers`
 - `npm run report:sdk:publication-readiness`
 - `npm run preflight:sdk:publish`
 - `npm run verify:sdk:release`
@@ -171,7 +173,7 @@ and the SDK lane, but it does not yet prove:
 
 - full product completion across the twelve programme outcomes
 - full release/operational/ratification gates
-- Customer 360, full actual-path product completion, or orchestration runtime
+- the full routed Customer/Account 360 product, broader actual-path comparisons and designed-versus-observed completion, or orchestration runtime
 - authorised npm publication readiness
 
 The audit should keep moving by binding more existing claims to explicit
@@ -197,7 +199,7 @@ source of truth for the proof chains.
 | Permissioned Customer/Account 360 | In progress | Backend identity persistence, accounts/groups, permissioned timeline and Customer/Account 360 reads, plus consent/privacy-job foundations now exist; richer connectors, broader privacy completion, and user-facing product depth remain. |
 | Detect deterioration, gaps, loops, abandonment and justified risk | Not started | Full alerts/analytics/path productisation beyond the new subject-scoped actual-path slice plus reviewed anomaly/risk and governed predictive layers. |
 | Safe consent-aware idempotent human-governed action | Not started | Workflow definitions, action runtime, adapters, kill switches, and consequential-action safety proof. |
-| Roles, plans, quotas, retention, flags, audit, observability and runbooks | Foundation | Route-by-route enforcement completion, privacy controls, ratified runbooks/telemetry/SLOs, and signed rollout gates. |
+| Roles, plans, quotas, retention, flags, audit, observability and runbooks | Foundation | Managed plan catalogues, quota/usage-ledger foundations, rollout controls, and proposed operations records already exist, but route-by-route capability enforcement, privacy controls, ratified runbooks/telemetry/SLOs, published docs, and signed rollout gates remain. |
 
 The strongest completion blocker across the whole programme remains the same:
 many areas have meaningful foundations, but the release-grade proof chain is
@@ -223,7 +225,23 @@ what it still does not prove, and the shortest remaining path to a credible
 | Permissioned Customer/Account 360 | A durable backend foundation now exists: persisted identity/binding/group/session/segment state, permissioned profile and account timeline reads, permissioned Customer/Account 360 reads, and first purpose-gated privacy/export/suppression job behaviour are all present with focused route proof. | It does not yet prove a full routed 360 product surface, broader connector-backed timelines, field-level sensitive controls, or privacy-job completion across every raw/derived/action store. | Extend the backend foundation into the full user-facing 360 product and complete end-to-end privacy propagation/release proof. |
 | Detect deterioration, gaps, loops, abandonment and justified risk | Deterministic metric-alert lifecycle exists and actual-path analytics now have an initial subject-scoped product surface, so there is stronger foundation for future governed risk surfaces. | It does not yet prove reviewed anomaly/risk detection, full-scope path analytics/risk productisation, or governed predictive layers. | Finish broader path productisation first, then add reviewed deterministic deterioration/risk surfaces before any predictive layer. |
 | Safe consent-aware idempotent human-governed action | Cross-cutting consent, metering, and audit foundations exist elsewhere in the programme. | It does not yet prove workflow definitions, action runtime, adapters, kill switches, or consequential-action safety proof. This remains genuinely not started at product/runtime scope. | Implement workflow definitions and the idempotent action runtime only after identity/privacy/path foundations are stronger. |
-| Roles, plans, quotas, retention, flags, audit, observability and runbooks | Managed plan catalogues, quota/usage ledger foundations, rollout controls, and proposed architecture/operations records exist. Some route-level feature enforcement already exists in specific areas. | It does not yet prove route-by-route capability enforcement across the programme, privacy controls, ratified telemetry/SLO/runbooks, rollout gates, or published docs. | Complete route-by-route enforcement and bind ratified ops/runbook/rollout proof to the cross-cutting chain. |
+| Roles, plans, quotas, retention, flags, audit, observability and runbooks | Managed plan catalogues, quota/usage ledger foundations, rollout controls, proposed architecture/operations records, and some route-level feature enforcement already exist. | It does not yet prove full `journeys.*` route-by-route capability enforcement, privacy/DPIA and retention controls, ratified telemetry/SLO/runbooks, signed rollout gates, or published operator/developer/customer documentation. | Complete X-02, X-05, X-08, X-09, and X-10 proof to turn the cross-cutting chain from foundational to release-grade. |
+
+## 11B. Weakest outcome proof-status matrix
+
+This matrix is narrower than the full section-27 verification table above. It
+exists to prevent the weakest outcomes from being described only in broad
+programme language when their missing proof is more specific than that.
+
+| Outcome | Current strongest positive evidence | Current proof status | Highest-confidence missing proof |
+| --- | --- | --- | --- |
+| Trustworthy stage NPS/CSAT/CES, sentiment and operations | `P2-05` through `P2-10` now prove durable survey/question linkage, immutable metric definitions and observations, deterministic NPS/CSAT/CES and operational calculators, fenced rebuild/correction jobs, a routed analytics workspace, and deterministic stale/falling/small/contradictory alert rules with browser and PostgreSQL proof. | Implemented foundation with partial product proof: the core metric and alert pipeline exists and is exercised, but the full outcome is not yet release-grade. | Native ticket/social adapters and scale proof from `P2-07`, full comparison/emotional/sentiment/export surfaces and accessibility-at-scale from `P2-09`, and the Phase 2 performance/freshness/rebuild release gate in `P2-11`. |
+| Reusable portfolio and owned initiatives | `P3-01`, `P3-02`, `P3-04` through `P3-07`, `P3-09`, `P3-10`, and the Phase 3 feature-control foundations in `P3-11` now prove durable portfolio item persistence, scoring/versioning, collaboration threads, governance roles, saved views, read-only sharing, before/after outcome structures, and export/presentation foundations. | Implemented foundation with partial product proof: durable portfolio and collaboration primitives exist, but the full portfolio product and release proof do not. | Product surfaces and enterprise-volume proof for `P3-08`, route-by-route governance and UX completion across `P3-04` through `P3-07`, metric-store and reporting completion for `P3-09`, and the Phase 3 entitlements/deletion/performance/export-security proof in `P3-11`. |
+| Macro/subjourneys and complete service blueprint | `P4-01`, `P4-04`, `P4-05`, and `P4-07` now prove durable runtime-29 hierarchy nodes, typed links, blueprint records/versions, structured blueprint lanes and relationships, the three lines, and current/future comparison contracts with static, migration, backend-test, and PostgreSQL probe coverage. | Implemented foundation with partial product proof: durable hierarchy/blueprint persistence and comparison primitives exist, but the full user-facing workspace and release chain do not. | Product surfaces and accessible graph/table alternatives for `P4-03`, mounted APIs and workspace routing breadth across `P4-01` through `P4-07`, taxonomy/health-rollup and causality/gap-detection proof for `P4-02` and `P4-06`, plus the Phase 4 permission/export/performance release gate in `P4-08`. |
+| Real conversion/drop-off/duration/cohorts/paths and designed-versus-observed | `P5C-01` now proves version-lineaged actual-path analytics, a real actual-path API, the Journey Metrics product surface, durable subject-scoped snapshots and rollups, known-profile stitched reads, freshness signals, and snapshot-to-current reconciliation deltas with focused route/runtime proof. | Implemented foundation with partial product proof: a real actual-path product slice exists, but the full designed-versus-observed and product-scale analytics outcome is not yet release-grade. | Product-scale comparisons and broader designed-versus-observed reconciliation UX from `P5C-01`, secondary suppression and operational reconciliation/correction at product scale, plus the still-missing reviewed anomaly/risk and predictive layers in `P5C-02` and `P5C-03` where this outcome feeds adjacent risk claims. |
+| Detect deterioration, gaps, loops, abandonment and justified risk | `P2-09/10` still stop at deterministic metric-alert and analytics foundations, while `P5C-01` now proves a real actual-path API, Journey Metrics surface, durable subject-scoped snapshots/rollups, known-profile stitched reads, and reconciliation deltas. | Foundational only: current evidence proves initial alert/path foundations, but it does not yet prove a reviewed risk product. | Reviewed anomaly/risk detection under `P5C-02`, governed predictive controls under `P5C-03`, broader path productisation beyond the current subject-scoped slice, and release-grade proof for the resulting surfaces. |
+| Safe consent-aware idempotent human-governed action | Cross-cutting foundations already exist through `X-01` metering/quota controls, `X-03` rollout/kill-switch foundations, and the programme-wide audit and consent primitives referenced elsewhere in the traceability ledger. | Pre-implementation only: enabling controls exist, but no direct orchestration/runtime product proof exists yet. | First implementation and proof for `P5D-01` through `P5D-04`, followed by the release-grade cross-cutting controls in `X-01` through `X-08` that would make consequential actions safe to claim. |
+| Roles, plans, quotas, retention, flags, audit, observability and runbooks | `X-01` and `X-03` already prove managed plan catalogues, usage-ledger foundations, and progressive rollout/kill-switch controls; proposed operations records also exist for `X-08`. | Foundational but materially incomplete: governance primitives exist, but the release-grade proof chain is still broken across multiple cross-cutting requirements. | Completion proof for `X-02`, `X-05`, `X-08`, `X-09`, and `X-10`: route-by-route capability enforcement, privacy/DPIA/retention controls, ratified telemetry/SLO/runbooks, signed rollout gates, and published verified documentation. |
 
 ## 12. Current SDK publication blocker sheet
 
@@ -259,7 +277,7 @@ Even with release-shaped packages, publication is still downstream of the
 programme gates explicitly called out in the SDK release docs:
 
 - durable endpoint / ingestion proof is not yet release-complete
-- Seemplify dogfood now has a generated reconciliation artifact, but the current August 6, 2026 report still shows zero ChatGPT-connected users, zero ChatGPT-selected users, and zero journey-created milestones in the sampled local evidence; ratified load/SLO/security gates and a fuller end-to-end activation run remain open
+- Seemplify dogfood now has a generated reconciliation artifact, but the current August 6, 2026 report still shows zero audited ChatGPT-connected users, zero audited ChatGPT-selected users, zero stored ChatGPT runtime preferences, two Codex runtime homes, zero Codex auth files, one journey-created milestone, and only one AI-runtime audit event in the sampled local evidence; ratified load/SLO/security gates and a fuller end-to-end activation run remain open
 - privacy/security/operations evidence is not yet fully ratified
 
 ### What would prove the first publish actually happened
@@ -292,18 +310,34 @@ publication specifically or only the wider end-to-end programme completion.
 | Publish branch state | SDK publication | Repo/workflow | Merge the intended SDK publish state onto `main`; current branch is not `main`, `main` does not yet contain the newer SDK publish-policy/checklist/preflight files this branch now uses, and the new landing/delta commands should both turn green before workflow activation is treated as meaningful. |
 | npm authentication and scope ownership | SDK publication | External setup | Prove `npm whoami`, confirm `@seemplify` organisation ownership, and complete trusted-publisher configuration for the exact repository/workflow/environment. |
 | Connected-journey durable endpoint release gate | SDK publication and programme | Proof/ops | The durable ingest plane is correct and well-tested, but not yet release-complete: ratified security/privacy, sustained load/SLO, failover, and signed release proof remain open. |
-| Seemplify activation dogfood | SDK publication and programme | Runtime/proof | The repo has a generated activation report, but the current August 6, 2026 artifact still shows zero ChatGPT-connected users, zero ChatGPT-selected users, zero journey-created milestones, and zero activation/runtime audit events in its sampled local evidence; a fuller end-to-end run with live ChatGPT/runtime milestones and release-grade signoff remains missing. |
+| Connected-journey release-gate consolidation | SDK publication and programme | Proof/ops | Maintain the dedicated connected-journey release-gate artifact so the ingest gate, dogfood activity, and remaining blocker families are current in one place before attempting SDK publication. |
+| Seemplify activation dogfood | SDK publication and programme | Runtime/proof | The repo has a generated activation report, and the current August 6, 2026 artifact now shows one journey-created milestone plus one AI-runtime audit event, but it still shows zero audited ChatGPT-connected users, zero audited ChatGPT-selected users, zero stored ChatGPT runtime preferences, two Codex runtime homes, zero Codex auth files, and zero activation audit events; a fuller end-to-end run with live ChatGPT/runtime milestones and release-grade signoff remains missing. |
 | Stage reprojection scale proof | SDK publication and programme | Runtime/proof | Runtime-30 retained reprojection is implemented, exercised, and now has a multi-batch contract-run slice over 25 retained events, but production-scale reprojection/performance evidence is still missing. |
 | Visual designed-journey completion | Programme only | Product + proof | Finish saved-view depth and final accessibility/security/performance/release gates. |
 | Evidence/Research Hub completion | Programme only | Product + proof | Complete retention/deletion propagation, export negative controls, synthesis presentation depth, and privacy/security release evidence. |
 | Metrics/sentiment completion | Programme only | Product + proof | Add native ticket/social adapters, richer comparisons, privacy suppression, exports, and final Phase 2 release proof. |
-| Portfolio productisation | Programme only | Product | Route and finish portfolio UX, collaboration/reporting breadth, and end-to-end permissions/governance acceptance. |
-| Hierarchy/blueprint productisation | Programme only | Product | Mount the routed hierarchy/blueprint APIs and workspaces, then prove exports/permissions/performance. |
+| Portfolio productisation | Programme only | Product + proof | Durable portfolio, collaboration, scoring, saved-view, sharing, and governance foundations now exist in backend storage, migrations, and focused tests; remaining work is routed portfolio UX breadth, reporting/export depth, permission-matrix completion, and end-to-end governance/release acceptance. |
+| Hierarchy/blueprint productisation | Programme only | Product + proof | Durable runtime-29 hierarchy/blueprint schemas, typed links, comparison contracts, migration tests, and PostgreSQL probe coverage already exist; remaining work is mounting the routed hierarchy/blueprint APIs and workspaces, then proving exports, permissions, and performance. |
 | Actual paths and designed-vs-observed | Programme only | Product + proof | Extend the existing durable subject-scoped path projections/rollups with broader comparisons, designed-versus-observed productisation, and reconciliation/correction/runtime proof. |
-| Customer/Account 360 | Programme only | New implementation | Build persistence, accounts/groups, privacy jobs, and permissioned 360 timelines. |
+| Customer/Account 360 | Programme only | Product + proof | Backend identity persistence, accounts/groups, sessions, segments, permissioned timelines, Customer/Account 360 reads, and first privacy/export/suppression foundations now exist; remaining work is the full routed 360 product, richer connectors, broader field-level controls, and end-to-end privacy propagation/release proof. |
 | Deterioration/risk layers | Programme only | New implementation | Productise path/alert surfaces, then add reviewed deterministic risk layers before any predictive gates. |
-| Human-governed action runtime | Programme only | New implementation | Implement workflow definitions, idempotent action runtime, adapters, kill switches, and consequential-action proof. |
-| Cross-cutting governance/runbooks/docs | Programme only | Controls/ops/docs | Finish route-by-route capability enforcement, privacy controls, ratified telemetry/SLO/runbooks, rollout gates, and published documentation. |
+| Human-governed action runtime | Programme only | New implementation | Cross-cutting consent, metering, audit, quota, and rollout-control foundations already exist elsewhere in the programme; remaining work is implementing workflow definitions, the idempotent action runtime, reviewed adapters, layered kill switches, and consequential-action proof. |
+| Cross-cutting governance/runbooks/docs | Programme only | Controls/ops/docs | Managed plan catalogues, quota/usage-ledger foundations, rollout controls, and proposed architecture/operations records already exist; remaining work is route-by-route capability enforcement, privacy controls, ratified telemetry/SLO/runbooks, rollout gates, and published documentation. |
+
+## 12B. Closure matrix for programme-completion and SDK-publication blockers
+
+This matrix is the current bridge between the audit and the real closure work.
+It is intentionally narrower than the full execution checklist above: it names
+the blocker families that still dominate both programme completion and eventual
+SDK publication as of Thursday, August 6, 2026.
+
+| Blocker family | Scope blocked | Current strongest evidence | Exact proof still required |
+| --- | --- | --- | --- |
+| Connected-journey release gate | Programme + SDK publication | `P5A-01` through `P5A-08` now prove the canonical protocol, source/key/schema control plane, durable ingest plane, replay/debug/dead-letter foundations, runtime-30 retained reprojection execution slices, and release-shaped unpublished npm SDKs; the destructive-isolated August 6, 2026 ingest/security/load artifact also exists. | Production-scale retained reprojection/performance proof, ratified security/privacy/operations approval, sustained load/SLO/failover evidence, and fuller connected-journey signoff that can support a publish claim rather than only a local qualification claim. |
+| Seemplify activation dogfood and rollout evidence | Programme + SDK publication | A generated activation reconciliation artifact exists and now prefers authoritative onboarding-completed and explicit workspace-created platform-audit milestones where available; the current artifact now also shows non-zero journey activity and one AI-runtime audit event in sampled local evidence. | A fuller end-to-end dogfood run with fresh ChatGPT/runtime-connected and runtime-selected milestones, plus signed rollout/release signoff sufficient for `X-09` and the connected-journey publish lane. |
+| Cross-cutting governance, privacy, telemetry, and runbooks | Programme + SDK publication | `X-01` and `X-03` already prove managed plan catalogues, immutable usage-ledger foundations, and progressive rollout/kill-switch controls; proposed operations records exist for `X-08`. | Completion proof for `X-02`, `X-05`, `X-08`, `X-09`, and `X-10`: route-by-route `journeys.*` capability enforcement, privacy/DPIA/retention controls, ratified telemetry/SLO/runbooks, signed rollout gates, and published verified operator/developer/customer documentation. |
+| SDK repo/workflow publish readiness | SDK publication | `qualify:sdk`, `verify:sdk:release`, the August 6, 2026 consolidated publication-readiness artifact, `preflight:sdk:landing`, and `evidence:sdk:delta` now prove the packages are release-shaped and unpublished while `main` still lacks the full required publish-state. | Land the required publish-state on `main`, turn the landing/delta checks green, and intentionally enable the publish workflow only once the connected-journey and cross-cutting release gates above are satisfied. |
+| npm authentication and scope readiness | SDK publication | Local qualification, release docs, and repo-side readiness checks exist; GitHub `npm-production` environment evidence also exists. | Prove `npm whoami`, confirm `@seemplify` organisation ownership/readiness, complete trusted-publisher configuration for the exact repo/workflow/environment, and observe a successful protected publish run before claiming any SDK is actually published. |
 
 ## 13. Recommended next implementation order from the current audit
 
@@ -354,20 +388,20 @@ Primary outcome impact:
 - Real conversion/drop-off/duration/cohorts/paths and designed-versus-observed
 - Detect deterioration, gaps, loops, abandonment and justified risk
 
-### Priority 3 — build Customer/Account 360 and privacy jobs
+### Priority 3 — extend Customer/Account 360 from backend foundations into the full product
 
 Why third:
 
 - it depends on identity, consent, and connected data foundations
-- it is one of the most obviously absent section-27 outcomes
+- the backend foundation now exists, so the remaining gap is product depth and full privacy completion rather than first persistence
 - it is a prerequisite for any credible consequential-action layer
 
 Concrete scope:
 
-- identity persistence and jobs beyond the current pure reducer
-- accounts/groups/memberships/materialised segments
-- permissioned 360 timeline and fact/inference/evidence distinctions
-- consent/suppression/export/correction/erasure/retention jobs
+- full routed profile/account/group/segment/360 product surfaces over the existing backend reads
+- richer timeline, fact, inference, and evidence distinctions plus broader connectors
+- broader field-level sensitive controls and operator/admin UX depth
+- end-to-end consent/suppression/export/correction/erasure/retention completion proof across every raw/derived/action store
 
 Primary outcome impact:
 

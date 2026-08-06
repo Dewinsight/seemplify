@@ -1,6 +1,6 @@
 # SDK publication readiness report
 
-Generated at: 2026-08-06T01:40:15.619Z
+Generated at: 2026-08-06T18:07:55.429Z
 
 ## Summary
 
@@ -9,8 +9,8 @@ Generated at: 2026-08-06T01:40:15.619Z
 - Target branch: main
 - Repo-side landing preflight: failed
 - Required files missing on main: 4
-- Committed main...HEAD SDK publish-state diffs: 2
-- Working-tree SDK publish-state entries: 4
+- Committed main...HEAD SDK publish-state diffs: 4
+- Working-tree SDK publish-state entries: 0
 - Publish preflight: failed
 
 ## Repo-side landing status
@@ -23,9 +23,9 @@ Generated at: 2026-08-06T01:40:15.619Z
 ## Required SDK publish-state delta
 
 - packages/SDK-QUALIFICATION.json: A	experience-management/packages/SDK-QUALIFICATION.json
-- packages/SDK-RELEASE.md: M packages/SDK-RELEASE.md
-- packages/SDK-PUBLISH-CHECKLIST.md: ?? packages/SDK-PUBLISH-CHECKLIST.md
-- scripts/sdk-publish-preflight.mjs: ?? scripts/sdk-publish-preflight.mjs
+- packages/SDK-RELEASE.md: A	experience-management/packages/SDK-RELEASE.md
+- packages/SDK-PUBLISH-CHECKLIST.md: A	experience-management/packages/SDK-PUBLISH-CHECKLIST.md
+- scripts/sdk-publish-preflight.mjs: A	experience-management/scripts/sdk-publish-preflight.mjs
 
 ## Publish preflight repository/workflow blockers
 
@@ -34,8 +34,8 @@ Generated at: 2026-08-06T01:40:15.619Z
 
 ## Publish preflight external setup blockers
 
-- npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T01_40_18_747Z-debug-0.log
-- npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T01_40_19_259Z-debug-0.log
+- npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T18_08_11_214Z-debug-0.log
+- npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T18_08_11_880Z-debug-0.log
 
 ## Publish preflight workstation limitations
 

@@ -1,7 +1,8 @@
 {
-  "generatedAt": "2026-08-06T01:23:53.707Z",
+  "generatedAt": "2026-08-06T18:09:19.711Z",
   "databaseProvider": "sqlite",
   "databasePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\experience.sqlite",
+  "providerPreferencePath": null,
   "summary": {
     "users": 2,
     "withEmailVerified": 2,
@@ -9,14 +10,18 @@
     "withOwnedSpace": 2,
     "withChatGptConnected": 0,
     "withChatGptSelected": 0,
+    "withStoredChatGptPreference": 0,
+    "withCodexRuntimeHome": 2,
+    "withCodexAuthFile": 0,
     "withSurveyCreated": 1,
-    "withJourneyCreated": 0,
+    "withJourneyCreated": 1,
     "withSubscriptionRequested": 0,
     "withSubscriptionActivated": 0
   },
   "caveats": [
     "Survey and journey milestones are reconciled at the owned-space level where legacy tables do not retain a direct creator user for every artifact.",
     "ChatGPT connection and runtime-selection proof depends on platform_audit_events actions emitted by current AI runtime routes; older connections made before this audit hook may be absent.",
+    "Stored runtime preferences and Codex runtime-home/auth-file presence are supportive local signals only; they are not treated as equivalent to a fresh audited ChatGPT connection event.",
     "Onboarding and explicit workspace-creation milestones prefer authoritative platform_audit_events when present and fall back to durable account/space records for older histories.",
     "This artifact is for internal Seemplify dogfood evidence only and is not customer telemetry ingestion."
   ],
@@ -36,22 +41,29 @@
         "emailVerifiedAt": "2026-07-29T08:54:03.902Z",
         "onboardingCompletedAt": "2026-07-29T08:54:03.902Z",
         "spaceCreatedAt": "2026-07-30T01:03:38.241Z",
-        "chatGptLoginStartedAt": null,
+        "chatGptLoginStartedAt": "2026-08-06T18:00:01.053Z",
         "chatGptConnectedAt": null,
         "chatGptSelectedAt": null,
         "localRuntimeSelectedAt": null,
         "surveyCreatedAt": "2026-07-29T14:19:48.779Z",
         "surveyPublishedAt": "2026-07-29T17:38:33.399Z",
-        "journeyCreatedAt": null,
+        "journeyCreatedAt": "2026-07-29T14:24:37.551Z",
         "journeyPublishedAt": null,
         "subscriptionRequestedAt": null,
         "subscriptionActivatedAt": null
       },
       "evidence": {
         "activationAuditEvents": 0,
-        "aiRuntimeAuditEvents": 0,
+        "aiRuntimeAuditEvents": 1,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": null,
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": true,
+        "codexAuthFilePresent": false,
         "surveyScope": "space",
-        "journeyScope": null,
+        "journeyScope": "space",
         "subscriptionScope": null
       }
     },
@@ -84,6 +96,13 @@
       "evidence": {
         "activationAuditEvents": 0,
         "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": null,
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": true,
+        "codexAuthFilePresent": false,
         "surveyScope": null,
         "journeyScope": null,
         "subscriptionScope": null

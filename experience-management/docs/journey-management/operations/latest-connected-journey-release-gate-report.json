@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "generatedAt": "2026-08-06T18:07:59.911Z",
+  "displayDate": "Thursday, August 6, 2026",
+  "inputs": {
+    "ingestRefresh": {
+      "ok": true,
+      "status": 0
+    },
+    "dogfoodRefresh": {
+      "ok": true,
+      "status": 0
+    }
+  },
+  "summary": {
+    "gateOpen": true,
+    "openBlockerCount": 6,
+    "ingestEvidenceUsable": true,
+    "stageProcessingExercised": true,
+    "requestLatencyP95Ms": 5018.68,
+    "generatedLoadEvents": 600,
+    "chatGptConnected": 0,
+    "chatGptSelected": 0,
+    "journeyCreated": 1
+  },
+  "blockerStatuses": [
+    {
+      "id": "independent_security_privacy_review",
+      "title": "Independent security/privacy review",
+      "open": true,
+      "evidence": "Connected-journey ingest gate still records INDEPENDENT_SECURITY_PRIVACY_REVIEW_PENDING."
+    },
+    {
+      "id": "ratified_hardware_load_profile",
+      "title": "Ratified hardware and load profile",
+      "open": true,
+      "evidence": "Current local request latency p95 is 5018.68 ms against an unratified candidate."
+    },
+    {
+      "id": "multi_node_failover",
+      "title": "Multi-node production PostgreSQL failover",
+      "open": true,
+      "evidence": "Connected-journey ingest gate still records MULTI_NODE_PRODUCTION_POSTGRES_FAILOVER_NOT_EXERCISED."
+    },
+    {
+      "id": "sustained_recovery_live_traffic_soak",
+      "title": "Sustained recovery and live-traffic soak",
+      "open": true,
+      "evidence": "Bounded local soak exists, but the gate still records SUSTAINED_RECOVERY_AND_LIVE_TRAFFIC_SOAK_PENDING."
+    },
+    {
+      "id": "signed_slo_capacity_approval",
+      "title": "Signed SLO and capacity approval",
+      "open": true,
+      "evidence": "Connected-journey ingest gate still records SIGNED_SLO_AND_CAPACITY_APPROVAL_PENDING."
+    },
+    {
+      "id": "dogfood_chatgpt_runtime_activity",
+      "title": "Dogfood ChatGPT/runtime activity",
+      "open": true,
+      "evidence": "Dogfood summary currently shows audited ChatGPT connected=0, audited ChatGPT selected=0, stored ChatGPT runtime preference=0, Codex runtime homes=2, Codex auth files=0, journey created=1."
+    }
+  ]
+}

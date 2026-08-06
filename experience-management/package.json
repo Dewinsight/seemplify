@@ -47,6 +47,8 @@
     "validate:journey-plan": "node scripts/validate-journey-traceability.mjs",
     "report:journey-dogfood": "tsx scripts/generate-journey-dogfood-report.mts",
     "report:journey-ingest-gate": "tsx scripts/generate-journey-ingest-gate-report.mts",
+    "report:journey:release-gate": "node scripts/generate-connected-journey-release-gate-report.mjs",
+    "report:journey:closure-blockers": "node scripts/generate-journey-closure-blocker-report.mjs",
     "report:sdk:publication-readiness": "node scripts/generate-sdk-publication-readiness-report.mjs",
     "test:e2e": "playwright test",
     "test:e2e:postgres": "node scripts/test-postgres-e2e.mjs",

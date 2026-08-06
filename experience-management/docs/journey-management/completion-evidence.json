@@ -1226,7 +1226,7 @@
       "evidenceId": "dogfood-activation-report-2026-08-05",
       "requirementIds": ["P5A-08", "X-08", "X-09"],
       "class": "Runtime",
-      "summary": "A bounded Seemplify activation dogfood reconciliation artifact is now generated from current durable account, survey, journey, subscription, and AI-runtime records, and it now prefers authoritative onboarding and explicit workspace-creation audit milestones where available; the current August 6, 2026 local artifact still shows no ChatGPT-connected or ChatGPT-selected users and no journey-created milestones in the sampled evidence.",
+      "summary": "A bounded Seemplify activation dogfood reconciliation artifact is now generated from current durable account, survey, journey, subscription, and AI-runtime records, and it now prefers authoritative onboarding and explicit workspace-creation audit milestones where available while separating audited ChatGPT/runtime milestones from weaker local runtime signals; the current August 6, 2026 local artifact still shows zero audited ChatGPT-connected users, zero audited ChatGPT-selected users, zero stored ChatGPT runtime preferences, two Codex runtime homes, zero Codex auth files, one journey-created milestone, and one AI-runtime audit event in the sampled evidence.",
       "command": "npm run report:journey-dogfood",
       "artifactPath": "docs/journey-management/dogfood/latest-activation-report.md",
       "observed": {
@@ -1244,11 +1244,11 @@
           "chatGptConnected": 0,
           "chatGptSelected": 0,
           "surveyCreated": 1,
-          "journeyCreated": 0,
+          "journeyCreated": 1,
           "subscriptionRequested": 0,
           "subscriptionActivated": 0,
           "activationAuditEvents": 0,
-          "aiRuntimeAuditEvents": 0
+          "aiRuntimeAuditEvents": 1
         }
       },
       "notClaimed": [

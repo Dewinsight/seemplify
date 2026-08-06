@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { config, projectDir } from '../backend/src/config.ts';
 import { db } from '../backend/src/database.ts';
 
@@ -24,10 +25,22 @@ function ensureDirectory(filePath: string) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
 
+function safeRuntimeKey(userId: string) {
+  return crypto.createHash('sha256').update(`experience-codex:${userId}`).digest('hex');
+}
+
 const now = new Date().toISOString();
 const outputDir = path.join(projectDir, 'docs', 'journey-management', 'dogfood');
 const jsonPath = path.join(outputDir, 'latest-activation-report.json');
 const markdownPath = path.join(outputDir, 'latest-activation-report.md');
+const providerPreferencePath = path.join(config.codexRuntimeDir, 'provider-preferences.json');
+const providerPreferenceFileExists = fs.existsSync(providerPreferencePath);
+const providerPreferenceFile = providerPreferenceFileExists
+  ? parseJson<{ preferences?: Record<string, Record<string, unknown>> }>(
+    fs.readFileSync(providerPreferencePath, 'utf8'),
+    {}
+  )
+  : {};
 
 const users = (db.prepare(`SELECT u.id,u.email,u.name,u.created_at,u.email_verified_at,
     profile.onboarding_completed_at
@@ -44,7 +57,6 @@ const users = (db.prepare(`SELECT u.id,u.email,u.name,u.created_at,u.email_verif
 
 const spaces = db.prepare(`SELECT id,name,created_by_user_id,personal_for_user_id,created_at
   FROM spaces ORDER BY created_at,id`).all() as SqlRow[];
-const spaceById = new Map(spaces.map((row) => [String(row.id), row]));
 
 const surveyMilestones = db.prepare(`SELECT space_id,MIN(created_at) created_at,
     MIN(CASE WHEN status='live' OR published_at IS NOT NULL THEN COALESCE(published_at,created_at) END) published_at
@@ -127,6 +139,10 @@ const records = users.map((user) => {
   const subscriptionRequested = subscriptionRequests.find((row) =>
     String(row.requested_by_user_id || '') === user.id && String(row.space_id || '') === (spaceId || '__none__'));
   const subscriptionActivated = spaceId ? activationBySpace.get(spaceId) : null;
+  const preferenceKey = spaceId ? `${user.id}:${spaceId}` : null;
+  const storedPreference = preferenceKey ? providerPreferenceFile.preferences?.[preferenceKey] : undefined;
+  const runtimeHome = path.join(config.codexRuntimeDir, 'users', safeRuntimeKey(user.id));
+  const authFile = path.join(runtimeHome, 'auth.json');
   return {
     user: {
       id: user.id,
@@ -156,6 +172,13 @@ const records = users.map((user) => {
     evidence: {
       activationAuditEvents: activationEvents.length,
       aiRuntimeAuditEvents: runtimeEvents.length,
+      providerPreferenceStored: Boolean(storedPreference),
+      providerPreferencePath: providerPreferenceFileExists ? providerPreferencePath : null,
+      runtimePreferenceProvider: optionalString(storedPreference?.provider),
+      runtimePreferenceChoice: optionalString(storedPreference?.runtimeChoice),
+      runtimePreferenceUpdatedAt: iso(storedPreference?.updatedAt),
+      codexRuntimeHomePresent: fs.existsSync(runtimeHome),
+      codexAuthFilePresent: fs.existsSync(authFile),
       surveyScope: survey ? 'space' : null,
       journeyScope: journey ? 'space' : null,
       subscriptionScope: subscriptionActivated ? 'space' : subscriptionRequested ? 'requester+space' : null
@@ -170,6 +193,10 @@ const totals = {
   withOwnedSpace: records.filter((record) => record.scope.primaryOwnedSpaceId).length,
   withChatGptConnected: records.filter((record) => record.milestones.chatGptConnectedAt).length,
   withChatGptSelected: records.filter((record) => record.milestones.chatGptSelectedAt).length,
+  withStoredChatGptPreference: records.filter((record) => record.evidence.runtimePreferenceProvider === 'codex'
+    || record.evidence.runtimePreferenceChoice === 'chatgpt').length,
+  withCodexRuntimeHome: records.filter((record) => record.evidence.codexRuntimeHomePresent).length,
+  withCodexAuthFile: records.filter((record) => record.evidence.codexAuthFilePresent).length,
   withSurveyCreated: records.filter((record) => record.milestones.surveyCreatedAt).length,
   withJourneyCreated: records.filter((record) => record.milestones.journeyCreatedAt).length,
   withSubscriptionRequested: records.filter((record) => record.milestones.subscriptionRequestedAt).length,
@@ -179,6 +206,7 @@ const totals = {
 const caveats = [
   'Survey and journey milestones are reconciled at the owned-space level where legacy tables do not retain a direct creator user for every artifact.',
   'ChatGPT connection and runtime-selection proof depends on platform_audit_events actions emitted by current AI runtime routes; older connections made before this audit hook may be absent.',
+  'Stored runtime preferences and Codex runtime-home/auth-file presence are supportive local signals only; they are not treated as equivalent to a fresh audited ChatGPT connection event.',
   'Onboarding and explicit workspace-creation milestones prefer authoritative platform_audit_events when present and fall back to durable account/space records for older histories.',
   'This artifact is for internal Seemplify dogfood evidence only and is not customer telemetry ingestion.'
 ];
@@ -187,6 +215,7 @@ const report = {
   generatedAt: now,
   databaseProvider: db.provider,
   databasePath: db.provider === 'sqlite' ? config.databasePath : null,
+  providerPreferencePath: providerPreferenceFileExists ? providerPreferencePath : null,
   summary: totals,
   caveats,
   records
@@ -203,8 +232,11 @@ const lines = [
   `- Email verified: ${totals.withEmailVerified}`,
   `- Onboarding completed: ${totals.withOnboardingCompleted}`,
   `- Owned space created: ${totals.withOwnedSpace}`,
-  `- ChatGPT connected: ${totals.withChatGptConnected}`,
-  `- ChatGPT selected: ${totals.withChatGptSelected}`,
+  `- ChatGPT connected (audited): ${totals.withChatGptConnected}`,
+  `- ChatGPT selected (audited): ${totals.withChatGptSelected}`,
+  `- Stored ChatGPT runtime preference: ${totals.withStoredChatGptPreference}`,
+  `- Codex runtime home present: ${totals.withCodexRuntimeHome}`,
+  `- Codex auth file present: ${totals.withCodexAuthFile}`,
   `- Survey created in owned space: ${totals.withSurveyCreated}`,
   `- Journey created in owned space: ${totals.withJourneyCreated}`,
   `- Subscription requested: ${totals.withSubscriptionRequested}`,
@@ -227,10 +259,15 @@ for (const record of records) {
   lines.push(`- Email verified: ${record.milestones.emailVerifiedAt || '—'}`);
   lines.push(`- Onboarding completed: ${record.milestones.onboardingCompletedAt || '—'}`);
   lines.push(`- Space created: ${record.milestones.spaceCreatedAt || '—'}`);
-  lines.push(`- ChatGPT login started: ${record.milestones.chatGptLoginStartedAt || '—'}`);
-  lines.push(`- ChatGPT connected: ${record.milestones.chatGptConnectedAt || '—'}`);
-  lines.push(`- ChatGPT selected: ${record.milestones.chatGptSelectedAt || '—'}`);
-  lines.push(`- Local runtime selected: ${record.milestones.localRuntimeSelectedAt || '—'}`);
+  lines.push(`- ChatGPT login started (audited): ${record.milestones.chatGptLoginStartedAt || '—'}`);
+  lines.push(`- ChatGPT connected (audited): ${record.milestones.chatGptConnectedAt || '—'}`);
+  lines.push(`- ChatGPT selected (audited): ${record.milestones.chatGptSelectedAt || '—'}`);
+  lines.push(`- Local runtime selected (audited): ${record.milestones.localRuntimeSelectedAt || '—'}`);
+  lines.push(`- Stored runtime provider: ${record.evidence.runtimePreferenceProvider || '—'}`);
+  lines.push(`- Stored runtime choice: ${record.evidence.runtimePreferenceChoice || '—'}`);
+  lines.push(`- Stored runtime preference updated: ${record.evidence.runtimePreferenceUpdatedAt || '—'}`);
+  lines.push(`- Codex runtime home present: ${record.evidence.codexRuntimeHomePresent ? 'yes' : 'no'}`);
+  lines.push(`- Codex auth file present: ${record.evidence.codexAuthFilePresent ? 'yes' : 'no'}`);
   lines.push(`- Survey created (space scope): ${record.milestones.surveyCreatedAt || '—'}`);
   lines.push(`- Survey published (space scope): ${record.milestones.surveyPublishedAt || '—'}`);
   lines.push(`- Journey created (space scope): ${record.milestones.journeyCreatedAt || '—'}`);
