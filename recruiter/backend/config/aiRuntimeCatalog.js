@@ -202,6 +202,22 @@ function isCrossProductActivity(activity) {
   return CROSS_PRODUCT_GROUPS.includes(ACTIVITY_DEFINITIONS[activity]?.group);
 }
 
+/** Turns taken during a live AI interview, plus the scoring of what was said.
+ * This is the candidate's own conversation, so it runs on the candidate's own
+ * connected ChatGPT account and never on the workspace's or the platform's.
+ * Question generation and CV parsing are excluded: the recruiter does those
+ * before any candidate is present. */
+const CANDIDATE_INTERVIEW_ACTIVITIES = Object.freeze([
+  'ai_interview.chat.introduction',
+  'ai_interview.chat.clarification',
+  'ai_interview.chat.acknowledgement',
+  'ai_interview.scoring'
+]);
+
+function isCandidateInterviewActivity(activity) {
+  return CANDIDATE_INTERVIEW_ACTIVITIES.includes(String(activity || ''));
+}
+
 /** Recruiter's own AI runs on the signed-in person's ChatGPT plan. Only
  * another product's intake stays on the managed runtimes. */
 function isChatgptPinnedActivity(activity) {
@@ -354,8 +370,10 @@ module.exports = {
   CHATGPT_DEFAULT_CODEX_MODEL,
   CHATGPT_MODEL,
   CHATGPT_PROVIDER,
+  CANDIDATE_INTERVIEW_ACTIVITIES,
   MANAGED_ROUTES,
   createManagedRuntimeSettings,
+  isCandidateInterviewActivity,
   isChatgptPinnedActivity,
   isCrossProductActivity,
   CLAUDE_PROVIDER,
