@@ -11,6 +11,7 @@ import { TutorialRenderer } from '@/components/tutorial/TutorialRenderer';
 import AppShell from '@/components/AppShell';
 import { InactivityWarning } from '@/components/InactivityWarning';
 import { AiRuntimeGateDialog } from '@/components/AiRuntimeGateDialog';
+import { ChatGptConnectionGate } from '@/components/ChatGptConnectionGate';
 import { FeatureFlagsProvider } from '@/context/FeatureFlagsContext';
 
 interface ConditionalProvidersProps {
@@ -45,6 +46,7 @@ export default function ConditionalProviders({ children }: ConditionalProvidersP
                 <AppShell>{children}</AppShell>
                 <InactivityWarning />
                 <AiRuntimeGateDialog />
+                <ChatGptConnectionGate />
                 <TutorialRenderer />
               </TutorialProvider>
             </OrganizationProvider>

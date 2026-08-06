@@ -33,9 +33,15 @@ export interface AiRuntimeGateError {
 type GateHandler = (gate: AiRuntimeGateError) => void;
 
 let gateHandler: GateHandler | null = null;
+let setupGateOpen = false;
 
 export function setAiRuntimeGateHandler(handler: GateHandler | null) {
   gateHandler = handler;
+}
+
+/** The proactive connection gate supersedes the reactive dialog while open. */
+export function setAiRuntimeSetupGateOpen(open: boolean) {
+  setupGateOpen = open;
 }
 
 export function isAiRuntimeGateCode(code: unknown): code is string {
@@ -54,6 +60,7 @@ export function extractAiRuntimeGateError(body: any): AiRuntimeGateError | null 
 }
 
 export function handleAiRuntimeGateError(gate: AiRuntimeGateError) {
+  if (setupGateOpen) return;
   if (gateHandler) gateHandler(gate);
   else console.warn('AI runtime gate fired with no mounted dialog:', gate.code);
 }
