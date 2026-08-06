@@ -2,13 +2,19 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 import { db } from './database.js';
 import { publishEvent } from './events.js';
-import { evaluateJourneyStageRules, journeyStageRuleLimits, type JourneyRuleEvent } from './journeyStageRules.js';
+import { type evaluateJourneyStageRules, type JourneyRuleEvent } from './journeyStageRules.js';
 import { publishedJourneyStageRules, type PublishedJourneyStageRule } from './journeyStageRuleRepository.js';
+import {
+  buildJourneyStageRuleHistory,
+  deriveAnonymousVisitApplication,
+  evaluatePublishedJourneyStageRuleGroup,
+  groupPublishedJourneyStageRules,
+  stageInstanceState
+} from './journeyStageProjectionCore.js';
 
 export const journeyStageProcessor = 'connected_journey_v1';
 export const journeyStageProcessorVersion = 'stage-rules-v1';
 export const journeyStageMaxAttempts = 5;
-export const journeyStageLateThresholdMs = 24 * 60 * 60 * 1_000;
 
 export class JourneyStageProcessingError extends Error {
   constructor(message: string, public code: string, public retryable = false, public status = 500) {
@@ -176,77 +182,37 @@ function priorHistory(raw: RawRow) {
       AND anonymous_id_hash=? AND event_name IS NOT NULL AND occurred_at<=?
       AND NOT (received_at=? AND id=?)
     ORDER BY occurred_at DESC,event_id DESC LIMIT ?`).all(
-      raw.space_id, raw.source_id, raw.environment, raw.anonymous_id_hash, raw.occurred_at,
-      raw.received_at, raw.id, journeyStageRuleLimits.history
+      raw.space_id, raw.source_id, raw.environment, raw.anonymous_id_hash, raw.occurred_at, raw.received_at, raw.id, 100
     ) as Array<Record<string, unknown>>;
-  return rows.reverse().map((row): JourneyRuleEvent => ({
-    messageId: String(row.event_id), eventName: String(row.event_name), timestamp: iso(row.occurred_at),
-    subjectId: String(row.anonymous_id_hash), sourceId: String(row.source_id),
-    environment: row.environment as JourneyRuleEvent['environment'],
-    properties: parseObject(parseObject(row.payload_json).properties)
-  }));
+  return buildJourneyStageRuleHistory(rows);
 }
 
-function groupedRules(rules: PublishedJourneyStageRule[]) {
-  const groups = new Map<string, PublishedJourneyStageRule[]>();
-  for (const rule of rules) groups.set(rule.journeyDefinitionId,
-    [...(groups.get(rule.journeyDefinitionId) || []), rule]);
-  return groups;
-}
-
-function sha(parts: string[]) { return crypto.createHash('sha256').update(parts.join('\u0000')).digest('hex'); }
 function sqlBoolean(value: boolean) { return db.provider === 'postgres' ? value : value ? 1 : 0; }
-
-function instanceState(role: JourneyStageRuleRoleLike) {
-  if (role === 'success') return 'succeeded';
-  if (role === 'failure') return 'failed';
-  if (role === 'exit') return 'exited';
-  return 'active';
-}
-type JourneyStageRuleRoleLike = 'entry' | 'progress' | 'success' | 'failure' | 'exit';
-
-function tupleBefore(eventAt: string, eventId: string, latestAt: string, latestEventId: string) {
-  return eventAt < latestAt || (eventAt === latestAt && eventId < latestEventId);
-}
 
 function applyRuleGroup(input: {
   raw: RawRow; claim: JourneyStageEventClaim; rules: PublishedJourneyStageRule[]; history: JourneyRuleEvent[]; evaluatedAt: string;
   evaluator?: typeof evaluateJourneyStageRules;
 }) {
-  const mapVersionId = input.rules[0]!.journeyMapVersionId;
-  if (input.rules.some((rule) => rule.journeyMapVersionId !== mapVersionId)) throw new JourneyStageProcessingError(
-    'Published rules span more than one governed map version.', 'EVENT_STAGE_RULE_VERSION_MIXED'
-  );
-  const journeyDefinitionId = input.rules[0]!.journeyDefinitionId;
-  const event: JourneyRuleEvent = {
-    messageId: input.raw.event_id, eventName: String(input.raw.event_name), timestamp: input.raw.occurred_at,
-    subjectId: input.raw.anonymous_id_hash || 'missing-anonymous-subject', sourceId: input.raw.source_id,
-    environment: input.raw.environment, properties: parseObject(parseObject(input.raw.payload_json).properties)
-  };
-  const evaluation = input.raw.anonymous_id_hash
-    ? (input.evaluator || evaluateJourneyStageRules)(input.rules.map((rule) => rule.evaluator), event, input.history)
-    : {
-      eventMessageId: event.messageId, matches: [], traces: input.rules.map((rule) => ({
-        ruleId: rule.ruleDefinitionId, ruleVersion: rule.versionNumber,
-        definitionId: rule.journeyDefinitionId, stageKey: rule.stageKey, role: rule.role,
-        matched: false, assignmentKey: null, reasons: ['anonymous_subject_missing'],
-        specificity: 0, priority: rule.priority
-      }))
-    };
-  const matched = evaluation.matches[0] || null;
-  const matchedVersion = matched ? input.rules.find((rule) => rule.ruleDefinitionId === matched.ruleId
-    && rule.versionNumber === matched.ruleVersion) : undefined;
-  if (matched && !matchedVersion) throw new JourneyStageProcessingError(
-    'A matched rule version was not present in the published snapshot.', 'EVENT_STAGE_RULE_SNAPSHOT_INVALID'
-  );
-  const ruleSetSha256 = sha(input.rules.map((rule) => `${rule.id}:${rule.contentSha256}`).sort());
-  const decisionKey = sha([input.raw.received_at, input.raw.id, journeyDefinitionId, journeyStageProcessor]);
-  const isLate = Date.parse(input.raw.occurred_at) < Date.parse(input.raw.received_at) - journeyStageLateThresholdMs;
+  const {
+    mapVersionId, journeyDefinitionId, evaluation, matched, matchedVersion, ruleSetSha256, decisionKey,
+    isLate, outcome, provenance
+  } = evaluatePublishedJourneyStageRuleGroup({
+    raw: input.raw,
+    claim: input.claim,
+    rules: input.rules,
+    history: input.history,
+    evaluatedAt: input.evaluatedAt,
+    journeyStageProcessor,
+    journeyStageProcessorVersion,
+    errorFactory: (message, code) => new JourneyStageProcessingError(message, code),
+    evaluator: input.evaluator
+  });
   let instance: Record<string, unknown> | undefined;
   let outOfOrder = false;
   if (matched && input.raw.anonymous_id_hash) {
-    const instanceId = sha([input.raw.space_id, input.raw.source_id, input.raw.environment,
-      journeyDefinitionId, 'anonymous', input.raw.anonymous_id_hash]);
+    const instanceId = crypto.createHash('sha256').update(
+      [input.raw.space_id, input.raw.source_id, input.raw.environment, journeyDefinitionId, 'anonymous', input.raw.anonymous_id_hash].join('\u0000')
+    ).digest('hex');
     db.prepare(`INSERT INTO journey_anonymous_instances
       (id,space_id,source_id,environment,journey_definition_id,subject_kind,anonymous_id_hash,state,current_stage_key,
         first_event_at,latest_event_at,latest_event_id,latest_visit_id,revision,created_at,updated_at)
@@ -261,21 +227,18 @@ function applyRuleGroup(input: {
       AND environment=? AND journey_definition_id=? AND anonymous_id_hash=?${lock}`).get(
         input.raw.space_id, input.raw.source_id, input.raw.environment, journeyDefinitionId, input.raw.anonymous_id_hash
       ) as Record<string, unknown>;
-    outOfOrder = Boolean(instance.current_stage_key) && tupleBefore(
-      input.raw.occurred_at, input.raw.event_id, iso(instance.latest_event_at), String(instance.latest_event_id)
-    );
+    outOfOrder = deriveAnonymousVisitApplication({
+      instance: {
+        state: String(instance.state),
+        currentStageKey: instance.current_stage_key ? String(instance.current_stage_key) : null,
+        latestEventAt: iso(instance.latest_event_at),
+        latestEventId: String(instance.latest_event_id)
+      },
+      eventOccurredAt: input.raw.occurred_at,
+      eventId: input.raw.event_id
+    }).outOfOrder;
   }
-  const outcome = !input.raw.anonymous_id_hash ? 'skipped_no_anonymous_subject' : matched ? 'matched' : 'no_match';
   const decisionId = crypto.randomUUID();
-  const provenance = {
-    rawEvent: { receivedAt: input.raw.received_at, id: input.raw.id, eventId: input.raw.event_id,
-      envelopeSha256: input.raw.envelope_sha256, schemaVersionId: input.raw.schema_version_id },
-    source: { id: input.raw.source_id, environment: input.raw.environment },
-    journey: { definitionId: journeyDefinitionId, mapVersionId },
-    ruleSetSha256, processor: journeyStageProcessor, processorVersion: journeyStageProcessorVersion,
-    leaseGeneration: input.claim.leaseGeneration, subjectKind: input.raw.anonymous_id_hash ? 'anonymous' : null,
-    eventOccurredAt: input.raw.occurred_at, evaluatedAt: input.evaluatedAt
-  };
   db.prepare(`INSERT INTO journey_stage_rule_decisions
     (id,decision_key,raw_received_at,raw_event_id,space_id,source_id,environment,event_id,journey_definition_id,
       journey_map_version_id,subject_kind,anonymous_id_hash,outcome,matched_rule_definition_id,matched_rule_version_id,
@@ -298,13 +261,18 @@ function applyRuleGroup(input: {
     ) as { id: string };
   if (matched && matchedVersion && instance && input.raw.anonymous_id_hash) {
     const assignmentKey = matched.assignmentKey!;
-    const visitId = sha([assignmentKey, input.raw.source_id, input.raw.environment]);
+    const visitId = crypto.createHash('sha256').update([assignmentKey, input.raw.source_id, input.raw.environment].join('\u0000')).digest('hex');
     const priorStage = instance.current_stage_key ? String(instance.current_stage_key) : null;
-    const chronologicallyNewer = !instance.current_stage_key
-      || tupleBefore(iso(instance.latest_event_at), String(instance.latest_event_id), input.raw.occurred_at, input.raw.event_id);
-    const terminalAbsorbing = ['succeeded', 'failed', 'exited'].includes(String(instance.state));
-    const applies = !outOfOrder && chronologicallyNewer && !terminalAbsorbing;
-    const nonApplicationReason = applies ? null : outOfOrder ? 'out_of_order' : 'terminal_absorbing';
+    const { applies, nonApplicationReason } = deriveAnonymousVisitApplication({
+      instance: {
+        state: String(instance.state),
+        currentStageKey: priorStage,
+        latestEventAt: iso(instance.latest_event_at),
+        latestEventId: String(instance.latest_event_id)
+      },
+      eventOccurredAt: input.raw.occurred_at,
+      eventId: input.raw.event_id
+    });
     db.prepare(`INSERT INTO journey_anonymous_stage_visits
       (id,assignment_key,instance_id,decision_id,raw_received_at,raw_event_id,space_id,source_id,environment,event_id,
         journey_definition_id,journey_map_version_id,subject_kind,stage_key,role,rule_definition_id,rule_version_id,
@@ -326,7 +294,7 @@ function applyRuleGroup(input: {
       // never regress the instance watermark, stage or terminal state.
       db.prepare(`UPDATE journey_anonymous_instances SET state=?,current_stage_key=?,latest_event_at=?,
         latest_event_id=?,latest_visit_id=?,revision=revision+1,updated_at=? WHERE id=? AND space_id=?`).run(
-          instanceState(matched.role), matched.stageKey, input.raw.occurred_at, input.raw.event_id, visitId,
+          stageInstanceState(matched.role), matched.stageKey, input.raw.occurred_at, input.raw.event_id, visitId,
           input.evaluatedAt, instance.id, input.raw.space_id
         );
     }
@@ -345,9 +313,9 @@ export function processJourneyStageEvent(claim: JourneyStageEventClaim, options:
     if (raw.event_name) {
       const rules = publishedJourneyStageRules(raw.space_id, raw.event_name);
       const history = priorHistory(raw);
-      for (const group of groupedRules(rules).values()) results.push(applyRuleGroup({
-        raw, claim, rules: group, history, evaluatedAt, evaluator: options.evaluator
-      }));
+      for (const group of groupPublishedJourneyStageRules(rules).values()) {
+        results.push(applyRuleGroup({ raw, claim, rules: group, history, evaluatedAt, evaluator: options.evaluator }));
+      }
     }
     options.beforeCommit?.();
     appendProcessingReceipt({ inbox: claim, attemptedAt: claim.claimedAt, completedAt: evaluatedAt,

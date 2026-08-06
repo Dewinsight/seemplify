@@ -1003,6 +1003,36 @@ async function removeCodexRequestDir(requestDir, {
  * the response envelope are deliberately identical to the shared path so a
  * caller cannot tell the two apart except by `runtimeOwner`.
  */
+/**
+ * OpenAI's server-side output schemas demand additionalProperties:false and a
+ * required list naming every property on each object node. Recruiter schemas
+ * are authored for the lenient json_schema transport, so server enforcement
+ * is applied only when a schema already meets the strict contract; otherwise
+ * the prompt carries the schema, exactly as the shared codex engine always
+ * has, and the caller's validation and repair pass guard the result.
+ */
+function codexStrictOutputSchema(schema) {
+  const strict = (node) => {
+    if (!node || typeof node !== 'object') return true;
+    if (Array.isArray(node)) return node.every(strict);
+    if (node.type === 'object' || node.properties) {
+      if (node.additionalProperties !== false) return false;
+      const keys = Object.keys(node.properties || {});
+      const required = Array.isArray(node.required) ? node.required : [];
+      if (!keys.every((key) => required.includes(key))) return false;
+      if (!Object.values(node.properties || {}).every(strict)) return false;
+    }
+    if (node.items && !strict(node.items)) return false;
+    for (const combiner of ['anyOf', 'oneOf', 'allOf']) {
+      if (Array.isArray(node[combiner]) && !node[combiner].every(strict)) return false;
+    }
+    if (node.$defs && !Object.values(node.$defs).every(strict)) return false;
+    if (node.definitions && !Object.values(node.definitions).every(strict)) return false;
+    return true;
+  };
+  return strict(schema) ? schema : undefined;
+}
+
 async function runCodexSubjectTurn(input, state) {
   const engine = engineSettings({ ...state, selectedEngine: 'codex' });
   const effectiveInput = prepareInferenceInput(input);
@@ -1016,7 +1046,7 @@ async function runCodexSubjectTurn(input, state) {
     modelCandidates: input.codexModelCandidates,
     effortCandidates: input.codexEffortCandidates
       || (input.reasoningEffort ? [{ value: String(input.reasoningEffort), source: 'admin_action' }] : []),
-    jsonSchema: effectiveInput.jsonSchema,
+    jsonSchema: codexStrictOutputSchema(effectiveInput.jsonSchema),
     requestId: input.requestId,
     timeoutMs: Number(input.timeoutMs || 240_000)
   });

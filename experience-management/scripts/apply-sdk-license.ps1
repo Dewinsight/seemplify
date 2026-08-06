@@ -141,6 +141,11 @@ $policyObject = Get-Content -Path $policyPath -Raw | ConvertFrom-Json
 $policy = ConvertTo-OrderedHashtable -InputObject $policyObject
 
 $policy['release']['approvedLicences'] = @($LicenseId)
+$policy['release']['$approvedLicencesComment'] = @(
+  "Authorised owner-approved SPDX identifiers for the five npm Journey SDK packages.",
+  "release-ready requires every manifest license field to match one of these values",
+  "and requires a per-package LICENSE file in each package directory."
+)
 $policy['lockedFoundation']['licenceKeyForbidden'] = $false
 $policy['lockedFoundation']['licenseFileForbidden'] = $false
 if ($MakePublic) {
@@ -150,7 +155,7 @@ if ($MakePublic) {
 $externalBlockers = @($policy['externalBlockers']['items'])
 $filteredBlockers = $externalBlockers | Where-Object {
   $_ -ne 'No legal SPDX licence has been selected and no LICENSE file exists.' -and
-  ($MakePublic -or $_ -ne 'All five packages remain private:true and must not be made public by a qualification change.')
+  (-not $MakePublic -or $_ -ne 'All five packages remain private:true and must not be made public by a qualification change.')
 }
 $policy['externalBlockers']['items'] = @($filteredBlockers)
 

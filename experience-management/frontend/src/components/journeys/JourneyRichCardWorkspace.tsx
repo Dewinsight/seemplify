@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive, FileText, Image, Link2, Loader2, Paperclip, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2
 } from 'lucide-react';
@@ -239,11 +239,17 @@ export function JourneyRichCardWorkspace({ map, snapshot, editable, onChanged }:
   const [assetAlt, setAssetAlt] = useState('');
   const [assetCaption, setAssetCaption] = useState('');
   const assetFileIsImage = Boolean(assetFile && isImageUpload(assetFile));
+  const assetFileInputRef = useRef<HTMLInputElement | null>(null);
   const [externalUrl, setExternalUrl] = useState('');
   const [externalName, setExternalName] = useState('');
   const [catalogBusy, setCatalogBusy] = useState(false);
   const activeTouchpoints = snapshot.catalog.touchpoints.filter((item) => item.status === 'active');
   const availableTouchpoints = activeTouchpoints.filter((item) => !detail?.touchpoints.some((linked) => linked.id === item.id));
+  const handleAssetFileSelection = (files: FileList | null | undefined) => {
+    setAssetFile(files?.[0] || null);
+  };
+  const selectedAssetFile = assetFile || assetFileInputRef.current?.files?.[0] || null;
+  const selectedAssetFileIsImage = Boolean(selectedAssetFile && isImageUpload(selectedAssetFile));
 
   useEffect(() => { setWorkingRevision(map.definition.revision); }, [map.definition.revision]);
   useEffect(() => {
@@ -254,6 +260,7 @@ export function JourneyRichCardWorkspace({ map, snapshot, editable, onChanged }:
     const fallback = detailFor(snapshot, selectedCardId);
     setDetail(fallback); setDocument(fallback?.richText || { version: 1, blocks: [] }); setEmotion(fallback?.emotion || null);
     setTouchpointId(''); setAssetFile(null); setAssetAlt(''); setAssetCaption(''); setExternalUrl(''); setExternalName('');
+    if (assetFileInputRef.current) assetFileInputRef.current.value = '';
     if (!selectedCardId || map.version.state !== 'draft') return;
     let active = true;
     void readJourneyCardRichDetail(map.definition.id, selectedCardId, true).then((loaded) => {
@@ -404,25 +411,34 @@ export function JourneyRichCardWorkspace({ map, snapshot, editable, onChanged }:
             {editable && <div className="grid gap-4 border-t pt-4 lg:grid-cols-2">
               <form className="space-y-2" onSubmit={(event) => {
                 event.preventDefault(); if (!assetFile) return;
-                const isImage = isImageUpload(assetFile);
+                const file = selectedAssetFile;
+                if (!file) return;
+                const isImage = isImageUpload(file);
                 void runMutation('upload', async (expectedRevision) => {
-                  const upload = await uploadJourneyCardAssetFile(assetFile);
+                  const upload = await uploadJourneyCardAssetFile(file);
                   return attachJourneyCardAsset(map.definition.id, selectedCard.id, { expectedRevision,
                     kind: isImage ? 'image' : 'attachment', uploadId: upload.id, displayName: upload.name,
                     mimeType: upload.mimeType, altText: isImage ? assetAlt.trim() : '', caption: assetCaption.trim() });
-                }, (result) => { setDetail(result.detail); setAssetFile(null); setAssetAlt(''); setAssetCaption(''); });
+                }, (result) => {
+                  setDetail(result.detail); setAssetFile(null); setAssetAlt(''); setAssetCaption('');
+                  if (assetFileInputRef.current) assetFileInputRef.current.value = '';
+                });
               }}>
                 <h3 className="text-sm font-medium">Upload a file</h3>
                 <Label htmlFor="journey-asset-file" className="text-xs">Image or PDF</Label>
-                <Input id="journey-asset-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" disabled={Boolean(busy)}
-                  onChange={(event) => setAssetFile(event.target.files?.[0] || null)} />
-                {assetFileIsImage && <><Label htmlFor="journey-asset-alt" className="text-xs">Alternative text</Label>
-                  <Input id="journey-asset-alt" value={assetAlt} maxLength={snapshot.limits.altTextCharacters}
-                    onChange={(event) => setAssetAlt(event.target.value)} placeholder="Describe what the image communicates" /></>}
+                <input id="journey-asset-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+                  className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5"
+                  ref={assetFileInputRef}
+                  disabled={Boolean(busy)} onChange={(event) => handleAssetFileSelection(event.currentTarget.files)}
+                  onInput={(event) => handleAssetFileSelection((event.target as HTMLInputElement).files)} />
+                <Label htmlFor="journey-asset-alt" className="text-xs">Alternative text</Label>
+                <Input id="journey-asset-alt" value={assetAlt} maxLength={snapshot.limits.altTextCharacters}
+                  onChange={(event) => setAssetAlt(event.target.value)}
+                  placeholder={selectedAssetFileIsImage ? 'Describe what the image communicates' : 'Optional for non-image attachments'} />
                 <Label htmlFor="journey-asset-caption" className="text-xs">Caption (optional)</Label>
                 <Input id="journey-asset-caption" value={assetCaption} maxLength={snapshot.limits.captionCharacters}
                   onChange={(event) => setAssetCaption(event.target.value)} />
-                <Button type="submit" size="sm" disabled={Boolean(busy) || !assetFile || (assetFileIsImage && !assetAlt.trim())}>
+                <Button type="submit" size="sm" disabled={Boolean(busy) || !selectedAssetFile || (selectedAssetFileIsImage && !assetAlt.trim())}>
                   {busy === 'upload' ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-2 h-3.5 w-3.5" />}Attach file
                 </Button>
               </form>

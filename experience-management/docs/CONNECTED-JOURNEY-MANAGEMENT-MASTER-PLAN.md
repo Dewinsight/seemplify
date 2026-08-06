@@ -1,9 +1,11 @@
 # Connected Journey Management master implementation plan
 
-**Status:** Proposed programme plan  
-**Last updated:** 2026-08-04  
+**Status:** Proposed programme plan; live implementation truth is tracked in the traceability, completion-proof, and evidence-ledger documents  
+**Last updated:** 2026-08-06  
 **Product:** Seemplify Experience Management  
 **Document purpose:** Execution-ready plan for evolving the existing Journey Maps feature into a complete, evidence-backed, connected Journey Management platform.
+
+Execution-status note: this master plan remains the target-state blueprint. For current implementation truth and release blockers, use [CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md](C:/Users/User/Documents/github/seemplify/experience-management/docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md), [CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md](C:/Users/User/Documents/github/seemplify/experience-management/docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md), and [completion-evidence.json](C:/Users/User/Documents/github/seemplify/experience-management/docs/journey-management/completion-evidence.json).
 
 ## 1. Executive decision
 

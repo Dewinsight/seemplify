@@ -2,6 +2,7 @@ import { getApiBaseUrl, getWsBaseUrl, getInactivityTimeout, getInactivityWarning
 import { sanitizeObject, preventClickjacking, defaultRateLimiter } from '../utils/security';
 import { tokenManager } from '../utils/tokenManager';
 import { handleCreditError, extractCreditError } from '../utils/creditErrorHandler';
+import { extractAiRuntimeGateError, handleAiRuntimeGateError } from '../utils/aiRuntimeGateHandler';
 
 const isBrowser = typeof window !== 'undefined';
 const ACTIVE_ORGANIZATION_STORAGE_KEY = 'seemplify_active_organization_id';
@@ -416,6 +417,20 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
       }
     } else {
       console.warn('⚠️ 401 error but not auto-logging out:', errorData.msg || errorData.message);
+    }
+  }
+
+  // AI runtime gate: a failed AI call carrying a runtime-availability code
+  // (local model off/unreachable, or the user's ChatGPT account needed) opens
+  // the global runtime dialog — same interception pattern as the 402 credits
+  // toast above. The response still flows back to the caller untouched.
+  if (isBrowser && !response.ok && response.status !== 401 && response.status !== 402) {
+    try {
+      const errorData = await response.clone().json();
+      const gate = extractAiRuntimeGateError(errorData);
+      if (gate) handleAiRuntimeGateError(gate);
+    } catch {
+      // Non-JSON failure body — nothing to gate on.
     }
   }
 

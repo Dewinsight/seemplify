@@ -1,7 +1,7 @@
 # Connected Journey Management implementation status
 
 **Overall status:** In progress — not fully implemented
-**Last reconciled:** 2026-08-05
+**Last reconciled:** 2026-08-06
 **Programme:** [CONNECTED-JOURNEY-MANAGEMENT-MASTER-PLAN.md](./CONNECTED-JOURNEY-MANAGEMENT-MASTER-PLAN.md)
 **Requirement ledger:** [CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md](./CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md)
 
@@ -9,11 +9,12 @@
 
 No: the complete programme in the master plan is not implemented. Seemplify
 has a useful Journey Map 2.0 foundation, an exercised Research Hub workspace,
-durable metric definitions/observations/rebuilds and metric-alert lifecycle, and
-several tested domain contracts. It does not yet provide the complete analytics experience,
-portfolio management, governed service-blueprint workspace, complete
-connected-journey dogfood/SLO gate, Customer 360, actual-path product, or
-orchestration runtime.
+durable metric definitions/observations/rebuilds and metric-alert lifecycle,
+durable collaboration/saved-view/portfolio backends, and several tested domain
+contracts. It does not yet provide the complete analytics experience, a fully
+productised portfolio or hierarchy workspace, a governed service-blueprint
+workspace, the complete connected-journey dogfood/SLO gate, Customer 360,
+full actual-path product completion, or orchestration runtime.
 
 The traceability ledger is the completion authority. A type, plan paragraph,
 seed fixture, pure calculator, route name, or narrow passing test is not treated
@@ -220,6 +221,39 @@ template programme's final combined release gates also remain incomplete.
   drop-off, loops, repeats, skipped/unexpected transitions, entry/exit, duration
   distributions, revision/conflict handling, lineage, and minimum-group
   suppression.
+- A first actual-path product surface now exists in Journey
+  Metrics through `/api/journey-metrics/actual-paths`, exposing accepted
+  instance/visit counts, common observed paths, designed funnel progression,
+  skipped transitions, loops/repeats, an initial designed-versus-observed
+  stage-alignment comparison, and explicit descriptive-only scope notes.
+  Durable append-only snapshots of the current view can now be saved
+  and reread for a fixed scope/version through the same workspace, and the
+  workspace now reports whether the latest saved snapshot is current or stale
+  relative to newer observed visits or completed stage reprojections; recent
+  snapshot history is also inspectable from the same page and historical
+  snapshots can be reopened into the current workspace view. Saved snapshots
+  also now expose a bounded reconciliation block against the current live
+  view. A follow-on backend slice now also adds a first durable anonymous-only
+  rollup read model, so editors can materialise a stable per-version/per-period
+  rollup, reopen the latest rollup through a dedicated route, and see it become
+  stale and then refresh as newer observed visits arrive. The Journey Metrics
+  workspace now also surfaces that latest durable rollup directly beside the
+  live view and append-only snapshots so the product can show current/stale
+  rollup state without leaving the actual-path workspace. A further backend
+  slice now also adds a first known-profile stitched mode on the same route,
+  reusing the existing anonymous-binding and account-membership bridge from the
+  identity layer so the response can report stitched known-profile/account
+  coverage where deterministic identity links already exist. The Journey
+  Metrics workspace can now switch the live actual-path view between
+  anonymous-only and known-profile stitched modes, and the same selected
+  subject scope now also flows through persisted rollups and snapshots so each
+  mode can be materialised, reopened, and inspected honestly from the same
+  workspace. The product is
+  still not a full known-identity path workspace: broader designed-versus-observed
+  reconciliation, correction handling, and product-scale comparisons remain.
+  version have changed since the snapshot was taken. Focused backend route
+  proof, path-analytics regressions, frontend/backend typecheck, and production
+  frontend build pass.
 - A typed service-blueprint contract for customer, frontstage, backstage,
   systems, policies/controls, handoffs, dependencies, SLA, cost, risk, failure
   points, the three blueprint lines, causal-gap analysis, and current/future
@@ -237,8 +271,14 @@ survey/collector/question bindings, segments, immutable definitions and rebuilds
 and presents values, baselines/targets, samples, windows, freshness, comparable
 trends, stage overlays, evidence coverage, and exact source-revision lineage.
 Focused desktop-owner and mobile-member browser scenarios pass with retries
-disabled. The portfolio, path, hierarchy, and blueprint items in this section
-remain calculation/validation foundations. Native ticket/social adapters, full
+disabled. The actual-path lane has now moved beyond a pure calculator into a
+subject-scoped product slice with an initial designed-versus-observed
+comparison, persisted snapshots, and a first durable rollup read model, but it
+is still not the full Phase 5 outcome: known-identity pathing, broader
+designed-versus-observed reconciliation, secondary suppression, operational
+correction, and broader release proof remain. Portfolio and
+hierarchy/blueprint work have now crossed into durable backend and migration
+ground but are not yet fully routed, productised, or release-proven. Native ticket/social adapters, full
   cohort/persona/segment/channel and sentiment views, exports, privacy
 suppression, production load/soak/accessibility/security approval, and
 operational SLO evidence remain.
@@ -289,7 +329,7 @@ operational SLO evidence remain.
   bounded memory-only batching, partial-result handling, retry/timeout/abort
   behavior, graceful flush/close, and host-safe callbacks. It deliberately makes
   no durable-delivery or self-authentication claim.
-- A private React Native SDK foundation emits the canonical protocol with a
+- An unpublished React Native SDK foundation emits the canonical protocol with a
   public write key, bounded count/byte/age queues and batches, stable IDs,
   partial-result retry, consent-gated persistence and withdrawal purge. It has
   explicit host lifecycle/network/battery/context bridges and accepts durable
@@ -298,7 +338,7 @@ operational SLO evidence remain.
   than falling back. Its artifact imports no DOM, Node or implicit native
   module. Real-device/OS qualification, historical installed-artifact upgrade
   tests, reviewed native adapters, dogfood and production data-plane proof remain.
-- Private native SwiftPM and Kotlin/Android foundations now cover every
+- Unpublished native SwiftPM and Kotlin/Android foundations now cover every
   canonical call, including operational metrics, plus reset/flush semantics,
   bounded consent-aware queues, retry-stable IDs, partial receipts, privacy
   minimisation, injectable host boundaries, and fail-closed encrypted storage.
@@ -310,6 +350,44 @@ operational SLO evidence remain.
 
 The durable control, ingestion, and anonymous stage-projection planes now exist
 and have local, browser, SQLite, and production-shaped PostgreSQL evidence.
+The next connected-journey identity tranche has also moved beyond a pure policy
+contract: a first persisted backend slice now stores reducer-backed anonymous
+and known profiles, exact bindings, merges, memberships, source facts,
+tombstones, processed commands, and audit, and exposes a permissioned
+`/api/journey-identities` surface for list/detail/resolve and explicit
+identity-command workflows. A follow-on backend slice now also adds durable
+account/group catalog rows plus rebuilt profile/group interaction timelines
+backed by those persisted identity facts. A further follow-on slice now adds a
+first durable session read model backed by anonymous identifier bindings plus
+persisted identity source facts. A further backend-first slice now also adds
+connected-journey segment/version/materialisation foundations with simple
+identity and membership rule clauses. A further backend slice now also adds a
+first permissioned Customer 360 read surface for profile/account detail over
+the existing identity, segment, session, consent-state, timeline, and anonymous
+journey-instance foundations, and the account 360 read now filters suppressed
+or denied member profiles plus their timeline and journey-instance traces for
+the requested purpose while the plain profile/group/account/session identity
+projections now also suppress suppressed profiles from list/detail/member/count,
+timeline, direct session, correction-history, audit, and segment-detail reads. A further privacy/export
+foundation now also adds
+purpose-specific profile privacy states plus governed profile-export jobs, and
+it blocks profile Customer 360 and export reads when the requested purpose is
+denied or suppressed. A further privacy-operations slice now also records
+durable suppression and erasure job requests, immediately applies suppression
+state where appropriate, and now also immediately propagates to existing
+profile export bundles, materialised segment memberships, profile timeline
+events, identity sessions, and anonymous journey instances when no append-only
+anonymous stage-visit traces remain while still explicitly keeping the deeper
+anonymous actual-path trace stores pending when they block cleanup and still
+returning the remaining downstream targets that have not yet been executed. A
+further correction-window foundation now also records
+durable correction runs whenever identity commands trigger merge-driven or
+late-source-fact rebuilds of profile timelines, derived sessions, and
+materialised segment memberships. This is still not Customer 360: resumable
+consent/correction/erasure/retention execution across the remaining stores,
+broader concurrency/runtime proof, richer segment semantics, product UI, and
+richer 360/timeline surfaces still remain.
+
 The remaining connected-journey blockers include a reconciled Seemplify
 activation dogfood journey, ratified and stable load/SLO results, retained
 projection rebuilds, Customer 360, actual-
@@ -403,10 +481,15 @@ The following focused evidence has passed on the current programme branch:
   and a successful Node 20/22 CI matrix run remain outstanding.
 - SDK packaging: a stable rerun passes clean no-`dist` typecheck/build,
   deterministic double-build hashes, Browser and React Native built-artifact
-  compatibility, real prepack/dry-run tarballs, and isolated offline
-  runtime/declaration/dependency consumers across all five TypeScript packages.
-  Publication remains blocked by product/security/licensing/account gates and
-  every package remains private.
+  compatibility, real prepack/dry-run tarballs, isolated offline
+  runtime/declaration/dependency consumers across all five TypeScript packages,
+  `qualify:sdk`, the explicit `release-ready` gate, the Swift static/protocol
+  contract, and the Kotlin static/protocol contract. All five npm package
+  manifests are now MIT with a per-package `LICENSE` file and `private: false`.
+  Publication remains blocked by the durable-endpoint/dogfood/security gates,
+  unverified npm `@seemplify` scope ownership and publish authentication, and
+  the still-disabled publish workflow; no registry write has occurred and no
+  `@seemplify` SDK package exists on npm as of Wednesday, August 5, 2026.
 - Event source/key/schema control plane: 8 backend route/domain tests, 7
   frontend contract tests, and 3 focused desktop/mobile browser scenarios pass.
 - Durable event ingestion: 8 focused policy/integration tests and the full
@@ -486,11 +569,13 @@ changes stop. No failing or unobserved release gate can be waived.
 3. Complete live metric experience: native ticket/social adapters, sentiment and
    emotional lanes, cohort/persona/segment/channel comparisons, exports,
    privacy suppression, and the Phase 2 performance/release gate.
-4. Reusable pain point/opportunity/solution/initiative portfolio and governance.
-5. Durable hierarchy and a complete service-blueprint workspace/export.
+4. Complete reusable pain point/opportunity/solution/initiative portfolio
+   management, governance, and routed UX.
+5. Complete hierarchy and service-blueprint workspaces, exports, and release
+   proof over the newer durable backend foundations.
 6. Reconciled Seemplify activation dogfood, stable capacity/SLO proof, and
    retained labelled reprojection over the implemented stage runtime.
-7. Known-identity journey instances, actual-path persistence/UI, and designed-versus-observed comparison.
+7. Known-identity journey instances, product-scale actual-path comparisons, and broader designed-versus-observed reconciliation.
 8. Permissioned Customer and Account 360 with privacy operations.
 9. Risk/anomaly and reviewed inference/prediction controls.
 10. Idempotent, consent-aware, human-governed orchestration and action adapters.
@@ -500,8 +585,9 @@ changes stop. No failing or unobserved release gate can be waived.
 ## Current implementation order
 
 The work continues in dependency order: close remaining Phase 1 editor and
-migration gaps; persist Research Hub metrics and portfolio entities; build
-hierarchy/blueprints; complete stage processing, SDK dogfood, and Phase 5A
+migration gaps; finish the routed Research Hub and metrics experience; extend
+the newer durable portfolio/collaboration/saved-view and hierarchy/blueprint
+foundations into complete product surfaces; complete stage processing, SDK dogfood, and Phase 5A
 security/load gates on the now-durable event platform; then identity,
 instances, paths/360, and finally orchestration. Each tranche is added to the
 traceability ledger with its missing proof kept explicit.

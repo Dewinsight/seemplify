@@ -59,6 +59,17 @@ export default function AiAccountPage() {
   useEffect(() => { void refresh() }, [refresh])
   useEffect(() => stopPolling, [stopPolling])
 
+  // The runtime-gate dialog deep-links here with ?connect=1 so "Use ChatGPT"
+  // flows straight into the device-code sign-in without a second click.
+  const autoConnectRef = useRef(false)
+  useEffect(() => {
+    if (autoConnectRef.current || loading || !account) return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("connect") !== "1") return
+    autoConnectRef.current = true
+    if (account.status !== "connected") void connect()
+  }, [loading, account])
+
   /** The device code is entered on OpenAI's site, so the only signal we get is
    * the account turning connected. Poll, then give up rather than spin. */
   const startPolling = useCallback(() => {

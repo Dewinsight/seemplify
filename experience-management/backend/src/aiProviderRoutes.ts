@@ -1,14 +1,52 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import {
   cancelCodexDeviceLogin, chooseAiProvider, disconnectCodex, getAiProviderState,
   resetUserCodexDefaults, startCodexDeviceLogin
 } from './aiProvider.js';
 import { currentSessionUser } from './auth.js';
+import { db } from './database.js';
+import { recordPlatformAuditEvent } from './platformAudit.js';
 import { resolveRequestSpace } from './spaces.js';
 import { TerraError } from './terraClient.js';
 
 export const aiProviderRouter = express.Router();
+
+function optionalString(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function recordAiRuntimeAudit(request: express.Request, userId: string, input: {
+  action: string;
+  targetId: string;
+  spaceId: string;
+  reason: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+}) {
+  recordPlatformAuditEvent({
+    request,
+    action: input.action,
+    actorUserId: userId,
+    actorRole: 'workspace_user',
+    targetType: 'ai_runtime',
+    targetId: input.targetId,
+    spaceId: input.spaceId,
+    reason: input.reason,
+    before: input.before,
+    after: input.after
+  });
+}
+
+function latestAiRuntimeAction(userId: string) {
+  const row = db.prepare(`SELECT action FROM platform_audit_events
+    WHERE actor_user_id=? AND target_type='ai_runtime'
+    ORDER BY created_at DESC,id DESC LIMIT 1`).get(userId) as { action?: string } | undefined;
+  return typeof row?.action === 'string' ? row.action : null;
+}
 
 function context(request: express.Request) {
   const user = currentSessionUser(request);
@@ -32,6 +70,7 @@ aiProviderRouter.get('/', async (request, response) => {
 aiProviderRouter.patch('/', async (request, response) => {
   try {
     const { user, space } = context(request);
+    const before = await getAiProviderState(user.id, space.id);
     const optionalCodexSetting = z.string().trim().min(1).max(200).nullable();
     const input = z.object({
       provider: z.enum(['terra', 'codex']),
@@ -48,7 +87,47 @@ aiProviderRouter.patch('/', async (request, response) => {
       codexDataSharingAcknowledged: z.boolean().optional()
     }).parse(request.body);
     await chooseAiProvider(user.id, space.id, input);
-    return response.json(await getAiProviderState(user.id, space.id));
+    const next = await getAiProviderState(user.id, space.id);
+    const beforeChoice = before.preference.runtimeChoice;
+    const nextChoice = next.preference.runtimeChoice;
+    if (beforeChoice !== nextChoice) {
+      recordAiRuntimeAudit(request, user.id, {
+        action: 'ai_runtime.runtime_selected',
+        targetId: `${user.id}:${space.id}`,
+        spaceId: space.id,
+        reason: 'Workspace AI runtime selection changed.',
+        before: {
+          provider: before.preference.provider,
+          runtimeChoice: beforeChoice,
+          codexModel: optionalString(before.codex.selectedModel)
+        },
+        after: {
+          provider: next.preference.provider,
+          runtimeChoice: nextChoice,
+          codexModel: optionalString(next.codex.selectedModel)
+        }
+      });
+    }
+    if (next.codex.account.connected && latestAiRuntimeAction(user.id) !== 'ai_runtime.codex_connected') {
+      recordAiRuntimeAudit(request, user.id, {
+        action: 'ai_runtime.codex_connected',
+        targetId: user.id,
+        spaceId: space.id,
+        reason: 'ChatGPT / Codex became connected for this account.',
+        before: {
+          connected: before.codex.account.connected,
+          planType: before.codex.account.planType,
+          authMode: before.codex.account.authMode
+        },
+        after: {
+          connected: true,
+          planType: next.codex.account.planType,
+          authMode: next.codex.account.authMode,
+          codexModel: optionalString(next.codex.selectedModel)
+        }
+      });
+    }
+    return response.json(next);
   } catch (error) { return sendError(response, error); }
 });
 
@@ -62,8 +141,20 @@ aiProviderRouter.post('/reset-codex-defaults', async (request, response) => {
 
 aiProviderRouter.post('/codex/device-login', async (request, response) => {
   try {
-    const { user } = context(request);
-    return response.json(await startCodexDeviceLogin(user.id));
+    const { user, space } = context(request);
+    const started = await startCodexDeviceLogin(user.id);
+    recordAiRuntimeAudit(request, user.id, {
+      action: 'ai_runtime.codex_login_started',
+      targetId: user.id,
+      spaceId: space.id,
+      reason: 'ChatGPT / Codex device login started.',
+      after: {
+        verificationUrl: started.verificationUrl,
+        loginId: 'loginId' in started ? started.loginId : null,
+        connected: started.connected
+      }
+    });
+    return response.json(started);
   } catch (error) { return sendError(response, error); }
 });
 
@@ -77,7 +168,29 @@ aiProviderRouter.post('/codex/device-login/cancel', async (request, response) =>
 aiProviderRouter.post('/codex/disconnect', async (request, response) => {
   try {
     const { user, space } = context(request);
+    const before = await getAiProviderState(user.id, space.id);
     await disconnectCodex(user.id);
-    return response.json(await getAiProviderState(user.id, space.id));
+    const next = await getAiProviderState(user.id, space.id);
+    if (before.codex.account.connected && !next.codex.account.connected) {
+      recordAiRuntimeAudit(request, user.id, {
+        action: 'ai_runtime.codex_disconnected',
+        targetId: user.id,
+        spaceId: space.id,
+        reason: 'ChatGPT / Codex was disconnected from this account.',
+        before: {
+          connected: true,
+          planType: before.codex.account.planType,
+          authMode: before.codex.account.authMode,
+          runtimeChoice: before.preference.runtimeChoice
+        },
+        after: {
+          connected: false,
+          planType: next.codex.account.planType,
+          authMode: next.codex.account.authMode,
+          runtimeChoice: next.preference.runtimeChoice
+        }
+      });
+    }
+    return response.json(next);
   } catch (error) { return sendError(response, error); }
 });

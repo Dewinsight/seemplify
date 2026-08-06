@@ -990,6 +990,7 @@ function atSourceUsageRecord({
   activity,
   engine,
   model,
+  provider,
   providerRequestId,
   status,
   httpStatus,
@@ -1005,7 +1006,10 @@ function atSourceUsageRecord({
   return {
     ...metering,
     activity,
-    provider: `local-${engine}`,
+    // Must match the provider identity in the completion response exactly:
+    // the backend's usage reconciliation hashes provider into the event
+    // identity, and a divergence poisons every retry of that execution.
+    provider: provider || `local-${engine}`,
     model,
     providerRequestId,
     status,
@@ -1195,8 +1199,11 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   if (requiredModel.length > 200 || /[\u0000-\u001f\u007f]/.test(requiredModel)) {
     return sendJson(response, 400, { code: 'INVALID_REQUIRED_MODEL' });
   }
-  const engineMismatch = requiredEngine && selected.id !== requiredEngine;
-  const modelMismatch = requiredModel
+  // A per-user Codex subject runs on the caller's own session, never the
+  // managed engine slot, so the administrator's engine selection cannot gate
+  // it: the request is pinned to the codex engine by construction.
+  const engineMismatch = !input.codexSubject && requiredEngine && selected.id !== requiredEngine;
+  const modelMismatch = !input.codexSubject && requiredModel
     && String(selected.model || '').trim().toLowerCase() !== requiredModel.toLowerCase();
   if (engineMismatch || modelMismatch) {
     return sendJson(response, 503, {
@@ -1320,7 +1327,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
         providerOutcomeMustNotRepeat = true;
         startedAt = Date.now();
       }
-    }, executionState);
+    }, input.codexSubject ? { ...executionState, selectedEngine: 'codex' } : executionState);
     const schemaErrors = input.jsonSchema ? validateSchemaValue(data.data, input.jsonSchema) : [];
     if (schemaErrors.length) {
       const error = new Error(`Inference engine returned invalid structured data: ${schemaErrors.slice(0, 5).join('; ')}`);
@@ -1343,13 +1350,18 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       totalTokens
     } = meteredTokenCounts(data.usage);
     const responseId = data.id || crypto.randomUUID();
-    const provider = `local-${data.engine}`;
-    const providerLabel = localProviderLabel(provider, data.model);
+    // A user-owned turn ran on the caller's connected ChatGPT account, not a
+    // managed local engine; the provider identity must say so.
+    const provider = data.runtimeOwner === 'user' ? 'chatgpt-codex' : `local-${data.engine}`;
+    const providerLabel = data.runtimeOwner === 'user'
+      ? `ChatGPT Codex (${data.model})`
+      : localProviderLabel(provider, data.model);
     const usageRecord = atSourceUsageRecord({
       metering,
       activity: input.activity,
       engine: data.engine,
       model: data.model,
+      provider,
       providerRequestId: responseId,
       status: 'success',
       httpStatus: 200,
@@ -1365,6 +1377,11 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
       providerLabel,
       engine: data.engine,
       model: data.model,
+      runtimeOwner: data.runtimeOwner || undefined,
+      planType: data.planType || undefined,
+      modelSource: data.modelSource || undefined,
+      reasoningEffortSource: data.reasoningEffortSource || undefined,
+      degraded: data.degraded === true ? true : undefined,
       runtimeProfile: runtimeProfile || undefined,
       gatewayExecutionId: metering?.gatewayExecutionId,
       content: data.content,
@@ -1485,6 +1502,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
         activity: input.activity,
         engine: terminalUsageEnvelope.engine,
         model: terminalUsageEnvelope.model,
+        provider: input.codexSubject ? 'chatgpt-codex' : undefined,
         providerRequestId: terminalUsageEnvelope.id,
         status: 'failed',
         httpStatus: error.status || 503,
@@ -1524,6 +1542,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
           activity: input.activity,
           engine: usageEnvelope.engine || selected.id,
           model: usageEnvelope.model || selected.model,
+          provider: input.codexSubject ? 'chatgpt-codex' : undefined,
           providerRequestId: usageEnvelope.id,
           status: 'failed',
           httpStatus: error.status || 503,

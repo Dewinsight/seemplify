@@ -395,14 +395,20 @@ class AIRuntimeService {
         && existing?.provider === 'groq'
         && Number(existing?.routeVersion || 1) === 1;
       if (definition?.lockedProvider) {
-        routesByActivity.set(route.activity, {
-          ...route,
-          ...(existing || {}),
-          provider: route.provider,
-          model: route.model,
-          lockedProvider: true,
-          failoverPolicy: route.failoverPolicy
-        });
+        // The lock stops drift onto another shared provider. An administrator
+        // explicitly routing the activity to a connected ChatGPT account is
+        // not drift, so it survives the pin — mirroring resolveRoute.
+        const storedUserOwned = existing && isUserOwnedProvider(existing.provider);
+        routesByActivity.set(route.activity, storedUserOwned
+          ? { ...route, ...existing, lockedProvider: true }
+          : {
+              ...route,
+              ...(existing || {}),
+              provider: route.provider,
+              model: route.model,
+              lockedProvider: true,
+              failoverPolicy: route.failoverPolicy
+            });
       } else {
         routesByActivity.set(route.activity, shouldApplyNewLocalDefault
           ? { ...(existing || {}), ...route }
@@ -918,6 +924,9 @@ class AIRuntimeService {
       activity: route.activity,
       provider: data?.provider || route.provider,
       model: data?.model || route.model,
+      // Personal-plan work must stay separable from billable platform usage in
+      // every rollup, so the owner is stamped on the durable event itself.
+      runtimeOwner: route.runtimeOwner === 'user' || data?.runtimeOwner === 'user' ? 'user' : 'platform',
       reasoningEffort: route.reasoningEffort,
       routeVersion: route.routeVersion || 1,
       promptVersion: context.promptVersion || '1',

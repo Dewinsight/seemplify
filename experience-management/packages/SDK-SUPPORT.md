@@ -1,19 +1,19 @@
 # Journey SDK support and compatibility
 
 This document records what is implemented and tested. It is not a public
-support promise. All five npm packages and both native package foundations
-remain private, and there is no production ingestion service for them to target
-yet.
+support promise. The five npm packages now carry MIT release metadata and
+remain unpublished; the two native package foundations still remain private,
+and there is no production ingestion service for any of them to target yet.
 
 ## Current matrix
 
 | Package | Package version | Wire protocol | Runtime/module surface | Automated evidence | Release status |
 | --- | --- | --- | --- | --- | --- |
-| `@seemplify/journey-event-protocol` | `0.1.0` | `1.0` | Dual ESM/CommonJS; browser-safe root; explicit Node-only `/mock` subpath in both formats; JSON Schema and OpenAPI assets | Node 22 CI, strict TypeScript, schema/reference-validator parity, mock contract | Private foundation |
-| `@seemplify/journey-browser-sdk` | `0.1.0` | `1.0` | Dual ES2022 ESM/CommonJS behind a `browser` condition, for modern bundlers and direct module loading | Deterministic adapters plus built-artifact browser bundles and restricted-host failure-isolation checks in both formats; no ratified real-browser matrix | Private foundation |
-| `@seemplify/journey-react` | `0.1.0` | Via Browser SDK | Dual ESM/CommonJS; React peer range `>=18.3 <20`; SSR-inert provider and hooks | React `19.2.x`, server rendering, Strict Mode and failure isolation | Private foundation |
-| `@seemplify/journey-node` | `0.1.0` | `1.0` | Node `>=20`, dual ESM/CommonJS, server-only conditional export with no `default` fallback | Local Node 22 tests cover canonical calls, bounded import, request identity/context, transport/retry/close/privacy; Node 20/22 CI matrix is configured but awaits a successful remote run | Private foundation |
-| `@seemplify/journey-react-native` | `0.1.0` | `1.0` | Dual ES2022 ESM/CommonJS behind a `react-native` condition; no DOM, Node built-ins, or bundled native module | Deterministic host adapters plus neutral built-artifact/restricted-host checks in both formats and 12 conformance, consent, secure-storage, lifecycle, offline, retry and failure-isolation tests; no real-device/OS matrix | Private foundation |
+| `@seemplify/journey-event-protocol` | `0.1.0` | `1.0` | Dual ESM/CommonJS; browser-safe root; explicit Node-only `/mock` subpath in both formats; JSON Schema and OpenAPI assets | Node 22 CI, strict TypeScript, schema/reference-validator parity, mock contract | Prepared for release (not published) |
+| `@seemplify/journey-browser-sdk` | `0.1.0` | `1.0` | Dual ES2022 ESM/CommonJS behind a `browser` condition, for modern bundlers and direct module loading | Deterministic adapters plus built-artifact browser bundles and restricted-host failure-isolation checks in both formats; no ratified real-browser matrix | Prepared for release (not published) |
+| `@seemplify/journey-react` | `0.1.0` | Via Browser SDK | Dual ESM/CommonJS; React peer range `>=18.3 <20`; SSR-inert provider and hooks | React `19.2.x`, server rendering, Strict Mode and failure isolation | Prepared for release (not published) |
+| `@seemplify/journey-node` | `0.1.0` | `1.0` | Node `>=20`, dual ESM/CommonJS, server-only conditional export with no `default` fallback | Local Node 22 tests cover canonical calls, bounded import, request identity/context, transport/retry/close/privacy; Node 20/22 CI matrix is configured but awaits a successful remote run | Prepared for release (not published) |
+| `@seemplify/journey-react-native` | `0.1.0` | `1.0` | Dual ES2022 ESM/CommonJS behind a `react-native` condition; no DOM, Node built-ins, or bundled native module | Deterministic host adapters plus neutral built-artifact/restricted-host checks in both formats and 12 conformance, consent, secure-storage, lifecycle, offline, retry and failure-isolation tests; no real-device/OS matrix | Prepared for release (not published) |
 | `SeemplifyJourney` (SwiftPM) | `0.1.0` | `1.0` | Swift tools 5.10; iOS 15+ and macOS 12+; source package with an optional Keychain/AES-GCM/atomic-file store | Windows protocol/static contract passes against all eight canonical call fixtures plus batch/result fixtures; 10 XCTest scenarios are authored but Swift is unavailable locally; pinned macOS/Xcode 15.4 CI is configured but unobserved | Private foundation |
 | `com.seemplify:journey-kotlin` | `0.1.0-foundation` | `1.0` | Android minSdk 23/compileSdk 35; JVM 17; Gradle 8.10.2, AGP 8.7.3 and Kotlin 2.0.21 | Static protocol/package contract and clean Windows gate pass ten-fixture/no-publication checks, 12/12 JVM tests, zero-finding lint, release AAR/sources/metadata and instrumentation APK; 2/2 Keystore/AtomicFile tests pass on one Android 15/API 35 emulator; broader device/OS evidence remains open | Private foundation |
 
@@ -97,6 +97,15 @@ physical-device matrix, and none is claimed.
 5. No runtime, browser, framework or operating-system combination becomes
    supported until it is represented in CI and in this table.
 
+## Changing a repository-enforced budget
+
+The bundle ceilings in `SDK-QUALIFICATION.json` are repository-enforced local
+measurements, not public support promises. If a deliberate SDK change needs a
+higher limit, rerun the clean measurement workflow on the approved toolchain,
+update the recorded budget numbers and rationale in the reviewed commit, and
+keep the change paired with the code that caused the increase. Never raise a
+budget just to green-light unexplained drift.
+
 ## Release gates still open
 
 - Durable ingestion and control-plane conformance
@@ -112,6 +121,5 @@ physical-device matrix, and none is claimed.
   crash-recovery and installed-artifact upgrade matrices beyond the single API
   35 emulator foundation run
 - Security/privacy review, SCA, secret scan, SBOM and provenance
-- Legal selection of an SPDX licence plus checked-in `LICENSE`
 - npm `@seemplify` scope ownership and trusted-publisher setup
 - Dogfood, load/soak and incident-response evidence from the master plan

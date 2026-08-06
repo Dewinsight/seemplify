@@ -74,6 +74,20 @@
   body { background: white; }
 }
 
+[data-sonner-toaster] {
+  pointer-events: none;
+}
+
+[data-sonner-toast] {
+  pointer-events: none;
+}
+
+[data-sonner-toast] button,
+[data-sonner-toast] a,
+[data-sonner-toast] [role="button"] {
+  pointer-events: auto;
+}
+
 .email-editor .tiptap p { margin: 0.45rem 0; }
 .email-editor .tiptap p:first-child { margin-top: 0; }
 .email-editor .tiptap p:last-child { margin-bottom: 0; }

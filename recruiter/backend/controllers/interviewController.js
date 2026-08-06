@@ -1077,7 +1077,7 @@ const scheduleInterview = async (req, res) => {
         console.log('📧 [Controller] emailTemplate type:', typeof emailTemplate);
         console.log('📧 [Controller] emailTemplate length:', emailTemplate ? emailTemplate.length : 0);
         
-        // Send the email - Use Nylas if interviewer has connected email, fallback to Brevo
+        // Send the email - Use Nylas if interviewer has connected email, fallback to the shared Seemplify mail service
         const useNylasEmail = interviewer.nylasGrantId && process.env.USE_NYLAS_FOR_INTERVIEW_EMAILS === 'true';
         
         if (useNylasEmail) {
@@ -1112,11 +1112,11 @@ const scheduleInterview = async (req, res) => {
             candidateInviteOptions
           );
           
-          // If Nylas fails due to permissions or other issues, fall back to Brevo
+          // If Nylas fails due to permissions or other issues, fall back to the shared Seemplify mail service
           if (!nylasResult.success && nylasResult.fallbackToBrevo) {
-            console.log('📧 Nylas failed (scope/permission issue), falling back to Brevo email service');
+            console.log('📧 Nylas failed (scope/permission issue), falling back to the Seemplify mail service');
             console.warn('ℹ️ SOLUTION: User needs to disconnect and reconnect calendar to grant email permissions');
-            console.warn('ℹ️ Current behavior: Using Brevo email service as fallback (interview still works)');
+            console.warn('ℹ️ Current behavior: Using the Seemplify mail service as fallback (interview still works)');
             
             // ✅ SEND INTERVIEW INVITATION ONLY TO CANDIDATE (no BCC/CC to interviewers)
             await emailService.sendInterviewInviteEmail(
@@ -1129,7 +1129,7 @@ const scheduleInterview = async (req, res) => {
             );
           } else if (!nylasResult.success) {
             console.error(`❌ Nylas email failed: ${nylasResult.error}`);
-            console.log('📧 Falling back to Brevo email service...');
+            console.log('📧 Falling back to the Seemplify mail service...');
             // ✅ SEND INTERVIEW INVITATION ONLY TO CANDIDATE (no BCC/CC to interviewers)
             await emailService.sendInterviewInviteEmail(
               candidate.email,
@@ -1141,7 +1141,7 @@ const scheduleInterview = async (req, res) => {
             );
           }
         } else {
-          console.log('📧 Using Brevo email service (Nylas not available)');
+          console.log('📧 Using the Seemplify mail service (Nylas not available)');
           // ✅ SEND INTERVIEW INVITATION ONLY TO CANDIDATE (no BCC/CC to interviewers)
           await emailService.sendInterviewInviteEmail(
             candidate.email,
@@ -1301,8 +1301,8 @@ Best regards,
             console.log(`📧 ✅ Nylas notification result for ${participant.email}:`, nylasNotificationResult);
             
             if (!nylasNotificationResult.success) {
-              console.log(`📧 ⚠️ Nylas notification failed for ${participant.email}, falling back to Brevo. Error:`, nylasNotificationResult.error);
-              // Fallback to Brevo using same method
+              console.log(`📧 ⚠️ Nylas notification failed for ${participant.email}, falling back to the Seemplify mail service. Error:`, nylasNotificationResult.error);
+              // Fallback to the shared Seemplify mail service using the same method
               await emailService.sendInterviewInviteEmail(
                 participant.email,
                 notificationTemplateData,
@@ -1310,10 +1310,10 @@ Best regards,
                 [], // No BCC for notifications  
                 []  // No CC for notifications
               );
-              console.log(`📧 ✅ Brevo fallback notification sent to ${participant.email}`);
+              console.log(`📧 ✅ Seemplify mail-service fallback notification sent to ${participant.email}`);
             }
           } else {
-            console.log(`📧 🚨 ATTEMPTING Brevo notification to ${participant.email} (Nylas not available)`);
+            console.log(`📧 🚨 ATTEMPTING Seemplify mail-service notification to ${participant.email} (Nylas not available)`);
             await emailService.sendInterviewInviteEmail(
               participant.email,
               notificationTemplateData,
@@ -1321,7 +1321,7 @@ Best regards,
               [], // No BCC for notifications
               []  // No CC for notifications  
             );
-            console.log(`📧 ✅ Brevo notification sent to ${participant.email}`);
+            console.log(`📧 ✅ Seemplify mail-service notification sent to ${participant.email}`);
           }
           
           console.log(`✅ Interview notification sent to ${participant.email}`);
@@ -3441,9 +3441,10 @@ const generateAISummary = async (req, res) => {
     const summaryResult = await azureService.generateInterviewSummary(interviewData);
     
     if (!summaryResult.success) {
-      return res.status(500).json({
+      return res.status(summaryResult.statusCode || 500).json({
         success: false,
         error: 'Failed to generate AI summary',
+        code: summaryResult.code,
         details: summaryResult.error
       });
     }
@@ -3473,9 +3474,10 @@ const generateAISummary = async (req, res) => {
     
   } catch (error) {
     console.error('Generate AI summary error:', error);
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
       error: 'Server error generating AI summary',
+      code: error.code,
       details: error.message
     });
   }
@@ -4826,9 +4828,10 @@ const analyzeTeamComments = async (req, res) => {
     const analysisResult = await azureService.analyzeTeamComments(commentsData);
     
     if (!analysisResult.success) {
-      return res.status(500).json({
+      return res.status(analysisResult.statusCode || 500).json({
         success: false,
         error: 'Failed to analyze team comments',
+        code: analysisResult.code,
         details: analysisResult.error,
         rawResponse: analysisResult.rawResponse
       });
@@ -4862,9 +4865,10 @@ const analyzeTeamComments = async (req, res) => {
     
   } catch (error) {
     console.error('Analyze team comments error:', error);
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
       error: 'Server error analyzing team comments',
+      code: error.code,
       details: error.message
     });
   }
@@ -5639,7 +5643,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                   jobDetailsPdfAttached: hasJobDetailsPdf
                 };
                 
-                // Send the email - Use Nylas if available, fallback to Brevo
+                // Send the email - Use Nylas if available, fallback to the shared Seemplify mail service
                 const useNylasEmail = interviewer.nylasGrantId && process.env.USE_NYLAS_FOR_INTERVIEW_EMAILS === 'true';
                 const maxEmailAttempts = 2;
                 let emailSent = false;
@@ -5663,7 +5667,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                       );
 
                       if (!nylasResult.success) {
-                        console.log(`📧 Nylas failed for ${candidateName}, falling back to Brevo`);
+                        console.log(`📧 Nylas failed for ${candidateName}, falling back to the Seemplify mail service`);
                         await emailService.sendInterviewInviteEmail(
                           candidate.email,
                           templateData,
@@ -5674,7 +5678,7 @@ const scheduleMultiCandidateInterview = async (req, res) => {
                         );
                       }
                     } else {
-                      console.log(`📧 Using Brevo email service for ${candidateName} (attempt ${attempt}/${maxEmailAttempts})`);
+                      console.log(`📧 Using the Seemplify mail service for ${candidateName} (attempt ${attempt}/${maxEmailAttempts})`);
                       await emailService.sendInterviewInviteEmail(
                         candidate.email,
                         templateData,

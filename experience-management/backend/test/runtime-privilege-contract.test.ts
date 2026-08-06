@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 /**
- * STATIC registration test for runtimes 27-29.
+ * STATIC registration test for runtimes 27-30.
  *
  * SCOPE WARNING — READ BEFORE TRUSTING A GREEN RUN. Every assertion below reads
  * source TEXT. This file does NOT create a database, does NOT apply a migration
@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
  *   assertRuntimePrivileges expectations  a table missing here is never checked,
  *                                         so an over-broad grant on it is invisible.
  *
- * Runtimes 18-26 were exhaustive in all three; 27-29 were not, and no test paired
+ * Runtimes 18-26 were exhaustive in all three; 27-30 were not, and no test paired
  * them (knowledge-embedding-config.test.ts stops at runtime 22 and checks one
  * runtime at a time). This pairs all three lists for every runtime 27-29 object so
  * the omission cannot recur at runtime 30.
@@ -44,7 +44,8 @@ const privilegeSource = fs.readFileSync(path.join(migrationRoot, 'runtime_privil
 const RUNTIMES = [
   { version: 27, file: '0027_journey_portfolio.sql' },
   { version: 28, file: '0028_journey_collaboration.sql' },
-  { version: 29, file: '0029_journey_hierarchy_blueprints.sql' }
+  { version: 29, file: '0029_journey_hierarchy_blueprints.sql' },
+  { version: 30, file: '0030_journey_stage_reprojection.sql' }
 ] as const;
 
 /** Only top-of-line CREATE TABLE is a declaration; the same text inside a comment is prose. */
@@ -115,21 +116,21 @@ for (const { version, file } of RUNTIMES) {
   });
 }
 
-test('the runtime 27-29 contracts stay pinned to the shipped compatibility window', () => {
+test('the runtime 27-30 contracts stay pinned to the shipped compatibility window', () => {
   const compatibility = JSON.parse(
     fs.readFileSync(path.join(migrationRoot, 'runtime-compatibility.json'), 'utf8')) as {
       minimumRuntimeSchemaVersion: number; maximumRuntimeSchemaVersion: number;
     };
-  // 29 is the newest migration on disk and the newest runtime any of the three
+  // 30 is the newest migration on disk and the newest runtime any of the three
   // lists above describes; the guard is only meaningful while that holds.
-  assert.equal(compatibility.maximumRuntimeSchemaVersion, 29);
-  assert.equal(compatibility.minimumRuntimeSchemaVersion, 29);
-  assert.match(contractSource, /LATEST_RUNTIME_SCHEMA_VERSION = 29/u);
+  assert.equal(compatibility.maximumRuntimeSchemaVersion, 30);
+  assert.equal(compatibility.minimumRuntimeSchemaVersion, 30);
+  assert.match(contractSource, /LATEST_RUNTIME_SCHEMA_VERSION = 30/u);
   const beyondWindow = fs.readdirSync(migrationRoot)
     .map((name) => /^(\d{4})_.*\.sql$/u.exec(name))
     .filter((match): match is RegExpExecArray => match !== null)
-    .filter((match) => Number(match[1]!) > 29)
+    .filter((match) => Number(match[1]!) > 30)
     .map((match) => match[0]);
   assert.deepEqual(beyondWindow, [],
-    'a migration past runtime-29 must be added to RUNTIMES above before it can ship');
+    'a migration past runtime-30 must be added to RUNTIMES above before it can ship');
 });

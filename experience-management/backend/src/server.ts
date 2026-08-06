@@ -13,6 +13,7 @@ import { journeyResearchRefreshRunner } from './journeyResearchRefresh.js';
 import { journeyMetricRebuildRunner } from './journeyMetricRebuild.js';
 import { journeyAssetRetentionWorker } from './journeyAssetRetentionWorker.js';
 import { journeySavedViewRetentionWorker } from './journeySavedViewRetentionWorker.js';
+import { journeyStageReprojectionRunner } from './journeyStageReprojection.js';
 
 aiJobRunner.start();
 campaignRunner.start();
@@ -27,6 +28,7 @@ journeyResearchRefreshRunner.start();
 journeyMetricRebuildRunner.start();
 journeyAssetRetentionWorker.start();
 journeySavedViewRetentionWorker.start();
+journeyStageReprojectionRunner.start();
 const server = app.listen(config.port, config.host, () => {
   console.log(`Seemplify Experience is running at http://${config.host}:${config.port}`);
 });
@@ -44,13 +46,15 @@ async function shutdown(signal: string) {
   journeyMetricRebuildRunner.stop();
   journeyAssetRetentionWorker.stop();
   journeySavedViewRetentionWorker.stop();
+  journeyStageReprojectionRunner.stop();
   xSyncRunner.stop();
   const [aiDrained, campaignDrained, esignDrained, knowledgeDrained, backfillDrained, journeyStageDrained, journeyResearchDrained,
-    journeyMetricDrained, journeyAssetRetentionDrained, journeySavedViewRetentionDrained] = await Promise.all([
+    journeyMetricDrained, journeyAssetRetentionDrained, journeySavedViewRetentionDrained, journeyStageReprojectionDrained] = await Promise.all([
     aiJobRunner.drain(8_000), campaignRunner.stop(8_000), esignWorker.stop(8_000), knowledgeJobRunner.drain(8_000),
     knowledgeBackfillCoordinator.drain(8_000), journeyStageProcessingRunner.drain(8_000),
     journeyResearchRefreshRunner.drain(8_000), journeyMetricRebuildRunner.drain(8_000),
-    journeyAssetRetentionWorker.drain(8_000), journeySavedViewRetentionWorker.drain(8_000)
+    journeyAssetRetentionWorker.drain(8_000), journeySavedViewRetentionWorker.drain(8_000),
+    journeyStageReprojectionRunner.drain(8_000)
   ]);
   if (!aiDrained) console.warn('AI worker did not drain before the shutdown deadline; its durable job will recover on restart.');
   if (!campaignDrained) console.warn('Campaign worker did not drain before the shutdown deadline.');
@@ -62,6 +66,7 @@ async function shutdown(signal: string) {
   if (!journeyMetricDrained) console.warn('Journey metric worker did not drain before shutdown; its fenced lease will recover.');
   if (!journeyAssetRetentionDrained) console.warn('Journey asset retention did not drain before shutdown; its durable purge receipt will recover.');
   if (!journeySavedViewRetentionDrained) console.warn('Journey saved-view retention did not drain before shutdown; expired views will be purged on the next pass.');
+  if (!journeyStageReprojectionDrained) console.warn('Journey stage reprojection did not drain before shutdown; its fenced lease will recover.');
   await stopCodexClients();
   server.close(() => { clearTimeout(forceExit); process.exit(0); });
 }

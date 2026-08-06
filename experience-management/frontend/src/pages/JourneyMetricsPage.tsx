@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   Activity, BarChart3, Bell, CircleAlert, Database, Download, Eye, Gauge, Layers3, LoaderCircle, Plus, RefreshCw,
-  RotateCcw, Settings2, ShieldCheck
+  RotateCcw, Save, Settings2, ShieldCheck
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -18,11 +18,14 @@ import {
   createJourneyMetricBinding, createJourneyMetricDefinition, createJourneyMetricDefinitionVersion,
   createJourneyMetricSegment, downloadJourneyMetricAnalyticsExport, journeyMetricAnalyticsExportFormats,
   journeyNativeSocialMeasureKinds, journeyNativeTicketMeasureKinds,
+  createJourneyActualPathSnapshot, listJourneyActualPathSnapshots, materializeJourneyActualPathRollup,
+  readJourneyActualPathSnapshot, readJourneyActualPaths, readLatestJourneyActualPathRollup, readLatestJourneyActualPathSnapshot,
   listJourneyMetricBindings, listJourneyMetricDefinitions, listJourneyMetricNativeSources,
   listJourneyMetricObservations,
   listJourneyMetricRebuilds, listJourneyMetricSegments, nativeMetricVersion, queueJourneyMetricRebuild,
   readJourneyMetricDefinition, readJourneyMetricObservationLineage,
   surveyMetricVersion, updateJourneyMetricBinding, updateJourneyMetricSegment,
+  type JourneyActualPathResult, type JourneyActualPathRollup, type JourneyActualPathSnapshot, type JourneyActualPathSubjectKind,
   type JourneyMetricAnalyticsExportFormat, type JourneyMetricAppliedFilters, type JourneyMetricBinding,
   type JourneyMetricComparison, type JourneyMetricDefinition, type JourneyMetricNativeSourceCatalog,
   type JourneyMetricObservation, type JourneyMetricRebuild,
@@ -73,8 +76,8 @@ const NATIVE_MEASURE_LABEL: Record<JourneyNativeMeasureKind, string> = {
 };
 /** Rendered wherever a native aggregate is described. Social posts are counted
  * in aggregate and are never an individual customer path. */
-const NATIVE_SOCIAL_NOTICE = 'Aggregate shares of authorised social posts only. Individual posts, authors and '
-  + 'post content are never read into a measure, and a social measure is not an individual customer path.';
+const NATIVE_SOCIAL_NOTICE = 'Aggregate shares of authorised social posts only. Individual posts are never shown; '
+  + 'authors and post content are never read into a measure, and a social measure is not an individual customer path.';
 const emptyBindingDraft: BindingDraft = { targetType: 'journey', targetId: '', surveyId: '', collectorId: '', questionId: '' };
 const emptySegmentDraft: SegmentDraft = { name: '', description: '', rule: '{\n  "conditions": []\n}' };
 const emptyAlertDraft: AlertDraft = { name: '', metricDefinitionId: '', ruleKind: 'falling_metric',
@@ -107,6 +110,12 @@ function dateBoundary(value: string, endExclusive = false) {
   const date = new Date(`${value}T00:00:00.000Z`);
   if (endExclusive) date.setUTCDate(date.getUTCDate() + 1);
   return date.toISOString();
+}
+
+function deltaLabel(value: number | null, suffix = '') {
+  if (value === null) return 'Unavailable';
+  if (value === 0) return `No change${suffix}`;
+  return `${value > 0 ? '+' : ''}${value.toLocaleString()}${suffix}`;
 }
 
 function latestByDefinition(observations: JourneyMetricObservation[]) {
@@ -179,6 +188,16 @@ function targetOptions(map: JourneyMapReadModel | null, segments: JourneyMetricS
   if (type === 'touchpoint') return map.cards.filter((card) => card.kind === 'touchpoint').map((card) => ({ id: card.id, name: card.title }));
   if (type === 'persona') return map.personas.map((persona) => ({ id: persona.id, name: persona.name }));
   return segments.filter((segment) => segment.state === 'active').map((segment) => ({ id: segment.id, name: segment.name }));
+}
+
+function pathPercent(value: number | null | undefined, suppressed = false) {
+  if (suppressed) return SUPPRESSED_LABEL;
+  return value === null || value === undefined ? '—' : `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+}
+
+function pathCount(value: number | null | undefined, suppressed = false) {
+  if (suppressed) return SUPPRESSED_LABEL;
+  return value === null || value === undefined ? '—' : value.toLocaleString();
 }
 
 function MetricNumberButton({ observation, definition, children, onInspect, labelText }: {
@@ -266,7 +285,9 @@ function SentimentLane({ observation, definition }: {
         })}
         <line x1="0" y1="82" x2="240" y2="82" className="stroke-border" />
       </svg>
-      <p className="mt-2 text-xs text-muted-foreground">{NATIVE_SOCIAL_NOTICE}</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Individual posts are never shown. {NATIVE_SOCIAL_NOTICE}
+      </p>
     </div>
     <div className="min-w-0 overflow-x-auto">
       <table className="w-full border-collapse text-sm">
@@ -304,6 +325,7 @@ export function JourneyMetricsPage() {
   const enabled = useSessionFeature('journeyMetrics'); const session = useAuthSession();
   const richCardsEnabled = useSessionFeature('journeyRichCards');
   const exportsEnabled = useSessionFeature('journeyExports');
+  const actualPathsEnabled = useSessionFeature('journeyActualPaths');
   const canManage = Boolean(session?.activeSpace && session.activeSpace.role !== 'member');
   const [journeys, setJourneys] = useState<Array<{ id: string; name: string }>>([]);
   const [journeyId, setJourneyId] = useState(''); const [map, setMap] = useState<JourneyMapReadModel | null>(null);
@@ -322,6 +344,12 @@ export function JourneyMetricsPage() {
   const [comparisonDraft, setComparisonDraft] = useState<JourneyMetricComparison>({});
   const [comparison, setComparison] = useState<JourneyMetricComparison>({});
   const [appliedFilters, setAppliedFilters] = useState<JourneyMetricAppliedFilters | null>(null);
+  const [actualPaths, setActualPaths] = useState<JourneyActualPathResult | null>(null);
+  const [actualPathSubjectKind, setActualPathSubjectKind] = useState<JourneyActualPathSubjectKind>('anonymous_only');
+  const [latestActualPathRollup, setLatestActualPathRollup] = useState<JourneyActualPathRollup | null>(null);
+  const [latestActualPathSnapshot, setLatestActualPathSnapshot] = useState<JourneyActualPathSnapshot | null>(null);
+  const [actualPathSnapshots, setActualPathSnapshots] = useState<JourneyActualPathSnapshot[]>([]);
+  const [selectedActualPathSnapshotId, setSelectedActualPathSnapshotId] = useState<string | null>(null);
   const [channels, setChannels] = useState<Array<{ id: string; name: string }>>([]);
   const [exporting, setExporting] = useState<JourneyMetricAnalyticsExportFormat | null>(null);
   const [metricOpen, setMetricOpen] = useState(false); const [editingDefinition, setEditingDefinition] = useState<JourneyMetricDefinition | null>(null);
@@ -339,7 +367,8 @@ export function JourneyMetricsPage() {
 
   const loadJourney = useCallback(async (selected: string) => {
     if (!selected) { setMap(null); setDefinitions([]); setBindings([]); setSegments([]); setObservations([]); setRebuilds([]);
-      setAlertDefinitions([]); setAlerts([]); setAlertRuns([]); setAlertNotifications([]); setAlertPreference(null); return; }
+      setAlertDefinitions([]); setAlerts([]); setAlertRuns([]); setAlertNotifications([]); setAlertPreference(null);
+      setActualPaths(null); setLatestActualPathRollup(null); setLatestActualPathSnapshot(null); setActualPathSnapshots([]); setSelectedActualPathSnapshotId(null); return; }
     setLoading(true); setError('');
     try {
       const [nextMap, nextDefinitions, nextBindings, nextSegments, surveyRows] = await Promise.all([
@@ -347,21 +376,30 @@ export function JourneyMetricsPage() {
         listJourneyMetricSegments(selected), api<Survey[]>('/api/surveys')
       ]);
       const [nextObservations, nextRebuilds, nextAlertDefinitions, nextAlerts, nextAlertRuns,
-        nextAlertNotifications, nextAlertPreference] = await Promise.all([
+        nextAlertNotifications, nextAlertPreference, nextActualPaths, nextActualPathRollup,
+        nextActualPathSnapshot, nextActualPathSnapshots] = await Promise.all([
         listJourneyMetricObservations({ journeyDefinitionId: selected },
           { from: dateBoundary(range.from), to: dateBoundary(range.to, true) }, comparison),
         listJourneyMetricRebuilds({ journeyDefinitionId: selected }), listJourneyMetricAlertDefinitions(selected),
         listJourneyMetricAlerts(selected), listJourneyMetricAlertRuns(selected), listJourneyMetricAlertNotifications(),
-        readJourneyMetricAlertNotificationPreference()
+        readJourneyMetricAlertNotificationPreference(),
+        actualPathsEnabled ? readJourneyActualPaths(selected, { from: dateBoundary(range.from), to: dateBoundary(range.to, true) }, actualPathSubjectKind) : Promise.resolve(null),
+        actualPathsEnabled ? readLatestJourneyActualPathRollup(selected, actualPathSubjectKind) : Promise.resolve(null),
+        actualPathsEnabled ? readLatestJourneyActualPathSnapshot(selected, actualPathSubjectKind) : Promise.resolve(null),
+        actualPathsEnabled ? listJourneyActualPathSnapshots(selected, actualPathSubjectKind) : Promise.resolve([])
       ]);
       setMap(nextMap); setDefinitions(nextDefinitions); setBindings(nextBindings); setSegments(nextSegments);
       setObservations(nextObservations.observations); setAppliedFilters(nextObservations.appliedFilters);
       setRebuilds(nextRebuilds); setSurveys(surveyRows);
       setAlertDefinitions(nextAlertDefinitions); setAlerts(nextAlerts); setAlertRuns(nextAlertRuns);
-      setAlertNotifications(nextAlertNotifications); setAlertPreference(nextAlertPreference);
-    } catch (value) { setError(errorMessage(value)); setObservations([]); setAppliedFilters(null); }
+      setAlertNotifications(nextAlertNotifications); setAlertPreference(nextAlertPreference); setActualPaths(nextActualPaths);
+      setLatestActualPathRollup(nextActualPathRollup);
+      setLatestActualPathSnapshot(nextActualPathSnapshot);
+      setActualPathSnapshots(nextActualPathSnapshots);
+      setSelectedActualPathSnapshotId(null);
+    } catch (value) { setError(errorMessage(value)); setObservations([]); setAppliedFilters(null); setActualPaths(null); setLatestActualPathRollup(null); setLatestActualPathSnapshot(null); setActualPathSnapshots([]); }
     finally { setLoading(false); }
-  }, [range.from, range.to, comparison]);
+  }, [range.from, range.to, comparison, actualPathsEnabled, actualPathSubjectKind]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -482,6 +520,61 @@ export function JourneyMetricsPage() {
   const freshCount = activeDefinitions.filter((definition) => {
     const current = observationsByDefinition.get(definition.id)?.[0]; return current?.status === 'available' && current.value !== null && current.freshnessStatus === 'fresh';
   }).length;
+  const stageNameById = useMemo(() => new Map((map?.stages || []).map((stage) => [stage.id, stage.name])), [map]);
+
+  async function saveActualPathSnapshot() {
+    if (!journeyId) return;
+    setWorking('actual-path-snapshot');
+    try {
+      const result = await createJourneyActualPathSnapshot({
+        journeyDefinitionId: journeyId,
+        from: dateBoundary(range.from),
+        to: dateBoundary(range.to, true),
+        minimumCohortSize: 5,
+        subjectKind: actualPathSubjectKind
+      });
+      setLatestActualPathSnapshot(result.snapshot);
+      setActualPaths(result.snapshot.result);
+      setSelectedActualPathSnapshotId(result.snapshot.id);
+      setActualPathSnapshots((current) => {
+        const without = current.filter((item) => item.id !== result.snapshot.id);
+        return [result.snapshot, ...without].slice(0, 20);
+      });
+      toast.success(result.replayed ? 'The same actual-path snapshot already exists for this scope.' : 'Actual-path snapshot saved.');
+    } catch (value) { toast.error(errorMessage(value)); }
+    finally { setWorking(null); }
+  }
+
+  async function refreshActualPathRollup() {
+    if (!journeyId) return;
+    setWorking('actual-path-rollup');
+    try {
+      const result = await materializeJourneyActualPathRollup({
+        journeyDefinitionId: journeyId,
+        from: dateBoundary(range.from),
+        to: dateBoundary(range.to, true),
+        minimumCohortSize: 5,
+        subjectKind: actualPathSubjectKind
+      });
+      setLatestActualPathRollup(result.rollup);
+      setActualPaths(result.rollup.result);
+      setSelectedActualPathSnapshotId(null);
+      toast.success(result.updated ? 'Actual-path rollup refreshed.' : 'Actual-path rollup materialized.');
+    } catch (value) { toast.error(errorMessage(value)); }
+    finally { setWorking(null); }
+  }
+
+  async function inspectActualPathSnapshot(snapshotId: string) {
+    if (!journeyId) return;
+    setWorking(`actual-path-open-${snapshotId}`);
+    try {
+      const snapshot = await readJourneyActualPathSnapshot(snapshotId, journeyId, actualPathSubjectKind);
+      setActualPaths(snapshot.result);
+      setSelectedActualPathSnapshotId(snapshot.id);
+      toast.success('Actual-path snapshot opened.');
+    } catch (value) { toast.error(errorMessage(value)); }
+    finally { setWorking(null); }
+  }
 
   const targets = useMemo(() => {
     if (!map) return [];
@@ -820,6 +913,299 @@ export function JourneyMetricsPage() {
             <div className="px-4 py-3"><dt className="text-muted-foreground">Stage research coverage</dt><dd className="mt-1 font-semibold">{researchCoveredStageCount} of {map.stages.length} stages</dd></div>
           </dl>
         </section>
+
+        {actualPathsEnabled && <section className="overflow-hidden border bg-card" aria-labelledby="actual-paths-heading">
+          <div className="border-b px-4 py-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 id="actual-paths-heading" className="text-sm font-semibold">
+                  Actual paths ({actualPathSubjectKind === 'known_profiles' ? 'known-profile stitched view' : 'anonymous observed journeys'})
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {actualPathSubjectKind === 'known_profiles'
+                    ? 'This view reuses existing anonymous bindings and current account memberships to stitch observed paths onto known profiles where deterministic identity links already exist.'
+                    : 'This view stays anonymous-instance scoped. It compares observed paths against one designed journey version and stays descriptive only.'}
+                </p>
+              </div>
+              <div className="inline-flex rounded-md border bg-background p-1">
+                <Button
+                  size="sm"
+                  variant={actualPathSubjectKind === 'anonymous_only' ? 'default' : 'ghost'}
+                  onClick={() => setActualPathSubjectKind('anonymous_only')}
+                  disabled={loading || working === 'actual-path-rollup' || working === 'actual-path-snapshot'}
+                >
+                  Anonymous
+                </Button>
+                <Button
+                  size="sm"
+                  variant={actualPathSubjectKind === 'known_profiles' ? 'default' : 'ghost'}
+                  onClick={() => setActualPathSubjectKind('known_profiles')}
+                  disabled={loading || working === 'actual-path-rollup' || working === 'actual-path-snapshot'}
+                >
+                  Known profiles
+                </Button>
+              </div>
+            </div>
+          </div>
+          {!actualPaths && <div className="px-4 py-8 text-sm text-muted-foreground">No observed path analytics are available for this journey and period yet.</div>}
+          {actualPaths && <div className="space-y-4 p-4">
+            {actualPaths.scope.subjectKind === 'known_profiles' && actualPaths.scope.stitchedSubjectSummary && <div className="grid gap-3 rounded-md border bg-muted/20 px-4 py-3 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Stitched known profiles</p>
+                <p className="mt-1 text-sm font-semibold">{actualPaths.scope.stitchedSubjectSummary.stitchedKnownProfileCount}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Stitched accounts</p>
+                <p className="mt-1 text-sm font-semibold">{actualPaths.scope.stitchedSubjectSummary.stitchedAccountCount}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Observed anonymous instances</p>
+                <p className="mt-1 text-sm font-semibold">{actualPaths.scope.stitchedSubjectSummary.anonymousInstanceCount}</p>
+              </div>
+            </div>}
+            <div className="flex flex-col gap-3 rounded-md border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium">Durable rollup</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {latestActualPathRollup
+                    ? `Latest materialized ${actualPathSubjectKind === 'known_profiles' ? 'known-profile stitched' : 'anonymous'} rollup refreshed ${formatDate(latestActualPathRollup.materializedAt)} for this journey.`
+                    : `No durable ${actualPathSubjectKind === 'known_profiles' ? 'known-profile stitched' : 'anonymous'} actual-path rollup has been materialized for this journey yet.`}
+                </p>
+                {latestActualPathRollup && <p className={`mt-2 text-xs ${latestActualPathRollup.freshness.status === 'current' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {latestActualPathRollup.freshness.status === 'current'
+                    ? `This durable rollup is current for the latest observed ${actualPathSubjectKind === 'known_profiles' ? 'known-profile stitched' : 'anonymous-path'} data we can see right now.`
+                    : `This durable rollup is stale. ${latestActualPathRollup.freshness.staleReasons.includes('newer_observed_visit')
+                      ? 'Newer observed visits arrived after the current rollup. ' : ''}${latestActualPathRollup.freshness.staleReasons.includes('newer_completed_reprojection')
+                      ? 'A newer completed stage reprojection exists for this journey version.' : ''}`}
+                </p>}
+                {latestActualPathRollup && <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Accepted instances</p>
+                    <p className="mt-1 text-xs font-medium">{pathCount(latestActualPathRollup.summary.acceptedInstanceCount)}</p>
+                  </div>
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Accepted visits</p>
+                    <p className="mt-1 text-xs font-medium">{pathCount(latestActualPathRollup.summary.acceptedVisitCount)}</p>
+                  </div>
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Unobserved stages</p>
+                    <p className="mt-1 text-xs font-medium">{latestActualPathRollup.summary.unobservedStageCount}</p>
+                  </div>
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">At-risk stages</p>
+                    <p className="mt-1 text-xs font-medium">{latestActualPathRollup.summary.atRiskStageCount}</p>
+                  </div>
+                </div>}
+              </div>
+              {canManage && <Button variant="outline" onClick={() => void refreshActualPathRollup()}
+                disabled={working === 'actual-path-rollup'}>
+                {working === 'actual-path-rollup' ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+                {latestActualPathRollup ? 'Refresh rollup' : 'Materialize rollup'}
+              </Button>}
+            </div>
+            <div className="flex flex-col gap-3 rounded-md border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium">Durable snapshot</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {latestActualPathSnapshot
+                    ? `Latest persisted ${actualPathSubjectKind === 'known_profiles' ? 'known-profile stitched' : 'anonymous'} snapshot saved ${formatDate(latestActualPathSnapshot.createdAt)} for this journey.`
+                    : `No persisted ${actualPathSubjectKind === 'known_profiles' ? 'known-profile stitched' : 'anonymous'} actual-path snapshot has been saved for this journey yet.`}
+                </p>
+                {selectedActualPathSnapshotId && <p className="mt-2 text-xs text-muted-foreground">
+                  Viewing saved snapshot {selectedActualPathSnapshotId === latestActualPathSnapshot?.id ? '(latest)' : '(historical)'}.
+                </p>}
+                {latestActualPathSnapshot && <p className={`mt-2 text-xs ${latestActualPathSnapshot.freshness.status === 'current' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {latestActualPathSnapshot.freshness.status === 'current'
+                    ? `This snapshot is current for the latest observed ${actualPathSubjectKind === 'known_profiles' ? 'known-profile stitched' : 'anonymous-path'} data we can see right now.`
+                    : `This snapshot is stale. ${latestActualPathSnapshot.freshness.staleReasons.includes('newer_observed_visit')
+                      ? 'Newer observed visits arrived after the snapshot scope. ' : ''}${latestActualPathSnapshot.freshness.staleReasons.includes('newer_completed_reprojection')
+                      ? 'A newer completed stage reprojection exists for this journey version.' : ''}`}
+                </p>}
+                {selectedActualPathSnapshotId && (() => {
+                  const viewedSnapshot = actualPathSnapshots.find((snapshot) => snapshot.id === selectedActualPathSnapshotId)
+                    || (latestActualPathSnapshot?.id === selectedActualPathSnapshotId ? latestActualPathSnapshot : null);
+                  if (!viewedSnapshot) return null;
+                  return <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                    <div className="rounded-md border bg-background px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Current lineage as of</p>
+                      <p className="mt-1 text-xs font-medium">{formatDate(viewedSnapshot.reconciliation.currentAsOf)}</p>
+                    </div>
+                    <div className="rounded-md border bg-background px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Accepted instances delta</p>
+                      <p className="mt-1 text-xs font-medium">{deltaLabel(viewedSnapshot.reconciliation.deltas.acceptedInstanceCount)}</p>
+                    </div>
+                    <div className="rounded-md border bg-background px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Accepted visits delta</p>
+                      <p className="mt-1 text-xs font-medium">{deltaLabel(viewedSnapshot.reconciliation.deltas.acceptedVisitCount)}</p>
+                    </div>
+                    <div className="rounded-md border bg-background px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Unobserved stages delta</p>
+                      <p className="mt-1 text-xs font-medium">{deltaLabel(viewedSnapshot.reconciliation.deltas.unobservedStageCount)}</p>
+                    </div>
+                    <div className="rounded-md border bg-background px-3 py-2">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">At-risk stages delta</p>
+                      <p className="mt-1 text-xs font-medium">{deltaLabel(viewedSnapshot.reconciliation.deltas.atRiskStageCount)}</p>
+                    </div>
+                    <div className="rounded-md border bg-background px-3 py-2 sm:col-span-2 xl:col-span-5">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Design version reconciliation</p>
+                      <p className="mt-1 text-xs font-medium">
+                        {viewedSnapshot.reconciliation.designVersionChanged
+                          ? 'The current designed journey version differs from the version saved in this snapshot.'
+                          : 'The current designed journey version still matches the version saved in this snapshot.'}
+                      </p>
+                    </div>
+                  </div>;
+                })()}
+              </div>
+              {canManage && <Button variant="outline" onClick={() => void saveActualPathSnapshot()}
+                disabled={working === 'actual-path-snapshot'}>
+                {working === 'actual-path-snapshot' ? <LoaderCircle className="animate-spin" /> : <Save />}
+                Save snapshot
+              </Button>}
+            </div>
+            {!!actualPathSnapshots.length && <section className="overflow-hidden border">
+              <div className="border-b px-4 py-3">
+                <h3 className="text-sm font-semibold">Snapshot history</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Recent persisted {actualPathSubjectKind === 'known_profiles' ? 'known-profile stitched' : 'anonymous'} path snapshots for this journey, with freshness status.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] border-collapse text-sm">
+                  <thead><tr className="border-b bg-muted/30 text-left text-xs"><th className="px-4 py-2">Saved</th><th className="px-4 py-2">Window</th><th className="px-4 py-2">As of</th><th className="px-4 py-2">Accepted instances</th><th className="px-4 py-2">Unobserved stages</th><th className="px-4 py-2">At-risk stages</th><th className="px-4 py-2">Freshness</th><th className="px-4 py-2 text-right">Action</th></tr></thead>
+                  <tbody>{actualPathSnapshots.map((snapshot) => <tr key={snapshot.id} className="border-b last:border-b-0">
+                    <td className="px-4 py-3">{formatDate(snapshot.createdAt)}</td>
+                    <td className="px-4 py-3">{formatDate(snapshot.period.start)} to {formatDate(snapshot.period.end)}</td>
+                    <td className="px-4 py-3">{formatDate(snapshot.asOf)}</td>
+                    <td className="px-4 py-3">{pathCount(snapshot.summary.acceptedInstanceCount)}</td>
+                    <td className="px-4 py-3">{snapshot.summary.unobservedStageCount}</td>
+                    <td className="px-4 py-3">{snapshot.summary.atRiskStageCount}</td>
+                    <td className={`px-4 py-3 font-medium ${snapshot.freshness.status === 'current' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      {label(snapshot.freshness.status)}
+                    </td>
+                    <td className="px-4 py-3 text-right"><Button size="sm" variant={selectedActualPathSnapshotId === snapshot.id ? 'default' : 'outline'}
+                      disabled={working === `actual-path-open-${snapshot.id}`}
+                      onClick={() => void inspectActualPathSnapshot(snapshot.id)}>
+                      {working === `actual-path-open-${snapshot.id}` ? <LoaderCircle className="animate-spin" /> : <Eye />}
+                      Open
+                    </Button></td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            </section>}
+            <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="border bg-muted/20 px-3 py-3"><dt className="text-xs text-muted-foreground">Accepted instances</dt>
+                <dd className="mt-1 text-sm font-semibold">{pathCount(actualPaths.analytics.sample.acceptedInstanceCount, actualPaths.analytics.sample.suppressed)}</dd></div>
+              <div className="border bg-muted/20 px-3 py-3"><dt className="text-xs text-muted-foreground">Accepted visits</dt>
+                <dd className="mt-1 text-sm font-semibold">{pathCount(actualPaths.analytics.sample.acceptedVisitCount, actualPaths.analytics.sample.suppressed)}</dd></div>
+              <div className="border bg-muted/20 px-3 py-3"><dt className="text-xs text-muted-foreground">Journey version</dt>
+                <dd className="mt-1 text-sm font-semibold capitalize">{actualPaths.scope.designVersionSource}</dd></div>
+              <div className="border bg-muted/20 px-3 py-3"><dt className="text-xs text-muted-foreground">Suppression threshold</dt>
+                <dd className="mt-1 text-sm font-semibold">{actualPaths.analytics.tables.pathSignatures.suppression.minimumCohortSize}</dd></div>
+            </dl>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <section className="overflow-hidden border">
+                <div className="border-b px-4 py-3">
+                  <h3 className="text-sm font-semibold">Most common observed paths</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Top anonymous path signatures for the selected period and version.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[680px] border-collapse text-sm">
+                    <thead><tr className="border-b bg-muted/30 text-left text-xs"><th className="px-4 py-2">Observed path</th><th className="px-4 py-2">Instances</th><th className="px-4 py-2">Share</th></tr></thead>
+                    <tbody>{actualPaths.analytics.tables.pathSignatures.rows.slice(0, 8).map((row) => <tr key={row.signature} className="border-b last:border-b-0">
+                      <td className="px-4 py-3">{row.stageIds.map((stageId) => stageNameById.get(stageId) || stageId).join(' → ')}</td>
+                      <td className="px-4 py-3">{pathCount(row.measure.numerator, row.measure.suppressed)}</td>
+                      <td className="px-4 py-3">{pathPercent(row.measure.percentage, row.measure.suppressed)}</td>
+                    </tr>)}{!actualPaths.analytics.tables.pathSignatures.rows.length && <tr><td colSpan={3} className="px-4 py-6 text-center text-muted-foreground">No accepted paths in this period.</td></tr>}</tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="overflow-hidden border">
+                <div className="border-b px-4 py-3">
+                  <h3 className="text-sm font-semibold">Designed funnel versus observed progression</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Observed progression through the selected designed stage order.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[680px] border-collapse text-sm">
+                    <thead><tr className="border-b bg-muted/30 text-left text-xs"><th className="px-4 py-2">Stage</th><th className="px-4 py-2">Entrants</th><th className="px-4 py-2">Completed</th><th className="px-4 py-2">Drop-off before next</th></tr></thead>
+                    <tbody>{actualPaths.analytics.tables.funnel.rows.map((row) => <tr key={row.stageId} className="border-b last:border-b-0">
+                      <td className="px-4 py-3">{stageNameById.get(row.stageId) || row.stageId}</td>
+                      <td className="px-4 py-3">{pathPercent(row.entrantMeasure.percentage, row.entrantMeasure.suppressed)}</td>
+                      <td className="px-4 py-3">{pathPercent(row.completionMeasure.percentage, row.completionMeasure.suppressed)}</td>
+                      <td className="px-4 py-3">{pathPercent(row.dropOffBeforeNextMeasure.percentage, row.dropOffBeforeNextMeasure.suppressed)}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <section className="overflow-hidden border">
+                <div className="border-b px-4 py-3">
+                  <h3 className="text-sm font-semibold">Designed versus observed stage alignment</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">This compares the designed stage order with anonymous observed progression for the selected lineage and period.</p>
+                </div>
+                <div className="grid gap-3 border-b bg-muted/20 px-4 py-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div><p className="text-xs text-muted-foreground">Unobserved designed stages</p><p className="mt-1 text-sm font-semibold">{actualPaths.designedVsObserved.summary.unobservedStageCount}</p></div>
+                  <div><p className="text-xs text-muted-foreground">At-risk designed stages</p><p className="mt-1 text-sm font-semibold">{actualPaths.designedVsObserved.summary.atRiskStageCount}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Skipped-forward transitions</p><p className="mt-1 text-sm font-semibold">{pathCount(actualPaths.designedVsObserved.summary.skippedForwardTransitionCount)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Loop transitions</p><p className="mt-1 text-sm font-semibold">{pathCount(actualPaths.designedVsObserved.summary.loopTransitionCount)}</p></div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[840px] border-collapse text-sm">
+                    <thead><tr className="border-b bg-muted/30 text-left text-xs"><th className="px-4 py-2">Designed stage</th><th className="px-4 py-2">Observed entrants</th><th className="px-4 py-2">Observed completion</th><th className="px-4 py-2">Drop-off before next</th><th className="px-4 py-2">Skipped inbound</th><th className="px-4 py-2">Loops</th><th className="px-4 py-2">Status</th></tr></thead>
+                    <tbody>{actualPaths.designedVsObserved.stageRows.map((row) => <tr key={row.stageId} className="border-b last:border-b-0">
+                      <td className="px-4 py-3"><div className="font-medium">{row.stageName}</div><div className="text-xs text-muted-foreground">Designed position {row.designedIndex + 1}</div></td>
+                      <td className="px-4 py-3">{pathPercent(row.entrantPercentage)}</td>
+                      <td className="px-4 py-3">{pathPercent(row.completionPercentage)}</td>
+                      <td className="px-4 py-3">{pathPercent(row.dropOffBeforeNextPercentage)}</td>
+                      <td className="px-4 py-3">{pathCount(row.skippedInboundTransitions)}</td>
+                      <td className="px-4 py-3">{pathCount(row.loopTransitions)}</td>
+                      <td className={`px-4 py-3 font-medium ${row.status === 'aligned' ? 'text-emerald-700' : row.status === 'at_risk' ? 'text-amber-700' : 'text-slate-600'}`}>{label(row.status)}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="overflow-hidden border">
+                <div className="border-b px-4 py-3"><h3 className="text-sm font-semibold">Skipped transitions</h3></div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[680px] border-collapse text-sm">
+                    <thead><tr className="border-b bg-muted/30 text-left text-xs"><th className="px-4 py-2">Transition</th><th className="px-4 py-2">Missing designed stages</th><th className="px-4 py-2">Occurrences</th></tr></thead>
+                    <tbody>{actualPaths.analytics.tables.skippedTransitions.rows.slice(0, 8).map((row, index) => <tr key={`${row.fromStageId}-${row.toStageId}-${index}`} className="border-b last:border-b-0">
+                      <td className="px-4 py-3">{stageNameById.get(row.fromStageId) || row.fromStageId} → {stageNameById.get(row.toStageId) || row.toStageId}</td>
+                      <td className="px-4 py-3">{row.missingStageIds.length ? row.missingStageIds.map((stageId) => stageNameById.get(stageId) || stageId).join(', ') : '—'}</td>
+                      <td className="px-4 py-3">{pathCount(row.measure.numerator, row.measure.suppressed)}</td>
+                    </tr>)}{!actualPaths.analytics.tables.skippedTransitions.rows.length && <tr><td colSpan={3} className="px-4 py-6 text-center text-muted-foreground">No skipped transitions detected.</td></tr>}</tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="overflow-hidden border">
+                <div className="border-b px-4 py-3"><h3 className="text-sm font-semibold">Loops and repeats</h3></div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[680px] border-collapse text-sm">
+                    <thead><tr className="border-b bg-muted/30 text-left text-xs"><th className="px-4 py-2">Transition</th><th className="px-4 py-2">Classification</th><th className="px-4 py-2">Occurrences</th></tr></thead>
+                    <tbody>{actualPaths.analytics.tables.loops.rows.slice(0, 8).map((row, index) => <tr key={`${row.fromStageId}-${row.toStageId}-${index}`} className="border-b last:border-b-0">
+                      <td className="px-4 py-3">{stageNameById.get(row.fromStageId) || row.fromStageId} → {stageNameById.get(row.toStageId) || row.toStageId}</td>
+                      <td className="px-4 py-3">{label(row.kind)}</td>
+                      <td className="px-4 py-3">{pathCount(row.measure.numerator, row.measure.suppressed)}</td>
+                    </tr>)}{!actualPaths.analytics.tables.loops.rows.length && <tr><td colSpan={3} className="px-4 py-6 text-center text-muted-foreground">No backward loops or repeated-stage transitions detected.</td></tr>}</tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            <div className="border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+              <p>{actualPaths.analytics.interpretation.statement}</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {actualPaths.scope.notes.map((note) => <li key={note}>{note}</li>)}
+              </ul>
+            </div>
+          </div>}
+        </section>}
 
         <section className="overflow-hidden border bg-card" aria-labelledby="current-metrics-heading">
           <div className="border-b px-4 py-3"><h2 id="current-metrics-heading" className="text-sm font-semibold">Current measures and comparisons</h2>

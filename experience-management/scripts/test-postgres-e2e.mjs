@@ -200,7 +200,7 @@ function postgresEnvironment(sourceSha256) {
     POSTGRES_PASSWORD_FILE: appPasswordFile,
     POSTGRES_SSL: 'disable',
     POSTGRES_SCHEMA_VERSION: '1',
-    POSTGRES_RUNTIME_SCHEMA_VERSION: '29',
+    POSTGRES_RUNTIME_SCHEMA_VERSION: '30',
     POSTGRES_SOURCE_SHA256: sourceSha256,
     EXPERIENCE_E2E_DATABASE_PROVIDER: 'postgres',
     EXPERIENCE_POSTGRES_E2E_RUN_ID: suffix,
@@ -852,6 +852,51 @@ try {
   $runtime_29_replay$;`);
   emit('postgres_runtime_29_replay_passed', { database });
 
+  const runtime30RollbackMigrations = path.join(temporaryDir, 'runtime-30-rollback-migrations');
+  fs.mkdirSync(runtime30RollbackMigrations);
+  for (const name of fs.readdirSync(committedMigrations).filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/u.test(name))) {
+    const source = fs.readFileSync(path.join(committedMigrations, name), 'utf8');
+    fs.writeFileSync(path.join(runtime30RollbackMigrations, name), name.startsWith('0030_')
+      ? `${source}\nSELECT * FROM journey_runtime_30_deliberate_failure;\n`
+      : source);
+  }
+  runExpectedFailure(process.execPath, upgradeArgs(30, runtime30RollbackMigrations),
+    /journey_runtime_30_deliberate_failure/u);
+  dockerPsql(database, `DO $runtime_30_rollback$
+    BEGIN
+      IF (SELECT MAX(version) FROM experience_runtime_schema_version)<>29 THEN
+        RAISE EXCEPTION 'failed runtime-30 migration advanced the ledger';
+      END IF;
+      IF to_regclass('public.journey_stage_reprojection_runs') IS NOT NULL
+         OR to_regclass('public.journey_stage_reprojection_attempts') IS NOT NULL
+         OR to_regclass('public.journey_stage_reprojection_checkpoints') IS NOT NULL
+         OR to_regclass('public.journey_stage_reprojection_audit_events') IS NOT NULL THEN
+        RAISE EXCEPTION 'failed runtime-30 migration left stage reprojection storage behind';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname IN (
+        'journey_stage_reprojection_attempts_append_only',
+        'journey_stage_reprojection_audit_append_only'
+      )) THEN
+        RAISE EXCEPTION 'failed runtime-30 migration left stage reprojection integrity triggers behind';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_proc WHERE proname='journey_stage_reprojection_append_only_guard') THEN
+        RAISE EXCEPTION 'failed runtime-30 migration left its append-only guard function behind';
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN (
+        'journey_stage_reprojection_runs_map_tenant_fk',
+        'journey_stage_reprojection_attempts_run_tenant_fk',
+        'journey_stage_reprojection_checkpoints_run_tenant_fk'
+      )) THEN
+        RAISE EXCEPTION 'failed runtime-30 migration left stage reprojection tenant constraints behind';
+      END IF;
+    END
+  $runtime_30_rollback$;`);
+  emit('postgres_runtime_30_rollback_passed', { database });
+
+  run(process.execPath, upgradeArgs(30));
+  run(process.execPath, upgradeArgs(30));
+  emit('postgres_runtime_30_replay_passed', { database });
+
   const privilegeSql = fs.readFileSync(path.join(projectDir, 'backend', 'migrations', 'postgres', 'runtime_privileges.sql'), 'utf8')
     .replaceAll('__DATABASE__', database)
     .replaceAll('__APP_ROLE__', appRole)
@@ -975,6 +1020,15 @@ try {
     stdio: 'inherit'
   });
   run(process.execPath, ['scripts/probe-journey-stage-processing-postgres.mjs'], {
+    env: {
+      ...runtimeEnvironment,
+      POSTGRES_PROBE_ALLOW_WRITES: 'true',
+      POSTGRES_PROBE_OWNER_USER: ownerRole,
+      POSTGRES_PROBE_OWNER_PASSWORD_FILE: ownerPasswordFile
+    },
+    stdio: 'inherit'
+  });
+  run(process.execPath, ['scripts/probe-journey-stage-reprojection-postgres.mjs'], {
     env: {
       ...runtimeEnvironment,
       POSTGRES_PROBE_ALLOW_WRITES: 'true',

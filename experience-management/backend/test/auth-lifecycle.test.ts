@@ -104,6 +104,8 @@ test('requires mailbox verification and onboarding while keeping tokens one-time
   assert.equal(onboarded.body.profile.onboardingVersion, 1);
   assert.ok(onboarded.body.profile.completedAt);
   assert.ok(onboarded.body.spaces.some((space: any) => space.isPersonal && space.name === 'Alice Experience Lab'));
+  assert.equal((db.prepare(`SELECT COUNT(*) count FROM platform_audit_events
+    WHERE actor_user_id=? AND action='onboarding_completed'`).get(aliceRow.id) as any).count, 1);
   await alice.get('/api/bootstrap').expect(200);
   await alice.put('/api/account/profile').send({ organizationName: 'Alice Insights' }).expect(200);
   await alice.put('/api/account/profile').send({ onboardingVersion: 99, completedAt: new Date().toISOString() }).expect(400)

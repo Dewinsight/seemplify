@@ -701,6 +701,32 @@ function verifyWorkflowTemplate(policy, { quiet = false } = {}) {
     }
   }
 
+  const publishToolchain = policy.release?.publishToolchain;
+  if (publishToolchain && typeof publishToolchain === 'object') {
+    const nodeVersion = publishToolchain.nodeVersion;
+    const npmVersion = publishToolchain.npmVersion;
+    if (typeof nodeVersion !== 'string' || !nodeVersion.trim()) {
+      fail('Qualification policy publishToolchain.nodeVersion must be recorded');
+    }
+    if (typeof npmVersion !== 'string' || !npmVersion.trim()) {
+      fail('Qualification policy publishToolchain.npmVersion must be recorded');
+    }
+    if (!source.includes(`node-version: ${nodeVersion}`)) {
+      fail(`Workflow template does not pin the recorded publish Node version "${nodeVersion}"`);
+    }
+    if (!source.includes(`npm i -g npm@${npmVersion}`)) {
+      fail(`Workflow template does not install the recorded publish npm version "${npmVersion}"`);
+    }
+    const assertionLine = `node -e "const [major, minor] = process.versions.node.split('.').map((value) => Number.parseInt(value, 10)); if (major !== 22 || minor < 14) throw new Error('Node 22.14.0+ required for trusted publishing');"`;
+    if (!source.includes(assertionLine)) {
+      fail('Workflow template does not assert the trusted-publishing Node floor');
+    }
+    const npmAssertionLine = `node -e "const [major, minor, patch] = require('node:child_process').execSync('npm --version', { encoding: 'utf8' }).trim().split('.').map((value) => Number.parseInt(value, 10)); if (major < 11 || (major === 11 && minor < 5) || (major === 11 && minor === 5 && patch < 1)) throw new Error('npm 11.5.1+ required for trusted publishing');"`;
+    if (!source.includes(npmAssertionLine)) {
+      fail('Workflow template does not assert the trusted-publishing npm floor');
+    }
+  }
+
   if (!quiet) {
     console.log(`verified workflow template ${relativeWorkflowPath}`);
   }
@@ -767,10 +793,10 @@ function auditManifestCoordination(policy) {
 }
 
 /**
- * The locked pre-publication state. This is deliberately the inverse of a
- * release check: it asserts the foundation is still shut, so a change that
- * quietly opened it — a package flipped public, a licence guessed, a stray
- * LICENSE file — turns this gate red instead of sailing through.
+ * Repository-enforced foundation state. This stays local and non-publishing:
+ * it checks whether the manifests, package LICENSE files and policy agree with
+ * each other, whether the foundation is still locked or already prepared for a
+ * later owner-approved release step.
  */
 function auditFoundation(policy) {
   const findings = [];
@@ -811,7 +837,7 @@ function auditFoundation(policy) {
       findings.push(`${manifest.name} has no LICENSE file in its own package directory`);
     }
     if (policy.lockedFoundation.coordinatedVersion && manifest.version !== policy.lockedFoundation.coordinatedVersion) {
-      findings.push(`${manifest.name} is ${manifest.version} but the locked foundation version is ${policy.lockedFoundation.coordinatedVersion}`);
+      findings.push(`${manifest.name} is ${manifest.version} but the recorded foundation version is ${policy.lockedFoundation.coordinatedVersion}`);
     }
   }
 
@@ -827,8 +853,8 @@ function auditFoundation(policy) {
 }
 
 /**
- * Non-publish qualification. Succeeds when the intentionally locked foundation
- * is internally consistent, and reports the external blockers without turning
+ * Non-publish qualification. Succeeds when the recorded foundation state is
+ * internally consistent, and reports the external blockers without turning
  * red, because none of them is locally actionable. It contains no `npm publish`
  * and contacts no registry under any environment combination.
  */
@@ -904,36 +930,41 @@ function releaseReady() {
   console.log('SDK manifests and artifacts passed the explicit publication gate.');
 }
 
-const [action, argument] = process.argv.slice(2);
+export function runCli(action, argument) {
+  switch (action) {
+    case 'clean':
+      cleanPackage(packageSpec(argument));
+      break;
+    case 'clean-all':
+      sdkPackages.forEach(cleanPackage);
+      break;
+    case 'mark-cjs':
+      emitCjsDirectoryManifest(packageSpec(argument));
+      break;
+    case 'verify':
+      verifyPackage(packageSpec(argument));
+      break;
+    case 'verify-all':
+      sdkPackages.forEach((spec) => verifyPackage(spec));
+      break;
+    case 'deterministic':
+      buildDeterministically();
+      break;
+    case 'pack-dry-run':
+      dryRunPacks();
+      break;
+    case 'qualify':
+      qualify();
+      break;
+    case 'release-ready':
+      releaseReady();
+      break;
+    default:
+      fail(`Unknown action: ${action || '<missing>'}`);
+  }
+}
 
-switch (action) {
-  case 'clean':
-    cleanPackage(packageSpec(argument));
-    break;
-  case 'clean-all':
-    sdkPackages.forEach(cleanPackage);
-    break;
-  case 'mark-cjs':
-    emitCjsDirectoryManifest(packageSpec(argument));
-    break;
-  case 'verify':
-    verifyPackage(packageSpec(argument));
-    break;
-  case 'verify-all':
-    sdkPackages.forEach((spec) => verifyPackage(spec));
-    break;
-  case 'deterministic':
-    buildDeterministically();
-    break;
-  case 'pack-dry-run':
-    dryRunPacks();
-    break;
-  case 'qualify':
-    qualify();
-    break;
-  case 'release-ready':
-    releaseReady();
-    break;
-  default:
-    fail(`Unknown action: ${action || '<missing>'}`);
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  const [action, argument] = process.argv.slice(2);
+  runCli(action, argument);
 }

@@ -40,9 +40,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.14.0
           cache: npm
           cache-dependency-path: experience-management/package-lock.json
+      - run: npm i -g npm@11.5.1
+      - run: node -e "const [major, minor] = process.versions.node.split('.').map((value) => Number.parseInt(value, 10)); if (major !== 22 || minor < 14) throw new Error('Node 22.14.0+ required for the release-shaped verification lane');"
+      - run: node -e "const [major, minor, patch] = require('node:child_process').execSync('npm --version', { encoding: 'utf8' }).trim().split('.').map((value) => Number.parseInt(value, 10)); if (major < 11 || (major === 11 && minor < 5) || (major === 11 && minor === 5 && patch < 1)) throw new Error('npm 11.5.1+ required for the release-shaped verification lane');"
       - run: npm ci
       - run: npm run qualify:sdk
       - run: npx playwright install --with-deps chromium

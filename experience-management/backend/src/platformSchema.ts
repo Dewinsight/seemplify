@@ -939,6 +939,366 @@ export function ensurePlatformSchema() {
     CREATE INDEX IF NOT EXISTS journey_anonymous_stage_visits_timeline
       ON journey_anonymous_stage_visits(space_id,journey_definition_id,instance_id,event_occurred_at,id);
 
+    CREATE TABLE IF NOT EXISTS journey_actual_path_snapshots (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      journey_definition_id TEXT NOT NULL,
+      journey_map_version_id TEXT NOT NULL,
+      subject_scope TEXT NOT NULL CHECK(subject_scope IN ('anonymous_only','known_profiles')),
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      as_of TEXT NOT NULL,
+      minimum_cohort_size INTEGER NOT NULL CHECK(minimum_cohort_size>0),
+      analytics_version TEXT NOT NULL CHECK(length(analytics_version) BETWEEN 1 AND 100),
+      summary_json TEXT NOT NULL CHECK(json_valid(summary_json)),
+      result_json TEXT NOT NULL CHECK(json_valid(result_json)),
+      created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(space_id,journey_definition_id,journey_map_version_id,subject_scope,period_start,period_end,as_of,minimum_cohort_size,analytics_version),
+      FOREIGN KEY(journey_definition_id,space_id)
+        REFERENCES journey_definitions(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(journey_map_version_id,journey_definition_id,space_id)
+        REFERENCES journey_map_versions(id,definition_id,space_id) ON DELETE RESTRICT
+    );
+    CREATE INDEX IF NOT EXISTS journey_actual_path_snapshots_latest
+      ON journey_actual_path_snapshots(space_id,journey_definition_id,created_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_actual_path_rollups (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      journey_definition_id TEXT NOT NULL,
+      journey_map_version_id TEXT NOT NULL,
+      subject_scope TEXT NOT NULL CHECK(subject_scope IN ('anonymous_only','known_profiles')),
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      minimum_cohort_size INTEGER NOT NULL CHECK(minimum_cohort_size>0),
+      analytics_version TEXT NOT NULL CHECK(length(analytics_version) BETWEEN 1 AND 100),
+      last_as_of TEXT NOT NULL,
+      latest_observed_event_at TEXT,
+      latest_reprojection_completed_at TEXT,
+      summary_json TEXT NOT NULL CHECK(json_valid(summary_json)),
+      result_json TEXT NOT NULL CHECK(json_valid(result_json)),
+      materialized_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      materialized_at TEXT NOT NULL,
+      UNIQUE(space_id,journey_definition_id,journey_map_version_id,subject_scope,period_start,period_end,minimum_cohort_size,analytics_version),
+      FOREIGN KEY(journey_definition_id,space_id)
+        REFERENCES journey_definitions(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(journey_map_version_id,journey_definition_id,space_id)
+        REFERENCES journey_map_versions(id,definition_id,space_id) ON DELETE RESTRICT
+    );
+    CREATE INDEX IF NOT EXISTS journey_actual_path_rollups_latest
+      ON journey_actual_path_rollups(space_id,journey_definition_id,materialized_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_profiles (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK(kind IN ('anonymous','known')),
+      status TEXT NOT NULL CHECK(status IN ('active','deleted')),
+      created_at TEXT NOT NULL,
+      created_by_command_id TEXT NOT NULL CHECK(length(created_by_command_id) BETWEEN 1 AND 200),
+      known_at TEXT,
+      deleted_at TEXT,
+      UNIQUE(id,space_id),
+      CHECK((kind='known' AND known_at IS NOT NULL) OR kind='anonymous' OR known_at IS NULL)
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_profiles_space_history
+      ON journey_identity_profiles(space_id,created_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_bindings (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 512),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      identifier_kind TEXT NOT NULL CHECK(identifier_kind IN ('anonymous_id','authenticated_user_id','external_user_id')),
+      identifier_namespace TEXT NOT NULL CHECK(length(identifier_namespace) BETWEEN 1 AND 160),
+      identifier_value TEXT NOT NULL CHECK(length(identifier_value) BETWEEN 1 AND 512),
+      profile_id TEXT NOT NULL,
+      bound_at TEXT NOT NULL,
+      bound_by_command_id TEXT NOT NULL CHECK(length(bound_by_command_id) BETWEEN 1 AND 200),
+      UNIQUE(space_id,identifier_kind,identifier_namespace,identifier_value),
+      FOREIGN KEY(profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_bindings_profile
+      ON journey_identity_bindings(space_id,profile_id,bound_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_merges (
+      merge_audit_id TEXT PRIMARY KEY CHECK(length(merge_audit_id) BETWEEN 1 AND 200),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      source_profile_id TEXT NOT NULL,
+      target_profile_id TEXT NOT NULL,
+      canonical_target_profile_id TEXT NOT NULL,
+      reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 4000),
+      active INTEGER NOT NULL CHECK(active IN (0,1)),
+      merged_at TEXT NOT NULL,
+      merged_by_command_id TEXT NOT NULL CHECK(length(merged_by_command_id) BETWEEN 1 AND 200),
+      split_at TEXT,
+      split_by_command_id TEXT,
+      FOREIGN KEY(source_profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(target_profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(canonical_target_profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_merges_space_history
+      ON journey_identity_merges(space_id,merged_at DESC,merge_audit_id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_memberships (
+      membership_id TEXT PRIMARY KEY CHECK(length(membership_id) BETWEEN 1 AND 200),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL,
+      group_type TEXT NOT NULL CHECK(group_type IN ('account','group')),
+      group_id TEXT NOT NULL CHECK(length(group_id) BETWEEN 1 AND 128),
+      active INTEGER NOT NULL CHECK(active IN (0,1)),
+      added_at TEXT NOT NULL,
+      added_by_command_id TEXT NOT NULL CHECK(length(added_by_command_id) BETWEEN 1 AND 200),
+      removed_at TEXT,
+      removed_by_command_id TEXT,
+      UNIQUE(space_id,group_type,group_id,profile_id),
+      FOREIGN KEY(profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_memberships_profile
+      ON journey_identity_memberships(space_id,profile_id,added_at DESC,membership_id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_groups (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      group_type TEXT NOT NULL CHECK(group_type IN ('account','group')),
+      name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
+      external_ref TEXT CHECK(external_ref IS NULL OR length(external_ref) BETWEEN 1 AND 200),
+      status TEXT NOT NULL CHECK(status IN ('active','archived')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      UNIQUE(space_id,group_type,id),
+      UNIQUE(space_id,group_type,external_ref)
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_groups_space_history
+      ON journey_identity_groups(space_id,group_type,updated_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_source_facts (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 512),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      fact_id TEXT NOT NULL CHECK(length(fact_id) BETWEEN 1 AND 128),
+      profile_id TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(length(source) BETWEEN 1 AND 160),
+      source_ref TEXT NOT NULL CHECK(length(source_ref) BETWEEN 1 AND 400),
+      occurred_at TEXT NOT NULL,
+      recorded_by_command_id TEXT NOT NULL CHECK(length(recorded_by_command_id) BETWEEN 1 AND 200),
+      UNIQUE(space_id,fact_id),
+      FOREIGN KEY(profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_source_facts_profile
+      ON journey_identity_source_facts(space_id,profile_id,occurred_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_audit_facts (
+      audit_id TEXT PRIMARY KEY CHECK(length(audit_id) BETWEEN 1 AND 200),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      command_id TEXT NOT NULL CHECK(length(command_id) BETWEEN 1 AND 200),
+      policy_version TEXT NOT NULL CHECK(length(policy_version) BETWEEN 1 AND 80),
+      actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL CHECK(action IN ('observe','identify','alias','merge','split','add_membership','remove_membership','delete')),
+      outcome TEXT NOT NULL CHECK(outcome IN ('accepted','rejected')),
+      code TEXT NOT NULL CHECK(length(code) BETWEEN 1 AND 120),
+      explanation TEXT NOT NULL CHECK(length(explanation) BETWEEN 1 AND 4000),
+      occurred_at TEXT NOT NULL,
+      details_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(details_json))
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_audit_space_history
+      ON journey_identity_audit_facts(space_id,occurred_at DESC,audit_id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_profile_tombstones (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 200),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL,
+      deleted_at TEXT NOT NULL,
+      deleted_by_command_id TEXT NOT NULL CHECK(length(deleted_by_command_id) BETWEEN 1 AND 200),
+      reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 4000),
+      UNIQUE(space_id,profile_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS journey_identity_identifier_tombstones (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 512),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      identifier_kind TEXT NOT NULL CHECK(identifier_kind IN ('anonymous_id','authenticated_user_id','external_user_id')),
+      identifier_namespace TEXT NOT NULL CHECK(length(identifier_namespace) BETWEEN 1 AND 160),
+      identifier_value TEXT NOT NULL CHECK(length(identifier_value) BETWEEN 1 AND 512),
+      profile_id TEXT NOT NULL,
+      deleted_at TEXT NOT NULL,
+      deleted_by_command_id TEXT NOT NULL CHECK(length(deleted_by_command_id) BETWEEN 1 AND 200),
+      reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 4000),
+      UNIQUE(space_id,identifier_kind,identifier_namespace,identifier_value)
+    );
+
+    CREATE TABLE IF NOT EXISTS journey_identity_processed_commands (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 512),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      command_id TEXT NOT NULL CHECK(length(command_id) BETWEEN 1 AND 200),
+      command_fingerprint TEXT NOT NULL CHECK(length(command_fingerprint) BETWEEN 1 AND 50000),
+      decision_json TEXT NOT NULL CHECK(json_valid(decision_json)),
+      processed_at TEXT NOT NULL,
+      UNIQUE(space_id,command_id)
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_processed_commands_space_history
+      ON journey_identity_processed_commands(space_id,processed_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_profile_timeline_events (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 200),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL,
+      canonical_profile_id TEXT NOT NULL,
+      event_kind TEXT NOT NULL CHECK(length(event_kind) BETWEEN 1 AND 80),
+      occurred_at TEXT NOT NULL,
+      title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 240),
+      summary TEXT NOT NULL CHECK(length(summary) BETWEEN 1 AND 4000),
+      source_type TEXT NOT NULL CHECK(length(source_type) BETWEEN 1 AND 80),
+      source_id TEXT NOT NULL CHECK(length(source_id) BETWEEN 1 AND 200),
+      detail_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(detail_json)),
+      created_at TEXT NOT NULL,
+      UNIQUE(space_id,profile_id,event_kind,source_type,source_id),
+      FOREIGN KEY(profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(canonical_profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS journey_profile_timeline_events_profile
+      ON journey_profile_timeline_events(space_id,profile_id,occurred_at DESC,id);
+    CREATE INDEX IF NOT EXISTS journey_profile_timeline_events_canonical
+      ON journey_profile_timeline_events(space_id,canonical_profile_id,occurred_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_sessions (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL,
+      canonical_profile_id TEXT NOT NULL,
+      identifier_namespace TEXT NOT NULL CHECK(length(identifier_namespace) BETWEEN 1 AND 160),
+      identifier_value TEXT NOT NULL CHECK(length(identifier_value) BETWEEN 1 AND 512),
+      started_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      ended_at TEXT,
+      event_count INTEGER NOT NULL DEFAULT 0 CHECK(event_count >= 0),
+      source_fact_count INTEGER NOT NULL DEFAULT 0 CHECK(source_fact_count >= 0),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(space_id,profile_id,identifier_namespace,identifier_value),
+      FOREIGN KEY(profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(canonical_profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_sessions_profile
+      ON journey_identity_sessions(space_id,profile_id,last_seen_at DESC,id);
+    CREATE INDEX IF NOT EXISTS journey_identity_sessions_canonical
+      ON journey_identity_sessions(space_id,canonical_profile_id,last_seen_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_segments (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 160),
+      description TEXT NOT NULL DEFAULT '' CHECK(length(description) <= 2000),
+      state TEXT NOT NULL CHECK(state IN ('active','retired')),
+      active_version_id TEXT NOT NULL,
+      active_version_number INTEGER NOT NULL DEFAULT 1 CHECK(active_version_number > 0),
+      materialized_member_count INTEGER NOT NULL DEFAULT 0 CHECK(materialized_member_count >= 0),
+      created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(id,space_id)
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_segments_space_history
+      ON journey_identity_segments(space_id,updated_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_segment_versions (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      segment_id TEXT NOT NULL,
+      version_number INTEGER NOT NULL CHECK(version_number > 0),
+      rule_json TEXT NOT NULL CHECK(json_valid(rule_json)),
+      state TEXT NOT NULL CHECK(state IN ('active','superseded')),
+      validation_state TEXT NOT NULL CHECK(validation_state IN ('valid')),
+      created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(space_id,segment_id,version_number),
+      UNIQUE(id,space_id),
+      FOREIGN KEY(segment_id,space_id) REFERENCES journey_identity_segments(id,space_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_segment_versions_segment
+      ON journey_identity_segment_versions(space_id,segment_id,version_number DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_segment_memberships (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 260),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      segment_id TEXT NOT NULL,
+      segment_version_id TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      canonical_profile_id TEXT NOT NULL,
+      matched_at TEXT NOT NULL,
+      UNIQUE(space_id,segment_id,profile_id),
+      FOREIGN KEY(segment_id,space_id) REFERENCES journey_identity_segments(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(segment_version_id,space_id) REFERENCES journey_identity_segment_versions(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(canonical_profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_segment_memberships_segment
+      ON journey_identity_segment_memberships(space_id,segment_id,matched_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_profile_privacy_states (
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK(purpose IN ('analytics','personalisation','research_contact','marketing')),
+      state TEXT NOT NULL CHECK(state IN ('unknown','granted','denied','suppressed')),
+      lawful_basis TEXT CHECK(lawful_basis IS NULL OR length(lawful_basis) BETWEEN 1 AND 160),
+      policy_reference TEXT CHECK(policy_reference IS NULL OR length(policy_reference) BETWEEN 1 AND 200),
+      updated_at TEXT NOT NULL,
+      updated_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      PRIMARY KEY(space_id,profile_id,purpose),
+      FOREIGN KEY(profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS journey_profile_privacy_states_profile
+      ON journey_profile_privacy_states(space_id,profile_id,purpose);
+
+    CREATE TABLE IF NOT EXISTS journey_profile_export_jobs (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK(purpose IN ('analytics','personalisation','research_contact','marketing')),
+      format TEXT NOT NULL CHECK(format='json'),
+      state TEXT NOT NULL CHECK(state='completed'),
+      export_json TEXT NOT NULL CHECK(json_valid(export_json)),
+      requested_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL,
+      FOREIGN KEY(profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE,
+      CHECK(completed_at>=created_at)
+    );
+    CREATE INDEX IF NOT EXISTS journey_profile_export_jobs_profile
+      ON journey_profile_export_jobs(space_id,profile_id,created_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_profile_privacy_jobs (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      profile_id TEXT NOT NULL,
+      operation TEXT NOT NULL CHECK(operation IN ('suppress','erasure')),
+      purpose TEXT CHECK(purpose IS NULL OR purpose IN ('analytics','personalisation','research_contact','marketing')),
+      state TEXT NOT NULL CHECK(state IN ('queued','completed')),
+      request_json TEXT NOT NULL CHECK(json_valid(request_json)),
+      result_json TEXT NOT NULL CHECK(json_valid(result_json)),
+      requested_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT,
+      FOREIGN KEY(profile_id,space_id) REFERENCES journey_identity_profiles(id,space_id) ON DELETE CASCADE,
+      CHECK((state='completed' AND completed_at IS NOT NULL) OR (state='queued' AND completed_at IS NULL))
+    );
+    CREATE INDEX IF NOT EXISTS journey_profile_privacy_jobs_profile
+      ON journey_profile_privacy_jobs(space_id,profile_id,created_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_identity_correction_runs (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      reason TEXT NOT NULL CHECK(reason IN ('merge_command','late_source_fact','identity_command')),
+      command_id TEXT NOT NULL CHECK(length(command_id) BETWEEN 1 AND 200),
+      profile_ids_json TEXT NOT NULL CHECK(json_valid(profile_ids_json)),
+      state TEXT NOT NULL CHECK(state='completed'),
+      result_json TEXT NOT NULL CHECK(json_valid(result_json)),
+      requested_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL,
+      CHECK(completed_at>=created_at)
+    );
+    CREATE INDEX IF NOT EXISTS journey_identity_correction_runs_space_history
+      ON journey_identity_correction_runs(space_id,created_at DESC,id);
+
     CREATE TABLE IF NOT EXISTS journey_stage_rule_audit_events (
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -954,6 +1314,111 @@ export function ensurePlatformSchema() {
     );
     CREATE INDEX IF NOT EXISTS journey_stage_rule_audit_history
       ON journey_stage_rule_audit_events(space_id,journey_definition_id,created_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_stage_reprojection_runs (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      reason TEXT NOT NULL CHECK(reason IN ('manual','rule_published','rule_corrected','reconcile','incident_recovery')),
+      journey_definition_id TEXT NOT NULL,
+      journey_map_version_id TEXT NOT NULL,
+      rule_definition_id TEXT,
+      rule_version_id TEXT,
+      source_id TEXT,
+      environment TEXT CHECK(environment IS NULL OR environment IN ('development','staging','production')),
+      window_start TEXT,
+      window_end TEXT,
+      state TEXT NOT NULL CHECK(state IN ('pending','leased','retryable','completed','failed','cancelled')),
+      available_at TEXT NOT NULL,
+      lease_owner TEXT CHECK(lease_owner IS NULL OR length(lease_owner) BETWEEN 1 AND 128),
+      lease_token TEXT CHECK(lease_token IS NULL OR length(lease_token) BETWEEN 16 AND 128),
+      lease_generation INTEGER NOT NULL DEFAULT 0 CHECK(lease_generation>=0),
+      lease_expires_at TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count BETWEEN 0 AND 100),
+      max_attempts INTEGER NOT NULL DEFAULT 5 CHECK(max_attempts BETWEEN 1 AND 10),
+      summary_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(summary_json)),
+      error_code TEXT CHECK(error_code IS NULL OR length(error_code) BETWEEN 1 AND 100),
+      idempotency_key TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 1 AND 200),
+      intent_sha256 TEXT NOT NULL CHECK(length(intent_sha256)=64),
+      requested_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      UNIQUE(id,space_id),
+      UNIQUE(space_id,idempotency_key),
+      FOREIGN KEY(journey_definition_id,space_id)
+        REFERENCES journey_definitions(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(journey_map_version_id,journey_definition_id,space_id)
+        REFERENCES journey_map_versions(id,definition_id,space_id) ON DELETE RESTRICT,
+      FOREIGN KEY(rule_definition_id,space_id,journey_definition_id)
+        REFERENCES journey_stage_rule_definitions(id,space_id,journey_definition_id) ON DELETE RESTRICT,
+      FOREIGN KEY(rule_version_id,rule_definition_id,space_id,journey_definition_id)
+        REFERENCES journey_stage_rule_versions(id,rule_definition_id,space_id,journey_definition_id) ON DELETE RESTRICT,
+      FOREIGN KEY(source_id,space_id,environment)
+        REFERENCES journey_event_sources(id,space_id,environment) ON DELETE RESTRICT,
+      CHECK(window_end IS NULL OR window_start IS NULL OR window_end>window_start),
+      CHECK((state='leased' AND lease_owner IS NOT NULL AND lease_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+        OR (state<>'leased' AND lease_owner IS NULL AND lease_token IS NULL AND lease_expires_at IS NULL)),
+      CHECK((state IN ('completed','failed','cancelled'))=(completed_at IS NOT NULL))
+    );
+    CREATE INDEX IF NOT EXISTS journey_stage_reprojection_runs_claim
+      ON journey_stage_reprojection_runs(state,available_at,lease_expires_at,space_id,id);
+    CREATE INDEX IF NOT EXISTS journey_stage_reprojection_runs_scope
+      ON journey_stage_reprojection_runs(space_id,journey_definition_id,created_at DESC,id);
+
+    CREATE TABLE IF NOT EXISTS journey_stage_reprojection_attempts (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      run_id TEXT NOT NULL,
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      attempt_number INTEGER NOT NULL CHECK(attempt_number BETWEEN 1 AND 100),
+      lease_generation INTEGER NOT NULL CHECK(lease_generation>0),
+      status TEXT NOT NULL CHECK(status IN ('succeeded','retryable_failed','terminal_failed','lease_expired','cancelled')),
+      error_code TEXT CHECK(error_code IS NULL OR length(error_code) BETWEEN 1 AND 100),
+      started_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL,
+      UNIQUE(run_id,attempt_number,status),
+      FOREIGN KEY(run_id,space_id) REFERENCES journey_stage_reprojection_runs(id,space_id) ON DELETE CASCADE,
+      CHECK((status='succeeded' AND error_code IS NULL) OR (status<>'succeeded' AND error_code IS NOT NULL)),
+      CHECK(completed_at>=started_at)
+    );
+    CREATE INDEX IF NOT EXISTS journey_stage_reprojection_attempts_history
+      ON journey_stage_reprojection_attempts(space_id,run_id,attempt_number,id);
+
+    CREATE TABLE IF NOT EXISTS journey_stage_reprojection_checkpoints (
+      run_id TEXT NOT NULL,
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      last_event_occurred_at TEXT,
+      last_raw_received_at TEXT,
+      last_raw_event_id TEXT,
+      processed_count INTEGER NOT NULL DEFAULT 0 CHECK(processed_count>=0),
+      matched_count INTEGER NOT NULL DEFAULT 0 CHECK(matched_count>=0),
+      no_match_count INTEGER NOT NULL DEFAULT 0 CHECK(no_match_count>=0),
+      skipped_no_anonymous_subject_count INTEGER NOT NULL DEFAULT 0 CHECK(skipped_no_anonymous_subject_count>=0),
+      late_count INTEGER NOT NULL DEFAULT 0 CHECK(late_count>=0),
+      out_of_order_count INTEGER NOT NULL DEFAULT 0 CHECK(out_of_order_count>=0),
+      changed_current_stage_count INTEGER NOT NULL DEFAULT 0 CHECK(changed_current_stage_count>=0),
+      changed_terminal_state_count INTEGER NOT NULL DEFAULT 0 CHECK(changed_terminal_state_count>=0),
+      no_change_count INTEGER NOT NULL DEFAULT 0 CHECK(no_change_count>=0),
+      revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(run_id,space_id),
+      FOREIGN KEY(run_id,space_id) REFERENCES journey_stage_reprojection_runs(id,space_id) ON DELETE CASCADE,
+      CHECK((last_raw_received_at IS NULL AND last_raw_event_id IS NULL)
+        OR (last_raw_received_at IS NOT NULL AND last_raw_event_id IS NOT NULL))
+    );
+
+    CREATE TABLE IF NOT EXISTS journey_stage_reprojection_audit_events (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL CHECK(action IN (
+        'reprojection.requested','reprojection.started','reprojection.completed','reprojection.failed','reprojection.cancelled','reprojection.viewed')),
+      target_type TEXT NOT NULL CHECK(length(target_type) BETWEEN 1 AND 80),
+      target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 128),
+      detail_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(detail_json) AND length(detail_json)<=16384),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS journey_stage_reprojection_audit_history
+      ON journey_stage_reprojection_audit_events(space_id,created_at DESC,id);
 
     CREATE TRIGGER IF NOT EXISTS journey_stage_rule_versions_published_update_guard
       BEFORE UPDATE ON journey_stage_rule_versions
@@ -987,12 +1452,30 @@ export function ensurePlatformSchema() {
     CREATE TRIGGER IF NOT EXISTS journey_anonymous_stage_visits_delete_guard
       BEFORE DELETE ON journey_anonymous_stage_visits
       BEGIN SELECT RAISE(ABORT,'journey anonymous stage visits are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_actual_path_snapshots_update_guard
+      BEFORE UPDATE ON journey_actual_path_snapshots
+      BEGIN SELECT RAISE(ABORT,'journey actual path snapshots are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_actual_path_snapshots_delete_guard
+      BEFORE DELETE ON journey_actual_path_snapshots
+      BEGIN SELECT RAISE(ABORT,'journey actual path snapshots are append-only'); END;
     CREATE TRIGGER IF NOT EXISTS journey_stage_rule_audit_update_guard
       BEFORE UPDATE ON journey_stage_rule_audit_events
       BEGIN SELECT RAISE(ABORT,'journey stage-rule audit is append-only'); END;
     CREATE TRIGGER IF NOT EXISTS journey_stage_rule_audit_delete_guard
       BEFORE DELETE ON journey_stage_rule_audit_events
       BEGIN SELECT RAISE(ABORT,'journey stage-rule audit is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_stage_reprojection_attempts_update_guard
+      BEFORE UPDATE ON journey_stage_reprojection_attempts
+      BEGIN SELECT RAISE(ABORT,'journey stage reprojection attempts are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_stage_reprojection_attempts_delete_guard
+      BEFORE DELETE ON journey_stage_reprojection_attempts
+      BEGIN SELECT RAISE(ABORT,'journey stage reprojection attempts are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_stage_reprojection_audit_update_guard
+      BEFORE UPDATE ON journey_stage_reprojection_audit_events
+      BEGIN SELECT RAISE(ABORT,'journey stage reprojection audit is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_stage_reprojection_audit_delete_guard
+      BEFORE DELETE ON journey_stage_reprojection_audit_events
+      BEGIN SELECT RAISE(ABORT,'journey stage reprojection audit is append-only'); END;
 
     CREATE TABLE IF NOT EXISTS journey_research_sources (
       id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),

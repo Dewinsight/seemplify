@@ -471,7 +471,15 @@ function MobileJourneyCards({ props, cells, announcement, setAnnouncement }: {
       </div>
     </div>}
     {props.map.stages.map((stage) => <section key={stage.id} className="border" aria-labelledby={`mobile-stage-${stage.id}`}>
-      <div className="border-b bg-muted/30 px-3 py-2"><h3 id={`mobile-stage-${stage.id}`} className="text-sm font-semibold">{stage.name}</h3></div>
+      <div className="border-b bg-muted/30 px-3 py-2">
+        <h3
+          id={`mobile-stage-${stage.id}`}
+          className="text-sm font-semibold"
+          data-testid={`stage-header-${stage.stageKey}`}
+        >
+          {stage.name}
+        </h3>
+      </div>
       <div className="divide-y">{props.visibleLanes.map((lane) => {
         const cards = cells.get(`${stage.stageKey}|${lane.laneType}`) || [];
         return <section key={lane.id} className="p-3" data-testid={`cell-${stage.stageKey}-${lane.laneType}`}>

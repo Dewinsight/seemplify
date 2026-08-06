@@ -10,6 +10,7 @@ import BrandTitle from '@/components/BrandTitle';
 import { TutorialRenderer } from '@/components/tutorial/TutorialRenderer';
 import AppShell from '@/components/AppShell';
 import { InactivityWarning } from '@/components/InactivityWarning';
+import { AiRuntimeGateDialog } from '@/components/AiRuntimeGateDialog';
 import { FeatureFlagsProvider } from '@/context/FeatureFlagsContext';
 
 interface ConditionalProvidersProps {
@@ -43,6 +44,7 @@ export default function ConditionalProviders({ children }: ConditionalProvidersP
               <TutorialProvider>
                 <AppShell>{children}</AppShell>
                 <InactivityWarning />
+                <AiRuntimeGateDialog />
                 <TutorialRenderer />
               </TutorialProvider>
             </OrganizationProvider>

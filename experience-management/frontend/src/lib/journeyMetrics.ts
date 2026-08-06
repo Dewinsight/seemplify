@@ -90,6 +90,126 @@ export interface JourneyMetricAppliedFilters {
   limit: number; offset: number; truncated: boolean;
 }
 
+export interface JourneyActualPathMeasure {
+  numerator: number | null; denominator: number | null; sampleSize: number | null; percentage: number | null; suppressed: boolean;
+}
+export interface JourneyActualPathSignatureRow {
+  signature: string; stageIds: string[]; visitCount: number; distinctStageCount: number; measure: JourneyActualPathMeasure;
+}
+export interface JourneyActualPathTransitionRow {
+  fromStageId: string; toStageId: string; classification: 'expected' | 'skipped_forward' | 'backward_loop' | 'repeated_stage' | 'unexpected_unknown_stage';
+  missingStageIds: string[]; occurrenceCount: number; measure: JourneyActualPathMeasure;
+}
+export interface JourneyActualPathLoopRow {
+  fromStageId: string; toStageId: string; kind: 'backward_loop' | 'repeated_stage'; occurrenceCount: number; measure: JourneyActualPathMeasure;
+}
+export interface JourneyActualPathFunnelRow {
+  stageId: string; stageIndex: number; entrantMeasure: JourneyActualPathMeasure; completionMeasure: JourneyActualPathMeasure;
+  dropOffBeforeNextMeasure: JourneyActualPathMeasure;
+}
+export interface JourneyActualPathResult {
+  analytics: {
+    analyticsVersion: string;
+    lineage: {
+      journeyId: string; journeyVersion: string; ruleSetVersion: string; projectionVersion: string;
+      period: { start: string; end: string; timezone: string };
+      asOf: string; cohortId: string | null; designedStageOrder: string[];
+    };
+    sample: {
+      inputRecordCount: number | null; acceptedVisitCount: number | null; acceptedInstanceCount: number | null;
+      distinctProfileCount: number | null; distinctAccountCount: number | null; suppressed: boolean;
+    };
+    dataQuality: Array<{ reason: string; count: number | null; suppressed: boolean }>;
+    tables: {
+      pathSignatures: { rows: JourneyActualPathSignatureRow[]; suppression: { applied: boolean; minimumCohortSize: number; reason: string | null } };
+      transitionMatrix: { rows: JourneyActualPathTransitionRow[]; suppression: { applied: boolean; minimumCohortSize: number; reason: string | null } };
+      funnel: { rows: JourneyActualPathFunnelRow[]; suppression: { applied: boolean; minimumCohortSize: number; reason: string | null } };
+      loops: { rows: JourneyActualPathLoopRow[]; suppression: { applied: boolean; minimumCohortSize: number; reason: string | null } };
+      skippedTransitions: { rows: JourneyActualPathTransitionRow[]; suppression: { applied: boolean; minimumCohortSize: number; reason: string | null } };
+      unexpectedTransitions: { rows: JourneyActualPathTransitionRow[]; suppression: { applied: boolean; minimumCohortSize: number; reason: string | null } };
+    };
+    interpretation: { mode: 'descriptive_only'; statement: string };
+  };
+  designedVsObserved: {
+    stageRows: Array<{
+      stageId: string; stageName: string; designedIndex: number;
+      entrantPercentage: number | null; completionPercentage: number | null; dropOffBeforeNextPercentage: number | null;
+      skippedInboundTransitions: number | null; loopTransitions: number | null; status: 'unobserved' | 'at_risk' | 'aligned';
+    }>;
+    summary: {
+      unobservedStageCount: number; atRiskStageCount: number;
+      skippedForwardTransitionCount: number | null; loopTransitionCount: number | null;
+    };
+  };
+  scope: {
+    subjectKind: 'anonymous_only' | 'known_profiles';
+    identityModel: 'anonymous_instance_scoped' | 'known_profile_stitched';
+    designVersionSource: 'published' | 'current';
+    designVersionId: string;
+    stitchedSubjectSummary?: {
+      stitchedKnownProfileCount: number;
+      stitchedAccountCount: number;
+      anonymousInstanceCount: number;
+    };
+    notes: string[];
+  };
+}
+
+export type JourneyActualPathSubjectKind = 'anonymous_only' | 'known_profiles';
+
+export interface JourneyActualPathSnapshot {
+  id: string;
+  journeyDefinitionId: string;
+  journeyMapVersionId: string;
+  createdByUserId: string | null;
+  createdAt: string;
+  period: { start: string; end: string };
+  asOf: string;
+  minimumCohortSize: number;
+  analyticsVersion: string;
+  scopeSubject: JourneyActualPathSubjectKind;
+  summary: {
+    acceptedInstanceCount: number | null;
+    acceptedVisitCount: number | null;
+    unobservedStageCount: number;
+    atRiskStageCount: number;
+  };
+  freshness: {
+    status: 'current' | 'stale';
+    latestObservedEventAt: string | null;
+    latestReprojectionCompletedAt: string | null;
+    staleReasons: Array<'newer_observed_visit' | 'newer_completed_reprojection'>;
+  };
+  reconciliation: {
+    currentJourneyMapVersionId: string;
+    currentAsOf: string;
+    designVersionChanged: boolean;
+    deltas: {
+      acceptedInstanceCount: number | null;
+      acceptedVisitCount: number | null;
+      unobservedStageCount: number;
+      atRiskStageCount: number;
+    };
+  };
+  result: JourneyActualPathResult;
+}
+
+export interface JourneyActualPathRollup {
+  id: string;
+  journeyDefinitionId: string;
+  journeyMapVersionId: string;
+  materializedByUserId: string | null;
+  materializedAt: string;
+  period: { start: string; end: string };
+  lastAsOf: string;
+  minimumCohortSize: number;
+  analyticsVersion: string;
+  scopeSubject: JourneyActualPathSubjectKind;
+  summary: JourneyActualPathSnapshot['summary'];
+  freshness: JourneyActualPathSnapshot['freshness'];
+  result: JourneyActualPathResult;
+}
+
 export interface JourneyMetricObservation {
   id: string; definitionId: string; definitionVersionId: string; revision: number;
   supersedesObservationId: string | null; status: 'available' | 'unavailable' | 'retracted';
@@ -404,6 +524,173 @@ function parseReplayEnvelope(value: unknown, key: string) {
   const row = exact(value, 'mutation response', [key, 'replayed']); return { value: row[key], replayed: bool(row.replayed, 'response.replayed') };
 }
 
+function parseMeasure(value: unknown, label: string): JourneyActualPathMeasure {
+  const row = exact(value, label, ['numerator', 'denominator', 'sampleSize', 'percentage', 'suppressed']);
+  return {
+    numerator: nullableFinite(row.numerator, `${label}.numerator`),
+    denominator: nullableFinite(row.denominator, `${label}.denominator`),
+    sampleSize: nullableFinite(row.sampleSize, `${label}.sampleSize`),
+    percentage: nullableFinite(row.percentage, `${label}.percentage`),
+    suppressed: bool(row.suppressed, `${label}.suppressed`)
+  };
+}
+
+function parseActualPathResult(value: unknown): JourneyActualPathResult {
+  const row = exact(value, 'actual path analytics response', ['analytics', 'designedVsObserved', 'scope']);
+  const analytics = exact(row.analytics, 'actualPath.analytics', ['analyticsVersion', 'lineage', 'sample', 'dataQuality', 'tables', 'interpretation']);
+  const lineage = exact(analytics.lineage, 'actualPath.analytics.lineage', [
+    'journeyId', 'journeyVersion', 'ruleSetVersion', 'projectionVersion', 'period', 'asOf', 'cohortId', 'designedStageOrder'
+  ]);
+  const period = exact(lineage.period, 'actualPath.analytics.lineage.period', ['start', 'end', 'timezone']);
+  const sample = exact(analytics.sample, 'actualPath.analytics.sample', [
+    'inputRecordCount', 'acceptedVisitCount', 'acceptedInstanceCount', 'distinctProfileCount', 'distinctAccountCount', 'suppressed'
+  ]);
+  const tables = exact(analytics.tables, 'actualPath.analytics.tables', [
+    'pathSignatures', 'transitionMatrix', 'funnel', 'loops', 'repeats', 'skippedTransitions', 'unexpectedTransitions', 'entryExit', 'stageDurations'
+  ]);
+  const parseSuppression = (value: unknown, label: string) => {
+    const row = exact(value, label, ['applied', 'minimumCohortSize', 'reason']);
+    return { applied: bool(row.applied, `${label}.applied`), minimumCohortSize: integer(row.minimumCohortSize, `${label}.minimumCohortSize`, 1), reason: row.reason === null ? null : text(row.reason, `${label}.reason`) };
+  };
+  const parseTable = <T>(value: unknown, label: string, parser: (entry: unknown, index: number) => T) => {
+    const row = exact(value, label, ['rows', 'suppression']);
+    return {
+      rows: array(row.rows, `${label}.rows`).map(parser),
+      suppression: parseSuppression(row.suppression, `${label}.suppression`)
+    };
+  };
+  const parseTransition = (value: unknown, label: string): JourneyActualPathTransitionRow => {
+    const row = exact(value, label, ['fromStageId', 'toStageId', 'classification', 'missingStageIds', 'occurrenceCount', 'measure']);
+    return {
+      fromStageId: nonempty(row.fromStageId, `${label}.fromStageId`),
+      toStageId: nonempty(row.toStageId, `${label}.toStageId`),
+      classification: enumValue(row.classification, `${label}.classification`, ['expected', 'skipped_forward', 'backward_loop', 'repeated_stage', 'unexpected_unknown_stage'] as const),
+      missingStageIds: array(row.missingStageIds, `${label}.missingStageIds`).map((entry) => nonempty(entry, `${label}.missingStageIds[]`)),
+      occurrenceCount: integer(row.occurrenceCount, `${label}.occurrenceCount`, 0),
+      measure: parseMeasure(row.measure, `${label}.measure`)
+    };
+  };
+  const scope = exact(row.scope, 'actualPath.scope', ['subjectKind', 'identityModel', 'designVersionSource', 'designVersionId', 'notes']);
+  const designedVsObserved = exact(row.designedVsObserved, 'actualPath.designedVsObserved', ['stageRows', 'summary']);
+  const designedSummary = exact(designedVsObserved.summary, 'actualPath.designedVsObserved.summary', [
+    'unobservedStageCount', 'atRiskStageCount', 'skippedForwardTransitionCount', 'loopTransitionCount'
+  ]);
+  return {
+    analytics: {
+      analyticsVersion: nonempty(analytics.analyticsVersion, 'actualPath.analytics.analyticsVersion'),
+      lineage: {
+        journeyId: nonempty(lineage.journeyId, 'actualPath.analytics.lineage.journeyId'),
+        journeyVersion: nonempty(lineage.journeyVersion, 'actualPath.analytics.lineage.journeyVersion'),
+        ruleSetVersion: nonempty(lineage.ruleSetVersion, 'actualPath.analytics.lineage.ruleSetVersion'),
+        projectionVersion: nonempty(lineage.projectionVersion, 'actualPath.analytics.lineage.projectionVersion'),
+        period: { start: iso(period.start, 'actualPath.analytics.lineage.period.start'),
+          end: iso(period.end, 'actualPath.analytics.lineage.period.end'),
+          timezone: nonempty(period.timezone, 'actualPath.analytics.lineage.period.timezone') },
+        asOf: iso(lineage.asOf, 'actualPath.analytics.lineage.asOf'),
+        cohortId: nullableText(lineage.cohortId, 'actualPath.analytics.lineage.cohortId'),
+        designedStageOrder: array(lineage.designedStageOrder, 'actualPath.analytics.lineage.designedStageOrder')
+          .map((entry) => nonempty(entry, 'actualPath.analytics.lineage.designedStageOrder[]'))
+      },
+      sample: {
+        inputRecordCount: nullableFinite(sample.inputRecordCount, 'actualPath.analytics.sample.inputRecordCount'),
+        acceptedVisitCount: nullableFinite(sample.acceptedVisitCount, 'actualPath.analytics.sample.acceptedVisitCount'),
+        acceptedInstanceCount: nullableFinite(sample.acceptedInstanceCount, 'actualPath.analytics.sample.acceptedInstanceCount'),
+        distinctProfileCount: nullableFinite(sample.distinctProfileCount, 'actualPath.analytics.sample.distinctProfileCount'),
+        distinctAccountCount: nullableFinite(sample.distinctAccountCount, 'actualPath.analytics.sample.distinctAccountCount'),
+        suppressed: bool(sample.suppressed, 'actualPath.analytics.sample.suppressed')
+      },
+      dataQuality: array(analytics.dataQuality, 'actualPath.analytics.dataQuality').map((entry, index) => {
+        const row = exact(entry, `actualPath.analytics.dataQuality[${index}]`, ['reason', 'count', 'suppressed']);
+        return { reason: nonempty(row.reason, `actualPath.analytics.dataQuality[${index}].reason`),
+          count: nullableFinite(row.count, `actualPath.analytics.dataQuality[${index}].count`),
+          suppressed: bool(row.suppressed, `actualPath.analytics.dataQuality[${index}].suppressed`) };
+      }),
+      tables: {
+        pathSignatures: parseTable(tables.pathSignatures, 'actualPath.analytics.tables.pathSignatures', (entry, index) => {
+          const row = exact(entry, `actualPath.analytics.tables.pathSignatures.rows[${index}]`, ['signature', 'stageIds', 'visitCount', 'distinctStageCount', 'measure']);
+          return { signature: nonempty(row.signature, `actualPath.analytics.tables.pathSignatures.rows[${index}].signature`),
+            stageIds: array(row.stageIds, `actualPath.analytics.tables.pathSignatures.rows[${index}].stageIds`)
+              .map((item) => nonempty(item, `actualPath.analytics.tables.pathSignatures.rows[${index}].stageIds[]`)),
+            visitCount: integer(row.visitCount, `actualPath.analytics.tables.pathSignatures.rows[${index}].visitCount`, 0),
+            distinctStageCount: integer(row.distinctStageCount, `actualPath.analytics.tables.pathSignatures.rows[${index}].distinctStageCount`, 0),
+            measure: parseMeasure(row.measure, `actualPath.analytics.tables.pathSignatures.rows[${index}].measure`) };
+        }),
+        transitionMatrix: parseTable(tables.transitionMatrix, 'actualPath.analytics.tables.transitionMatrix', (entry, index) =>
+          parseTransition(entry, `actualPath.analytics.tables.transitionMatrix.rows[${index}]`)),
+        funnel: parseTable(tables.funnel, 'actualPath.analytics.tables.funnel', (entry, index) => {
+          const row = exact(entry, `actualPath.analytics.tables.funnel.rows[${index}]`, ['stageId', 'stageIndex', 'entrantMeasure', 'completionMeasure', 'dropOffBeforeNextMeasure']);
+          return {
+            stageId: nonempty(row.stageId, `actualPath.analytics.tables.funnel.rows[${index}].stageId`),
+            stageIndex: integer(row.stageIndex, `actualPath.analytics.tables.funnel.rows[${index}].stageIndex`, 0),
+            entrantMeasure: parseMeasure(row.entrantMeasure, `actualPath.analytics.tables.funnel.rows[${index}].entrantMeasure`),
+            completionMeasure: parseMeasure(row.completionMeasure, `actualPath.analytics.tables.funnel.rows[${index}].completionMeasure`),
+            dropOffBeforeNextMeasure: parseMeasure(row.dropOffBeforeNextMeasure, `actualPath.analytics.tables.funnel.rows[${index}].dropOffBeforeNextMeasure`)
+          };
+        }),
+        loops: parseTable(tables.loops, 'actualPath.analytics.tables.loops', (entry, index) => {
+          const row = exact(entry, `actualPath.analytics.tables.loops.rows[${index}]`, ['fromStageId', 'toStageId', 'kind', 'occurrenceCount', 'measure']);
+          return {
+            fromStageId: nonempty(row.fromStageId, `actualPath.analytics.tables.loops.rows[${index}].fromStageId`),
+            toStageId: nonempty(row.toStageId, `actualPath.analytics.tables.loops.rows[${index}].toStageId`),
+            kind: enumValue(row.kind, `actualPath.analytics.tables.loops.rows[${index}].kind`, ['backward_loop', 'repeated_stage'] as const),
+            occurrenceCount: integer(row.occurrenceCount, `actualPath.analytics.tables.loops.rows[${index}].occurrenceCount`, 0),
+            measure: parseMeasure(row.measure, `actualPath.analytics.tables.loops.rows[${index}].measure`)
+          };
+        }),
+        skippedTransitions: parseTable(tables.skippedTransitions, 'actualPath.analytics.tables.skippedTransitions', (entry, index) =>
+          parseTransition(entry, `actualPath.analytics.tables.skippedTransitions.rows[${index}]`)),
+        unexpectedTransitions: parseTable(tables.unexpectedTransitions, 'actualPath.analytics.tables.unexpectedTransitions', (entry, index) =>
+          parseTransition(entry, `actualPath.analytics.tables.unexpectedTransitions.rows[${index}]`))
+      },
+      interpretation: exact(analytics.interpretation, 'actualPath.analytics.interpretation', ['mode', 'statement']) as { mode: 'descriptive_only'; statement: string }
+    },
+    designedVsObserved: {
+      stageRows: array(designedVsObserved.stageRows, 'actualPath.designedVsObserved.stageRows').map((entry, index) => {
+        const row = exact(entry, `actualPath.designedVsObserved.stageRows[${index}]`, [
+          'stageId', 'stageName', 'designedIndex', 'entrantPercentage', 'completionPercentage',
+          'dropOffBeforeNextPercentage', 'skippedInboundTransitions', 'loopTransitions', 'status'
+        ]);
+        return {
+          stageId: nonempty(row.stageId, `actualPath.designedVsObserved.stageRows[${index}].stageId`),
+          stageName: nonempty(row.stageName, `actualPath.designedVsObserved.stageRows[${index}].stageName`),
+          designedIndex: integer(row.designedIndex, `actualPath.designedVsObserved.stageRows[${index}].designedIndex`, 0),
+          entrantPercentage: nullableFinite(row.entrantPercentage, `actualPath.designedVsObserved.stageRows[${index}].entrantPercentage`),
+          completionPercentage: nullableFinite(row.completionPercentage, `actualPath.designedVsObserved.stageRows[${index}].completionPercentage`),
+          dropOffBeforeNextPercentage: nullableFinite(row.dropOffBeforeNextPercentage, `actualPath.designedVsObserved.stageRows[${index}].dropOffBeforeNextPercentage`),
+          skippedInboundTransitions: nullableFinite(row.skippedInboundTransitions, `actualPath.designedVsObserved.stageRows[${index}].skippedInboundTransitions`),
+          loopTransitions: nullableFinite(row.loopTransitions, `actualPath.designedVsObserved.stageRows[${index}].loopTransitions`),
+          status: enumValue(row.status, `actualPath.designedVsObserved.stageRows[${index}].status`, ['unobserved', 'at_risk', 'aligned'] as const)
+        };
+      }),
+      summary: {
+        unobservedStageCount: integer(designedSummary.unobservedStageCount, 'actualPath.designedVsObserved.summary.unobservedStageCount', 0),
+        atRiskStageCount: integer(designedSummary.atRiskStageCount, 'actualPath.designedVsObserved.summary.atRiskStageCount', 0),
+        skippedForwardTransitionCount: nullableFinite(designedSummary.skippedForwardTransitionCount, 'actualPath.designedVsObserved.summary.skippedForwardTransitionCount'),
+        loopTransitionCount: nullableFinite(designedSummary.loopTransitionCount, 'actualPath.designedVsObserved.summary.loopTransitionCount')
+      }
+    },
+    scope: {
+      subjectKind: enumValue(scope.subjectKind, 'actualPath.scope.subjectKind', ['anonymous_only', 'known_profiles'] as const),
+      identityModel: enumValue(scope.identityModel, 'actualPath.scope.identityModel', ['anonymous_instance_scoped', 'known_profile_stitched'] as const),
+      designVersionSource: enumValue(scope.designVersionSource, 'actualPath.scope.designVersionSource', ['published', 'current'] as const),
+      designVersionId: nonempty(scope.designVersionId, 'actualPath.scope.designVersionId'),
+      ...(scope.stitchedSubjectSummary === undefined ? {} : {
+        stitchedSubjectSummary: (() => {
+          const row = exact(scope.stitchedSubjectSummary, 'actualPath.scope.stitchedSubjectSummary', [
+            'stitchedKnownProfileCount', 'stitchedAccountCount', 'anonymousInstanceCount'
+          ]);
+          return {
+            stitchedKnownProfileCount: integer(row.stitchedKnownProfileCount, 'actualPath.scope.stitchedSubjectSummary.stitchedKnownProfileCount', 0),
+            stitchedAccountCount: integer(row.stitchedAccountCount, 'actualPath.scope.stitchedSubjectSummary.stitchedAccountCount', 0),
+            anonymousInstanceCount: integer(row.anonymousInstanceCount, 'actualPath.scope.stitchedSubjectSummary.anonymousInstanceCount', 0)
+          };
+        })()
+      }),
+      notes: array(scope.notes, 'actualPath.scope.notes').map((entry) => nonempty(entry, 'actualPath.scope.notes[]'))
+    }
+  };
+}
+
 export async function listJourneyMetricSegments(journeyDefinitionId: string) {
   const raw = await api<unknown>(listQuery('/api/journey-metrics/segments', { journeyDefinitionId, limit: 100 }));
   return array(parseEnvelope(raw, 'segments'), 'segments').map(parseJourneyMetricSegment);
@@ -496,6 +783,179 @@ export async function listJourneyMetricObservations(scope: { journeyDefinitionId
     // filter that the backend did not actually apply.
     appliedFilters: parseJourneyMetricAppliedFilters(row.appliedFilters)
   };
+}
+
+export async function readJourneyActualPaths(journeyDefinitionId: string, range?: { from?: string; to?: string },
+  subjectKind: JourneyActualPathSubjectKind = 'anonymous_only') {
+  const raw = await api<unknown>(listQuery('/api/journey-metrics/actual-paths', {
+    journeyDefinitionId, from: range?.from, to: range?.to, subjectKind, minimumCohortSize: 5
+  }));
+  return parseActualPathResult(raw);
+}
+
+function parseActualPathSnapshot(value: unknown): JourneyActualPathSnapshot {
+  const row = exact(value, 'actual path snapshot', [
+    'id', 'journeyDefinitionId', 'journeyMapVersionId', 'createdByUserId', 'createdAt', 'period',
+    'asOf', 'minimumCohortSize', 'analyticsVersion', 'scopeSubject', 'summary', 'freshness', 'reconciliation', 'result'
+  ]);
+  const period = exact(row.period, 'actualPathSnapshot.period', ['start', 'end']);
+  const summary = exact(row.summary, 'actualPathSnapshot.summary', [
+    'acceptedInstanceCount', 'acceptedVisitCount', 'unobservedStageCount', 'atRiskStageCount'
+  ]);
+  const freshness = exact(row.freshness, 'actualPathSnapshot.freshness', [
+    'status', 'latestObservedEventAt', 'latestReprojectionCompletedAt', 'staleReasons'
+  ]);
+  const reconciliation = exact(row.reconciliation, 'actualPathSnapshot.reconciliation', [
+    'currentJourneyMapVersionId', 'currentAsOf', 'designVersionChanged', 'deltas'
+  ]);
+  const deltas = exact(reconciliation.deltas, 'actualPathSnapshot.reconciliation.deltas', [
+    'acceptedInstanceCount', 'acceptedVisitCount', 'unobservedStageCount', 'atRiskStageCount'
+  ]);
+  return {
+    id: nonempty(row.id, 'actualPathSnapshot.id'),
+    journeyDefinitionId: nonempty(row.journeyDefinitionId, 'actualPathSnapshot.journeyDefinitionId'),
+    journeyMapVersionId: nonempty(row.journeyMapVersionId, 'actualPathSnapshot.journeyMapVersionId'),
+    createdByUserId: nullableId(row.createdByUserId, 'actualPathSnapshot.createdByUserId'),
+    createdAt: iso(row.createdAt, 'actualPathSnapshot.createdAt'),
+    period: { start: iso(period.start, 'actualPathSnapshot.period.start'), end: iso(period.end, 'actualPathSnapshot.period.end') },
+    asOf: iso(row.asOf, 'actualPathSnapshot.asOf'),
+    minimumCohortSize: integer(row.minimumCohortSize, 'actualPathSnapshot.minimumCohortSize', 1),
+    analyticsVersion: nonempty(row.analyticsVersion, 'actualPathSnapshot.analyticsVersion'),
+    scopeSubject: enumValue(row.scopeSubject, 'actualPathSnapshot.scopeSubject', ['anonymous_only', 'known_profiles'] as const),
+    summary: {
+      acceptedInstanceCount: nullableFinite(summary.acceptedInstanceCount, 'actualPathSnapshot.summary.acceptedInstanceCount'),
+      acceptedVisitCount: nullableFinite(summary.acceptedVisitCount, 'actualPathSnapshot.summary.acceptedVisitCount'),
+      unobservedStageCount: integer(summary.unobservedStageCount, 'actualPathSnapshot.summary.unobservedStageCount', 0),
+      atRiskStageCount: integer(summary.atRiskStageCount, 'actualPathSnapshot.summary.atRiskStageCount', 0)
+    },
+    freshness: {
+      status: enumValue(freshness.status, 'actualPathSnapshot.freshness.status', ['current', 'stale'] as const),
+      latestObservedEventAt: nullableIso(freshness.latestObservedEventAt, 'actualPathSnapshot.freshness.latestObservedEventAt'),
+      latestReprojectionCompletedAt: nullableIso(freshness.latestReprojectionCompletedAt, 'actualPathSnapshot.freshness.latestReprojectionCompletedAt'),
+      staleReasons: array(freshness.staleReasons, 'actualPathSnapshot.freshness.staleReasons')
+        .map((entry) => enumValue(entry, 'actualPathSnapshot.freshness.staleReasons[]', ['newer_observed_visit', 'newer_completed_reprojection'] as const))
+    },
+    reconciliation: {
+      currentJourneyMapVersionId: nonempty(reconciliation.currentJourneyMapVersionId, 'actualPathSnapshot.reconciliation.currentJourneyMapVersionId'),
+      currentAsOf: iso(reconciliation.currentAsOf, 'actualPathSnapshot.reconciliation.currentAsOf'),
+      designVersionChanged: bool(reconciliation.designVersionChanged, 'actualPathSnapshot.reconciliation.designVersionChanged'),
+      deltas: {
+        acceptedInstanceCount: nullableFinite(deltas.acceptedInstanceCount, 'actualPathSnapshot.reconciliation.deltas.acceptedInstanceCount'),
+        acceptedVisitCount: nullableFinite(deltas.acceptedVisitCount, 'actualPathSnapshot.reconciliation.deltas.acceptedVisitCount'),
+        unobservedStageCount: integer(deltas.unobservedStageCount, 'actualPathSnapshot.reconciliation.deltas.unobservedStageCount'),
+        atRiskStageCount: integer(deltas.atRiskStageCount, 'actualPathSnapshot.reconciliation.deltas.atRiskStageCount')
+      }
+    },
+    result: parseActualPathResult(row.result)
+  };
+}
+
+function parseActualPathRollup(value: unknown): JourneyActualPathRollup {
+  const row = exact(value, 'actual path rollup', [
+    'id', 'journeyDefinitionId', 'journeyMapVersionId', 'materializedByUserId', 'materializedAt', 'period',
+    'lastAsOf', 'minimumCohortSize', 'analyticsVersion', 'scopeSubject', 'summary', 'freshness', 'result'
+  ]);
+  const period = exact(row.period, 'actualPathRollup.period', ['start', 'end']);
+  const summary = exact(row.summary, 'actualPathRollup.summary', [
+    'acceptedInstanceCount', 'acceptedVisitCount', 'unobservedStageCount', 'atRiskStageCount'
+  ]);
+  const freshness = exact(row.freshness, 'actualPathRollup.freshness', [
+    'status', 'latestObservedEventAt', 'latestReprojectionCompletedAt', 'staleReasons'
+  ]);
+  return {
+    id: nonempty(row.id, 'actualPathRollup.id'),
+    journeyDefinitionId: nonempty(row.journeyDefinitionId, 'actualPathRollup.journeyDefinitionId'),
+    journeyMapVersionId: nonempty(row.journeyMapVersionId, 'actualPathRollup.journeyMapVersionId'),
+    materializedByUserId: nullableId(row.materializedByUserId, 'actualPathRollup.materializedByUserId'),
+    materializedAt: iso(row.materializedAt, 'actualPathRollup.materializedAt'),
+    period: { start: iso(period.start, 'actualPathRollup.period.start'), end: iso(period.end, 'actualPathRollup.period.end') },
+    lastAsOf: iso(row.lastAsOf, 'actualPathRollup.lastAsOf'),
+    minimumCohortSize: integer(row.minimumCohortSize, 'actualPathRollup.minimumCohortSize', 1),
+    analyticsVersion: nonempty(row.analyticsVersion, 'actualPathRollup.analyticsVersion'),
+    scopeSubject: enumValue(row.scopeSubject, 'actualPathRollup.scopeSubject', ['anonymous_only', 'known_profiles'] as const),
+    summary: {
+      acceptedInstanceCount: nullableFinite(summary.acceptedInstanceCount, 'actualPathRollup.summary.acceptedInstanceCount'),
+      acceptedVisitCount: nullableFinite(summary.acceptedVisitCount, 'actualPathRollup.summary.acceptedVisitCount'),
+      unobservedStageCount: integer(summary.unobservedStageCount, 'actualPathRollup.summary.unobservedStageCount', 0),
+      atRiskStageCount: integer(summary.atRiskStageCount, 'actualPathRollup.summary.atRiskStageCount', 0)
+    },
+    freshness: {
+      status: enumValue(freshness.status, 'actualPathRollup.freshness.status', ['current', 'stale'] as const),
+      latestObservedEventAt: nullableIso(freshness.latestObservedEventAt, 'actualPathRollup.freshness.latestObservedEventAt'),
+      latestReprojectionCompletedAt: nullableIso(freshness.latestReprojectionCompletedAt, 'actualPathRollup.freshness.latestReprojectionCompletedAt'),
+      staleReasons: array(freshness.staleReasons, 'actualPathRollup.freshness.staleReasons')
+        .map((entry) => enumValue(entry, 'actualPathRollup.freshness.staleReasons[]', ['newer_observed_visit', 'newer_completed_reprojection'] as const))
+    },
+    result: parseActualPathResult(row.result)
+  };
+}
+
+export async function readLatestJourneyActualPathSnapshot(journeyDefinitionId: string,
+  subjectKind: JourneyActualPathSubjectKind = 'anonymous_only') {
+  const raw = await api<unknown>(listQuery('/api/journey-metrics/actual-path-snapshots/latest', { journeyDefinitionId, subjectKind }));
+  const row = exact(raw, 'actual path latest snapshot response', ['snapshot']);
+  return row.snapshot === null ? null : parseActualPathSnapshot(row.snapshot);
+}
+
+export async function readLatestJourneyActualPathRollup(journeyDefinitionId: string,
+  subjectKind: JourneyActualPathSubjectKind = 'anonymous_only') {
+  const raw = await api<unknown>(listQuery('/api/journey-metrics/actual-path-rollups/latest', { journeyDefinitionId, subjectKind }));
+  const row = exact(raw, 'actual path latest rollup response', ['rollup']);
+  return row.rollup === null ? null : parseActualPathRollup(row.rollup);
+}
+
+export async function materializeJourneyActualPathRollup(input: {
+  journeyDefinitionId: string;
+  from?: string;
+  to?: string;
+  asOf?: string;
+  minimumCohortSize?: number;
+  subjectKind?: JourneyActualPathSubjectKind;
+}) {
+  const raw = await api<unknown>('/api/journey-metrics/actual-path-rollups/materialize', mutationOptions('POST', {
+    journeyDefinitionId: input.journeyDefinitionId,
+    ...(input.from ? { from: input.from } : {}),
+    ...(input.to ? { to: input.to } : {}),
+    ...(input.asOf ? { asOf: input.asOf } : {}),
+    ...(input.minimumCohortSize ? { minimumCohortSize: input.minimumCohortSize } : {}),
+    ...(input.subjectKind ? { subjectKind: input.subjectKind } : {})
+  }, mutationKey('actual-path-rollup')));
+  const row = exact(raw, 'actual path rollup materialize response', ['rollup', 'updated']);
+  return { rollup: parseActualPathRollup(row.rollup), updated: bool(row.updated, 'actual path rollup materialize response.updated') };
+}
+
+export async function listJourneyActualPathSnapshots(journeyDefinitionId: string,
+  subjectKind: JourneyActualPathSubjectKind = 'anonymous_only') {
+  const raw = await api<unknown>(listQuery('/api/journey-metrics/actual-path-snapshots', { journeyDefinitionId, limit: 20, subjectKind }));
+  const row = exact(raw, 'actual path snapshot list response', ['snapshots']);
+  return array(row.snapshots, 'actual path snapshot list response.snapshots').map(parseActualPathSnapshot);
+}
+
+export async function readJourneyActualPathSnapshot(snapshotId: string, journeyDefinitionId: string,
+  subjectKind: JourneyActualPathSubjectKind = 'anonymous_only') {
+  const raw = await api<unknown>(listQuery(`/api/journey-metrics/actual-path-snapshots/${encodeURIComponent(snapshotId)}`, { journeyDefinitionId, subjectKind }));
+  const row = exact(raw, 'actual path snapshot read response', ['snapshot']);
+  return parseActualPathSnapshot(row.snapshot);
+}
+
+export async function createJourneyActualPathSnapshot(input: {
+  journeyDefinitionId: string;
+  from?: string;
+  to?: string;
+  asOf?: string;
+  minimumCohortSize?: number;
+  subjectKind?: JourneyActualPathSubjectKind;
+}) {
+  const raw = await api<unknown>('/api/journey-metrics/actual-path-snapshots', mutationOptions('POST', {
+    journeyDefinitionId: input.journeyDefinitionId,
+    ...(input.from ? { from: input.from } : {}),
+    ...(input.to ? { to: input.to } : {}),
+    ...(input.asOf ? { asOf: input.asOf } : {}),
+    ...(input.minimumCohortSize ? { minimumCohortSize: input.minimumCohortSize } : {}),
+    ...(input.subjectKind ? { subjectKind: input.subjectKind } : {})
+  }, mutationKey('actual-path-snapshot')));
+  const row = exact(raw, 'actual path snapshot create response', ['snapshot', 'replayed']);
+  return { snapshot: parseActualPathSnapshot(row.snapshot), replayed: bool(row.replayed, 'actual path snapshot create response.replayed') };
 }
 
 export const journeyMetricAnalyticsExportFormats = ['csv', 'json'] as const;

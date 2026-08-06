@@ -18,6 +18,7 @@ import {
 import {
   effectiveSubscriptionForSpace, ensureConfiguredAdministratorEnterprise, ensureExistingSubscriptionsGrandfathered
 } from './subscriptionEntitlements.js';
+import { recordPlatformAuditEvent } from './platformAudit.js';
 
 const cookieName = 'seemplify_experience_session';
 const resetLifetimeMs = 30 * 60_000;
@@ -1033,6 +1034,16 @@ export function completeAccountOnboarding(request: Request, response: Response) 
       .run(user.id, parsed.data.jobTitle, parsed.data.organizationName, parsed.data.timezone, parsed.data.primaryGoal,
         currentOnboardingVersion, now, now, now);
     if (parsed.data.spaceName) renamePersonalSpaceForUser(user.id, parsed.data.spaceName);
+    recordPlatformAuditEvent({
+      request,
+      action: 'onboarding_completed',
+      actorUserId: user.id,
+      actorRole: 'workspace_user',
+      targetType: 'user',
+      targetId: user.id,
+      reason: 'Account onboarding completed.',
+      after: { flow_version: String(currentOnboardingVersion) }
+    });
   })();
   return response.json(sessionPayload({ ...user, name: parsed.data.name }));
 }

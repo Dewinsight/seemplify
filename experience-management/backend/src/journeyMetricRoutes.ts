@@ -19,6 +19,12 @@ import {
   type JourneyMetricVersionInput
 } from './journeyMetrics.js';
 import { JourneyNativeMetricSourceError } from './journeyNativeMetricSources.js';
+import {
+  JourneyActualPathAnalyticsError, createJourneyActualPathSnapshot, listJourneyActualPathSnapshots,
+  materializeJourneyActualPathRollup, readJourneyActualPathAnalytics, readJourneyActualPathSnapshot,
+  readLatestJourneyActualPathRollup, readLatestJourneyActualPathSnapshot
+} from './journeyActualPathAnalytics.js';
+import { JourneyPathAnalyticsConfigurationError } from './journeyPathAnalytics.js';
 import { resolveRequestSpace, SpaceError } from './spaces.js';
 import { SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import {
@@ -83,6 +89,9 @@ function sendError(response: express.Response, value: unknown) {
     code: 'JOURNEY_METRIC_INPUT_INVALID', details: value.issues });
   if (value instanceof JourneyMetricConfigurationError || value instanceof JourneyOperationalMeasureError) {
     return response.status(400).json({ error: value.message, code: value.code });
+  }
+  if (value instanceof JourneyPathAnalyticsConfigurationError || value instanceof JourneyActualPathAnalyticsError) {
+    return response.status('status' in value ? value.status : 400).json({ error: value.message, code: value.code });
   }
   if (value instanceof JourneyMetricsError || value instanceof SpaceError || value instanceof SubscriptionEntitlementError
       || value instanceof JourneyEventIngestionError || value instanceof JourneyNativeMetricSourceError) {
@@ -334,6 +343,79 @@ journeyMetricRouter.get('/observations', (request, response) => {
   try { const { space } = context(request);
     const query = z.object({ ...observationFilterSchema, ...page }).strict().parse(request.query);
     return response.json(listJourneyMetricObservations({ spaceId: space.id, ...query }));
+  } catch (value) { return sendError(response, value); }
+});
+
+journeyMetricRouter.get('/actual-paths', (request, response) => {
+  try {
+    const { space } = context(request);
+    const query = z.object({
+      journeyDefinitionId: id,
+      from: z.string().datetime({ offset: true }).optional(),
+      to: z.string().datetime({ offset: true }).optional(),
+      asOf: z.string().datetime({ offset: true }).optional(),
+      subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional(),
+      minimumCohortSize: z.coerce.number().int().min(1).max(1_000).default(5)
+    }).strict().parse(request.query);
+    return response.json(readJourneyActualPathAnalytics({ spaceId: space.id, ...query }));
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.get('/actual-path-rollups/latest', (request, response) => {
+  try {
+    const { space } = context(request);
+    const query = z.object({ journeyDefinitionId: id, subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional() }).strict().parse(request.query);
+    return response.json({ rollup: readLatestJourneyActualPathRollup(space.id, query.journeyDefinitionId, query.subjectKind) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.post('/actual-path-rollups/materialize', (request, response) => {
+  try {
+    const { user, space } = editor(request);
+    const body = z.object({
+      journeyDefinitionId: id,
+      from: z.string().datetime({ offset: true }).optional(),
+      to: z.string().datetime({ offset: true }).optional(),
+      asOf: z.string().datetime({ offset: true }).optional(),
+      subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional(),
+      minimumCohortSize: z.number().int().min(1).max(1_000).default(5)
+    }).strict().parse(request.body || {});
+    const result = materializeJourneyActualPathRollup({ spaceId: space.id, actorUserId: user.id, ...body });
+    return response.status(result.updated ? 200 : 201).json(result);
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.get('/actual-path-snapshots/latest', (request, response) => {
+  try {
+    const { space } = context(request);
+    const query = z.object({ journeyDefinitionId: id, subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional() }).strict().parse(request.query);
+    return response.json({ snapshot: readLatestJourneyActualPathSnapshot(space.id, query.journeyDefinitionId, query.subjectKind) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.get('/actual-path-snapshots', (request, response) => {
+  try {
+    const { space } = context(request);
+    const query = z.object({ journeyDefinitionId: id, subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional(), ...page }).strict().parse(request.query);
+    return response.json({ snapshots: listJourneyActualPathSnapshots(space.id, query.journeyDefinitionId, query.limit, query.subjectKind) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.get('/actual-path-snapshots/:snapshotId', (request, response) => {
+  try {
+    const { space } = context(request);
+    const query = z.object({ journeyDefinitionId: id, subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional() }).strict().parse(request.query);
+    return response.json({ snapshot: readJourneyActualPathSnapshot(space.id, query.journeyDefinitionId, id.parse(request.params.snapshotId), query.subjectKind) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.post('/actual-path-snapshots', (request, response) => {
+  try {
+    const { user, space } = editor(request);
+    const body = z.object({
+      journeyDefinitionId: id,
+      from: z.string().datetime({ offset: true }).optional(),
+      to: z.string().datetime({ offset: true }).optional(),
+      asOf: z.string().datetime({ offset: true }).optional(),
+      subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional(),
+      minimumCohortSize: z.number().int().min(1).max(1_000).default(5)
+    }).strict().parse(request.body || {});
+    const result = createJourneyActualPathSnapshot({ spaceId: space.id, actorUserId: user.id, ...body });
+    return response.status(result.replayed ? 200 : 201).json(result);
   } catch (value) { return sendError(response, value); }
 });
 

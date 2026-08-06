@@ -11,6 +11,11 @@ Native, Swift and Kotlin/Android packages. None has been published externally.
   scoped credentials: `jpk_dev/stg/live` for distributed public write keys and
   `jsk_dev/stg/live` for server secrets. Legacy `sp_test/live` keys are rejected,
   and an explicitly configured SDK environment must match the key environment.
+- All five npm SDK packages now declare `private: false`, carry the MIT licence,
+  include a per-package `LICENSE` file, and pass the local `qualify:sdk` and
+  `release-ready` publication-shape gates. A protected `npm-production` GitHub
+  environment now exists, while the trusted-publishing workflow remains checked
+  in as disabled and nothing has been published externally.
 
 ### Added
 
@@ -29,7 +34,7 @@ Native, Swift and Kotlin/Android packages. None has been published externally.
   request-context middleware.
 - Browser-resolvable built-artifact and restricted-host compatibility checks,
   plus a Node 20/22 SDK CI matrix definition.
-- Private React Native foundation with public-key-only configuration, canonical
+- Unpublished React Native foundation with public-key-only configuration, canonical
   calls, explicit encrypted/atomic host storage, consent-gated persistence,
   bounded lifecycle/offline/battery delivery, opt-in minimised context, stable
   IDs, partial-result retry and host-failure isolation.
@@ -51,7 +56,7 @@ Native, Swift and Kotlin/Android packages. None has been published externally.
 - Restricted-host browser and React Native compatibility checks now run in both
   ESM and CommonJS, resolving by specifier through package self-reference so the
   result reflects the export map rather than workspace install topology.
-- Private SwiftPM foundation for iOS 15+ and macOS 12+ with all eight canonical
+- Unpublished SwiftPM foundation for iOS 15+ and macOS 12+ with all eight canonical
   calls, consent-first bounded delivery, partial/duplicate retry semantics,
   public-key-only configuration, injectable host dependencies, privacy-safe
   diagnostics and Keychain/AES-GCM/atomic-file persistence without a plaintext
@@ -60,7 +65,7 @@ Native, Swift and Kotlin/Android packages. None has been published externally.
   authored XCTest scenarios, a passing Windows static contract, and a pinned
   read-only macOS/Xcode 15.4 CI definition. Swift compilation and runtime
   execution are not claimed locally.
-- Private Kotlin/Android foundation for minSdk 23 with all eight canonical
+- Unpublished Kotlin/Android foundation for minSdk 23 with all eight canonical
   calls, bounded consent-aware delivery, host adapters and an
   AndroidKeyStore/AES-GCM/AtomicFile store; canonical/no-publication guards,
   a passing Windows static contract, 12/12 JVM tests, zero-finding lint,
@@ -80,4 +85,7 @@ Native, Swift and Kotlin/Android packages. None has been published externally.
   durable-endpoint evidence. Swift also still needs compiler/XCTest evidence;
   Kotlin still needs physical devices and a ratified multi-version Android
   matrix beyond its single API 35 emulator run.
-- npm scope ownership and a legal licence decision are not established.
+- npm `@seemplify` scope ownership and publish authentication are not
+  established. The MIT licence decision is recorded and enforced for the five
+  npm packages, but the publish workflow remains disabled and no registry write
+  has occurred.

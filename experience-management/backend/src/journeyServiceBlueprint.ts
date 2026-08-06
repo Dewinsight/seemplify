@@ -6,9 +6,10 @@
  * analysed blueprint without a second, divergent rule set. Nothing here touches storage: the module
  * is dependency-free and every export is a pure function over caller-owned data.
  *
- * Runtime-29 is defined but NOT yet in the supported runtime window
- * (`migrations/postgres/runtime-compatibility.json` pins min=max=26), so these rules are a
- * pre-validation contract, not evidence that blueprints are persisted anywhere.
+ * Runtime-29 is now in the supported runtime window, so these rules align with
+ * the durable schema. This module is still only an in-memory contract: it is
+ * not by itself evidence that the complete blueprint product surface is
+ * shipped or release-qualified.
  */
 
 export const JOURNEY_SERVICE_BLUEPRINT_VERSION = 'journey-service-blueprint/v1' as const;

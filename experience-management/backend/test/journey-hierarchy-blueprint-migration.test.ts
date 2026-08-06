@@ -32,8 +32,9 @@ import {
  * PostgreSQL proof. A statement that satisfies these regexes can still fail
  * against a live server (wrong plpgsql control flow, a column that does not
  * exist on an upstream table, a planner-level rejection). Executed-PostgreSQL
- * coverage for runtime-29 is a separate and currently OPEN gate; see the
- * per-migration probe precedent in `scripts/probe-journey-*-postgres.mjs`.
+ * coverage for runtime-29 must still be treated as a separate executed
+ * PostgreSQL gate from this static contract; see the per-migration probe
+ * precedent in `scripts/probe-journey-*-postgres.mjs`.
  *
  * What it does prove is the class of defect that shipped in the first draft of
  * this migration: a three-column FOREIGN KEY whose referenced column set had no

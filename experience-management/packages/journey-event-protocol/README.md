@@ -140,7 +140,7 @@ a substitute for the future ingestion service.
 
 ## Release governance
 
-This package remains private and unpublished. The repository-wide
+This package remains unpublished. The repository-wide
 [support matrix](https://github.com/michaelegbo/seemplify/blob/main/experience-management/packages/SDK-SUPPORT.md)
 and [release/deprecation process](https://github.com/michaelegbo/seemplify/blob/main/experience-management/packages/SDK-RELEASE.md)
 are release gates, not current public support promises.

@@ -91,7 +91,10 @@ class AIInterviewAnalysisService {
       };
     } catch (error) {
       console.error('❌ Error in AI analysis:', error);
-      // Return default analysis on error
+      // A runtime-availability failure must not masquerade as a completed
+      // analysis: it would mark the interview analyzed with placeholder data
+      // and consume credits. Only parse-level noise degrades to the default.
+      if (error.code) throw error;
       return this._getDefaultAnalysis();
     }
   }

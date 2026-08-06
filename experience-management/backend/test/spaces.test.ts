@@ -207,6 +207,9 @@ test('shows every pending account invitation after login and safely accepts one 
   await firstOwner.post('/api/auth/login').send({ email: 'owner-a@example.test', password: passwordA }).expect(200);
   const firstOwnerSession = await firstOwner.get('/api/auth/session').expect(200);
   const secondSpace = await firstOwner.post('/api/spaces').send({ name: 'Customer success' }).expect(201);
+  assert.equal((db.prepare(`SELECT COUNT(*) count FROM platform_audit_events
+    WHERE actor_user_id=(SELECT id FROM users WHERE email='owner-a@example.test')
+      AND action='space_created' AND target_id=?`).get(secondSpace.body.activeSpace.id) as any).count, 1);
   const invitee = request.agent(app);
   await invitee.post('/api/auth/login').send({ email: 'owner-b@example.test', password: passwordB }).expect(200);
   const inviteeSession = await invitee.get('/api/auth/session').expect(200);

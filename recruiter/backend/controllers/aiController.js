@@ -15,6 +15,19 @@ const chatSessionService = require('../services/chatSessionService'); // Added f
 const aiModelService = new AIModelService();
 const aiToolExecutor = new AIToolExecutor();
 
+/**
+ * AI failures answer with the runtime error's own status and code — a 409
+ * "connect your ChatGPT account" is a user action, not a server fault, and
+ * the frontend runtime gate routes on the code.
+ */
+function sendAIFailure(res, failure, msg) {
+  return res.status(failure?.statusCode || 500).json({
+    msg,
+    code: failure?.code,
+    error: failure?.error || failure?.message
+  });
+}
+
 // Generate job description using AI
 exports.generateJobDescription = async (req, res) => {
   try {
@@ -43,10 +56,7 @@ exports.generateJobDescription = async (req, res) => {
     const result = await aiModelService.generateJobDescription(jobData);
 
     if (!result.success) {
-      return res.status(500).json({
-        msg: 'Failed to generate job description',
-        error: result.error
-      });
+      return sendAIFailure(res, result, 'Failed to generate job description');
     }
 
     console.log(`✅ Job description generated successfully for: ${title}`);
@@ -62,10 +72,7 @@ exports.generateJobDescription = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error generating job description:', error);
-    res.status(500).json({
-      msg: 'Server error generating job description',
-      error: error.message
-    });
+    sendAIFailure(res, error, 'Server error generating job description');
   }
 };
 
@@ -96,10 +103,7 @@ exports.generateJobRequirements = async (req, res) => {
     const result = await aiModelService.generateJobRequirements(jobData);
 
     if (!result.success) {
-      return res.status(500).json({
-        msg: 'Failed to generate job requirements',
-        error: result.error
-      });
+      return sendAIFailure(res, result, 'Failed to generate job requirements');
     }
 
     console.log(`✅ Job requirements generated successfully for: ${title}`);
@@ -111,10 +115,7 @@ exports.generateJobRequirements = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error generating job requirements:', error);
-    res.status(500).json({
-      msg: 'Server error generating job requirements',
-      error: error.message
-    });
+    sendAIFailure(res, error, 'Server error generating job requirements');
   }
 };
 
@@ -205,10 +206,7 @@ exports.chatPublic = async (req, res) => {
     const aiResult = await aiToolExecutor.processMessage(message, mockContext, null);
     
     if (!aiResult.success) {
-      return res.status(500).json({
-        msg: 'Failed to process request with AI tools',
-        error: aiResult.error
-      });
+      return sendAIFailure(res, aiResult, 'Failed to process request with AI tools');
     }
 
     // 🚀 IMMEDIATE RESPONSE TO FRONTEND (Public Test Mode)
@@ -231,10 +229,7 @@ exports.chatPublic = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error in public chat:', error);
-    res.status(500).json({
-      msg: 'Server error processing public chat',
-      error: error.message
-    });
+    sendAIFailure(res, error, 'Server error processing public chat');
   }
 };
 
@@ -1134,6 +1129,9 @@ exports.analyzeCandidates = async (req, res) => {
     4. Key trends or patterns`;
 
     const aiResult = await aiModelService.generateChatResponse(prompt, '', { activity: 'analytics.candidates' });
+    if (!aiResult.success) {
+      return sendAIFailure(res, aiResult, 'AI candidate analytics are unavailable');
+    }
 
     res.json({
       totalCandidates,
@@ -1150,10 +1148,7 @@ exports.analyzeCandidates = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error analyzing candidates:', error);
-    res.status(500).json({
-      msg: 'Server error analyzing candidates',
-      error: error.message
-    });
+    sendAIFailure(res, error, 'Server error analyzing candidates');
   }
 };
 
@@ -1204,6 +1199,9 @@ exports.analyzeJobs = async (req, res) => {
     4. Recommendations for improving job postings`;
 
     const aiResult = await aiModelService.generateChatResponse(prompt, '', { activity: 'analytics.jobs' });
+    if (!aiResult.success) {
+      return sendAIFailure(res, aiResult, 'AI job analytics are unavailable');
+    }
 
     res.json({
       totalJobs,
@@ -1221,10 +1219,7 @@ exports.analyzeJobs = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error analyzing jobs:', error);
-    res.status(500).json({
-      msg: 'Server error analyzing jobs',
-      error: error.message
-    });
+    sendAIFailure(res, error, 'Server error analyzing jobs');
   }
 };
 
@@ -1318,6 +1313,9 @@ Based on these AI-powered matches, provide:
 5. Insights on why these candidates scored high in the AI matching`;
 
       const aiResult = await aiModelService.generateChatResponse(prompt, '', { activity: 'matching.report' });
+      if (!aiResult.success) {
+        return sendAIFailure(res, aiResult, 'The AI matching report is unavailable');
+      }
       aiInsights = aiResult.response;
     } else {
       aiInsights = "No matching candidates found. Consider expanding your search criteria or posting the job on more platforms to attract qualified candidates.";
@@ -1380,10 +1378,7 @@ Based on these AI-powered matches, provide:
 
   } catch (error) {
     console.error('❌ Error getting AI matching report:', error);
-    res.status(500).json({
-      msg: 'Server error getting AI matching report',
-      error: error.message
-    });
+    sendAIFailure(res, error, 'Server error getting AI matching report');
   }
 };
 
@@ -1458,6 +1453,9 @@ exports.getHiringAnalytics = async (req, res) => {
     5. Areas for process improvement`;
 
     const aiResult = await aiModelService.generateChatResponse(prompt, '', { activity: 'analytics.hiring' });
+    if (!aiResult.success) {
+      return sendAIFailure(res, aiResult, 'AI hiring analytics are unavailable');
+    }
 
     res.json({
       overview: {
@@ -1485,10 +1483,7 @@ exports.getHiringAnalytics = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error getting hiring analytics:', error);
-    res.status(500).json({
-      msg: 'Server error getting hiring analytics',
-      error: error.message
-    });
+    sendAIFailure(res, error, 'Server error getting hiring analytics');
   }
 };
 
@@ -1512,8 +1507,9 @@ exports.testConnection = async (req, res) => {
         response: result.response,
       });
     } else {
-      res.status(500).json({
+      res.status(result.statusCode || 500).json({
         msg: 'AI model connection failed',
+        code: result.code,
         model: aiModelService.modelName,
         provider: 'groq',
         defaultDeployment: GROQ_120B,
@@ -1527,12 +1523,9 @@ exports.testConnection = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error testing connection:', error);
-    res.status(500).json({
-      msg: 'Server error testing connection',
-      error: error.message
-    });
+    sendAIFailure(res, error, 'Server error testing connection');
   }
-}; 
+};
 
 // Helper functions
 async function analyzeMessageForActions(message, aiResponse) {
@@ -1936,7 +1929,11 @@ exports.handleChatStream = async (req, res) => {
       onError: (error) => {
         console.error('SSE stream error:', error);
         if (!res.writableEnded) {
-            sendSseEvent('error', { message: error.message || 'An error occurred during streaming.' });
+            sendSseEvent('error', {
+              message: error.message || 'An error occurred during streaming.',
+              code: error.code,
+              statusCode: error.statusCode
+            });
             res.end();
         }
       },
@@ -2047,7 +2044,7 @@ exports.handleChatStream = async (req, res) => {
     console.error('❌ Error in handleChatStream:', error);
     // Ensure response isn't already sent
     if (!res.headersSent) {
-      res.status(500).json({ msg: 'Server error processing chat stream', error: error.message });
+      sendAIFailure(res, error, 'Server error processing chat stream');
     } else {
       // If headers sent, try to end the stream if it's still open.
       // This might not always work if the error is critical.

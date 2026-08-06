@@ -5,7 +5,8 @@
                      "Every number here was measured by this repository\u0027s own gates on one developer",
                      "host. This file is NOT a public browser, device, bundler or operating-system",
                      "support promise, and nothing in it may be quoted as one. The supported public",
-                     "matrix lives in SDK-SUPPORT.md and is still empty.",
+                     "matrix lives in SDK-SUPPORT.md, but no supported public combination is ratified",
+                     "from this file alone.",
                      "Changing a bundleBudgets limit is a reviewed change: see SDK-SUPPORT.md",
                      "\u0027Changing a repository-enforced budget\u0027."
                  ],
@@ -230,11 +231,10 @@
                                              "MIT"
                                          ],
                     "$approvedLicencesComment":  [
-                                                     "Deliberately EMPTY. `release-ready` must fail until an authorised owner",
-                                                     "records a legally approved SPDX identifier here AND adds it to every manifest",
-                                                     "AND checks in a per-package LICENSE file. This repository does not guess",
-                                                     "whether the SDKs are open-source or proprietary, so no value may be added",
-                                                     "here as part of a qualification change."
+                                                     "Authorised owner-approved SPDX identifiers for the five npm Journey SDK",
+                                                     "packages. `release-ready` requires every manifest license field to match",
+                                                     "one of these values and requires a per-package LICENSE file in each",
+                                                     "package directory."
                                                  ],
                     "coordinatedVersionRequired":  true,
                     "internalDependenciesExact":  true,
@@ -251,6 +251,17 @@
                                           ],
                     "environment":  "npm-production",
                     "confirmation":  "PUBLISH_JOURNEY_SDKS",
+                    "publishToolchain":  {
+                                             "$comment":  [
+                                                              "As of 2026-08-05 the npm trusted-publishing documentation",
+                                                              "requires npm CLI 11.5.1+ and Node 22.14.0+.",
+                                                              "These values are asserted in the publish template and",
+                                                              "the release-shaped CI verification lane so the eventual",
+                                                              "registry write path does not depend on a runner default."
+                                                          ],
+                                             "nodeVersion":  "22.14.0",
+                                             "npmVersion":  "11.5.1"
+                                         },
                     "workflowTemplate":  "../.github/workflows/publish-journey-sdks.yml.disabled",
                     "workflowMustStayDisabled":  true,
                     "requiredWorkflowGates":  [
@@ -265,8 +276,8 @@
                 },
     "lockedFoundation":  {
                              "$comment":  [
-                                              "The intentionally locked pre-publication state. `qualify` succeeds only if",
-                                              "this state is internally consistent; it reports the external blockers",
+                                              "Repository-enforced foundation state. `qualify` succeeds only if this",
+                                              "recorded state is internally consistent; it reports the external blockers",
                                               "separately without turning red, because they are not locally actionable."
                                           ],
                              "allPackagesPrivate":  false,
@@ -292,9 +303,7 @@
                                            "Swift needs compiler/XCTest/simulator/device evidence; none is executable on this host.",
                                            "Kotlin needs a ratified physical-device/OS matrix beyond one API 35 emulator run.",
                                            "Security/privacy review, SCA, secret scan, SBOM and provenance are incomplete.",
-                                           "npm @seemplify scope ownership and trusted-publisher setup are not established.",
-                                           "The protected npm-production GitHub environment is not confirmed to exist.",
-                                           "All five packages remain private:true and must not be made public by a qualification change."
+                                           "npm @seemplify scope ownership and trusted-publisher setup are not established."
                                        ]
                          }
 }

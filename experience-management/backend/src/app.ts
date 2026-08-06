@@ -25,6 +25,7 @@ import {
 import { isDatabaseConstraintError } from './databaseAdapter.js';
 import { attachEventStream, publishEvent } from './events.js';
 import { EMAIL_SENDER_NAME_MAX_LENGTH, emailStatus, getRecipientUnsubscribePreview, listRecipients, markRecipientUnsubscribed, sendInvitations, sendSpaceInvitationEmail } from './emailService.js';
+import { recordPlatformAuditEvent } from './platformAudit.js';
 import {
   addCampaignContacts, campaignTemplates, createCampaign, getCampaignDetail, launchCampaign, listCampaignSummaries,
   getCampaignUnsubscribePreview, markCampaignContactResponded, pauseCampaign, replaceCampaignSteps, resumeCampaign,
@@ -61,6 +62,7 @@ import { journeyEventIngestionRouter } from './journeyEventIngestionRoutes.js';
 import { journeyStageRuleRouter } from './journeyStageRuleRoutes.js';
 import { journeyResearchRouter } from './journeyResearchRoutes.js';
 import { journeyMetricImportRouter, journeyMetricRouter } from './journeyMetricRoutes.js';
+import { journeyIdentityRouter } from './journeyIdentityRoutes.js';
 import { queueJourneyMetricRebuildsForSurvey } from './journeyMetrics.js';
 import {
   journeyTemplateRouter, platformJourneyTemplateRouter, seedJourneyTemplateCatalog
@@ -554,6 +556,7 @@ app.use('/api/journey-event-control-plane', journeyEventControlPlaneRouter);
 app.use('/api/journey-stage-rules', journeyStageRuleRouter);
 app.use('/api/journey-research', journeyResearchRouter);
 app.use('/api/journey-metrics', journeyMetricRouter);
+app.use('/api/journey-identities', journeyIdentityRouter);
 app.use('/api/knowledge-bases', knowledgeRouter);
 knowledgeJobRoute(app);
 surveyKnowledgeRoutes(app);
@@ -604,6 +607,17 @@ app.post('/api/spaces', (request, response) => {
   try {
     const user = authenticatedUser(request);
     const space = createSpace(user, { name: request.body?.name });
+    recordPlatformAuditEvent({
+      request,
+      action: 'space_created',
+      actorUserId: user.id,
+      actorRole: 'workspace_user',
+      targetType: 'space',
+      targetId: space.id,
+      spaceId: space.id,
+      reason: 'Workspace created from spaces API.',
+      after: { space_kind: space.isPersonal ? 'personal' : 'workspace' }
+    });
     return response.status(201).json({ space, ...spaceSession(user.id) });
   } catch (error) { return sendError(response, error); }
 });

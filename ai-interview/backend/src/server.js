@@ -22,7 +22,7 @@ const {
 const { estimateAIInterviewWalletCost, findAIInterviewVoiceOption } = require('./aiInterviewVoiceOptions');
 const azureSpeechTtsService = require('./azureSpeechTtsService');
 const azureSpeechSttService = require('./azureSpeechSttService');
-const mailDeliveryService = require('./brevoEmailService');
+const mailDeliveryService = require('./mailDeliveryService');
 const questionGeneratorService = require('./questionGeneratorService');
 const cvProcessingQueue = require('./cvProcessingQueueService');
 const cvCandidateResults = require('./cvCandidateResultRepository');

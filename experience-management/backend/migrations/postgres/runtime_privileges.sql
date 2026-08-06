@@ -156,7 +156,11 @@ BEGIN
     'journey_blueprint_gap_assessments',
     'journey_blueprint_comparisons',
     'journey_hierarchy_operations',
-    'journey_hierarchy_activity'
+    'journey_hierarchy_activity',
+    'journey_stage_reprojection_runs',
+    'journey_stage_reprojection_attempts',
+    'journey_stage_reprojection_checkpoints',
+    'journey_stage_reprojection_audit_events'
   ] LOOP
     IF to_regclass('public.' || protected_table) IS NULL THEN
       RAISE EXCEPTION 'Required runtime privilege target public.% is missing', protected_table;
@@ -287,7 +291,9 @@ REVOKE UPDATE,DELETE ON TABLE
   public.journey_blueprint_relationships,
   public.journey_blueprint_comparisons,
   public.journey_hierarchy_operations,
-  public.journey_hierarchy_activity
+  public.journey_hierarchy_activity,
+  public.journey_stage_reprojection_attempts,
+  public.journey_stage_reprojection_audit_events
 FROM __APP_ROLE__;
 REVOKE DELETE ON TABLE
   public.journey_event_rate_buckets,
@@ -325,7 +331,9 @@ REVOKE DELETE ON TABLE
   public.journey_share_rate_buckets,
   public.journey_hierarchy_settings,
   public.journey_hierarchy_health_policies,
-  public.journey_blueprints
+  public.journey_blueprints,
+  public.journey_stage_reprojection_runs,
+  public.journey_stage_reprojection_checkpoints
 FROM __APP_ROLE__;
 -- Blob purge receipts are stateful while pending, but are durable history:
 -- the runtime may claim/update them and cannot erase completed or failed

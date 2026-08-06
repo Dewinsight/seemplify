@@ -53,9 +53,10 @@ router.post('/interviews/:interviewId/analyze', authMiddleware, requireOrganizat
     });
   } catch (error) {
     console.error('Error analyzing interview:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -91,9 +92,10 @@ router.get('/candidates/:candidateId/ai-insights', authMiddleware, async (req, r
     });
   } catch (error) {
     console.error('Error getting candidate insights:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -114,9 +116,10 @@ router.get('/jobs/:jobId/comparative-analysis', authMiddleware, async (req, res)
     });
   } catch (error) {
     console.error('Error getting comparative analysis:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -135,9 +138,10 @@ router.get('/interviews/:interviewId/recommendations', authMiddleware, async (re
     });
   } catch (error) {
     console.error('Error getting recommendations:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -233,9 +237,10 @@ router.post('/jobs/:jobId/analyze-all', authMiddleware, requireOrganization, asy
     });
   } catch (error) {
     console.error('Error in bulk analysis:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -276,9 +281,10 @@ router.get('/interviews/:interviewId/analysis-status', authMiddleware, async (re
     });
   } catch (error) {
     console.error('Error getting analysis status:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -323,9 +329,10 @@ router.get('/interviews/:interviewId/analysis', authMiddleware, async (req, res)
     });
   } catch (error) {
     console.error('Error getting analysis results:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -356,9 +363,10 @@ router.post('/interviews/:interviewId/re-analyze', authMiddleware, requireOrgani
     });
   } catch (error) {
     console.error('Error re-analyzing interview:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -425,9 +433,10 @@ router.get('/jobs/:jobId/analysis-summary', authMiddleware, async (req, res) => 
     });
   } catch (error) {
     console.error('Error getting analysis summary:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -545,9 +554,10 @@ router.get('/jobs/:jobId/top-insights', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting top insights:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });

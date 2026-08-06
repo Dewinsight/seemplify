@@ -23,7 +23,7 @@ const BASE_RUNTIME_EXTENSION_TABLES = Object.freeze([
   'assistant_audit_events'
 ]);
 
-export const LATEST_RUNTIME_SCHEMA_VERSION = 29;
+export const LATEST_RUNTIME_SCHEMA_VERSION = 30;
 
 export function runtimeExtensionTables(runtimeVersion = LATEST_RUNTIME_SCHEMA_VERSION) {
   const tables = [...BASE_RUNTIME_EXTENSION_TABLES];
@@ -126,6 +126,10 @@ export function runtimeExtensionTables(runtimeVersion = LATEST_RUNTIME_SCHEMA_VE
       'journey_blueprint_relationships','journey_blueprint_portfolio_links',
       'journey_blueprint_gap_assessments','journey_blueprint_comparisons','journey_hierarchy_operations',
       'journey_hierarchy_activity');
+  }
+  if (runtimeVersion >= 30) {
+    tables.push('journey_stage_reprojection_runs','journey_stage_reprojection_attempts',
+      'journey_stage_reprojection_checkpoints','journey_stage_reprojection_audit_events');
   }
   return tables;
 }
@@ -5108,6 +5112,14 @@ export async function assertRuntimePrivileges(query, runtimeRole, options = {}) 
       ['journey_blueprint_comparisons', true, true, false, false],
       ['journey_hierarchy_operations', true, true, false, false],
       ['journey_hierarchy_activity', true, true, false, false]
+    );
+  }
+  if (privilegeRuntimeVersion >= 30) {
+    expectations.push(
+      ['journey_stage_reprojection_runs', true, true, true, false],
+      ['journey_stage_reprojection_attempts', true, true, false, false],
+      ['journey_stage_reprojection_checkpoints', true, true, true, false],
+      ['journey_stage_reprojection_audit_events', true, true, false, false]
     );
   }
   for (const [table, select, insert, update, remove] of expectations) {

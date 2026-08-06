@@ -4,7 +4,7 @@
 
 External publication is disabled:
 
-- every SDK manifest retains `"private": true`;
+- the five npm SDK manifests are release-shaped (`private: false`, MIT, per-package `LICENSE`) but still unpublished;
 - the trusted-publishing workflow is checked in with a `.disabled` suffix;
 - the publication gate refuses private packages, refuses packages without an
   explicit licence decision and requires an exact confirmation value;
@@ -17,33 +17,59 @@ External publication is disabled:
 Do not remove these controls until the Connected Journey master-plan release
 gates are complete and an authorised owner approves the release.
 
+## Current repo-side landing prerequisite
+
+Before the first authorised publish attempt, the intended SDK release state
+itself must exist on `main`, not only on a working branch. As of Thursday,
+August 6, 2026, `main` does not yet contain the current branch's SDK
+publish-policy and evidence files, including
+`packages/SDK-QUALIFICATION.json`, `packages/SDK-RELEASE.md`,
+`packages/SDK-PUBLISH-CHECKLIST.md`, and `scripts/sdk-publish-preflight.mjs`.
+
+Do not treat workflow activation alone as sufficient. The publish-policy,
+qualification, checklist, and preflight state must first land on `main`, and
+only then should npm-side setup and final workflow activation be considered.
+
+The executable repo-side proof for this prerequisite is:
+
+```sh
+npm run report:sdk:publication-readiness
+npm run preflight:sdk:landing
+npm run evidence:sdk:delta
+```
+
+These commands remain intentionally non-publishing. The consolidated readiness
+report is the preferred current snapshot: it records the current repo-side
+landing status, required-file delta, publish-preflight blockers, and
+workstation limitations in one reproducible artifact. The landing and delta
+companions remain useful as narrower debugging checks on that same required
+file set.
+
 ## Decisions required before the first release
 
 1. Create or verify ownership of the npm `@seemplify` organisation.
-2. Choose the legal licence. Add an approved SPDX identifier to every manifest
-   and add the corresponding `LICENSE` file. This repository intentionally does
-   not guess whether the SDKs should be open-source or proprietary.
-3. Decide whether the first public version is an alpha under `next`, a public
-   beta, or a stable `1.0.0`. Current `0.1.0` packages describe private
-   foundations and must not be promoted to `latest` accidentally.
-4. Ratify the support matrix, protocol compatibility policy, support ownership,
+2. Decide whether the first public version is an alpha under `next`, a public
+   beta, or a stable `1.0.0`. The current `0.1.0` npm packages are prepared
+   for release but must not be promoted to `latest` accidentally.
+3. Ratify the support matrix, protocol compatibility policy, support ownership,
    vulnerability intake and time-based deprecation window.
-5. Configure a protected GitHub environment named `npm-production`, with
-   required reviewers, and bind npm Trusted Publishing to the exact repository
-   and workflow filename.
-6. Separately decide the Swift distribution/tag strategy and the Kotlin Maven
+4. Bind npm Trusted Publishing to the exact repository, workflow filename and
+   protected `npm-production` environment.
+5. Separately decide the Swift distribution/tag strategy and the Kotlin Maven
    repository, coordinates, signing, provenance and protected environment. npm
    approval does not authorise either native distribution.
 
-After the owner makes the SPDX decision, the repository-local helper can apply
-that choice across the five npm SDK packages and the qualification policy:
+If the owner-approved SPDX decision ever changes, the repository-local helper
+can re-apply that choice across the five npm SDK packages and the qualification
+policy:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\apply-sdk-license.ps1 -LicenseId MIT -CopyrightHolder "Seemplify"
 ```
 
-Use `-MakePublic` only when the remaining release gates are complete and the
-authorised publish step is about to begin.
+`-MakePublic` has already been used for the five npm SDK packages in this
+repository state; rerun it only if a future owner-approved licence change
+should also keep the packages non-private.
 
 ## Versioning and order
 
@@ -73,6 +99,8 @@ npm confirmation path as distribution authority.
 From `experience-management`:
 
 ```sh
+npm run report:sdk:publication-readiness
+npm run preflight:sdk:publish
 npm ci
 npm run clean:sdk
 npm run typecheck:sdk
@@ -88,6 +116,12 @@ manifest's `prepack` artifact guard, runs browser- and React-Native-resolvable
 restricted-host compatibility checks in both ESM and CommonJS, validates dry-run
 tarball contents and installs real tarballs offline into isolated ESM,
 CommonJS, mixed-format and TypeScript declaration consumers.
+
+`preflight:sdk:publish` is intentionally non-publishing. It reports the current
+workstation and repository blockers for an authorised publish attempt, including
+workflow enablement, branch, local Node/npm trusted-publishing floors, GitHub
+CLI auth, npm auth, npm scope readiness, and whether the first package is
+already published.
 
 The CommonJS pass is deliberately stricter than "the export is callable". It
 asserts that `require.resolve` returns a path under `dist/cjs/` and that the
@@ -116,9 +150,10 @@ SDK_RELEASE_VERSION=<approved-version> \
 node scripts/sdk-package-tools.mjs release-ready
 ```
 
-That command intentionally fails today because the packages are private and no
-licence has been selected. `release-ready` checks `SDK_PUBLISH_CONFIRM` before
-anything else, so running it without that variable — the safest way to confirm
+That command is expected to stay non-publishing: it validates coordinated
+versioning, approved licence metadata, per-package `LICENSE` files, deterministic
+artifacts and tarball shape, then stops. `release-ready` checks
+`SDK_PUBLISH_CONFIRM` before anything else, so running it without that variable — the safest way to confirm
 the gate is wired — fails immediately at the confirmation check and never
 reaches the manifest or pack stages. The command contains no `npm publish` and
 never contacts a registry under any environment combination; it is a read-only
@@ -160,6 +195,37 @@ The template uses GitHub OIDC provenance and does not require a long-lived npm
 token. A first release should use the non-default `next` tag. Promotion to
 `latest` is a separate, explicitly approved operation after registry-installed
 consumer tests pass for the complete package set.
+
+### External npm account setup sequence
+
+Before the first publish, complete the npm-side setup in this order:
+
+1. Sign in to npm with the intended release-owner account and enable account
+   2FA.
+2. Create the `@seemplify` npm organisation if it does not already exist.
+3. Confirm the release-owner account has write/owner authority for that
+   organisation and the first package namespace.
+4. Configure trusted publishing for the exact GitHub repository, workflow file,
+   and protected `npm-production` environment that this repository records.
+5. After trusted publishing is enabled, prefer npm's strongest package setting:
+   require 2FA and disallow token-based publishing access where compatible with
+   the chosen release method.
+6. Keep the first coordinated release on the `next` dist-tag; promote to
+   `latest` only after registry-installed consumer verification succeeds.
+
+Trusted-publisher management through the npm CLI uses `npm trust`, whose
+current documentation requires npm CLI `11.15.0` or newer, write permissions on
+the package, and 2FA enabled on the account. If that command is unavailable,
+use the npm web UI instead for the trusted-publisher setup.
+
+As of Thursday, August 6, 2026, the current npm trusted-publishing
+documentation requires npm CLI `11.5.1` or later and Node `22.14.0` or later.
+This workstation is below that management baseline (`npm 11.0.0`, Node
+`v22.11.0`) and does not expose `npm trust`, so trusted-publisher inspection or
+configuration should be performed either through a newer npm environment or the
+npm web UI. This local version gap does not by itself prove that GitHub Actions
+publishes will fail, because the protected publish workflow can still run on a
+newer GitHub-hosted Node 22 patch release when it is eventually enabled.
 
 ## Deprecation and incident policy
 
