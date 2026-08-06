@@ -54,10 +54,26 @@ export function requiresChatGptSetup(
   account: AiRuntimeAccount | null | undefined,
   policy: AiRuntimePolicy | null | undefined
 ) {
-  if (!account || !policy) return false;
-  if (!policy.chatgptEnabled || policy.defaultRuntime !== 'chatgpt') return false;
-  if (policy.localEnabled) return false;
-  return !account.routable;
+  return chatGptSetupState(account, policy) === 'required';
+}
+
+/**
+ * How the connection gate should confront this user, mirroring Experience
+ * Management's ChatGptConnectionGate:
+ * - 'required': ChatGPT is the runtime and local is off — the gate blocks
+ *   until the account is connected and consented.
+ * - 'choice': ChatGPT is the workspace default but local can still serve —
+ *   the gate asks the user to pick, once per session.
+ * - null: nothing to gate on.
+ */
+export function chatGptSetupState(
+  account: AiRuntimeAccount | null | undefined,
+  policy: AiRuntimePolicy | null | undefined
+): 'required' | 'choice' | null {
+  if (!account || !policy) return null;
+  if (!policy.chatgptEnabled || policy.defaultRuntime !== 'chatgpt') return null;
+  if (account.routable) return null;
+  return policy.localEnabled ? 'choice' : 'required';
 }
 
 export const aiAccountService = {
