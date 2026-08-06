@@ -67,7 +67,17 @@ const publicHealthRateLimitWindowMs = Number(process.env.LOCAL_LLM_HEALTH_RATE_L
 const publicHealthRateLimitRequests = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_REQUESTS || 30);
 const publicHealthRateLimitMaxKeys = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_MAX_KEYS || 10_000);
 const recruiterBackendUrl = String(process.env.RECRUITER_BACKEND_URL || 'https://api.seemplifyai.com').replace(/\/+$/, '');
-const allowedActivities = new Set(Object.keys(ACTIVITY_DEFINITIONS));
+const recruiterActivities = new Set(Object.keys(ACTIVITY_DEFINITIONS));
+
+/**
+ * Which activities this gateway will serve. Recruiter declares its own in its
+ * catalogue; the other products that call the gateway directly are governed by
+ * the runtime profiles here, so they no longer have to be listed inside
+ * Recruiter's catalogue to be accepted.
+ */
+function isAllowedActivity(activity) {
+  return recruiterActivities.has(activity) || Boolean(runtimeProfileForActivity(activity));
+}
 const cvActivities = new Set(['candidate.cv_parse', 'ai_interview.cv_parse']);
 const meteringExcludedHarnessSources = new Set([
   'gateway-integration-test',
@@ -846,7 +856,7 @@ function statusPayload() {
   const state = readState();
   const selected = engineSettings(state);
   const cvLocalEligible = ENGINE_IDS.includes(selected.id);
-  const scheduler = inferenceScheduler.snapshot(allowedActivities);
+  const scheduler = inferenceScheduler.snapshot(recruiterActivities);
   return {
     service: 'seemplify-local-cv-llm',
     state,
@@ -1116,7 +1126,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   }
   let input;
   try { input = JSON.parse(rawBody); } catch { return sendJson(response, 400, { code: 'INVALID_JSON' }); }
-  if (!allowedActivities.has(input.activity)) {
+  if (!isAllowedActivity(input.activity)) {
     return sendJson(response, 403, { code: 'ACTIVITY_NOT_ALLOWED' });
   }
   if (cvOnly && !cvActivities.has(input.activity)) {

@@ -429,8 +429,12 @@ capability matrix. Legacy `/api/journeys` now have explicit
 read/edit/export guards, and focused HTTP governance proof now covers Journey
 Map publish, shared saved-view management/settings/audit, Journey Research gap
 creation, Journey Rich Card catalogue mutation, Journey AI suggestion
-review/apply entry points, Journey Metric alert-definition creation, and
-Journey Identity customer-360/export/privacy-job entry points. The
+review/apply entry points, Journey Metric alert-definition creation, Journey
+Identity customer-360/export/privacy-job entry points, Journey Persona
+governance mutations plus read-only usage, Journey Evidence
+attach/refresh/assess/delete plus member-readable source/audit, Journey Map
+persona link/unlink, and space/platform Journey Template permission surfaces
+including platform manage-vs-read and origin enforcement. The
 mixed direct/durable
 `monthlyAiActions` concurrency gap is closed: both paths share one immutable
 ledger and per-space mutex, and durable creation/retries use idempotent

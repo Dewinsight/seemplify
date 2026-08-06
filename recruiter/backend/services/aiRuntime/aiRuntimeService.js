@@ -439,10 +439,15 @@ class AIRuntimeService {
       ...defaults,
       ...settings,
       models: [...modelsByKey.values()],
-      routes: [...routesByActivity.values()].map((route) => ({
-        ...route,
-        failoverPolicy: failoverPolicyForRoute(route.activity, route.provider)
-      })),
+      // Routes for activities this catalogue no longer defines are dropped on
+      // read: another product's activities were once stored here, and leaving
+      // them would keep offering an administrator settings that do nothing.
+      routes: [...routesByActivity.values()]
+        .filter((route) => Boolean(ACTIVITY_DEFINITIONS[route.activity]))
+        .map((route) => ({
+          ...route,
+          failoverPolicy: failoverPolicyForRoute(route.activity, route.provider)
+        })),
       quotaGroups: Array.isArray(settings?.quotaGroups) && settings.quotaGroups.length ? settings.quotaGroups : defaults.quotaGroups,
       alerts: { ...defaults.alerts, ...(settings?.alerts || {}) },
       localFailover: { ...defaults.localFailover, ...(settings?.localFailover || {}) },

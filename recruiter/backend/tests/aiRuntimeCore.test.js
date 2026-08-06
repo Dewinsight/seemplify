@@ -56,24 +56,6 @@ test('every seeded AI activity has one compatible explicit route', () => {
   assert.ok(requiredCapabilitiesForActivity('ai_interview.chat.clarification').includes('streaming'));
 });
 
-test('the local knowledge graph extraction activity is registered and pinned to Terra', () => {
-  const activity = ACTIVITY_DEFINITIONS['experience.knowledge_graph_extract'];
-  assert.ok(activity);
-  assert.equal(activity.provider, TERRA_PROVIDER);
-  assert.equal(activity.model, TERRA_MODEL);
-  assert.equal(activity.reasoningEffort, 'high');
-  assert.equal(activity.lockedProvider, true);
-});
-
-test('the grounded knowledge answer activity is registered and pinned to Terra', () => {
-  const activity = ACTIVITY_DEFINITIONS['experience.knowledge_answer'];
-  assert.ok(activity);
-  assert.equal(activity.provider, TERRA_PROVIDER);
-  assert.equal(activity.model, TERRA_MODEL);
-  assert.equal(activity.reasoningEffort, 'high');
-  assert.equal(activity.lockedProvider, true);
-});
-
 test('default routing keeps CV and questions on managed local inference while Experience is pinned to Terra', () => {
   const settings = createManagedRuntimeSettings();
   const liveChatActivities = new Set([
@@ -746,7 +728,7 @@ test('admin permission boundaries keep secrets super-admin only', () => {
   assert.equal(allowed, true);
 });
 
-test('default catalog keeps CV and question generation local and pins every Experience activity to Terra', () => {
+test('the managed baseline keeps CV and question generation on local inference', () => {
   const settings = createManagedRuntimeSettings();
   assert.ok(settings.routes.length >= 25);
   const localRoutes = settings.routes.filter((route) => route.provider === LOCAL_PROVIDER);
@@ -756,47 +738,10 @@ test('default catalog keeps CV and question generation local and pins every Expe
     'candidate.cv_parse',
     'interview.questions'
   ]);
-  const terraRoutes = settings.routes.filter((route) => route.provider === TERRA_PROVIDER);
-  assert.deepEqual(terraRoutes.map((route) => route.activity).sort(), [
-    'experience.analyst_chat',
-    'experience.assistant.action_extract',
-    'experience.assistant.correspondence_draft',
-    'experience.assistant.document_compare',
-    'experience.assistant.document_summarise',
-    'experience.assistant.email_draft',
-    'experience.assistant.email_summarise',
-    'experience.assistant.executive_brief',
-    'experience.assistant.knowledge_answer',
-    'experience.assistant.meeting_minutes',
-    'experience.assistant.meeting_prepare',
-    'experience.assistant.work_product',
-    'experience.cross_source_intelligence',
-    'experience.insight_generation',
-    'experience.journey_mapping',
-    'experience.knowledge_answer',
-    'experience.knowledge_graph_extract',
-    'experience.report_generation',
-    'experience.response_analysis',
-    'experience.social_listening',
-    'experience.social_reply_draft',
-    'experience.survey_generation',
-    'experience.translation'
-  ]);
-  assert.equal(terraRoutes.every((route) => route.model === TERRA_MODEL && route.failoverPolicy === 'wait_local'), true);
-  const claudeRoutes = settings.routes.filter((route) => route.provider === CLAUDE_PROVIDER);
-  assert.equal(claudeRoutes.length, 11);
-  assert.equal(claudeRoutes.every((route) => route.model === CLAUDE_SONNET_MODEL && route.failoverPolicy === 'wait_local'), true);
-  assert.equal(settings.routes.filter((route) => !localRoutes.includes(route) && !terraRoutes.includes(route) && !claudeRoutes.includes(route)).every((route) => route.provider === 'groq'), true);
-  assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-120b'), true);
-  assert.equal(settings.models.some((model) => model.id === 'openai/gpt-oss-20b'), true);
-  assert.equal(settings.models.some((model) => model.id === LOCAL_CV_MODEL), true);
-  assert.equal(settings.models.some((model) => model.id === TERRA_MODEL && model.provider === TERRA_PROVIDER), true);
-  assert.equal(settings.models.some((model) => model.id === CLAUDE_SONNET_MODEL && model.provider === CLAUDE_PROVIDER), true);
-  assert.deepEqual(settings.rollout, {
-    groqPercent: 100,
-    azureBaselineEnabled: false,
-    samplingSalt: 'groq-gpt-oss-v1'
-  });
+  // Experience Management and Xplorer CRM run their own AI, so this catalog
+  // holds no routes for them and nothing here is pinned to Terra.
+  assert.equal(settings.routes.some((route) => route.provider === TERRA_PROVIDER), false);
+  assert.equal(settings.routes.some((route) => route.activity.startsWith('experience.')), false);
 });
 
 test('fresh bootstrap starts at the deterministic ten percent canary', () => {
