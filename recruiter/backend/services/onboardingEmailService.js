@@ -298,10 +298,13 @@ function envelopeDocumentCount(envelope = {}) {
   return `${count} document${count === 1 ? '' : 's'}`;
 }
 
-async function sendCandidateInvite({ candidate, organization, inviteToken, onboarding, request, req }) {
+async function sendCandidateInvite({ candidate, organization, portalPath, onboarding, request, req }) {
   const resolvedOrganization = await resolveOrganization(organization, { request, req, onboarding });
   const portalContext = { organization: resolvedOrganization || organization, request: request || req };
-  const portalUrl = candidatePortalUrl(`/signup?token=${encodeURIComponent(inviteToken)}`, portalContext);
+  if (!portalPath || !String(portalPath).startsWith('/')) {
+    throw new Error('A candidate portal path is required for an onboarding invitation.');
+  }
+  const portalUrl = candidatePortalUrl(portalPath, portalContext);
   const name = candidateName(candidate);
   const organizationName = organizationDisplayName(resolvedOrganization || organization);
   const transition = await transitionSummary(onboarding);
