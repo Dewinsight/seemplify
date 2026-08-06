@@ -1,7 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Bot, Copy, ExternalLink, Loader2, RefreshCw, Unplug } from "lucide-react"
+import { Check, Copy, ExternalLink, Loader2, RefreshCw, Unplug } from "lucide-react"
+import { OpenAILogo } from "@/components/ui/openai-logo"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,8 +36,24 @@ export default function AiAccountPage() {
   const [working, setWorking] = useState("")
   const [error, setError] = useState("")
   const [copied, setCopied] = useState(false)
+  // OpenAI throttles repeated device logins; the wait comes back with the
+  // refusal so it can be counted down rather than retried blindly.
+  const [cooldownUntil, setCooldownUntil] = useState(0)
+  const [cooldownLeft, setCooldownLeft] = useState(0)
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollDeadline = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!cooldownUntil) return
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000))
+      setCooldownLeft(left)
+      if (left === 0) { setCooldownUntil(0); setError("") }
+    }
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [cooldownUntil])
 
   const stopPolling = useCallback(() => {
     if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null }
@@ -110,6 +127,7 @@ export default function AiAccountPage() {
   }, [refresh, stopPolling])
 
   async function connect() {
+    if (cooldownLeft > 0) return
     setWorking("connect"); setError("")
     try {
       const { login, account: next } = await aiAccountService.startLogin()
@@ -119,6 +137,8 @@ export default function AiAccountPage() {
       setCopied(false)
       startPolling()
     } catch (reason: any) {
+      const wait = Number(reason?.retryAfterSeconds) || 0
+      if (wait > 0) setCooldownUntil(Date.now() + wait * 1000)
       const message = reason?.message || "ChatGPT sign-in could not be started."
       setError(message); toast.error(message)
     } finally { setWorking("") }
@@ -177,6 +197,8 @@ export default function AiAccountPage() {
   const status = account ? statusTone[account.status] : statusTone.disconnected
   const connected = account?.status === "connected"
   const setupRequired = requiresChatGptSetup(account, policy)
+  const cooling = cooldownLeft > 0
+  const countdown = `${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, "0")}`
 
   return (
     <div className="space-y-6" data-testid="ai-account-page">
@@ -208,8 +230,10 @@ export default function AiAccountPage() {
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-muted-foreground" />
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0d0d0d] text-white dark:bg-white dark:text-[#0d0d0d]">
+                <OpenAILogo className="h-4 w-4" />
+              </span>
               <CardTitle className="text-base">Connection</CardTitle>
             </div>
             <Badge variant={status.variant} data-testid="ai-account-status">{status.label}</Badge>
@@ -228,9 +252,16 @@ export default function AiAccountPage() {
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               {!connected && (
-                <Button onClick={connect} disabled={Boolean(working)} data-testid="ai-account-connect">
-                  {working === "connect" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Connect ChatGPT
+                <Button
+                  onClick={connect}
+                  disabled={Boolean(working) || cooling}
+                  className="bg-[#0d0d0d] text-white hover:bg-[#2f2f2f] disabled:opacity-60 dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+                  data-testid="ai-account-connect"
+                >
+                  {working === "connect"
+                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    : <OpenAILogo className="mr-2 h-4 w-4" />}
+                  {cooling ? `Try again in ${countdown}` : "Sign in with OpenAI"}
                 </Button>
               )}
               <Button variant="outline" onClick={() => void refresh()} disabled={Boolean(working)}>
@@ -276,41 +307,71 @@ export default function AiAccountPage() {
       </Card>
 
       <Dialog open={Boolean(deviceLogin)} onOpenChange={(open) => { if (!open) void cancel() }}>
-        <DialogContent data-testid="ai-account-device-login">
-          <DialogHeader>
-            <DialogTitle>Finish signing in with OpenAI</DialogTitle>
-            <DialogDescription>
+        <DialogContent
+          data-testid="ai-account-device-login"
+          className="gap-0 overflow-hidden rounded-2xl border-black/10 p-0 sm:max-w-[440px] dark:border-white/10"
+        >
+          <DialogHeader className="items-center space-y-0 px-7 pb-6 pt-9 text-center">
+            <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0d0d0d] text-white shadow-sm ring-1 ring-black/5 dark:bg-white dark:text-[#0d0d0d] dark:ring-white/10">
+              <OpenAILogo className="h-8 w-8" />
+            </span>
+            <DialogTitle className="text-center text-[22px] font-semibold leading-tight tracking-[-0.01em]">
+              Finish signing in with OpenAI
+            </DialogTitle>
+            <DialogDescription className="mx-auto mt-2 max-w-[19rem] text-center text-[14.5px] leading-relaxed">
               Open the secure page, enter this one-time code, then return here. This dialog updates on its own.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <Label htmlFor="ai-account-code">One-time code</Label>
-            <div className="flex gap-2">
-              <Input
-                id="ai-account-code"
-                data-testid="ai-account-code"
-                readOnly
-                value={deviceLogin?.userCode || ""}
-                className="font-mono tracking-widest"
-                onFocus={(event) => event.currentTarget.select()}
-              />
-              <Button type="button" variant="outline" onClick={copyCode} aria-label="Copy the ChatGPT sign-in code">
-                <Copy className="mr-2 h-4 w-4" />{copied ? "Copied" : "Copy"}
-              </Button>
+          <div className="px-7">
+            <div className="rounded-xl border border-black/10 px-3.5 py-4 dark:border-white/10">
+              <p className="text-center text-[12.5px] text-muted-foreground">
+                Enter this code on the OpenAI page
+              </p>
+              <div className="mt-2.5 flex items-center gap-2">
+                <Input
+                  id="ai-account-code"
+                  data-testid="ai-account-code"
+                  readOnly
+                  aria-label="One-time code"
+                  value={deviceLogin?.userCode || ""}
+                  className="h-12 rounded-lg border-black/10 bg-muted/30 text-center font-mono text-xl font-semibold tracking-[0.3em] dark:border-white/10"
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 w-12 shrink-0 rounded-lg border-black/10 p-0 dark:border-white/10"
+                  onClick={copyCode}
+                  aria-label={copied ? "Code copied" : "Copy the ChatGPT sign-in code"}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+              <p className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground" role="status">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />Waiting for you to finish on OpenAI…
+              </p>
             </div>
-            <p className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />Waiting for OpenAI…
-            </p>
           </div>
-          <DialogFooter className="sm:justify-between">
-            <Button variant="ghost" onClick={cancel} disabled={working === "cancel"}>Cancel</Button>
+          <DialogFooter className="mt-6 flex-col gap-2 px-7 pb-7 sm:flex-col sm:space-x-0">
             {deviceLogin?.verificationUrl && (
-              <Button asChild>
+              <Button
+                asChild
+                className="h-11 w-full rounded-xl bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+              >
                 <a href={deviceLogin.verificationUrl} target="_blank" rel="noreferrer noopener">
-                  Open OpenAI<ExternalLink className="ml-2 h-4 w-4" />
+                  <OpenAILogo className="mr-2 h-4 w-4" />Open OpenAI
+                  <ExternalLink className="ml-2 h-3.5 w-3.5 opacity-70" />
                 </a>
               </Button>
             )}
+            <Button
+              variant="ghost"
+              onClick={cancel}
+              disabled={working === "cancel"}
+              className="h-9 w-full text-xs font-normal text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

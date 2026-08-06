@@ -40,6 +40,15 @@ class BoundedFixedWindowRateLimiter {
     return window.count <= this.requests;
   }
 
+  /** Milliseconds until this key's window resets, so a caller that was turned
+   * away can be told when to come back instead of guessing. Zero when the key
+   * is not currently limited. */
+  retryAfterMs(key, now = Date.now()) {
+    const window = this.windows.get(String(key || 'unknown').slice(0, 128));
+    if (!window) return 0;
+    return Math.max(0, this.windowMs - (now - window.startedAt));
+  }
+
   get size() {
     return this.windows.size;
   }
