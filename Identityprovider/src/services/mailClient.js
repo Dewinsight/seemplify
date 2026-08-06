@@ -33,8 +33,12 @@ export async function sendMail({ to, subject, html, text }, environment = proces
       authorization: `Bearer ${config.token}`
     },
     body: JSON.stringify({
-      from: { email: config.fromEmail, name: config.fromName },
-      to: [{ email: to }],
+      // The first-party mail API accepts bare mailbox strings. Display names
+      // are carried separately so callers cannot smuggle extra recipients in
+      // a formatted address.
+      from: config.fromEmail,
+      fromName: config.fromName || undefined,
+      to: [to],
       subject,
       html,
       text: text || undefined
