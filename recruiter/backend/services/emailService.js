@@ -100,7 +100,11 @@ class EmailService {
 
     try {
       const result = await sendMail({
-        from: payload.sender?.email || undefined,
+        // Legacy call sites still build a Brevo-shaped `sender` object and
+        // several contain retired domains. The first-party service has one
+        // authenticated sender identity; always take it from MAIL_FROM_EMAIL.
+        // The organization brand remains the display name.
+        from: undefined,
         fromName: payload.sender?.name || undefined,
         to: recipients,
         cc: toMailboxList(payload.cc),

@@ -3,6 +3,7 @@ const router = express.Router();
 const fs = require('fs').promises;
 const path = require('path');
 const multer = require('multer');
+const crypto = require('crypto');
 
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
@@ -51,6 +52,10 @@ const cloudinaryUploadService = new CloudinaryUploadService();
 const ACTIVE_SIGNING_ENVELOPE_STATUSES = ['sent', 'viewed', 'partially_signed'];
 const VIEWABLE_SIGNING_ENVELOPE_STATUSES = [...ACTIVE_SIGNING_ENVELOPE_STATUSES, 'completed'];
 const SIGNABLE_DOCUMENT_STATUSES = ['pending', 'signed'];
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
+}
 
 const uploadsDir = path.join(__dirname, '..', 'uploads', 'onboarding');
 const upload = multer({
@@ -1292,18 +1297,29 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
     account.linkCandidate(candidate._id, organization._id);
     await account.save();
 
-    const loginPath = `/login?email=${encodeURIComponent(candidate.email || '')}&next=${encodeURIComponent(`/public/candidate/transitions/${onboarding._id}`)}`;
-    const portalInviteUrl = createdCandidateAccount
-      ? await onboardingEmailService.sendCandidateInvite({
-          candidate,
-          organization,
-          onboarding,
-          request: req
-        }).catch((error) => {
-          console.error('Failed to send onboarding invite email:', error);
-          return onboardingEmailService.candidatePortalUrl(loginPath, { organization, request: req });
-        })
-      : onboardingEmailService.candidatePortalUrl(loginPath, { organization, request: req });
+    const transitionPath = `/public/candidate/transitions/${onboarding._id}`;
+    const loginPath = `/login?email=${encodeURIComponent(candidate.email || '')}&next=${encodeURIComponent(transitionPath)}`;
+    let portalPath = loginPath;
+    if (createdCandidateAccount) {
+      const inviteToken = crypto.randomBytes(32).toString('base64url');
+      onboarding.inviteTokenHash = sha256(inviteToken);
+      onboarding.inviteTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      portalPath = `/signup?token=${encodeURIComponent(inviteToken)}`;
+    }
+
+    // Every new transition sends a notification. Existing candidate accounts
+    // receive a login link; newly-created accounts receive the one-time signup
+    // token. Previously the existing-account branch silently sent no email.
+    const portalInviteUrl = await onboardingEmailService.sendCandidateInvite({
+      candidate,
+      organization,
+      onboarding,
+      portalPath,
+      request: req
+    }).catch((error) => {
+      console.error('Failed to send onboarding invite email:', error);
+      return onboardingEmailService.candidatePortalUrl(portalPath, { organization, request: req });
+    });
 
     onboarding.portalInviteUrl = portalInviteUrl;
     await onboarding.save();
@@ -1334,7 +1350,7 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
       actorUser: req.user.id,
       actorEmail: req.user.email,
       action: `${processType}_started`,
-      metadata: { inviteEmail: createdCandidateAccount ? candidate.email : undefined, processType, reusedCandidateAccount: !createdCandidateAccount }
+      metadata: { inviteEmail: candidate.email, processType, reusedCandidateAccount: !createdCandidateAccount }
     });
 
     await createPeopleTransitionNotifications({
