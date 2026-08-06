@@ -283,6 +283,26 @@ test('a model absent from the connected plan falls back to that account default'
   assert.equal(output.degraded, true);
 });
 
+test('a pending device sign-in is resumable rather than a dead end', async () => {
+  // The person still has to type the code on OpenAI's site, so asking again
+  // must hand back the code already issued instead of refusing.
+  const subjectKey = sessions.subjectKeyFor('recruiter', 'user-resume');
+  const first = await sessions.startDeviceLogin(subjectKey);
+  if (first.connected) return; // already signed in from an earlier case
+  assert.ok(first.userCode, 'the first attempt issues a code');
+
+  const second = await sessions.startDeviceLogin(subjectKey);
+  assert.equal(second.connected, false);
+  assert.equal(second.resumed, true, 'a second attempt resumes rather than throwing');
+  assert.equal(second.userCode, first.userCode, 'the same code is handed back');
+  assert.equal(second.verificationUrl, first.verificationUrl);
+
+  // Cancelling clears it so a fresh code can be issued.
+  await sessions.cancelDeviceLogin(subjectKey);
+  const status = await sessions.accountStatusForSubject(subjectKey);
+  assert.equal(status.pendingLogin, false, 'cancelling clears the pending sign-in');
+});
+
 test('a turn on a subject with no connected account fails closed', async () => {
   const subjectKey = sessions.subjectKeyFor('recruiter', 'never-connected');
   await assert.rejects(runCodexSubjectTurn({
