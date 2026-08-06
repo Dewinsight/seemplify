@@ -59,6 +59,26 @@ export default function AiAccountPage() {
   useEffect(() => { void refresh() }, [refresh])
   useEffect(() => stopPolling, [stopPolling])
 
+  // Connecting is the acknowledgement: the data-sharing notice sits beside the
+  // connection the whole time, so a connected account consents automatically.
+  // Only an explicit withdrawal (unticking the box) is remembered and honoured.
+  const autoConsentRef = useRef(false)
+  const WITHDRAWN_KEY = "seemplify_ai_consent_withdrawn"
+  useEffect(() => {
+    if (autoConsentRef.current || !account) return
+    if (account.status !== "connected" || account.dataSharingAcknowledgedAt) return
+    if (localStorage.getItem(WITHDRAWN_KEY) === "true") return
+    autoConsentRef.current = true
+    void (async () => {
+      try {
+        const { account: next } = await aiAccountService.setConsent(true)
+        setAccount(next)
+      } catch {
+        autoConsentRef.current = false
+      }
+    })()
+  }, [account])
+
   // The runtime-gate dialog deep-links here with ?connect=1 so "Use ChatGPT"
   // flows straight into the device-code sign-in without a second click.
   const autoConnectRef = useRef(false)
@@ -121,6 +141,8 @@ export default function AiAccountPage() {
     try {
       const { account: next } = await aiAccountService.setConsent(acknowledged)
       setAccount(next)
+      if (acknowledged) localStorage.removeItem(WITHDRAWN_KEY)
+      else localStorage.setItem(WITHDRAWN_KEY, "true")
       toast.success(acknowledged
         ? "ChatGPT may now run your AI tasks."
         : "Consent withdrawn. Your AI tasks will not use ChatGPT.")
