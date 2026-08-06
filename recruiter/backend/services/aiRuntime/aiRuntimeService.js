@@ -4,10 +4,13 @@ const AIQuotaSnapshot = require('../../models/AIQuotaSnapshot');
 const AIRuntimeSettings = require('../../models/AIRuntimeSettings');
 const {
   ACTIVITY_DEFINITIONS,
+  CHATGPT_MODEL,
+  CHATGPT_PROVIDER,
   GROQ_120B,
   GROQ_BASE_URL,
   createDefaultRuntimeSettings,
   failoverPolicyForRoute,
+  isChatgptPinnedActivity,
   isGatewayProvider,
   isManagedLocalProvider,
   isUserOwnedProvider,
@@ -388,13 +391,30 @@ class AIRuntimeService {
       modelsByKey.set(key, { ...model, ...(modelsByKey.get(key) || {}) });
     }
     const routesByActivity = new Map(storedRoutes.map((route) => [route.activity, route]));
+    // Normalised early: the ChatGPT requirement decides whether recruiter
+    // routes are pinned to user accounts or left on the managed runtimes.
+    const mergePolicy = normalizeRuntimePolicy(settings?.runtimePolicy);
     for (const route of defaults.routes) {
       const definition = ACTIVITY_DEFINITIONS[route.activity];
       const existing = routesByActivity.get(route.activity);
       const shouldApplyNewLocalDefault = definition?.defaultLocal
         && existing?.provider === 'groq'
         && Number(existing?.routeVersion || 1) === 1;
-      if (definition?.lockedProvider) {
+      if (mergePolicy.chatgptRequired && isChatgptPinnedActivity(route.activity)) {
+        // Recruiter AI runs only on the user's own ChatGPT account, so the
+        // provider is pinned the way locked activities are: an administrator
+        // still chooses the Codex model, reasoning effort, and whether the
+        // activity is on, but not which runtime serves it.
+        routesByActivity.set(route.activity, {
+          ...route,
+          ...(existing || {}),
+          provider: CHATGPT_PROVIDER,
+          model: CHATGPT_MODEL,
+          codexModel: String(existing?.codexModel || route.codexModel || ''),
+          lockedProvider: definition?.lockedProvider === true,
+          failoverPolicy: 'chatgpt_required'
+        });
+      } else if (definition?.lockedProvider) {
         // The lock stops drift onto another shared provider. An administrator
         // explicitly routing the activity to a connected ChatGPT account is
         // not drift, so it survives the pin — mirroring resolveRoute.
@@ -429,7 +449,7 @@ class AIRuntimeService {
       rollout: { ...defaults.rollout, ...(settings?.rollout || {}) },
       // Normalised on read, so a stored policy whose default points at a
       // disabled runtime is corrected rather than enforced.
-      runtimePolicy: normalizeRuntimePolicy(settings?.runtimePolicy)
+      runtimePolicy: mergePolicy
     };
     this.settingsCache = settings;
     this.settingsCacheExpiresAt = Date.now() + SETTINGS_CACHE_MS;
@@ -1129,11 +1149,20 @@ class AIRuntimeService {
    * for the case where there is genuinely nowhere else to run.
    */
   managedRuntimeRoute(route, settings, reason, policy) {
-    if (!policy.localEnabled) {
+    // Another product's intake always degrades: it never belonged to a
+    // personal plan, so requiring ChatGPT for recruiter work must not break
+    // Experience Management or CRM. Recruiter work is ChatGPT-only, so its
+    // caller is told to connect an account rather than having private work
+    // quietly billed to platform capacity.
+    const crossProduct = reason === 'chatgpt_cross_product_request';
+    const noManagedFallback = crossProduct
+      ? !policy.localEnabled
+      : (policy.chatgptRequired || !policy.localEnabled);
+    if (noManagedFallback) {
       throw new AIRuntimeError(
         reason === 'chatgpt_consent_absent'
-          ? 'ChatGPT data sharing is no longer acknowledged and the local AI runtime is disabled.'
-          : 'This AI action has no connected ChatGPT account and the local runtime is disabled.',
+          ? 'ChatGPT data sharing is no longer acknowledged, so this AI action cannot run.'
+          : 'This AI action runs on a connected ChatGPT account, and none is available.',
         {
           code: reason === 'chatgpt_consent_absent'
             ? 'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED'

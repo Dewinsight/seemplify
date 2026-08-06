@@ -9,6 +9,7 @@ const {
   CLAUDE_PROVIDER,
   CLAUDE_SONNET_MODEL,
   createDefaultRuntimeSettings,
+  createManagedRuntimeSettings,
   GROQ_120B,
   GROQ_20B,
   LOCAL_CV_MODEL,
@@ -47,7 +48,7 @@ const TEST_ENV = {
 };
 
 test('every seeded AI activity has one compatible explicit route', () => {
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   const health = assessRouting(settings);
   assert.equal(health.valid, true);
   assert.equal(health.configured, health.expected);
@@ -74,7 +75,7 @@ test('the grounded knowledge answer activity is registered and pinned to Terra',
 });
 
 test('default routing keeps CV and questions on managed local inference while Experience is pinned to Terra', () => {
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   const liveChatActivities = new Set([
     'ai_interview.chat.introduction',
     'ai_interview.chat.clarification',
@@ -118,7 +119,7 @@ test('default routing keeps CV and questions on managed local inference while Ex
 });
 
 test('configurable activities can use local inference while CV, CRM, and Experience provider locks remain enforced', () => {
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   for (const route of settings.routes) {
     if (ACTIVITY_DEFINITIONS[route.activity]?.lockedProvider !== true) {
       route.provider = LOCAL_PROVIDER;
@@ -445,7 +446,7 @@ test('non-CV local activities use the signed general completion endpoint', async
 
 test('local activities expose an OpenAI-compatible buffered SSE stream', async () => {
   const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
-  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.getSettings = async () => createManagedRuntimeSettings();
   runtime.complete = async () => ({
     requestId: 'local-stream-request',
     content: 'Local streamed answer',
@@ -524,7 +525,7 @@ test('runtime reuses a stable request ID as its local usage execution identity',
 });
 
 test('runtime never falls back to the general route for a missing activity route', () => {
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   settings.routes = settings.routes.filter((route) => route.activity !== 'interview.questions');
   const health = assessRouting(settings);
   assert.equal(health.valid, false);
@@ -537,7 +538,7 @@ test('runtime never falls back to the general route for a missing activity route
 });
 
 test('routing rejects models that lack an activity capability', () => {
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   const route = settings.routes.find((item) => item.activity === 'interview.questions');
   const model = settings.models.find((item) => item.id === route.model);
   model.capabilities = model.capabilities.filter((capability) => capability !== 'json_schema');
@@ -564,7 +565,7 @@ test('Groq model synchronization never marks the managed local model unavailable
     credentialModel: {},
     quotaModel: {}
   });
-  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.getSettings = async () => createManagedRuntimeSettings();
   runtime.getCredential = async () => ({
     encryptedSecret: encryptSecret(`gsk_${'z'.repeat(36)}`, { env: TEST_ENV })
   });
@@ -746,7 +747,7 @@ test('admin permission boundaries keep secrets super-admin only', () => {
 });
 
 test('default catalog keeps CV and question generation local and pins every Experience activity to Terra', () => {
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   assert.ok(settings.routes.length >= 25);
   const localRoutes = settings.routes.filter((route) => route.provider === LOCAL_PROVIDER);
   assert.deepEqual(localRoutes.map((route) => route.activity).sort(), [
@@ -809,7 +810,7 @@ test('fresh bootstrap starts at the deterministic ten percent canary', () => {
 });
 
 test('runtime seed merges catalog updates without overwriting admin routing', () => {
-  const defaults = createDefaultRuntimeSettings();
+  const defaults = createManagedRuntimeSettings();
   const merged = mergeCatalogSettings({
     providerEnabled: false,
     models: [{
@@ -852,7 +853,7 @@ test('runtime seed merges catalog updates without overwriting admin routing', ()
 });
 
 test('bootstrap replaces only an untouched auto-created Groq-only rollout', () => {
-  const runtimeDefaults = createDefaultRuntimeSettings();
+  const runtimeDefaults = createManagedRuntimeSettings();
   const bootstrapDefaults = createBootstrapSettings({});
   const merged = mergeCatalogSettings(runtimeDefaults, bootstrapDefaults);
   assert.equal(merged.rollout.groqPercent, 10);

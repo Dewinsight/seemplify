@@ -9,7 +9,7 @@ const test = require('node:test');
 
 const {
   ACTIVITY_DEFINITIONS,
-  DEFAULT_ROUTES,
+  MANAGED_ROUTES,
   GROQ_PROVIDER,
   LOCAL_CV_MODEL,
   LOCAL_PROVIDER,
@@ -68,7 +68,7 @@ async function waitForCondition(predicate, timeoutMs = 10_000) {
 }
 
 test('CV extraction is locked local while local question generation has audited Groq failover', () => {
-  const routes = new Map(DEFAULT_ROUTES.map((route) => [route.activity, route]));
+  const routes = new Map(MANAGED_ROUTES.map((route) => [route.activity, route]));
   for (const activity of ['candidate.cv_parse', 'ai_interview.cv_parse']) {
     assert.equal(routes.get(activity).provider, LOCAL_PROVIDER);
     assert.equal(routes.get(activity).model, LOCAL_CV_MODEL);
@@ -102,7 +102,7 @@ test('CV extraction is locked local while local question generation has audited 
 });
 
 test('Experience catalog includes current and assistant activities as locked Terra routes', () => {
-  const routes = new Map(DEFAULT_ROUTES.map((route) => [route.activity, route]));
+  const routes = new Map(MANAGED_ROUTES.map((route) => [route.activity, route]));
   const expected = [
     'experience.survey_generation',
     'experience.response_analysis',
@@ -123,7 +123,7 @@ test('Experience catalog includes current and assistant activities as locked Ter
     Object.keys(ACTIVITY_DEFINITIONS).filter((activity) => activity.startsWith('experience.')),
     expected
   );
-  assert.equal(DEFAULT_ROUTES.length, routes.size);
+  assert.equal(MANAGED_ROUTES.length, routes.size);
   for (const activity of expected) {
     const definition = ACTIVITY_DEFINITIONS[activity];
     const route = routes.get(activity);

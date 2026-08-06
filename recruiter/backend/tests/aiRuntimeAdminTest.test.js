@@ -11,6 +11,7 @@ const AIUsageEvent = require('../models/AIUsageEvent');
 const AIUsageLogicalRequest = require('../models/AIUsageLogicalRequest');
 const {
   createDefaultRuntimeSettings,
+  createManagedRuntimeSettings,
   GROQ_120B,
   LOCAL_MANAGED_MODEL
 } = require('../config/aiRuntimeCatalog');
@@ -345,7 +346,7 @@ test('manual CV retry reports expired retained assets without leaking the servic
 });
 
 test('route updates derive failover policy from the selected provider and ignore client policy', async () => {
-  let settings = createDefaultRuntimeSettings();
+  let settings = createManagedRuntimeSettings();
   settings.models = settings.models.map((model) => (
     model.provider === 'groq' ? { ...model, available: true } : model
   ));

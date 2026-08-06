@@ -341,6 +341,7 @@ interface RuntimeSettings {
     localEnabled: boolean;
     chatgptEnabled: boolean;
     defaultRuntime: 'local' | 'chatgpt';
+    chatgptRequired?: boolean;
   };
   rollout: {
     groqPercent: 10 | 50 | 100;
@@ -1725,6 +1726,15 @@ export default function AIRuntimeAdminPage() {
                             data-testid="chatgpt-runtime-switch"
                           />
                           ChatGPT (user accounts)
+                        </label>
+                        <label className="flex items-center gap-2 rounded-md border border-gray-800 p-3 text-xs text-gray-300">
+                          <Switch
+                            checked={settings?.runtimePolicy?.chatgptRequired === true}
+                            disabled={!canConfigure || busy === 'runtime-policy'}
+                            onCheckedChange={(value) => void saveRuntimePolicy({ chatgptRequired: value })}
+                            data-testid="chatgpt-required-switch"
+                          />
+                          Require ChatGPT for recruiter AI
                         </label>
                         <div className="rounded-md border border-gray-800 p-3">
                           <p className="text-[11px] uppercase tracking-wide text-gray-500">Default runtime</p>

@@ -43,8 +43,8 @@
           "npm scope @seemplify is not proven ready."
         ],
         "repoSideProof": [
-          "`npm run preflight:sdk:landing` now fails explicitly when `main` is still missing the required SDK publish-state files.",
-          "`npm run evidence:sdk:delta` now shows the exact required-file delta between the current working tree and `main`."
+          "`npm run preflight:sdk:landing` now passes and proves that `main` contains the required SDK publish-state files.",
+          "`npm run evidence:sdk:delta` now shows no remaining required-file delta between the current working tree and `main`."
         ]
       },
       "notClaimed": [
@@ -203,14 +203,14 @@
       "artifactPath": "scripts/sdk-landing-preflight.mjs",
       "observed": {
         "proves": [
-          "The repo now has an executable check that fails explicitly when `main` is still missing the minimum required SDK publish-state files.",
-          "The repo now has a companion delta report that shows the exact required-file difference between the current working tree and `main`, including untracked working-tree files.",
-          "As of Thursday, August 6, 2026, `main` still lacks the required SDK publish-state file set."
+          "The repo now has an executable check that proves whether `main` contains the minimum required SDK publish-state files.",
+          "The repo now has a companion delta report that shows the exact required-file difference between the current working tree and `main`, including untracked working-tree files when present.",
+          "As of Thursday, August 6, 2026, `main` contains the required SDK publish-state file set and no required-file delta remains against the current working tree."
         ],
         "currentSummary": {
-          "requiredFilesMissingOnMain": 4,
-          "committedMainHeadDiffs": 2,
-          "workingTreeSdkPublishStateEntries": 4
+          "requiredFilesMissingOnMain": 0,
+          "committedMainHeadDiffs": 0,
+          "workingTreeSdkPublishStateEntries": 0
         }
       },
       "notClaimed": [
@@ -218,7 +218,7 @@
         "Does not prove the broader connected-journey release gates are complete.",
         "Does not prove the SDKs are publishable today."
       ],
-      "status": "blocking",
+      "status": "implemented",
       "invalidatedByPaths": [
         "package.json",
         "packages/SDK-PUBLISH-CHECKLIST.md",
@@ -237,13 +237,13 @@
       "observed": {
         "proves": [
           "The repo can now materialise one non-publishing artifact that combines the current repo-side and external SDK publication blockers.",
-          "As of Thursday, August 6, 2026, the artifact records that the landing preflight still fails, four required SDK publish-state files are missing on `main`, and the publish preflight still fails.",
+          "As of Thursday, August 6, 2026, the artifact records that the landing preflight passes, no required SDK publish-state files are missing on `main`, and the publish preflight still fails for the remaining workflow and external npm blockers.",
           "The artifact also records the exact required-file delta against `main`, plus the current workstation trusted-publishing limitations."
         ],
         "currentSummary": {
-          "requiredFilesMissingOnMain": 4,
-          "committedMainHeadDiffs": 2,
-          "workingTreeSdkPublishStateEntries": 4,
+          "requiredFilesMissingOnMain": 0,
+          "committedMainHeadDiffs": 0,
+          "workingTreeSdkPublishStateEntries": 0,
           "publishPreflightOk": false
         }
       },
@@ -1410,6 +1410,42 @@
         "e2e/journey-ai-suggestions.spec.ts",
         "e2e/journey-map-v2.spec.ts",
         "e2e/journey-rich-cards.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "closure-blocker-generator-refresh-fix-2026-08-06",
+      "requirementIds": ["P5A-08", "X-08"],
+      "class": "Operations",
+      "summary": "The closure-blocker generator now correctly treats the SDK publication-readiness artifact refresh as a report-generation outcome on Windows, instead of falsely reporting failure because the nested Node script was spawned through the shell.",
+      "command": "node scripts/generate-journey-closure-blocker-report.mjs",
+      "artifactPath": "scripts/generate-journey-closure-blocker-report.mjs",
+      "observed": {
+        "proves": [
+          "The closure-blocker generator now invokes the SDK publication-readiness generator through a direct Node process rather than a shell-mediated process on Windows.",
+          "The generated closure-blocker artifacts now truthfully report that the SDK publication-readiness artifact refresh passed while still keeping the real SDK publication blockers open.",
+          "The current closure-blocker artifact now records landingPreflightOk=true, requiredFilesMissingOnMain=none, committedMainHeadDiffs=0, and workingTreeSdkPublishStateEntries=0."
+        ],
+        "artifactPaths": [
+          "docs/journey-management/operations/latest-journey-closure-blockers-report.md",
+          "docs/journey-management/operations/latest-journey-closure-blockers-report.json"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove SDK publication readiness.",
+        "Does not prove the connected-journey release gate is closed.",
+        "Does not prove external npm authentication, scope ownership, or trusted-publisher configuration."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "scripts/generate-journey-closure-blocker-report.mjs",
+        "scripts/generate-sdk-publication-readiness-report.mjs",
+        "scripts/sdk-landing-preflight.mjs",
+        "scripts/sdk-publish-delta.mjs",
+        "scripts/sdk-publish-preflight.mjs",
+        "docs/journey-management/operations/latest-journey-closure-blockers-report.md",
+        "docs/journey-management/operations/latest-journey-closure-blockers-report.json",
+        "docs/journey-management/operations/latest-sdk-publication-readiness-report.md",
+        "docs/journey-management/operations/latest-sdk-publication-readiness-report.json"
       ]
     }
   ]

@@ -3,6 +3,7 @@ const test = require('node:test');
 
 const {
   createDefaultRuntimeSettings,
+  createManagedRuntimeSettings,
   GROQ_120B,
   LOCAL_PROVIDER,
   TERRA_MODEL,
@@ -82,7 +83,7 @@ test('30-minute monitor activates Groq failover and restores local routing after
 
 test('health failover uses Groq for eligible work but keeps every CV route local', () => {
   const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   const configured = runtime.resolveRoute('interview.questions', settings);
   assert.equal(configured.provider, LOCAL_PROVIDER);
   assert.equal(runtime.resolveExecutionRoute(configured, settings, {}).provider, LOCAL_PROVIDER);
@@ -117,7 +118,7 @@ test('health failover uses Groq for eligible work but keeps every CV route local
 
 test('runtime enforces the CV provider lock even when stored settings are stale', () => {
   const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   const stored = settings.routes.find((route) => route.activity === 'candidate.cv_parse');
   stored.provider = 'groq';
   stored.model = GROQ_120B;
@@ -129,7 +130,7 @@ test('runtime enforces the CV provider lock even when stored settings are stale'
 });
 
 test('settings merge and route resolution canonicalize stale failover policies', async () => {
-  const stored = createDefaultRuntimeSettings();
+  const stored = createManagedRuntimeSettings();
   const localRoute = stored.routes.find((route) => route.activity === 'matching.analysis');
   localRoute.provider = LOCAL_PROVIDER;
   localRoute.model = 'managed-local-gpu';
@@ -164,7 +165,7 @@ test('settings merge and route resolution canonicalize stale failover policies',
 
 test('execution failover ignores caller-supplied policies', () => {
   const runtime = new AIRuntimeService({ settingsModel: {}, credentialModel: {}, quotaModel: {} });
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   settings.localFailover.active = true;
 
   const localRoute = runtime.resolveRoute('interview.questions', settings);

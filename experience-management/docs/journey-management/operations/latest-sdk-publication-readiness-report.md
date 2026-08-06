@@ -1,31 +1,31 @@
 # SDK publication readiness report
 
-Generated at: 2026-08-06T18:07:55.429Z
+Generated at: 2026-08-06T21:55:32.297Z
 
 ## Summary
 
 - Date: Thursday, August 6, 2026
 - Current branch: codex/deep-graph-analysis
 - Target branch: main
-- Repo-side landing preflight: failed
-- Required files missing on main: 4
-- Committed main...HEAD SDK publish-state diffs: 4
+- Repo-side landing preflight: passed
+- Required files missing on main: 0
+- Committed main...HEAD SDK publish-state diffs: 0
 - Working-tree SDK publish-state entries: 0
 - Publish preflight: failed
 
 ## Repo-side landing status
 
-- packages/SDK-QUALIFICATION.json: missing on main
-- packages/SDK-RELEASE.md: missing on main
-- packages/SDK-PUBLISH-CHECKLIST.md: missing on main
-- scripts/sdk-publish-preflight.mjs: missing on main
+- packages/SDK-QUALIFICATION.json: present on main
+- packages/SDK-RELEASE.md: present on main
+- packages/SDK-PUBLISH-CHECKLIST.md: present on main
+- scripts/sdk-publish-preflight.mjs: present on main
 
 ## Required SDK publish-state delta
 
-- packages/SDK-QUALIFICATION.json: A	experience-management/packages/SDK-QUALIFICATION.json
-- packages/SDK-RELEASE.md: A	experience-management/packages/SDK-RELEASE.md
-- packages/SDK-PUBLISH-CHECKLIST.md: A	experience-management/packages/SDK-PUBLISH-CHECKLIST.md
-- scripts/sdk-publish-preflight.mjs: A	experience-management/scripts/sdk-publish-preflight.mjs
+- packages/SDK-QUALIFICATION.json: present on main; no current SDK publish-state delta
+- packages/SDK-RELEASE.md: present on main; no current SDK publish-state delta
+- packages/SDK-PUBLISH-CHECKLIST.md: present on main; no current SDK publish-state delta
+- scripts/sdk-publish-preflight.mjs: present on main; no current SDK publish-state delta No SDK publish-state delta remains between main and the current working tree.
 
 ## Publish preflight repository/workflow blockers
 
@@ -34,8 +34,8 @@ Generated at: 2026-08-06T18:07:55.429Z
 
 ## Publish preflight external setup blockers
 
-- npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T18_08_11_214Z-debug-0.log
-- npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T18_08_11_880Z-debug-0.log
+- npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T21_55_36_352Z-debug-0.log
+- npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T21_55_37_000Z-debug-0.log
 
 ## Publish preflight workstation limitations
 

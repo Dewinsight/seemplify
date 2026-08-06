@@ -28,6 +28,40 @@ const { sanitizeCampaignHtml } = await import('../src/emailService.js');
 const { config } = await import('../src/config.js');
 after(() => { db.close(); fs.rmSync(root, { recursive: true, force: true }); });
 
+async function sessionIdentity(agent: ReturnType<typeof request.agent>) {
+  const response = await agent.get('/api/auth/session').expect(200);
+  return { userId: String(response.body.user.id), spaceId: String(response.body.activeSpace.id) };
+}
+
+async function journeyOwnerAgent() {
+  const agent = request.agent(app);
+  await signupVerifyAndOnboard(agent, {
+    name: 'Journey Owner',
+    email: `journey-owner-${Date.now()}@example.test`,
+    password: 'Journey-Owner-2026!',
+    spaceName: 'Journey owner space'
+  });
+  const current = await sessionIdentity(agent);
+  db.prepare("UPDATE platform_subscriptions SET plan_code='enterprise' WHERE space_id=?").run(current.spaceId);
+  return { agent, ...current };
+}
+
+async function journeyMemberAgent(spaceId: string) {
+  const agent = request.agent(app);
+  await signupVerifyAndOnboard(agent, {
+    name: 'Journey Member',
+    email: `journey-member-${Date.now()}@example.test`,
+    password: 'Journey-Member-2026!',
+    spaceName: 'Journey member space'
+  });
+  const current = await sessionIdentity(agent);
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO space_memberships (space_id,user_id,role,joined_at,updated_at)
+    VALUES (?,?,?,?,?)`).run(spaceId, current.userId, 'member', now, now);
+  db.prepare('UPDATE users SET active_space_id=? WHERE id=?').run(spaceId, current.userId);
+  return { agent, ...current, sharedSpaceId: spaceId };
+}
+
 test('serves versioned assets immutably and never substitutes HTML for a missing asset', async () => {
   const asset = await request(app).get('/assets/current-build-a1b2c3.js').expect(200);
   assert.match(String(asset.headers['content-type']), /javascript/);
@@ -286,6 +320,62 @@ test('persists social mentions and journey maps before Terra work is dispatched'
   await agent.get(`/api/ai/jobs/${optimized.body.jobId}`).expect(200);
   assert.equal((db.prepare('SELECT COUNT(*) count FROM journey_ai_applications WHERE journey_id=?').get(created.body.id) as any).count, 0);
   await agent.delete(`/api/social/mentions/${imported.body.mentions[0].id}`).expect(204);
+});
+
+test('legacy journey routes enforce member read-only capabilities explicitly', async () => {
+  const owner = await journeyOwnerAgent();
+  const member = await journeyMemberAgent(owner.spaceId);
+
+  const created = await owner.agent.post('/api/journeys').send({
+    name: 'Shared customer onboarding journey',
+    audience: 'New customers',
+    industry: 'Software',
+    objective: 'Improve activation',
+    summary: 'Journey used to verify member permissions.',
+    stages: [{
+      name: 'Discover',
+      goal: 'Understand value',
+      touchpoints: ['Website'],
+      customerActions: ['Compare options'],
+      emotions: ['Curious'],
+      painPoints: ['Unclear pricing'],
+      metrics: ['Visit-to-demo conversion'],
+      opportunities: ['Clarify plans'],
+      recommendedActions: ['Publish a plan comparison']
+    }]
+  }).set('X-Seemplify-Space', owner.spaceId).expect(201);
+
+  await member.agent.get('/api/journeys')
+    .set('X-Seemplify-Space', owner.spaceId).expect(200);
+  await member.agent.get(`/api/journeys/${created.body.id}`)
+    .set('X-Seemplify-Space', owner.spaceId).expect(200);
+  await member.agent.get(`/api/journeys/${created.body.id}/versions`)
+    .set('X-Seemplify-Space', owner.spaceId).expect(200);
+
+  await member.agent.post('/api/journeys').set('X-Seemplify-Space', owner.spaceId).send({
+    name: 'Member denied journey',
+    stages: created.body.stages
+  }).expect(403);
+  await member.agent.patch(`/api/journeys/${created.body.id}`).set('X-Seemplify-Space', owner.spaceId).send({
+    expectedUpdatedAt: created.body.updatedAt,
+    summary: 'Members must not edit shared journeys.'
+  }).expect(403);
+  await member.agent.delete(`/api/journeys/${created.body.id}`).set('X-Seemplify-Space', owner.spaceId).send({
+    expectedUpdatedAt: created.body.updatedAt
+  }).expect(403);
+  await member.agent.post('/api/ai/journeys').set('X-Seemplify-Space', owner.spaceId).send({
+    brief: 'Map the onboarding lifecycle for new software customers.'
+  }).expect(403);
+  await member.agent.post(`/api/journeys/${created.body.id}/ai/optimize`).set('X-Seemplify-Space', owner.spaceId).send({
+    focus: 'Ownership and metrics'
+  }).expect(403);
+  await member.agent.post(`/api/journeys/${created.body.id}/versions/version-1/restore`).set('X-Seemplify-Space', owner.spaceId).send({
+    expectedUpdatedAt: created.body.updatedAt
+  }).expect(403);
+  await member.agent.get(`/api/journeys/${created.body.id}/export.json`)
+    .set('X-Seemplify-Space', owner.spaceId).expect(403);
+  await member.agent.get(`/api/journeys/${created.body.id}/export.csv`)
+    .set('X-Seemplify-Space', owner.spaceId).expect(403);
 });
 
 test('imports bounded UTF-8 social listening files with explicit field mapping', async () => {
@@ -623,7 +713,7 @@ test('fails stale ambiguous delivery leases instead of risking duplicate sends',
 });
 
 test('persists the campaign sender name, keeps the verified sender email, and reports provider outcomes', async () => {
-  assert.equal(config.mailIdempotencyTtlMinutes, 29);
+  assert.equal(config.mailIdempotencyTtlMinutes, Number(process.env.MAIL_IDEMPOTENCY_TTL_MINUTES));
   const agent = request.agent(app);
   await agent.post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'Test-Admin-Password-2026!' }).expect(200);
   const survey = await agent.post('/api/surveys').send({

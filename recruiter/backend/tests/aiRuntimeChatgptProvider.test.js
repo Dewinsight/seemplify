@@ -2,8 +2,11 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
+  CHATGPT_DEFAULT_CODEX_MODEL,
   CHATGPT_MODEL,
   CHATGPT_PROVIDER,
+  MANAGED_ROUTES,
+  isChatgptPinnedActivity,
   TERRA_PROVIDER,
   createDefaultRuntimeSettings,
   failoverPolicyForRoute,
@@ -44,11 +47,15 @@ function runtimeWith(settings, fetchImpl = async () => ({ ok: true }), connected
   return runtime;
 }
 
+/** ChatGPT available but not required: the posture in which unusable
+ * ChatGPT work degrades to the managed runtime instead of failing. */
 function settingsWithChatgpt(overrides = {}) {
   const defaults = createDefaultRuntimeSettings();
   return {
     ...defaults,
-    runtimePolicy: normalizeRuntimePolicy({ localEnabled: true, chatgptEnabled: true, defaultRuntime: 'local' }),
+    runtimePolicy: normalizeRuntimePolicy({
+      localEnabled: true, chatgptEnabled: true, defaultRuntime: 'local', chatgptRequired: false
+    }),
     models: defaults.models.map((model) => (
       model.provider === CHATGPT_PROVIDER ? { ...model, enabled: true } : model
     )),
@@ -83,7 +90,7 @@ test('the ChatGPT model declares the capability every structured activity requir
   assert.ok(model, 'the catalogue must register a ChatGPT model');
   assert.ok(model.capabilities.includes('json_schema'),
     'resolveRoute rejects a model that cannot satisfy a structured activity');
-  assert.equal(model.enabled, false, 'the runtime stays off until an administrator enables it');
+  assert.equal(model.enabled, true, 'recruiter AI is ChatGPT-only, so its model ships enabled');
   assert.equal(model.userOwned, true);
   // Inference bills to the connected account, so platform pricing must be zero.
   assert.equal(model.pricing.inputPerMillionUsd, 0);
@@ -91,18 +98,78 @@ test('the ChatGPT model declares the capability every structured activity requir
 });
 
 test('runtime policy normalisation never leaves a default pointing at a disabled runtime', () => {
+  // Recruiter AI ships ChatGPT-only: connected accounts are the runtime, and
+  // the managed local runtime remains only for other products' intake.
   assert.deepEqual(normalizeRuntimePolicy(undefined),
-    { localEnabled: true, chatgptEnabled: false, defaultRuntime: 'local' });
+    { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt', chatgptRequired: true });
   assert.deepEqual(
     normalizeRuntimePolicy({ localEnabled: true, chatgptEnabled: false, defaultRuntime: 'chatgpt' }),
-    { localEnabled: true, chatgptEnabled: false, defaultRuntime: 'local' },
+    { localEnabled: true, chatgptEnabled: false, defaultRuntime: 'local', chatgptRequired: false },
     'a default aimed at a disabled runtime is corrected on read'
   );
   assert.deepEqual(
-    normalizeRuntimePolicy({ localEnabled: false, chatgptEnabled: true, defaultRuntime: 'local' }),
-    { localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+    normalizeRuntimePolicy({ localEnabled: false, chatgptEnabled: true, defaultRuntime: 'local', chatgptRequired: false }),
+    { localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt', chatgptRequired: false }
   );
-  assert.equal(normalizeRuntimePolicy({ defaultRuntime: 'nonsense' }).defaultRuntime, 'local');
+  // Requiring a runtime that is switched off is meaningless, so it is dropped.
+  assert.equal(
+    normalizeRuntimePolicy({ chatgptEnabled: false, chatgptRequired: true }).chatgptRequired,
+    false
+  );
+  assert.equal(normalizeRuntimePolicy({ chatgptEnabled: false, defaultRuntime: 'nonsense' }).defaultRuntime, 'local');
+});
+
+test('every recruiter activity ships routed to the connected ChatGPT account', () => {
+  const settings = createDefaultRuntimeSettings();
+  const chatgptModel = settings.models.find((model) => model.provider === CHATGPT_PROVIDER);
+  assert.equal(chatgptModel.enabled, true, 'the shipped runtime must have an enabled model');
+  for (const route of settings.routes) {
+    if (isChatgptPinnedActivity(route.activity)) {
+      assert.equal(route.provider, CHATGPT_PROVIDER, `${route.activity} must run on ChatGPT`);
+      assert.equal(route.codexModel, CHATGPT_DEFAULT_CODEX_MODEL, `${route.activity} must prefer the sol model`);
+      assert.equal(route.failoverPolicy, 'chatgpt_required');
+    } else {
+      // Another product's intake keeps its managed runtime: a recruiter's
+      // personal plan must never be billed for Experience or CRM work.
+      assert.notEqual(route.provider, CHATGPT_PROVIDER, `${route.activity} is cross-product`);
+    }
+  }
+});
+
+test('when ChatGPT is required there is no managed runtime to fall back to', async () => {
+  const settings = settingsWithChatgpt({
+    runtimePolicy: normalizeRuntimePolicy({
+      localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt', chatgptRequired: true
+    })
+  });
+  const runtime = runtimeWith(settings);
+  // An unconnected user is told to connect rather than having private work
+  // quietly billed to platform capacity.
+  await assert.rejects(
+    runtime.attachCodexSubject(
+      { activity: 'assistant.chat', provider: CHATGPT_PROVIDER, model: CHATGPT_MODEL },
+      { actorId: 'user-without-an-account' },
+      settings
+    ),
+    (error) => {
+      // Both codes mean the same thing to the caller: this person must act on
+      // their own ChatGPT account before the work can run.
+      assert.ok(
+        ['AI_RUNTIME_ACCOUNT_REQUIRED', 'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED'].includes(error.code),
+        `unexpected code ${error.code}`
+      );
+      assert.equal(error.statusCode, 409);
+      return true;
+    }
+  );
+  // Cross-product intake still runs: it never belonged to a personal plan.
+  const crossProduct = await runtime.attachCodexSubject(
+    { activity: 'experience.journey_mapping', provider: CHATGPT_PROVIDER, model: CHATGPT_MODEL },
+    { actorId: 'recruiter-user-1' },
+    settings
+  );
+  assert.notEqual(crossProduct.provider, CHATGPT_PROVIDER);
+  assert.equal(crossProduct.failoverReason, 'chatgpt_cross_product_request');
 });
 
 test('a disabled ChatGPT runtime refuses its routes instead of quietly using another', async () => {
@@ -216,7 +283,8 @@ test('a locked activity may be routed to a personal plan but not to another shar
   assert.equal(resolved.provider, CHATGPT_PROVIDER,
     'an explicit administrator choice of a personal plan survives the lock');
 
-  // The lock still holds against drift onto a different shared provider.
+  // The lock still holds against drift onto a different shared provider: it is
+  // forced back to the activity's own managed runtime, never to Groq.
   const drifted = settingsWithChatgpt({
     routes: createDefaultRuntimeSettings().routes.map((route) => (
       route.activity === 'candidate.cv_parse'
@@ -224,9 +292,9 @@ test('a locked activity may be routed to a personal plan but not to another shar
         : route
     ))
   });
-  assert.equal(runtimeWith(drifted).resolveRoute('candidate.cv_parse', drifted).provider, TERRA_PROVIDER === 'local-codex'
-    ? createDefaultRuntimeSettings().routes.find((route) => route.activity === 'candidate.cv_parse').provider
-    : 'local-ollama');
+  const managedCvProvider = MANAGED_ROUTES
+    .find((route) => route.activity === 'candidate.cv_parse').provider;
+  assert.equal(runtimeWith(drifted).resolveRoute('candidate.cv_parse', drifted).provider, managedCvProvider);
 });
 
 test('a connected, consented user binds the route to their own plan', async () => {

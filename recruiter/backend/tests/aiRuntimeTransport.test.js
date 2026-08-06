@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { afterEach, mock, test } = require('node:test');
 
-const { createDefaultRuntimeSettings } = require('../config/aiRuntimeCatalog');
+const { createDefaultRuntimeSettings, createManagedRuntimeSettings } = require('../config/aiRuntimeCatalog');
 const AIUsageDailyRollup = require('../models/AIUsageDailyRollup');
 const AIUsageEvent = require('../models/AIUsageEvent');
 const AIUsageLogicalRequest = require('../models/AIUsageLogicalRequest');
@@ -81,7 +81,7 @@ class TestRuntime extends AIRuntimeService {
     this.successes = [];
   }
 
-  async getSettings() { return createDefaultRuntimeSettings(); }
+  async getSettings() { return createManagedRuntimeSettings(); }
 
   async listEligibleCredentials({ excludeIds = [], excludeQuotaGroups = [] } = {}) {
     return this.credentials.filter((credential) => (
@@ -253,7 +253,7 @@ test('gateway identity is stable across route changes and scoped by source, acti
 
 test('eligible local request does not fail over when automatic failover is disabled', async () => {
   const runtime = new TestRuntime([jsonResponse(successPayload('must not be used'))]);
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   settings.localFailover.enabled = false;
   runtime.getSettings = async () => settings;
   runtime.localProviderRequest = async () => {
@@ -355,7 +355,7 @@ test('Terra gateway usage is persisted to the request audit and daily model roll
   const runtime = new AIRuntimeService({
     fetchImpl: async () => { throw new Error('unexpected fetch'); }
   });
-  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.getSettings = async () => createManagedRuntimeSettings();
   runtime.localProviderRequest = async () => jsonResponse({
     id: 'terra-request-1',
     gatewayExecutionId: `localexec_${'d'.repeat(48)}`,
@@ -424,7 +424,7 @@ test('post-generation gateway failures persist authoritative Terra token usage',
   const runtime = new AIRuntimeService({
     fetchImpl: async () => { throw new Error('unexpected fetch'); }
   });
-  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.getSettings = async () => createManagedRuntimeSettings();
   runtime.localProviderRequest = async () => jsonResponse({
     error: {
       code: 'LOCAL_LLM_SCHEMA_INVALID',
@@ -472,7 +472,7 @@ test('a successful local response without usage is audited as unreported rather 
   const runtime = new AIRuntimeService({
     fetchImpl: async () => { throw new Error('unexpected fetch'); }
   });
-  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.getSettings = async () => createManagedRuntimeSettings();
   runtime.localProviderRequest = async () => jsonResponse({
     id: 'terra-unmetered-1',
     engine: 'codex',
@@ -505,7 +505,7 @@ test('an adapter zero envelope with usageReported=false remains explicitly unmet
   const runtime = new AIRuntimeService({
     fetchImpl: async () => { throw new Error('unexpected fetch'); }
   });
-  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  runtime.getSettings = async () => createManagedRuntimeSettings();
   runtime.localProviderRequest = async () => jsonResponse({
     id: 'terra-explicit-unmetered-1',
     engine: 'codex',
@@ -614,7 +614,7 @@ test('Azure rollback adapter is explicit and removes Groq-only controls', async 
 
 test('canary baseline requests never fall through to a Groq credential', async () => {
   const runtime = new TestRuntime([]);
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   settings.rollout = { groqPercent: 10, azureBaselineEnabled: true, samplingSalt: 'canary-test' };
   let organizationId = 'org-0';
   while (deterministicBucket({ organizationId }, settings.rollout.samplingSalt) < 10) {
@@ -835,7 +835,7 @@ test('credential cooldowns form a circuit breaker and 401 disables a key', async
     }
   };
   const runtime = new AIRuntimeService({ credentialModel: Credential, settingsModel: {} });
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   settings.alerts.enabled = false;
   await runtime.listEligibleCredentials({ model: 'openai/gpt-oss-120b' });
   assert.equal(eligibilityQuery.enabled, true);
@@ -879,7 +879,7 @@ test('organization-wide rate limits cool every key in the same quota group', asy
     quotaModel: { updateOne: (filter, update) => { quotaUpdates.push({ filter, update }); return Promise.resolve(); } },
     settingsModel: {}
   });
-  const settings = createDefaultRuntimeSettings();
+  const settings = createManagedRuntimeSettings();
   settings.alerts.enabled = false;
   await runtime.markCredentialFailure(
     { _id: 'limited-key', label: 'Limited', quotaGroup: 'shared-org', status: 'healthy' },

@@ -13,6 +13,14 @@ const CLAUDE_SONNET_MODEL = 'sonnet';
  * as the managed local runtimes but billed to that person's account. */
 const CHATGPT_PROVIDER = 'chatgpt-codex';
 const CHATGPT_MODEL = 'chatgpt-codex-account';
+/** The Codex model every recruiter activity asks the connected account for.
+ * It is a preference, not a demand: a plan that does not offer it resolves to
+ * that account's own default instead of failing. */
+const CHATGPT_DEFAULT_CODEX_MODEL = 'gpt-5.6-sol';
+/** Groups whose work arrives from other Seemplify products through
+ * /api/internal/ai. It is not a recruiter's own work, so it stays on the
+ * managed runtimes and is never billed to anyone's personal ChatGPT plan. */
+const CROSS_PRODUCT_GROUPS = Object.freeze(['Experience Management', 'Xplorer CRM']);
 const DEFAULT_LOCAL_FAILOVER = Object.freeze({
   enabled: true,
   intervalMinutes: 30,
@@ -90,8 +98,9 @@ const DEFAULT_MODELS = Object.freeze([
     contextWindow: 131072,
     maxOutputTokens: 65536,
     available: true,
-    // Off until a platform administrator enables the ChatGPT runtime.
-    enabled: false,
+    // Recruiter AI is ChatGPT-only, so the model ships enabled; the runtime
+    // policy switch is what an administrator uses to turn the runtime off.
+    enabled: true,
     localCloud: true,
     managed: false,
     userOwned: true
@@ -321,6 +330,16 @@ function isManagedLocalProvider(provider) {
   return ['local-codex', 'local-claude', 'local-ollama', 'local-vllm'].includes(String(provider || '').trim().toLowerCase());
 }
 
+function isCrossProductActivity(activity) {
+  return CROSS_PRODUCT_GROUPS.includes(ACTIVITY_DEFINITIONS[activity]?.group);
+}
+
+/** Recruiter's own AI runs on the signed-in person's ChatGPT plan. Only
+ * another product's intake stays on the managed runtimes. */
+function isChatgptPinnedActivity(activity) {
+  return Boolean(ACTIVITY_DEFINITIONS[activity]) && !isCrossProductActivity(activity);
+}
+
 function isUserOwnedProvider(provider) {
   return String(provider || '').trim().toLowerCase() === CHATGPT_PROVIDER;
 }
@@ -336,9 +355,13 @@ function isGatewayProvider(provider) {
  * account uses when it has expressed no preference.
  */
 const DEFAULT_RUNTIME_POLICY = Object.freeze({
+  // Recruiter AI runs exclusively on each user's connected ChatGPT account.
+  // The local runtime stays enabled only to serve the other products whose
+  // work arrives through /api/internal/ai — no recruiter activity uses it.
   localEnabled: true,
-  chatgptEnabled: false,
-  defaultRuntime: 'local'
+  chatgptEnabled: true,
+  defaultRuntime: 'chatgpt',
+  chatgptRequired: true
 });
 
 function normalizeRuntimePolicy(value) {
@@ -354,19 +377,40 @@ function normalizeRuntimePolicy(value) {
   const defaultRuntime = requested === 'chatgpt' && !chatgptEnabled ? 'local'
     : requested === 'local' && !localEnabled && chatgptEnabled ? 'chatgpt'
     : requested;
-  return { localEnabled, chatgptEnabled, defaultRuntime };
+  // Requiring ChatGPT is only meaningful while the runtime is switched on.
+  const chatgptRequired = chatgptEnabled && (typeof candidate.chatgptRequired === 'boolean'
+    ? candidate.chatgptRequired : DEFAULT_RUNTIME_POLICY.chatgptRequired);
+  return { localEnabled, chatgptEnabled, defaultRuntime, chatgptRequired };
 }
 
-const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({
+/** The pre-ChatGPT baseline: every activity on the platform's own managed
+ * capacity. It still serves the other products' intake, and an administrator
+ * who turns off the ChatGPT requirement returns recruiter work to it. */
+const MANAGED_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({
   activity,
   provider: definition.provider || GROQ_PROVIDER,
   model: definition.model,
+  codexModel: '',
   reasoningEffort: definition.reasoningEffort,
   lockedProvider: definition.lockedProvider === true,
   failoverPolicy: failoverPolicyForRoute(activity, definition.provider || GROQ_PROVIDER),
   enabled: true,
   routeVersion: 1
 })));
+
+/** What a new install ships with: recruiter AI on each user's own ChatGPT
+ * plan, other products' intake still on the managed runtimes. */
+const DEFAULT_ROUTES = Object.freeze(MANAGED_ROUTES.map((route) => (
+  isChatgptPinnedActivity(route.activity)
+    ? {
+        ...route,
+        provider: CHATGPT_PROVIDER,
+        model: CHATGPT_MODEL,
+        codexModel: CHATGPT_DEFAULT_CODEX_MODEL,
+        failoverPolicy: failoverPolicyForRoute(route.activity, CHATGPT_PROVIDER)
+      }
+    : { ...route }
+)));
 
 const DEFAULT_ALERT_SETTINGS = Object.freeze({
   enabled: true,
@@ -412,6 +456,16 @@ function localProviderLabel(provider, model) {
   return normalizedModel || normalizedProvider || 'Unknown provider';
 }
 
+/** The managed-runtime posture: what an install looks like when a platform
+ * administrator turns the ChatGPT requirement off. */
+function createManagedRuntimeSettings() {
+  return {
+    ...createDefaultRuntimeSettings(),
+    routes: MANAGED_ROUTES.map((route) => ({ ...route })),
+    runtimePolicy: { ...DEFAULT_RUNTIME_POLICY, chatgptRequired: false, defaultRuntime: 'local' }
+  };
+}
+
 function createDefaultRuntimeSettings() {
   return {
     key: 'global',
@@ -429,8 +483,13 @@ function createDefaultRuntimeSettings() {
 
 module.exports = {
   ACTIVITY_DEFINITIONS,
+  CHATGPT_DEFAULT_CODEX_MODEL,
   CHATGPT_MODEL,
   CHATGPT_PROVIDER,
+  MANAGED_ROUTES,
+  createManagedRuntimeSettings,
+  isChatgptPinnedActivity,
+  isCrossProductActivity,
   CLAUDE_PROVIDER,
   CLAUDE_SONNET_MODEL,
   DEFAULT_ALERT_SETTINGS,

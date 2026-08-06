@@ -43,6 +43,9 @@ export interface AiRuntimePolicy {
   localEnabled: boolean;
   chatgptEnabled: boolean;
   defaultRuntime: 'local' | 'chatgpt';
+  /** Recruiter AI runs only on connected ChatGPT accounts; there is no
+   * managed runtime to fall back to for this user's work. */
+  chatgptRequired?: boolean;
 }
 
 /**
@@ -73,6 +76,9 @@ export function chatGptSetupState(
   if (!account || !policy) return null;
   if (!policy.chatgptEnabled || policy.defaultRuntime !== 'chatgpt') return null;
   if (account.routable) return null;
+  // The local runtime being on does not help this user when their own AI work
+  // is ChatGPT-only — only an unrequired policy leaves them a real choice.
+  if (policy.chatgptRequired) return 'required';
   return policy.localEnabled ? 'choice' : 'required';
 }
 

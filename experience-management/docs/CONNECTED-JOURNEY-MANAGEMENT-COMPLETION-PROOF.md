@@ -253,15 +253,10 @@ path is still blocked by both repo-side and external requirements.
 - The publish workflow is still disabled at
   `../.github/workflows/publish-journey-sdks.yml.disabled`.
 - The current working branch is not `main`.
-- `main` does not yet contain the newer SDK publish-policy and evidence files
-  that this branch now relies on, including `packages/SDK-QUALIFICATION.json`,
-  `packages/SDK-RELEASE.md`, `packages/SDK-PUBLISH-CHECKLIST.md`, and
-  `scripts/sdk-publish-preflight.mjs`.
-- `npm run preflight:sdk:landing` now proves that those required files are
-  still missing on `main`.
-- `npm run evidence:sdk:delta` now shows the exact required-file delta between
-  the current working tree and `main`, including untracked working-tree files
-  that have not yet landed on `main`.
+- `npm run preflight:sdk:landing` now passes and proves that `main` contains
+  the required SDK publish-state files.
+- `npm run evidence:sdk:delta` now shows no remaining required-file delta
+  between the current working tree and `main`.
 
 ### External blockers still present
 
@@ -277,7 +272,7 @@ Even with release-shaped packages, publication is still downstream of the
 programme gates explicitly called out in the SDK release docs:
 
 - durable endpoint / ingestion proof is not yet release-complete
-- Seemplify dogfood now has a generated reconciliation artifact, but the current August 6, 2026 report still shows zero audited ChatGPT-connected users, zero audited ChatGPT-selected users, zero stored ChatGPT runtime preferences, two Codex runtime homes, zero Codex auth files, one journey-created milestone, and only one AI-runtime audit event in the sampled local evidence; ratified load/SLO/security gates and a fuller end-to-end activation run remain open
+- Seemplify dogfood now has a generated reconciliation artifact, and the current August 6, 2026 report now shows one audited ChatGPT-connected user, one audited ChatGPT-selected user, zero stored ChatGPT runtime preferences, two Codex runtime homes, one Codex auth file, one journey-created milestone, and five AI-runtime audit events in the sampled local evidence; ratified load/SLO/security gates and a fuller end-to-end activation run remain open
 - privacy/security/operations evidence is not yet fully ratified
 
 ### What would prove the first publish actually happened
@@ -307,11 +302,11 @@ publication specifically or only the wider end-to-end programme completion.
 | Area | Blocking scope | Remaining work type | Concrete remaining work from current evidence |
 | --- | --- | --- | --- |
 | Publish workflow activation | SDK publication | Repo/workflow | Rename `../.github/workflows/publish-journey-sdks.yml.disabled` only when npm-side setup and programme gates are actually ready. |
-| Publish branch state | SDK publication | Repo/workflow | Merge the intended SDK publish state onto `main`; current branch is not `main`, `main` does not yet contain the newer SDK publish-policy/checklist/preflight files this branch now uses, and the new landing/delta commands should both turn green before workflow activation is treated as meaningful. |
+| Publish branch state | SDK publication | Repo/workflow | Current branch is not `main`. The landing and delta checks are now green, so the remaining repo-side branch-state work is enabling the publish workflow only on `main` once the external npm and programme release gates are truly satisfied. |
 | npm authentication and scope ownership | SDK publication | External setup | Prove `npm whoami`, confirm `@seemplify` organisation ownership, and complete trusted-publisher configuration for the exact repository/workflow/environment. |
 | Connected-journey durable endpoint release gate | SDK publication and programme | Proof/ops | The durable ingest plane is correct and well-tested, but not yet release-complete: ratified security/privacy, sustained load/SLO, failover, and signed release proof remain open. |
 | Connected-journey release-gate consolidation | SDK publication and programme | Proof/ops | Maintain the dedicated connected-journey release-gate artifact so the ingest gate, dogfood activity, and remaining blocker families are current in one place before attempting SDK publication. |
-| Seemplify activation dogfood | SDK publication and programme | Runtime/proof | The repo has a generated activation report, and the current August 6, 2026 artifact now shows one journey-created milestone plus one AI-runtime audit event, but it still shows zero audited ChatGPT-connected users, zero audited ChatGPT-selected users, zero stored ChatGPT runtime preferences, two Codex runtime homes, zero Codex auth files, and zero activation audit events; a fuller end-to-end run with live ChatGPT/runtime milestones and release-grade signoff remains missing. |
+| Seemplify activation dogfood | SDK publication and programme | Runtime/proof | The repo has a generated activation report, and the current August 6, 2026 artifact now shows one audited ChatGPT-connected user, one audited ChatGPT-selected user, one journey-created milestone, five AI-runtime audit events, zero stored ChatGPT runtime preferences, two Codex runtime homes, one Codex auth file, and zero activation audit events; a fuller end-to-end run with broader live product activity and release-grade signoff remains missing. |
 | Stage reprojection scale proof | SDK publication and programme | Runtime/proof | Runtime-30 retained reprojection is implemented, exercised, and now has a multi-batch contract-run slice over 25 retained events, but production-scale reprojection/performance evidence is still missing. |
 | Visual designed-journey completion | Programme only | Product + proof | Finish saved-view depth and final accessibility/security/performance/release gates. |
 | Evidence/Research Hub completion | Programme only | Product + proof | Complete retention/deletion propagation, export negative controls, synthesis presentation depth, and privacy/security release evidence. |
@@ -334,9 +329,9 @@ SDK publication as of Thursday, August 6, 2026.
 | Blocker family | Scope blocked | Current strongest evidence | Exact proof still required |
 | --- | --- | --- | --- |
 | Connected-journey release gate | Programme + SDK publication | `P5A-01` through `P5A-08` now prove the canonical protocol, source/key/schema control plane, durable ingest plane, replay/debug/dead-letter foundations, runtime-30 retained reprojection execution slices, and release-shaped unpublished npm SDKs; the destructive-isolated August 6, 2026 ingest/security/load artifact also exists. | Production-scale retained reprojection/performance proof, ratified security/privacy/operations approval, sustained load/SLO/failover evidence, and fuller connected-journey signoff that can support a publish claim rather than only a local qualification claim. |
-| Seemplify activation dogfood and rollout evidence | Programme + SDK publication | A generated activation reconciliation artifact exists and now prefers authoritative onboarding-completed and explicit workspace-created platform-audit milestones where available; the current artifact now also shows non-zero journey activity and one AI-runtime audit event in sampled local evidence. | A fuller end-to-end dogfood run with fresh ChatGPT/runtime-connected and runtime-selected milestones, plus signed rollout/release signoff sufficient for `X-09` and the connected-journey publish lane. |
+| Seemplify activation dogfood and rollout evidence | Programme + SDK publication | A generated activation reconciliation artifact exists and now prefers authoritative onboarding-completed and explicit workspace-created platform-audit milestones where available; the current artifact now also shows non-zero audited ChatGPT/runtime selection, non-zero journey activity, and five AI-runtime audit events in sampled local evidence. | A fuller end-to-end dogfood run with broader live product activity and signed rollout/release signoff sufficient for `X-09` and the connected-journey publish lane. |
 | Cross-cutting governance, privacy, telemetry, and runbooks | Programme + SDK publication | `X-01` and `X-03` already prove managed plan catalogues, immutable usage-ledger foundations, and progressive rollout/kill-switch controls; proposed operations records exist for `X-08`. | Completion proof for `X-02`, `X-05`, `X-08`, `X-09`, and `X-10`: route-by-route `journeys.*` capability enforcement, privacy/DPIA/retention controls, ratified telemetry/SLO/runbooks, signed rollout gates, and published verified operator/developer/customer documentation. |
-| SDK repo/workflow publish readiness | SDK publication | `qualify:sdk`, `verify:sdk:release`, the August 6, 2026 consolidated publication-readiness artifact, `preflight:sdk:landing`, and `evidence:sdk:delta` now prove the packages are release-shaped and unpublished while `main` still lacks the full required publish-state. | Land the required publish-state on `main`, turn the landing/delta checks green, and intentionally enable the publish workflow only once the connected-journey and cross-cutting release gates above are satisfied. |
+| SDK repo/workflow publish readiness | SDK publication | `qualify:sdk`, `verify:sdk:release`, the August 6, 2026 consolidated publication-readiness artifact, `preflight:sdk:landing`, and `evidence:sdk:delta` now prove the packages are release-shaped and unpublished, that `main` contains the required SDK publish-state, and that no required-file delta remains against the current working tree. | Intentionally enable the publish workflow only once the connected-journey and cross-cutting release gates above are satisfied, then complete the protected npm publication path from `main`. |
 | npm authentication and scope readiness | SDK publication | Local qualification, release docs, and repo-side readiness checks exist; GitHub `npm-production` environment evidence also exists. | Prove `npm whoami`, confirm `@seemplify` organisation ownership/readiness, complete trusted-publisher configuration for the exact repo/workflow/environment, and observe a successful protected publish run before claiming any SDK is actually published. |
 
 ## 13. Recommended next implementation order from the current audit
