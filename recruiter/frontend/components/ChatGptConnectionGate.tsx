@@ -28,6 +28,13 @@ const POLL_INTERVAL_MS = 2000
 // A "continue with local" decision holds for the browser session; the gate
 // re-asks on the next sign-in rather than on every navigation.
 const LOCAL_CHOICE_KEY = "seemplify_ai_runtime_gate_choice"
+// Routes a signed-out person can be on. A stale token can briefly read as
+// authenticated, so the path is checked too: the gate is for people using the
+// workspace, never for someone looking at a sign-in screen.
+const SIGNED_OUT_ROUTES = [
+  "/login", "/signup", "/logout", "/oidc", "/auth",
+  "/forgot-password", "/reset-password", "/verify", "/join", "/public", "/admin"
+]
 
 /**
  * Ported from Experience Management's ChatGptConnectionGate: when ChatGPT is
@@ -40,6 +47,9 @@ const LOCAL_CHOICE_KEY = "seemplify_ai_runtime_gate_choice"
 export function ChatGptConnectionGate() {
   const pathname = usePathname()
   const { isAuthenticated } = useAuth()
+  const signedOutRoute = SIGNED_OUT_ROUTES.some(
+    (route) => pathname === route || pathname?.startsWith(`${route}/`)
+  )
   const [account, setAccount] = useState<AiRuntimeAccount | null>(null)
   const [policy, setPolicy] = useState<AiRuntimePolicy | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -68,16 +78,18 @@ export function ChatGptConnectionGate() {
   }, [])
 
   useEffect(() => {
-    if (!isAuthenticated) return
+    // Nothing is fetched for a signed-out visitor: the sign-in screen must not
+    // fire an authenticated request, let alone show a blocking dialog.
+    if (!isAuthenticated || signedOutRoute) return
     setLocalChoice(sessionStorage.getItem(LOCAL_CHOICE_KEY) === "local")
     void refresh()
     const onFocus = () => { void refresh() }
     window.addEventListener("focus", onFocus)
     return () => window.removeEventListener("focus", onFocus)
-  }, [refresh, isAuthenticated])
+  }, [refresh, isAuthenticated, signedOutRoute])
 
   const setup = chatGptSetupState(account, policy)
-  const exempt = Boolean(pathname?.startsWith("/settings/ai-account"))
+  const exempt = Boolean(pathname?.startsWith("/settings/ai-account")) || signedOutRoute
   const open = isAuthenticated && loaded && !exempt && setup !== null && !(setup === "choice" && localChoice)
   const connected = account?.status === "connected"
   const needsConsent = connected && !account?.dataSharingAcknowledgedAt
