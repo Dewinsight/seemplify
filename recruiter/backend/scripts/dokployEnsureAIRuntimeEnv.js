@@ -43,6 +43,15 @@ function ensureAIRuntimeEnv(envText, randomBytes = crypto.randomBytes, localRunt
   ensure('AI_PROVIDER_ENCRYPTION_KEY_VERSION', () => 'v1');
   ensure('AI_GATEWAY_HMAC_SECRET', () => randomBytes(48).toString('base64'));
   ensure('AI_GATEWAY_ALLOWED_SERVICES', () => 'ai-interview');
+  // Sign-in dies with "OIDC_ISSUER not configured" without these; the client
+  // credentials must match the Identity Provider's clients.json registry.
+  if (String(localRuntime.oidcIssuer || '').trim()) {
+    ensure('OIDC_ISSUER', () => String(localRuntime.oidcIssuer).trim());
+    ensure('OIDC_CLIENT_ID', () => String(localRuntime.oidcClientId || 'smarthr-backend').trim());
+    if (String(localRuntime.oidcClientSecret || '').trim()) {
+      ensure('OIDC_CLIENT_SECRET', () => String(localRuntime.oidcClientSecret).trim());
+    }
+  }
   requireExact('AI_USAGE_OUTBOX_ENABLED', localRuntime.usageOutboxEnabled || 'true');
   requireExact('AI_USAGE_REDIS_HOST', localRuntime.usageRedisHost || 'dokploy-redis');
   if (String(localRuntime.sharedSecret || '').trim()) {
@@ -98,7 +107,10 @@ async function main() {
     statusTokenSecret: cvStatusTokenSecret,
     concurrency: process.env.CV_ANALYSIS_QUEUE_CONCURRENCY || '1',
     usageOutboxEnabled,
-    usageRedisHost
+    usageRedisHost,
+    oidcIssuer: process.env.OIDC_ISSUER || 'https://auth.seemplifyai.com',
+    oidcClientId: process.env.OIDC_CLIENT_ID || 'smarthr-backend',
+    oidcClientSecret: process.env.OIDC_CLIENT_SECRET || ''
   });
   if (!result.added.length) {
     console.log('AI Runtime security environment is already configured; no values changed.');

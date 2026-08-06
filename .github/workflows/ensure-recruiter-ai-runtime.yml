@@ -26,3 +26,6 @@ jobs:
           CV_ANALYSIS_QUEUE_CONCURRENCY: "1"
           AI_USAGE_OUTBOX_ENABLED: "true"
           AI_USAGE_REDIS_HOST: dokploy-redis
+          OIDC_ISSUER: https://auth.seemplifyai.com
+          OIDC_CLIENT_ID: smarthr-backend
+          OIDC_CLIENT_SECRET: ${{ secrets.RECRUITER_OIDC_CLIENT_SECRET }}
