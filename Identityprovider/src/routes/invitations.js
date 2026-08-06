@@ -185,6 +185,10 @@ router.post('/:invitationId/resend',
       try {
         await emailService.sendEmail({
           to: invitation.email,
+          // The token is regenerated for every resend, so this key is stable for
+          // one reminder event without suppressing a later, deliberate resend.
+          idempotencyKey: `organization_invitation_reminder:${invitation._id}:${plainToken.slice(0, 24)}`,
+          tag: 'organization_invitation_reminder',
           subject: `Reminder: You're invited to join ${invitation.organization.name}`,
           html: `
             <h2>Reminder: You've been invited to join ${invitation.organization.name}</h2>
@@ -662,6 +666,8 @@ router.post('/:orgId/invitations',
       try {
         await emailService.sendEmail({
           to: normalizedEmail,
+          idempotencyKey: `organization_invitation:${invitation._id}`,
+          tag: 'organization_invitation',
           subject: `You're invited to join ${req.organization.name}`,
           html: `
             <h2>You've been invited to join ${req.organization.name}</h2>

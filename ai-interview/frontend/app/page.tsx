@@ -15,7 +15,7 @@ export default function HomePage() {
               Voice-led AI interviews with recruiter controls, wallet billing, and admin governance.
             </h1>
             <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">
-              Create structured AI interviews, send secure candidate links through Brevo, proctor candidate sessions, and review ranked transcripts from a dedicated app.
+              Create structured AI interviews, send secure candidate links by email, proctor candidate sessions, and review ranked transcripts from a dedicated app.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link href="/login" className="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-950 px-6 text-sm font-semibold text-white shadow-lg">
@@ -45,7 +45,7 @@ export default function HomePage() {
               {[
                 ["Mongo database", "Uses ai_recruiter instead of the recruiter app database."],
                 ["Wallet billing", "$1.50 debited per candidate interview."],
-                ["Brevo invites", "Candidate links are sent through transactional email."]
+                ["Email invites", "Candidate links are sent through the Seemplify mail service."]
               ].map(([title, body]) => (
                 <div key={title} className="rounded-2xl border bg-slate-50 p-4">
                   <div className="flex items-center gap-2 font-semibold">

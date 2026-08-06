@@ -167,7 +167,12 @@ async function main() {
     const schemaContract = await assertRuntimeSchemaContract(runtimeQuery, {
       schema: 'public', runtimeVersion: config.postgres.runtimeSchemaVersion
     });
-    const privilegeContract = await assertRuntimePrivileges(runtimeQuery, config.postgres.user, { schema: 'public' });
+    // runtimeVersion is required, not optional. Omitted, every privilege gate in
+    // the contract fell back to its own default and the verifier silently
+    // asserted an older runtime's expectations while reporting success.
+    const privilegeContract = await assertRuntimePrivileges(runtimeQuery, config.postgres.user, {
+      schema: 'public', runtimeVersion: config.postgres.runtimeSchemaVersion
+    });
 
     const actualTableNames = (db.prepare(`SELECT table_name name
       FROM information_schema.tables

@@ -7,6 +7,7 @@ import {
 import { Link } from 'wouter';
 import { toast } from 'sonner';
 import { api, ApiError, json, spaceScopedApiUrl, waitForJob } from '@/lib/api';
+import { useNavigate } from '@/lib/router';
 import { useLiveRefresh } from '@/hooks/useLiveRefresh';
 import { formatDate, formatDateTime } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -198,6 +199,7 @@ function versionReason(reason: JourneyVersion['reason']) {
 }
 
 export function JourneysPage() {
+  const navigate = useNavigate();
   const [journeys, setJourneys] = useState<Journey[]>([]);
   const [jobs, setJobs] = useState<AiJob[]>([]);
   const [versions, setVersions] = useState<JourneyVersion[]>([]);
@@ -213,7 +215,6 @@ export function JourneysPage() {
   const [objective, setObjective] = useState('Reduce onboarding friction and improve retention');
   const [focus, setFocus] = useState('Find missing touchpoints, friction, ownership gaps, and measurable improvements.');
   const [generationKnowledgeBaseIds, setGenerationKnowledgeBaseIds] = useState<string[]>([]);
-  const [auditKnowledgeBaseIds, setAuditKnowledgeBaseIds] = useState<string[]>([]);
   const [workingAction, setWorkingAction] = useState<WorkingAction>(null);
   const [restoringVersionId, setRestoringVersionId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -308,12 +309,12 @@ export function JourneysPage() {
     if (!selected) return;
     setWorkingAction('optimize');
     try {
-      const queued = await api<{ jobId: string; deduplicated: boolean }>(`/api/journeys/${selected.id}/ai/optimize`, json('POST', { focus, knowledgeBaseIds: auditKnowledgeBaseIds }));
-      toast.success(queued.deduplicated ? 'This exact audit is already active. Following its progress.' : 'Journey audit queued with Terra.');
+      const queued = await api<{ jobId: string; deduplicated: boolean; reviewUrl: string }>(
+        `/api/journeys/${selected.id}/ai/optimize`, json('POST', { focus })
+      );
+      toast.success(queued.deduplicated ? 'This exact review is already active.' : 'Journey suggestions queued for review.');
       await load();
-      await waitForJob(queued.jobId, () => void load());
-      await load();
-      toast.success('Journey improvements applied. They remain hypotheses until validated.');
+      navigate(queued.reviewUrl);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not optimize journey.');
     } finally {
@@ -664,14 +665,14 @@ export function JourneysPage() {
 
           <Card>
             <CardHeader>
-              <div className="flex items-start gap-3"><CircleGauge className="mt-0.5 h-5 w-5 text-muted-foreground" /><div><CardTitle>Audit this journey with Terra</CardTitle><CardDescription className="mt-1 leading-5">Ask Terra to find missing stages, weak measures, and unsupported actions. An audit improves the working hypothesis; it does not add customer evidence.</CardDescription></div></div>
+              <div className="flex items-start gap-3"><CircleGauge className="mt-0.5 h-5 w-5 text-muted-foreground" /><div><CardTitle>Request AI journey suggestions</CardTitle><CardDescription className="mt-1 leading-5">Ask the selected AI runtime to propose typed changes. Every change requires a recorded human decision before it can enter a draft.</CardDescription></div></div>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"><strong>This revises the current map.</strong> A restorable snapshot is saved automatically before Terra applies its changes.</div>
+              <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"><strong>Nothing is applied automatically.</strong> You will review each proposed difference, its warnings, and its cited evidence first.</div>
               <Label htmlFor="journey-focus">Audit focus</Label>
               <Textarea id="journey-focus" rows={3} value={focus} onChange={(event) => setFocus(event.target.value)} />
-              <KnowledgeBasePicker value={auditKnowledgeBaseIds} onChange={setAuditKnowledgeBaseIds} disabled={workingAction !== null} description="Optional. Ground this audit in selected operational or research documents." />
-              <Button onClick={optimizeJourney} disabled={workingAction !== null}>{workingAction === 'optimize' ? <Loader2 className="animate-spin" /> : <Sparkles />}Audit and improve</Button>
+              <p className="text-xs leading-5 text-muted-foreground">To ground suggestions, attach authorised sources to the Map 2.0 journey evidence workspace and select those evidence links when starting a review.</p>
+              <Button onClick={optimizeJourney} disabled={workingAction !== null}>{workingAction === 'optimize' ? <Loader2 className="animate-spin" /> : <Sparkles />}Create reviewable suggestions</Button>
             </CardContent>
           </Card>
 

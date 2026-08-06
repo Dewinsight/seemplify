@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "test:mail": "node --test test/mail-client.test.mjs",
     "seed-admin": "node src/seeds/seedAdminSimple.js",
     "seed-plans": "node src/seeds/seedPlans.js"
   },

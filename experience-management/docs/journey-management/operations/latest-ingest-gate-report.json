@@ -1,0 +1,193 @@
+{
+  "generatedAt": "2026-08-06T18:09:18.228Z",
+  "command": "node scripts/journey-postgres-ingest-security-load.mjs",
+  "ok": true,
+  "exitCode": 0,
+  "phases": [
+    "preflight",
+    "backend-build",
+    "sqlite-bootstrap",
+    "postgres-provision",
+    "sqlite-to-postgres-migration",
+    "postgres-runtime-upgrade",
+    "least-privilege-grants",
+    "postgres-runtime-verification",
+    "least-privilege-runtime-role",
+    "http-process-startup",
+    "bounded-sustained-soak",
+    "atomic-deduplication-and-conflict",
+    "runtime18-stage-processing",
+    "credential-revocation"
+  ],
+  "result": {
+    "event": "journey_postgres_ingest_gate_complete",
+    "runtime": {
+      "node": "v22.11.0",
+      "postgresImage": "postgres:16-alpine",
+      "runtimeSchemaVersion": 30,
+      "appProcesses": 2,
+      "databaseRole": "dedicated-non-owner-runtime"
+    },
+    "traffic": {
+      "generatedLoadEvents": 600,
+      "waves": 5,
+      "batchSize": 20,
+      "concurrency": 8,
+      "elapsedMs": 26671.89,
+      "throughputEventsPerSecond": 22.5,
+      "waveDurationsMs": [
+        5032.18,
+        6876.19,
+        4918.85,
+        5019.4,
+        4825.22
+      ]
+    },
+    "soak": {
+      "durationMs": 5374.87,
+      "requests": 4,
+      "events": 80,
+      "averageEventsPerSecond": 14.88
+    },
+    "latencyMs": {
+      "requests": 91,
+      "p50": 525.53,
+      "p95": 5018.68,
+      "p99": 6875.55,
+      "maximum": 6875.55
+    },
+    "reconciliation": {
+      "raw_events": 765,
+      "dedupe_events": 765,
+      "inbox_events": 765,
+      "metered_events": 765,
+      "receipts": 860,
+      "rejections": 21,
+      "oldest_queue_age_ms": 0,
+      "rawDedupeDrift": 0,
+      "rawInboxDrift": 0,
+      "rawMeterDrift": 0
+    },
+    "queue": {
+      "states": {
+        "completed": 765
+      },
+      "oldestPendingAgeMs": 0
+    },
+    "partitions": {
+      "raw": [
+        {
+          "partition": "journey_raw_events_2026_08",
+          "count": 765
+        }
+      ],
+      "receipts": [
+        {
+          "partition": "journey_event_ingest_receipts_2026_08",
+          "count": 860
+        }
+      ]
+    },
+    "outcomes": {
+      "accepted": 765,
+      "content_conflict": 11,
+      "duplicate": 63,
+      "over_quota": 15,
+      "rate_limited": 5,
+      "rejected": 1
+    },
+    "expectedErrorTraffic": {
+      "malformedJson": 1,
+      "oversizedBody": 1,
+      "forbiddenOrigin": 1,
+      "hostilePayload": 1,
+      "eventIdConflicts": 11,
+      "sourceRateLimitedThenRetried": 5,
+      "globalQuotaLimitedThenRetried": 15,
+      "revokedCredential": 1,
+      "unexpectedResponses": 0
+    },
+    "atomicity": {
+      "sameEventRace": {
+        "attempts": 16,
+        "accepted": 1,
+        "duplicates": 15,
+        "durableRows": 1
+      },
+      "sourceRateLimit": {
+        "attempted": 10,
+        "initiallyAccepted": 5,
+        "initiallyLimited": 5,
+        "retryAccepted": 5
+      },
+      "globalQuota": {
+        "attempted": 20,
+        "initiallyAccepted": 5,
+        "initiallyLimited": 15,
+        "retryAccepted": 15
+      },
+      "duplicateBatchEvents": 40,
+      "conflictingBatchEvents": 10
+    },
+    "recovery": {
+      "gracefulRestartDuplicateSafe": true,
+      "forcedMidBatchRetryReconciled": true,
+      "crashBatchEvents": 50
+    },
+    "stageProcessing": {
+      "exercised": true,
+      "journeyDefinitionId": "2e6ea648-798f-49a2-83bf-406f61fb3c26",
+      "publishedMapVersionId": "fb32c624-b88d-5232-b171-6db8acf65bbf",
+      "publishedRuleDefinitionId": "b2360cce-6104-4ae3-87e3-3333adf7f537",
+      "projectedEvents": 2,
+      "decisions": 2,
+      "visits": 2,
+      "instances": 2,
+      "aggregateStageCount": 2,
+      "restartRecoveryQueuedState": "pending",
+      "restartRecoveryCompletedState": "completed",
+      "processingReceiptPartitions": [
+        {
+          "partition": "journey_event_processing_receipts_2026_08",
+          "count": 2
+        }
+      ]
+    },
+    "security": {
+      "leastPrivilegeRuntimeRole": true,
+      "deniedRuntimeOperations": [
+        "schema_create",
+        "runtime_metadata_update",
+        "owner_role_assumption"
+      ],
+      "malformedRejectedBeforeDurability": true,
+      "oversizedRejectedBeforeDurability": true,
+      "hostilePayloadRedacted": true,
+      "originBindingEnforced": true,
+      "revokeObservedAcrossProcesses": true,
+      "outputAndLogSentinelFindings": 0,
+      "storedSentinelFindings": 0
+    },
+    "informationalTargets": {
+      "ratified": false,
+      "candidateAcceptedBatchP95Ms": 300,
+      "observedAgainstCandidate": "outside",
+      "note": "Local Docker evidence only; hardware profile and production SLO are not ratified."
+    },
+    "remainingBlockers": [
+      "INDEPENDENT_SECURITY_PRIVACY_REVIEW_PENDING",
+      "RATIFIED_HARDWARE_AND_LOAD_PROFILE_PENDING",
+      "MULTI_NODE_PRODUCTION_POSTGRES_FAILOVER_NOT_EXERCISED",
+      "SUSTAINED_RECOVERY_AND_LIVE_TRAFFIC_SOAK_PENDING",
+      "SIGNED_SLO_AND_CAPACITY_APPROVAL_PENDING"
+    ],
+    "cleanup": {
+      "databaseDropped": true,
+      "rolesDropped": true,
+      "containerRemoved": true,
+      "temporaryFilesRemoved": true,
+      "residualContainers": 0
+    }
+  },
+  "diagnostics": null
+}

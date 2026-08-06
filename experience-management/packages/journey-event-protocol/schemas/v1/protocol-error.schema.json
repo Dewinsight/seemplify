@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.seemplify.com/journey-events/v1/protocol-error.schema.json",
+  "title": "Seemplify Connected Journey protocol error v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "error"],
+  "properties": {
+    "protocolVersion": { "const": "1.0" },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "retryable": { "type": "boolean" },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "eventId": { "type": "string", "format": "uuid" },
+        "index": { "type": "integer", "minimum": 0 },
+        "details": { "$ref": "event-envelope.schema.json#/$defs/jsonValue" }
+      }
+    }
+  }
+}

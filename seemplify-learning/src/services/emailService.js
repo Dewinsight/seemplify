@@ -1,53 +1,50 @@
+import crypto from 'node:crypto'
 import dotenv from 'dotenv'
+import { formatMailAddress, isMailConfigured, sendMail } from './mailClient.js'
 
 dotenv.config()
 
 class EmailService {
   constructor() {
-    this.apiKey = process.env.BREVO_API_KEY || ''
-    this.apiBaseUrl = 'https://api.brevo.com/v3/smtp/email'
-    this.senderEmail = process.env.SENDER_EMAIL || 'no-reply@seemplifyai.com'
-    this.senderName = process.env.SENDER_NAME || 'Seemplify Learning'
+    this.senderEmail = process.env.MAIL_FROM_EMAIL || process.env.SENDER_EMAIL || 'no-reply@seemplifyai.com'
+    this.senderName = process.env.MAIL_FROM_NAME || process.env.SENDER_NAME || 'Seemplify Learning'
   }
 
-  async sendEmail({ to, subject, html, text }) {
+  /** True when the mail service URL, credential and sender are all present. */
+  isConfigured() {
+    return isMailConfigured()
+  }
+
+  /**
+   * Sends one transactional message through the self-hosted Seemplify mail
+   * service. When the service is not configured the send is skipped rather than
+   * throwing, preserving the previous behaviour for optional notifications.
+   */
+  async sendEmail({ to, subject, html, text, idempotencyKey, tag, replyTo }) {
     if (!to || !subject || !html) {
       throw new Error('Missing required email fields')
     }
 
-    if (!this.apiKey) {
-      console.warn('BREVO_API_KEY missing. Email delivery skipped.')
+    if (!this.isConfigured()) {
+      console.warn('Mail service is not configured (MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL). Email delivery skipped.')
       return { skipped: true }
     }
 
-    const response = await fetch(this.apiBaseUrl, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'api-key': this.apiKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        sender: {
-          name: this.senderName,
-          email: this.senderEmail
-        },
-        to: [{ email: to }],
-        subject,
-        htmlContent: html,
-        ...(text ? { textContent: text } : {})
-      })
+    return sendMail({
+      from: formatMailAddress(this.senderEmail),
+      fromName: this.senderName,
+      to,
+      subject,
+      html,
+      text,
+      tag,
+      replyTo,
+      idempotencyKey: String(idempotencyKey || '').trim() || crypto.randomUUID()
     })
-
-    const result = await response.json().catch(() => ({}))
-    if (!response.ok) {
-      throw new Error(result.message || 'Email send failed')
-    }
-    return result
   }
 
-  async sendNotificationEmail({ to, subject, html, text }) {
-    return this.sendEmail({ to, subject, html, text })
+  async sendNotificationEmail({ to, subject, html, text, idempotencyKey, tag }) {
+    return this.sendEmail({ to, subject, html, text, idempotencyKey, tag: tag || 'notification' })
   }
 }
 

@@ -1,0 +1,12 @@
+{
+  "protocolVersion": "1.0",
+  "error": {
+    "code": "SCHEMA_VALIDATION_FAILED",
+    "message": "The event did not match its published schema.",
+    "retryable": false,
+    "requestId": "request_01",
+    "eventId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f61",
+    "index": 0,
+    "details": { "path": "$.properties.plan" }
+  }
+}

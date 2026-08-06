@@ -1,4 +1,5 @@
 import { apiRequest, getAuthHeaders, getCurrentApiBaseUrl } from './apiConfig';
+import { inspectResponseForAiRuntimeGate } from '../utils/aiRuntimeGateHandler';
 
 // Message types
 export type MessageType = "user" | "assistant" | "system"
@@ -924,6 +925,8 @@ class AssistantService {
     streamPromise
       .then(async (response) => {
         if (!response.ok) {
+          // The stream bypasses apiRequest, so the runtime gate is checked here.
+          await inspectResponseForAiRuntimeGate(response);
           // Attempt to parse error from backend if possible
           try {
             const errorData = await response.json();

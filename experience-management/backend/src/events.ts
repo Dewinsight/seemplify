@@ -4,6 +4,21 @@ import type { Request, Response } from 'express';
 const emitter = new EventEmitter();
 emitter.setMaxListeners(200);
 
+export type PublishedEvent = {
+  type: string;
+  data: unknown;
+  spaceId: string | null;
+  targetUserId: string | null;
+  at: string;
+};
+
+/** Internal fan-out used by the SSE adapter and in-process observers. Returning
+ * an unsubscribe function keeps short-lived workers and tests leak-free. */
+export function subscribePublishedEvents(listener: (event: PublishedEvent) => void) {
+  emitter.on('event', listener);
+  return () => emitter.off('event', listener);
+}
+
 export function publishEvent(type: string, data: unknown, spaceId?: string | null, targetUserId?: string | null) {
   const eventData = type === 'ai-job' && data && typeof data === 'object'
     ? ((job: Record<string, unknown>) => ({ id: job.id, kind: job.kind, state: job.state, stage: job.stage, progress: job.progress, updatedAt: job.updatedAt }))(data as Record<string, unknown>)
@@ -49,7 +64,7 @@ export function attachEventStream(
     return false;
   };
   write(`event: connected\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
-  const listener = (event: { type: string; data: unknown; spaceId: string | null; targetUserId: string | null; at: string }) => {
+  const listener = (event: PublishedEvent) => {
     if (event.spaceId !== spaceId) return;
     if (event.targetUserId && event.targetUserId !== viewerUserId) return;
     if (!verifyAccess()) return;

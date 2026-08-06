@@ -8,8 +8,11 @@ const {
   GROQ_BASE_URL,
   createDefaultRuntimeSettings,
   failoverPolicyForRoute,
+  isGatewayProvider,
   isManagedLocalProvider,
-  localProviderLabel
+  isUserOwnedProvider,
+  localProviderLabel,
+  normalizeRuntimePolicy
 } = require('../../config/aiRuntimeCatalog');
 const { decryptSecret } = require('./secretCrypto');
 const { getAIRequestContext } = require('./requestContext');
@@ -285,6 +288,36 @@ function signLocalRequest(secret, body, options = {}) {
   return { timestamp, nonce, signature };
 }
 
+/**
+ * Ordered candidates for a user-owned route, mirroring Experience Management's
+ * precedence. Recruiter configures models per activity at the platform tier
+ * only, so the chain is `admin_action` then the activity's catalogue default;
+ * the connected account supplies the remaining fallbacks.
+ */
+function orderedCandidates(entries) {
+  const result = [];
+  const seen = new Set();
+  for (const [value, source] of entries) {
+    const candidate = String(value || '').trim();
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    result.push({ value: candidate, source });
+  }
+  return result;
+}
+
+function codexModelCandidates(route) {
+  return orderedCandidates([[route.codexModel, 'admin_action']]);
+}
+
+function codexEffortCandidates(route) {
+  const definition = ACTIVITY_DEFINITIONS[route.activity] || {};
+  return orderedCandidates([
+    [route.reasoningEffort, 'admin_action'],
+    [definition.reasoningEffort, 'action_default']
+  ]);
+}
+
 function buildAttemptError({ attempt, credential, error, startedAt }) {
   return {
     attempt,
@@ -316,8 +349,12 @@ class AIRuntimeService {
     credentialModel = AIProviderCredential,
     quotaModel = AIQuotaSnapshot,
     settingsModel = AIRuntimeSettings,
-    azureRollbackAdapter
+    azureRollbackAdapter,
+    // Required lazily by default: codexAccountService depends on this module
+    // for request signing, so importing it at load time would be circular.
+    resolveSubject = (actorId) => require('./codexAccountService').resolveRoutableSubject(actorId)
   } = {}) {
+    this.resolveSubject = resolveSubject;
     this.fetch = fetchImpl;
     this.Credential = credentialModel;
     this.Quota = quotaModel;
@@ -358,14 +395,20 @@ class AIRuntimeService {
         && existing?.provider === 'groq'
         && Number(existing?.routeVersion || 1) === 1;
       if (definition?.lockedProvider) {
-        routesByActivity.set(route.activity, {
-          ...route,
-          ...(existing || {}),
-          provider: route.provider,
-          model: route.model,
-          lockedProvider: true,
-          failoverPolicy: route.failoverPolicy
-        });
+        // The lock stops drift onto another shared provider. An administrator
+        // explicitly routing the activity to a connected ChatGPT account is
+        // not drift, so it survives the pin — mirroring resolveRoute.
+        const storedUserOwned = existing && isUserOwnedProvider(existing.provider);
+        routesByActivity.set(route.activity, storedUserOwned
+          ? { ...route, ...existing, lockedProvider: true }
+          : {
+              ...route,
+              ...(existing || {}),
+              provider: route.provider,
+              model: route.model,
+              lockedProvider: true,
+              failoverPolicy: route.failoverPolicy
+            });
       } else {
         routesByActivity.set(route.activity, shouldApplyNewLocalDefault
           ? { ...(existing || {}), ...route }
@@ -383,7 +426,10 @@ class AIRuntimeService {
       quotaGroups: Array.isArray(settings?.quotaGroups) && settings.quotaGroups.length ? settings.quotaGroups : defaults.quotaGroups,
       alerts: { ...defaults.alerts, ...(settings?.alerts || {}) },
       localFailover: { ...defaults.localFailover, ...(settings?.localFailover || {}) },
-      rollout: { ...defaults.rollout, ...(settings?.rollout || {}) }
+      rollout: { ...defaults.rollout, ...(settings?.rollout || {}) },
+      // Normalised on read, so a stored policy whose default points at a
+      // disabled runtime is corrected rather than enforced.
+      runtimePolicy: normalizeRuntimePolicy(settings?.runtimePolicy)
     };
     this.settingsCache = settings;
     this.settingsCacheExpiresAt = Date.now() + SETTINGS_CACHE_MS;
@@ -400,7 +446,10 @@ class AIRuntimeService {
     if (!storedRoute) {
       throw new AIRuntimeError(`No route is configured for ${normalized}`, { code: 'AI_ROUTE_NOT_CONFIGURED', statusCode: 503 });
     }
-    const route = definition.lockedProvider
+    // A locked activity is pinned to its managed runtime so it cannot drift onto
+    // another shared provider. Routing it to a user's own ChatGPT account is an
+    // explicit administrator decision, not drift, so it survives the pin.
+    const route = definition.lockedProvider && !isUserOwnedProvider(storedRoute.provider)
       ? {
           ...storedRoute,
           provider: definition.provider,
@@ -414,6 +463,22 @@ class AIRuntimeService {
         };
     if (!route?.enabled || !settings.providerEnabled) {
       throw new AIRuntimeError(`AI activity ${normalized} is disabled`, { code: 'AI_ACTIVITY_DISABLED', statusCode: 503 });
+    }
+    const runtimePolicy = normalizeRuntimePolicy(settings.runtimePolicy);
+    if (!runtimePolicy.localEnabled && !runtimePolicy.chatgptEnabled) {
+      throw new AIRuntimeError('AI runtimes are currently disabled by a platform administrator', {
+        code: 'AI_RUNTIMES_DISABLED', statusCode: 503
+      });
+    }
+    if (isUserOwnedProvider(route.provider) && !runtimePolicy.chatgptEnabled) {
+      throw new AIRuntimeError('The ChatGPT runtime is disabled by a platform administrator', {
+        code: 'AI_RUNTIME_CHATGPT_DISABLED', statusCode: 503
+      });
+    }
+    if (isManagedLocalProvider(route.provider) && !runtimePolicy.localEnabled) {
+      throw new AIRuntimeError('The local AI runtime is disabled by a platform administrator', {
+        code: 'AI_RUNTIME_LOCAL_DISABLED', statusCode: 503
+      });
     }
     const model = settings.models.find((item) => item.id === route.model && item.provider === route.provider && item.enabled !== false);
     if (!model) {
@@ -695,18 +760,33 @@ class AIRuntimeService {
     const usageEventId = deriveRuntimeUsageEventId({ context, route });
     const sourceApp = String(context.sourceApp || input.context?.sourceApp || 'recruiter').slice(0, 64);
     const experienceProfile = String(route.activity || '').startsWith('experience.');
-    const requiredEngine = route.provider === 'local-codex'
+    const userOwned = isUserOwnedProvider(route.provider);
+    const requiredEngine = userOwned || route.provider === 'local-codex'
       ? 'codex'
       : route.provider === 'local-claude'
         ? 'claude'
         : undefined;
+    // The gateway derives the subject key itself; sending the raw user id keeps
+    // the namespace under the gateway's control rather than this caller's.
+    const codexSubjectId = userOwned ? String(route.codexSubjectId || '') : '';
+    if (userOwned && !codexSubjectId) {
+      throw new AIRuntimeError('This activity requires a connected ChatGPT account', {
+        code: 'CHATGPT_SUBJECT_UNRESOLVED', statusCode: 409, retryable: false
+      });
+    }
     const body = JSON.stringify({
       activity: route.activity,
-      model: route.model,
+      model: userOwned ? undefined : route.model,
       executionMode: 'local-only',
       runtimeProfile: experienceProfile ? 'experience-management' : undefined,
       requiredEngine: !experienceProfile ? requiredEngine : undefined,
-      requiredModel: requiredEngine && !experienceProfile ? route.model : undefined,
+      requiredModel: requiredEngine && !experienceProfile && !userOwned ? route.model : undefined,
+      codexSourceApp: userOwned ? 'recruiter' : undefined,
+      codexSubjectId: userOwned ? codexSubjectId : undefined,
+      // Ordered preferences with their source, not one value: plans differ, so
+      // the connected account resolves these and degrades rather than failing.
+      codexModelCandidates: userOwned ? codexModelCandidates(route) : undefined,
+      codexEffortCandidates: userOwned ? codexEffortCandidates(route) : undefined,
       messages: input.messages,
       jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema,
       schemaName: input.schemaName,
@@ -830,7 +910,7 @@ class AIRuntimeService {
         'totalTokens'
       ].some((field) => Object.hasOwn(rawUsage, field)));
     const usage = normalizeUsage(rawUsage || {});
-    const gatewayMetered = Boolean(data?.gatewayExecutionId) || isManagedLocalProvider(route.provider);
+    const gatewayMetered = Boolean(data?.gatewayExecutionId) || isGatewayProvider(route.provider);
     const event = {
       eventId: gatewayMetered
         ? deriveRuntimeUsageEventId({ context, route })
@@ -844,6 +924,9 @@ class AIRuntimeService {
       activity: route.activity,
       provider: data?.provider || route.provider,
       model: data?.model || route.model,
+      // Personal-plan work must stay separable from billable platform usage in
+      // every rollup, so the owner is stamped on the durable event itself.
+      runtimeOwner: route.runtimeOwner === 'user' || data?.runtimeOwner === 'user' ? 'user' : 'platform',
       reasoningEffort: route.reasoningEffort,
       routeVersion: route.routeVersion || 1,
       promptVersion: context.promptVersion || '1',
@@ -1036,6 +1119,85 @@ class AIRuntimeService {
     throw lastError || new AIRuntimeError('Groq request failed');
   }
 
+  /**
+   * Returns a user-owned route to the activity's managed runtime, recording why.
+   *
+   * Ported from Experience Management's effectiveAiProviderSnapshot: when the
+   * ChatGPT runtime cannot be used, work continues on the managed runtime if a
+   * platform administrator has left it enabled, and only fails when they have
+   * not. Degrading keeps queued and retried work moving; failing is reserved
+   * for the case where there is genuinely nowhere else to run.
+   */
+  managedRuntimeRoute(route, settings, reason, policy) {
+    if (!policy.localEnabled) {
+      throw new AIRuntimeError(
+        reason === 'chatgpt_consent_absent'
+          ? 'ChatGPT data sharing is no longer acknowledged and the local AI runtime is disabled.'
+          : 'This AI action has no connected ChatGPT account and the local runtime is disabled.',
+        {
+          code: reason === 'chatgpt_consent_absent'
+            ? 'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED'
+            : 'AI_RUNTIME_ACCOUNT_REQUIRED',
+          statusCode: 409,
+          retryable: false
+        }
+      );
+    }
+    const definition = ACTIVITY_DEFINITIONS[route.activity] || {};
+    const provider = definition.provider || 'groq';
+    const model = definition.model || GROQ_120B;
+    const modelConfig = settings?.models?.find((item) => (
+      item.id === model && item.provider === provider && item.enabled !== false
+    ));
+    if (!modelConfig || modelConfig.available === false) {
+      throw new AIRuntimeError(
+        `${route.activity} cannot use ChatGPT for this request and no managed runtime is available`,
+        { code: 'AI_FAILOVER_MODEL_UNAVAILABLE', statusCode: 503, retryable: true }
+      );
+    }
+    return {
+      ...route,
+      provider,
+      model,
+      modelConfig,
+      failoverPolicy: failoverPolicyForRoute(route.activity, provider),
+      failoverFrom: route.provider,
+      failoverReason: reason
+    };
+  }
+
+  /**
+   * Binds a user-owned route to the person whose ChatGPT plan will pay for it,
+   * or returns it to the managed runtime.
+   *
+   * Consent is deliberately re-read here rather than trusted from the route:
+   * provider and model are durable job inputs, but a privacy revocation is an
+   * immediate override, so queued and retried work stops using ChatGPT as soon
+   * as consent is withdrawn.
+   */
+  async attachCodexSubject(route, context, settings) {
+    if (!isUserOwnedProvider(route.provider)) return route;
+    const policy = normalizeRuntimePolicy(settings?.runtimePolicy);
+    const activity = String(route.activity || '');
+    // Cross-product work arrives through /api/internal/ai carrying another
+    // product's user. It has no Recruiter account to bill, so it runs where it
+    // ran before ChatGPT existed.
+    if (activity.startsWith('experience.') || activity.startsWith('knowledge.')) {
+      return this.managedRuntimeRoute(route, settings, 'chatgpt_cross_product_request', policy);
+    }
+    // Unattributed work — a public applicant's CV has no account that could
+    // ever be connected.
+    const actorId = String(context?.actorId || '').trim();
+    if (!actorId) {
+      return this.managedRuntimeRoute(route, settings, 'chatgpt_unattributed_request', policy);
+    }
+    const subject = await this.resolveSubject(actorId);
+    if (!subject) {
+      return this.managedRuntimeRoute(route, settings, 'chatgpt_consent_absent', policy);
+    }
+    return { ...route, codexSubjectId: subject.subjectId, runtimeOwner: 'user' };
+  }
+
   async complete(activity, input = {}, options = {}) {
     const abortedBeforeStart = activeAbortReason(options.signal);
     if (abortedBeforeStart) throw abortedBeforeStart;
@@ -1047,8 +1209,12 @@ class AIRuntimeService {
       promptVersion: input.promptVersion
     }));
     const requestId = context.requestId || crypto.randomUUID();
-    const route = this.resolveExecutionRoute(configuredRoute, settings, { ...context, requestId });
-    if (isManagedLocalProvider(route.provider)) {
+    const route = await this.attachCodexSubject(
+      this.resolveExecutionRoute(configuredRoute, settings, { ...context, requestId }),
+      context,
+      settings
+    );
+    if (isGatewayProvider(route.provider)) {
       const startedAt = Date.now();
       const payload = this.normalizePayload(input, route, { stream: false });
       let response;
@@ -1306,7 +1472,7 @@ class AIRuntimeService {
     }));
     const requestId = context.requestId || crypto.randomUUID();
     const route = this.resolveExecutionRoute(configuredRoute, settings, { ...context, requestId });
-    if (isManagedLocalProvider(route.provider)) {
+    if (isGatewayProvider(route.provider)) {
       const result = await this.complete(activity, {
         ...input,
         stream: false,

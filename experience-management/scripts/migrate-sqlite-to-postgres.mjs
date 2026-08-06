@@ -30,6 +30,82 @@ const ROWID_TABLES = new Set([
   'esign_audit_events'
 ]);
 
+// These governance rows intentionally support platform-owned records. Their
+// scope CHECK guarantees NULL space_id means `system`, never an unscoped
+// customer artifact. All ordinary tenant artifacts remain non-null below.
+const NULLABLE_SPACE_ID_TABLES = new Set([
+  'journey_templates',
+  'journey_template_versions',
+  'journey_template_audit_events'
+]);
+
+/** PostgreSQL runtime invariants that were not present in every historical
+ * SQLite schema.  A cutover builds the base PostgreSQL tables before applying
+ * runtime migrations, so an old SQLite table can make the original
+ * CREATE TABLE IF NOT EXISTS migration a no-op.  Normalise those legacy source
+ * shapes here so every cutover reaches the same checked base schema without
+ * changing an already checksummed runtime migration. */
+const REQUIRED_POSTGRES_CHECKS = new Map([
+  ['social_intelligence_publications', [
+    "source_snapshot_sha256 ~ '^[a-f0-9]{64}$'",
+    "artifact_sha256 ~ '^[a-f0-9]{64}$'"
+  ]],
+  ['platform_usage_events', ["intent_hash ~ '^[a-f0-9]{64}$'"]]
+]);
+
+/** SQLite INTEGER is normally widened to BIGINT because its storage class is
+ * 64-bit.  Tables owned by a PostgreSQL runtime migration, however, have an
+ * exact INTEGER contract.  If a current SQLite store already contains one of
+ * those tables, CREATE TABLE IF NOT EXISTS cannot narrow it later, so preserve
+ * the declared runtime width during cutover. */
+const REQUIRED_POSTGRES_COLUMN_TYPES = new Map([
+  ['deep_analysis_runs\u001fprogress', 'INTEGER'],
+  ['deep_analysis_runs\u001ftotal_partitions', 'INTEGER'],
+  ['deep_analysis_runs\u001fcompleted_partitions', 'INTEGER'],
+  ['deep_analysis_runs\u001ffailed_partitions', 'INTEGER'],
+  ['deep_analysis_partitions\u001fordinal', 'INTEGER'],
+  ['deep_analysis_partitions\u001flevel', 'INTEGER'],
+  ['deep_analysis_partitions\u001ftoken_estimate', 'INTEGER'],
+  ['journey_personas\u001frevision', 'INTEGER'],
+  ['journey_definitions\u001freview_cadence_days', 'INTEGER'],
+  ['journey_definitions\u001frevision', 'INTEGER'],
+  ['journey_map_versions\u001fversion_number', 'INTEGER'],
+  ['journey_map_versions\u001fschema_version', 'INTEGER'],
+  ['journey_map_stages\u001fordinal', 'INTEGER'],
+  ['journey_map_lanes\u001fordinal', 'INTEGER'],
+  ['journey_map_lanes\u001fvisible', 'INTEGER'],
+  ['journey_map_cards\u001fordinal', 'INTEGER'],
+  ['journey_definition_personas\u001fordinal', 'INTEGER'],
+  ['journey_evidence_links\u001fsample_size', 'INTEGER'],
+  ['journey_evidence_links\u001ffreshness_days', 'INTEGER'],
+  ['journey_templates\u001frevision', 'INTEGER'],
+  ['journey_template_versions\u001fversion_number', 'INTEGER'],
+  ['journey_template_versions\u001fschema_version', 'INTEGER'],
+  ['journey_template_versions\u001frevision', 'INTEGER'],
+  ['journey_event_sources\u001frevision', 'INTEGER'],
+  ['journey_event_schema_versions\u001fversion_major', 'INTEGER'],
+  ['journey_event_schema_versions\u001fversion_minor', 'INTEGER'],
+  ['journey_persona_versions\u001fversion_number', 'INTEGER'],
+  ['journey_persona_versions\u001freview_at', 'TIMESTAMPTZ'],
+  ['journey_persona_versions\u001fcreated_at', 'TIMESTAMPTZ'],
+  ['journey_persona_claims\u001fordinal', 'INTEGER'],
+  ['journey_persona_claims\u001fcreated_at', 'TIMESTAMPTZ'],
+  ['journey_persona_claim_evidence\u001fcreated_at', 'TIMESTAMPTZ'],
+  ['journey_persona_review_events\u001fsequence', 'INTEGER'],
+  ['journey_persona_review_events\u001fcreated_at', 'TIMESTAMPTZ'],
+  ['journey_map_version_personas\u001fordinal', 'INTEGER'],
+  ['journey_map_version_personas\u001fevidence_coverage_at_pin', 'INTEGER'],
+  ['journey_map_version_personas\u001fpinned_at', 'TIMESTAMPTZ']
+]);
+
+/** SQLite names inline UNIQUE constraints with sqlite_autoindex identifiers.
+ * Preserve the stable PostgreSQL names that the runtime contract and operators
+ * use instead of deriving a source-engine-specific hash. */
+const REQUIRED_POSTGRES_AUTO_INDEX_NAMES = new Map([
+  ['social_intelligence_publications\u001fdocument_id', 'social_intelligence_publications_document_id_key'],
+  ['deep_analysis_partitions\u001frun_id,ordinal', 'deep_analysis_partitions_run_id_ordinal_key']
+]);
+
 class MigrationError extends Error {
   constructor(code, message, details = undefined) {
     super(message);
@@ -288,6 +364,14 @@ function translateExpression(expression, context, schema) {
     /CASE\s+WHEN\s+json_valid\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s+THEN\s+json_extract\s*\(\s*\1\s*,\s*('(?:[^']|'')*')\s*\)\s+END/gi,
     (_match, column, jsonPath) => `${q(schema)}.${q('experience_json_extract_safe')}(${q(column)},${jsonPath})`
   );
+  // Runtime 16's SQLite parity table uses GLOB only to validate the
+  // major.minor schema-version string. Translate that one bounded contract to
+  // PostgreSQL's anchored regular expression; all other GLOB expressions stay
+  // rejected rather than being guessed at during a cutover.
+  translated = translated.replace(
+    /\bversion\s+GLOB\s+'\[0-9\]\*\.\[0-9\]\*'/giu,
+    "version ~ '^[0-9]+\\.[0-9]+$'"
+  );
   if (/\b(?:GLOB|REGEXP|json_valid|json_extract|json_each)\b/i.test(translated)) {
     throw new MigrationError('UNSUPPORTED_SQLITE_EXPRESSION', `Cannot safely translate ${context}.`, { expression });
   }
@@ -348,9 +432,11 @@ function introspect(db, schema) {
       return {
         name: column.name,
         declaredType: column.type || '',
-        pgType: postgresType(column.type, nocase),
+        pgType: REQUIRED_POSTGRES_COLUMN_TYPES.get(`${raw.name}\u001f${String(column.name)}`)
+          || postgresType(column.type, nocase),
         nocase,
-        notNull: Boolean(column.notnull) || column.name === 'space_id',
+        notNull: Boolean(column.notnull)
+          || (column.name === 'space_id' && !NULLABLE_SPACE_ID_TABLES.has(String(raw.name))),
         default: translateDefault(column.dflt_value, raw.name, column.name),
         pkOrder: Number(column.pk) || 0
       };
@@ -376,10 +462,15 @@ function introspect(db, schema) {
         if (!match) throw new MigrationError('SQL_PARSE_ERROR', `Cannot parse partial index ${index.name}.`, { sql: originalSql });
         predicate = translateExpression(match[1].trim().replace(/;$/, ''), `index ${index.name}`, schema);
       }
+      const requiredName = REQUIRED_POSTGRES_AUTO_INDEX_NAMES.get(
+        `${raw.name}\u001f${entries.map((entry) => String(entry.name)).join(',')}`
+      );
       return {
         sourceName: index.name,
         sourceSql: originalSql,
-        name: shortenName(index.name.startsWith('sqlite_autoindex_') ? `uq_${raw.name}_${sha256(terms.join('|')).slice(0, 10)}` : index.name),
+        name: shortenName(index.name.startsWith('sqlite_autoindex_')
+          ? (requiredName || `uq_${raw.name}_${sha256(terms.join('|')).slice(0, 10)}`)
+          : index.name),
         unique: Boolean(index.unique),
         origin: index.origin,
         terms,
@@ -426,12 +517,14 @@ function introspect(db, schema) {
     if (hasRowid && columns.some((column) => column.name.toLowerCase() === 'rowid')) {
       throw new MigrationError('ROWID_COLLISION', `Table ${raw.name} already declares a rowid column.`);
     }
+    const sourceChecks = extractChecks(sql).map((check) => translateExpression(check, `CHECK on ${raw.name}`, schema));
+    const checks = [...new Set([...sourceChecks, ...(REQUIRED_POSTGRES_CHECKS.get(raw.name) || [])])];
     tables.push({
       name: raw.name,
       sourceSql: sql,
       columns,
       primaryKey,
-      checks: extractChecks(sql).map((check) => translateExpression(check, `CHECK on ${raw.name}`, schema)),
+      checks,
       indexes,
       foreignKeys,
       hasRowid
@@ -499,7 +592,7 @@ function sourceManifest(db, tables) {
   let totalRows = 0;
   for (const table of tables) {
     const rows = readSourceRows(db, table);
-    if (table.columns.some((column) => column.name === 'space_id')) {
+    if (table.columns.some((column) => column.name === 'space_id') && !NULLABLE_SPACE_ID_TABLES.has(table.name)) {
       const missing = rows.filter((row) => row.space_id === null || row.space_id === undefined).length;
       if (missing) {
         throw new MigrationError('SPACE_ID_NULL', `${table.name}.space_id contains ${missing} NULL row(s); refusing to weaken tenant isolation.`, { table: table.name, rows: missing });
@@ -803,8 +896,12 @@ async function verifyTarget(client, schema, tables, source) {
   }
   const nullableSpace = await client.query(`SELECT table_name FROM information_schema.columns
     WHERE table_schema=$1 AND column_name='space_id' AND is_nullable<>'NO' ORDER BY table_name`, [schema]);
-  if (nullableSpace.rowCount) {
-      throw new MigrationError('TARGET_SPACE_ID_NULLABLE', 'PostgreSQL contains nullable space_id columns.', { tables: nullableSpace.rows.map((row) => row.table_name) });
+  const unexpectedNullableSpace = nullableSpace.rows
+    .map((row) => String(row.table_name))
+    .filter((table) => !NULLABLE_SPACE_ID_TABLES.has(table));
+  if (unexpectedNullableSpace.length) {
+      throw new MigrationError('TARGET_SPACE_ID_NULLABLE', 'PostgreSQL contains unexpectedly nullable space_id columns.',
+        { tables: unexpectedNullableSpace });
   }
   const expectedIndexes = tables.flatMap((table) => table.indexes.map((index) => index.name)).sort();
   const actualIndexes = new Set((await client.query(

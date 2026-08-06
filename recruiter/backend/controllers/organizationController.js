@@ -493,7 +493,7 @@ exports.inviteUser = async (req, res) => {
     let emailError = null;
 
     if (!emailConfig.isConfigured) {
-      emailError = 'Email service is not configured - BREVO_API_KEY missing';
+      emailError = 'Email service is not configured - MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL missing';
       console.error('❌ Cannot send email - service not configured');
     } else {
       try {

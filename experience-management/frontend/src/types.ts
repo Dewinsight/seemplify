@@ -14,7 +14,7 @@ export interface AuthSession {
   subscription?: {
     planCode: 'starter' | 'team' | 'enterprise'; planName: string;
     features: SubscriptionFeatures;
-    limits: { seats: number; activeSurveys: number; monthlyAiActions: number; knowledgeStorageBytes: number };
+    limits: SubscriptionLimits;
     status: 'active' | 'suspended' | 'cancelled' | null;
     source: 'managed' | 'managed_fallback' | 'legacy_grandfathered';
   } | null;
@@ -22,6 +22,23 @@ export interface AuthSession {
 export interface SubscriptionFeatures {
   surveys: boolean; campaigns: boolean; agreements: boolean; serviceRecovery: boolean;
   socialListening: boolean; knowledgeBases: boolean; terra: boolean;
+  journeyDesign: boolean; journeyAi: boolean; journeyPersonas: boolean; journeyEvidence: boolean;
+  journeyTemplates: boolean; journeyExports: boolean; journeyMetrics: boolean; journeyRichCards: boolean; journeySavedViews: boolean;
+  journeyPortfolio: boolean; journeyCollaboration: boolean;
+  journeyHierarchy: boolean; journeyBlueprints: boolean; journeyConnected: boolean;
+  journeyProfiles: boolean; journeyActualPaths: boolean; journeyOrchestration: boolean;
+  mobileSdks: boolean; journeyConnectors: boolean;
+}
+export interface SubscriptionLimits {
+  seats: number; activeSurveys: number; monthlyAiActions: number; knowledgeStorageBytes: number;
+  journeyMaps: number; journeyPersonas: number;
+  journeyTemplates: number; journeyShares: number; eventSources: number; monthlyTrackedEvents: number;
+  retainedProfiles: number; eventRetentionDays: number; activeJourneyRuleSets: number;
+  activeJourneyOrchestrations: number; monthlyOrchestrationActions: number; schemaDefinitions: number;
+  webhookDestinations: number; monthlyJourneyExports: number; journeyMetricDefinitions: number;
+  journeyMetricBindings: number; journeyMetricSegments: number; monthlyJourneyMetricImports: number;
+  journeyMetricAlertDefinitions: number;
+  journeyChannels: number; journeyTouchpoints: number; journeyCardAssets: number; journeyCardAssetBytes: number; journeySavedViews: number;
 }
 export interface SpaceSession { spaces: SpaceSummary[]; activeSpace: SpaceSummary }
 export interface PendingSpaceInvitation {
@@ -149,7 +166,7 @@ export type DeepAnalysisState = 'queued' | 'processing' | 'paused' | 'completed'
 export interface DeepAnalysisRun {
   id: string; title: string; objective: string; mode: DeepAnalysisMode; state: DeepAnalysisState; stage: string; progress: number;
   sourceRefs: string[]; knowledgeBaseIds: string[]; manifest: Record<string, any>;
-  estimate: { estimatedInputTokens?: number; mapPartitions?: number; reductionPartitions?: number; specialistPartitions?: number;
+  estimate: { estimatedInputTokens?: number; mapPartitions?: number; graphPartitions?: number; reductionPartitions?: number; specialistPartitions?: number;
     estimatedCalls?: number; estimatedDurationSeconds?: number; estimatedDurationRangeSeconds?: number[] };
   result: any; runtime: any; error: string | null; totalPartitions: number; completedPartitions: number; failedPartitions: number;
   partitions?: Array<{ id: string; ordinal: number; level: number; kind: string; state: string; tokenEstimate: number; error: string | null }>;

@@ -129,7 +129,11 @@ class AIToolExecutor {
       return {
         success: false,
         message: 'I encountered an error while processing your request. Please try again.',
-        error: error.message
+        error: error.message,
+        // Runtime identity survives so the HTTP layer can tell "connect your
+        // ChatGPT account" apart from a generic failure.
+        code: error.code,
+        statusCode: error.statusCode
       };
     }
   }

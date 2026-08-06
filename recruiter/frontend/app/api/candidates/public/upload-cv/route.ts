@@ -17,6 +17,10 @@ export async function POST(request: NextRequest) {
     const backendFormData = new FormData()
     backendFormData.append('resume', file)
     backendFormData.append('jobId', jobId)
+    // The applicant's candidate record must travel too, or the analysis
+    // creates a duplicate candidate instead of enriching theirs.
+    const candidateId = String(formData.get('candidateId') || '').trim()
+    if (candidateId) backendFormData.append('candidateId', candidateId)
 
     // Increase timeout to 10 minutes for CV processing
     const controller = new AbortController()

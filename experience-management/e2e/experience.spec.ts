@@ -819,15 +819,20 @@ test('X social listening setup and journey maps remain visible while Terra work 
   await expect(page.getByText('Earlier journey version restored. The displaced version is still available.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Stage 4: Expand' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Audit and improve' }).click();
-  await expect(page.getByText('Journey audit queued with Terra.')).toBeVisible();
+  await page.getByRole('button', { name: 'Create reviewable suggestions' }).click();
+  await expect(page.getByText('Journey suggestions queued for review.')).toBeVisible();
 
   await page.goto('/ai-queue');
   await expect(page.getByText('Journey optimization').first()).toBeVisible();
   const currentJourney = await page.request.get(`/api/journeys/${journey.id}`);
   expect(currentJourney.status()).toBe(200);
+  // The reviewed suggestion run queued above is a retained AI audit record, so
+  // the journey is deliberately no longer directly deletable. The precondition
+  // still has to be accepted first: a stale expectedUpdatedAt would fail this
+  // same call with an untyped 409 instead.
   const deleted = await page.request.delete(`/api/journeys/${journey.id}`, { data: { expectedUpdatedAt: (await currentJourney.json()).updatedAt } });
-  expect(deleted.status()).toBe(204);
+  expect(deleted.status()).toBe(409);
+  expect((await deleted.json()).code).toBe('JOURNEY_AI_AUDIT_RETENTION');
 });
 
 test('journey live refresh never lets an older response overwrite a newer edit', async ({ page }, testInfo) => {

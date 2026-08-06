@@ -37,7 +37,8 @@ const {
   getAiProviderPreference, resetAiProviderPreferenceCacheForTests,
   setAiProviderPreference, updateAdminCodexDefaults
 } = await import('../src/aiProvider.js');
-const { createJob, db } = await import('../src/database.js');
+const { db } = await import('../src/database.js');
+const { createAiJobFixture } = await import('./aiJobFixtures.js');
 
 after(async () => {
   await stopCodexClients();
@@ -52,6 +53,12 @@ async function waitForConnected(agent: request.SuperAgentTest) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error('Fake ChatGPT account did not connect.');
+}
+
+function auditActionsFor(targetId: string) {
+  return (db.prepare(`SELECT action FROM platform_audit_events
+    WHERE target_id=? AND target_type='ai_runtime' ORDER BY created_at,id`).all(targetId) as Array<{ action: string }>)
+    .map((row) => row.action);
 }
 
 test('device login, consent, model choice, job snapshots, and disconnect are isolated', async () => {
@@ -74,11 +81,13 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
   const login = await agent.post('/api/ai-provider/codex/device-login').send({}).expect(200);
   assert.equal(login.body.userCode, 'TEST-CODE');
   assert.equal(login.body.verificationUrl, 'https://auth.openai.com/codex/device');
+  assert.deepEqual(auditActionsFor(userId), ['ai_runtime.codex_login_started']);
   const connected = await waitForConnected(agent);
   assert.equal(connected.body.codex.models[0].id, 'gpt-test-codex');
   assert.equal(connected.body.codex.models[1].id, 'gpt-test-codex-fast');
   assert.equal(connected.body.codex.models[2].id, 'gpt-test-codex-minimal');
   assert.ok(connected.body.codex.models[0].supportedReasoningEfforts.some((item: any) => item.reasoningEffort === 'max'));
+  assert.deepEqual(auditActionsFor(userId), ['ai_runtime.codex_login_started']);
 
   await agent.patch('/api/ai-provider').send({ provider: 'codex', codexModel: 'gpt-test-codex' }).expect(409);
   const selected = await agent.patch('/api/ai-provider').send({
@@ -97,6 +106,11 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
     model: 'gpt-test-codex-fast', reasoningEffort: 'focused'
   });
   assert.ok(selected.body.preference.codexDataSharingAcknowledgedAt);
+  assert.deepEqual(auditActionsFor(userId), [
+    'ai_runtime.codex_login_started',
+    'ai_runtime.codex_connected'
+  ]);
+  assert.equal(auditActionsFor(`${userId}:${spaceId}`).at(-1), 'ai_runtime.runtime_selected');
   await agent.patch('/api/ai-provider').send({
     provider: 'codex', codexDataSharingAcknowledged: false
   }).expect(409);
@@ -140,10 +154,10 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
     codexDataSharingAcknowledged: true
   }).expect(200);
 
-  const defaultQueued = createJob('report.generate', { brief: 'Snapshot the default effort.' }, spaceId, null, null, userId);
+  const defaultQueued = createAiJobFixture('report.generate', { brief: 'Snapshot the default effort.' }, spaceId, null, null, userId);
   assert.equal((defaultQueued.input as any)._aiRuntime.codexReasoningEffort, 'max');
 
-  const queued = createJob('analyst.chat', { question: 'Test the recorded runtime.' }, spaceId, null, null, userId);
+  const queued = createAiJobFixture('analyst.chat', { question: 'Test the recorded runtime.' }, spaceId, null, null, userId);
   assert.deepEqual((queued.input as any)._aiRuntime, aiProviderSnapshot(userId, spaceId, 'analyst.chat'));
   assert.equal((queued.input as any)._aiRuntime.codexModel, 'gpt-test-codex-fast');
   assert.equal((queued.input as any)._aiRuntime.codexReasoningEffort, 'focused');
@@ -194,7 +208,7 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
   assert.equal((queued.input as any)._aiRuntime.provider, 'codex');
   assert.equal((queued.input as any)._aiRuntime.codexModel, 'gpt-test-codex-fast');
 
-  const automatic = createJob('response.analyze', {}, spaceId, null, null, null);
+  const automatic = createAiJobFixture('response.analyze', {}, spaceId, null, null, null);
   assert.equal((automatic.input as any)._aiRuntime.provider, 'terra');
 
   setAiProviderPreference(userId, 'another-space', {
@@ -228,6 +242,7 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
   assert.equal(getAiProviderPreference(userId, 'never-configured-space').runtimeChoice, null);
   assert.equal(getAiProviderPreference(userId, spaceId).codexDataSharingAcknowledgedAt, null);
   assert.equal(getAiProviderPreference(userId, 'another-space').codexDataSharingAcknowledgedAt, null);
+  assert.equal(auditActionsFor(userId).at(-1), 'ai_runtime.codex_disconnected');
 });
 
 test('admin defaults inherit field-by-field, user reset is narrow, and queued candidates are durable', async () => {
@@ -327,7 +342,7 @@ test('admin defaults inherit field-by-field, user reset is narrow, and queued ca
   assert.equal(reset.codexReasoningEffort, null);
   assert.deepEqual(reset.codexActionOverrides, {});
 
-  const queued = createJob('analyst.chat', { question: 'Keep the inherited admin runtime.' },
+  const queued = createAiJobFixture('analyst.chat', { question: 'Keep the inherited admin runtime.' },
     spaceId, null, null, userId);
   const queuedRuntime = (queued.input as any)._aiRuntime;
   assert.deepEqual(queuedRuntime.codexModelCandidates, [

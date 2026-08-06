@@ -40,7 +40,8 @@ globalThis.fetch = async (input) => {
   throw new Error(`Unexpected platform admin test request: ${String(input)}`);
 };
 
-const { db, createJob } = await import('../src/database.js');
+const { db } = await import('../src/database.js');
+const { createAiJobFixture } = await import('./aiJobFixtures.js');
 const {
   bootstrapAdminAccount, currentSessionUser, issueEmailVerificationToken, issuePasswordResetToken,
   login, resetPassword, session, verifyEmail
@@ -307,7 +308,7 @@ test('administrator provisioning uses password-claim invitations and records rol
 test('global AI jobs and product activity expose only privacy-safe operational metadata', async () => {
   const rootAgent = await loginAs('platform-admin@seemplify.local');
   const account = seedUser('queue-requester@example.test', 'Queue Requester');
-  const job = createJob('analyst.chat', {
+  const job = createAiJobFixture('analyst.chat', {
     prompt: 'PRIVATE CUSTOMER PROMPT MUST NOT LEAK',
     evidence: 'PRIVATE CUSTOMER EVIDENCE MUST NOT LEAK'
   }, account.spaceId, null, null, account.id);
@@ -379,7 +380,7 @@ test('global AI jobs and product activity expose only privacy-safe operational m
   assert.equal((await monitorAgent.get('/api/platform-admin/activity')
     .query({ search: account.email }).expect(200)).body.total, 0);
 
-  const malformed = createJob('analyst.chat', { safe: true }, account.spaceId, null, null, account.id);
+  const malformed = createAiJobFixture('analyst.chat', { safe: true }, account.spaceId, null, null, account.id);
   db.prepare(`UPDATE ai_jobs SET input_json='{' WHERE id=?`).run(malformed.id);
   const legacyJobs = await rootAgent.get('/api/platform-admin/jobs').query({ provider: 'terra', search: malformed.id }).expect(200);
   assert.ok(legacyJobs.body.jobs.some((item: any) => item.id === malformed.id));
@@ -464,6 +465,17 @@ test('subscription plans are versioned, editable, propagated, resettable, and au
   const current = catalog.body.plans.find((plan: any) => plan.code === 'starter');
   assert.equal(current.activeSubscriptions >= 1, true);
   assert.equal(current.features.socialListening, false);
+  for (const feature of [
+    'journeyAi', 'journeyTemplates', 'journeyExports', 'journeyMetrics', 'journeyPortfolio',
+    'journeyCollaboration', 'journeyHierarchy', 'journeyBlueprints', 'journeyConnected',
+    'journeyProfiles', 'journeyActualPaths',
+    'journeyOrchestration', 'mobileSdks', 'journeyConnectors'
+  ]) assert.equal(typeof current.features[feature], 'boolean', `${feature} is absent from the managed plan catalogue`);
+  for (const limit of [
+    'journeyTemplates', 'journeyShares', 'eventSources', 'monthlyTrackedEvents', 'retainedProfiles',
+    'eventRetentionDays', 'activeJourneyRuleSets', 'activeJourneyOrchestrations',
+    'monthlyOrchestrationActions', 'schemaDefinitions', 'webhookDestinations', 'monthlyJourneyExports'
+  ]) assert.equal(Number.isSafeInteger(current.limits[limit]), true, `${limit} is absent from the managed plan catalogue`);
 
   const updated = await rootAgent.put('/api/platform-admin/plans/starter').send({
     name: 'Starter managed',
@@ -492,7 +504,7 @@ test('subscription plans are versioned, editable, propagated, resettable, and au
   assert.equal(JSON.parse(stored.features_json).socialListening, true);
   assert.equal(JSON.parse(stored.limits_json).monthlyAiActions, 1);
 
-  const reserved = createJob('survey.improve', { quotaFixture: true }, durableQuota.spaceId, null, null, durableQuota.id);
+  const reserved = createAiJobFixture('survey.improve', { quotaFixture: true }, durableQuota.spaceId, null, null, durableQuota.id);
   assert.equal(currentMonthlyAiActions(durableQuota.spaceId), 1);
   assert.throws(() => assertCanQueueAiAction(durableQuota.spaceId), (error: unknown) =>
     error instanceof SubscriptionEntitlementError && error.code === 'SUBSCRIPTION_QUOTA_EXCEEDED');

@@ -14,13 +14,18 @@ import {
 } from './knowledgeBackfill.js';
 import { KnowledgeError } from './knowledgeRepository.js';
 import { getMailDeliveryOverview, syncMailDeliveryEnvironment } from './mailDeliveryAdmin.js';
+import { JourneyMapError } from './journeyMaps.js';
+import {
+  effectiveJourneyRollout, getJourneyPlatformRollout, getJourneySpaceRollout, listJourneyDivergences,
+  listJourneySpaceRollouts, putJourneySpaceRollout, resetJourneySpaceRollout, updateJourneyPlatformRollout
+} from './journeyRollout.js';
 import { resolveRequestSpace, type SpaceContext, SpaceError } from './spaces.js';
 import {
   activeControlPlaneRoleIds, activeControlPlaneRolesForUsers, controlPlanePermissionsForUser,
   controlPlaneRoleAssignments, hasControlPlanePermission, platformPermissionCatalog
 } from './platformRbac.js';
 import {
-  defaultSubscriptionPlanCatalog, effectiveSubscriptionForSpace, listSubscriptionPlans, publicSubscriptionPlan,
+  currentMeteredUsage, defaultSubscriptionPlanCatalog, effectiveSubscriptionForSpace, listSubscriptionPlans, publicSubscriptionPlan,
   subscriptionCatalogVersion, subscriptionPlanCodes, subscriptionPlanSnapshot,
   validatedSubscriptionPlanSnapshot
 } from './subscriptionEntitlements.js';
@@ -44,13 +49,44 @@ const reasonSchema = z.string().trim().min(5).max(1_000);
 const noteSchema = z.string().trim().min(5).max(2_000);
 const planFeaturesSchema = z.object({
   surveys: z.boolean(), campaigns: z.boolean(), agreements: z.boolean(), serviceRecovery: z.boolean(),
-  socialListening: z.boolean(), knowledgeBases: z.boolean(), terra: z.boolean()
+  socialListening: z.boolean(), knowledgeBases: z.boolean(), terra: z.boolean(),
+  journeyDesign: z.boolean(), journeyAi: z.boolean(), journeyPersonas: z.boolean(), journeyEvidence: z.boolean(),
+  journeyTemplates: z.boolean(), journeyExports: z.boolean(), journeyMetrics: z.boolean(), journeyRichCards: z.boolean(),
+  journeySavedViews: z.boolean(),
+  journeyPortfolio: z.boolean(), journeyCollaboration: z.boolean(),
+  journeyHierarchy: z.boolean(), journeyBlueprints: z.boolean(), journeyConnected: z.boolean(),
+  journeyProfiles: z.boolean(), journeyActualPaths: z.boolean(), journeyOrchestration: z.boolean(),
+  mobileSdks: z.boolean(), journeyConnectors: z.boolean()
 }).strict();
 const planLimitsSchema = z.object({
   seats: z.number().int().min(1).max(100_000),
   activeSurveys: z.number().int().min(0).max(1_000_000),
   monthlyAiActions: z.number().int().min(0).max(10_000_000),
-  knowledgeStorageBytes: z.number().int().min(0).max(10 * 1024 * 1024 * 1024 * 1024)
+  knowledgeStorageBytes: z.number().int().min(0).max(10 * 1024 * 1024 * 1024 * 1024),
+  journeyMaps: z.number().int().min(0).max(1_000_000),
+  journeyPersonas: z.number().int().min(0).max(1_000_000),
+  journeyTemplates: z.number().int().min(0).max(1_000_000),
+  journeyShares: z.number().int().min(0).max(10_000_000),
+  eventSources: z.number().int().min(0).max(1_000_000),
+  monthlyTrackedEvents: z.number().int().min(0).max(10_000_000_000),
+  retainedProfiles: z.number().int().min(0).max(1_000_000_000),
+  eventRetentionDays: z.number().int().min(0).max(3_650),
+  activeJourneyRuleSets: z.number().int().min(0).max(1_000_000),
+  activeJourneyOrchestrations: z.number().int().min(0).max(1_000_000),
+  monthlyOrchestrationActions: z.number().int().min(0).max(10_000_000_000),
+  schemaDefinitions: z.number().int().min(0).max(10_000_000),
+  webhookDestinations: z.number().int().min(0).max(1_000_000),
+  monthlyJourneyExports: z.number().int().min(0).max(10_000_000),
+  journeyMetricDefinitions: z.number().int().min(0).max(10_000_000),
+  journeyMetricBindings: z.number().int().min(0).max(100_000_000),
+  journeyMetricSegments: z.number().int().min(0).max(10_000_000),
+  journeyMetricAlertDefinitions: z.number().int().min(0).max(10_000_000),
+  monthlyJourneyMetricImports: z.number().int().min(0).max(10_000_000_000),
+  journeyChannels: z.number().int().min(0).max(10_000_000),
+  journeyTouchpoints: z.number().int().min(0).max(100_000_000),
+  journeyCardAssets: z.number().int().min(0).max(100_000_000),
+  journeyCardAssetBytes: z.number().int().min(0).max(10_000_000_000_000),
+  journeySavedViews: z.number().int().min(0).max(10_000_000)
 }).strict();
 const managedPlanSchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -59,6 +95,33 @@ const managedPlanSchema = z.object({
   features: planFeaturesSchema,
   limits: planLimitsSchema,
   expectedVersion: z.number().int().min(1),
+  reason: reasonSchema
+}).strict();
+const journeyRolloutSettingsSchema = z.object({
+  v2ReadEnabled: z.boolean(),
+  v2WriteEnabled: z.boolean(),
+  dualWriteEnabled: z.boolean(),
+  compareReadsEnabled: z.boolean(),
+  rolloutPercentage: z.number().int().min(0).max(100),
+  forcedLegacy: z.boolean(),
+  killSwitchReference: z.string().trim().min(3).max(200).nullable(),
+  killSwitchReviewAt: z.string().datetime().nullable()
+}).strict();
+const journeyPlatformRolloutMutationSchema = journeyRolloutSettingsSchema.extend({
+  expectedRevision: z.number().int().min(1),
+  reason: reasonSchema
+}).strict();
+const journeySpaceRolloutMutationSchema = z.object({
+  enrollment: z.enum(['inherit', 'included', 'excluded']),
+  v2ReadEnabled: z.boolean().nullable(),
+  v2WriteEnabled: z.boolean().nullable(),
+  dualWriteEnabled: z.boolean().nullable(),
+  compareReadsEnabled: z.boolean().nullable(),
+  rolloutPercentage: z.number().int().min(0).max(100).nullable(),
+  forcedLegacy: z.boolean(),
+  killSwitchReference: z.string().trim().min(3).max(200).nullable(),
+  killSwitchReviewAt: z.string().datetime().nullable(),
+  expectedRevision: z.number().int().min(1).nullable(),
   reason: reasonSchema
 }).strict();
 const promotionGateSchema = z.object({
@@ -163,6 +226,9 @@ function sendPlatformError(response: Response, error: unknown) {
   if (error instanceof KnowledgeError) {
     return response.status(error.status).json({ error: error.message, code: error.code });
   }
+  if (error instanceof JourneyMapError) {
+    return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
+  }
   if (isDatabaseConstraintError(error)) {
     return response.status(409).json({ error: 'The requested change conflicts with current platform state.', code: 'PLATFORM_STATE_CONFLICT' });
   }
@@ -219,7 +285,8 @@ function activeRoleNames(userId: string) {
     .all(userId) as Array<{ role: string }>).map((row) => String(row.role));
 }
 
-type PlatformCapability = 'readPlatform' | 'readUsers' | 'readSpaces' | 'readSubscriptions' | 'readAnalytics' | 'readAudit';
+type PlatformCapability = 'readPlatform' | 'readUsers' | 'readSpaces' | 'readSubscriptions' | 'readAnalytics' | 'readAudit'
+  | 'readJourneyRollout';
 
 function platformCapabilities(user: SessionUser) {
   const root = isRootPlatformAdmin(user.id);
@@ -243,7 +310,9 @@ function platformCapabilities(user: SessionUser) {
     readActivity: allowed('activity.read'),
     readAudit: allowed('audit.read'),
     readAiDefaults: allowed('ai_defaults.read'),
-    manageAiDefaults: allowed('ai_defaults.manage')
+    manageAiDefaults: allowed('ai_defaults.manage'),
+    readJourneyRollout: allowed('journey_rollout.read'),
+    manageJourneyRollout: allowed('journey_rollout.manage')
   };
 }
 
@@ -529,6 +598,7 @@ platformAdminRouter.post('/email-delivery/sync', async (request, response) => {
       after: {
         publicBaseUrl: result.publicBaseUrl,
         deployed: result.deployed,
+        syncedAt: result.syncedAt,
         apps: result.apps.map((app) => ({
           id: app.id,
           applicationId: app.applicationId,
@@ -645,6 +715,95 @@ platformAdminRouter.post('/knowledge-bases/:id/embedding-rollback', (request, re
     recordAudit(request, actor, { action: 'knowledge_embedding.rollback', targetType: 'knowledge_base', targetId: id,
       spaceId, reason, after: { provider: result.knowledgeBase.embeddingProfile.provider, changed: result.changed } });
     return response.json(result);
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+// Journey Map 2.0 rollout controls are platform control-plane data. Space
+// owners cannot read or mutate them through tenant routes, and every mutation
+// is revision-checked and written with the existing immutable admin audit.
+platformAdminRouter.get('/journey-rollout', requirePlatformCapability('readJourneyRollout'), (_request, response) => {
+  try {
+    const spaces = listJourneySpaceRollouts();
+    return response.json({
+      platform: getJourneyPlatformRollout(),
+      spaces: spaces.map((space) => ({ ...space, effective: effectiveJourneyRollout(space.spaceId) }))
+    });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.put('/journey-rollout/platform', (request, response) => {
+  const actor = requireControlPermission(request, response, 'journey_rollout.manage');
+  if (!actor) return;
+  try {
+    const input = journeyPlatformRolloutMutationSchema.parse(request.body || {});
+    const before = getJourneyPlatformRollout();
+    const after = db.transaction(() => {
+      const updated = updateJourneyPlatformRollout({ ...input, actorUserId: actor.id });
+      recordAudit(request, actor, {
+        action: input.forcedLegacy && !before.forcedLegacy
+          ? 'journey_rollout.platform_forced_legacy' : 'journey_rollout.platform_updated',
+        targetType: 'journey_rollout_platform', targetId: 'platform', reason: input.reason,
+        before: before as unknown as JsonObject, after: updated as unknown as JsonObject
+      });
+      return updated;
+    })();
+    return response.json({ platform: after });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.put('/journey-rollout/spaces/:spaceId', (request, response) => {
+  const actor = requireControlPermission(request, response, 'journey_rollout.manage');
+  if (!actor) return;
+  try {
+    const spaceId = uuidSchema.parse(request.params.spaceId);
+    if (!db.prepare('SELECT 1 FROM spaces WHERE id=?').get(spaceId)) {
+      throw new PlatformAdminError('Space not found.', 404, 'SPACE_NOT_FOUND');
+    }
+    const input = journeySpaceRolloutMutationSchema.parse(request.body || {});
+    const before = getJourneySpaceRollout(spaceId);
+    const after = db.transaction(() => {
+      const updated = putJourneySpaceRollout({ ...input, spaceId, actorUserId: actor.id });
+      recordAudit(request, actor, {
+        action: input.forcedLegacy && !before?.forcedLegacy
+          ? 'journey_rollout.space_forced_legacy' : 'journey_rollout.space_updated',
+        targetType: 'journey_rollout_space', targetId: spaceId, spaceId, reason: input.reason,
+        before: (before || {}) as unknown as JsonObject, after: updated as unknown as JsonObject
+      });
+      return updated;
+    })();
+    return response.json({ space: after, effective: effectiveJourneyRollout(spaceId) });
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.delete('/journey-rollout/spaces/:spaceId', (request, response) => {
+  const actor = requireControlPermission(request, response, 'journey_rollout.manage');
+  if (!actor) return;
+  try {
+    const spaceId = uuidSchema.parse(request.params.spaceId);
+    const input = z.object({ expectedRevision: z.number().int().min(1), reason: reasonSchema }).strict()
+      .parse(request.body || {});
+    const before = getJourneySpaceRollout(spaceId);
+    if (!before) throw new PlatformAdminError('Journey rollout override not found.', 404, 'JOURNEY_ROLLOUT_NOT_FOUND');
+    db.transaction(() => {
+      resetJourneySpaceRollout(spaceId, input.expectedRevision);
+      recordAudit(request, actor, {
+        action: 'journey_rollout.space_reset', targetType: 'journey_rollout_space', targetId: spaceId,
+        spaceId, reason: input.reason, before: before as unknown as JsonObject,
+        after: { inherited: true, effective: effectiveJourneyRollout(spaceId) }
+      });
+    })();
+    return response.status(204).end();
+  } catch (error) { return sendPlatformError(response, error); }
+});
+
+platformAdminRouter.get('/journey-rollout/divergences', requirePlatformCapability('readJourneyRollout'), (request, response) => {
+  try {
+    const input = z.object({
+      spaceId: uuidSchema.optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(50),
+      before: z.string().datetime().optional()
+    }).strict().parse(request.query || {});
+    return response.json({ divergences: listJourneyDivergences(input) });
   } catch (error) { return sendPlatformError(response, error); }
 });
 
@@ -990,6 +1149,7 @@ platformAdminRouter.get('/spaces/:id', requirePlatformCapability('readSpaces'), 
         (SELECT COUNT(*) FROM knowledge_bases WHERE space_id=?) knowledge_bases`).get(id, id, id, id, id, id, id) as any;
     return response.json({
       space: spaceSummary(row), members, subscription: subscriptionForSpace(id),
+      meteredUsage: currentMeteredUsage(id),
       counts: {
         surveys: Number(counts?.surveys || 0), responses: Number(counts?.responses || 0), campaigns: Number(counts?.campaigns || 0),
         agreements: Number(counts?.agreements || 0), aiJobs: Number(counts?.ai_jobs || 0),
@@ -1341,7 +1501,8 @@ subscriptionRouter.get('/current', (request, response) => {
       source: effective.source,
       subscriptionStatus: effective.subscriptionStatus,
       catalogVersion: effective.catalogVersion
-    }
+    },
+    meteredUsage: currentMeteredUsage(context.space.id)
   });
 });
 

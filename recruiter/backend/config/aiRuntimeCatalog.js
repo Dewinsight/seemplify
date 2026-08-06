@@ -9,6 +9,10 @@ const TERRA_PROVIDER = 'local-codex';
 const TERRA_MODEL = 'gpt-5.6-terra';
 const CLAUDE_PROVIDER = 'local-claude';
 const CLAUDE_SONNET_MODEL = 'sonnet';
+/** A recruiter's own ChatGPT plan, reached through the same gateway transport
+ * as the managed local runtimes but billed to that person's account. */
+const CHATGPT_PROVIDER = 'chatgpt-codex';
+const CHATGPT_MODEL = 'chatgpt-codex-account';
 const DEFAULT_LOCAL_FAILOVER = Object.freeze({
   enabled: true,
   intervalMinutes: 30,
@@ -72,6 +76,25 @@ const DEFAULT_MODELS = Object.freeze([
     enabled: true,
     localCloud: true,
     managed: true
+  },
+  {
+    id: CHATGPT_MODEL,
+    provider: CHATGPT_PROVIDER,
+    label: 'ChatGPT (connected account)',
+    // json_schema is mandatory: resolveRoute rejects any model that cannot
+    // satisfy a structured activity, and most Recruiter activities are.
+    capabilities: ['text', 'reasoning', 'json_object', 'json_schema', 'tools', 'streaming'],
+    // Inference bills to the connected user's ChatGPT plan, not to Seemplify.
+    pricing: { inputPerMillionUsd: 0, cachedInputPerMillionUsd: 0, outputPerMillionUsd: 0 },
+    documentedLimits: { concurrency: 1 },
+    contextWindow: 131072,
+    maxOutputTokens: 65536,
+    available: true,
+    // Off until a platform administrator enables the ChatGPT runtime.
+    enabled: false,
+    localCloud: true,
+    managed: false,
+    userOwned: true
   },
   {
     id: CLAUDE_SONNET_MODEL,
@@ -287,12 +310,51 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
 });
 
 function failoverPolicyForRoute(activity, provider) {
+  // A personal ChatGPT plan must never silently hand private work to Groq and
+  // bill it to the platform. Failure is reported, not papered over.
+  if (isUserOwnedProvider(provider)) return 'chatgpt_required';
   if (ACTIVITY_DEFINITIONS[activity]?.lockedProvider === true) return 'wait_local';
   return isManagedLocalProvider(provider) ? 'groq_immediate' : 'none';
 }
 
 function isManagedLocalProvider(provider) {
   return ['local-codex', 'local-claude', 'local-ollama', 'local-vllm'].includes(String(provider || '').trim().toLowerCase());
+}
+
+function isUserOwnedProvider(provider) {
+  return String(provider || '').trim().toLowerCase() === CHATGPT_PROVIDER;
+}
+
+/** Both families reach the gateway over the same signed transport, so the
+ * transport branch keys off this while failover semantics stay separate. */
+function isGatewayProvider(provider) {
+  return isManagedLocalProvider(provider) || isUserOwnedProvider(provider);
+}
+
+/**
+ * Which runtimes a platform administrator has switched on, and which one an
+ * account uses when it has expressed no preference.
+ */
+const DEFAULT_RUNTIME_POLICY = Object.freeze({
+  localEnabled: true,
+  chatgptEnabled: false,
+  defaultRuntime: 'local'
+});
+
+function normalizeRuntimePolicy(value) {
+  const candidate = value && typeof value === 'object' ? value : {};
+  const localEnabled = typeof candidate.localEnabled === 'boolean'
+    ? candidate.localEnabled : DEFAULT_RUNTIME_POLICY.localEnabled;
+  const chatgptEnabled = typeof candidate.chatgptEnabled === 'boolean'
+    ? candidate.chatgptEnabled : DEFAULT_RUNTIME_POLICY.chatgptEnabled;
+  const requested = candidate.defaultRuntime === 'chatgpt' || candidate.defaultRuntime === 'local'
+    ? candidate.defaultRuntime : DEFAULT_RUNTIME_POLICY.defaultRuntime;
+  // A default pointing at a disabled runtime would be unenforceable, so it is
+  // corrected on read rather than trusted.
+  const defaultRuntime = requested === 'chatgpt' && !chatgptEnabled ? 'local'
+    : requested === 'local' && !localEnabled && chatgptEnabled ? 'chatgpt'
+    : requested;
+  return { localEnabled, chatgptEnabled, defaultRuntime };
 }
 
 const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({
@@ -357,6 +419,7 @@ function createDefaultRuntimeSettings() {
     models: DEFAULT_MODELS.map((model) => ({ ...model })),
     routes: DEFAULT_ROUTES.map((route) => ({ ...route })),
     quotaGroups: [{ id: 'groq-primary', label: 'Groq primary organization', enabled: true }],
+    runtimePolicy: { ...DEFAULT_RUNTIME_POLICY },
     alerts: { ...DEFAULT_ALERT_SETTINGS },
     localFailover: { ...DEFAULT_LOCAL_FAILOVER },
     rollout: { ...DEFAULT_ROLLOUT_SETTINGS },
@@ -366,9 +429,12 @@ function createDefaultRuntimeSettings() {
 
 module.exports = {
   ACTIVITY_DEFINITIONS,
+  CHATGPT_MODEL,
+  CHATGPT_PROVIDER,
   CLAUDE_PROVIDER,
   CLAUDE_SONNET_MODEL,
   DEFAULT_ALERT_SETTINGS,
+  DEFAULT_RUNTIME_POLICY,
   DEFAULT_LOCAL_FAILOVER,
   DEFAULT_ROLLOUT_SETTINGS,
   DEFAULT_MODELS,
@@ -384,6 +450,9 @@ module.exports = {
   TERRA_PROVIDER,
   createDefaultRuntimeSettings,
   failoverPolicyForRoute,
+  isGatewayProvider,
   isManagedLocalProvider,
-  localProviderLabel
+  isUserOwnedProvider,
+  localProviderLabel,
+  normalizeRuntimePolicy
 };

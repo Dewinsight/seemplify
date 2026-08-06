@@ -1,3 +1,9 @@
+# LEGACY. Outbound transactional email now goes through the self-hosted
+# Seemplify mail service (see docs/TRANSACTIONAL-EMAIL.md), so Brevo no longer
+# produces delivery events for this deployment. The inbound webhook endpoint and
+# its bounce/complaint suppression are retained, and this script still registers
+# the endpoint for any deployment that is still receiving Brevo events. Do not
+# use it as part of a new installation.
 param(
   [string]$PublicUrl = 'https://experience.aiinnigeria.com',
   [string]$BrevoEnvFile = '',

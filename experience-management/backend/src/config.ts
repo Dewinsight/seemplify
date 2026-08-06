@@ -291,7 +291,7 @@ export const config = {
     ),
     ssl: postgresSsl(process.env.POSTGRES_SSL),
     schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
-    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 11, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 30, 1, 1_000_000),
     sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
   },
   uploadDir: resolveFromBackend(
@@ -329,6 +329,15 @@ export const config = {
   knowledgeBackfillHeartbeatMs: boundedNumber(process.env.KNOWLEDGE_BACKFILL_HEARTBEAT_MS, 30_000, 5_000, 5 * 60_000),
   knowledgeRetrieveTopK: boundedNumber(process.env.KNOWLEDGE_RETRIEVE_TOP_K, 10, 2, 20),
   knowledgeContextMaxBytes: boundedNumber(process.env.KNOWLEDGE_CONTEXT_MAX_BYTES, 64 * 1024, 8 * 1024, 256 * 1024),
+  journeyIdentityHashKeyFile: resolveFromBackend(
+    process.env.JOURNEY_IDENTITY_HASH_KEY_FILE || '../../.local-runtime/experience-management/journey-identity-hash-key'
+  ),
+  journeyStageWorkerPollMs: boundedNumber(process.env.JOURNEY_STAGE_WORKER_POLL_MS, 750, 100, 60_000),
+  journeyStageWorkerLeaseMs: boundedNumber(process.env.JOURNEY_STAGE_WORKER_LEASE_MS, 60_000, 5_000, 10 * 60_000),
+  journeyStageWorkerBatchSize: boundedNumber(process.env.JOURNEY_STAGE_WORKER_BATCH_SIZE, 25, 1, 100),
+  journeyResearchRefreshPollMs: boundedNumber(process.env.JOURNEY_RESEARCH_REFRESH_POLL_MS, 2_000, 100, 60_000),
+  journeyResearchRefreshLeaseMs: boundedNumber(process.env.JOURNEY_RESEARCH_REFRESH_LEASE_MS, 60_000, 5_000, 10 * 60_000),
+  journeyResearchRefreshBatchSize: boundedNumber(process.env.JOURNEY_RESEARCH_REFRESH_BATCH_SIZE, 10, 1, 100),
   esignStorageDir: resolveFromBackend(
     process.env.ESIGN_STORAGE_DIR || '../../.local-runtime/experience-management/esign'
   ),

@@ -770,6 +770,12 @@ function requestedFeature(request: Request): SubscriptionFeature | null {
   if (path.includes('/esign')) return 'agreements';
   if (path.includes('/campaigns')) return 'campaigns';
   if (path.includes('/tickets')) return 'serviceRecovery';
+  // Journey design is its own entitlement so manual mapping survives an AI-free
+  // plan. The legacy `/journeys` routes keep their historic AI-runtime gate
+  // until every client has moved to the Map 2.0 surfaces.
+  if (path.includes('/journey-personas')) return 'journeyPersonas';
+  if (path.includes('/journey-evidence')) return 'journeyEvidence';
+  if (path.includes('/journey-maps')) return 'journeyDesign';
   if (path.includes('/assistant') || path.includes('/intelligence') || path.includes('/journeys')
     || path.includes('/ai-provider')) return 'terra';
   if (path.includes('/ai/') || path.endsWith('/ai') || path.includes('/runtime')) return 'terra';

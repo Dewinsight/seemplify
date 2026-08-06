@@ -1,0 +1,22 @@
+{
+  "protocolVersion": "1.0",
+  "batchId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f60",
+  "results": [
+    {
+      "eventId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f61",
+      "index": 0,
+      "status": "accepted",
+      "duplicate": false,
+      "retryable": false,
+      "receivedAt": "2026-08-04T12:36:00.050Z"
+    },
+    {
+      "eventId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f62",
+      "index": 1,
+      "status": "duplicate",
+      "duplicate": true,
+      "retryable": false,
+      "receivedAt": "2026-08-04T12:36:00.051Z"
+    }
+  ]
+}

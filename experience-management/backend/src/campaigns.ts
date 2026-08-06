@@ -57,7 +57,7 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
 
 const rowCampaign = (row: any): Campaign => ({
   id: row.id, surveyId: row.survey_id, collectorId: row.collector_id, name: row.name,
-  senderName: normalizeEmailSenderName(row.sender_name), senderEmail: config.brevoFromEmail,
+  senderName: normalizeEmailSenderName(row.sender_name), senderEmail: config.mailFromEmail,
   status: row.status === 'running' ? 'active' : row.status, stopOnResponse: Boolean(row.stop_on_response), startAt: row.start_at,
   startsAt: row.start_at, settings: { stopOnResponse: Boolean(row.stop_on_response) },
   createdAt: row.created_at, updatedAt: row.updated_at, launchedAt: row.launched_at,
@@ -615,7 +615,7 @@ const finalizeFailedDelivery = db.transaction((input: { deliveryId: string; camp
   }
   const delay = Math.min(60, Math.pow(2, Math.max(0, Number(delivery.attempt) - 1))) * 60_000;
   const firstAttemptAt = Date.parse(String(delivery.first_attempt_at || now));
-  const idempotencyExpiresAt = firstAttemptAt + config.brevoIdempotencyTtlMinutes * 60_000;
+  const idempotencyExpiresAt = firstAttemptAt + config.mailIdempotencyTtlMinutes * 60_000;
   if (!Number.isFinite(firstAttemptAt) || Date.now() + delay >= idempotencyExpiresAt) {
     const error = `${input.error} Retry stopped before the provider idempotency window expired to avoid a duplicate send.`.slice(0, 1000);
     db.prepare("UPDATE campaign_deliveries SET state='failed',error=?,updated_at=? WHERE id=?").run(error, now, input.deliveryId);
@@ -693,7 +693,7 @@ const recoverSendingDeliveries = db.transaction((now: string, freshAfter: string
 
 export function recoverCampaignDeliveries() {
   const now = new Date();
-  const result = recoverSendingDeliveries(now.toISOString(), new Date(now.getTime() - config.brevoIdempotencyTtlMinutes * 60_000).toISOString());
+  const result = recoverSendingDeliveries(now.toISOString(), new Date(now.getTime() - config.mailIdempotencyTtlMinutes * 60_000).toISOString());
   for (const campaignId of result.campaignIds) {
     publishCampaign(campaignId, { reason: result.failed ? 'delivery-recovery-failed' : 'delivery-recovered' });
     refreshCampaignCompletion(campaignId);

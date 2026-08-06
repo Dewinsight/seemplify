@@ -99,6 +99,9 @@ interface ActivityRoute {
   activity: string;
   provider: string;
   model: string;
+  /** For a connected-ChatGPT route the platform model is a placeholder; this is
+   * the preferred model from the account catalogue, resolved per user. */
+  codexModel?: string;
   reasoningEffort: 'low' | 'medium' | 'high';
   enabled: boolean;
   routeVersion: number;
@@ -325,6 +328,20 @@ interface RuntimeSettings {
   activityDefinitions: ActivityDefinition[];
   alerts: AlertSettings;
   quotaGroups: QuotaGroupOption[];
+  providerEnabled?: boolean;
+  chatgptCatalog?: {
+    available: boolean;
+    connected?: boolean;
+    email?: string | null;
+    planType?: string | null;
+    models: Array<{ id: string; displayName: string; isDefault?: boolean }>;
+    error: string | null;
+  };
+  runtimePolicy?: {
+    localEnabled: boolean;
+    chatgptEnabled: boolean;
+    defaultRuntime: 'local' | 'chatgpt';
+  };
   rollout: {
     groqPercent: 10 | 50 | 100;
     azureBaselineEnabled: boolean;
@@ -1300,12 +1317,54 @@ export default function AIRuntimeAdminPage() {
     }
   }
 
+  async function saveRuntimePolicy(patch: Partial<NonNullable<RuntimeSettings['runtimePolicy']>>) {
+    setBusy('runtime-policy');
+    try {
+      await adminJson('/api/admin/ai-runtime/runtime-policy', { method: 'PUT', body: JSON.stringify(patch) });
+      await loadSettings();
+      toast({ title: 'Runtime policy saved' });
+    } catch (error) {
+      toast({
+        title: 'Runtime policy was not saved',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive'
+      });
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function saveProviderEnabled(providerEnabled: boolean) {
+    setBusy('provider-enabled');
+    try {
+      await adminJson('/api/admin/ai-runtime/provider', { method: 'PUT', body: JSON.stringify({ providerEnabled }) });
+      await loadSettings();
+      toast({
+        title: providerEnabled ? 'AI activity resumed' : 'AI activity stopped',
+        description: providerEnabled ? undefined : 'Every AI activity now returns AI_ACTIVITY_DISABLED.'
+      });
+    } catch (error) {
+      toast({
+        title: 'The AI switch was not changed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive'
+      });
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function saveRoute(route: ActivityRoute) {
     setBusy(`route:${route.activity}`);
     try {
       await adminJson(`/api/admin/ai-runtime/routes/${encodeURIComponent(route.activity)}`, {
         method: 'PUT',
-        body: JSON.stringify({ model: route.model, reasoningEffort: route.reasoningEffort, enabled: route.enabled })
+        body: JSON.stringify({
+          model: route.model,
+          codexModel: route.codexModel,
+          reasoningEffort: route.reasoningEffort,
+          enabled: route.enabled
+        })
       });
       await loadSettings();
       toast({ title: 'Route saved', description: `${definitions.get(route.activity)?.label || route.activity} now uses ${route.model}.` });
@@ -1628,6 +1687,63 @@ export default function AIRuntimeAdminPage() {
               <TabsContent value="overview" className="mt-5 space-y-5">
                 {loading && !overview ? <div className="flex h-48 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-blue-400" /></div> : (
                   <>
+                    <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-4" data-testid="runtime-policy-card">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-100">AI runtimes</h3>
+                          <p className="mt-1 max-w-2xl text-xs text-gray-400">
+                            Which runtimes users may reach, and which one they get when they have expressed no
+                            preference. A recruiter can only use ChatGPT after connecting their own account and
+                            accepting the data-sharing notice.
+                          </p>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs text-gray-300">
+                          <Switch
+                            checked={settings?.providerEnabled !== false}
+                            disabled={!canConfigure || busy === 'provider-enabled'}
+                            onCheckedChange={(value) => void saveProviderEnabled(value)}
+                            data-testid="provider-enabled-switch"
+                          />
+                          All AI activity
+                        </label>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <label className="flex items-center gap-2 rounded-md border border-gray-800 p-3 text-xs text-gray-300">
+                          <Switch
+                            checked={settings?.runtimePolicy?.localEnabled !== false}
+                            disabled={!canConfigure || busy === 'runtime-policy'}
+                            onCheckedChange={(value) => void saveRuntimePolicy({ localEnabled: value })}
+                            data-testid="local-runtime-switch"
+                          />
+                          Local AI runtime
+                        </label>
+                        <label className="flex items-center gap-2 rounded-md border border-gray-800 p-3 text-xs text-gray-300">
+                          <Switch
+                            checked={settings?.runtimePolicy?.chatgptEnabled === true}
+                            disabled={!canConfigure || busy === 'runtime-policy'}
+                            onCheckedChange={(value) => void saveRuntimePolicy({ chatgptEnabled: value })}
+                            data-testid="chatgpt-runtime-switch"
+                          />
+                          ChatGPT (user accounts)
+                        </label>
+                        <div className="rounded-md border border-gray-800 p-3">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-500">Default runtime</p>
+                          <Select
+                            value={settings?.runtimePolicy?.defaultRuntime || 'local'}
+                            onValueChange={(value) => void saveRuntimePolicy({ defaultRuntime: value as 'local' | 'chatgpt' })}
+                            disabled={!canConfigure || busy === 'runtime-policy'}
+                          >
+                            <SelectTrigger className="mt-1 h-8 border-gray-800 bg-gray-950 text-xs" data-testid="default-runtime-select">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="local">Local AI runtime</SelectItem>
+                              <SelectItem value="chatgpt">ChatGPT</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
                     <LiveOperationsPanel
                       data={liveOperations}
                       connection={liveConnection}
@@ -2227,13 +2343,14 @@ export default function AIRuntimeAdminPage() {
                   {settings?.routingHealth && !settings.routingHealth.valid && <div role="alert" className="border-b border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">{settings.routingHealth.issues.map((issue) => <p key={`${issue.activity}:${issue.code}`}><span className="font-mono">{issue.activity}</span>: {issue.message}</p>)}</div>}
                   <div className="overflow-x-auto">
                     <Table>
-                      <TableHeader><TableRow className="border-gray-800"><TableHead>Activity</TableHead><TableHead>Provider</TableHead><TableHead>Model</TableHead><TableHead>Reasoning</TableHead><TableHead>Enabled</TableHead><TableHead className="text-right">Save</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow className="border-gray-800"><TableHead>Activity</TableHead><TableHead>Provider</TableHead><TableHead>Model</TableHead><TableHead>ChatGPT model</TableHead><TableHead>Reasoning</TableHead><TableHead>Enabled</TableHead><TableHead className="text-right">Save</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {(settings?.routes || []).map((route) => (
                           <TableRow key={route.activity} className="border-gray-800">
                             <TableCell><div className="font-medium text-gray-200">{definitions.get(route.activity)?.label || route.activity}</div><div className="text-xs text-gray-500">{definitions.get(route.activity)?.group} / v{route.routeVersion}{definitions.get(route.activity)?.lockedProvider ? ' / local provider locked' : ''}</div></TableCell>
                             <TableCell className={route.provider === 'groq' ? 'text-gray-300' : 'text-green-300'}>{route.provider === 'groq' ? 'Groq' : 'Managed local'}</TableCell>
                             <TableCell><Select disabled={definitions.get(route.activity)?.lockedProvider} value={route.model} onValueChange={(model) => editRoute(route.activity, { model })}><SelectTrigger aria-label={`${definitions.get(route.activity)?.label || route.activity} model`} className="w-56 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent>{settings?.models.filter((model) => model.enabled && model.available !== false && (!definitions.get(route.activity)?.lockedProvider || model.provider === route.provider)).map((model) => <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>)}</SelectContent></Select></TableCell>
+                            <TableCell>{route.provider === 'chatgpt-codex' ? (<Select value={route.codexModel || ''} onValueChange={(codexModel) => editRoute(route.activity, { codexModel })} disabled={!settings?.chatgptCatalog?.connected}><SelectTrigger aria-label={`${definitions.get(route.activity)?.label || route.activity} ChatGPT model`} className="w-56 border-gray-700 bg-gray-950"><SelectValue placeholder={settings?.chatgptCatalog?.connected ? 'Account default' : 'Connect ChatGPT'} /></SelectTrigger><SelectContent>{(settings?.chatgptCatalog?.models || []).map((model) => <SelectItem key={model.id} value={model.id}>{model.displayName}{model.isDefault ? ' (default)' : ''}</SelectItem>)}</SelectContent></Select>) : <span className="text-xs text-gray-600">Not applicable</span>}</TableCell>
                             <TableCell><Select value={route.reasoningEffort} onValueChange={(reasoningEffort) => editRoute(route.activity, { reasoningEffort: reasoningEffort as ActivityRoute['reasoningEffort'] })}><SelectTrigger aria-label={`${definitions.get(route.activity)?.label || route.activity} reasoning effort`} className="w-28 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">

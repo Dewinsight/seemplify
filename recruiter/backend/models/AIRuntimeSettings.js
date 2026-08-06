@@ -11,6 +11,8 @@ const AIRuntimeSettingsSchema = new mongoose.Schema({
   quotaGroups: { type: [mongoose.Schema.Types.Mixed], default: () => defaults.quotaGroups },
   alerts: { type: mongoose.Schema.Types.Mixed, default: () => defaults.alerts },
   localFailover: { type: mongoose.Schema.Types.Mixed, default: () => defaults.localFailover },
+  // Which runtimes are switched on, and which one an account uses by default.
+  runtimePolicy: { type: mongoose.Schema.Types.Mixed, default: () => defaults.runtimePolicy },
   rollout: { type: mongoose.Schema.Types.Mixed, default: () => defaults.rollout },
   version: { type: Number, default: 1 },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }

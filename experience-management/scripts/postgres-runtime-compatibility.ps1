@@ -26,6 +26,24 @@ function Test-ProjectSupportsPostgresRuntimeVersion([string]$ProjectDir, [int]$R
   if ($RequiredVersion -ge 9 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0009_managed_subscription_plans.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 10 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0010_deep_corpus_analysis.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 11 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0011_bounded_active_request_indexes.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 12 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0012_journey_map_v2.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 13 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0013_governed_journey_templates.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 14 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0014_journey_evidence_lifecycle.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 15 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0015_subscription_usage_ledger.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 16 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0016_journey_event_control_plane.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 17 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0017_journey_event_data_plane.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 18 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0018_journey_stage_processing.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 19 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0019_journey_research_hub.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 20 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0020_journey_v2_rollout.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 21 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0021_journey_metric_observations.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 22 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0022_journey_ai_suggestions.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 23 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0023_versioned_journey_personas.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 24 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0024_journey_rich_cards.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 25 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0025_journey_metric_alerts.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 26 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0026_journey_saved_views.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 27 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0027_journey_portfolio.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 28 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0028_journey_collaboration.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 29 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0029_journey_hierarchy_blueprints.sql') -PathType Leaf)) { return $false }
   return $true
 }
 

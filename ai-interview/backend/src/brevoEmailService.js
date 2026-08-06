@@ -7,19 +7,24 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-function getBrevoConfig() {
+const crypto = require('crypto');
+const { formatMailAddress, isMailConfigured, sendMail } = require('./mailClient');
+
+/**
+ * Kept under its original name and export shape so callers do not change; the
+ * transport underneath is now the self-hosted Seemplify mail service.
+ */
+function getMailConfig() {
   return {
-    apiKey: process.env.BREVO_API_KEY,
-    fromEmail: process.env.BREVO_FROM_EMAIL || process.env.AI_INTERVIEW_FROM_EMAIL || 'no-reply@seemplifyai.com',
-    fromName: process.env.BREVO_FROM_NAME || process.env.AI_INTERVIEW_FROM_NAME || 'Seemplify AI Interview',
-    apiUrl: process.env.BREVO_API_URL || 'https://api.brevo.com/v3/smtp/email',
+    fromEmail: process.env.MAIL_FROM_EMAIL || process.env.AI_INTERVIEW_FROM_EMAIL || 'no-reply@seemplifyai.com',
+    fromName: process.env.MAIL_FROM_NAME || process.env.AI_INTERVIEW_FROM_NAME || 'Seemplify AI Interview',
+    baseUrl: process.env.MAIL_API_BASE_URL || '',
     mode: (process.env.AI_INTERVIEW_EMAIL_MODE || 'send').toLowerCase()
   };
 }
 
 function isConfigured() {
-  const config = getBrevoConfig();
-  return Boolean(config.apiKey);
+  return isMailConfigured();
 }
 
 function buildInviteEmail({ candidateName, organizationName, jobTitle, interviewTitle, questionCount, expiresAt, interviewUrl }) {
@@ -66,35 +71,21 @@ function buildInviteEmail({ candidateName, organizationName, jobTitle, interview
   return { html, text };
 }
 
-async function sendEmail({ to, subject, html, text }) {
-  const config = getBrevoConfig();
-  if (!config.apiKey) {
-    throw new Error('BREVO_API_KEY is not configured.');
-  }
+async function sendEmail({ to, subject, html, text, idempotencyKey, tag }) {
+  const config = getMailConfig();
   if (config.mode === 'log') {
     return { messageId: `log_${Date.now()}`, mode: 'log' };
   }
-
-  const response = await fetch(config.apiUrl, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'api-key': config.apiKey
-    },
-    body: JSON.stringify({
-      sender: { name: config.fromName, email: config.fromEmail },
-      to: [{ email: to }],
-      subject,
-      htmlContent: html,
-      textContent: text
-    })
+  return sendMail({
+    from: formatMailAddress(config.fromEmail),
+    fromName: config.fromName,
+    to,
+    subject,
+    html,
+    text,
+    tag,
+    idempotencyKey: String(idempotencyKey || '').trim() || crypto.randomUUID()
   });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(body.message || `Brevo send failed with status ${response.status}`);
-  }
-  return body;
 }
 
 async function sendInvite(input) {
@@ -103,12 +94,18 @@ async function sendInvite(input) {
     to: input.candidateEmail,
     subject: `${input.organizationName || 'AI Interview'} - AI Interview Invitation - ${input.jobTitle || 'Role'}`,
     html,
-    text
+    text,
+    tag: 'ai_interview_invite',
+    // The interview URL embeds the single-use invite token, so it identifies
+    // this invitation event exactly. A reissued invite gets a new token.
+    idempotencyKey: input.invitationId
+      ? `ai_interview_invite:${input.invitationId}`
+      : `ai_interview_invite:${crypto.createHash('sha256').update(String(input.interviewUrl || '')).digest('hex').slice(0, 32)}`
   });
 }
 
 module.exports = {
   isConfigured,
-  getBrevoConfig,
+  getMailConfig,
   sendInvite
 };

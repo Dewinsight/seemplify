@@ -30,6 +30,9 @@ const { app } = await import('../src/app.js');
 const { db, deleteJourney, getJob, getJourney, getJourneyVersion, listJourneyVersionSummaries, updateJob, updateJourney } = await import('../src/database.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
 const { TerraError } = await import('../src/terraClient.js');
+const {
+  applyJourneySuggestionRun, purgeJourneySuggestionAuditForMaintenance, reviewJourneySuggestionChange
+} = await import('../src/journeySuggestions.js');
 const originalFetch = globalThis.fetch;
 
 after(() => {
@@ -124,8 +127,10 @@ test('an in-flight Terra optimization cannot overwrite a newer workspace edit', 
     terraStarted();
     await release;
     return terraResponse({
-      name: 'Concurrent journey', audience: 'Customers', objective: 'Improve adoption', industry: 'Software',
-      summary: 'Terra summary that must not win', stages
+      summary: 'A bounded set of journey changes for explicit human review.',
+      changes: [{ operation: 'stage.update', stageKey: 's01-discover', name: null,
+        goal: 'A proposed goal that must not win', description: null,
+        rationale: 'Proposes a clearer stage outcome without replacing the journey map.', evidenceRefs: [] }]
     });
   };
 
@@ -135,7 +140,13 @@ test('an in-flight Terra optimization cannot overwrite a newer workspace edit', 
     expectedUpdatedAt: created.body.updatedAt, summary: 'Workspace edit made while Terra was running'
   }).expect(200);
   releaseTerra();
-  await assert.rejects(execution, (error: unknown) => error instanceof TerraError && error.code === 'JOURNEY_CHANGED' && error.retryable === false);
+  let review = (await execution).output as any;
+  review = reviewJourneySuggestionChange({ spaceId: job.spaceId, runId: review.run.id,
+    changeId: review.changes[0].id, expectedRunRevision: review.run.revision,
+    decision: 'accepted', reason: 'Apply only if the compatibility base is safe.', actorUserId: job.requestedBy! });
+  assert.throws(() => applyJourneySuggestionRun({ spaceId: job.spaceId, runId: review.run.id,
+    expectedRunRevision: review.run.revision, expectedDefinitionRevision: review.run.baseDefinitionRevision,
+    actorUserId: job.requestedBy! }), (error: any) => error.code === 'JOURNEY_SUGGESTION_LEGACY_DUAL_WRITE_UNSUPPORTED');
   const persisted = getJourney(created.body.id);
   assert.equal(persisted?.summary, edited.body.summary);
   assert.equal(persisted?.updatedAt, edited.body.updatedAt);
@@ -155,8 +166,10 @@ test('a committed Terra optimization replays its recorded result without a secon
   globalThis.fetch = async () => {
     terraCalls += 1;
     return terraResponse({
-      name: 'Replay-safe journey', audience: 'Customers', objective: 'Improve adoption', industry: 'Software',
-      summary: 'Improved exactly once', stages
+      summary: 'A replay-safe set of reviewed journey map suggestions.',
+      changes: [{ operation: 'stage.update', stageKey: 's01-discover', name: null,
+        goal: 'Improved only after review', description: null,
+        rationale: 'Proposes a measurable stage outcome without directly changing the map.', evidenceRefs: [] }]
     });
   };
 
@@ -164,16 +177,25 @@ test('a committed Terra optimization replays its recorded result without a secon
   const replayed = await executeAiJob(job);
   assert.equal(terraCalls, 1);
   assert.deepEqual(replayed, first);
-  assert.equal(getJourney(created.body.id)?.summary, 'Improved exactly once');
+  assert.equal((first.output as any).run.state, 'review');
+  assert.equal((first.output as any).changes.length, 1);
+  assert.equal(getJourney(created.body.id)?.summary, 'Original summary');
   const versions = listJourneyVersionSummaries(created.body.id, 20);
-  assert.equal(versions.length, 1);
-  assert.equal(versions[0].reason, 'terra_optimize');
-  assert.equal(versions[0].sourceJobId, job.id);
-  assert.equal(getJourneyVersion(created.body.id, versions[0].id)?.snapshot.summary, 'Original summary');
-  assert.equal((db.prepare('SELECT COUNT(*) count FROM journey_ai_applications WHERE job_id=?').get(job.id) as any).count, 1);
+  assert.equal(versions.length, 0);
+  assert.equal((db.prepare('SELECT COUNT(*) count FROM journey_ai_applications WHERE job_id=?').get(job.id) as any).count, 0);
+  assert.equal((db.prepare('SELECT COUNT(*) count FROM journey_ai_suggestion_changes WHERE run_id=?')
+    .get(queued.body.suggestionId) as any).count, 1);
   updateJob(job.id, { state: 'completed', stage: 'completed', progress: 100, result: first, completedAt: new Date().toISOString() });
-  assert.match(String((db.prepare('SELECT result_json FROM ai_jobs WHERE id=?').get(job.id) as any).result_json), new RegExp(created.body.id));
+  assert.match(String((db.prepare('SELECT result_json FROM ai_jobs WHERE id=?').get(job.id) as any).result_json), /review/u);
   const current = getJourney(created.body.id)!;
+  const retained = await agent.delete(`/api/journeys/${created.body.id}`)
+    .send({ expectedUpdatedAt: current.updatedAt }).expect(409);
+  assert.equal(retained.body.code, 'JOURNEY_AI_AUDIT_RETENTION');
+  process.env.JOURNEY_AUDIT_MAINTENANCE_MODE = 'privacy-purge';
+  try {
+    purgeJourneySuggestionAuditForMaintenance({ spaceId: job.spaceId, definitionId: queued.body.definitionId,
+      reasonCode: 'privacy_erasure', changeTicket: 'TEST-PRIVACY-2026' });
+  } finally { delete process.env.JOURNEY_AUDIT_MAINTENANCE_MODE; }
   await agent.delete(`/api/journeys/${created.body.id}`).send({ expectedUpdatedAt: current.updatedAt }).expect(204);
   assert.equal(getJob(job.id), null);
   assert.equal((db.prepare('SELECT COUNT(*) count FROM journey_ai_applications WHERE journey_id=?').get(created.body.id) as any).count, 0);

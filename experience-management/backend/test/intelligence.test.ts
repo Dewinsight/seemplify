@@ -33,7 +33,8 @@ Object.assign(process.env, {
 });
 
 const { app } = await import('../src/app.js');
-const { createJob, db, getJob, insertInsight, updateJob } = await import('../src/database.js');
+const { db, getJob, insertInsight, updateJob } = await import('../src/database.js');
+const { createAiJobFixture } = await import('./aiJobFixtures.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
 const {
   crossSourceIntelligenceJsonSchemaFor, socialListeningJsonSchemaFor, socialListeningResult, socialListeningResultFor
@@ -447,7 +448,7 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   assert.deepEqual((await member.get('/api/social/reply-drafts').expect(200)).body, []);
   assert.deepEqual((await member.get('/api/social/reports').expect(200)).body, []);
   await member.post(`/api/social/reports/${failedReport.body.report.id}/retry`).send({}).expect(404);
-  const unattributedPrivateJob = createJob('social.analyze', { mentionIds: [mentionId] }, user.active_space_id);
+  const unattributedPrivateJob = createAiJobFixture('social.analyze', { mentionIds: [mentionId] }, user.active_space_id);
   await owner.get(`/api/ai/jobs/${unattributedPrivateJob.id}`).expect(200);
   await member.get(`/api/ai/jobs/${unattributedPrivateJob.id}`).expect(404);
 });
@@ -751,7 +752,7 @@ test('accepts source references and presentation-only quote or ellipsis changes 
 
 test('deleting a user deletes their private AI payloads instead of making them globally visible', () => {
   const member = db.prepare('SELECT id,active_space_id FROM users WHERE email=?').get('research-member@seemplify.local') as { id: string; active_space_id: string };
-  const privateJob = createJob('social.analyze', { mentionIds: ['private-source-id'] }, member.active_space_id, null, null, member.id);
+  const privateJob = createAiJobFixture('social.analyze', { mentionIds: ['private-source-id'] }, member.active_space_id, null, null, member.id);
   assert.ok(getJob(privateJob.id));
   db.prepare('DELETE FROM spaces WHERE id=?').run(member.active_space_id);
   db.prepare('DELETE FROM users WHERE id=?').run(member.id);

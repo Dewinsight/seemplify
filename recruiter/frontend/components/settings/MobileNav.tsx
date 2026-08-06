@@ -4,7 +4,7 @@ import React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Settings, CreditCard, Building2, Bell, Mail, Coins, DollarSign } from "lucide-react"
+import { Settings, CreditCard, Building2, Bell, Mail, Coins, DollarSign, Bot } from "lucide-react"
 
 
 // Navigation items with icon components and short names
@@ -14,6 +14,7 @@ const navItems = [
   { title: "Credits", shortTitle: "Credits", href: "/settings/credits", icon: Coins },
   { title: "Organization", shortTitle: "Org", href: "/settings/organization", icon: Building2 },
   { title: "Currencies", shortTitle: "Currency", href: "/settings/currencies", icon: DollarSign },
+  { title: "ChatGPT account", shortTitle: "ChatGPT", href: "/settings/ai-account", icon: Bot },
   { title: "Notifications", shortTitle: "Alerts", href: "/settings/notifications", icon: Bell },
   { title: "Invitations", shortTitle: "Invites", href: "/settings/invitations", icon: Mail },
 ]

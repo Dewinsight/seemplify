@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import { emailDraftPlainText, normalizeEmailDraftHtml } from './emailDraftHtml.js';
 import type { SessionUser } from './auth.js';
+import { createAdmittedAiJob } from './aiJobAdmission.js';
 import { config } from './config.js';
-import { createJob, db, getJob } from './database.js';
+import { db, getJob } from './database.js';
 import { publishEvent } from './events.js';
 import { IntelligenceError, resolveIntelligenceSourceSnapshots } from './intelligence.js';
 import { decryptNylasSecret, encryptNylasSecret, fingerprintNylasGrant } from './nylasSecrets.js';
@@ -11,7 +12,6 @@ import {
   type NylasProvider, type NylasReplyRecipient
 } from './nylasClient.js';
 import { recordAssistantAudit } from './assistantOperations.js';
-import { assertCanQueueAiAction } from './subscriptionEntitlements.js';
 import type { AssistantDocumentType } from './assistantSchemas.js';
 import './spaces.js';
 import type { AiJob, AiJobKind } from './types.js';
@@ -550,7 +550,6 @@ function createRun(input: {
         return { run: runResponse(assistantRunRow(existing.id)), job, created: false };
       }
     }
-    assertCanQueueAiAction(input.spaceId);
     db.prepare(`INSERT INTO assistant_runs
       (id,space_id,requested_by,kind,connection_id,subject_ref,source_refs_json,knowledge_base_ids_json,document_type,title,
        input_snapshot_json,input_sha256,request_fingerprint,state,idempotency_key,created_at,updated_at)
@@ -560,7 +559,7 @@ function createRun(input: {
       cleanText(input.title, 500) || null, encryptedSnapshot, snapshotHash, input.requestFingerprint,
       input.idempotencyKey || null, timestamp, timestamp
     );
-    const job = createJob(jobKind(input.kind), { assistantRunId: id }, input.spaceId, null, null, input.userId);
+    const job = createAdmittedAiJob(jobKind(input.kind), { assistantRunId: id }, input.spaceId, null, null, input.userId);
     db.prepare('UPDATE assistant_runs SET ai_job_id=? WHERE id=?').run(job.id, id);
     recordAssistantAudit({
       spaceId: input.spaceId,

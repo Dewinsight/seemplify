@@ -177,7 +177,8 @@ globalThis.fetch = async (input, init) => {
 };
 
 const { app } = await import('../src/app.js');
-const { createCollector, createJob, createResponse, db, getJob, saveSurvey } = await import('../src/database.js');
+const { createCollector, createResponse, db, getJob, saveSurvey } = await import('../src/database.js');
+const { createAiJobFixture } = await import('./aiJobFixtures.js');
 const { config: runtimeConfig } = await import('../src/config.js');
 const { KnowledgeJobRunner, knowledgeJobRunner } = await import('../src/knowledgeJobs.js');
 const {
@@ -689,7 +690,7 @@ test('keeps the committed watermark readable during reindex and rejects idempote
   db.prepare("UPDATE knowledge_bases SET status='ready' WHERE id=?").run(base.id);
 });
 
-test('does not alias an active journey audit to a different knowledge snapshot', async () => {
+test('requires journey knowledge to be attached as governed evidence before suggestion generation', async () => {
   const owner = request.agent(app);
   await owner.post('/api/auth/login').send({ email: 'knowledge-owner@example.test', password: 'Knowledge-Owner-Password-2026!' }).expect(200);
   const bases = (await owner.get('/api/knowledge-bases').expect(200)).body.knowledgeBases;
@@ -701,16 +702,13 @@ test('does not alias an active journey audit to a different knowledge snapshot',
     stages: [{ name: 'Discover', goal: 'Understand the service', touchpoints: ['Website'], customerActions: ['Read'],
       emotions: ['Curious'], painPoints: [], metrics: ['Activation rate'], opportunities: [], recommendedActions: [] }]
   }).expect(201);
-  const firstAudit = await owner.post(`/api/journeys/${journey.body.id}/ai/optimize`)
-    .send({ focus: 'activation', knowledgeBaseIds: [first.id] }).expect(202);
-  assert.equal(firstAudit.body.deduplicated, false);
-  const replay = await owner.post(`/api/journeys/${journey.body.id}/ai/optimize`)
-    .send({ focus: 'activation', knowledgeBaseIds: [first.id] }).expect(202);
-  assert.equal(replay.body.jobId, firstAudit.body.jobId); assert.equal(replay.body.deduplicated, true);
-  const different = await owner.post(`/api/journeys/${journey.body.id}/ai/optimize`)
-    .send({ focus: 'activation', knowledgeBaseIds: [second.id] }).expect(409);
-  assert.equal(different.body.reason, 'different_knowledge');
-  assert.equal(different.body.activeJobId, firstAudit.body.jobId);
+  for (const knowledgeBaseId of [first.id, second.id]) {
+    const rejected = await owner.post(`/api/journeys/${journey.body.id}/ai/optimize`)
+      .send({ focus: 'activation', knowledgeBaseIds: [knowledgeBaseId] }).expect(409);
+    assert.equal(rejected.body.code, 'JOURNEY_SUGGESTION_LINKED_EVIDENCE_REQUIRED');
+  }
+  assert.equal(Number((db.prepare(`SELECT COUNT(*) count FROM ai_jobs
+    WHERE kind='journey.optimize' AND space_id=?`).get(first.spaceId) as any).count), 0);
 });
 
 test('pins and persists knowledge context before a durable Terra activity is dispatched', async () => {
@@ -768,7 +766,7 @@ test('pins and persists knowledge context before a durable Terra activity is dis
   assert.equal(Number((db.prepare('SELECT COUNT(*) count FROM survey_generation_applications WHERE ai_job_id=?').get(generatedJob.id) as any).count), 1);
 });
 
-test('grounds every knowledge-aware intelligence activity through GTE plus BGE before Terra and keeps translation and reply drafts ungrounded', async () => {
+test('grounds every directly executable knowledge-aware intelligence activity through GTE plus BGE and keeps unsupported actions ungrounded', async () => {
   const owner = request.agent(app);
   await owner.post('/api/auth/login').send({ email: 'knowledge-owner@example.test', password: 'Knowledge-Owner-Password-2026!' }).expect(200);
   const qwenBase = (await owner.get('/api/knowledge-bases').expect(200)).body.knowledgeBases
@@ -827,20 +825,18 @@ test('grounds every knowledge-aware intelligence activity through GTE plus BGE b
       JSON.stringify([knowledgeRef]), now, now);
 
   const withKnowledge = (input: Record<string, unknown> = {}) => ({ ...input, knowledgeBaseRefs: [knowledgeRef] });
-  const intelligenceJob = createJob('intelligence.synthesize', withKnowledge({ reportId }), qwenBase.spaceId,
+  const intelligenceJob = createAiJobFixture('intelligence.synthesize', withKnowledge({ reportId }), qwenBase.spaceId,
     null, null, qwenBase.createdBy);
   db.prepare('UPDATE intelligence_reports SET ai_job_id=? WHERE id=?').run(intelligenceJob.id, reportId);
   const matrix = [
-    { kind: 'survey.generate', schema: 'experience_survey', job: createJob('survey.generate', withKnowledge({ brief: 'Create an escalation survey.' }), qwenBase.spaceId, null, null, qwenBase.createdBy) },
-    { kind: 'survey.improve', schema: 'experience_survey_improvement', job: createJob('survey.improve', withKnowledge(), qwenBase.spaceId, survey.id, null, qwenBase.createdBy) },
-    { kind: 'response.analyze', schema: 'experience_response_analysis', job: createJob('response.analyze', withKnowledge(), qwenBase.spaceId, survey.id, responseRecord.id, qwenBase.createdBy) },
-    { kind: 'insights.generate', schema: 'experience_insights', job: createJob('insights.generate', withKnowledge(), qwenBase.spaceId, survey.id, null, qwenBase.createdBy) },
-    { kind: 'analyst.chat', schema: 'experience_analyst_answer', job: createJob('analyst.chat', withKnowledge({ question: 'What should improve?' }), qwenBase.spaceId, survey.id, null, qwenBase.createdBy) },
-    { kind: 'report.generate', schema: 'experience_executive_report', job: createJob('report.generate', withKnowledge({ audience: 'leadership' }), qwenBase.spaceId, survey.id, null, qwenBase.createdBy) },
+    { kind: 'survey.generate', schema: 'experience_survey', job: createAiJobFixture('survey.generate', withKnowledge({ brief: 'Create an escalation survey.' }), qwenBase.spaceId, null, null, qwenBase.createdBy) },
+    { kind: 'survey.improve', schema: 'experience_survey_improvement', job: createAiJobFixture('survey.improve', withKnowledge(), qwenBase.spaceId, survey.id, null, qwenBase.createdBy) },
+    { kind: 'response.analyze', schema: 'experience_response_analysis', job: createAiJobFixture('response.analyze', withKnowledge(), qwenBase.spaceId, survey.id, responseRecord.id, qwenBase.createdBy) },
+    { kind: 'insights.generate', schema: 'experience_insights', job: createAiJobFixture('insights.generate', withKnowledge(), qwenBase.spaceId, survey.id, null, qwenBase.createdBy) },
+    { kind: 'analyst.chat', schema: 'experience_analyst_answer', job: createAiJobFixture('analyst.chat', withKnowledge({ question: 'What should improve?' }), qwenBase.spaceId, survey.id, null, qwenBase.createdBy) },
+    { kind: 'report.generate', schema: 'experience_executive_report', job: createAiJobFixture('report.generate', withKnowledge({ audience: 'leadership' }), qwenBase.spaceId, survey.id, null, qwenBase.createdBy) },
     { kind: 'intelligence.synthesize', schema: 'experience_cross_source_intelligence', job: intelligenceJob },
-    { kind: 'journey.generate', schema: 'experience_journey', job: createJob('journey.generate', withKnowledge({ objective: 'Improve onboarding' }), qwenBase.spaceId, null, null, qwenBase.createdBy) },
-    { kind: 'journey.optimize', schema: 'experience_journey', job: createJob('journey.optimize', withKnowledge({ journeyId: journey.id,
-      journeyUpdatedAt: journey.updatedAt, focus: 'activation' }), qwenBase.spaceId, null, null, qwenBase.createdBy) }
+    { kind: 'journey.generate', schema: 'experience_journey', job: createAiJobFixture('journey.generate', withKnowledge({ objective: 'Improve onboarding' }), qwenBase.spaceId, null, null, qwenBase.createdBy) }
   ] as const;
 
   const generatedQuestions = [
@@ -935,6 +931,18 @@ test('grounds every knowledge-aware intelligence activity through GTE plus BGE b
   }
   assert.deepEqual(retrievalCalls, matrix.map((item) => item.kind));
 
+  // Direct replacement jobs are no longer executable. Journey optimisation
+  // now freezes only evidence links attached to a Map 2 draft, then produces
+  // a typed suggestion diff for explicit review (covered by the dedicated
+  // journey-suggestions integration suite).
+  const retiredJourneyJob = createAiJobFixture('journey.optimize', withKnowledge({
+    journeyId: journey.id, journeyUpdatedAt: journey.updatedAt, focus: 'activation'
+  }), qwenBase.spaceId, null, null, qwenBase.createdBy);
+  await assert.rejects(() => executeAiJob(retiredJourneyJob), (error: any) =>
+    error?.code === 'JOURNEY_SUGGESTION_RUN_REQUIRED');
+  assert.equal(db.prepare('SELECT 1 FROM ai_job_knowledge_contexts WHERE ai_job_id=?')
+    .get(retiredJourneyJob.id), undefined);
+
   const translated = await owner.post(`/api/surveys/${survey.id}/ai/translate`).send({
     language: 'French', knowledgeBaseIds: [qwenBase.id]
   }).expect(202);
@@ -953,11 +961,11 @@ test('grounds every knowledge-aware intelligence activity through GTE plus BGE b
     (id,space_id,mention_id,requested_by,tone,instructions,source_snapshot_json,state,created_at,updated_at)
     VALUES (?,?,?,?,?,'',?,'queued',?,?)`).run(draftId, qwenBase.spaceId, mentionId, qwenBase.createdBy, 'helpful',
       JSON.stringify({ mentionId, author: 'Customer', content: 'The escalation process was helpful.' }), now, now);
-  const rejectedReplyJob = createJob('social.reply_draft', withKnowledge({ draftId }), qwenBase.spaceId, null, null, qwenBase.createdBy);
+  const rejectedReplyJob = createAiJobFixture('social.reply_draft', withKnowledge({ draftId }), qwenBase.spaceId, null, null, qwenBase.createdBy);
   await assert.rejects(() => executeAiJob(rejectedReplyJob), (error: any) =>
     error?.code === 'KNOWLEDGE_CONTEXT_ACTIVITY_UNSUPPORTED');
   assert.equal(db.prepare('SELECT 1 FROM ai_job_knowledge_contexts WHERE ai_job_id=?').get(rejectedReplyJob.id), undefined);
-  const replyJob = createJob('social.reply_draft', { draftId }, qwenBase.spaceId, null, null, qwenBase.createdBy);
+  const replyJob = createAiJobFixture('social.reply_draft', { draftId }, qwenBase.spaceId, null, null, qwenBase.createdBy);
   db.prepare('UPDATE social_reply_drafts SET ai_job_id=? WHERE id=?').run(replyJob.id, draftId);
   active = { kind: 'social.reply_draft', jobId: replyJob.id, schema: 'experience_social_reply_draft', grounded: false };
   await executeAiJob(replyJob);

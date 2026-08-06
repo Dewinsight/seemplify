@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.seemplify.com/journey-events/v1/batch-result.schema.json",
+  "title": "Seemplify Connected Journey batch ingest result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "batchId", "results"],
+  "properties": {
+    "protocolVersion": { "const": "1.0" },
+    "batchId": { "type": "string", "format": "uuid" },
+    "results": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "event-result.schema.json" }
+    }
+  }
+}

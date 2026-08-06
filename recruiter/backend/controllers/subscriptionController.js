@@ -639,8 +639,8 @@ exports.emailInvoice = async (req, res) => {
       <p>We appreciate your business!</p>
     `;
     
-    // Setup email with PDF attachment according to Brevo API format
-    // Brevo API expects: { url: string } or { content: string, name: string }
+    // Setup email with PDF attachment according to the shared mail-service format
+    // The provider-shaped adapter accepts: { url: string } or { content: string, name: string }
     const attachments = [{
       content: invoiceBase64,
       name: pdfDetails.fileName

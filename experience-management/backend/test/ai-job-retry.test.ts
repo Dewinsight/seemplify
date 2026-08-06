@@ -39,7 +39,8 @@ Object.assign(process.env, {
 });
 
 const { app } = await import('../src/app.js');
-const { createJob, db, getJob } = await import('../src/database.js');
+const { db, getJob } = await import('../src/database.js');
+const { createAiJobFixture } = await import('./aiJobFixtures.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
 const { TerraError } = await import('../src/terraClient.js');
 
@@ -88,7 +89,7 @@ test('retries only failed same-space social analysis jobs with bounded, auditabl
     insertMention(user.active_space_id, 'The onboarding flow is difficult to complete.'),
     insertMention(user.active_space_id, 'Support response time is too slow for urgent issues.')
   ];
-  const job = createJob('social.analyze', { mentionIds }, user.active_space_id, null, null, user.id);
+  const job = createAiJobFixture('social.analyze', { mentionIds }, user.active_space_id, null, null, user.id);
   const output = socialOutput(mentionIds);
   db.prepare('UPDATE ai_jobs SET provider_result_json=? WHERE id=?').run(JSON.stringify({
     activity: 'experience.social_listening', schemaName: 'experience_social_listening', output,
@@ -158,7 +159,7 @@ test('advertises missing sources as ineligible and execution never analyzes a su
   };
 
   const missingId = insertMention(user.active_space_id, 'This source will be removed before retry.');
-  const missingJob = createJob('social.analyze', { mentionIds: [missingId] }, user.active_space_id, null, null, user.id);
+  const missingJob = createAiJobFixture('social.analyze', { mentionIds: [missingId] }, user.active_space_id, null, null, user.id);
   failJob(missingJob.id);
   db.prepare('DELETE FROM social_mentions WHERE id=? AND space_id=?').run(missingId, user.active_space_id);
   const missingDetail = await owner.get(`/api/ai/jobs/${missingJob.id}`).expect(200);
@@ -170,7 +171,7 @@ test('advertises missing sources as ineligible and execution never analyzes a su
 
   const first = insertMention(user.active_space_id, 'First preserved source.');
   const second = insertMention(user.active_space_id, 'Second source deleted after requeue.');
-  const racedJob = createJob('social.analyze', { mentionIds: [first, second] }, user.active_space_id, null, null, user.id);
+  const racedJob = createAiJobFixture('social.analyze', { mentionIds: [first, second] }, user.active_space_id, null, null, user.id);
   failJob(racedJob.id);
   await owner.post(`/api/ai/jobs/${racedJob.id}/retry`).send({}).expect(202);
   db.prepare('DELETE FROM social_mentions WHERE id=? AND space_id=?').run(second, user.active_space_id);
@@ -181,7 +182,7 @@ test('advertises missing sources as ineligible and execution never analyzes a su
       && error.retryable === false
   );
 
-  const unsupported = createJob('report.generate', {}, user.active_space_id, null, null, user.id);
+  const unsupported = createAiJobFixture('report.generate', {}, user.active_space_id, null, null, user.id);
   failJob(unsupported.id);
   const unsupportedDetail = await owner.get(`/api/ai/jobs/${unsupported.id}`).expect(200);
   assert.equal(unsupportedDetail.body.retry.eligible, false);
@@ -207,7 +208,7 @@ test('requires live authorized knowledge unless an immutable retrieval context w
       dtype: 'q8', dimensions: 768, vectorIndexVersion: 'gte-modernbert-v1'
     }
   };
-  const unavailable = createJob('social.analyze', { mentionIds: [mentionId], knowledgeBaseRefs: [ref] },
+  const unavailable = createAiJobFixture('social.analyze', { mentionIds: [mentionId], knowledgeBaseRefs: [ref] },
     user.active_space_id, null, null, user.id);
   failJob(unavailable.id);
   const unavailableDetail = await owner.get(`/api/ai/jobs/${unavailable.id}`).expect(200);
@@ -215,7 +216,7 @@ test('requires live authorized knowledge unless an immutable retrieval context w
   assert.match(unavailableDetail.body.retry.reason, /Knowledge base not found/u);
   await owner.post(`/api/ai/jobs/${unavailable.id}/retry`).send({}).expect(404);
 
-  const saved = createJob('social.analyze', { mentionIds: [mentionId], knowledgeBaseRefs: [ref] },
+  const saved = createAiJobFixture('social.analyze', { mentionIds: [mentionId], knowledgeBaseRefs: [ref] },
     user.active_space_id, null, null, user.id);
   failJob(saved.id);
   const timestamp = new Date().toISOString();

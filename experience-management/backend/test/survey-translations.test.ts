@@ -44,7 +44,8 @@ Object.assign(process.env, {
 });
 
 const { app } = await import('../src/app.js');
-const { applySurveyTranslation, createJob, db, getSurvey, listInsights } = await import('../src/database.js');
+const { applySurveyTranslation, db, getSurvey, listInsights } = await import('../src/database.js');
+const { createAiJobFixture } = await import('./aiJobFixtures.js');
 
 after(() => {
   db.close();
@@ -112,7 +113,7 @@ test('translation completion merges into the newest survey and replays idempoten
     questions: [{ type: 'short_text', title: 'Original question', required: true }]
   }).expect(201);
   const spaceId = String((db.prepare('SELECT space_id FROM surveys WHERE id=?').get(created.body.id) as any).space_id);
-  const job = createJob('survey.translate', { language: 'Spanish' }, spaceId, created.body.id, null, null);
+  const job = createAiJobFixture('survey.translate', { language: 'Spanish' }, spaceId, created.body.id, null, null);
 
   const edited = await agent.put(`/api/surveys/${created.body.id}`).send({
     ...created.body,

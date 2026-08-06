@@ -14,6 +14,10 @@ export const platformPermissionCatalog = [
   { id: 'analytics.read', label: 'View analytics', description: 'View aggregate platform analytics.' },
   { id: 'ai_defaults.read', label: 'View AI defaults', description: 'View platform ChatGPT model and effort defaults.' },
   { id: 'ai_defaults.manage', label: 'Manage AI defaults', description: 'Change platform ChatGPT model and effort defaults.' },
+  { id: 'journey_templates.read', label: 'View journey templates', description: 'Review governed system journey-template versions.' },
+  { id: 'journey_templates.manage', label: 'Manage journey templates', description: 'Review, publish, version, and retire system journey templates.' },
+  { id: 'journey_rollout.read', label: 'View journey rollout', description: 'View Journey Map 2.0 flags, cohorts, kill switches, and content-free divergences.' },
+  { id: 'journey_rollout.manage', label: 'Manage journey rollout', description: 'Change Journey Map 2.0 rollout controls and forced-legacy kill switches.' },
   { id: 'jobs.read', label: 'View global AI jobs', description: 'View privacy-safe operational AI queue metadata.' },
   { id: 'activity.read', label: 'View activity', description: 'View privacy-safe product activity across spaces.' },
   { id: 'audit.read', label: 'View audit log', description: 'View administrative mutation history.' }

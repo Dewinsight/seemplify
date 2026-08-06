@@ -931,7 +931,7 @@ const applyCampaignSenderNameSchema = db.transaction(() => {
   if (!columns.has('sender_name')) {
     db.exec("ALTER TABLE campaigns ADD COLUMN sender_name TEXT NOT NULL DEFAULT '' CHECK(length(sender_name) <= 150)");
   }
-  const senderName = String(config.brevoFromName || '')
+  const senderName = String(config.mailFromName || '')
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim()
@@ -1253,6 +1253,272 @@ db.exec(`CREATE TABLE IF NOT EXISTS deep_analysis_runs (
   );
   CREATE INDEX IF NOT EXISTS deep_analysis_evidence_run_kind
     ON deep_analysis_evidence(run_id,kind,created_at);`);
+// Journey Map 2.0. Additive and normalised: the legacy `journeys` table stays
+// untouched so the compatibility adapter and rollback window keep working while
+// structure, personas, and evidence move to stable per-entity identifiers.
+db.exec(`CREATE TABLE IF NOT EXISTS journey_personas (
+    id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    lifecycle_state TEXT NOT NULL DEFAULT 'draft' CHECK(lifecycle_state IN ('draft','in_review','active','retired')),
+    owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    source TEXT NOT NULL DEFAULT 'workspace' CHECK(source IN ('workspace','legacy_audience_draft','ai_draft')),
+    attributes_json TEXT NOT NULL DEFAULT '{}',
+    goals_json TEXT NOT NULL DEFAULT '[]',
+    behaviours_json TEXT NOT NULL DEFAULT '[]',
+    needs_json TEXT NOT NULL DEFAULT '[]',
+    barriers_json TEXT NOT NULL DEFAULT '[]',
+    review_at TEXT,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_personas_space_name ON journey_personas(space_id,name);
+  CREATE INDEX IF NOT EXISTS journey_personas_space_state ON journey_personas(space_id,lifecycle_state,updated_at DESC);
+  CREATE TABLE IF NOT EXISTS journey_definitions (
+    id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    legacy_journey_id TEXT,
+    name TEXT NOT NULL,
+    purpose TEXT NOT NULL DEFAULT '',
+    experience_type TEXT NOT NULL DEFAULT 'customer'
+      CHECK(experience_type IN ('customer','employee','citizen','patient','partner','custom')),
+    map_type TEXT NOT NULL DEFAULT 'current_state'
+      CHECK(map_type IN ('current_state','future_state','ideal_state','service_blueprint')),
+    mode TEXT NOT NULL DEFAULT 'designed' CHECK(mode IN ('designed','evidence_backed','connected')),
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published','archived')),
+    owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    current_version_id TEXT,
+    published_version_id TEXT,
+    review_cadence_days INTEGER NOT NULL DEFAULT 0 CHECK(review_cadence_days >= 0),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_definitions_legacy
+    ON journey_definitions(legacy_journey_id) WHERE legacy_journey_id IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS journey_definitions_space ON journey_definitions(space_id,updated_at DESC,id);
+  CREATE TABLE IF NOT EXISTS journey_map_versions (
+    id TEXT PRIMARY KEY,
+    definition_id TEXT NOT NULL REFERENCES journey_definitions(id) ON DELETE CASCADE,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL CHECK(version_number > 0),
+    schema_version INTEGER NOT NULL DEFAULT 2 CHECK(schema_version > 0),
+    state TEXT NOT NULL DEFAULT 'draft' CHECK(state IN ('draft','published','superseded')),
+    map_type TEXT NOT NULL DEFAULT 'current_state'
+      CHECK(map_type IN ('current_state','future_state','ideal_state','service_blueprint')),
+    mode TEXT NOT NULL DEFAULT 'designed' CHECK(mode IN ('designed','evidence_backed','connected')),
+    experience_type TEXT NOT NULL DEFAULT 'customer'
+      CHECK(experience_type IN ('customer','employee','citizen','patient','partner','custom')),
+    objective TEXT NOT NULL DEFAULT '',
+    industry TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    legacy_audience TEXT NOT NULL DEFAULT '',
+    provenance_json TEXT NOT NULL DEFAULT '{}',
+    source_job_id TEXT REFERENCES ai_jobs(id) ON DELETE SET NULL,
+    author_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    published_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_map_versions_definition_number
+    ON journey_map_versions(definition_id,version_number);
+  CREATE INDEX IF NOT EXISTS journey_map_versions_definition
+    ON journey_map_versions(definition_id,version_number DESC);
+  CREATE TABLE IF NOT EXISTS journey_map_stages (
+    id TEXT PRIMARY KEY,
+    version_id TEXT NOT NULL REFERENCES journey_map_versions(id) ON DELETE CASCADE,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    stage_key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    goal TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    ordinal INTEGER NOT NULL CHECK(ordinal >= 0)
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_map_stages_version_key ON journey_map_stages(version_id,stage_key);
+  CREATE INDEX IF NOT EXISTS journey_map_stages_order ON journey_map_stages(version_id,ordinal,id);
+  CREATE TABLE IF NOT EXISTS journey_map_lanes (
+    id TEXT PRIMARY KEY,
+    version_id TEXT NOT NULL REFERENCES journey_map_versions(id) ON DELETE CASCADE,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    lane_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
+    visible INTEGER NOT NULL DEFAULT 1 CHECK(visible IN (0,1))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_map_lanes_version_lane ON journey_map_lanes(version_id,lane_type,ordinal);
+  CREATE INDEX IF NOT EXISTS journey_map_lanes_order ON journey_map_lanes(version_id,ordinal,id);
+  CREATE TABLE IF NOT EXISTS journey_map_cards (
+    id TEXT PRIMARY KEY,
+    version_id TEXT NOT NULL REFERENCES journey_map_versions(id) ON DELETE CASCADE,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    stage_key TEXT NOT NULL,
+    lane_type TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
+    persona_id TEXT REFERENCES journey_personas(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('draft','active','retired')),
+    origin TEXT NOT NULL DEFAULT 'workspace' CHECK(origin IN ('legacy_import','workspace','ai_suggestion','template')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS journey_map_cards_cell
+    ON journey_map_cards(version_id,stage_key,lane_type,ordinal,id);
+  CREATE TABLE IF NOT EXISTS journey_definition_personas (
+    definition_id TEXT NOT NULL REFERENCES journey_definitions(id) ON DELETE CASCADE,
+    persona_id TEXT NOT NULL REFERENCES journey_personas(id) ON DELETE CASCADE,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    ordinal INTEGER NOT NULL DEFAULT 0 CHECK(ordinal >= 0),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (definition_id,persona_id)
+  );
+  CREATE INDEX IF NOT EXISTS journey_definition_personas_persona
+    ON journey_definition_personas(persona_id,definition_id);
+  CREATE TABLE IF NOT EXISTS journey_evidence_links (
+    id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    target_type TEXT NOT NULL CHECK(target_type IN ('card','stage','persona','definition')),
+    target_id TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_ref TEXT NOT NULL,
+    source_label TEXT NOT NULL DEFAULT '',
+    excerpt TEXT NOT NULL DEFAULT '',
+    assessment TEXT NOT NULL DEFAULT 'supports' CHECK(assessment IN ('supports','contradicts','neutral')),
+    confidence REAL NOT NULL DEFAULT 0 CHECK(confidence >= 0 AND confidence <= 1),
+    population TEXT NOT NULL DEFAULT '',
+    sample_size INTEGER,
+    collected_at TEXT,
+    window_start TEXT,
+    window_end TEXT,
+    freshness_days INTEGER,
+    source_updated_at TEXT,
+    last_validated_at TEXT,
+    invalidated_at TEXT,
+    invalidated_reason TEXT,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_evidence_links_unique
+    ON journey_evidence_links(space_id,target_type,target_id,source_type,source_ref);
+  CREATE INDEX IF NOT EXISTS journey_evidence_links_target
+    ON journey_evidence_links(space_id,target_type,target_id,created_at,id);`);
+const journeyEvidenceLinkColumns = new Set((db.prepare('PRAGMA table_info(journey_evidence_links)').all() as any[])
+  .map((column) => String(column.name)));
+if (!journeyEvidenceLinkColumns.has('source_updated_at')) {
+  db.exec('ALTER TABLE journey_evidence_links ADD COLUMN source_updated_at TEXT');
+}
+if (!journeyEvidenceLinkColumns.has('last_validated_at')) {
+  db.exec('ALTER TABLE journey_evidence_links ADD COLUMN last_validated_at TEXT');
+  db.exec('UPDATE journey_evidence_links SET last_validated_at=created_at WHERE last_validated_at IS NULL');
+}
+db.exec(`CREATE TABLE IF NOT EXISTS journey_evidence_audit_events (
+    id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    evidence_link_id TEXT NOT NULL REFERENCES journey_evidence_links(id) ON DELETE CASCADE,
+    actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL CHECK(action IN ('refreshed')),
+    changed_fields_json TEXT NOT NULL DEFAULT '[]',
+    before_fingerprint TEXT NOT NULL CHECK(length(before_fingerprint)=64),
+    after_fingerprint TEXT NOT NULL CHECK(length(after_fingerprint)=64),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS journey_evidence_audit_link
+    ON journey_evidence_audit_events(evidence_link_id,created_at DESC,id);
+  CREATE INDEX IF NOT EXISTS journey_evidence_audit_space
+    ON journey_evidence_audit_events(space_id,created_at DESC,id);`);
+// Governed journey templates. Template versions own all previewable content;
+// definitions only carry stable catalogue identity and lifecycle pointers. A
+// map records the exact published template version it copied so later template
+// revisions can never rewrite an existing journey.
+db.exec(`CREATE TABLE IF NOT EXISTS journey_templates (
+    id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL CHECK(scope IN ('system','space')),
+    space_id TEXT REFERENCES spaces(id) ON DELETE CASCADE,
+    template_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','retired')),
+    current_version_id TEXT REFERENCES journey_template_versions(id) ON DELETE SET NULL,
+    published_version_id TEXT REFERENCES journey_template_versions(id) ON DELETE SET NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK((scope='system' AND space_id IS NULL) OR (scope='space' AND space_id IS NOT NULL))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_templates_system_key
+    ON journey_templates(template_key) WHERE scope='system';
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_templates_space_key
+    ON journey_templates(space_id,template_key) WHERE scope='space';
+  CREATE INDEX IF NOT EXISTS journey_templates_space_status
+    ON journey_templates(space_id,status,updated_at DESC,id);
+  CREATE TABLE IF NOT EXISTS journey_template_versions (
+    id TEXT PRIMARY KEY,
+    template_id TEXT NOT NULL REFERENCES journey_templates(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL CHECK(scope IN ('system','space')),
+    space_id TEXT REFERENCES spaces(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL CHECK(version_number > 0),
+    schema_version INTEGER NOT NULL DEFAULT 1 CHECK(schema_version > 0),
+    state TEXT NOT NULL DEFAULT 'draft' CHECK(state IN ('draft','in_review','published','retired')),
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    industry TEXT NOT NULL DEFAULT '',
+    use_case TEXT NOT NULL DEFAULT '',
+    experience_type TEXT NOT NULL DEFAULT 'customer'
+      CHECK(experience_type IN ('customer','employee','citizen','patient','partner','custom')),
+    map_type TEXT NOT NULL DEFAULT 'current_state'
+      CHECK(map_type IN ('current_state','future_state','ideal_state','service_blueprint')),
+    lanes_json TEXT NOT NULL DEFAULT '[]',
+    stages_json TEXT NOT NULL DEFAULT '[]',
+    content_checksum TEXT NOT NULL CHECK(length(content_checksum)=64),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TEXT,
+    published_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    published_at TEXT,
+    retired_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    retired_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK((scope='system' AND space_id IS NULL) OR (scope='space' AND space_id IS NOT NULL))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_template_versions_number
+    ON journey_template_versions(template_id,version_number);
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_template_versions_one_published
+    ON journey_template_versions(template_id) WHERE state='published';
+  CREATE INDEX IF NOT EXISTS journey_template_versions_state
+    ON journey_template_versions(template_id,state,version_number DESC);
+  CREATE TABLE IF NOT EXISTS journey_template_instantiations (
+    definition_id TEXT PRIMARY KEY REFERENCES journey_definitions(id) ON DELETE CASCADE,
+    version_id TEXT NOT NULL REFERENCES journey_map_versions(id) ON DELETE CASCADE,
+    template_version_id TEXT NOT NULL REFERENCES journey_template_versions(id) ON DELETE RESTRICT,
+    space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS journey_template_instantiations_version
+    ON journey_template_instantiations(version_id);
+  CREATE INDEX IF NOT EXISTS journey_template_instantiations_template
+    ON journey_template_instantiations(template_version_id,created_at DESC,definition_id);
+  CREATE TABLE IF NOT EXISTS journey_template_audit_events (
+    id TEXT PRIMARY KEY,
+    template_id TEXT NOT NULL REFERENCES journey_templates(id) ON DELETE CASCADE,
+    template_version_id TEXT REFERENCES journey_template_versions(id) ON DELETE SET NULL,
+    space_id TEXT REFERENCES spaces(id) ON DELETE CASCADE,
+    actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL CHECK(action IN ('seeded','created','draft_updated','version_created','submitted_for_review','review_rejected','published','retired','map_created')),
+    reason TEXT NOT NULL DEFAULT '',
+    before_json TEXT NOT NULL DEFAULT '{}',
+    after_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS journey_template_audit_history
+    ON journey_template_audit_events(template_id,created_at DESC,id);
+  CREATE INDEX IF NOT EXISTS journey_template_audit_space
+    ON journey_template_audit_events(space_id,created_at DESC,id);`);
 const insightColumns = new Set((db.prepare('PRAGMA table_info(insights)').all() as any[]).map((column) => String(column.name)));
 if (!insightColumns.has('ai_job_id')) db.exec('ALTER TABLE insights ADD COLUMN ai_job_id TEXT REFERENCES ai_jobs(id) ON DELETE SET NULL');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS insights_ai_job_id ON insights(ai_job_id) WHERE ai_job_id IS NOT NULL');
@@ -1682,45 +1948,37 @@ export function clearJobProviderResult(id: string) {
     .run(new Date().toISOString(), id);
 }
 
-export function createJob(kind: AiJob['kind'], input: Record<string, unknown>, spaceId: string, surveyId?: string | null, responseId?: string | null, requestedBy?: string | null) {
-  if (!spaceId) throw new Error('A space is required to queue AI work.');
-  if (surveyId && !db.prepare('SELECT 1 FROM surveys WHERE id=? AND space_id=?').get(surveyId, spaceId)) {
+export function insertUnadmittedAiJobRecord(input: {
+  id: string;
+  kind: AiJob['kind'];
+  jobInput: Record<string, unknown>;
+  spaceId: string;
+  surveyId?: string | null;
+  responseId?: string | null;
+  requestedBy?: string | null;
+  createdAt?: string;
+}) {
+  if (!input.spaceId) throw new Error('A space is required to queue AI work.');
+  if (input.surveyId && !db.prepare('SELECT 1 FROM surveys WHERE id=? AND space_id=?').get(input.surveyId, input.spaceId)) {
     throw new Error('Survey not found.');
   }
-  if (responseId && !db.prepare(`SELECT 1 FROM responses r JOIN surveys s ON s.id=r.survey_id
-    WHERE r.id=? AND s.space_id=? AND (? IS NULL OR r.survey_id=?)`).get(responseId, spaceId, surveyId || null, surveyId || null)) {
+  if (input.responseId && !db.prepare(`SELECT 1 FROM responses r JOIN surveys s ON s.id=r.survey_id
+    WHERE r.id=? AND s.space_id=? AND (? IS NULL OR r.survey_id=?)`)
+    .get(input.responseId, input.spaceId, input.surveyId || null, input.surveyId || null)) {
     throw new Error('Response not found.');
   }
-  const id = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const queuedInput = { ...input, _aiRuntime: aiProviderSnapshot(requestedBy, spaceId, kind) };
+  const now = input.createdAt || new Date().toISOString();
+  const queuedInput = {
+    ...input.jobInput,
+    _aiRuntime: aiProviderSnapshot(input.requestedBy, input.spaceId, input.kind)
+  };
   db.prepare(`INSERT INTO ai_jobs (id,space_id,kind,survey_id,response_id,requested_by,state,stage,progress,attempt,input_json,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,'queued','queued',0,0,?,?,?)`).run(id, spaceId, kind, surveyId || null, responseId || null, requestedBy || null, JSON.stringify(queuedInput), now, now);
-  return getJob(id)!;
+    VALUES (?,?,?,?,?,?,'queued','queued',0,0,?,?,?)`).run(
+      input.id, input.spaceId, input.kind, input.surveyId || null, input.responseId || null,
+      input.requestedBy || null, JSON.stringify(queuedInput), now, now
+    );
+  return getJob(input.id)!;
 }
-
-export const claimNextJob = db.transaction((): AiJob | null => {
-  const now = new Date().toISOString();
-  const lock = db.provider === 'postgres' ? ' FOR UPDATE OF candidate SKIP LOCKED' : '';
-  // JavaScript timestamps have millisecond precision, so rowid preserves
-  // insertion-order FIFO when several durable jobs are enqueued together.
-  const row = db.prepare(`SELECT candidate.* FROM ai_jobs candidate
-    WHERE candidate.state='queued' AND (candidate.retry_at IS NULL OR candidate.retry_at<=?)
-      AND candidate.id=(
-        SELECT queued.id FROM ai_jobs queued
-        WHERE queued.space_id=candidate.space_id AND queued.state='queued' AND (queued.retry_at IS NULL OR queued.retry_at<=?)
-        ORDER BY queued.created_at,queued.rowid LIMIT 1
-      )
-    ORDER BY
-      (SELECT COUNT(*) FROM ai_jobs active WHERE active.space_id=candidate.space_id AND active.state='processing'),
-      COALESCE((SELECT MAX(started_at) FROM ai_jobs served
-        WHERE served.space_id=candidate.space_id AND served.started_at IS NOT NULL),''),
-      candidate.created_at,candidate.rowid
-    LIMIT 1${lock}`).get(now, now) as any;
-  if (!row) return null;
-  const changed = db.prepare(`UPDATE ai_jobs SET state='processing',stage='dispatching',progress=5,attempt=attempt+1,started_at=?,updated_at=? WHERE id=? AND state='queued'`).run(now, now, row.id).changes;
-  return changed ? getJob(row.id) : null;
-});
 
 export function updateJob(id: string, values: { state?: AiJob['state']; stage?: string; progress?: number; result?: unknown; error?: string | null; retryAt?: string | null; completedAt?: string | null }) {
   const current = getJob(id);

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { reserveAiJobRetryAttempt } from './aiJobAdmission.js';
 import { socialListeningResultFor } from './aiSchemas.js';
 import {
   db, getJobForSpace, getJobProviderResult, listSocialMentionsByIdsForSpace
@@ -227,6 +228,7 @@ export function retryFailedAiJob(jobId: string, spaceId: string, viewerUserId: s
         terraManualRetryCount: priorManualRetries + 1,
         terraManualRetryHistory: retryHistory(job, historyEntry)
       };
+      reserveAiJobRetryAttempt(job, currentGeneration + 1, 1);
       const jobChanged = db.prepare(`UPDATE ai_jobs SET state='queued',stage='queued',progress=0,attempt=0,result_json=NULL,error=NULL,
         retry_at=NULL,started_at=NULL,completed_at=NULL,provider_result_json=NULL,input_json=?,updated_at=?
         WHERE id=? AND space_id=? AND kind='intelligence.synthesize' AND state='failed'`)
@@ -272,6 +274,7 @@ export function retryFailedAiJob(jobId: string, spaceId: string, viewerUserId: s
       terraManualRetryCount: priorManualRetries + 1,
       terraManualRetryHistory: retryHistory(job, historyEntry)
     };
+    reserveAiJobRetryAttempt(job, currentGeneration + 1, 1);
     const changed = db.prepare(`UPDATE ai_jobs SET state='queued',stage='queued',progress=0,attempt=0,result_json=NULL,error=NULL,
       retry_at=NULL,started_at=NULL,completed_at=NULL,provider_result_json=?,input_json=?,updated_at=?
       WHERE id=? AND space_id=? AND kind='social.analyze' AND state='failed'`)

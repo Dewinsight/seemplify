@@ -1,6 +1,7 @@
 /**
  * Notification Service
- * Handles recipient resolution and batch email notifications via Brevo
+ * Handles recipient resolution and batch email notifications through the
+ * first-party Seemplify transactional mail service.
  */
 
 import { emailService } from './emailService.js'
@@ -10,8 +11,8 @@ import { Account } from '../models/Account.js'
 import { Notification } from '../models/Notification.js'
 
 // Configuration
-const BATCH_SIZE = 50 // Brevo recommends max 50 recipients per API call
-const BATCH_DELAY_MS = 100 // Delay between batches to respect rate limits
+const BATCH_SIZE = 50 // Keep batches bounded so transactional sends stay predictable.
+const BATCH_DELAY_MS = 100 // Small pause between batches to smooth send bursts.
 
 class NotificationService {
   /**

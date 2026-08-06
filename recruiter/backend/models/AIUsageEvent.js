@@ -31,6 +31,9 @@ const AIUsageEventSchema = new mongoose.Schema({
   activity: { type: String, required: true, index: true },
   provider: { type: String, required: true, index: true },
   model: { type: String, required: true, index: true },
+  // Whose plan paid for the work: the platform's shared capacity or the
+  // acting user's own connected ChatGPT account.
+  runtimeOwner: { type: String, enum: ['platform', 'user'], default: 'platform', index: true },
   reasoningEffort: String,
   routeVersion: Number,
   promptVersion: { type: String, default: '1' },

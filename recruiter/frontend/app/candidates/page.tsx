@@ -1028,14 +1028,6 @@ export default function CandidatesPage() {
                       : "Start building your talent pool by adding candidates"
                     }
                   </p>
-                  {!searchTerm && (
-                    <Button asChild className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700">
-                      <Link href="/candidates/new">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add Your First Candidate
-                      </Link>
-                    </Button>
-                  )}
                   {searchTerm && (
                     <Button 
                       onClick={clearFilters}

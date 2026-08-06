@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import multer from 'multer';
 import { z } from 'zod';
 import { aiJobRunner } from './aiJobs.js';
+import { createAdmittedAiJob } from './aiJobAdmission.js';
 import { AiJobRetryError, aiJobRetryStatus, retryFailedAiJob } from './aiJobRetry.js';
 import { getAiProviderPreference, getAiProviderState } from './aiProvider.js';
 import { aiProviderRouter } from './aiProviderRoutes.js';
@@ -17,13 +18,14 @@ import { computeAnalytics } from './analytics.js';
 import { assistantRouter, nylasCallback } from './assistantRoutes.js';
 import { config } from './config.js';
 import {
-  createCollector, createJob, createJourney, createResponse, db, deleteJourney, deleteSurvey, findActiveJourneyOptimization, getCollectorBySlug, getJob, getJobForSpace,
+  createCollector, createJourney, createResponse, db, deleteJourney, deleteSurvey, getCollectorBySlug, getJob, getJobForSpace,
   getJourney, getResponse, getSurvey, insertSocialMentions, listCollectors, listInsights, listJourneyVersionSummaries,
   listJobsForSpace, listJourneys, listResponses, listSocialMentionsByIds, listSocialMentionsByIdsForSpace, listSocialMentionsForSpace, listSurveys, restoreJourneyVersion, saveSurvey, updateJob, updateJourney
 } from './database.js';
 import { isDatabaseConstraintError } from './databaseAdapter.js';
 import { attachEventStream, publishEvent } from './events.js';
 import { EMAIL_SENDER_NAME_MAX_LENGTH, emailStatus, getRecipientUnsubscribePreview, listRecipients, markRecipientUnsubscribed, sendInvitations, sendSpaceInvitationEmail } from './emailService.js';
+import { recordPlatformAuditEvent } from './platformAudit.js';
 import {
   addCampaignContacts, campaignTemplates, createCampaign, getCampaignDetail, launchCampaign, listCampaignSummaries,
   getCampaignUnsubscribePreview, markCampaignContactResponded, pauseCampaign, replaceCampaignSteps, resumeCampaign,
@@ -42,6 +44,29 @@ import { esignPublicRouter, esignRecipientRouter, esignRouter } from './esignRou
 import { getKnowledgeRuntimeStatus } from './knowledgeClient.js';
 import { supportsKnowledgeContext } from './knowledgeContext.js';
 import { knowledgeJobRunner } from './knowledgeJobs.js';
+import {
+  assertLegacyJourneyMapDeletionAllowed, discardJourneyMapForLegacyJourney, ensureJourneyMapForLegacyJourney,
+  JourneyMapError
+} from './journeyMaps.js';
+import {
+  listLegacyJourneysWithRollout, readLegacyJourneyWithRollout, runLegacyJourneyWrite
+} from './journeyRollout.js';
+import { journeyEvidenceRouter, journeyMapRouter, journeyPersonaRouter } from './journeyRoutes.js';
+import { journeyRichCardRouter } from './journeyRichCardRoutes.js';
+import { journeyMapSuggestionRouter, journeySuggestionRouter } from './journeySuggestionRoutes.js';
+import {
+  attachJourneySuggestionJob, createJourneySuggestionRun, getJourneySuggestionRun, JourneySuggestionError
+} from './journeySuggestions.js';
+import { journeyEventControlPlaneRouter } from './journeyEventControlPlaneRoutes.js';
+import { journeyEventIngestionRouter } from './journeyEventIngestionRoutes.js';
+import { journeyStageRuleRouter } from './journeyStageRuleRoutes.js';
+import { journeyResearchRouter } from './journeyResearchRoutes.js';
+import { journeyMetricImportRouter, journeyMetricRouter } from './journeyMetricRoutes.js';
+import { journeyIdentityRouter } from './journeyIdentityRoutes.js';
+import { queueJourneyMetricRebuildsForSurvey } from './journeyMetrics.js';
+import {
+  journeyTemplateRouter, platformJourneyTemplateRouter, seedJourneyTemplateCatalog
+} from './journeyTemplates.js';
 import { knowledgeJobRoute, knowledgeRouter, surveyKnowledgeRoutes } from './knowledgeRoutes.js';
 import {
   createKnowledgeMarkdownDocument, getKnowledgeBase, getKnowledgeContext, knowledgeJobAudienceUserId,
@@ -71,13 +96,18 @@ import {
 import { platformAdminRouter, subscriptionRouter } from './platformAdmin.js';
 import { adminControlPlaneRouter } from './adminControlPlane.js';
 import {
-  assertCanQueueAiAction, assertSubscriptionQuota, SubscriptionEntitlementError
+  assertCanQueueAiAction, assertSubscriptionFeature, assertSubscriptionQuota, SubscriptionEntitlementError
 } from './subscriptionEntitlements.js';
 
 const app = express();
+seedJourneyTemplateCatalog();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+// Public telemetry has its own strict byte/parser/error contract and must be
+// mounted before the broader authenticated application JSON middleware.
+app.use('/v1', journeyMetricImportRouter);
+app.use('/v1', journeyEventIngestionRouter);
 app.use(express.json({ limit: '3mb' }));
 
 const upload = multer({
@@ -174,6 +204,12 @@ function sendError(response: express.Response, error: unknown, status = 400) {
   if (error instanceof SubscriptionEntitlementError) {
     return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
   }
+  if (error instanceof JourneySuggestionError) {
+    return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
+  }
+  if (error instanceof JourneyMapError) {
+    return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
+  }
   const message = error instanceof Error ? error.message : String(error);
   return response.status(status).json({ error: message });
 }
@@ -208,6 +244,14 @@ function authenticatedUser(request: express.Request) {
 function authenticatedSpace(request: express.Request) {
   const user = authenticatedUser(request);
   return resolveRequestSpace(request, user.id);
+}
+
+function entitledJourneySpace(request: express.Request, options: { ai?: boolean; exports?: boolean } = {}) {
+  const space = authenticatedSpace(request);
+  assertSubscriptionFeature(space.id, 'journeyDesign');
+  if (options.ai) assertSubscriptionFeature(space.id, 'journeyAi');
+  if (options.exports) assertSubscriptionFeature(space.id, 'journeyExports');
+  return space;
 }
 
 function publicHtml(value: unknown) {
@@ -455,7 +499,7 @@ function queueJob(kind: AiJobKind, input: Record<string, unknown>, spaceId: stri
     : [];
   delete queuedInput.knowledgeBaseIds;
   if (refs.length) queuedInput.knowledgeBaseRefs = refs;
-  const job = createJob(kind, queuedInput, spaceId, surveyId, responseId, requestedBy);
+  const job = createAdmittedAiJob(kind, queuedInput, spaceId, surveyId, responseId, requestedBy);
   publishEvent('ai-job', job, spaceId);
   void aiJobRunner.pump();
   return job;
@@ -463,7 +507,7 @@ function queueJob(kind: AiJobKind, input: Record<string, unknown>, spaceId: stri
 
 function recordKnowledgeResolutionFailure(kind: AiJobKind, spaceId: string, surveyId: string | null,
   responseId: string | null, requestedBy: string | null, error: unknown) {
-  const queued = createJob(kind, { knowledgeContextRequired: true }, spaceId, surveyId, responseId, requestedBy);
+  const queued = createAdmittedAiJob(kind, { knowledgeContextRequired: true }, spaceId, surveyId, responseId, requestedBy);
   const message = error instanceof Error ? error.message : 'The required knowledge snapshot could not be resolved.';
   const failed = updateJob(queued.id, { state: 'failed', stage: 'knowledge_unavailable', progress: 100,
     error: message, completedAt: new Date().toISOString() }) || queued;
@@ -491,6 +535,7 @@ app.get('/health', (_request, response) => {
     at: new Date().toISOString()
   });
 });
+app.use('/api/platform-admin/journey-templates', platformJourneyTemplateRouter);
 app.use('/api/platform-admin', platformAdminRouter);
 app.use('/api/platform-admin', adminControlPlaneRouter);
 app.use('/api/subscriptions', subscriptionRouter);
@@ -500,6 +545,18 @@ app.use('/api/public/esign', esignPublicRouter);
 app.use('/api/assistant', assistantRouter);
 app.get('/api/integrations/nylas/callback', noStore, nylasCallback);
 app.use('/api/tutorials', tutorialProgressRouter);
+app.use('/api/journey-maps/:definitionId/ai-suggestions', journeyMapSuggestionRouter);
+app.use('/api/journey-suggestions', journeySuggestionRouter);
+app.use('/api/journey-maps', journeyMapRouter);
+app.use('/api/journey-rich-cards', journeyRichCardRouter);
+app.use('/api/journey-personas', journeyPersonaRouter);
+app.use('/api/journey-evidence', journeyEvidenceRouter);
+app.use('/api/journey-templates', journeyTemplateRouter);
+app.use('/api/journey-event-control-plane', journeyEventControlPlaneRouter);
+app.use('/api/journey-stage-rules', journeyStageRuleRouter);
+app.use('/api/journey-research', journeyResearchRouter);
+app.use('/api/journey-metrics', journeyMetricRouter);
+app.use('/api/journey-identities', journeyIdentityRouter);
 app.use('/api/knowledge-bases', knowledgeRouter);
 knowledgeJobRoute(app);
 surveyKnowledgeRoutes(app);
@@ -550,6 +607,17 @@ app.post('/api/spaces', (request, response) => {
   try {
     const user = authenticatedUser(request);
     const space = createSpace(user, { name: request.body?.name });
+    recordPlatformAuditEvent({
+      request,
+      action: 'space_created',
+      actorUserId: user.id,
+      actorRole: 'workspace_user',
+      targetType: 'space',
+      targetId: space.id,
+      spaceId: space.id,
+      reason: 'Workspace created from spaces API.',
+      after: { space_kind: space.isPersonal ? 'personal' : 'workspace' }
+    });
     return response.status(201).json({ space, ...spaceSession(user.id) });
   } catch (error) { return sendError(response, error); }
 });
@@ -1080,35 +1148,27 @@ function journeyExportFilename(id: string, extension: 'json' | 'csv') {
   return `journey-map-${crypto.createHash('sha256').update(id).digest('hex').slice(0, 16)}.${extension}`;
 }
 function normalizeJourneyFocus(value: unknown) { return String(value || '').trim().replace(/\s+/gu, ' '); }
-function journeyFocusKey(value: unknown) { return normalizeJourneyFocus(value).toLocaleLowerCase('en-US'); }
-function knowledgeRefsKey(value: unknown) {
-  if (!Array.isArray(value)) return '[]';
-  return JSON.stringify(value.map((item) => item && typeof item === 'object'
-    ? `${String((item as Record<string, unknown>).id || '')}@${Number((item as Record<string, unknown>).indexVersion || 0)}`
-    : '').filter(Boolean).sort());
-}
-function activeJourneyOptimizationConflict(job: AiJob, reason: 'different_focus' | 'different_knowledge' | 'stale_snapshot') {
-  return {
-    error: reason === 'stale_snapshot'
-      ? 'An optimization for an older journey version is still active. Wait for it to finish before requesting another audit.'
-      : reason === 'different_knowledge'
-        ? 'An optimization with a different knowledge snapshot is already active for this journey. Wait for it to finish before requesting another audit.'
-      : 'A different optimization is already active for this journey. Wait for it to finish before requesting another audit.',
-    code: 'JOURNEY_OPTIMIZATION_ACTIVE', reason, activeJobId: job.id, activeState: job.state,
-    statusUrl: `/api/ai/jobs/${job.id}`
-  };
-}
-app.get('/api/journeys', noStore, (request, response) => response.json(listJourneys(authenticatedSpace(request).id)));
-app.get('/api/journeys/:id', noStore, (request, response) => { const journey = getJourney(String(request.params.id), authenticatedSpace(request).id); return journey ? response.json(journey) : response.status(404).json({ error: 'Journey not found.' }); });
+app.get('/api/journeys', noStore, (request, response) => {
+  const space = entitledJourneySpace(request);
+  return response.json(listLegacyJourneysWithRollout(space.id, request.get('x-request-id')));
+});
+app.get('/api/journeys/:id', noStore, (request, response) => {
+  const journey = readLegacyJourneyWithRollout(entitledJourneySpace(request).id, String(request.params.id),
+    request.get('x-request-id'));
+  return journey ? response.json(journey) : response.status(404).json({ error: 'Journey not found.' });
+});
 app.post('/api/journeys', (request, response) => {
   const parsed = journeyInput.safeParse(request.body); if (!parsed.success) return sendError(response, parsed.error);
-  const space = authenticatedSpace(request);
+  const space = entitledJourneySpace(request);
   if (parsed.data.id && getJourney(parsed.data.id, space.id)) return response.status(409).json({ error: 'A journey with this ID already exists.' });
   try {
-    const journey = createJourney({ ...parsed.data, provenance: {
-      origin: 'workspace', lastModifiedBy: 'workspace', evidenceBasis: 'workspace_authored', evidenceLevel: 'hypothesis',
-      generatedAt: null, optimizedAt: null
-    } }, space.id);
+    const journey = runLegacyJourneyWrite({
+      spaceId: space.id, journeyId: null, requestId: request.get('x-request-id'),
+      operation: () => createJourney({ ...parsed.data, provenance: {
+        origin: 'workspace', lastModifiedBy: 'workspace', evidenceBasis: 'workspace_authored', evidenceLevel: 'hypothesis',
+        generatedAt: null, optimizedAt: null
+      } }, space.id)
+    });
     publishEvent('data-changed', { reason: 'journey-created', id: journey.id }, space.id);
     return response.status(201).json(journey);
   } catch (error: any) {
@@ -1118,13 +1178,16 @@ app.post('/api/journeys', (request, response) => {
 });
 app.patch('/api/journeys/:id', (request, response) => {
   const parsed = journeyUpdateInput.safeParse(request.body); if (!parsed.success) return sendError(response, parsed.error);
-  const space = authenticatedSpace(request); const id = String(request.params.id); const current = getJourney(id, space.id);
+  const space = entitledJourneySpace(request); const id = String(request.params.id); const current = getJourney(id, space.id);
   if (!current) return response.status(404).json({ error: 'Journey not found.' });
   const { expectedUpdatedAt, ...changes } = parsed.data;
-  const journey = updateJourney(id, {
-    ...changes,
-    provenance: { ...current.provenance, lastModifiedBy: 'workspace', evidenceLevel: 'hypothesis' }
-  }, expectedUpdatedAt, { reason: 'workspace_edit', actor: 'workspace' }, space.id);
+  const journey = runLegacyJourneyWrite({
+    spaceId: space.id, journeyId: id, requestId: request.get('x-request-id'),
+    operation: () => updateJourney(id, {
+      ...changes,
+      provenance: { ...current.provenance, lastModifiedBy: 'workspace', evidenceLevel: 'hypothesis' }
+    }, expectedUpdatedAt, { reason: 'workspace_edit', actor: 'workspace' }, space.id)
+  });
   if (!journey) return response.status(409).json({ error: 'This journey changed since it was opened. Refresh it before saving.', current: getJourney(id, space.id) });
   publishEvent('data-changed', { reason: 'journey-updated', id: journey.id }, space.id);
   return response.json(journey);
@@ -1132,7 +1195,24 @@ app.patch('/api/journeys/:id', (request, response) => {
 app.delete('/api/journeys/:id', (request, response) => {
   const parsed = z.object({ expectedUpdatedAt: z.string().datetime() }).safeParse(request.body || {});
   if (!parsed.success) return sendError(response, parsed.error);
-  const space = authenticatedSpace(request); const id = String(request.params.id); const deleted = deleteJourney(id, parsed.data.expectedUpdatedAt, space.id);
+  const space = entitledJourneySpace(request); const id = String(request.params.id);
+  const deletionTarget = getJourney(id, space.id);
+  if (!deletionTarget) return response.status(404).json({ error: 'Journey not found.' });
+  if (deletionTarget.updatedAt !== parsed.data.expectedUpdatedAt) {
+    return response.status(409).json({
+      error: 'This journey changed since it was opened. Refresh it before deleting.', current: deletionTarget
+    });
+  }
+  try { assertLegacyJourneyMapDeletionAllowed(space.id, id); }
+  catch (error) { return sendError(response, error); }
+  const deleted = runLegacyJourneyWrite({
+    spaceId: space.id, journeyId: id, requestId: request.get('x-request-id'), deleting: true,
+    operation: () => {
+      const result = deleteJourney(id, parsed.data.expectedUpdatedAt, space.id);
+      if (result === 'deleted') discardJourneyMapForLegacyJourney(space.id, id);
+      return result;
+    }
+  });
   if (deleted === 'not_found') return response.status(404).json({ error: 'Journey not found.' });
   if (deleted === 'conflict') return response.status(409).json({ error: 'This journey changed since it was opened. Refresh it before deleting.', current: getJourney(id, space.id) });
   publishEvent('data-changed', { reason: 'journey-deleted', id }, space.id);
@@ -1143,52 +1223,53 @@ app.post('/api/ai/journeys', (request, response) => {
     knowledgeBaseIds: z.array(z.string().uuid()).max(5).optional() }).safeParse(request.body);
   if (!parsed.success) return sendError(response, parsed.error);
   try {
-    const space = authenticatedSpace(request);
+    const space = entitledJourneySpace(request, { ai: true });
     const job = queueJob('journey.generate', parsed.data, space.id, null, null, authenticatedUser(request).id);
     return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
   } catch (error) { return sendError(response, error); }
 });
 app.post('/api/journeys/:id/ai/optimize', (request, response) => {
-  const space = authenticatedSpace(request); const journey = getJourney(String(request.params.id), space.id);
-  if (!journey) return response.status(404).json({ error: 'Journey not found.' });
-  const parsed = z.object({ focus: z.string().trim().max(2000).optional(), knowledgeBaseIds: z.array(z.string().uuid()).max(5).optional() }).safeParse(request.body || {}); if (!parsed.success) return sendError(response, parsed.error);
-  const focus = normalizeJourneyFocus(parsed.data.focus);
-  let requestedKnowledgeKey = '[]';
   try {
-    requestedKnowledgeKey = knowledgeRefsKey(resolveKnowledgeBaseRefs(space.id, parsed.data.knowledgeBaseIds, {
-      requireTerra: true, viewerUserId: authenticatedUser(request).id, allowPrivate: false
-    }));
-  } catch (error) { return sendError(response, error); }
-  const existing = findActiveJourneyOptimization(journey.id, space.id);
-  if (existing) {
-    const sameSnapshot = String(existing.input.journeyUpdatedAt || '') === journey.updatedAt;
-    const sameFocus = journeyFocusKey(existing.input.focus) === journeyFocusKey(focus);
-    const sameKnowledge = knowledgeRefsKey(existing.input.knowledgeBaseRefs) === requestedKnowledgeKey;
-    if (sameSnapshot && sameFocus && sameKnowledge) return response.status(202).json({ jobId: existing.id, state: existing.state, statusUrl: `/api/ai/jobs/${existing.id}`, deduplicated: true });
-    return response.status(409).json(activeJourneyOptimizationConflict(existing,
-      !sameSnapshot ? 'stale_snapshot' : !sameFocus ? 'different_focus' : 'different_knowledge'));
-  }
-  try {
-    const job = queueJob('journey.optimize', { journeyId: journey.id, journeyUpdatedAt: journey.updatedAt, focus,
-      knowledgeBaseIds: parsed.data.knowledgeBaseIds }, space.id, null, null, authenticatedUser(request).id);
-    return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}`, deduplicated: false });
-  } catch (error: any) {
-    const raced = isDatabaseConstraintError(error) ? findActiveJourneyOptimization(journey.id, space.id) : null;
-    if (raced) {
-      const sameSnapshot = String(raced.input.journeyUpdatedAt || '') === journey.updatedAt;
-      const sameFocus = journeyFocusKey(raced.input.focus) === journeyFocusKey(focus);
-      const sameKnowledge = knowledgeRefsKey(raced.input.knowledgeBaseRefs) === requestedKnowledgeKey;
-      if (sameSnapshot && sameFocus && sameKnowledge) return response.status(202).json({ jobId: raced.id, state: raced.state, statusUrl: `/api/ai/jobs/${raced.id}`, deduplicated: true });
-      return response.status(409).json(activeJourneyOptimizationConflict(raced,
-        !sameSnapshot ? 'stale_snapshot' : !sameFocus ? 'different_focus' : 'different_knowledge'));
+    const space = entitledJourneySpace(request, { ai: true });
+    if (space.role === 'member') throw new JourneySuggestionError(
+      'You do not have permission to request journey suggestions in this space.', 403,
+      'JOURNEY_SUGGESTION_FORBIDDEN');
+    const journey = getJourney(String(request.params.id), space.id);
+    if (!journey) return response.status(404).json({ error: 'Journey not found.' });
+    const parsed = z.object({ focus: z.string().trim().max(2000).optional(),
+      knowledgeBaseIds: z.array(z.string().uuid()).max(5).optional() }).strict().parse(request.body || {});
+    if (parsed.knowledgeBaseIds?.length) throw new JourneySuggestionError(
+      'Attach authorised knowledge records to the journey as evidence, then select those evidence links for the AI review.',
+      409, 'JOURNEY_SUGGESTION_LINKED_EVIDENCE_REQUIRED');
+    const focus = normalizeJourneyFocus(parsed.focus);
+    const user = authenticatedUser(request);
+    const { definitionId } = ensureJourneyMapForLegacyJourney(journey, space.id);
+    const queued = db.transaction(() => {
+      const created = createJourneySuggestionRun({ spaceId: space.id, definitionId, userId: user.id, focus,
+        evidenceLinkIds: [] });
+      if (!created.created) return { created: false, detail: created.run, job: null };
+      assertCanQueueAiAction(space.id);
+      const job = createAdmittedAiJob('journey.optimize', { suggestionRunId: created.run.run.id },
+        space.id, null, null, user.id);
+      attachJourneySuggestionJob(space.id, created.run.run.id, job.id);
+      return { created: true, detail: getJourneySuggestionRun(space.id, created.run.run.id, user.id), job };
+    })();
+    if (queued.job) {
+      publishEvent('ai-job', queued.job, space.id);
+      void aiJobRunner.pump();
     }
-    throw error;
-  }
+    const jobId = queued.job?.id || queued.detail.run.aiJobId;
+    return response.status(202).json({ jobId, state: queued.detail.run.state,
+      statusUrl: jobId ? `/api/ai/jobs/${jobId}` : null, deduplicated: !queued.created,
+      suggestionId: queued.detail.run.id,
+      reviewUrl: `/journey-maps/suggestions/${queued.detail.run.id}`,
+      definitionId });
+  } catch (error) { return sendError(response, error); }
 });
 
 app.get('/api/journeys/:id/versions', noStore, (request, response) => {
   const id = String(request.params.id);
-  if (!getJourney(id, authenticatedSpace(request).id)) return response.status(404).json({ error: 'Journey not found.' });
+  if (!getJourney(id, entitledJourneySpace(request).id)) return response.status(404).json({ error: 'Journey not found.' });
   const parsed = z.coerce.number().int().min(1).max(20).safeParse(request.query.limit ?? 10);
   if (!parsed.success) return sendError(response, parsed.error);
   return response.json(listJourneyVersionSummaries(id, parsed.data));
@@ -1197,8 +1278,12 @@ app.post('/api/journeys/:id/versions/:versionId/restore', (request, response) =>
   const parsed = z.object({ expectedUpdatedAt: z.string().datetime() }).safeParse(request.body || {});
   if (!parsed.success) return sendError(response, parsed.error);
   const id = String(request.params.id);
-  const space = authenticatedSpace(request);
-  const restored = restoreJourneyVersion(id, String(request.params.versionId), parsed.data.expectedUpdatedAt, space.id);
+  const space = entitledJourneySpace(request);
+  const restored = runLegacyJourneyWrite({
+    spaceId: space.id, journeyId: id, requestId: request.get('x-request-id'),
+    operation: () => restoreJourneyVersion(id, String(request.params.versionId), parsed.data.expectedUpdatedAt, space.id),
+    journeyFromResult: (result) => result.status === 'restored' ? result.journey : null
+  });
   if (restored.status === 'not_found') return response.status(404).json({ error: 'Journey not found.' });
   if (restored.status === 'version_not_found') return response.status(404).json({ error: 'Journey version not found.' });
   if (restored.status === 'conflict') return response.status(409).json({ error: 'This journey changed since it was opened. Refresh it before restoring.', current: restored.current });
@@ -1210,7 +1295,8 @@ app.post('/api/journeys/:id/versions/:versionId/restore', (request, response) =>
 });
 
 app.get('/api/journeys/:id/export.:format', noStore, (request, response) => {
-  const journey = getJourney(String(request.params.id), authenticatedSpace(request).id);
+  const journey = readLegacyJourneyWithRollout(entitledJourneySpace(request, { exports: true }).id,
+    String(request.params.id), request.get('x-request-id'));
   if (!journey) return response.status(404).json({ error: 'Journey not found.' });
   const format = String(request.params.format).toLowerCase();
   if (format === 'json') {
@@ -1435,6 +1521,8 @@ app.put('/api/surveys/:id', (request, response) => {
     const current = requireSurvey(String(request.params.id), space.id);
     const input = surveyInput.parse({ ...current, ...request.body, id: current.id });
     const survey = saveSurvey(input as any, input.questions as any, space.id);
+    queueJourneyMetricRebuildsForSurvey({ spaceId: space.id, surveyId: survey.id, reason: 'source_corrected',
+      idempotencyPrefix: `survey-updated:${survey.id}:${survey.updatedAt}`, actorUserId: authenticatedUser(request).id });
     publishEvent('data-changed', { surveyId: survey.id, reason: 'survey-updated' }, space.id);
     return response.json(survey);
   } catch (error) { return sendError(response, error); }
@@ -1444,6 +1532,8 @@ app.delete('/api/surveys/:id', (request, response) => {
   const space = authenticatedSpace(request);
   const files = db.prepare(`SELECT u.stored_filename FROM uploads u JOIN collectors c ON c.id=u.collector_id
     WHERE c.survey_id=? AND u.space_id=?`).all(id, space.id) as Array<{ stored_filename: string }>;
+  queueJourneyMetricRebuildsForSurvey({ spaceId: space.id, surveyId: id, reason: 'source_deleted',
+    idempotencyPrefix: `survey-deleted:${id}`, actorUserId: authenticatedUser(request).id });
   if (!deleteSurvey(id, space.id)) return response.status(404).json({ error: 'Survey not found.' });
   for (const file of files) removeUploadedFile(path.resolve(config.uploadDir, file.stored_filename));
   return response.status(204).end();
@@ -1570,6 +1660,8 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
         recordKnowledgeResolutionFailure('response.analyze', owningSpaceId, survey.id, stored.id, null, error);
       }
     }
+    queueJourneyMetricRebuildsForSurvey({ spaceId: owningSpaceId, surveyId: survey.id, reason: 'source_created',
+      idempotencyPrefix: `survey-response:${stored.id}` });
   }
   publishEvent('response', { surveyId: survey.id, responseId: stored.id, status: stored.status }, owningSpaceId);
   return response.status(201).json({ responseId: stored.id, status: stored.status, thankYouMessage: survey.thankYouMessage });
@@ -1696,10 +1788,6 @@ app.post('/api/ai/jobs/:id/retry', (request, response) => {
   try {
     z.object({}).strict().parse(request.body || {});
     const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
-    // A retry reuses the existing durable row for idempotency and quota history,
-    // but it can consume another provider execution, so normal AI admission
-    // still applies before the failed row is requeued.
-    assertCanQueueAiAction(space.id);
     const retried = retryFailedAiJob(String(request.params.id), space.id, user.id);
     void aiJobRunner.pump();
     return response.status(202).json({

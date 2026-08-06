@@ -56,6 +56,12 @@ test('retrieval enforces five bases and graph depth two', () => {
   assert.throws(() => validateRetrieveInput({ ...base, knowledgeBases, graphDepth: 3 }), /between 0 and 2/);
 });
 
+test('graph snapshots prioritize the most broadly supported entities for bounded corpus analysis', () => {
+  assert.match(AQL.graphSnapshot, /LET supportingSourceCount = LENGTH\(UNIQUE/u);
+  assert.match(AQL.graphSnapshot, /SORT supportingSourceCount DESC, entity\.name ASC/u);
+  assert.match(AQL.graphSnapshot, /FILTER relation\.indexVersion <= @indexVersion/u);
+});
+
 test('corpus scanning is bounded and the static query retains tenant, base, document, and version filters', () => {
   const input = validateScanInput({ requestId: 'scan_1', spaceId: 'space_1', knowledgeBaseId: 'base_1',
     documentId: 'document_1', indexVersion: 4, offset: 32, limit: 16 });

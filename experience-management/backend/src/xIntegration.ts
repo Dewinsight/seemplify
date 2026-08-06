@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import type { SessionUser } from './auth.js';
+import { createAdmittedAiJob } from './aiJobAdmission.js';
 import { aiJobRunner } from './aiJobs.js';
 import { config } from './config.js';
-import { createJob, db, listSocialMentionsByIdsForSpace } from './database.js';
+import { db, listSocialMentionsByIdsForSpace } from './database.js';
 import { publishEvent } from './events.js';
-import { assertCanQueueAiAction, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
+import { SubscriptionEntitlementError } from './subscriptionEntitlements.js';
 import { decryptSecret, encryptSecret } from './secureSecrets.js';
 import {
   exchangeOAuth2Code, exchangeOAuthToken, getXJson, postXJson, refreshOAuth2Token, requestOAuthToken, revokeOAuth2Token,
@@ -953,11 +954,12 @@ function persistCollectedBatch(input: {
     // drained, and an explicit expansion stores posts without triggering a
     // potentially large analysis bill.
     const analysisIds = input.autoAnalyze === false ? [] : insertedIds.slice(0, normalSyncLimit);
-    const analysisJobs: ReturnType<typeof createJob>[] = [];
+    const analysisJobs: ReturnType<typeof createAdmittedAiJob>[] = [];
     for (let index = 0; index < analysisIds.length; index += normalSyncLimit) {
       try {
-        assertCanQueueAiAction(input.connection.space_id);
-        analysisJobs.push(createJob('social.analyze', { mentionIds: analysisIds.slice(index, index + normalSyncLimit), source: 'x-sync', xSyncJobId: input.jobId }, input.connection.space_id, null, null, input.connection.user_id));
+        analysisJobs.push(createAdmittedAiJob('social.analyze', {
+          mentionIds: analysisIds.slice(index, index + normalSyncLimit), source: 'x-sync', xSyncJobId: input.jobId
+        }, input.connection.space_id, null, null, input.connection.user_id));
       } catch (error) {
         // Preserve the collected posts when the AI allowance is exhausted;
         // only their automatic analysis is deferred.
@@ -972,7 +974,7 @@ function persistCollectedBatch(input: {
   })();
 }
 
-function dispatchAnalysisJobs(jobs: ReturnType<typeof createJob>[]) {
+function dispatchAnalysisJobs(jobs: ReturnType<typeof createAdmittedAiJob>[]) {
   for (const job of jobs) publishEvent('ai-job', job, job.spaceId);
   if (jobs.length) void aiJobRunner.pump();
 }

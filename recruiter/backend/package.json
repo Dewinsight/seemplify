@@ -58,6 +58,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "test:mail": "node --test tests/mailClient.test.js",
     "test:admin-ai-interviews": "node --test tests/adminAIInterviewAnalytics.test.js",
     "test:platform-features": "node --test tests/platformFeatures.test.js",
     "test:admin-activity": "node --test tests/userActivityTracking.test.js tests/adminOrganizationActivity.test.js",

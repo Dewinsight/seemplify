@@ -496,7 +496,7 @@ exports.getMatchingCandidates = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error getting matching candidates:', error);
-    res.status(500).json({ msg: 'Server error finding matching candidates', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error finding matching candidates', code: error.code, error: error.message });
   }
 };
 
@@ -611,7 +611,7 @@ exports.getCandidateExplanation = async (req, res) => {
     res.json({ candidateId, jobId, explanation });
   } catch (error) {
     console.error('❌ Error generating candidate explanation:', error);
-    res.status(500).json({ msg: 'Failed to generate explanation', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Failed to generate explanation', code: error.code, error: error.message });
   }
 };
 
@@ -996,7 +996,7 @@ exports.getRankedShortlist = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error ranking shortlist:', error);
-    res.status(500).json({ msg: 'Server error ranking shortlist', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error ranking shortlist', code: error.code, error: error.message });
   }
 };
 
@@ -1498,7 +1498,7 @@ exports.generateOptimizedInterviewQuestions = async (req, res) => {
     res.status(201).json({ msg: 'Successfully generated optimized question suite', ...result });
   } catch (error) {
     console.error('❌ Error generating optimized interview questions:', error);
-    res.status(500).json({ msg: 'Server error generating optimized interview questions', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error generating optimized interview questions', code: error.code, error: error.message });
   }
 };
 
@@ -1510,7 +1510,7 @@ exports.analyzeInterviewQuestionQuality = async (req, res) => {
     res.json({ msg: 'Question quality analysis completed', analysis });
   } catch (error) {
     console.error('❌ Error analyzing question quality:', error);
-    res.status(500).json({ msg: 'Server error analyzing question quality', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error analyzing question quality', code: error.code, error: error.message });
   }
 };
 

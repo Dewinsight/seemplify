@@ -144,7 +144,7 @@ exports.startEnrichment = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error starting enrichment:', error);
-    return res.status(500).json({ msg: 'Failed to start enrichment', error: error.message });
+    return res.status(error.statusCode || 500).json({ msg: 'Failed to start enrichment', code: error.code, error: error.message });
   }
 };
 
@@ -176,7 +176,7 @@ exports.getStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error getting enrichment status:', error);
-    return res.status(500).json({ msg: 'Failed to get enrichment status', error: error.message });
+    return res.status(error.statusCode || 500).json({ msg: 'Failed to get enrichment status', code: error.code, error: error.message });
   }
 };
 
@@ -210,6 +210,6 @@ exports.getResults = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error getting enrichment results:', error);
-    return res.status(500).json({ msg: 'Failed to get enrichment results', error: error.message });
+    return res.status(error.statusCode || 500).json({ msg: 'Failed to get enrichment results', code: error.code, error: error.message });
   }
 };

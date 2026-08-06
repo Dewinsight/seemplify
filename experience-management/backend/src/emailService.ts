@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { config } from './config.js';
 import { db } from './database.js';
+import { mailTransportStatus, sendMail } from './mailClient.js';
 import type { Collector, Survey } from './types.js';
 
 function escapeHtml(value: unknown) {
@@ -12,7 +13,7 @@ const unsafeSenderNameCharacters = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
 const unsafeSenderNameCharactersGlobal = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/gu;
 
 function configuredSenderName() {
-  return String(config.brevoFromName || '')
+  return String(config.mailFromName || '')
     .replace(unsafeSenderNameCharactersGlobal, ' ')
     .replace(/\s+/gu, ' ')
     .trim()
@@ -20,9 +21,9 @@ function configuredSenderName() {
 }
 
 /**
- * Sender names are sent as structured provider data, but are still treated as
- * header-adjacent input. Reject controls defensively and use the verified
- * account default whenever an optional campaign display name is empty.
+ * Sender display names end up inside a From header, so they are treated as
+ * header input. Reject controls defensively and use the verified account
+ * default whenever an optional campaign display name is empty.
  */
 export function normalizeEmailSenderName(value?: string | null) {
   if (value !== undefined && value !== null) {
@@ -38,40 +39,48 @@ export function normalizeEmailSenderName(value?: string | null) {
 }
 
 export function emailStatus() {
+  const transport = mailTransportStatus();
   return {
-    configured: Boolean(config.brevoApiKey),
+    configured: transport.configured,
     mode: config.emailMode,
-    provider: 'brevo',
-    sender: config.brevoFromEmail,
-    senderName: config.brevoFromName,
-    source: config.brevoApiKey ? 'seemplify-shared-environment' : 'not-configured'
+    provider: 'seemplify-mail',
+    sender: config.mailFromEmail,
+    senderName: config.mailFromName,
+    source: transport.configured ? 'seemplify-mail-service' : 'not-configured'
   };
 }
 
-async function sendBrevoEmail(input: { to: string; name?: string; senderName?: string; subject: string; html: string; text: string; headers?: Record<string, string> }) {
-  if (config.emailMode === 'log') return { messageId: `log_${Date.now()}`, mode: 'log' };
-  if (!config.brevoApiKey) throw new Error('BREVO_API_KEY is not configured in the shared Seemplify environment.');
-  const response = await fetch(config.brevoApiUrl, {
-    method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'api-key': config.brevoApiKey },
-    body: JSON.stringify({
-      sender: { name: normalizeEmailSenderName(input.senderName), email: config.brevoFromEmail },
-      to: [{ email: input.to, name: input.name || undefined }],
-      subject: input.subject,
-      htmlContent: input.html,
-      textContent: input.text,
-      headers: input.headers
-    }),
-    signal: AbortSignal.timeout(20_000)
+/**
+ * Single funnel for every outbound message in this service. Callers keep their
+ * own delivery ledgers, so this deliberately performs exactly one attempt and
+ * lets the classified MailError decide whether the caller retries.
+ */
+async function deliver(input: {
+  to: string;
+  /**
+   * Accepted for call-site compatibility. The mail service composes headers
+   * from bare mailboxes, so a recipient display name is not transported.
+   */
+  name?: string;
+  senderName?: string;
+  subject: string;
+  html: string;
+  text: string;
+  idempotencyKey: string;
+  correlation: string;
+  tag: string;
+}) {
+  return sendMail({
+    from: config.mailFromEmail,
+    fromName: normalizeEmailSenderName(input.senderName),
+    to: [input.to],
+    subject: input.subject,
+    html: input.html,
+    text: input.text,
+    tag: input.tag,
+    idempotencyKey: input.idempotencyKey,
+    headers: { 'X-Seemplify-Correlation': input.correlation.slice(0, 500) }
   });
-  const payload = await response.json().catch(() => ({})) as any;
-  if (!response.ok) {
-    if (String(payload.code || '').toLowerCase() === 'duplicate_parameter' && input.headers?.idempotencyKey) {
-      return { messageId: `idempotent:${input.headers.idempotencyKey}`, mode: 'brevo', idempotentDuplicate: true };
-    }
-    throw new Error(payload.message || `Brevo returned HTTP ${response.status}`);
-  }
-  return { ...payload, mode: 'brevo' };
 }
 
 export async function sendTransactionalEmail(input: {
@@ -84,13 +93,15 @@ export async function sendTransactionalEmail(input: {
   correlation: string;
 }) {
   if (!/^[0-9a-f-]{36}$/i.test(input.idempotencyKey)) throw new Error('Email idempotency key must be a UUID.');
-  return sendBrevoEmail({
+  return deliver({
     to: input.to.trim().toLowerCase(),
     name: input.name?.trim(),
     subject: input.subject.replace(/[\r\n]+/g, ' ').slice(0, 250),
     html: input.html,
     text: input.text,
-    headers: { idempotencyKey: input.idempotencyKey, 'X-Mailin-custom': input.correlation.slice(0, 500) }
+    idempotencyKey: input.idempotencyKey,
+    correlation: input.correlation,
+    tag: input.correlation.split(':')[0] || 'transactional'
   });
 }
 
@@ -154,23 +165,28 @@ export async function sendCampaignEmail(input: {
     ${htmlBody}${input.embeddedQuestionHtml || ''}${unsubscribeHtml}
   </div>`;
   const text = `${textBody}${input.embeddedQuestionText ? `\n\n${input.embeddedQuestionText}` : ''}${input.unsubscribeUrl ? `\n\nUnsubscribe: ${input.unsubscribeUrl}` : ''}`.trim();
-  return sendBrevoEmail({
+  return deliver({
     to: input.to,
     name: input.name,
     senderName: input.senderName,
     subject,
     html,
     text,
-    headers: { idempotencyKey: input.deliveryId, 'X-Mailin-custom': `campaign_delivery:${input.deliveryId}` }
+    idempotencyKey: input.deliveryId,
+    correlation: `campaign_delivery:${input.deliveryId}`,
+    tag: 'campaign_delivery'
   });
 }
 
-export async function sendPasswordResetEmail(input: { email: string; name: string; token: string }) {
+export async function sendPasswordResetEmail(input: { resetId: string; email: string; name: string; token: string }) {
   const resetUrl = `${config.publicUrl}/reset-password?token=${encodeURIComponent(input.token)}`;
   const greeting = input.name ? `Hello ${escapeHtml(input.name)},` : 'Hello,';
-  return sendBrevoEmail({
+  return deliver({
     to: input.email,
     name: input.name,
+    idempotencyKey: input.resetId,
+    correlation: `password_reset:${input.resetId}`,
+    tag: 'password_reset',
     subject: 'Reset your Experience Management password',
     html: `<div style="font-family:Helvetica,Arial,sans-serif;color:#20211f;line-height:1.6;max-width:620px;margin:auto">
       <h2 style="font-size:22px;margin:0 0 18px">Reset your password</h2>
@@ -251,8 +267,11 @@ export async function sendSpaceInvitationEmail(input: {
   role: string;
 }) {
   const inviteUrl = `${config.publicUrl}/join/${encodeURIComponent(input.token)}`;
-  return sendBrevoEmail({
+  return deliver({
     to: input.email,
+    idempotencyKey: input.invitationId,
+    correlation: `space_invitation:${input.invitationId}`,
+    tag: 'space_invitation',
     subject: `Join ${input.spaceName} in Experience Management`,
     html: `<div style="font-family:Helvetica,Arial,sans-serif;color:#20211f;line-height:1.6;max-width:620px;margin:auto">
       <h2 style="font-size:22px;margin:0 0 18px">You have been invited</h2>
@@ -260,8 +279,7 @@ export async function sendSpaceInvitationEmail(input: {
       <p><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;background:#26352e;color:#fff;text-decoration:none;padding:12px 18px;border-radius:7px;font-weight:600">Review invitation</a></p>
       <p style="font-size:13px;color:#6b706c">This link expires in 7 days and is bound to ${escapeHtml(input.email)}. If you were not expecting it, you can ignore this message.</p>
     </div>`,
-    text: `${input.invitedBy} invited you to join ${input.spaceName} in Experience Management as ${input.role}.\n\nReview the invitation: ${inviteUrl}\n\nThis link expires in 7 days and is bound to ${input.email}.`,
-    headers: { idempotencyKey: input.invitationId, 'X-Mailin-custom': `space_invitation:${input.invitationId}` }
+    text: `${input.invitedBy} invited you to join ${input.spaceName} in Experience Management as ${input.role}.\n\nReview the invitation: ${inviteUrl}\n\nThis link expires in 7 days and is bound to ${input.email}.`
   });
 }
 
@@ -308,7 +326,7 @@ export async function sendInvitations(survey: Survey, collector: Collector, reci
       continue;
     }
     const firstAttemptAt = stored.first_attempt_at ? Date.parse(String(stored.first_attempt_at)) : Date.now();
-    if (stored.first_attempt_at && (!Number.isFinite(firstAttemptAt) || Date.now() - firstAttemptAt >= config.brevoIdempotencyTtlMinutes * 60_000)) {
+    if (stored.first_attempt_at && (!Number.isFinite(firstAttemptAt) || Date.now() - firstAttemptAt >= config.mailIdempotencyTtlMinutes * 60_000)) {
       const error = 'The previous invitation delivery state is unknown outside the provider idempotency window; it was not resent.';
       update.run('failed', stored.invite_sent_at || null, stored.message_id || null, error, now, id);
       outcomes.push({ id, email, status: 'failed', error });
@@ -316,13 +334,15 @@ export async function sendInvitations(survey: Survey, collector: Collector, reci
     }
     db.prepare("UPDATE recipients SET status='sending',first_attempt_at=COALESCE(first_attempt_at,?),updated_at=? WHERE id=?").run(now, now, id);
     try {
-      const result = await sendBrevoEmail({
+      const result = await deliver({
         to: email,
         name: recipient.name,
         subject: `Your feedback: ${survey.title}`,
         html: content.html,
         text: content.text,
-        headers: { idempotencyKey: id, 'X-Mailin-custom': `collector_recipient:${id}` }
+        idempotencyKey: id,
+        correlation: `collector_recipient:${id}`,
+        tag: 'collector_recipient'
       });
       const sentAt = new Date().toISOString();
       update.run('sent', sentAt, (result as any).messageId || '', null, sentAt, id);

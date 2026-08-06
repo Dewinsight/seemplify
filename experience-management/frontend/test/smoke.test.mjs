@@ -334,8 +334,8 @@ test('refuses an incompatible rollback after a PostgreSQL runtime upgrade starts
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
   assert.match(deploy, /started runtime upgrade/);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 11,
-    maximumRuntimeSchemaVersion: 11,
+    minimumRuntimeSchemaVersion: 29,
+    maximumRuntimeSchemaVersion: 29,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });
@@ -385,6 +385,13 @@ test('ships capability-scoped platform administration and subscription controls'
   assert.match(plans, /\/api\/platform-admin\/plans/);
   assert.match(plans, /Restore defaults/);
   assert.match(plans, /Social Listening/);
+  for (const journeyControl of [
+    'Journey AI', 'Journey templates', 'Journey exports', 'Journey metrics', 'Journey portfolio',
+    'Journey collaboration', 'Journey hierarchy', 'Service blueprints', 'Connected journeys',
+    'Customer profiles', 'Actual path analytics',
+    'Journey orchestration', 'Mobile SDKs', 'Journey connectors', 'Accepted events per month',
+    'Event retention days', 'Active mapping rule sets', 'Workflow actions per month'
+  ]) assert.match(plans, new RegExp(journeyControl));
   assert.match(users, /\/api\/platform-admin\/users/);
   assert.match(users, /Create and invite user/);
   assert.match(user, /Assign role/);

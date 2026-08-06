@@ -189,6 +189,22 @@ const STRUCTURED_CONTRACTS = {
   'interview.bias': { schema: BIAS_ANALYSIS_SCHEMA, schemaName: 'interview_bias', schemaStrict: true }
 };
 
+/**
+ * A failed wrapper result must keep the runtime error's identity: HTTP
+ * handlers and the frontend runtime gate route on .code/.statusCode to tell
+ * "connect your ChatGPT account" apart from a genuine server fault.
+ */
+function runtimeFailure(error, extra = {}) {
+  return {
+    success: false,
+    error: error.message,
+    code: error.code,
+    statusCode: error.statusCode,
+    retryable: error.retryable === true,
+    ...extra
+  };
+}
+
 class AIModelService {
   constructor() {
     // TEMPERATURE OPTIMIZATION STRATEGY:
@@ -554,7 +570,7 @@ class AIModelService {
 
     } catch (error) {
       console.error("AI runtime connection failed:", error.message);
-      return { success: false, error: error.message };
+      return runtimeFailure(error);
     }
   }
 
@@ -866,12 +882,7 @@ ${cvText}`
 
     } catch (error) {
       console.error("Error calling the AI runtime for CV analysis:", error.message);
-      return {
-        success: false,
-        error: error.message,
-        code: error.code,
-        retryable: error.retryable === true
-      };
+      return runtimeFailure(error);
     }
   }
 
@@ -993,10 +1004,7 @@ ${cvText}`
 
     } catch (error) {
       console.error("Error calling the AI runtime for job description:", error.message);
-      return {
-        success: false,
-        error: error.message
-      };
+      return runtimeFailure(error);
     }
   }
 
@@ -1164,10 +1172,7 @@ ${cvText}`
 
     } catch (error) {
       console.error("Error calling the AI runtime for job requirements:", error.message);
-      return {
-        success: false,
-        error: error.message
-      };
+      return runtimeFailure(error);
     }
   }
 
@@ -1249,11 +1254,9 @@ ${cvText}`
 
     } catch (error) {
       console.error("Error calling the AI runtime for chat:", error.message);
-      return {
-        success: false,
-        error: error.message,
+      return runtimeFailure(error, {
         response: "I'm sorry, I'm having trouble processing your request right now. Please try again."
-      };
+      });
     }
   }
 
@@ -1429,11 +1432,7 @@ User Message: "${firstUserMessage}"`;
 
     } catch (error) {
       console.error("Error generating chat title:", error.message);
-      return {
-        success: false,
-        title: "HR Chat Session",
-        error: error.message
-      };
+      return runtimeFailure(error, { title: "HR Chat Session" });
     }
   }
 
@@ -1736,10 +1735,7 @@ Return only valid JSON.`
 
     } catch (error) {
       console.error("Error generating interview summary:", error.message);
-      return {
-        success: false,
-        error: error.message
-      };
+      return runtimeFailure(error);
     }
   }
 
@@ -1929,10 +1925,7 @@ Return only valid JSON.`
 
     } catch (error) {
       console.error("Error analyzing team comments:", error.message);
-      return {
-        success: false,
-        error: error.message
-      };
+      return runtimeFailure(error);
     }
   }
 
@@ -1994,6 +1987,8 @@ Return only valid JSON.`
     const errors = questions.length === suppliedQuestions.length
       ? []
       : ['One or more blank questions were skipped and require manual review.'];
+    let runtimeErrorCode;
+    let runtimeErrorStatus;
     const batchSize = 5;
     const systemPrompt = `You are an employment-interview bias reviewer. Assess each supplied question independently and preserve its questionIndex.
 
@@ -2051,6 +2046,10 @@ Return concise evidence-based assessments. Never infer candidate characteristics
         }
       } catch (error) {
         errors.push(`Questions ${start + 1}-${start + batchQuestions.length}: ${error.message}`);
+        if (!runtimeErrorCode && error.code) {
+          runtimeErrorCode = error.code;
+          runtimeErrorStatus = error.statusCode;
+        }
         console.error('AI bias analysis batch failed:', error.message);
       }
     }
@@ -2059,6 +2058,8 @@ Return concise evidence-based assessments. Never infer candidate characteristics
       success: errors.length === 0,
       partial: errors.length > 0 && analyses.some(Boolean),
       analyses,
+      code: runtimeErrorCode,
+      statusCode: runtimeErrorStatus,
       error: errors.length ? errors.join(' ') : undefined
     };
   }

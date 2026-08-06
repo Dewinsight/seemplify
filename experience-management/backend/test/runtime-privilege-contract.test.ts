@@ -1,0 +1,136 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * STATIC registration test for runtimes 27-30.
+ *
+ * SCOPE WARNING — READ BEFORE TRUSTING A GREEN RUN. Every assertion below reads
+ * source TEXT. This file does NOT create a database, does NOT apply a migration
+ * and does NOT execute a single statement, so it is NOT executed-PostgreSQL
+ * proof and must not be recorded as one. It cannot observe whether a GRANT takes
+ * effect, whether the presence loop actually raises, or any plpgsql behaviour.
+ *
+ * What it does prove is the drift class that runtimes 27-29 shipped: a table
+ * created by a migration but never registered in one of the three lists that are
+ * supposed to describe it. Each list fails differently when it is short, which is
+ * why none of them caught the others:
+ *
+ *   runtime_privileges.sql presence loop  fail-closed gate. A table missing here
+ *                                         lets the file apply cleanly against a
+ *                                         database that never created it, so the
+ *                                         grants silently cover less than claimed.
+ *   runtimeExtensionTables()              drives runtimeTableSetDifference. A
+ *                                         table missing here reads as an unknown,
+ *                                         unexpected table on a correct database.
+ *   assertRuntimePrivileges expectations  a table missing here is never checked,
+ *                                         so an over-broad grant on it is invisible.
+ *
+ * Runtimes 18-26 were exhaustive in all three; 27-30 were not, and no test paired
+ * them (knowledge-embedding-config.test.ts stops at runtime 22 and checks one
+ * runtime at a time). This pairs all three lists for every runtime 27-29 object so
+ * the omission cannot recur at runtime 30.
+ */
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const backendRoot = path.resolve(here, '..');
+const migrationRoot = path.join(backendRoot, 'migrations', 'postgres');
+const contractSource = fs.readFileSync(
+  path.resolve(backendRoot, '..', 'scripts', 'postgres-runtime-contract.mjs'), 'utf8');
+const privilegeSource = fs.readFileSync(path.join(migrationRoot, 'runtime_privileges.sql'), 'utf8');
+
+const RUNTIMES = [
+  { version: 27, file: '0027_journey_portfolio.sql' },
+  { version: 28, file: '0028_journey_collaboration.sql' },
+  { version: 29, file: '0029_journey_hierarchy_blueprints.sql' },
+  { version: 30, file: '0030_journey_stage_reprojection.sql' }
+] as const;
+
+/** Only top-of-line CREATE TABLE is a declaration; the same text inside a comment is prose. */
+const createdTables = (file: string): string[] => [
+  ...fs.readFileSync(path.join(migrationRoot, file), 'utf8')
+    .matchAll(/^CREATE TABLE (?:IF NOT EXISTS )?([a-z_][a-z0-9_]*)\s*\(/gmu)
+].map((match) => match[1]!);
+
+const quotedNames = (source: string): string[] =>
+  [...source.matchAll(/'([a-z_][a-z0-9_]*)'/gu)].map((match) => match[1]!);
+
+const region = (source: string, open: string, close: string): string => {
+  const start = source.indexOf(open);
+  assert.notEqual(start, -1, `the source no longer contains ${open}`);
+  const end = source.indexOf(close, start);
+  assert.ok(end > start, `the source no longer contains ${close} after ${open}`);
+  return source.slice(start, end);
+};
+
+/**
+ * Splits a region into per-runtime blocks keyed by the version in its guard, so a
+ * name registered under the wrong runtime fails rather than passing on presence.
+ */
+const versionBlocks = (source: string, variable: string): Map<number, string> => {
+  const markers = [...source.matchAll(new RegExp(String.raw`if \(${variable} >= (\d+)\) \{`, 'gu'))];
+  assert.ok(markers.length > 0, `no ${variable} version guards found`);
+  const blocks = new Map<number, string>();
+  markers.forEach((match, index) => {
+    const from = match.index! + match[0].length;
+    const to = markers[index + 1]?.index ?? source.length;
+    blocks.set(Number(match[1]!), source.slice(from, to));
+  });
+  return blocks;
+};
+
+const presenceGate = new Set(quotedNames(
+  region(privilegeSource, 'DO $seemplify_privilege_contract$', '$seemplify_privilege_contract$;')));
+
+const extensionBlocks = versionBlocks(
+  region(contractSource, 'export function runtimeExtensionTables(', 'export const RUNTIME_EXTENSION_TABLES'),
+  'runtimeVersion');
+
+const privilegeBlocks = versionBlocks(
+  region(contractSource, 'export async function assertRuntimePrivileges(',
+    'for (const [table, select, insert, update, remove] of expectations)'),
+  'privilegeRuntimeVersion');
+
+for (const { version, file } of RUNTIMES) {
+  test(`every runtime-${version} table is registered in all three runtime contracts`, () => {
+    const created = createdTables(file);
+    assert.ok(created.length > 0, `${file} must declare tables`);
+    assert.deepEqual([...new Set(created)], created, `${file} must not declare a table twice`);
+
+    // Fail-closed presence gate. Without the name, runtime_privileges.sql applies
+    // cleanly against a database that never ran this migration.
+    const ungated = created.filter((table) => !presenceGate.has(table));
+    assert.deepEqual(ungated, [],
+      `runtime_privileges.sql must gate every runtime-${version} table before granting on it`);
+
+    // Extension tables are order-sensitive: they are compared against the live
+    // catalogue, so a name under the wrong version guard misreports either an
+    // unknown table or a missing one.
+    assert.deepEqual(quotedNames(extensionBlocks.get(version) ?? ''), created,
+      `runtimeExtensionTables must list exactly the runtime-${version} tables, in migration order`);
+
+    assert.deepEqual(quotedNames(privilegeBlocks.get(version) ?? ''), created,
+      `assertRuntimePrivileges must expect a privilege set for exactly the runtime-${version} tables`);
+  });
+}
+
+test('the runtime 27-30 contracts stay pinned to the shipped compatibility window', () => {
+  const compatibility = JSON.parse(
+    fs.readFileSync(path.join(migrationRoot, 'runtime-compatibility.json'), 'utf8')) as {
+      minimumRuntimeSchemaVersion: number; maximumRuntimeSchemaVersion: number;
+    };
+  // 30 is the newest migration on disk and the newest runtime any of the three
+  // lists above describes; the guard is only meaningful while that holds.
+  assert.equal(compatibility.maximumRuntimeSchemaVersion, 30);
+  assert.equal(compatibility.minimumRuntimeSchemaVersion, 30);
+  assert.match(contractSource, /LATEST_RUNTIME_SCHEMA_VERSION = 30/u);
+  const beyondWindow = fs.readdirSync(migrationRoot)
+    .map((name) => /^(\d{4})_.*\.sql$/u.exec(name))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .filter((match) => Number(match[1]!) > 30)
+    .map((match) => match[0]);
+  assert.deepEqual(beyondWindow, [],
+    'a migration past runtime-30 must be added to RUNTIMES above before it can ship');
+});

@@ -16,7 +16,7 @@ fs.mkdirSync(path.join(frontendDist, 'assets'), { recursive: true });
 fs.writeFileSync(path.join(frontendDist, 'assets', 'current-build-a1b2c3.js'), 'globalThis.__experienceAssetLoaded = true;');
 fs.writeFileSync(path.join(frontendDist, 'assets', 'current-build-d4e5f6.css'), ':root { color: rgb(1 2 3); }');
 fs.writeFileSync(passwordFile, 'Test-Admin-Password-2026!'); fs.writeFileSync(sessionFile, 'test-session-secret-that-is-long-and-random-enough'); fs.writeFileSync(webhookSecretFile, 'test-brevo-webhook-secret-that-is-long-enough'); fs.writeFileSync(xKeyFile, Buffer.alloc(32, 9).toString('base64url')); fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 10).toString('base64url'));
-Object.assign(process.env, { DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: frontendDist, PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', LOCAL_LLM_SHARED_SECRET_FILE: sessionFile, BREVO_WEBHOOK_SECRET_FILE: webhookSecretFile, BREVO_IDEMPOTENCY_TTL_MINUTES: '120', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, X_API_BASE_URL: 'https://api.x.invalid', X_OAUTH_BASE_URL: 'https://api.x.invalid',
+Object.assign(process.env, { DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: frontendDist, PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', LOCAL_LLM_SHARED_SECRET_FILE: sessionFile, BREVO_WEBHOOK_SECRET_FILE: webhookSecretFile, MAIL_IDEMPOTENCY_TTL_MINUTES: '120', MAIL_API_BASE_URL: 'http://127.0.0.1:5020', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, X_API_BASE_URL: 'https://api.x.invalid', X_OAUTH_BASE_URL: 'https://api.x.invalid',
   ESIGN_STORAGE_DIR: path.join(root, 'esign'), ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, ESIGN_WORKER_POLL_MS: '250',
   X_SEED_CONSUMER_KEY_FILE: path.join(root, 'no-x-consumer-key'), X_SEED_CONSUMER_SECRET_FILE: path.join(root, 'no-x-consumer-secret'), X_SEED_BEARER_TOKEN_FILE: path.join(root, 'no-x-bearer-token'), X_SEED_ACCESS_TOKEN_FILE: path.join(root, 'no-x-access-token'), X_SEED_ACCESS_TOKEN_SECRET_FILE: path.join(root, 'no-x-access-token-secret') });
 const { app } = await import('../src/app.js');
@@ -257,23 +257,21 @@ test('persists social mentions and journey maps before Terra work is dispatched'
   assert.equal(duplicateOptimization.body.deduplicated, true);
   assert.equal(duplicateOptimization.body.jobId, optimized.body.jobId);
   const differentOptimization = await agent.post(`/api/journeys/${created.body.id}/ai/optimize`).send({ focus: 'A different audit' }).expect(409);
-  assert.equal(differentOptimization.body.code, 'JOURNEY_OPTIMIZATION_ACTIVE');
-  assert.equal(differentOptimization.body.reason, 'different_focus');
-  assert.equal(differentOptimization.body.activeJobId, optimized.body.jobId);
-  assert.equal(differentOptimization.body.statusUrl, `/api/ai/jobs/${optimized.body.jobId}`);
+  assert.equal(differentOptimization.body.code, 'JOURNEY_SUGGESTION_ACTIVE');
+  assert.equal(differentOptimization.body.details.runId, optimized.body.suggestionId);
+  assert.equal(differentOptimization.body.details.state, 'queued');
   const optimizationJob = await agent.get(`/api/ai/jobs/${optimized.body.jobId}`).expect(200);
   assert.equal(optimizationJob.body.kind, 'journey.optimize');
-  assert.equal(optimizationJob.body.input.journeyId, created.body.id);
-  assert.equal(optimizationJob.body.input.journeyUpdatedAt, restored.body.updatedAt);
-  assert.equal(optimizationJob.body.input.focus, 'Ownership and metrics');
+  assert.equal(optimizationJob.body.input.suggestionRunId, optimized.body.suggestionId);
+  assert.equal('journeyId' in optimizationJob.body.input, false);
   const changedWhileActive = await agent.patch(`/api/journeys/${created.body.id}`).send({
     expectedUpdatedAt: restored.body.updatedAt, summary: 'A newer version while the audit is still queued.'
   }).expect(200);
-  const staleOptimization = await agent.post(`/api/journeys/${created.body.id}/ai/optimize`).send({ focus: 'Ownership and metrics' }).expect(409);
-  assert.equal(staleOptimization.body.reason, 'stale_snapshot');
-  assert.equal(staleOptimization.body.activeJobId, optimized.body.jobId);
+  const staleOptimization = await agent.post(`/api/journeys/${created.body.id}/ai/optimize`).send({ focus: 'Ownership and metrics' }).expect(202);
+  assert.equal(staleOptimization.body.deduplicated, true);
+  assert.equal(staleOptimization.body.jobId, optimized.body.jobId);
   assert.equal((db.prepare(`SELECT COUNT(*) count FROM ai_jobs WHERE kind='journey.optimize'
-    AND CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.journeyId') END=?`).get(created.body.id) as any).count, 1);
+    AND CASE WHEN json_valid(input_json) THEN json_extract(input_json,'$.suggestionRunId') END=?`).get(optimized.body.suggestionId) as any).count, 1);
   const generated = await agent.post('/api/ai/journeys').send({ brief: 'Map the complete onboarding lifecycle for a new software customer.', audience: 'New customers' }).expect(202);
   const generationJob = await agent.get(`/api/ai/jobs/${generated.body.jobId}`).expect(200);
   assert.equal(generationJob.body.kind, 'journey.generate');
@@ -281,10 +279,11 @@ test('persists social mentions and journey maps before Terra work is dispatched'
   await agent.delete(`/api/journeys/${created.body.id}`).send({}).expect(400);
   const staleDelete = await agent.delete(`/api/journeys/${created.body.id}`).send({ expectedUpdatedAt: restored.body.updatedAt }).expect(409);
   assert.equal(staleDelete.body.current.updatedAt, changedWhileActive.body.updatedAt);
-  await agent.delete(`/api/journeys/${created.body.id}`).send({ expectedUpdatedAt: changedWhileActive.body.updatedAt }).expect(204);
-  await agent.get(`/api/journeys/${created.body.id}`).expect(404);
-  await agent.get(`/api/ai/jobs/${optimized.body.jobId}`).expect(404);
-  assert.equal((db.prepare('SELECT COUNT(*) count FROM journey_versions WHERE journey_id=?').get(created.body.id) as any).count, 0);
+  const retainedDelete = await agent.delete(`/api/journeys/${created.body.id}`)
+    .send({ expectedUpdatedAt: changedWhileActive.body.updatedAt }).expect(409);
+  assert.equal(retainedDelete.body.code, 'JOURNEY_AI_AUDIT_RETENTION');
+  await agent.get(`/api/journeys/${created.body.id}`).expect(200);
+  await agent.get(`/api/ai/jobs/${optimized.body.jobId}`).expect(200);
   assert.equal((db.prepare('SELECT COUNT(*) count FROM journey_ai_applications WHERE journey_id=?').get(created.body.id) as any).count, 0);
   await agent.delete(`/api/social/mentions/${imported.body.mentions[0].id}`).expect(204);
 });
@@ -501,12 +500,14 @@ test('does not orphan a follow-up when a response arrives during an in-flight se
   ] }).expect(200);
   await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'race@example.com' }] }).expect(201);
 
-  const originalMode = config.emailMode; const originalKey = config.brevoApiKey; const originalFetch = globalThis.fetch;
-  let releaseSend!: (value: Response) => void; let providerRequest: any;
+  const originalMode = config.emailMode; const originalKey = config.mailApiToken; const originalFetch = globalThis.fetch;
+  let releaseSend!: (value: Response) => void; let providerRequest: any; let providerIdempotencyKey = '';
   const pendingSend = new Promise<Response>((resolve) => { releaseSend = resolve; });
-  config.emailMode = 'send'; config.brevoApiKey = 'test-key';
-  globalThis.fetch = async (url, init) => String(url) === config.brevoApiUrl
-    ? (providerRequest = JSON.parse(String(init?.body || '{}')), pendingSend)
+  config.emailMode = 'send'; config.mailApiToken = 'key-id.test-secret';
+  globalThis.fetch = async (url, init) => String(url) === `${config.mailApiBaseUrl}/v1/messages`
+    ? (providerRequest = JSON.parse(String(init?.body || '{}')),
+      providerIdempotencyKey = String((init?.headers as Record<string, string>)?.['Idempotency-Key'] || ''),
+      pendingSend)
     : new Response(JSON.stringify({ error: 'runtime unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } });
   try {
     await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
@@ -517,10 +518,10 @@ test('does not orphan a follow-up when a response arrives during an in-flight se
     }
     const during = await agent.get(`/api/campaigns/${id}`).expect(200);
     assert.equal(during.body.deliveries[0].state, 'sending');
-    assert.equal(providerRequest.headers.idempotencyKey, during.body.deliveries[0].id);
-    assert.match(providerRequest.htmlContent, /\/api\/public\/campaigns\/unsubscribe\//);
+    assert.equal(providerIdempotencyKey, during.body.deliveries[0].id);
+    assert.match(providerRequest.html, /\/api\/public\/campaigns\/unsubscribe\//);
     await request(app).post(`/api/public/collectors/${during.body.collector.slug}/responses`).query({ recipient: during.body.contacts[0].token }).send({ answers: { 'race-answer': 'Responded while sending' }, status: 'completed' }).expect(201);
-    releaseSend(new Response(JSON.stringify({ messageId: 'race-message' }), { status: 201, headers: { 'content-type': 'application/json' } }));
+    releaseSend(new Response(JSON.stringify({ status: 'accepted', messageId: 'race-message' }), { status: 202, headers: { 'content-type': 'application/json' } }));
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const state = (db.prepare('SELECT status FROM campaigns WHERE id=?').get(id) as any)?.status;
       if (state === 'completed') break;
@@ -533,7 +534,7 @@ test('does not orphan a follow-up when a response arrives during an in-flight se
     assert.equal(after.body.metrics.sendingDeliveries, 0);
     assert.equal(after.body.metrics.sent, 1);
   } finally {
-    config.emailMode = originalMode; config.brevoApiKey = originalKey; globalThis.fetch = originalFetch;
+    config.emailMode = originalMode; config.mailApiToken = originalKey; globalThis.fetch = originalFetch;
   }
 });
 
@@ -611,7 +612,7 @@ test('fails stale ambiguous delivery leases instead of risking duplicate sends',
   await agent.put(`/api/campaigns/${id}/steps`).send({ steps: [{ delayMinutes: 30, subject: 'Later', mode: 'plain', bodyText: '{{survey_link}}' }] }).expect(200);
   await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'stale-lease@example.com' }] }).expect(201);
   await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
-  const staleAt = new Date(Date.now() - (config.brevoIdempotencyTtlMinutes + 5) * 60_000).toISOString();
+  const staleAt = new Date(Date.now() - (config.mailIdempotencyTtlMinutes + 5) * 60_000).toISOString();
   db.prepare("UPDATE campaign_deliveries SET state='sending',attempt=1,first_attempt_at=?,updated_at=? WHERE campaign_id=?").run(staleAt, staleAt, id);
   assert.equal(recoverCampaignDeliveries(), 1);
   const delivery = db.prepare('SELECT state,error FROM campaign_deliveries WHERE campaign_id=?').get(id) as any;
@@ -622,7 +623,7 @@ test('fails stale ambiguous delivery leases instead of risking duplicate sends',
 });
 
 test('persists the campaign sender name, keeps the verified sender email, and reports provider outcomes', async () => {
-  assert.equal(config.brevoIdempotencyTtlMinutes, 29);
+  assert.equal(config.mailIdempotencyTtlMinutes, 29);
   const agent = request.agent(app);
   await agent.post('/api/auth/login').send({ email: 'qa@seemplify.local', password: 'Test-Admin-Password-2026!' }).expect(200);
   const survey = await agent.post('/api/surveys').send({
@@ -630,76 +631,95 @@ test('persists the campaign sender name, keeps the verified sender email, and re
     questions: [{ id: 'provider-answer', page: 1, position: 0, type: 'short_text', title: 'Comment', required: false, options: [], settings: {}, logic: [] }]
   }).expect(201);
   const defaultCampaign = await agent.post('/api/campaigns').send({ name: 'Default sender campaign', surveyId: survey.body.id }).expect(201);
-  assert.equal(defaultCampaign.body.campaign.senderName, config.brevoFromName);
-  assert.equal(defaultCampaign.body.campaign.senderEmail, config.brevoFromEmail);
+  assert.equal(defaultCampaign.body.campaign.senderName, config.mailFromName);
+  assert.equal(defaultCampaign.body.campaign.senderEmail, config.mailFromEmail);
   const senderName = 'Provider outcome research team';
   const campaign = await agent.post('/api/campaigns').send({
     name: 'Provider outcome campaign', surveyId: survey.body.id, senderName: `  ${senderName}  `
   }).expect(201);
   const id = campaign.body.campaign.id;
   assert.equal(campaign.body.campaign.senderName, senderName);
-  assert.equal(campaign.body.campaign.senderEmail, config.brevoFromEmail);
+  assert.equal(campaign.body.campaign.senderEmail, config.mailFromEmail);
   const reloaded = await agent.get(`/api/campaigns/${id}`).expect(200);
   assert.equal(reloaded.body.campaign.senderName, senderName);
-  assert.equal(reloaded.body.campaign.senderEmail, config.brevoFromEmail);
+  assert.equal(reloaded.body.campaign.senderEmail, config.mailFromEmail);
   const reset = await agent.put(`/api/campaigns/${id}`).send({ senderName: '   ' }).expect(200);
-  assert.equal(reset.body.campaign.senderName, config.brevoFromName);
+  assert.equal(reset.body.campaign.senderName, config.mailFromName);
   const saved = await agent.put(`/api/campaigns/${id}`).send({ senderName: `  ${senderName}  ` }).expect(200);
   assert.equal(saved.body.campaign.senderName, senderName);
   await agent.put(`/api/campaigns/${id}`).send({ senderName: 'Unsafe\r\nBcc: attacker@example.com' }).expect(400)
     .expect(({ body }) => assert.match(JSON.stringify(body.details), /control characters/i));
   await agent.put(`/api/campaigns/${id}`).send({ senderName: 'x'.repeat(151) }).expect(400)
     .expect(({ body }) => assert.match(JSON.stringify(body.details), /150|too_big/i));
-  const originalMode = config.emailMode; const originalKey = config.brevoApiKey; const originalFetch = globalThis.fetch;
-  config.emailMode = 'send'; config.brevoApiKey = 'test-key';
+  const originalMode = config.emailMode; const originalKey = config.mailApiToken; const originalFetch = globalThis.fetch;
+  config.emailMode = 'send'; config.mailApiToken = 'key-id.test-secret';
   try {
-    const requests: any[] = [];
-    globalThis.fetch = async (_url, init) => {
-      requests.push(JSON.parse(String(init?.body || '{}')));
+    const requests: Array<{ url: string; body: any; headers: Record<string, string> }> = [];
+    const record = (url: unknown, init: RequestInit | undefined) => {
+      const headers = (init?.headers || {}) as Record<string, string>;
+      requests.push({ url: String(url), body: JSON.parse(String(init?.body || '{}')), headers });
+      return headers;
+    };
+    globalThis.fetch = async (url, init) => {
+      record(url, init);
       return new Response(JSON.stringify({ message: 'Provider unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } });
     };
     const failed = await agent.post(`/api/campaigns/${id}/test`).send({ email: 'failed-preview@example.com' }).expect(502);
     assert.equal(failed.body.outcomes[0].status, 'failed');
-    assert.deepEqual(requests[0].sender, { name: senderName, email: config.brevoFromEmail });
-    assert.match(requests[0].headers.idempotencyKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    assert.equal(requests[0].url, `${config.mailApiBaseUrl}/v1/messages`);
+    assert.equal(requests[0].body.from, config.mailFromEmail);
+    assert.equal(requests[0].body.fromName, senderName);
+    assert.equal(requests[0].headers.Authorization, 'Bearer key-id.test-secret');
+    assert.match(requests[0].headers['Idempotency-Key'], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 
     let call = 0; requests.length = 0;
-    globalThis.fetch = async (_url, init) => {
-      requests.push(JSON.parse(String(init?.body || '{}'))); call += 1;
+    globalThis.fetch = async (url, init) => {
+      record(url, init); call += 1;
       return call === 1
-        ? new Response(JSON.stringify({ messageId: 'accepted-message' }), { status: 201, headers: { 'content-type': 'application/json' } })
+        ? new Response(JSON.stringify({ status: 'accepted', messageId: 'accepted-message' }), { status: 202, headers: { 'content-type': 'application/json' } })
         : new Response(JSON.stringify({ message: 'Rejected message' }), { status: 500, headers: { 'content-type': 'application/json' } });
     };
     const mixed = await agent.post(`/api/campaigns/${id}/test`).send({ emails: ['accepted@example.com', 'rejected@example.com'] }).expect(207);
     assert.deepEqual(mixed.body.outcomes.map((outcome: any) => outcome.status), ['sent', 'failed']);
-    assert.equal(new Set(requests.map((item) => item.headers.idempotencyKey)).size, 2);
+    assert.equal(new Set(requests.map((item) => item.headers['Idempotency-Key'])).size, 2);
 
+    // A replayed Idempotency-Key answers 409: the original message was already
+    // accepted, so the business event completes instead of sending twice.
     globalThis.fetch = async (_url, init) => {
-      const body = JSON.parse(String(init?.body || '{}'));
-      return new Response(JSON.stringify({ code: 'duplicate_parameter', message: `Duplicate idempotency key ${body.headers.idempotencyKey}` }), { status: 400, headers: { 'content-type': 'application/json' } });
+      const key = (init?.headers as Record<string, string>)?.['Idempotency-Key'];
+      return new Response(JSON.stringify({ status: 'duplicate', message: `Duplicate idempotency key ${key}` }), { status: 409, headers: { 'content-type': 'application/json' } });
     };
     const duplicate = await agent.post(`/api/campaigns/${id}/test`).send({ email: 'idempotent@example.com' }).expect(200);
     assert.equal(duplicate.body.outcomes[0].status, 'sent');
     assert.match(duplicate.body.outcomes[0].messageId, /^idempotent:/);
 
+    // 401 is a deployment-credential fault, not a transient one.
+    globalThis.fetch = async () => new Response(JSON.stringify({ code: 'invalid_key' }), { status: 401, headers: { 'content-type': 'application/json' } });
+    const unauthorized = await agent.post(`/api/campaigns/${id}/test`).send({ email: 'unauthorized@example.com' }).expect(502);
+    assert.equal(unauthorized.body.outcomes[0].status, 'failed');
+    assert.match(unauthorized.body.outcomes[0].error, /rejected the credential/i);
+    assert.doesNotMatch(JSON.stringify(unauthorized.body), /test-secret/, 'the bearer token must never reach a response body');
+
     requests.length = 0;
-    globalThis.fetch = async (_url, init) => {
-      requests.push(JSON.parse(String(init?.body || '{}')));
-      return new Response(JSON.stringify({ messageId: 'campaign-message' }), { status: 201, headers: { 'content-type': 'application/json' } });
+    globalThis.fetch = async (url, init) => {
+      record(url, init);
+      return new Response(JSON.stringify({ status: 'accepted', messageId: 'campaign-message' }), { status: 202, headers: { 'content-type': 'application/json' } });
     };
     await agent.post(`/api/surveys/${survey.body.id}/publish`).send({ status: 'live' }).expect(200);
     await agent.post(`/api/campaigns/${id}/contacts`).send({ contacts: [{ email: 'sender-delivery@example.com' }] }).expect(201);
     await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
     await campaignRunner.pump();
-    const campaignRequest = requests.find((item) => item.to?.[0]?.email === 'sender-delivery@example.com');
-    assert.ok(campaignRequest, 'the launched campaign should reach the email provider');
-    assert.deepEqual(campaignRequest.sender, { name: senderName, email: config.brevoFromEmail });
+    const campaignRequest = requests.find((item) => item.body.to?.[0] === 'sender-delivery@example.com');
+    assert.ok(campaignRequest, 'the launched campaign should reach the mail service');
+    assert.equal(campaignRequest.body.from, config.mailFromEmail);
+    assert.equal(campaignRequest.body.fromName, senderName);
+    assert.equal(campaignRequest.body.tag, 'campaign_delivery');
     await agent.put(`/api/campaigns/${id}`).send({ senderName: 'Changed after launch' }).expect(400)
       .expect(({ body }) => assert.match(body.error, /cannot be changed after launch/i));
     const locked = await agent.get(`/api/campaigns/${id}`).expect(200);
     assert.equal(locked.body.campaign.senderName, senderName);
   } finally {
-    config.emailMode = originalMode; config.brevoApiKey = originalKey; globalThis.fetch = originalFetch;
+    config.emailMode = originalMode; config.mailApiToken = originalKey; globalThis.fetch = originalFetch;
   }
 });
 
@@ -722,22 +742,22 @@ test('personalizes job title and scalar custom contact fields without bypassing 
     email: 'personalized@example.com', firstName: 'Mina', lastName: 'Test', jobTitle: 'Head <Research>',
     customData: { 'Account tier': 'Enterprise', Region: '<North>' }
   }] }).expect(201);
-  const originalMode = config.emailMode; const originalKey = config.brevoApiKey; const originalFetch = globalThis.fetch;
+  const originalMode = config.emailMode; const originalKey = config.mailApiToken; const originalFetch = globalThis.fetch;
   let providerRequest: any;
-  config.emailMode = 'send'; config.brevoApiKey = 'test-key';
+  config.emailMode = 'send'; config.mailApiToken = 'key-id.test-secret';
   globalThis.fetch = async (_url, init) => {
     providerRequest = JSON.parse(String(init?.body || '{}'));
-    return new Response(JSON.stringify({ messageId: 'personalized-message' }), { status: 201, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ status: 'accepted', messageId: 'personalized-message' }), { status: 202, headers: { 'content-type': 'application/json' } });
   };
   try {
     await agent.post(`/api/campaigns/${id}/launch`).send({ startAt: new Date(Date.now() - 1000).toISOString() }).expect(200);
     await campaignRunner.pump();
     assert.equal(providerRequest.subject, 'Mina · Head <Research> · Enterprise');
-    assert.match(providerRequest.htmlContent, /Mina Head &lt;Research&gt; &lt;North&gt; \{\{unknown_value\}\}/);
-    assert.match(providerRequest.textContent, /^Mina Head <Research> <North>\n\nUnsubscribe:/);
-    assert.equal(providerRequest.to[0].name, 'Mina Test');
+    assert.match(providerRequest.html, /Mina Head &lt;Research&gt; &lt;North&gt; \{\{unknown_value\}\}/);
+    assert.match(providerRequest.text, /^Mina Head <Research> <North>\n\nUnsubscribe:/);
+    assert.equal(providerRequest.to[0], 'personalized@example.com');
   } finally {
-    config.emailMode = originalMode; config.brevoApiKey = originalKey; globalThis.fetch = originalFetch;
+    config.emailMode = originalMode; config.mailApiToken = originalKey; globalThis.fetch = originalFetch;
   }
 });
 
@@ -832,19 +852,22 @@ test('makes Quick Email durable, idempotent, unsubscribe-safe and suppression-aw
     questions: [{ id: 'quick-answer', page: 1, position: 0, type: 'short_text', title: 'Comment', required: false, options: [], settings: {}, logic: [] }]
   }).expect(201);
   const collector = await agent.post(`/api/surveys/${survey.body.id}/collectors`).send({ name: 'Quick email', type: 'email' }).expect(201);
-  const originalMode = config.emailMode; const originalKey = config.brevoApiKey; const originalFetch = globalThis.fetch;
-  const providerBodies: any[] = []; config.emailMode = 'send'; config.brevoApiKey = 'test-key';
+  const originalMode = config.emailMode; const originalKey = config.mailApiToken; const originalFetch = globalThis.fetch;
+  const providerBodies: any[] = []; const providerHeaders: Record<string, string>[] = [];
+  config.emailMode = 'send'; config.mailApiToken = 'key-id.test-secret';
   globalThis.fetch = async (_url, init) => {
     providerBodies.push(JSON.parse(String(init?.body || '{}')));
-    return new Response(JSON.stringify({ messageId: 'quick-email-message' }), { status: 201, headers: { 'content-type': 'application/json' } });
+    providerHeaders.push((init?.headers || {}) as Record<string, string>);
+    return new Response(JSON.stringify({ status: 'accepted', messageId: 'quick-email-message' }), { status: 202, headers: { 'content-type': 'application/json' } });
   };
   try {
     const first = await agent.post(`/api/collectors/${collector.body.id}/invitations`).send({ recipients: [{ email: 'quick-optout@example.com', name: 'Quick Recipient' }] }).expect(200);
     assert.equal(first.body.outcomes[0].status, 'sent');
     assert.equal(providerBodies.length, 1);
-    assert.equal(providerBodies[0].headers.idempotencyKey, first.body.outcomes[0].id);
-    assert.equal(providerBodies[0].headers['X-Mailin-custom'], `collector_recipient:${first.body.outcomes[0].id}`);
-    assert.match(providerBodies[0].htmlContent, /\/api\/public\/collectors\/unsubscribe\//);
+    assert.equal(providerHeaders[0]['Idempotency-Key'], first.body.outcomes[0].id);
+    assert.equal(providerBodies[0].headers['X-Seemplify-Correlation'], `collector_recipient:${first.body.outcomes[0].id}`);
+    assert.equal(providerBodies[0].to[0], 'quick-optout@example.com');
+    assert.match(providerBodies[0].html, /\/api\/public\/collectors\/unsubscribe\//);
 
     const replay = await agent.post(`/api/collectors/${collector.body.id}/invitations`).send({ recipients: [{ email: 'QUICK-OPTOUT@example.com', name: 'Quick Recipient' }] }).expect(200);
     assert.equal(replay.body.outcomes[0].id, first.body.outcomes[0].id);
@@ -862,7 +885,7 @@ test('makes Quick Email durable, idempotent, unsubscribe-safe and suppression-aw
     await agent.post(`/api/collectors/${otherCollector.body.id}/invitations`).send({ recipients: [{ email: 'quick-optout@example.com' }] }).expect(207);
     assert.equal(providerBodies.length, 1);
   } finally {
-    config.emailMode = originalMode; config.brevoApiKey = originalKey; globalThis.fetch = originalFetch;
+    config.emailMode = originalMode; config.mailApiToken = originalKey; globalThis.fetch = originalFetch;
   }
 });
 

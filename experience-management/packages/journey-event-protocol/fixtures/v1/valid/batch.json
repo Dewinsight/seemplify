@@ -1,0 +1,25 @@
+{
+  "protocolVersion": "1.0",
+  "batchId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f60",
+  "sentAt": "2026-08-04T12:36:00.000Z",
+  "events": [
+    {
+      "protocolVersion": "1.0",
+      "eventId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f61",
+      "call": "track",
+      "event": "onboarding_started",
+      "eventVersion": 1,
+      "occurredAt": "2026-08-04T12:35:58.000Z",
+      "anonymousId": "anon_batch_1"
+    },
+    {
+      "protocolVersion": "1.0",
+      "eventId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f62",
+      "call": "track",
+      "event": "onboarding_completed",
+      "eventVersion": 1,
+      "occurredAt": "2026-08-04T12:35:59.000Z",
+      "userId": "customer_batch_1"
+    }
+  ]
+}

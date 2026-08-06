@@ -18,6 +18,7 @@ import {
 import {
   effectiveSubscriptionForSpace, ensureConfiguredAdministratorEnterprise, ensureExistingSubscriptionsGrandfathered
 } from './subscriptionEntitlements.js';
+import { recordPlatformAuditEvent } from './platformAudit.js';
 
 const cookieName = 'seemplify_experience_session';
 const resetLifetimeMs = 30 * 60_000;
@@ -879,7 +880,7 @@ export async function forgotPassword(request: Request, response: Response) {
   const attemptId = user ? beginAccountEmailAttempt(user.id, 'password_reset', true) : null;
   if (user && attemptId) {
     const issued = createPasswordResetToken(user, null, false);
-    void sendPasswordResetEmail({ email: issued.user.email, name: issued.user.name, token: issued.token }).then(() => {
+    void sendPasswordResetEmail({ resetId: issued.id, email: issued.user.email, name: issued.user.name, token: issued.token }).then(() => {
       const deliveredAt = new Date().toISOString();
       db.transaction(() => {
         // A replacement becomes authoritative only after the provider accepts
@@ -1033,6 +1034,16 @@ export function completeAccountOnboarding(request: Request, response: Response) 
       .run(user.id, parsed.data.jobTitle, parsed.data.organizationName, parsed.data.timezone, parsed.data.primaryGoal,
         currentOnboardingVersion, now, now, now);
     if (parsed.data.spaceName) renamePersonalSpaceForUser(user.id, parsed.data.spaceName);
+    recordPlatformAuditEvent({
+      request,
+      action: 'onboarding_completed',
+      actorUserId: user.id,
+      actorRole: 'workspace_user',
+      targetType: 'user',
+      targetId: user.id,
+      reason: 'Account onboarding completed.',
+      after: { flow_version: String(currentOnboardingVersion) }
+    });
   })();
   return response.json(sessionPayload({ ...user, name: parsed.data.name }));
 }

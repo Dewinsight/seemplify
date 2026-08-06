@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.seemplify.com/journey-events/v1/event-envelope.schema.json",
+  "title": "Seemplify Connected Journey event envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "eventId", "call", "occurredAt"],
+  "properties": {
+    "protocolVersion": { "const": "1.0" },
+    "eventId": { "type": "string", "format": "uuid" },
+    "call": {
+      "enum": ["track", "identify", "alias", "group", "page", "screen", "consent", "metric"]
+    },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "sentAt": { "type": "string", "format": "date-time" },
+    "anonymousId": { "$ref": "#/$defs/identifier" },
+    "userId": { "$ref": "#/$defs/identifier" },
+    "accountId": { "$ref": "#/$defs/identifier" },
+    "sessionId": { "$ref": "#/$defs/identifier" },
+    "event": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "eventVersion": { "type": "integer", "minimum": 1 },
+    "properties": { "$ref": "#/$defs/jsonObject" },
+    "traits": { "$ref": "#/$defs/jsonObject" },
+    "context": {
+      "type": "object",
+      "maxProperties": 100,
+      "propertyNames": { "$ref": "#/$defs/safePropertyName" },
+      "properties": {
+        "locale": { "type": "string", "maxLength": 64 },
+        "timezone": { "type": "string", "maxLength": 128 },
+        "page": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": { "type": "string", "maxLength": 2048 },
+            "referrer": { "type": "string", "maxLength": 2048 },
+            "title": { "type": "string", "maxLength": 512 }
+          }
+        },
+        "device": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "enum": ["desktop", "mobile", "tablet", "server", "other"] },
+            "operatingSystem": { "type": "string", "maxLength": 128 }
+          }
+        },
+        "library": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "version": { "type": "string", "minLength": 1, "maxLength": 64 }
+          }
+        }
+      },
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "consent": { "$ref": "#/$defs/consent" },
+    "metric": { "$ref": "#/$defs/metric" }
+  },
+  "allOf": [
+    {
+      "anyOf": [
+        { "required": ["anonymousId"] },
+        { "required": ["userId"] },
+        { "required": ["accountId"] },
+        { "required": ["sessionId"] }
+      ]
+    },
+    {
+      "if": { "properties": { "call": { "enum": ["track", "metric"] } }, "required": ["call"] },
+      "then": { "required": ["event", "eventVersion"] }
+    },
+    {
+      "if": { "properties": { "call": { "const": "identify" } }, "required": ["call"] },
+      "then": { "required": ["userId"] }
+    },
+    {
+      "if": { "properties": { "call": { "const": "alias" } }, "required": ["call"] },
+      "then": { "required": ["anonymousId", "userId"] }
+    },
+    {
+      "if": { "properties": { "call": { "const": "group" } }, "required": ["call"] },
+      "then": {
+        "required": ["accountId"],
+        "anyOf": [{ "required": ["anonymousId"] }, { "required": ["userId"] }]
+      }
+    },
+    {
+      "if": { "properties": { "call": { "const": "consent" } }, "required": ["call"] },
+      "then": { "required": ["consent"] }
+    },
+    {
+      "if": { "properties": { "call": { "const": "metric" } }, "required": ["call"] },
+      "then": { "required": ["metric"] }
+    }
+  ],
+  "$defs": {
+    "identifier": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "safePropertyName": {
+      "type": "string",
+      "maxLength": 128,
+      "not": { "enum": ["__proto__", "prototype", "constructor"] }
+    },
+    "jsonObject": {
+      "type": "object",
+      "maxProperties": 100,
+      "propertyNames": { "$ref": "#/$defs/safePropertyName" },
+      "additionalProperties": { "$ref": "#/$defs/jsonValue" }
+    },
+    "jsonValue": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string", "maxLength": 4096 },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/jsonValue" }
+        },
+        { "$ref": "#/$defs/jsonObject" }
+      ]
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "updatedAt"],
+      "properties": {
+        "analytics": { "$ref": "#/$defs/consentState" },
+        "personalisation": { "$ref": "#/$defs/consentState" },
+        "researchContact": { "$ref": "#/$defs/consentState" },
+        "marketing": { "$ref": "#/$defs/consentState" },
+        "source": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "anyOf": [
+        { "required": ["analytics"] },
+        { "required": ["personalisation"] },
+        { "required": ["researchContact"] },
+        { "required": ["marketing"] }
+      ]
+    },
+    "consentState": { "enum": ["granted", "denied", "unknown"] },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "value": { "type": "number" },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "dimensions": { "$ref": "#/$defs/jsonObject" }
+      }
+    }
+  }
+}

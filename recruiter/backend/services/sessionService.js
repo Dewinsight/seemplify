@@ -59,6 +59,17 @@ async function createSession({ user, fingerprint, userAgent, ip }) {
   } catch (error) {
     console.warn('Unable to record login activity:', error.message);
   }
+
+  // Fire-and-forget: wake CV analyses that were waiting for an AI runtime and
+  // notify the recruiter. A login must never block or fail on this.
+  try {
+    const { handleLoginRuntimeCheck } = require('./cvLoginRuntimeService');
+    void handleLoginRuntimeCheck(user).catch((error) => {
+      console.warn('Login CV runtime check failed:', error.message);
+    });
+  } catch (error) {
+    console.warn('Login CV runtime check unavailable:', error.message);
+  }
       
       return {
     accessToken,

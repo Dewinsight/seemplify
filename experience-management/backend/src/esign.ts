@@ -1654,7 +1654,7 @@ export class EsignWorker {
   start() {
     if (!this.stopped) return;
     this.stopped = false;
-    const timestamp = now(); const safeAfter = new Date(Date.now() - config.brevoIdempotencyTtlMinutes * 60_000).toISOString();
+    const timestamp = now(); const safeAfter = new Date(Date.now() - config.mailIdempotencyTtlMinutes * 60_000).toISOString();
     db.prepare("UPDATE esign_email_deliveries SET state='failed',error='Delivery state is unknown outside the provider idempotency window; it was not resent.',updated_at=? WHERE state='sending' AND updated_at<?").run(timestamp, safeAfter);
     db.prepare("UPDATE esign_email_deliveries SET state='queued',error=COALESCE(error,'Recovered after restart'),updated_at=? WHERE state='sending'").run(timestamp);
     db.prepare('DELETE FROM esign_signing_sessions WHERE expires_at<? OR revoked_at IS NOT NULL AND revoked_at<?').run(now(), new Date(Date.now() - 7 * 86_400_000).toISOString());
