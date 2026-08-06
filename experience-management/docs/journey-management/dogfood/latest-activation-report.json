@@ -1,31 +1,132 @@
 {
-  "generatedAt": "2026-08-06T18:09:19.711Z",
-  "databaseProvider": "sqlite",
-  "databasePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\experience.sqlite",
-  "providerPreferencePath": null,
+  "generatedAt": "2026-08-06T21:56:53.076Z",
+  "databaseProvider": "postgres",
+  "databasePath": null,
+  "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
   "summary": {
-    "users": 2,
-    "withEmailVerified": 2,
-    "withOnboardingCompleted": 2,
-    "withOwnedSpace": 2,
-    "withChatGptConnected": 0,
-    "withChatGptSelected": 0,
+    "users": 91,
+    "withEmailVerified": 78,
+    "withOnboardingCompleted": 61,
+    "withOwnedSpace": 89,
+    "withChatGptConnected": 1,
+    "withChatGptSelected": 1,
+    "withCurrentRuntimeConnected": 1,
+    "withCurrentRuntimeSelectedChatGpt": 1,
     "withStoredChatGptPreference": 0,
     "withCodexRuntimeHome": 2,
-    "withCodexAuthFile": 0,
-    "withSurveyCreated": 1,
+    "withCodexAuthFile": 1,
+    "withSurveyCreated": 7,
     "withJourneyCreated": 1,
-    "withSubscriptionRequested": 0,
+    "withSubscriptionRequested": 3,
     "withSubscriptionActivated": 0
   },
   "caveats": [
     "Survey and journey milestones are reconciled at the owned-space level where legacy tables do not retain a direct creator user for every artifact.",
     "ChatGPT connection and runtime-selection proof depends on platform_audit_events actions emitted by current AI runtime routes; older connections made before this audit hook may be absent.",
+    "Current runtime-connected signals come from live getAiProviderState resolution and may diverge from the audited event trail when a different local runtime instance handled sign-in.",
     "Stored runtime preferences and Codex runtime-home/auth-file presence are supportive local signals only; they are not treated as equivalent to a fresh audited ChatGPT connection event.",
     "Onboarding and explicit workspace-creation milestones prefer authoritative platform_audit_events when present and fall back to durable account/space records for older histories.",
     "This artifact is for internal Seemplify dogfood evidence only and is not customer telemetry ingestion."
   ],
   "records": [
+    {
+      "user": {
+        "id": "fair-a",
+        "email": "fair-a@example.test",
+        "name": "Fair A"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": null,
+        "primaryOwnedSpaceName": null
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-07-01T09:00:00.000Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": null,
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "fair-b",
+        "email": "fair-b@example.test",
+        "name": "Fair B"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": null,
+        "primaryOwnedSpaceName": null
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-07-01T09:00:00.000Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": null,
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
     {
       "user": {
         "id": "427cb98d-583d-439a-ad85-f1d1f3fb5db0",
@@ -41,9 +142,9 @@
         "emailVerifiedAt": "2026-07-29T08:54:03.902Z",
         "onboardingCompletedAt": "2026-07-29T08:54:03.902Z",
         "spaceCreatedAt": "2026-07-30T01:03:38.241Z",
-        "chatGptLoginStartedAt": "2026-08-06T18:00:01.053Z",
-        "chatGptConnectedAt": null,
-        "chatGptSelectedAt": null,
+        "chatGptLoginStartedAt": "2026-08-06T19:19:08.333Z",
+        "chatGptConnectedAt": "2026-08-06T21:33:49.416Z",
+        "chatGptSelectedAt": "2026-08-06T21:49:12.139Z",
         "localRuntimeSelectedAt": null,
         "surveyCreatedAt": "2026-07-29T14:19:48.779Z",
         "surveyPublishedAt": "2026-07-29T17:38:33.399Z",
@@ -54,14 +155,22 @@
       },
       "evidence": {
         "activationAuditEvents": 0,
-        "aiRuntimeAuditEvents": 1,
+        "aiRuntimeAuditEvents": 5,
         "providerPreferenceStored": false,
-        "providerPreferencePath": null,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
         "runtimePreferenceProvider": null,
         "runtimePreferenceChoice": null,
         "runtimePreferenceUpdatedAt": null,
         "codexRuntimeHomePresent": true,
-        "codexAuthFilePresent": false,
+        "codexAuthFilePresent": true,
+        "currentRuntimeConnected": true,
+        "currentRuntimeEmail": "zonemobilewar13@gmail.com",
+        "currentRuntimePlanType": "pro",
+        "currentRuntimeAuthMode": "chatgpt",
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": "codex",
+        "currentRuntimePolicyDefault": "chatgpt",
         "surveyScope": "space",
         "journeyScope": "space",
         "subscriptionScope": null
@@ -82,6 +191,55 @@
         "emailVerifiedAt": "2026-07-29T22:30:12.936Z",
         "onboardingCompletedAt": "2026-07-29T22:30:12.936Z",
         "spaceCreatedAt": "2026-07-30T01:03:38.242Z",
+        "chatGptLoginStartedAt": "2026-08-06T20:58:09.344Z",
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": "2026-08-06T20:58:02.248Z",
+        "surveyCreatedAt": "2026-07-30T15:42:21.845Z",
+        "surveyPublishedAt": "2026-07-30T15:42:39.239Z",
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 2,
+        "providerPreferenceStored": true,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": "terra",
+        "runtimePreferenceChoice": "local",
+        "runtimePreferenceUpdatedAt": "2026-08-06T20:58:02.242Z",
+        "codexRuntimeHomePresent": true,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": "space",
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "c3c1e700-b1d8-499e-82d0-dbe12bc8f6bb",
+        "email": "okechukwuomeh3@gmail.com",
+        "name": "Okechukwu Samuel Omeh"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "f3fc1249-72b5-44b8-a8f1-b8dfaea1865f",
+        "primaryOwnedSpaceName": "Okechukwu Samuel Omeh"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-07-30T15:44:15.582Z",
+        "emailVerifiedAt": "2026-07-30T15:44:33.871Z",
+        "onboardingCompletedAt": "2026-07-30T15:44:42.535Z",
+        "spaceCreatedAt": "2026-07-30T15:44:15.632Z",
         "chatGptLoginStartedAt": null,
         "chatGptConnectedAt": null,
         "chatGptSelectedAt": null,
@@ -97,12 +255,4234 @@
         "activationAuditEvents": 0,
         "aiRuntimeAuditEvents": 0,
         "providerPreferenceStored": false,
-        "providerPreferencePath": null,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
         "runtimePreferenceProvider": null,
         "runtimePreferenceChoice": null,
         "runtimePreferenceUpdatedAt": null,
-        "codexRuntimeHomePresent": true,
+        "codexRuntimeHomePresent": false,
         "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "b4bf9c25-e3fe-4727-87b0-fe3a2d0b7a87",
+        "email": "pin-owner-1@example.com",
+        "name": "pin-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "083dfd9e-bc36-409e-8b4f-c8be4d5f3ded",
+        "primaryOwnedSpaceName": "pin-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:57.700Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.230Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.282Z",
+        "spaceCreatedAt": "2026-08-03T17:43:57.771Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "d4c77b6a-104e-4873-bcf1-08722775d065",
+        "email": "anonymous-library-owner-1@example.com",
+        "name": "anonymous-library-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "4e7fbb1b-1979-4fdc-a94b-43fe7b162a34",
+        "primaryOwnedSpaceName": "anonymous-library-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.067Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.582Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.625Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.156Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "8b971730-447f-4792-9acc-fc9b10b47919",
+        "email": "shared-network-0@example.test",
+        "name": "Shared Network User 0"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "67954b90-8826-445a-ad0b-104b023e1aad",
+        "primaryOwnedSpaceName": "Shared's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.084Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:43:58.159Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "81ddf0bc-e066-4469-b2c4-88b220530d7e",
+        "email": "ai-retry@example.test",
+        "name": "Retry Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "8b601e5d-f5b1-4776-90c1-cf94f65d1ed7",
+        "primaryOwnedSpaceName": "Retry's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.124Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.630Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.677Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.196Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "88315134-10e7-419f-9004-8a55995c95ba",
+        "email": "owner@example.com",
+        "name": "Envelope Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "49f8f9b8-7994-48bb-9bf8-7ed8e34de6db",
+        "primaryOwnedSpaceName": "Envelope's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.163Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.677Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.730Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.231Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "8307b22b-4ef4-452b-8f3c-e4eb6a09b44d",
+        "email": "delivery-failure@example.test",
+        "name": "Delivery Failure"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "032ab7c2-98d8-4a4d-85ce-1ef53601877a",
+        "primaryOwnedSpaceName": "Delivery's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.213Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.930Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.985Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.274Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "cf9a496f-8558-4056-a660-fec2e009e1f4",
+        "email": "researcher@example.com",
+        "name": "Research Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "9610891c-d981-4a58-9d21-e8ced85ddf56",
+        "primaryOwnedSpaceName": "Research's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.229Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.752Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.800Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.286Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "24ca8f97-ee6f-41c6-8593-a9a5bd890ef9",
+        "email": "assistant-owner@example.test",
+        "name": "Assistant Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "a9a142d7-eaf9-476b-af24-dd746359f921",
+        "primaryOwnedSpaceName": "Assistant research"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.254Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.772Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.818Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.315Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "322674b4-a44f-4955-84f3-1aeaae31e458",
+        "email": "campaign-sender-admin@example.test",
+        "name": "Workspace admin"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "a4179466-b1a9-40f5-817b-d0fffc378aa5",
+        "primaryOwnedSpaceName": "Workspace's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.280Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.280Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.280Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.332Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": "2026-08-03T17:43:58.455Z",
+        "surveyPublishedAt": "2026-08-03T17:43:58.486Z",
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": "space",
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "55633442-4a67-455d-8ad9-2b6a71521323",
+        "email": "pin-outsider-2@example.com",
+        "name": "pin-outsider user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "35ccaddf-465d-47c1-b95e-aba29613b3e5",
+        "primaryOwnedSpaceName": "pin-outsider's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.308Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.828Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.854Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.361Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "75cb0156-b802-430a-acb5-d6e4d2e566c5",
+        "email": "journeys@seemplify.local",
+        "name": "Workspace admin"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "520216c3-3276-4beb-9228-8ad85dfe4a69",
+        "primaryOwnedSpaceName": "Workspace's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.449Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.449Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.449Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.500Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "7360a4b6-0764-41c8-82d2-c23cdde681b1",
+        "email": "intelligence@seemplify.local",
+        "name": "Research Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "f2af0867-d2cc-4ba5-908c-b55e17aaa555",
+        "primaryOwnedSpaceName": "Research's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.458Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.991Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:59.043Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.507Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": "2026-08-03T17:43:59.167Z",
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": "space",
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "74efeb6a-70c2-4a90-838c-1d92ca484631",
+        "email": "shared-network-1@example.test",
+        "name": "Shared Network User 1"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "24dc1f90-193d-4857-b774-da42b17a241c",
+        "primaryOwnedSpaceName": "Shared's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.593Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:43:58.643Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "904664ee-4cc3-4759-bfdf-b5383e6c8967",
+        "email": "ai-retry-outsider@example.test",
+        "name": "Other Tenant"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "5fd9b5fd-db97-46c6-a4f3-3bea182d2c07",
+        "primaryOwnedSpaceName": "Other's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.921Z",
+        "emailVerifiedAt": "2026-08-03T17:43:59.451Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:59.485Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.975Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "8655072a-083b-401d-9182-34a70d8db99d",
+        "email": "qa@seemplify.local",
+        "name": "Workspace admin"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "e09d6d3f-71e8-4d0f-a6fa-aa5fbc439586",
+        "primaryOwnedSpaceName": "Workspace's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:58.938Z",
+        "emailVerifiedAt": "2026-08-03T17:43:58.938Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:58.938Z",
+        "spaceCreatedAt": "2026-08-03T17:43:58.995Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": "2026-08-03T17:43:59.114Z",
+        "surveyPublishedAt": "2026-08-03T17:43:59.153Z",
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": "space",
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "f687f833-304f-4900-93d3-df6a009e6c10",
+        "email": "delivery-invitee@example.test",
+        "name": "Delivery Invitee"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "95ee78db-8221-42d3-b230-c52e5ead5efa",
+        "primaryOwnedSpaceName": "Delivery's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:59.042Z",
+        "emailVerifiedAt": "2026-08-03T17:43:59.560Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:43:59.101Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "40b32f40-7d8b-48d2-85f0-8a2aa6d156cc",
+        "email": "shared-network-2@example.test",
+        "name": "Shared Network User 2"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "ac4e0846-bdc7-40f5-98f6-a185d25789f1",
+        "primaryOwnedSpaceName": "Shared's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:59.100Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:43:59.153Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "8e7c786a-2cc9-4dca-967a-e77706702c74",
+        "email": "knowledge-owner@example.test",
+        "name": "Knowledge Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "91fc3789-a1d7-4bde-bea1-4b2b9d847efc",
+        "primaryOwnedSpaceName": "Research space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:59.345Z",
+        "emailVerifiedAt": "2026-08-03T17:43:59.897Z",
+        "onboardingCompletedAt": "2026-08-03T17:43:59.980Z",
+        "spaceCreatedAt": "2026-08-03T17:43:59.406Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "d01f3f2d-c82c-401c-8199-4dc98eb6af30",
+        "email": "recovery-outsider-1785779039549@example.com",
+        "name": "Recovery Outsider"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "45ddff8c-678d-438f-a9be-54ae3bda8e15",
+        "primaryOwnedSpaceName": "Separate recovery space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:59.555Z",
+        "emailVerifiedAt": "2026-08-03T17:44:00.186Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:00.355Z",
+        "spaceCreatedAt": "2026-08-03T17:43:59.613Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "10f5ef1d-119a-4e5b-b30f-20c58af81d01",
+        "email": "shared-network-3@example.test",
+        "name": "Shared Network User 3"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "596ff7e3-da0b-49d4-ae0f-931a6f1db7fb",
+        "primaryOwnedSpaceName": "Shared's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:59.618Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:43:59.675Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "45fb3719-9cd6-4be3-995a-29694ce3af7e",
+        "email": "delivery-success@example.test",
+        "name": "Delivery Success"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "1c7c02c3-9ab5-4d20-bb8e-1c9a8f36928a",
+        "primaryOwnedSpaceName": "Delivery's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:43:59.619Z",
+        "emailVerifiedAt": "2026-08-03T17:44:00.655Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:43:59.677Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "e3481990-13cb-4ec8-a680-ebfba6de5f48",
+        "email": "knowledge-collaborator@example.test",
+        "name": "Knowledge Collaborator"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "7e504665-bfdf-4f4b-9dcb-cf56947288aa",
+        "primaryOwnedSpaceName": "Knowledge's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:00.077Z",
+        "emailVerifiedAt": "2026-08-03T17:44:00.890Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:01.225Z",
+        "spaceCreatedAt": "2026-08-03T17:44:00.206Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "ac021663-953a-4c86-acb0-fd13646b0712",
+        "email": "shared-network-4@example.test",
+        "name": "Shared Network User 4"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "54c611cf-f0c4-40dc-814e-ac4b51ab5e68",
+        "primaryOwnedSpaceName": "Shared's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:00.185Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:00.302Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "7c78e710-d9f8-4c1e-ae64-8bcda6da8728",
+        "email": "send-owner-3@example.com",
+        "name": "send-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "72c05617-2d3e-418c-a15b-7e3f138b7742",
+        "primaryOwnedSpaceName": "send-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:00.437Z",
+        "emailVerifiedAt": "2026-08-03T17:44:01.480Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:01.726Z",
+        "spaceCreatedAt": "2026-08-03T17:44:00.792Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "17914706-3730-4837-ad9a-e3e64942d78d",
+        "email": "shared-network-5@example.test",
+        "name": "Shared Network User 5"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "64df09fb-bcf5-4484-93cd-ca51805b60f2",
+        "primaryOwnedSpaceName": "Shared's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:00.791Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:00.980Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "2c7b2d00-ab2f-4850-8616-6a6eb9379ffb",
+        "email": "single-resend-exemption@example.test",
+        "name": "Single Resend Exemption"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "edc92726-4008-4101-8ba5-40a9e0abbb88",
+        "primaryOwnedSpaceName": "Single's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:01.226Z",
+        "emailVerifiedAt": "2026-08-03T17:44:02.065Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:01.376Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "99c06380-b85a-4023-81d5-e49048a07661",
+        "email": "shared-network-6@example.test",
+        "name": "Shared Network User 6"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "5b1685dd-40bb-4a84-8463-40a7fad13442",
+        "primaryOwnedSpaceName": "Shared's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:01.454Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:01.583Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "7ca1348e-fccc-495b-ae8d-f536322359b8",
+        "email": "pin-library-owner-2@example.com",
+        "name": "pin-library-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "3ceaa6fc-4266-48e7-9ff5-6734cc045da5",
+        "primaryOwnedSpaceName": "pin-library-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:01.773Z",
+        "emailVerifiedAt": "2026-08-03T17:44:02.502Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:02.786Z",
+        "spaceCreatedAt": "2026-08-03T17:44:01.900Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "81dab725-a739-4018-a891-9a1db199872d",
+        "email": "alice@example.test",
+        "name": "Alice Researcher"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "bb9bd2f0-e6e3-4d99-81f4-41bc092d664a",
+        "primaryOwnedSpaceName": "Alice Experience Lab"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:01.938Z",
+        "emailVerifiedAt": "2026-08-03T17:44:02.708Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:03.025Z",
+        "spaceCreatedAt": "2026-08-03T17:44:02.035Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "c5eeec4a-1bb6-480b-8d14-c7fee8a98a56",
+        "email": "platform-admin@seemplify.local",
+        "name": "Workspace admin"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "a835ad05-8bb2-48ac-9051-fca186fbac71",
+        "primaryOwnedSpaceName": "Workspace's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:02.132Z",
+        "emailVerifiedAt": "2026-08-03T17:44:02.132Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:02.132Z",
+        "spaceCreatedAt": "2026-08-03T17:44:02.291Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": "2026-08-03T17:44:03.357Z",
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": "requester+space"
+      }
+    },
+    {
+      "user": {
+        "id": "5dcdebfb-0722-4b70-b12c-6af48c4e768d",
+        "email": "first-space-owner@example.test",
+        "name": "First Space Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "9a9043ad-c00c-4039-a54a-ddcc51c523d7",
+        "primaryOwnedSpaceName": "First invitation space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:02.279Z",
+        "emailVerifiedAt": "2026-08-03T17:44:02.827Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:03.078Z",
+        "spaceCreatedAt": "2026-08-03T17:44:02.446Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "2404b4d5-e3a0-43d6-a874-43844c0d33c2",
+        "email": "current-space-owner@example.test",
+        "name": "Current Space Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "2211ccaa-a393-44c0-892e-43d331aaf732",
+        "primaryOwnedSpaceName": "Current invitation space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:03.271Z",
+        "emailVerifiedAt": "2026-08-03T17:44:03.817Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:03.850Z",
+        "spaceCreatedAt": "2026-08-03T17:44:03.335Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "e42d2279-7c9c-410f-af25-015461c92e28",
+        "email": "bob@example.test",
+        "name": "Bob Analyst"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "625072db-b4c0-411b-90bf-f41eab7d4824",
+        "primaryOwnedSpaceName": "Bob's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:03.331Z",
+        "emailVerifiedAt": "2026-08-03T17:44:03.866Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:03.901Z",
+        "spaceCreatedAt": "2026-08-03T17:44:03.427Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "390a42eb-1e4a-403a-bdfe-95a52dcad5ef",
+        "email": "owner-a@example.test",
+        "name": "Owner Alpha"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "89136b34-0547-44cb-b884-67e6e6f02456",
+        "primaryOwnedSpaceName": "Alpha research"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:03.627Z",
+        "emailVerifiedAt": "2026-08-03T17:44:04.143Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:04.189Z",
+        "spaceCreatedAt": "2026-08-03T17:44:03.720Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": "2026-08-03T17:44:04.801Z",
+        "surveyPublishedAt": "2026-08-03T17:44:05.175Z",
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": "space",
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "f647d3f6-b7a2-4068-b2e3-6423705b99e3",
+        "email": "session-cap-owner-4@example.com",
+        "name": "session-cap-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "e0cc8608-daed-4ccd-9031-0afeb704a6af",
+        "primaryOwnedSpaceName": "session-cap-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:03.680Z",
+        "emailVerifiedAt": "2026-08-03T17:44:04.197Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:04.221Z",
+        "spaceCreatedAt": "2026-08-03T17:44:03.795Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "ffb57928-433d-4a7e-81d8-33c60b3e6c3f",
+        "email": "billing-admin@example.test",
+        "name": "Billing Admin"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "4c187e1d-b9da-44a7-b1bb-4a27f1bb9639",
+        "primaryOwnedSpaceName": "Billing Admin workspace"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:03.829Z",
+        "emailVerifiedAt": "2026-08-03T17:44:03.829Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:03.836Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": "2026-08-03T17:44:04.191Z",
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": "requester+space"
+      }
+    },
+    {
+      "user": {
+        "id": "117de28a-6bf4-4064-953e-435359e264bf",
+        "email": "support-admin@example.test",
+        "name": "Support Admin"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "dda6170b-24b8-40b6-8cc8-6f8f70cc5a26",
+        "primaryOwnedSpaceName": "Support Admin workspace"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:03.864Z",
+        "emailVerifiedAt": "2026-08-03T17:44:03.864Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:03.874Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "dcb1e4c9-9d7f-4ae0-951a-9027e0ed4e52",
+        "email": "analyst-admin@example.test",
+        "name": "Analyst Admin"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "5c1cf81e-7809-4bdb-b1a7-30a5839fe053",
+        "primaryOwnedSpaceName": "Analyst Admin workspace"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:03.894Z",
+        "emailVerifiedAt": "2026-08-03T17:44:03.894Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:03.902Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "36c97c50-6017-4daa-aa54-9d07637dd68e",
+        "email": "preclaimed@example.test",
+        "name": "Mailbox Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "f3962a64-3fa4-4a90-8512-c5b4f63b47a8",
+        "primaryOwnedSpaceName": "Mailbox's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:03.950Z",
+        "emailVerifiedAt": "2026-08-03T17:44:06.015Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:04.006Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "3bad4d7f-ce2e-490a-a518-a0cb0d27973f",
+        "email": "carol@example.test",
+        "name": "Carol Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "ad5e0bf7-c905-4b39-99a8-766fca38d8d5",
+        "primaryOwnedSpaceName": "Carol's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:03.961Z",
+        "emailVerifiedAt": "2026-08-03T17:44:04.583Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:04.030Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "2baa4a5c-1031-41ef-8c79-278706877bce",
+        "email": "account-library-sender-3@example.com",
+        "name": "account-library-sender user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "3d5665fe-6b9a-453f-889b-7073b683a841",
+        "primaryOwnedSpaceName": "account-library-sender's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.212Z",
+        "emailVerifiedAt": "2026-08-03T17:44:04.733Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:04.760Z",
+        "spaceCreatedAt": "2026-08-03T17:44:04.263Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "f4d0333b-92d2-4593-868d-937fda73da72",
+        "email": "owner-b@example.test",
+        "name": "Owner Beta"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "de4b01d5-ee06-4ccd-8446-c15c2da704f9",
+        "primaryOwnedSpaceName": "Owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.212Z",
+        "emailVerifiedAt": "2026-08-03T17:44:04.727Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:04.757Z",
+        "spaceCreatedAt": "2026-08-03T17:44:04.261Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": "2026-08-03T17:44:04.937Z",
+        "surveyPublishedAt": "2026-08-03T17:44:04.990Z",
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": "space",
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "0cb43eed-edc0-4ba5-b07b-1fe2c3bbb748",
+        "email": "terms-owner@example.test",
+        "name": "Terms Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "5244d32e-08b6-43b5-b692-46fa9c0dc56c",
+        "primaryOwnedSpaceName": "Terms Owner workspace"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.511Z",
+        "emailVerifiedAt": "2026-08-03T17:44:04.511Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:04.517Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": "2026-08-03T17:44:04.630Z",
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": "requester+space"
+      }
+    },
+    {
+      "user": {
+        "id": "35b4c9b9-3816-4c07-a07e-3f65cfd11dd0",
+        "email": "terms-member@example.test",
+        "name": "Terms Member"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "fb21bb37-560e-41b9-8192-cd8b782deb87",
+        "primaryOwnedSpaceName": "Terms Member workspace"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.528Z",
+        "emailVerifiedAt": "2026-08-03T17:44:04.528Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:04.533Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "a7510e2a-98b1-460a-96ff-892903075519",
+        "email": "replay@example.test",
+        "name": "Replay Researcher"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "160ccb00-8dc5-47a4-ad68-a5021b00a010",
+        "primaryOwnedSpaceName": "Replay's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.657Z",
+        "emailVerifiedAt": "2026-08-03T17:44:05.175Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:04.709Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "0c2097c0-5a9c-4924-97d8-0745d2ab5a92",
+        "email": "restricted-space@example.test",
+        "name": "Restricted Space"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "7657564e-5a26-4ec8-b6a4-f86ca4936abe",
+        "primaryOwnedSpaceName": "Restricted Space workspace"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.766Z",
+        "emailVerifiedAt": "2026-08-03T17:44:04.766Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:04.774Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "ffe645b1-2e3f-4cd0-9bce-7ee7574f5c73",
+        "email": "account-recipient-0f827cc1-7876-4afb-883a-963d7594fb6e@example.com",
+        "name": "account-recipient user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "9e05b9cc-2771-4d7e-92f7-6bcc837dd800",
+        "primaryOwnedSpaceName": "account-recipient's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.785Z",
+        "emailVerifiedAt": "2026-08-03T17:44:05.296Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:04.840Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "28c3201f-9c57-41b5-933f-044bdedece68",
+        "email": "restricted-verify@example.test",
+        "name": "Restricted Verify"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "2928cc0c-ec5d-4f53-a740-f0ae22630241",
+        "primaryOwnedSpaceName": "Restricted Verify workspace"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.893Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:04.898Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "06710f0b-7241-494d-99a1-85c0911a090e",
+        "email": "completion-owner-5@example.com",
+        "name": "completion-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "e03d73aa-ad9c-42ca-9fb3-01414a3f2933",
+        "primaryOwnedSpaceName": "completion-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.896Z",
+        "emailVerifiedAt": "2026-08-03T17:44:05.420Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:05.442Z",
+        "spaceCreatedAt": "2026-08-03T17:44:04.947Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "5c8224af-a165-4427-b731-10dfa53eada7",
+        "email": "restricted-reset@example.test",
+        "name": "Restricted Reset"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "cada4159-1d6b-46ae-95f1-9ee2808e5c1b",
+        "primaryOwnedSpaceName": "Restricted Reset workspace"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:04.927Z",
+        "emailVerifiedAt": "2026-08-03T17:44:04.927Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:04.935Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "34aef12a-9747-4d8e-a8d4-49b03da6480d",
+        "email": "other-recipient-5@example.com",
+        "name": "other-recipient user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "2166c678-c0fd-4989-870f-6d6cec3a9504",
+        "primaryOwnedSpaceName": "other-recipient's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:05.318Z",
+        "emailVerifiedAt": "2026-08-03T17:44:05.850Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:05.362Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "1fcf2d56-ac74-4069-a37a-9e0330d39ad0",
+        "email": "completion-outsider-6@example.com",
+        "name": "completion-outsider user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "7127b0ab-72f0-40fb-a38a-c493dd6b8920",
+        "primaryOwnedSpaceName": "completion-outsider's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:05.461Z",
+        "emailVerifiedAt": "2026-08-03T17:44:05.985Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:06.018Z",
+        "spaceCreatedAt": "2026-08-03T17:44:05.508Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "29084ed5-07f4-4482-aee1-aa4a9b559f42",
+        "email": "expected@example.test",
+        "name": "Expected Recipient"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "e0e6f7a4-f5ec-4da6-b121-73f27c18c6ac",
+        "primaryOwnedSpaceName": "Expected private"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:05.978Z",
+        "emailVerifiedAt": "2026-08-03T17:44:06.497Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:06.046Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "7a03cc38-6f9a-4aa0-9fb2-3cfe3b7469c8",
+        "email": "mail-limit@example.test",
+        "name": "Mail Limit Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "d41942bc-9a9d-42d8-bf1f-1d6492ce9926",
+        "primaryOwnedSpaceName": "Mail's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:06.364Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:06.436Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "125ad908-4217-4c7e-ac18-3f7aab9cd30e",
+        "email": "onboarding-invitee@example.test",
+        "name": "Onboarding Invitee"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "7154b3bf-857e-48b8-8c76-7b62aba18316",
+        "primaryOwnedSpaceName": "Onboarding's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:06.667Z",
+        "emailVerifiedAt": "2026-08-03T17:44:07.184Z",
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:06.721Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "70776e3f-84f7-4251-894b-fe8911c63c3b",
+        "email": "decline-owner-7@example.com",
+        "name": "decline-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "9e236d5a-dd28-4b93-a6b1-e69360925625",
+        "primaryOwnedSpaceName": "decline-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:06.844Z",
+        "emailVerifiedAt": "2026-08-03T17:44:07.355Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:07.373Z",
+        "spaceCreatedAt": "2026-08-03T17:44:06.890Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "e96736a9-8367-4f55-95dc-6c5635c767f4",
+        "email": "alice-tutorial@example.test",
+        "name": "Alice Tutorial"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "9e66949c-8fa5-4525-a48c-cc874dd32bac",
+        "primaryOwnedSpaceName": "Alice's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:07.057Z",
+        "emailVerifiedAt": "2026-08-03T17:44:07.573Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:07.606Z",
+        "spaceCreatedAt": "2026-08-03T17:44:07.103Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "80a23191-7fb6-4262-9d49-584173d3e6f9",
+        "email": "parallel-library-owner-6@example.com",
+        "name": "parallel-library-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "34e612a3-fe77-400b-a5d0-b56d2b8ce015",
+        "primaryOwnedSpaceName": "parallel-library-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:07.111Z",
+        "emailVerifiedAt": "2026-08-03T17:44:07.635Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:07.653Z",
+        "spaceCreatedAt": "2026-08-03T17:44:07.155Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "7b2e2dc0-e1ab-4883-9e7c-d36b654b234c",
+        "email": "x-incremental-owner@example.test",
+        "name": "Incremental Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "d34f646d-f0d7-4e3b-b934-6558008b5254",
+        "primaryOwnedSpaceName": "Incremental's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:07.177Z",
+        "emailVerifiedAt": "2026-08-03T17:44:07.699Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:07.732Z",
+        "spaceCreatedAt": "2026-08-03T17:44:07.222Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "ff5706be-a6da-4882-bab3-3545abb54f93",
+        "email": "fresh-admin@example.com",
+        "name": "Workspace admin"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "afea8795-fdab-4079-935f-74a871644db4",
+        "primaryOwnedSpaceName": "Workspace's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:07.272Z",
+        "emailVerifiedAt": "2026-08-03T17:44:07.272Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:07.272Z",
+        "spaceCreatedAt": "2026-08-03T17:44:07.325Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "56dda394-fdd8-4c7d-872b-18da28962b4b",
+        "email": "x-owner@example.test",
+        "name": "X Workspace Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "1353cece-7e50-4c66-a442-3efaee86873d",
+        "primaryOwnedSpaceName": "X's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:07.495Z",
+        "emailVerifiedAt": "2026-08-03T17:44:08.009Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:08.043Z",
+        "spaceCreatedAt": "2026-08-03T17:44:07.537Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "466fd213-b905-40c0-ad18-cb53adefbc6d",
+        "email": "bob-tutorial@example.test",
+        "name": "Bob Tutorial"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "c4b31d71-41f7-44a8-803e-13467344e422",
+        "primaryOwnedSpaceName": "Bob's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:07.626Z",
+        "emailVerifiedAt": "2026-08-03T17:44:08.146Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:08.167Z",
+        "spaceCreatedAt": "2026-08-03T17:44:07.666Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "53b77ec2-0796-49e4-8544-688a1c3a7e4a",
+        "email": "space-owner-8@example.com",
+        "name": "space-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "e88ac59f-6afe-400b-9ba7-bd1d29dc9fbc",
+        "primaryOwnedSpaceName": "space-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:07.713Z",
+        "emailVerifiedAt": "2026-08-03T17:44:08.226Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:08.246Z",
+        "spaceCreatedAt": "2026-08-03T17:44:07.753Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "2ead43ce-bfd1-4470-ba28-20daa6201db5",
+        "email": "x-incremental-member@example.test",
+        "name": "Read-only Member"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "735e7ba0-8bb9-46ad-8e03-bbe2298b69ce",
+        "primaryOwnedSpaceName": "Read-only's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:07.750Z",
+        "emailVerifiedAt": "2026-08-03T17:44:08.270Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:08.290Z",
+        "spaceCreatedAt": "2026-08-03T17:44:07.789Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "c84df889-1939-469f-abfb-ffe7e75fc303",
+        "email": "x-member@example.test",
+        "name": "X Workspace Member"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "f750566b-7508-4c4f-8c92-32bd1fb988ab",
+        "primaryOwnedSpaceName": "X's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:08.061Z",
+        "emailVerifiedAt": "2026-08-03T17:44:08.582Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:08.606Z",
+        "spaceCreatedAt": "2026-08-03T17:44:08.100Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "76d268d3-a729-46b9-9794-0b099796395d",
+        "email": "space-member-9@example.com",
+        "name": "space-member user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "ef0d8adf-c5b5-4403-aa01-2cdb2f0c8582",
+        "primaryOwnedSpaceName": "space-member's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:08.265Z",
+        "emailVerifiedAt": "2026-08-03T17:44:08.781Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:08.799Z",
+        "spaceCreatedAt": "2026-08-03T17:44:08.304Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "c8157ef0-30ac-40ab-b4c7-d12139b96555",
+        "email": "space-outsider-10@example.com",
+        "name": "space-outsider user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "0aca2b0a-e1f4-4c25-814d-32b760b4daac",
+        "primaryOwnedSpaceName": "space-outsider's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:09.116Z",
+        "emailVerifiedAt": "2026-08-03T17:44:09.637Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:09.658Z",
+        "spaceCreatedAt": "2026-08-03T17:44:09.157Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "fa6c3a00-2e94-46eb-8504-3bc1ddc81976",
+        "email": "storage-owner-11@example.com",
+        "name": "storage-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "14c61f6c-a420-4c94-9c85-f19256e39612",
+        "primaryOwnedSpaceName": "storage-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:09.685Z",
+        "emailVerifiedAt": "2026-08-03T17:44:10.208Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:10.229Z",
+        "spaceCreatedAt": "2026-08-03T17:44:09.736Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "eab652d6-c899-4e6a-9bde-8fce92e6bbe9",
+        "email": "ip-login-bucket@example.test",
+        "name": "IP Bucket Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "41055f8e-7dcf-4645-8446-8a51163ca43e",
+        "primaryOwnedSpaceName": "IP login bucket"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:10.453Z",
+        "emailVerifiedAt": "2026-08-03T17:44:10.970Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:10.989Z",
+        "spaceCreatedAt": "2026-08-03T17:44:10.493Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "c17cdd77-7b7d-40b0-a5b4-df281922ee1e",
+        "email": "account-login-bucket@example.test",
+        "name": "Account Bucket Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "849828e6-771d-49db-a910-f80e7a1d5442",
+        "primaryOwnedSpaceName": "Account login bucket"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:11.410Z",
+        "emailVerifiedAt": "2026-08-03T17:44:11.929Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:11.947Z",
+        "spaceCreatedAt": "2026-08-03T17:44:11.449Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "5d06d2c8-20d9-4a79-ac1b-3d507496ab8e",
+        "email": "forgot-timing@example.test",
+        "name": "Forgot Timing Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "2e9de291-33d3-42e4-9f49-629b91c5fe73",
+        "primaryOwnedSpaceName": "Forgot's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:12.814Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:12.849Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "26486e23-e2ac-403e-9db8-b3959a29657f",
+        "email": "inflight-reset@example.test",
+        "name": "Inflight Reset Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "c512c42f-5544-4d59-aeed-2f11e7602520",
+        "primaryOwnedSpaceName": "Inflight reset"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:13.579Z",
+        "emailVerifiedAt": "2026-08-03T17:44:14.100Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:14.119Z",
+        "spaceCreatedAt": "2026-08-03T17:44:13.614Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "b757036a-a664-416d-bbe7-cc40f07d6817",
+        "email": "reset-mail-cap@example.test",
+        "name": "Reset Mail Cap Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "a39761e5-8abc-4ccb-8f26-af0aa530b3ba",
+        "primaryOwnedSpaceName": "Reset mail cap"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:14.736Z",
+        "emailVerifiedAt": "2026-08-03T17:44:15.248Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:15.267Z",
+        "spaceCreatedAt": "2026-08-03T17:44:14.774Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "0a8465e2-e413-4a91-bd25-066e72b211ba",
+        "email": "reset-replacement@example.test",
+        "name": "Reset Replacement Owner"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "cfd670e9-b6e1-402a-823e-d45a02331ef4",
+        "primaryOwnedSpaceName": "Reset replacement"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:16.327Z",
+        "emailVerifiedAt": "2026-08-03T17:44:16.846Z",
+        "onboardingCompletedAt": "2026-08-03T17:44:16.864Z",
+        "spaceCreatedAt": "2026-08-03T17:44:16.364Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "6f425f29-13e0-45d7-ab86-bb090b7f437e",
+        "email": "provider-outage@example.test",
+        "name": "Fresh Mailbox"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "fdc1040e-198c-4083-89ea-fef5b5c88a72",
+        "primaryOwnedSpaceName": "Fresh's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:44:17.725Z",
+        "emailVerifiedAt": null,
+        "onboardingCompletedAt": null,
+        "spaceCreatedAt": "2026-08-03T17:44:17.768Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "69ace28d-7b22-462e-a2fe-c3d4ed335ae8",
+        "email": "send-owner-2@example.com",
+        "name": "send-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "43d914f5-40f9-474c-9810-1350e6b9df01",
+        "primaryOwnedSpaceName": "send-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:45:53.202Z",
+        "emailVerifiedAt": "2026-08-03T17:45:53.704Z",
+        "onboardingCompletedAt": "2026-08-03T17:45:53.782Z",
+        "spaceCreatedAt": "2026-08-03T17:45:53.275Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "20007854-aa6c-46ff-9161-8f3d2e12e95a",
+        "email": "session-cap-owner-3@example.com",
+        "name": "session-cap-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "405917cf-f855-44d5-8a6d-c9ee730a4a9f",
+        "primaryOwnedSpaceName": "session-cap-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:45:54.377Z",
+        "emailVerifiedAt": "2026-08-03T17:45:54.916Z",
+        "onboardingCompletedAt": "2026-08-03T17:45:54.969Z",
+        "spaceCreatedAt": "2026-08-03T17:45:54.445Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "917a5f10-03ee-490f-866f-eaceaef3d26d",
+        "email": "recovery-outsider-1785779154957@example.com",
+        "name": "Recovery Outsider"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "c69649eb-bd4f-45f8-83c2-1b5351023412",
+        "primaryOwnedSpaceName": "Separate recovery space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:45:54.967Z",
+        "emailVerifiedAt": "2026-08-03T17:45:55.496Z",
+        "onboardingCompletedAt": "2026-08-03T17:45:55.543Z",
+        "spaceCreatedAt": "2026-08-03T17:45:55.031Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "bcfdfd7a-d3c6-437b-8332-d5b7ce11253d",
+        "email": "completion-owner-4@example.com",
+        "name": "completion-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "006a02c2-d64d-43c5-813c-3e3a168eaf60",
+        "primaryOwnedSpaceName": "completion-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:45:56.337Z",
+        "emailVerifiedAt": "2026-08-03T17:45:56.883Z",
+        "onboardingCompletedAt": "2026-08-03T17:45:56.947Z",
+        "spaceCreatedAt": "2026-08-03T17:45:56.430Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "eee05167-9705-45a5-8aa6-01d560cdad6e",
+        "email": "completion-outsider-5@example.com",
+        "name": "completion-outsider user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "22008e69-5292-4343-a9ac-f4c9a2e24461",
+        "primaryOwnedSpaceName": "completion-outsider's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:45:56.978Z",
+        "emailVerifiedAt": "2026-08-03T17:45:57.508Z",
+        "onboardingCompletedAt": "2026-08-03T17:45:57.562Z",
+        "spaceCreatedAt": "2026-08-03T17:45:57.067Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "a03a4fd9-33b2-4d2e-8019-d53689380b93",
+        "email": "decline-owner-6@example.com",
+        "name": "decline-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "fbf4551b-3de8-4f66-af9e-43f96c524fae",
+        "primaryOwnedSpaceName": "decline-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:45:59.300Z",
+        "emailVerifiedAt": "2026-08-03T17:45:59.820Z",
+        "onboardingCompletedAt": "2026-08-03T17:45:59.887Z",
+        "spaceCreatedAt": "2026-08-03T17:45:59.358Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "12a7cdde-eaaf-4129-8a23-8705b6dd7046",
+        "email": "space-owner-7@example.com",
+        "name": "space-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "01bc4599-f5a4-4f21-9a0f-aa3081bc6c66",
+        "primaryOwnedSpaceName": "space-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:46:00.760Z",
+        "emailVerifiedAt": "2026-08-03T17:46:01.275Z",
+        "onboardingCompletedAt": "2026-08-03T17:46:01.298Z",
+        "spaceCreatedAt": "2026-08-03T17:46:00.820Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "c889ddc6-8a51-4393-ab8a-c152e4cde54b",
+        "email": "space-member-8@example.com",
+        "name": "space-member user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "f805d4fc-e9f4-4e0e-83dd-70e1cf44fa6d",
+        "primaryOwnedSpaceName": "space-member's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:46:01.321Z",
+        "emailVerifiedAt": "2026-08-03T17:46:01.836Z",
+        "onboardingCompletedAt": "2026-08-03T17:46:01.863Z",
+        "spaceCreatedAt": "2026-08-03T17:46:01.368Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "c5f41ce2-9f9f-4e97-93a2-15f189cd5476",
+        "email": "space-outsider-9@example.com",
+        "name": "space-outsider user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "039a42ef-b454-4e88-ae23-4492f23cdeb5",
+        "primaryOwnedSpaceName": "space-outsider's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:46:02.283Z",
+        "emailVerifiedAt": "2026-08-03T17:46:02.797Z",
+        "onboardingCompletedAt": "2026-08-03T17:46:02.817Z",
+        "spaceCreatedAt": "2026-08-03T17:46:02.327Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "d8dddc86-169b-4d75-b9fd-102d53230678",
+        "email": "storage-owner-10@example.com",
+        "name": "storage-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "3f49e837-1f69-42db-b8d7-eeeff01fefda",
+        "primaryOwnedSpaceName": "storage-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:46:02.844Z",
+        "emailVerifiedAt": "2026-08-03T17:46:03.373Z",
+        "onboardingCompletedAt": "2026-08-03T17:46:03.398Z",
+        "spaceCreatedAt": "2026-08-03T17:46:02.887Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "430ba4c3-dd61-461d-a52a-8529d855290c",
+        "email": "parallel-library-owner-4@example.com",
+        "name": "parallel-library-owner user"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "ce2b910a-a7ca-4f11-a6ce-496fe83a92ae",
+        "primaryOwnedSpaceName": "parallel-library-owner's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-08-03T17:46:22.246Z",
+        "emailVerifiedAt": "2026-08-03T17:46:22.764Z",
+        "onboardingCompletedAt": "2026-08-03T17:46:22.806Z",
+        "spaceCreatedAt": "2026-08-03T17:46:22.286Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "providerPreferenceStored": false,
+        "providerPreferencePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\codex\\provider-preferences.json",
+        "runtimePreferenceProvider": null,
+        "runtimePreferenceChoice": null,
+        "runtimePreferenceUpdatedAt": null,
+        "codexRuntimeHomePresent": false,
+        "codexAuthFilePresent": false,
+        "currentRuntimeConnected": false,
+        "currentRuntimeEmail": null,
+        "currentRuntimePlanType": null,
+        "currentRuntimeAuthMode": null,
+        "currentRuntimePendingLogin": false,
+        "currentRuntimePreferenceChoice": null,
+        "currentRuntimeEffectiveProvider": null,
+        "currentRuntimePolicyDefault": null,
         "surveyScope": null,
         "journeyScope": null,
         "subscriptionScope": null

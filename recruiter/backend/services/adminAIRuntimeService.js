@@ -12,6 +12,7 @@ const {
   GROQ_20B,
   createDefaultRuntimeSettings,
   failoverPolicyForRoute,
+  isChatgptPinnedActivity,
   isUserOwnedProvider,
   normalizeRuntimePolicy
 } = require('../config/aiRuntimeCatalog');
@@ -683,7 +684,12 @@ async function updateRuntimePolicy(input, req) {
   if (defaultRuntime === 'local' && !localEnabled) {
     throw new TypeError('The local runtime must be enabled before it can be the default');
   }
-  const runtimePolicy = { localEnabled, chatgptEnabled, defaultRuntime };
+  const chatgptRequired = typeof input.chatgptRequired === 'boolean'
+    ? input.chatgptRequired : current.chatgptRequired;
+  if (chatgptRequired && !chatgptEnabled) {
+    throw new TypeError('The ChatGPT runtime must be enabled before it can be required');
+  }
+  const runtimePolicy = { localEnabled, chatgptEnabled, defaultRuntime, chatgptRequired };
   // Enabling a runtime is meaningless while its models are disabled, so the
   // ChatGPT catalogue entry follows the switch.
   const settings = await aiRuntimeService.getSettings({ force: true });
@@ -699,7 +705,7 @@ async function updateRuntimePolicy(input, req) {
     action: 'runtime_policy_updated',
     targetType: 'AIRuntimeSettings',
     targetId: 'global',
-    message: `AI runtimes: local ${localEnabled ? 'on' : 'off'}, ChatGPT ${chatgptEnabled ? 'on' : 'off'}, default ${defaultRuntime}`,
+    message: `AI runtimes: local ${localEnabled ? 'on' : 'off'}, ChatGPT ${chatgptEnabled ? 'on' : 'off'}${chatgptRequired ? ' (required)' : ''}, default ${defaultRuntime}`,
     metadata: runtimePolicy
   });
   return getRuntimeSettings(req);
@@ -711,6 +717,13 @@ async function updateRoute(activity, input, req) {
   const model = settings.models.find((item) => item.id === input.model && item.enabled !== false);
   if (!model) throw new TypeError('Selected model is not enabled');
   const definition = ACTIVITY_DEFINITIONS[activity];
+  // While ChatGPT is required, recruiter activities run on connected accounts
+  // only; refusing here is clearer than accepting a provider the settings
+  // merge would revert on the next read.
+  const policy = normalizeRuntimePolicy(settings.runtimePolicy);
+  if (policy.chatgptRequired && isChatgptPinnedActivity(activity) && !isUserOwnedProvider(model.provider)) {
+    throw new TypeError(`${activity} runs on each user's connected ChatGPT account; choose a ChatGPT model`);
+  }
   if (definition.lockedProvider && model.provider !== definition.provider && !isUserOwnedProvider(model.provider)) {
     throw new TypeError(`${activity} is locked to ${definition.provider} or a connected ChatGPT account`);
   }

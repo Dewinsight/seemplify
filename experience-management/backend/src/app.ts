@@ -254,6 +254,15 @@ function entitledJourneySpace(request: express.Request, options: { ai?: boolean;
   return space;
 }
 
+function requireLegacyJourneyCapability(space: ReturnType<typeof authenticatedSpace>, capability: 'read' | 'edit' | 'export') {
+  if (space.role !== 'member') return space;
+  if (capability === 'read') return space;
+  if (capability === 'export') {
+    throw new JourneyMapError('You do not have permission to export journey maps in this space.', 403, 'JOURNEY_EXPORT_FORBIDDEN');
+  }
+  throw new JourneyMapError('You do not have permission to change journey maps in this space.', 403, 'JOURNEY_MAP_FORBIDDEN');
+}
+
 function publicHtml(value: unknown) {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
@@ -1149,17 +1158,17 @@ function journeyExportFilename(id: string, extension: 'json' | 'csv') {
 }
 function normalizeJourneyFocus(value: unknown) { return String(value || '').trim().replace(/\s+/gu, ' '); }
 app.get('/api/journeys', noStore, (request, response) => {
-  const space = entitledJourneySpace(request);
+  const space = requireLegacyJourneyCapability(entitledJourneySpace(request), 'read');
   return response.json(listLegacyJourneysWithRollout(space.id, request.get('x-request-id')));
 });
 app.get('/api/journeys/:id', noStore, (request, response) => {
-  const journey = readLegacyJourneyWithRollout(entitledJourneySpace(request).id, String(request.params.id),
+  const journey = readLegacyJourneyWithRollout(requireLegacyJourneyCapability(entitledJourneySpace(request), 'read').id, String(request.params.id),
     request.get('x-request-id'));
   return journey ? response.json(journey) : response.status(404).json({ error: 'Journey not found.' });
 });
 app.post('/api/journeys', (request, response) => {
   const parsed = journeyInput.safeParse(request.body); if (!parsed.success) return sendError(response, parsed.error);
-  const space = entitledJourneySpace(request);
+  const space = requireLegacyJourneyCapability(entitledJourneySpace(request), 'edit');
   if (parsed.data.id && getJourney(parsed.data.id, space.id)) return response.status(409).json({ error: 'A journey with this ID already exists.' });
   try {
     const journey = runLegacyJourneyWrite({
@@ -1178,7 +1187,7 @@ app.post('/api/journeys', (request, response) => {
 });
 app.patch('/api/journeys/:id', (request, response) => {
   const parsed = journeyUpdateInput.safeParse(request.body); if (!parsed.success) return sendError(response, parsed.error);
-  const space = entitledJourneySpace(request); const id = String(request.params.id); const current = getJourney(id, space.id);
+  const space = requireLegacyJourneyCapability(entitledJourneySpace(request), 'edit'); const id = String(request.params.id); const current = getJourney(id, space.id);
   if (!current) return response.status(404).json({ error: 'Journey not found.' });
   const { expectedUpdatedAt, ...changes } = parsed.data;
   const journey = runLegacyJourneyWrite({
@@ -1195,7 +1204,7 @@ app.patch('/api/journeys/:id', (request, response) => {
 app.delete('/api/journeys/:id', (request, response) => {
   const parsed = z.object({ expectedUpdatedAt: z.string().datetime() }).safeParse(request.body || {});
   if (!parsed.success) return sendError(response, parsed.error);
-  const space = entitledJourneySpace(request); const id = String(request.params.id);
+  const space = requireLegacyJourneyCapability(entitledJourneySpace(request), 'edit'); const id = String(request.params.id);
   const deletionTarget = getJourney(id, space.id);
   if (!deletionTarget) return response.status(404).json({ error: 'Journey not found.' });
   if (deletionTarget.updatedAt !== parsed.data.expectedUpdatedAt) {
@@ -1223,17 +1232,14 @@ app.post('/api/ai/journeys', (request, response) => {
     knowledgeBaseIds: z.array(z.string().uuid()).max(5).optional() }).safeParse(request.body);
   if (!parsed.success) return sendError(response, parsed.error);
   try {
-    const space = entitledJourneySpace(request, { ai: true });
+    const space = requireLegacyJourneyCapability(entitledJourneySpace(request, { ai: true }), 'edit');
     const job = queueJob('journey.generate', parsed.data, space.id, null, null, authenticatedUser(request).id);
     return response.status(202).json({ jobId: job.id, state: job.state, statusUrl: `/api/ai/jobs/${job.id}` });
   } catch (error) { return sendError(response, error); }
 });
 app.post('/api/journeys/:id/ai/optimize', (request, response) => {
   try {
-    const space = entitledJourneySpace(request, { ai: true });
-    if (space.role === 'member') throw new JourneySuggestionError(
-      'You do not have permission to request journey suggestions in this space.', 403,
-      'JOURNEY_SUGGESTION_FORBIDDEN');
+    const space = requireLegacyJourneyCapability(entitledJourneySpace(request, { ai: true }), 'edit');
     const journey = getJourney(String(request.params.id), space.id);
     if (!journey) return response.status(404).json({ error: 'Journey not found.' });
     const parsed = z.object({ focus: z.string().trim().max(2000).optional(),
@@ -1269,7 +1275,7 @@ app.post('/api/journeys/:id/ai/optimize', (request, response) => {
 
 app.get('/api/journeys/:id/versions', noStore, (request, response) => {
   const id = String(request.params.id);
-  if (!getJourney(id, entitledJourneySpace(request).id)) return response.status(404).json({ error: 'Journey not found.' });
+  if (!getJourney(id, requireLegacyJourneyCapability(entitledJourneySpace(request), 'read').id)) return response.status(404).json({ error: 'Journey not found.' });
   const parsed = z.coerce.number().int().min(1).max(20).safeParse(request.query.limit ?? 10);
   if (!parsed.success) return sendError(response, parsed.error);
   return response.json(listJourneyVersionSummaries(id, parsed.data));
@@ -1278,7 +1284,7 @@ app.post('/api/journeys/:id/versions/:versionId/restore', (request, response) =>
   const parsed = z.object({ expectedUpdatedAt: z.string().datetime() }).safeParse(request.body || {});
   if (!parsed.success) return sendError(response, parsed.error);
   const id = String(request.params.id);
-  const space = entitledJourneySpace(request);
+  const space = requireLegacyJourneyCapability(entitledJourneySpace(request), 'edit');
   const restored = runLegacyJourneyWrite({
     spaceId: space.id, journeyId: id, requestId: request.get('x-request-id'),
     operation: () => restoreJourneyVersion(id, String(request.params.versionId), parsed.data.expectedUpdatedAt, space.id),
@@ -1295,7 +1301,7 @@ app.post('/api/journeys/:id/versions/:versionId/restore', (request, response) =>
 });
 
 app.get('/api/journeys/:id/export.:format', noStore, (request, response) => {
-  const journey = readLegacyJourneyWithRollout(entitledJourneySpace(request, { exports: true }).id,
+  const journey = readLegacyJourneyWithRollout(requireLegacyJourneyCapability(entitledJourneySpace(request, { exports: true }), 'export').id,
     String(request.params.id), request.get('x-request-id'));
   if (!journey) return response.status(404).json({ error: 'Journey not found.' });
   const format = String(request.params.format).toLowerCase();

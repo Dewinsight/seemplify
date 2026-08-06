@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-08-06T18:07:59.911Z",
+  "generatedAt": "2026-08-06T21:55:39.499Z",
   "displayDate": "Thursday, August 6, 2026",
   "inputs": {
     "ingestRefresh": {
@@ -14,13 +14,13 @@
   },
   "summary": {
     "gateOpen": true,
-    "openBlockerCount": 6,
+    "openBlockerCount": 5,
     "ingestEvidenceUsable": true,
     "stageProcessingExercised": true,
-    "requestLatencyP95Ms": 5018.68,
+    "requestLatencyP95Ms": 4992.58,
     "generatedLoadEvents": 600,
-    "chatGptConnected": 0,
-    "chatGptSelected": 0,
+    "chatGptConnected": 1,
+    "chatGptSelected": 1,
     "journeyCreated": 1
   },
   "blockerStatuses": [
@@ -34,7 +34,7 @@
       "id": "ratified_hardware_load_profile",
       "title": "Ratified hardware and load profile",
       "open": true,
-      "evidence": "Current local request latency p95 is 5018.68 ms against an unratified candidate."
+      "evidence": "Current local request latency p95 is 4992.58 ms against an unratified candidate."
     },
     {
       "id": "multi_node_failover",
@@ -57,8 +57,8 @@
     {
       "id": "dogfood_chatgpt_runtime_activity",
       "title": "Dogfood ChatGPT/runtime activity",
-      "open": true,
-      "evidence": "Dogfood summary currently shows audited ChatGPT connected=0, audited ChatGPT selected=0, stored ChatGPT runtime preference=0, Codex runtime homes=2, Codex auth files=0, journey created=1."
+      "open": false,
+      "evidence": "Dogfood summary currently shows audited ChatGPT connected=1, audited ChatGPT selected=1, stored ChatGPT runtime preference=0, Codex runtime homes=2, Codex auth files=1, journey created=1."
     }
   ]
 }

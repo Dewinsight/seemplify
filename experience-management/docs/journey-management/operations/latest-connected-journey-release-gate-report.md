@@ -1,17 +1,17 @@
 # Connected-journey release-gate report
 
-Generated at: 2026-08-06T18:07:59.911Z
+Generated at: 2026-08-06T21:55:39.499Z
 
 ## Summary
 
 - Date: Thursday, August 6, 2026
 - Gate open: yes
-- Open blocker count: 6
+- Open blocker count: 5
 - Stage processing exercised: true
-- Request latency p95 ms: 5018.68
+- Request latency p95 ms: 4992.58
 - Generated load events: 600
-- Dogfood ChatGPT connected: 0
-- Dogfood ChatGPT selected: 0
+- Dogfood ChatGPT connected: 1
+- Dogfood ChatGPT selected: 1
 - Dogfood journey created: 1
 
 ## Blocker statuses
@@ -26,7 +26,7 @@ Generated at: 2026-08-06T18:07:59.911Z
 
 - ID: ratified_hardware_load_profile
 - Open: yes
-- Evidence: Current local request latency p95 is 5018.68 ms against an unratified candidate.
+- Evidence: Current local request latency p95 is 4992.58 ms against an unratified candidate.
 
 ### Multi-node production PostgreSQL failover
 
@@ -49,6 +49,6 @@ Generated at: 2026-08-06T18:07:59.911Z
 ### Dogfood ChatGPT/runtime activity
 
 - ID: dogfood_chatgpt_runtime_activity
-- Open: yes
-- Evidence: Dogfood summary currently shows audited ChatGPT connected=0, audited ChatGPT selected=0, stored ChatGPT runtime preference=0, Codex runtime homes=2, Codex auth files=0, journey created=1.
+- Open: no
+- Evidence: Dogfood summary currently shows audited ChatGPT connected=1, audited ChatGPT selected=1, stored ChatGPT runtime preference=0, Codex runtime homes=2, Codex auth files=1, journey created=1.
 

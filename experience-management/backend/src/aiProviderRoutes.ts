@@ -41,11 +41,122 @@ function recordAiRuntimeAudit(request: express.Request, userId: string, input: {
   });
 }
 
-function latestAiRuntimeAction(userId: string) {
+function hasActiveCodexConnectionAudit(userId: string) {
   const row = db.prepare(`SELECT action FROM platform_audit_events
     WHERE actor_user_id=? AND target_type='ai_runtime'
+      AND action IN ('ai_runtime.codex_connected','ai_runtime.codex_disconnected')
     ORDER BY created_at DESC,id DESC LIMIT 1`).get(userId) as { action?: string } | undefined;
-  return typeof row?.action === 'string' ? row.action : null;
+  return row?.action === 'ai_runtime.codex_connected';
+}
+
+function latestRuntimeSelectionAudit(targetId: string) {
+  const row = db.prepare(`SELECT after_json FROM platform_audit_events
+    WHERE target_id=? AND target_type='ai_runtime'
+      AND action='ai_runtime.runtime_selected'
+    ORDER BY created_at DESC,id DESC LIMIT 1`).get(targetId) as { after_json?: string | null } | undefined;
+  if (!row?.after_json) return null;
+  try {
+    const parsed = JSON.parse(row.after_json) as { runtimeChoice?: unknown } | null;
+    return optionalString(parsed?.runtimeChoice);
+  } catch {
+    return null;
+  }
+}
+
+function effectiveRuntimeChoiceFromState(state: Awaited<ReturnType<typeof getAiProviderState>>) {
+  const explicitChoice = optionalString(state.preference.runtimeChoice);
+  if (explicitChoice) return explicitChoice;
+  return state.preference.effectiveProvider === 'codex' ? 'chatgpt' : 'local';
+}
+
+function syncRuntimeSelectionAudit(
+  request: express.Request,
+  userId: string,
+  spaceId: string,
+  before: {
+    provider: string;
+    runtimeChoice: string | null;
+    codexModel: string | null;
+  },
+  next: Awaited<ReturnType<typeof getAiProviderState>>
+) {
+  const targetId = `${userId}:${spaceId}`;
+  const nextChoice = effectiveRuntimeChoiceFromState(next);
+  if (!nextChoice) return;
+  const auditedChoice = latestRuntimeSelectionAudit(targetId);
+  if (auditedChoice === nextChoice) return;
+  recordAiRuntimeAudit(request, userId, {
+    action: 'ai_runtime.runtime_selected',
+    targetId,
+    spaceId,
+    reason: before.runtimeChoice === nextChoice
+      ? 'Workspace AI runtime selection was reconciled from the current live state.'
+      : 'Workspace AI runtime selection changed.',
+    before: {
+      provider: before.provider,
+      runtimeChoice: before.runtimeChoice,
+      codexModel: before.codexModel
+    },
+    after: {
+      provider: next.preference.provider,
+      runtimeChoice: nextChoice,
+      codexModel: optionalString(next.codex.selectedModel)
+    }
+  });
+}
+
+function syncCodexConnectionAudit(
+  request: express.Request,
+  userId: string,
+  spaceId: string,
+  before: {
+    connected: boolean;
+    planType: string | null;
+    authMode: string | null;
+    runtimeChoice: string | null;
+  },
+  next: Awaited<ReturnType<typeof getAiProviderState>>
+) {
+  const hadConnectedAudit = hasActiveCodexConnectionAudit(userId);
+  if (next.codex.account.connected && !hadConnectedAudit) {
+    recordAiRuntimeAudit(request, userId, {
+      action: 'ai_runtime.codex_connected',
+      targetId: userId,
+      spaceId,
+      reason: 'ChatGPT / Codex became connected for this account.',
+      before: {
+        connected: before.connected,
+        planType: before.planType,
+        authMode: before.authMode
+      },
+      after: {
+        connected: true,
+        planType: next.codex.account.planType,
+        authMode: next.codex.account.authMode,
+        codexModel: optionalString(next.codex.selectedModel)
+      }
+    });
+  }
+  if (!next.codex.account.connected && before.connected && hadConnectedAudit) {
+    recordAiRuntimeAudit(request, userId, {
+      action: 'ai_runtime.codex_disconnected',
+      targetId: userId,
+      spaceId,
+      reason: 'ChatGPT / Codex was disconnected from this account.',
+      before: {
+        connected: true,
+        planType: before.planType,
+        authMode: before.authMode,
+        runtimeChoice: before.runtimeChoice
+      },
+      after: {
+        connected: false,
+        planType: next.codex.account.planType,
+        authMode: next.codex.account.authMode,
+        runtimeChoice: next.preference.runtimeChoice
+      }
+    });
+  }
 }
 
 function context(request: express.Request) {
@@ -63,7 +174,22 @@ function sendError(response: express.Response, error: unknown) {
 aiProviderRouter.get('/', async (request, response) => {
   try {
     const { user, space } = context(request);
-    return response.json(await getAiProviderState(user.id, space.id));
+    const beforeConnected = hasActiveCodexConnectionAudit(user.id);
+    const state = await getAiProviderState(user.id, space.id);
+    syncRuntimeSelectionAudit(request, user.id, space.id, {
+      provider: state.preference.provider,
+      runtimeChoice: state.preference.runtimeChoice,
+      codexModel: optionalString(state.codex.selectedModel)
+    }, state);
+    if (state.codex.account.connected && !beforeConnected) {
+      syncCodexConnectionAudit(request, user.id, space.id, {
+        connected: false,
+        planType: null,
+        authMode: null,
+        runtimeChoice: state.preference.runtimeChoice
+      }, state);
+    }
+    return response.json(state);
   } catch (error) { return sendError(response, error); }
 });
 
@@ -88,45 +214,17 @@ aiProviderRouter.patch('/', async (request, response) => {
     }).parse(request.body);
     await chooseAiProvider(user.id, space.id, input);
     const next = await getAiProviderState(user.id, space.id);
-    const beforeChoice = before.preference.runtimeChoice;
-    const nextChoice = next.preference.runtimeChoice;
-    if (beforeChoice !== nextChoice) {
-      recordAiRuntimeAudit(request, user.id, {
-        action: 'ai_runtime.runtime_selected',
-        targetId: `${user.id}:${space.id}`,
-        spaceId: space.id,
-        reason: 'Workspace AI runtime selection changed.',
-        before: {
-          provider: before.preference.provider,
-          runtimeChoice: beforeChoice,
-          codexModel: optionalString(before.codex.selectedModel)
-        },
-        after: {
-          provider: next.preference.provider,
-          runtimeChoice: nextChoice,
-          codexModel: optionalString(next.codex.selectedModel)
-        }
-      });
-    }
-    if (next.codex.account.connected && latestAiRuntimeAction(user.id) !== 'ai_runtime.codex_connected') {
-      recordAiRuntimeAudit(request, user.id, {
-        action: 'ai_runtime.codex_connected',
-        targetId: user.id,
-        spaceId: space.id,
-        reason: 'ChatGPT / Codex became connected for this account.',
-        before: {
-          connected: before.codex.account.connected,
-          planType: before.codex.account.planType,
-          authMode: before.codex.account.authMode
-        },
-        after: {
-          connected: true,
-          planType: next.codex.account.planType,
-          authMode: next.codex.account.authMode,
-          codexModel: optionalString(next.codex.selectedModel)
-        }
-      });
-    }
+    syncRuntimeSelectionAudit(request, user.id, space.id, {
+      provider: before.preference.provider,
+      runtimeChoice: before.preference.runtimeChoice,
+      codexModel: optionalString(before.codex.selectedModel)
+    }, next);
+    syncCodexConnectionAudit(request, user.id, space.id, {
+      connected: before.codex.account.connected,
+      planType: before.codex.account.planType,
+      authMode: before.codex.account.authMode,
+      runtimeChoice: before.preference.runtimeChoice
+    }, next);
     return response.json(next);
   } catch (error) { return sendError(response, error); }
 });
@@ -171,26 +269,12 @@ aiProviderRouter.post('/codex/disconnect', async (request, response) => {
     const before = await getAiProviderState(user.id, space.id);
     await disconnectCodex(user.id);
     const next = await getAiProviderState(user.id, space.id);
-    if (before.codex.account.connected && !next.codex.account.connected) {
-      recordAiRuntimeAudit(request, user.id, {
-        action: 'ai_runtime.codex_disconnected',
-        targetId: user.id,
-        spaceId: space.id,
-        reason: 'ChatGPT / Codex was disconnected from this account.',
-        before: {
-          connected: true,
-          planType: before.codex.account.planType,
-          authMode: before.codex.account.authMode,
-          runtimeChoice: before.preference.runtimeChoice
-        },
-        after: {
-          connected: false,
-          planType: next.codex.account.planType,
-          authMode: next.codex.account.authMode,
-          runtimeChoice: next.preference.runtimeChoice
-        }
-      });
-    }
+    syncCodexConnectionAudit(request, user.id, space.id, {
+      connected: before.codex.account.connected,
+      planType: before.codex.account.planType,
+      authMode: before.codex.account.authMode,
+      runtimeChoice: before.preference.runtimeChoice
+    }, next);
     return response.json(next);
   } catch (error) { return sendError(response, error); }
 });

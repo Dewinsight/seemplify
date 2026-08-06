@@ -1,16 +1,11 @@
 {
-  "generatedAt": "2026-08-06T18:07:55.429Z",
+  "generatedAt": "2026-08-06T21:55:32.297Z",
   "workspaceRoot": "C:\\Users\\User\\Documents\\github\\seemplify\\experience-management",
   "currentBranch": "codex/deep-graph-analysis",
   "targetBranch": "main",
   "repoSide": {
-    "landingPreflightOk": false,
-    "requiredFilesMissingOnMain": [
-      "packages/SDK-QUALIFICATION.json",
-      "packages/SDK-RELEASE.md",
-      "packages/SDK-PUBLISH-CHECKLIST.md",
-      "scripts/sdk-publish-preflight.mjs"
-    ],
+    "landingPreflightOk": true,
+    "requiredFilesMissingOnMain": [],
     "requiredMainFiles": [
       "packages/SDK-QUALIFICATION.json",
       "packages/SDK-RELEASE.md",
@@ -19,12 +14,12 @@
     ],
     "deltaCommandOk": true,
     "deltaByFile": {
-      "packages/SDK-QUALIFICATION.json": "A\texperience-management/packages/SDK-QUALIFICATION.json",
-      "packages/SDK-RELEASE.md": "A\texperience-management/packages/SDK-RELEASE.md",
-      "packages/SDK-PUBLISH-CHECKLIST.md": "A\texperience-management/packages/SDK-PUBLISH-CHECKLIST.md",
-      "scripts/sdk-publish-preflight.mjs": "A\texperience-management/scripts/sdk-publish-preflight.mjs"
+      "packages/SDK-QUALIFICATION.json": "present on main; no current SDK publish-state delta",
+      "packages/SDK-RELEASE.md": "present on main; no current SDK publish-state delta",
+      "packages/SDK-PUBLISH-CHECKLIST.md": "present on main; no current SDK publish-state delta",
+      "scripts/sdk-publish-preflight.mjs": "present on main; no current SDK publish-state delta No SDK publish-state delta remains between main and the current working tree."
     },
-    "committedMainHeadDiffs": 4,
+    "committedMainHeadDiffs": 0,
     "workingTreeSdkPublishStateEntries": 0
   },
   "publishPreflight": {
@@ -34,8 +29,8 @@
       "current branch is codex/deep-graph-analysis; the publish workflow requires main"
     ],
     "externalSetupBlockers": [
-      "npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-06T18_08_11_214Z-debug-0.log",
-      "npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-06T18_08_11_880Z-debug-0.log"
+      "npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-06T21_55_36_352Z-debug-0.log",
+      "npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-06T21_55_37_000Z-debug-0.log"
     ],
     "workstationLimitations": [
       "local Node v22.11.0 is below the trusted-publishing floor 22.14.0",
@@ -44,7 +39,7 @@
     "observedNotes": [
       "GitHub CLI authentication is available",
       "GitHub environment npm-production exists with 1 required reviewer(s)",
-      "@seemplify/journey-event-protocol is not published yet on dist-tag next (npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/@seemplify%2fjourney-event-protocol - Not found npm error 404 npm error 404  '@seemplify/journey-event-protocol@next' is not in this registry. npm error 404 npm error 404 Note that you can also install from a npm error 404 tarball, folder, http url, or git url. npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-06T18_08_12_776Z-debug-0.log)"
+      "@seemplify/journey-event-protocol is not published yet on dist-tag next (npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/@seemplify%2fjourney-event-protocol - Not found npm error 404 npm error 404  '@seemplify/journey-event-protocol@next' is not in this registry. npm error 404 npm error 404 Note that you can also install from a npm error 404 tarball, folder, http url, or git url. npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-06T21_55_37_892Z-debug-0.log)"
     ]
   },
   "notClaimed": [

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-06T18:09:18.228Z",
+  "generatedAt": "2026-08-06T21:56:49.254Z",
   "command": "node scripts/journey-postgres-ingest-security-load.mjs",
   "ok": true,
   "exitCode": 0,
@@ -33,35 +33,35 @@
       "waves": 5,
       "batchSize": 20,
       "concurrency": 8,
-      "elapsedMs": 26671.89,
-      "throughputEventsPerSecond": 22.5,
+      "elapsedMs": 25222.29,
+      "throughputEventsPerSecond": 23.79,
       "waveDurationsMs": [
-        5032.18,
-        6876.19,
-        4918.85,
-        5019.4,
-        4825.22
+        5080.13,
+        4993.58,
+        5021.22,
+        5127.31,
+        4999.99
       ]
     },
     "soak": {
-      "durationMs": 5374.87,
+      "durationMs": 5359.77,
       "requests": 4,
       "events": 80,
-      "averageEventsPerSecond": 14.88
+      "averageEventsPerSecond": 14.93
     },
     "latencyMs": {
       "requests": 91,
-      "p50": 525.53,
-      "p95": 5018.68,
-      "p99": 6875.55,
-      "maximum": 6875.55
+      "p50": 578.38,
+      "p95": 4992.58,
+      "p99": 5126.45,
+      "maximum": 5126.45
     },
     "reconciliation": {
       "raw_events": 765,
       "dedupe_events": 765,
       "inbox_events": 765,
       "metered_events": 765,
-      "receipts": 860,
+      "receipts": 862,
       "rejections": 21,
       "oldest_queue_age_ms": 0,
       "rawDedupeDrift": 0,
@@ -84,14 +84,14 @@
       "receipts": [
         {
           "partition": "journey_event_ingest_receipts_2026_08",
-          "count": 860
+          "count": 862
         }
       ]
     },
     "outcomes": {
       "accepted": 765,
       "content_conflict": 11,
-      "duplicate": 63,
+      "duplicate": 65,
       "over_quota": 15,
       "rate_limited": 5,
       "rejected": 1
@@ -136,9 +136,9 @@
     },
     "stageProcessing": {
       "exercised": true,
-      "journeyDefinitionId": "2e6ea648-798f-49a2-83bf-406f61fb3c26",
-      "publishedMapVersionId": "fb32c624-b88d-5232-b171-6db8acf65bbf",
-      "publishedRuleDefinitionId": "b2360cce-6104-4ae3-87e3-3333adf7f537",
+      "journeyDefinitionId": "fcb47deb-39cd-4fbc-8880-fa92ffd87268",
+      "publishedMapVersionId": "379881d9-5245-58af-b0e3-fe669214bd86",
+      "publishedRuleDefinitionId": "56b28bd1-cb32-4196-af7d-d4cdc824a3bc",
       "projectedEvents": 2,
       "decisions": 2,
       "visits": 2,

@@ -87,7 +87,14 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
   assert.equal(connected.body.codex.models[1].id, 'gpt-test-codex-fast');
   assert.equal(connected.body.codex.models[2].id, 'gpt-test-codex-minimal');
   assert.ok(connected.body.codex.models[0].supportedReasoningEfforts.some((item: any) => item.reasoningEffort === 'max'));
-  assert.deepEqual(auditActionsFor(userId), ['ai_runtime.codex_login_started']);
+  assert.deepEqual(auditActionsFor(userId), ['ai_runtime.codex_login_started', 'ai_runtime.codex_connected']);
+  assert.equal(auditActionsFor(`${userId}:${spaceId}`).at(-1), 'ai_runtime.runtime_selected');
+  await agent.get('/api/ai-provider').expect(200);
+  assert.deepEqual(auditActionsFor(userId), ['ai_runtime.codex_login_started', 'ai_runtime.codex_connected']);
+  assert.deepEqual(auditActionsFor(`${userId}:${spaceId}`), [
+    'ai_runtime.runtime_selected',
+    'ai_runtime.runtime_selected'
+  ]);
 
   await agent.patch('/api/ai-provider').send({ provider: 'codex', codexModel: 'gpt-test-codex' }).expect(409);
   const selected = await agent.patch('/api/ai-provider').send({

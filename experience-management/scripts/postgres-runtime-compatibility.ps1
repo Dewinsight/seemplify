@@ -44,6 +44,8 @@ function Test-ProjectSupportsPostgresRuntimeVersion([string]$ProjectDir, [int]$R
   if ($RequiredVersion -ge 27 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0027_journey_portfolio.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 28 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0028_journey_collaboration.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 29 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0029_journey_hierarchy_blueprints.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 30 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0030_journey_stage_reprojection.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 31 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0031_journey_identity_profiles.sql') -PathType Leaf)) { return $false }
   return $true
 }
 

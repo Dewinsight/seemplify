@@ -34,6 +34,20 @@ function run(command, args, { cwd = workspaceRoot } = {}) {
   };
 }
 
+function runNodeScript(relativeScriptPath, { cwd = workspaceRoot } = {}) {
+  const result = spawnSync(process.execPath, [path.join(workspaceRoot, relativeScriptPath)], {
+    cwd,
+    encoding: 'utf8',
+    shell: false
+  });
+  return {
+    ok: result.status === 0,
+    status: result.status,
+    stdout: String(result.stdout ?? '').trim(),
+    stderr: String(result.stderr ?? '').trim()
+  };
+}
+
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
@@ -50,7 +64,7 @@ function safeReadJson(filePath) {
 mkdirSync(operationsDirectory, { recursive: true });
 
 const validateResult = run('npm', ['run', 'validate:journey-plan']);
-const sdkReadinessRefresh = run(process.execPath, [path.join('scripts', 'generate-sdk-publication-readiness-report.mjs')]);
+const sdkReadinessRefresh = runNodeScript(path.join('scripts', 'generate-sdk-publication-readiness-report.mjs'));
 const releaseGateRefresh = run('npm', ['run', 'report:journey:release-gate']);
 const dogfoodRefresh = run('npm', ['run', 'report:journey-dogfood']);
 
@@ -58,6 +72,7 @@ const validation = validateResult.ok ? JSON.parse(validateResult.stdout.split(/\
 const sdkReadiness = safeReadJson(sdkReadinessJsonPath);
 const releaseGate = safeReadJson(releaseGateJsonPath);
 const dogfood = safeReadJson(dogfoodJsonPath);
+const sdkReadinessArtifactAvailable = Boolean(sdkReadiness?.generatedAt);
 
 const dogfoodSummary = dogfood?.summary ?? {};
 const sdkRepoSide = sdkReadiness?.repoSide ?? {};
@@ -140,8 +155,6 @@ const blockerFamilies = [
       repositoryWorkflowBlockers: sdkPublishPreflight.repositoryWorkflowBlockers ?? []
     },
     missingProof: [
-      'required publish-state landed on main',
-      'landing and delta checks green',
       'publish workflow intentionally enabled only after release gates are satisfied'
     ]
   },
@@ -196,7 +209,7 @@ Generated at: ${generatedAt}
 
 - Date: ${displayDate}
 - Journey-plan validation: ${validateResult.ok ? 'passed' : 'failed'}
-- SDK publication-readiness artifact refresh: ${sdkReadinessRefresh.ok ? 'passed' : 'failed'}
+- SDK publication-readiness artifact refresh: ${sdkReadinessRefresh.ok && sdkReadinessArtifactAvailable ? 'passed' : 'failed'}
 - Dogfood artifact refresh: ${dogfoodRefresh.ok ? 'passed' : 'failed'}
 - Open blocker families: ${blockerFamilies.length}
 

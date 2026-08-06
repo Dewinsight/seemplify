@@ -502,7 +502,17 @@ function projectionForRead(spaceId: string, journey: Journey, serving: boolean, 
       const reconciliation = reconcileJourneyMap(spaceId, journey.id);
       if (reconciliation.noFabricatedEvidence && reconciliation.noFabricatedPersonas
         && reconciliation.noFabricatedConnectedData) {
-        refreshJourneyMapForLegacyJourney(journey, spaceId, { bumpRevision: true });
+        try {
+          refreshJourneyMapForLegacyJourney(journey, spaceId, { bumpRevision: true });
+        } catch (error) {
+          recordJourneyDivergence({
+            spaceId, journeyId: journey.id, definitionId: reconciliation.definitionId, operation: 'shadow_read',
+            servedSource: 'v2', legacyChecksum: reconciliation.sourceChecksum,
+            v2Checksum: reconciliation.projectionChecksum, reasonCode: 'v2_refresh_blocked',
+            detailCodes: [(error as { code?: string }).code || (error instanceof Error ? error.message : 'refresh_failed')],
+            requestId
+          });
+        }
       } else {
         recordJourneyDivergence({
           spaceId, journeyId: journey.id, definitionId: reconciliation.definitionId, operation: 'shadow_read',
