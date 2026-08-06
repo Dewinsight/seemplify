@@ -54,4 +54,6 @@ test('legacy Brevo-shaped senders cannot override the authenticated Seemplify se
   assert.equal(calls[0].body.from, 'no-reply@seemplifyai.com');
   assert.equal(calls[0].body.fromName, 'Example Organization');
   assert.equal(calls[0].headers.Authorization, 'Bearer recruiter.test-secret');
+  assert.match(calls[0].headers['Idempotency-Key'], /^[A-Za-z0-9._-]{8,128}$/);
+  assert.equal(calls[0].headers['Idempotency-Key'].includes(':'), false);
 });

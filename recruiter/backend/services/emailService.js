@@ -46,7 +46,13 @@ function messageDigestKey(tag, recipients, subject, html, text) {
   const digest = crypto.createHash('sha256')
     .update(JSON.stringify([tag, recipients.map((item) => item.toLowerCase()).sort(), subject || '', html || '', text || '']))
     .digest('hex');
-  return `${tag}:${digest.slice(0, 32)}`;
+  // The mail API accepts only [A-Za-z0-9._-] in Idempotency-Key. A colon
+  // previously made every legacy-adapter send (including onboarding invites)
+  // fail at the API boundary before it could be queued.
+  const safeTag = String(tag || 'recruiter_email')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'recruiter_email';
+  return `${safeTag}-${digest.slice(0, 32)}`;
 }
 
 /** Minimal fetch-Response stand-in for the provider-shaped call sites. */
