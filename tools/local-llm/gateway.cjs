@@ -1486,7 +1486,10 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
     if (providerOutcomeMustNotRepeat && metering && executionLease && !receiptPrepared) {
       const terminalUsageEnvelope = {
         id: usageEnvelope?.id || metering.gatewayExecutionId,
-        engine: usageEnvelope?.engine || selected.id,
+        // A per-user turn never ran on the managed engine, so a failure must
+        // not be audited against it: that reads as a fallback that never
+        // happened. The subject pins the engine regardless of the selection.
+        engine: usageEnvelope?.engine || (input.codexSubject ? 'codex' : selected.id),
         model: usageEnvelope?.model || selected.model,
         usage: usageEnvelope?.usage || {
           input_tokens: 0,
@@ -1540,7 +1543,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
         await persistAtSourceUsage(atSourceUsageRecord({
           metering,
           activity: input.activity,
-          engine: usageEnvelope.engine || selected.id,
+          engine: usageEnvelope.engine || (input.codexSubject ? 'codex' : selected.id),
           model: usageEnvelope.model || selected.model,
           provider: input.codexSubject ? 'chatgpt-codex' : undefined,
           providerRequestId: usageEnvelope.id,

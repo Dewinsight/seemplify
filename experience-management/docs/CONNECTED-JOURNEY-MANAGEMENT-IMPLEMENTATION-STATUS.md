@@ -423,8 +423,15 @@ Runtime schema 15 now supplies an immutable, idempotent usage ledger and
 reconcilable monthly buckets. Journey exports use atomic per-space admission,
 enforce the exact UTC-month quota after successful rendering, and expose only
 aggregate usage. The generic ledger does not make the whole catalogue complete:
-most new Journey capabilities still lack route-by-route entitlement/quota
-integration and granular `journeys.*` capabilities. The mixed direct/durable
+several newer Journey capabilities still lack full route-by-route
+entitlement/quota integration and a completed granular `journeys.*`
+capability matrix. Legacy `/api/journeys` now have explicit
+read/edit/export guards, and focused HTTP governance proof now covers Journey
+Map publish, shared saved-view management/settings/audit, Journey Research gap
+creation, Journey Rich Card catalogue mutation, Journey AI suggestion
+review/apply entry points, Journey Metric alert-definition creation, and
+Journey Identity customer-360/export/privacy-job entry points. The
+mixed direct/durable
 `monthlyAiActions` concurrency gap is closed: both paths share one immutable
 ledger and per-space mutex, and durable creation/retries use idempotent
 job/generation/attempt reservations. Durable feature flags

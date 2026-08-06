@@ -199,7 +199,16 @@ async function listModels(user, options = {}) {
 async function resolveRoutableSubject(userId) {
   const subjectId = String(userId || '').trim();
   if (!subjectId) return null;
-  const account = await AIUserRuntimeAccount.findOne({ user: subjectId });
+  // An actor id that is not a real user reference is simply "no connected
+  // account": it must reach the runtime gate, not surface a database cast
+  // error with no machine-readable code for callers to route on.
+  let account = null;
+  try {
+    account = await AIUserRuntimeAccount.findOne({ user: subjectId });
+  } catch (error) {
+    console.warn('ChatGPT subject lookup failed:', error.message);
+    return null;
+  }
   if (!account || !account.isRoutable()) return null;
   return { subjectId, subjectKey: account.subjectKey, sourceApp: SOURCE_APP };
 }

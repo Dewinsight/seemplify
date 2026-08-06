@@ -942,7 +942,10 @@ class AIRuntimeService {
       atSourceOnly: false,
       sourceApp: context.sourceApp || 'recruiter',
       activity: route.activity,
-      provider: data?.provider || route.provider,
+      // A user-owned route is authoritative about who ran the work: a failed
+      // turn must not be audited under a managed provider, which would read
+      // as a fallback to platform capacity that never happened.
+      provider: isUserOwnedProvider(route.provider) ? route.provider : (data?.provider || route.provider),
       model: data?.model || route.model,
       // Personal-plan work must stay separable from billable platform usage in
       // every rollup, so the owner is stamped on the durable event itself.
