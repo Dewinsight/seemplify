@@ -73,13 +73,33 @@ async function callGateway(operation, userId, { timeoutMs = 30_000, fetchImpl = 
   return payload;
 }
 
+/** The auth token only carries a user id, so the organization is resolved
+ * from the user document — and healed onto older account rows that were
+ * created before it was known, because background work (public CV analysis)
+ * finds the workspace's runtime account by organization. */
+async function organizationForUser(user, userId) {
+  if (user?.currentOrganization) return user.currentOrganization;
+  const User = require('../../models/User');
+  const document = await User.findById(userId).select('currentOrganization').lean();
+  return document?.currentOrganization || undefined;
+}
+
 async function accountForUser(user) {
   const userId = String(user?.id || user?._id || '');
   const existing = await AIUserRuntimeAccount.findOne({ user: userId });
-  if (existing) return existing;
+  if (existing) {
+    if (!existing.organization) {
+      const organization = await organizationForUser(user, userId);
+      if (organization) {
+        existing.organization = organization;
+        await existing.save();
+      }
+    }
+    return existing;
+  }
   return AIUserRuntimeAccount.create({
     user: userId,
-    organization: user?.currentOrganization || undefined,
+    organization: await organizationForUser(user, userId),
     subjectKey: subjectKeyForUser(userId),
     status: 'disconnected'
   });

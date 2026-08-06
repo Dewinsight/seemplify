@@ -1005,8 +1005,84 @@ function isOfflineError(error) {
       .test(String(error?.message || ''));
 }
 
+/**
+ * The ChatGPT runtime family of failures: nobody's fault and nothing a retry
+ * can fix until an administrator flips a switch, a recruiter connects or
+ * re-consents their account, or a personal plan's usage window resets. A CV
+ * must never be lost to any of these — it waits in the pipeline instead.
+ */
+function isRuntimeGateError(error) {
+  return [
+    'AI_RUNTIME_ACCOUNT_REQUIRED',
+    'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED',
+    'AI_RUNTIME_LOCAL_DISABLED',
+    'AI_RUNTIME_CHATGPT_DISABLED',
+    'AI_RUNTIMES_DISABLED',
+    'CHATGPT_NOT_CONNECTED',
+    'CHATGPT_SUBJECT_UNRESOLVED'
+  ].includes(String(error?.code || ''))
+    || (String(error?.code || '') === 'CODEX_TURN_FAILED'
+      && /usage limit|rate limit|too many requests/i.test(String(error?.message || '')));
+}
+
 function isUnboundedRuntimeDeferral(error) {
-  return isOfflineError(error) || isBusyError(error);
+  return isOfflineError(error) || isBusyError(error) || isRuntimeGateError(error);
+}
+
+/**
+ * A public applicant has no account, but the workspace may still have a
+ * personal ChatGPT runtime: the recruiter who connected a routable account.
+ * Attributing actorless work to that recruiter lets it run on whichever
+ * runtime the administrator selected — exactly as if the recruiter had
+ * uploaded the CV themselves — instead of failing when the local model is off.
+ */
+const organizationRuntimeActorCache = new Map();
+const ORGANIZATION_RUNTIME_ACTOR_TTL_MS = 60_000;
+
+async function resolveOrganizationRuntimeActor(organizationId) {
+  const key = String(organizationId || '');
+  if (!key) return null;
+  const cached = organizationRuntimeActorCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  let value = null;
+  try {
+    const AIUserRuntimeAccount = require('../models/AIUserRuntimeAccount');
+    let account = await AIUserRuntimeAccount.findOne({
+      organization: organizationId,
+      status: 'connected',
+      dataSharingAcknowledgedAt: { $ne: null }
+    }).sort({ connectedAt: -1 }).select('user').lean();
+    if (!account) {
+      // Accounts connected before their organization was recorded heal
+      // lazily elsewhere; here they are matched through their user so parked
+      // public work does not have to wait for that.
+      const orphans = await AIUserRuntimeAccount.find({
+        organization: null,
+        status: 'connected',
+        dataSharingAcknowledgedAt: { $ne: null }
+      }).sort({ connectedAt: -1 }).limit(20).select('user').lean();
+      for (const candidate of orphans) {
+        const member = await User.findById(candidate.user).select('currentOrganization').lean();
+        if (member && String(member.currentOrganization || '') === key) {
+          account = candidate;
+          await AIUserRuntimeAccount.updateOne(
+            { user: candidate.user, organization: null },
+            { $set: { organization: organizationId } }
+          );
+          break;
+        }
+      }
+    }
+    if (account?.user) {
+      const owner = await User.findById(account.user)
+        .select('email profile.firstName profile.lastName profile.displayName').lean();
+      if (owner) value = { id: String(account.user), user: owner };
+    }
+  } catch (error) {
+    console.warn('Organization runtime actor lookup failed:', error.message);
+  }
+  organizationRuntimeActorCache.set(key, { value, expiresAt: Date.now() + ORGANIZATION_RUNTIME_ACTOR_TTL_MS });
+  return value;
 }
 
 function isRetryableProcessingError(error) {
@@ -2484,6 +2560,11 @@ async function processJob(bullJob, workerToken) {
         ? User.findById(processingJob.actor).select('email profile.firstName profile.lastName profile.displayName').lean()
         : Promise.resolve(null)
     ]);
+    const runtimeActor = processingJob.actor
+      ? null
+      : await resolveOrganizationRuntimeActor(processingJob.organization);
+    const effectiveActorId = processingJob.actor ? String(processingJob.actor) : runtimeActor?.id;
+    const effectiveActor = actor || runtimeActor?.user || null;
     const analysis = await runInferenceWithGlobalPermit(
       bullJob,
       workerToken,
@@ -2497,11 +2578,11 @@ async function processJob(bullJob, workerToken) {
           sourceApp: 'recruiter-cv-worker',
           organizationId: String(processingJob.organization),
           organizationName: organization?.name,
-          actorId: processingJob.actor ? String(processingJob.actor) : undefined,
-          actorName: personName(actor)
+          actorId: effectiveActorId || undefined,
+          actorName: personName(effectiveActor)
             || [processingJob.formData?.firstName, processingJob.formData?.lastName].filter(Boolean).join(' ')
             || (processingJob.source === 'public' ? 'Public applicant' : undefined),
-          actorEmail: actor?.email || processingJob.formData?.email,
+          actorEmail: effectiveActor?.email || processingJob.formData?.email,
           jobId: processingJob.publicId,
           requestId: `cv-queue:${processingJob.publicId}`,
           usageExecutionId: `cv-queue:${processingJob.publicId}`,
@@ -2926,6 +3007,34 @@ async function retryJobNow(publicId, { requestedBy, stage = 'failed' } = {}) {
   await syncHistorySafely(job._id);
   publishTelemetrySoon(0);
   return { job: await CVProcessingJob.findById(job._id), queueAvailable: true, requestedAt: new Date() };
+}
+
+/**
+ * Wakes an organization's parked CV analyses without waiting out their
+ * backoff — called when a recruiter logs in, because their arrival is often
+ * exactly what unblocks the work (a freshly routable ChatGPT account, or a
+ * human about to fix the runtime). Returns what a login notification needs.
+ */
+async function promoteWaitingJobsForOrganization(organizationId, { limit = 25 } = {}) {
+  const waiting = await CVProcessingJob.find({
+    organization: organizationId,
+    state: 'waiting_for_local_runtime',
+    source: { $ne: 'ai-interview' }
+  }).sort({ createdAt: 1 }).limit(Math.max(1, limit)).select('publicId').lean();
+  let promoted = 0;
+  for (const job of waiting) {
+    try {
+      await retryJobNow(job.publicId, {
+        requestedBy: { type: 'system', name: 'Login runtime check' }
+      });
+      promoted += 1;
+    } catch (error) {
+      if (error?.code !== 'CV_RETRY_NOT_WAITING') {
+        console.warn(`CV login promotion skipped ${job.publicId}:`, error.message);
+      }
+    }
+  }
+  return { waiting: waiting.length, promoted };
 }
 
 function cleanupIsDue(resource, now) {
@@ -3811,9 +3920,12 @@ module.exports = {
   publishTelemetry,
   retryFailedJob,
   retryJobNow,
+  promoteWaitingJobsForOrganization,
+  resolveOrganizationRuntimeActor,
   cvBackoffDelay,
   isBusyError,
   isOfflineError,
+  isRuntimeGateError,
   isUnboundedRuntimeDeferral,
   isRetryableProcessingError,
   deferredRetryDelay,
