@@ -55,6 +55,7 @@ import {
 import OrganizationSwitcher from "@/components/OrganizationSwitcher";
 import { Logo } from "@/components/ui/Logo";
 import NotificationDropdown from "@/components/NotificationDropdown";
+import { OpenAILogo } from "@/components/ui/openai-logo";
 import { useFeatureFlags } from "@/context/FeatureFlagsContext";
 import type { PlatformFeatureKey } from "@/lib/platformFeatures";
 
@@ -284,6 +285,21 @@ const TopNavbar = () => {
           <div className="w-full flex-1 md:w-auto md:flex-none">
             {currentOrganization && <OrganizationSwitcher showCreateOption={true} />}
           </div>
+          {/* Direct route to the ChatGPT connection: the AI runs on the
+              signed-in person's own account, so it needs a standing entry
+              point rather than only appearing when something blocks. */}
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="hidden gap-2 sm:inline-flex"
+            data-testid="nav-connect-chatgpt"
+          >
+            <Link href="/settings/ai-account">
+              <OpenAILogo className="h-4 w-4" />
+              <span>ChatGPT</span>
+            </Link>
+          </Button>
           <NotificationDropdown />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -440,14 +440,32 @@ class CodexSubjectSession {
   async startDeviceLogin() {
     const status = await this.accountStatus();
     if (status.connected) return { connected: true };
+    // A pending sign-in is resumable: the person still has to type this code on
+    // OpenAI's site, so handing back the one already issued is what they need.
+    // Refusing here used to strand them with an error and no way forward.
     if (this.loginState?.pending) {
+      if (this.loginState.verificationUrl && this.loginState.userCode) {
+        return {
+          connected: false,
+          loginId: this.loginState.loginId,
+          verificationUrl: this.loginState.verificationUrl,
+          userCode: this.loginState.userCode,
+          resumed: true
+        };
+      }
       throw codexError('A ChatGPT sign-in is already waiting for completion.', 'CODEX_LOGIN_PENDING');
     }
     const result = await this.request('account/login/start', { type: 'chatgptDeviceCode' }, 30_000);
     if (!result?.loginId || !result?.verificationUrl || !result?.userCode) {
       throw codexError('Codex did not return a valid ChatGPT device sign-in request.', 'CODEX_LOGIN_INVALID');
     }
-    this.loginState = { loginId: String(result.loginId), pending: true, error: null };
+    this.loginState = {
+      loginId: String(result.loginId),
+      pending: true,
+      error: null,
+      verificationUrl: String(result.verificationUrl),
+      userCode: String(result.userCode)
+    };
     return {
       connected: false,
       loginId: String(result.loginId),

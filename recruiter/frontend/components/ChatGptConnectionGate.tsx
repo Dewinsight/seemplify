@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { usePathname } from "next/navigation"
-import { Bot, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react"
+import { Bot, Copy, ExternalLink, Loader2, LogOut, RefreshCw } from "lucide-react"
+import { OpenAILogo } from "@/components/ui/openai-logo"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -46,7 +47,7 @@ const SIGNED_OUT_ROUTES = [
  */
 export function ChatGptConnectionGate() {
   const pathname = usePathname()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, logout } = useAuth()
   const signedOutRoute = SIGNED_OUT_ROUTES.some(
     (route) => pathname === route || pathname?.startsWith(`${route}/`)
   )
@@ -143,7 +144,18 @@ export function ChatGptConnectionGate() {
     setCopied(false)
     try {
       if (restart) await aiAccountService.cancelLogin().catch(() => undefined)
-      const { login, account: next } = await aiAccountService.startLogin()
+      let result
+      try {
+        result = await aiAccountService.startLogin()
+      } catch (reason: any) {
+        // An older pending sign-in that cannot be resumed must not strand the
+        // user: clear it and issue a fresh code rather than showing an error
+        // with nothing to click.
+        if (restart || reason?.code !== "CODEX_LOGIN_PENDING") throw reason
+        await aiAccountService.cancelLogin().catch(() => undefined)
+        result = await aiAccountService.startLogin()
+      }
+      const { login, account: next } = result
       setAccount(next)
       if (login.connected) {
         await acknowledgeConsent()
@@ -167,6 +179,13 @@ export function ChatGptConnectionGate() {
     }
   }
 
+  /** The gate blocks the whole workspace, so signing out has to stay
+   * reachable — otherwise someone without a ChatGPT plan is stuck. */
+  function signOut() {
+    setAiRuntimeSetupGateOpen(false)
+    logout()
+  }
+
   function continueWithLocal() {
     sessionStorage.setItem(LOCAL_CHOICE_KEY, "local")
     setLocalChoice(true)
@@ -187,10 +206,17 @@ export function ChatGptConnectionGate() {
         onInteractOutside={(event) => event.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5" />
-            {needsConsent ? "Use ChatGPT for this workspace" : "Connect ChatGPT to continue"}
-          </DialogTitle>
+          <div className="mb-1 flex items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0d0d0d] text-white shadow-sm dark:bg-white dark:text-[#0d0d0d]">
+              <OpenAILogo className="h-6 w-6" />
+            </span>
+            <div className="min-w-0">
+              <DialogTitle className="text-left text-base leading-tight">
+                {needsConsent ? "Use ChatGPT for this workspace" : "Connect ChatGPT to continue"}
+              </DialogTitle>
+              <p className="mt-0.5 text-xs text-muted-foreground">Powered by your OpenAI account</p>
+            </div>
+          </div>
           <DialogDescription>
             {needsConsent
               ? `${accountName} is connected. Confirm to make it the AI runtime for your work.`
@@ -226,7 +252,7 @@ export function ChatGptConnectionGate() {
                     data-testid="chatgpt-gate-device-code"
                     readOnly
                     value={deviceLogin.userCode || ""}
-                    className="font-mono tracking-widest"
+                    className="h-11 text-center font-mono text-lg tracking-[0.35em]"
                     onFocus={(event) => event.currentTarget.select()}
                   />
                   <Button type="button" variant="outline" onClick={() => void copyCode()}>
@@ -260,7 +286,22 @@ export function ChatGptConnectionGate() {
           )}
         </div>
 
-        <DialogFooter className={setup === "choice" ? "sm:items-center sm:justify-between" : "sm:justify-end"}>
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* A blocking dialog must never trap someone: signing out is
+                always available, and a stuck sign-in can be started over. */}
+            <Button type="button" variant="ghost" size="sm" onClick={signOut} data-testid="chatgpt-gate-logout">
+              <LogOut className="mr-1 h-4 w-4" />Sign out
+            </Button>
+            {(deviceLogin || account?.status === "pending") && (
+              <Button type="button" variant="ghost" size="sm" disabled={busy}
+                data-testid="chatgpt-gate-start-over" onClick={() => void connect(true)}>
+                {working === "restart" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
+                Start over
+              </Button>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
           {setup === "choice" && (
             <Button
               type="button"
@@ -272,9 +313,10 @@ export function ChatGptConnectionGate() {
             </Button>
           )}
           {deviceLogin ? (
-            <Button type="button" variant="ghost" disabled={busy} data-testid="chatgpt-gate-retry" onClick={() => void connect(true)}>
-              {working === "restart" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
-              Restart sign-in
+            <Button asChild disabled={busy} data-testid="chatgpt-gate-open-openai">
+              <a href={deviceLogin.verificationUrl || "https://chatgpt.com"} target="_blank" rel="noreferrer noopener">
+                Open OpenAI<ExternalLink className="ml-1 h-4 w-4" />
+              </a>
             </Button>
           ) : needsConsent ? (
             <Button type="button" disabled={busy} data-testid="chatgpt-gate-enable" onClick={() => void acknowledgeConsent()}>
@@ -287,6 +329,7 @@ export function ChatGptConnectionGate() {
               Connect ChatGPT
             </Button>
           )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
