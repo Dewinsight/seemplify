@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const emailService = require('../services/emailService');
 const planService = require('../services/planService');
 const idpService = require('../services/idpService');
-const { verifySubscriptionAccess } = require('../services/idpSubscriptionService');
+const { syncOrganizationNameFromIdp } = require('../utils/organizationIdentitySync');
 
 // Create organization - REQUIRES IdP as the source of truth
 exports.createOrganization = async (req, res) => {
@@ -232,6 +232,8 @@ exports.getUserOrganizations = async (req, res) => {
           console.log('✅ Created local shell org:', localOrg._id);
         }
 
+        await syncOrganizationNameFromIdp(localOrg, idpOrg);
+
         organizations.push({
           _id: localOrg._id, // Always use local MongoDB ID
           idpOrganizationId: idpOrg.id,
@@ -247,14 +249,15 @@ exports.getUserOrganizations = async (req, res) => {
         });
       }
 
-      // Check if user needs organization setup - redirect to IdP
+      // Check if user needs organization setup - IdP is single source of truth
       if (organizations.length === 0) {
-        const idpUrl = process.env.IDP_HUB_URL || process.env.OIDC_ISSUER || 'http://localhost:4000';
+        console.log('❌ No organizations found in IdP - user needs to create or join one');
         return res.status(400).json({
           msg: 'Organization required. Please create or join an organization in the Identity Provider.',
           requiresOrganizationSetup: true,
-          organizations: [],
-          redirectUrl: `${idpUrl}/organizations`
+          redirectToIdp: true,
+          idpUrl: idpService.getIdpManagementUrl(null, 'organizations'),
+          organizations: []
         });
       }
 
@@ -264,7 +267,8 @@ exports.getUserOrganizations = async (req, res) => {
     } catch (idpError) {
       console.error('❌ Failed to fetch organizations from IdP:', idpError.message);
 
-      // NO FALLBACK - If IdP fails, return error
+      // NO FALLBACK - IdP is the single source of truth
+      // If IdP is unavailable, user cannot proceed
       return res.status(503).json({
         msg: 'Identity Provider unavailable. Please try again later.',
         code: 'idp_unavailable',
@@ -370,23 +374,7 @@ exports.switchOrganization = async (req, res) => {
         return res.status(403).json({ msg: 'Access denied to this organization' });
       }
 
-      // Verify subscription access for the target organization
-      console.log('🔒 Verifying subscription access for org:', localOrg.idpOrganizationId);
-      const subscriptionCheck = await verifySubscriptionAccess(
-        localOrg.idpOrganizationId,
-        user.idpAccessToken
-      );
-
-      if (!subscriptionCheck.allowed) {
-        console.log('❌ Organization switch denied - no subscription:', subscriptionCheck.reason);
-        return res.status(403).json({
-          msg: 'This organization does not have access to SmartHR/Recruiter',
-          code: 'SUBSCRIPTION_REQUIRED',
-          reason: subscriptionCheck.reason,
-          subscribeUrl: subscriptionCheck.subscribeUrl || `${process.env.OIDC_ISSUER || 'http://localhost:4000'}/plans`
-        });
-      }
-      console.log('✅ Subscription access verified for recruiter');
+      await syncOrganizationNameFromIdp(localOrg, idpOrg);
 
       console.log('✅ User is member of organization in IdP, switching...');
 
@@ -505,7 +493,7 @@ exports.inviteUser = async (req, res) => {
     let emailError = null;
 
     if (!emailConfig.isConfigured) {
-      emailError = 'Email service is not configured - BREVO_API_KEY missing';
+      emailError = 'Email service is not configured - MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL missing';
       console.error('❌ Cannot send email - service not configured');
     } else {
       try {
@@ -680,6 +668,7 @@ exports.getOrganization = async (req, res) => {
       const idpOrg = await idpService.getOrganization(localOrg.idpOrganizationId, userId);
 
       console.log('✅ IdP returned organization:', idpOrg.name);
+      await syncOrganizationNameFromIdp(localOrg, idpOrg);
 
       // Merge IdP data with local plan data
       const organization = {
@@ -944,6 +933,7 @@ exports.getOrganizationMembers = async (req, res) => {
 
         // Transform IdP response to match expected frontend format
         const members = idpData.members.map(m => ({
+          _id: m.id,  // Member-level _id for frontend compatibility (used in SelectItem key/value)
           user: {
             _id: m.id,
             email: m.email,

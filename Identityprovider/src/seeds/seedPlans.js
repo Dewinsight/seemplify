@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import dotenv from 'dotenv'
 import Plan from '../models/Plan.js'
+import { buildDefaultTrialPlanData } from '../config/defaultTrialPlan.js'
 
 dotenv.config()
 
@@ -104,36 +105,7 @@ const defaultPlans = [
     color: '#ec4899'
   },
   {
-    name: 'Trial',
-    slug: 'trial',
-    description: 'Free 14-day trial with full Professional features.',
-    pricing: {
-      monthly: 0,
-      yearly: 0,
-      yearlyDiscount: 0,
-      currency: 'NGN'
-    },
-    limits: {
-      maxMembers: 20,
-      maxTeams: 5,
-      maxStorage: 10 // 10 GB
-    },
-    features: {
-      recruiter: true,
-      leaveManagement: true,
-      payrollManagement: true,
-      performanceManagement: true,
-      outlineDocs: false,
-      aiChat: false,
-      lms: false
-    },
-    isActive: true,
-    isPublic: false, // Not visible to regular users, only for admin assignment
-    isFeatured: false,
-    isTrial: true,
-    trialDays: 14,
-    displayOrder: 0,
-    color: '#22c55e'
+    ...buildDefaultTrialPlanData()
   }
 ]
 

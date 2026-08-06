@@ -24,10 +24,43 @@ const {
   logLeaveRequestRejected,
   logLeaveRequestCancelled,
 } = require('../services/auditService');
+const emailService = require('../services/emailService');
 
 // Apply auth and org middleware to all routes
 router.use(requireAuth);
 router.use(requireOrganization);
+
+function collectLineManagerRecipients(userinfo, organizationId, teamId, requesterId) {
+  const teams = (userinfo?.teams || []).filter(team => {
+    const orgMatch = team.organizationId === organizationId;
+    const teamMatch = teamId ? team.id === teamId : true;
+    return orgMatch && teamMatch;
+  });
+
+  const recipientsByEmail = new Map();
+
+  for (const team of teams) {
+    const email = String(team.managerEmail || '').trim();
+    if (!email) continue;
+
+    const managerId = team.managerId ? String(team.managerId) : null;
+    if (managerId && managerId === String(requesterId)) continue;
+
+    const key = email.toLowerCase();
+    if (recipientsByEmail.has(key)) continue;
+
+    recipientsByEmail.set(key, {
+      userId: managerId,
+      userName: team.managerName || 'Line Manager',
+      userEmail: email,
+      teamId: team.id || null,
+      teamName: team.name || null,
+      assignmentType: 'line_manager',
+    });
+  }
+
+  return Array.from(recipientsByEmail.values());
+}
 
 // Get all leave requests for current user
 router.get('/', asyncHandler(async (req, res) => {
@@ -80,6 +113,8 @@ router.get('/approvals',
     // If user has full org permissions, show all pending
     if (req.hasFullAccess || req.organizationRole === 'admin' || req.organizationRole === 'hr_manager') {
       // Show all pending requests for org
+    } else if (req.hasDepartmentHeadAccess) {
+      query.userId = { $in: req.scopedEmployeeIds || [] };
     } else if (req.hasTeamPermission) {
       // Show only requests from team members (direct reports + sub-team members)
       const userTeams = (userinfo.teams || []).filter(
@@ -148,6 +183,9 @@ router.get('/team',
 
     // If not full access, filter to team members
     if (!req.hasFullAccess && req.organizationRole !== 'admin' && req.organizationRole !== 'hr_manager') {
+      if (req.hasDepartmentHeadAccess) {
+        query.userId = { $in: req.scopedEmployeeIds || [] };
+      } else {
       const userTeams = (userinfo.teams || []).filter(
         t => t.organizationId === req.organizationId && 
              (t.role === 'line_manager' || t.role === 'team_lead' || t.isManager)
@@ -165,6 +203,7 @@ router.get('/team',
       } else {
         // Fallback: check by assigned approver
         query['assignedApprover.userId'] = req.user.id;
+      }
       }
     }
 
@@ -286,6 +325,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
     const hasPermission = req.hasFullAccess ||
       req.organizationRole === 'admin' ||
       req.organizationRole === 'hr_manager' ||
+      req.hasDepartmentHeadAccess ||
       req.teamPermissions?.includes('view_team_leaves');
 
     if (!hasPermission) {
@@ -419,6 +459,47 @@ router.post('/',
     // Log audit
     await logLeaveRequestCreated(leaveRequest, req.user, req);
 
+    // Email notifications
+    if (policy.notifyApproversOnRequest) {
+      const lineManagerRecipients = collectLineManagerRecipients(
+        userinfo,
+        req.organizationId,
+        teamId,
+        req.user.id
+      );
+
+      const recipientsByEmail = new Map(
+        lineManagerRecipients.map(recipient => [
+          String(recipient.userEmail).toLowerCase(),
+          recipient,
+        ])
+      );
+
+      // Keep assigned approver coverage as fallback/additional recipient.
+      if (leaveRequest.assignedApprover?.userEmail) {
+        const approverEmailKey = String(leaveRequest.assignedApprover.userEmail).toLowerCase();
+        if (!recipientsByEmail.has(approverEmailKey)) {
+          recipientsByEmail.set(approverEmailKey, {
+            userId: leaveRequest.assignedApprover.userId,
+            userName: leaveRequest.assignedApprover.userName,
+            userEmail: leaveRequest.assignedApprover.userEmail,
+            teamId: leaveRequest.assignedApprover.teamId,
+            assignmentType: leaveRequest.assignedApprover.assignmentType,
+          });
+        }
+      }
+
+      const recipients = Array.from(recipientsByEmail.values());
+      if (recipients.length > 0) {
+        await Promise.allSettled(
+          recipients.map(recipient =>
+            emailService.sendLeaveRequestSubmittedToRecipient(leaveRequest, recipient)
+          )
+        );
+      }
+    }
+    await emailService.sendLeaveRequestCreatedConfirmation(leaveRequest);
+
     res.status(201).json({
       success: true,
       request: leaveRequest,
@@ -512,6 +593,12 @@ router.post('/:id/approve',
     // Log audit
     await logLeaveRequestApproved(leaveRequest, req.user, req, comment);
 
+    // Email notifications
+    const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
+    if (policy.notifyRequesterOnDecision) {
+      await emailService.sendLeaveRequestApproved(leaveRequest);
+    }
+
     res.json({
       success: true,
       request: leaveRequest,
@@ -583,6 +670,12 @@ router.post('/:id/reject',
 
     // Log audit
     await logLeaveRequestRejected(leaveRequest, req.user, req, reason);
+
+    // Email notifications
+    const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
+    if (policy.notifyRequesterOnDecision) {
+      await emailService.sendLeaveRequestRejected(leaveRequest);
+    }
 
     res.json({
       success: true,
@@ -662,6 +755,12 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 
   // Log audit
   await logLeaveRequestCancelled(leaveRequest, req.user, req, reason);
+
+  // Email notifications
+  const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
+  if (policy.notifyApproversOnRequest && leaveRequest.assignedApprover?.userEmail) {
+    await emailService.sendLeaveRequestCancelled(leaveRequest);
+  }
 
   res.json({
     success: true,

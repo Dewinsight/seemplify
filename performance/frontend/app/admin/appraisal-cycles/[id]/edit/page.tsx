@@ -1,95 +1,201 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useUserContext, useDirectReports } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
-    Box, Typography, Card, CardContent, Grid, Button, TextField,
-    FormControl, InputLabel, Select, MenuItem, Slider, Divider,
-    FormControlLabel, Switch, CircularProgress, Alert
+    Alert,
+    AlertTitle,
+    Box,
+    Button,
+    Card,
+    CardContent,
+    Checkbox,
+    Chip,
+    CircularProgress,
+    Divider,
+    FormControl,
+    FormControlLabel,
+    Grid,
+    InputAdornment,
+    InputLabel,
+    MenuItem,
+    Select,
+    Slider,
+    Stack,
+    Switch,
+    Tab,
+    Tabs,
+    TextField,
+    Typography
 } from '@mui/material';
-import { Save, ArrowBack } from '@mui/icons-material';
+import {
+    ArrowBack,
+    CheckCircle,
+    Groups,
+    RocketLaunch,
+    Save,
+    Search,
+    WarningAmber
+} from '@mui/icons-material';
+
+interface AssignableEmployee {
+    userId: string;
+    name: string;
+    email: string;
+    department?: string;
+    departmentId?: string;
+    departmentName?: string;
+    jobTitle?: string;
+    teamId?: string;
+    teamIds?: string[];
+    teamName?: string;
+    teamRole?: string;
+    managerId?: string;
+    managerName?: string;
+    managerEmail?: string;
+    isManager?: boolean;
+    isSelf?: boolean;
+    isSelectableForAppraisal?: boolean;
+    selectionBlockedReason?: string | null;
+}
+
+interface ManagedTeamOption {
+    id?: string;
+    _id?: string;
+    teamId?: string;
+    name?: string;
+    teamName?: string;
+}
 
 const cycleTypeLabels: Record<string, string> = {
-    'annual': 'Annual Review',
+    annual: 'Annual Review',
     'semi-annual': 'Semi-Annual Review',
-    'quarterly': 'Quarterly Review',
-    'probation': 'Probation Review',
-    'project': 'Project-Based Review',
-    'adhoc': 'Ad-Hoc Review'
+    quarterly: 'Quarterly Review',
+    probation: 'Probation Review',
+    project: 'Project-Based Review',
+    adhoc: 'Ad-Hoc Review'
 };
 
 const phaseLabels: Record<string, string> = {
-    'selfAssessment': 'Self-Assessment',
-    'managerReview': 'Manager Review',
-    'calibration': 'Calibration',
-    'finalReview': 'Final Review'
+    selfAssessment: 'Self-Assessment',
+    managerReview: 'Manager Review',
+    calibration: 'Calibration',
+    finalReview: 'Final Review'
 };
+
+const defaultFormData = {
+    name: '',
+    description: '',
+    cycleType: 'annual',
+    periodStart: '',
+    periodEnd: '',
+    okrWeight: 40,
+    scope: {
+        type: 'organization',
+        targetIds: [] as string[]
+    },
+    phases: {
+        selfAssessment: { startDate: '', endDate: '' },
+        managerReview: { startDate: '', endDate: '' },
+        calibration: { startDate: '', endDate: '' },
+        finalReview: { startDate: '', endDate: '' }
+    },
+    settings: {
+        allowSelfRating: true,
+        requireDocumentUpload: false,
+        requireOkrAlignment: true,
+        enablePeerFeedback: true,
+        enable360Feedback: false,
+        enableAiAssist: true,
+        enableChat: true,
+        requireSignOff: true
+    }
+};
+
+function formatDateForInput(dateString: string) {
+    if (!dateString) return '';
+    return new Date(dateString).toISOString().split('T')[0];
+}
+
+function normalizeManagedTeamId(team: ManagedTeamOption) {
+    return team?.teamId || team?.id || team?._id || '';
+}
+
+function normalizeManagedTeamName(team: ManagedTeamOption) {
+    return team?.teamName || team?.name || 'Unnamed Team';
+}
+
+function buildScopeFromEmployees(isHRAdmin: boolean, employees: AssignableEmployee[]) {
+    const targetIds = Array.from(
+        new Set(
+            employees.flatMap((employee) => {
+                const teamIds = Array.isArray(employee.teamIds) ? employee.teamIds : [];
+                return [...teamIds, employee.teamId].filter(Boolean).map((value) => String(value));
+            })
+        )
+    );
+
+    if (isHRAdmin) {
+        if (targetIds.length === 1) {
+            return { type: 'team', targetIds };
+        }
+
+        return { type: 'organization', targetIds: [] as string[] };
+    }
+
+    return { type: 'team', targetIds };
+}
+
+function matchesEmployeeSearch(employee: AssignableEmployee, query: string) {
+    if (!query) return true;
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return true;
+
+    return [
+        employee.name,
+        employee.email,
+        employee.teamName,
+        employee.department,
+        employee.departmentName,
+        employee.jobTitle,
+        employee.managerName,
+        employee.managerEmail
+    ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedQuery));
+}
 
 export default function EditAppraisalCyclePage() {
     const router = useRouter();
     const params = useParams();
-    const { isHRAdmin, user } = useUserContext();
-    const { managedTeams } = useDirectReports(); // Fetch teams managed by the user
+    const { isHRAdmin } = useUserContext();
+    const { managedTeams } = useDirectReports();
+    const cycleId = params.id as string;
+    const isNewCycle = cycleId === 'new';
+
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+    const [saveError, setSaveError] = useState('');
+    const [formData, setFormData] = useState(defaultFormData);
 
-    // Helper to format date for input
-    const formatDateForInput = (dateString: string) => {
-        if (!dateString) return '';
-        return new Date(dateString).toISOString().split('T')[0];
-    };
-
-    const [formData, setFormData] = useState({
-        name: '',
-        description: '',
-        cycleType: 'annual',
-        periodStart: '',
-        periodEnd: '',
-        okrWeight: 40,
-        scope: {
-            type: 'organization',
-            targetIds: [] as string[]
-        },
-        phases: {
-            selfAssessment: { startDate: '', endDate: '' },
-            managerReview: { startDate: '', endDate: '' },
-            calibration: { startDate: '', endDate: '' },
-            finalReview: { startDate: '', endDate: '' }
-        },
-        settings: {
-            allowSelfRating: true,
-            requireDocumentUpload: false,
-            requireOkrAlignment: true,
-            enablePeerFeedback: true,
-            enable360Feedback: false,
-            enableAiAssist: true,
-            enableChat: true,
-            requireSignOff: true
-        }
-    });
-
-    useEffect(() => {
-        // Initialize scope based on role for new cycles
-        if (params.id === 'new' && !isHRAdmin && managedTeams.length > 0) {
-            setFormData(prev => ({
-                ...prev,
-                scope: { type: 'team', targetIds: [] }
-            }));
-        }
-    }, [isHRAdmin, managedTeams.length, params.id]);
+    const [assignableEmployees, setAssignableEmployees] = useState<AssignableEmployee[]>([]);
+    const [loadingEmployees, setLoadingEmployees] = useState(false);
+    const [employeeSearch, setEmployeeSearch] = useState('');
+    const [participantView, setParticipantView] = useState<'byManager' | 'list'>('byManager');
+    const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
 
     useEffect(() => {
         const fetchCycle = async () => {
-            if (params.id === 'new') {
+            if (isNewCycle) {
                 setLoading(false);
                 return;
             }
 
             try {
-                const response = await api.get(`/appraisals/cycles/${params.id}`);
+                const response = await api.get(`/appraisals/cycles/${cycleId}`);
                 const cycle = response.data.data;
 
                 setFormData({
@@ -129,20 +235,169 @@ export default function EditAppraisalCyclePage() {
         };
 
         fetchCycle();
-    }, [params.id]);
+    }, [cycleId, isNewCycle]);
+
+    useEffect(() => {
+        if (!isNewCycle) return;
+
+        let isMounted = true;
+
+        const fetchAssignableEmployees = async () => {
+            setLoadingEmployees(true);
+            try {
+                const response = await api.get('/user/employees-for-appraisal');
+                const employeeList = response.data?.data?.employees || [];
+                if (!isMounted) return;
+                setAssignableEmployees(Array.isArray(employeeList) ? employeeList : []);
+            } catch (primaryError) {
+                console.error('Failed to fetch assignable users', primaryError);
+                try {
+                    const fallbackResponse = await api.get('/user/all-employees');
+                    const fallbackEmployees = fallbackResponse.data?.data || [];
+                    if (!isMounted) return;
+                    setAssignableEmployees(Array.isArray(fallbackEmployees) ? fallbackEmployees : []);
+                } catch (fallbackError: any) {
+                    if (!isMounted) return;
+                    console.error('Failed to fetch fallback assignable users', fallbackError);
+                    setSaveError(fallbackError.response?.data?.error || 'Failed to load employees for this cycle.');
+                }
+            } finally {
+                if (isMounted) {
+                    setLoadingEmployees(false);
+                }
+            }
+        };
+
+        fetchAssignableEmployees();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [isNewCycle]);
+
+    const eligibleEmployees = useMemo(
+        () => assignableEmployees.filter((employee) => employee.isSelectableForAppraisal !== false),
+        [assignableEmployees]
+    );
+
+    const ineligibleEmployees = useMemo(
+        () => assignableEmployees.filter((employee) => employee.isSelectableForAppraisal === false),
+        [assignableEmployees]
+    );
+
+    const filteredEligibleEmployees = useMemo(
+        () => eligibleEmployees.filter((employee) => matchesEmployeeSearch(employee, employeeSearch)),
+        [eligibleEmployees, employeeSearch]
+    );
+
+    const filteredIneligibleEmployees = useMemo(
+        () => ineligibleEmployees.filter((employee) => matchesEmployeeSearch(employee, employeeSearch)),
+        [ineligibleEmployees, employeeSearch]
+    );
+
+    const selectedParticipants = useMemo(
+        () => eligibleEmployees.filter((employee) => selectedParticipantIds.includes(employee.userId)),
+        [eligibleEmployees, selectedParticipantIds]
+    );
+
+    const groupedEligibleEmployees = useMemo(() => {
+        const groups = new Map<string, { key: string; managerName: string; managerEmail?: string; directReports: AssignableEmployee[] }>();
+
+        filteredEligibleEmployees.forEach((employee) => {
+            const managerKey = employee.managerId || employee.managerEmail || 'unassigned';
+            if (!groups.has(managerKey)) {
+                groups.set(managerKey, {
+                    key: managerKey,
+                    managerName: employee.managerName || 'Assigned Manager',
+                    managerEmail: employee.managerEmail,
+                    directReports: []
+                });
+            }
+            groups.get(managerKey)?.directReports.push(employee);
+        });
+
+        return Array.from(groups.values()).sort((left, right) => left.managerName.localeCompare(right.managerName));
+    }, [filteredEligibleEmployees]);
+
+    const selectionSummary = useMemo(() => ({
+        eligible: eligibleEmployees.length,
+        ineligible: ineligibleEmployees.length,
+        selected: selectedParticipants.length
+    }), [eligibleEmployees.length, ineligibleEmployees.length, selectedParticipants.length]);
+
+    const toggleParticipant = (userId: string) => {
+        setSelectedParticipantIds((previous) => (
+            previous.includes(userId)
+                ? previous.filter((id) => id !== userId)
+                : [...previous, userId]
+        ));
+    };
+
+    const selectAllEligible = () => {
+        setSelectedParticipantIds(eligibleEmployees.map((employee) => employee.userId));
+    };
+
+    const clearSelectedParticipants = () => {
+        setSelectedParticipantIds([]);
+    };
 
     const handleSave = async () => {
+        setSaveError('');
+
+        if (!formData.name.trim()) {
+            setSaveError('Cycle name is required.');
+            return;
+        }
+
+        if (!formData.periodStart || !formData.periodEnd) {
+            setSaveError('Set the cycle period start and end dates.');
+            return;
+        }
+
+        if (new Date(formData.periodStart) > new Date(formData.periodEnd)) {
+            setSaveError('Cycle period end date must be after the start date.');
+            return;
+        }
+
+        if (isNewCycle && selectedParticipants.length === 0) {
+            setSaveError('Select at least one eligible employee before creating the cycle.');
+            return;
+        }
+
         setSaving(true);
         try {
-            if (params.id === 'new') {
-                await api.post('/appraisals/cycles', formData);
+            if (isNewCycle) {
+                const scope = buildScopeFromEmployees(isHRAdmin, selectedParticipants);
+                await api.post('/appraisals/cycles', {
+                    ...formData,
+                    scope,
+                    launchNow: true,
+                    employees: selectedParticipants.map((employee) => ({
+                        userId: employee.userId,
+                        name: employee.name,
+                        email: employee.email,
+                        department: employee.department,
+                        departmentId: employee.departmentId,
+                        departmentName: employee.departmentName,
+                        jobTitle: employee.jobTitle,
+                        teamId: employee.teamId,
+                        teamIds: employee.teamIds,
+                        teamName: employee.teamName,
+                        teamRole: employee.teamRole,
+                        managerId: employee.managerId,
+                        managerName: employee.managerName,
+                        managerEmail: employee.managerEmail,
+                        isSelf: employee.isSelf
+                    }))
+                });
             } else {
-                await api.put(`/appraisals/cycles/${params.id}`, formData);
+                await api.put(`/appraisals/cycles/${cycleId}`, formData);
             }
-            router.push('/admin/appraisal-cycles'); // Go back to list
+
+            router.push('/admin/appraisal-cycles');
         } catch (err: any) {
             console.error('Save cycle error:', err);
-            setError(err.response?.data?.error || 'Failed to save cycle');
+            setSaveError(err.response?.data?.error || err.message || 'Failed to save cycle');
         } finally {
             setSaving(false);
         }
@@ -161,7 +416,7 @@ export default function EditAppraisalCyclePage() {
             <Alert severity="error">
                 {error}
                 <Button onClick={() => router.push('/admin/appraisal-cycles')} sx={{ ml: 2 }}>
-                    Back to List
+                    Back to list
                 </Button>
             </Alert>
         );
@@ -169,33 +424,53 @@ export default function EditAppraisalCyclePage() {
 
     return (
         <Box>
-            <Box sx={{ mb: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ mb: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Button
                         startIcon={<ArrowBack />}
-                        onClick={() => router.push(`/admin/appraisal-cycles/${params.id}`)}
+                        onClick={() => router.push(isNewCycle ? '/admin/appraisal-cycles' : `/admin/appraisal-cycles/${cycleId}`)}
                     >
                         Back
                     </Button>
-                    <Typography variant="h4" fontWeight={700}>
-                        Edit Cycle
-                    </Typography>
+                    <Box>
+                        <Typography variant="h4" fontWeight={700}>
+                            {isNewCycle ? 'Create Appraisal Cycle' : 'Edit Cycle'}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            {isNewCycle
+                                ? 'Set the cycle up once, choose who participates, and launch it immediately.'
+                                : 'Update the cycle settings and timeline.'}
+                        </Typography>
+                    </Box>
                 </Box>
                 <Button
                     variant="contained"
-                    startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <Save />}
+                    startIcon={saving ? <CircularProgress size={18} color="inherit" /> : (isNewCycle ? <RocketLaunch /> : <Save />)}
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={saving || (isNewCycle && loadingEmployees)}
                 >
-                    Save Changes
+                    {isNewCycle ? 'Create And Launch' : 'Save Changes'}
                 </Button>
             </Box>
 
+            {isNewCycle && (
+                <Alert severity="info" sx={{ mb: 3 }}>
+                    <AlertTitle>New cycle flow</AlertTitle>
+                    Step 1: define the cycle. Step 2: choose the employees who should participate. Step 3: create it once and the cycle goes active immediately.
+                </Alert>
+            )}
+
+            {saveError && (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                    {saveError}
+                </Alert>
+            )}
+
             <Grid container spacing={3}>
-                <Grid size={{ xs: 12, md: 8 }}>
+                <Grid size={{ xs: 12, lg: 8 }}>
                     <Card sx={{ mb: 3 }}>
                         <CardContent>
-                            <Typography variant="h6" gutterBottom>Basic Information</Typography>
+                            <Typography variant="h6" gutterBottom>Cycle Details</Typography>
                             <Grid container spacing={2}>
                                 <Grid size={{ xs: 12, md: 6 }}>
                                     <TextField
@@ -253,19 +528,18 @@ export default function EditAppraisalCyclePage() {
                         </CardContent>
                     </Card>
 
-                    <Card>
+                    <Card sx={{ mb: 3 }}>
                         <CardContent>
                             <Typography variant="h6" gutterBottom>Phase Timeline</Typography>
                             <Typography variant="body2" color="text.secondary" paragraph>
-                                Define the start and end dates for each phase of the appraisal cycle.
+                                Define when each phase should run. The workflow advances automatically as people submit their work.
                             </Typography>
-
                             <Grid container spacing={2}>
                                 {Object.entries(phaseLabels).map(([phaseKey, label]) => (
                                     <Grid size={{ xs: 12 }} key={phaseKey}>
                                         <Typography variant="subtitle2" gutterBottom>{label}</Typography>
                                         <Grid container spacing={2}>
-                                            <Grid size={{ xs: 6 }}>
+                                            <Grid size={{ xs: 12, sm: 6 }}>
                                                 <TextField
                                                     fullWidth
                                                     size="small"
@@ -276,13 +550,16 @@ export default function EditAppraisalCyclePage() {
                                                         ...formData,
                                                         phases: {
                                                             ...formData.phases,
-                                                            [phaseKey]: { ...formData.phases[phaseKey as keyof typeof formData.phases], startDate: e.target.value }
+                                                            [phaseKey]: {
+                                                                ...formData.phases[phaseKey as keyof typeof formData.phases],
+                                                                startDate: e.target.value
+                                                            }
                                                         }
                                                     })}
                                                     InputLabelProps={{ shrink: true }}
                                                 />
                                             </Grid>
-                                            <Grid size={{ xs: 6 }}>
+                                            <Grid size={{ xs: 12, sm: 6 }}>
                                                 <TextField
                                                     fullWidth
                                                     size="small"
@@ -293,94 +570,326 @@ export default function EditAppraisalCyclePage() {
                                                         ...formData,
                                                         phases: {
                                                             ...formData.phases,
-                                                            [phaseKey]: { ...formData.phases[phaseKey as keyof typeof formData.phases], endDate: e.target.value }
+                                                            [phaseKey]: {
+                                                                ...formData.phases[phaseKey as keyof typeof formData.phases],
+                                                                endDate: e.target.value
+                                                            }
                                                         }
                                                     })}
                                                     InputLabelProps={{ shrink: true }}
                                                 />
                                             </Grid>
                                         </Grid>
-                                        <Divider sx={{ my: 2 }} />
+                                        {phaseKey !== 'finalReview' && <Divider sx={{ my: 2 }} />}
                                     </Grid>
                                 ))}
                             </Grid>
                         </CardContent>
                     </Card>
+
+                    {isNewCycle && (
+                        <Card>
+                            <CardContent>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+                                    <Box>
+                                        <Typography variant="h6" gutterBottom>Choose Participants</Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Eligible employees have a real manager in the hierarchy. Top-level users without a manager stay visible here, but they cannot be selected.
+                                        </Typography>
+                                    </Box>
+                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                        <Chip color="primary" label={`${selectionSummary.selected} selected`} />
+                                        <Chip color="success" variant="outlined" label={`${selectionSummary.eligible} eligible`} />
+                                        <Chip color="warning" variant="outlined" label={`${selectionSummary.ineligible} unavailable`} />
+                                    </Stack>
+                                </Box>
+
+                                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
+                                    <TextField
+                                        fullWidth
+                                        placeholder="Search by name, team, department, or manager"
+                                        value={employeeSearch}
+                                        onChange={(e) => setEmployeeSearch(e.target.value)}
+                                        InputProps={{
+                                            startAdornment: (
+                                                <InputAdornment position="start">
+                                                    <Search fontSize="small" />
+                                                </InputAdornment>
+                                            )
+                                        }}
+                                    />
+                                    <Stack direction="row" spacing={1}>
+                                        <Button variant="outlined" onClick={selectAllEligible} disabled={eligibleEmployees.length === 0}>
+                                            Select All Eligible
+                                        </Button>
+                                        <Button variant="text" onClick={clearSelectedParticipants} disabled={selectedParticipantIds.length === 0}>
+                                            Clear
+                                        </Button>
+                                    </Stack>
+                                </Stack>
+
+                                <Tabs value={participantView} onChange={(_, value) => setParticipantView(value)} sx={{ mb: 2 }}>
+                                    <Tab value="byManager" label="By Manager" />
+                                    <Tab value="list" label="List View" />
+                                </Tabs>
+
+                                {loadingEmployees ? (
+                                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+                                        <CircularProgress />
+                                    </Box>
+                                ) : (
+                                    <>
+                                        {participantView === 'byManager' ? (
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                {groupedEligibleEmployees.map((group) => {
+                                                    const allSelected = group.directReports.every((employee) => selectedParticipantIds.includes(employee.userId));
+                                                    return (
+                                                        <Card key={group.key} variant="outlined">
+                                                            <CardContent>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 1.5 }}>
+                                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        <Groups color="primary" fontSize="small" />
+                                                                        <Box>
+                                                                            <Typography variant="subtitle2" fontWeight={700}>{group.managerName}</Typography>
+                                                                            <Typography variant="caption" color="text.secondary">{group.managerEmail || 'Assigned manager'}</Typography>
+                                                                        </Box>
+                                                                    </Box>
+                                                                    <Button
+                                                                        size="small"
+                                                                        onClick={() => {
+                                                                            const ids = group.directReports.map((employee) => employee.userId);
+                                                                            setSelectedParticipantIds((previous) => {
+                                                                                if (allSelected) {
+                                                                                    return previous.filter((id) => !ids.includes(id));
+                                                                                }
+                                                                                return Array.from(new Set([...previous, ...ids]));
+                                                                            });
+                                                                        }}
+                                                                    >
+                                                                        {allSelected ? 'Deselect Team' : 'Select Team'}
+                                                                    </Button>
+                                                                </Box>
+                                                                <Stack spacing={1}>
+                                                                    {group.directReports.map((employee) => (
+                                                                        <Box
+                                                                            key={employee.userId}
+                                                                            onClick={() => toggleParticipant(employee.userId)}
+                                                                            sx={{
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                gap: 1.5,
+                                                                                px: 1,
+                                                                                py: 1,
+                                                                                borderRadius: 1,
+                                                                                cursor: 'pointer',
+                                                                                '&:hover': { bgcolor: 'action.hover' }
+                                                                            }}
+                                                                        >
+                                                                            <Checkbox checked={selectedParticipantIds.includes(employee.userId)} />
+                                                                            <Box sx={{ flex: 1 }}>
+                                                                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                                                                                    <Typography variant="body2" fontWeight={600}>{employee.name}</Typography>
+                                                                                    {employee.isSelf && <Chip size="small" label="You" color="info" />}
+                                                                                    {employee.isManager && <Chip size="small" label="Manager" variant="outlined" />}
+                                                                                </Stack>
+                                                                                <Typography variant="caption" color="text.secondary">
+                                                                                    {[employee.jobTitle, employee.teamName || employee.departmentName || employee.department, employee.email]
+                                                                                        .filter(Boolean)
+                                                                                        .join(' | ')}
+                                                                                </Typography>
+                                                                            </Box>
+                                                                        </Box>
+                                                                    ))}
+                                                                </Stack>
+                                                            </CardContent>
+                                                        </Card>
+                                                    );
+                                                })}
+
+                                                {groupedEligibleEmployees.length === 0 && (
+                                                    <Alert severity="info">No eligible employees match the current search.</Alert>
+                                                )}
+                                            </Box>
+                                        ) : (
+                                            <Stack spacing={1}>
+                                                {filteredEligibleEmployees.map((employee) => (
+                                                    <Box
+                                                        key={employee.userId}
+                                                        onClick={() => toggleParticipant(employee.userId)}
+                                                        sx={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 1.5,
+                                                            px: 1,
+                                                            py: 1,
+                                                            borderRadius: 1,
+                                                            border: '1px solid',
+                                                            borderColor: 'divider',
+                                                            cursor: 'pointer',
+                                                            '&:hover': { bgcolor: 'action.hover' }
+                                                        }}
+                                                    >
+                                                        <Checkbox checked={selectedParticipantIds.includes(employee.userId)} />
+                                                        <Box sx={{ flex: 1 }}>
+                                                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                                                                <Typography variant="body2" fontWeight={600}>{employee.name}</Typography>
+                                                                {employee.isSelf && <Chip size="small" label="You" color="info" />}
+                                                                {employee.isManager && <Chip size="small" label="Manager" variant="outlined" />}
+                                                            </Stack>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                {[employee.teamName || employee.departmentName || employee.department, employee.jobTitle, employee.managerName || employee.managerEmail, employee.email]
+                                                                    .filter(Boolean)
+                                                                    .join(' | ')}
+                                                            </Typography>
+                                                        </Box>
+                                                    </Box>
+                                                ))}
+
+                                                {filteredEligibleEmployees.length === 0 && (
+                                                    <Alert severity="info">No eligible employees match the current search.</Alert>
+                                                )}
+                                            </Stack>
+                                        )}
+
+                                        {filteredIneligibleEmployees.length > 0 && (
+                                            <Card variant="outlined" sx={{ mt: 3, borderColor: 'warning.main' }}>
+                                                <CardContent>
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                                                        <WarningAmber color="warning" fontSize="small" />
+                                                        <Typography variant="subtitle2" fontWeight={700} color="warning.main">
+                                                            Not eligible for this cycle
+                                                        </Typography>
+                                                    </Box>
+                                                    <Stack spacing={1}>
+                                                        {filteredIneligibleEmployees.map((employee) => (
+                                                            <Box key={employee.userId} sx={{ px: 1, py: 1, borderRadius: 1, bgcolor: 'warning.50' }}>
+                                                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                                                                    <Typography variant="body2" fontWeight={600}>{employee.name}</Typography>
+                                                                    {employee.isSelf && <Chip size="small" label="You" color="info" />}
+                                                                </Stack>
+                                                                <Typography variant="caption" color="text.secondary">
+                                                                    {[employee.teamName || employee.departmentName || employee.department, employee.jobTitle, employee.email]
+                                                                        .filter(Boolean)
+                                                                        .join(' | ')}
+                                                                </Typography>
+                                                                <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 0.5 }}>
+                                                                    {employee.selectionBlockedReason || 'No manager is assigned for this employee.'}
+                                                                </Typography>
+                                                            </Box>
+                                                        ))}
+                                                    </Stack>
+                                                </CardContent>
+                                            </Card>
+                                        )}
+                                    </>
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
                 </Grid>
 
-                <Grid size={{ xs: 12, md: 4 }}>
-                    <Card sx={{ mb: 3 }}>
-                        <CardContent>
-                            <Typography variant="h6" gutterBottom>Scope Configuration</Typography>
-                            <Box sx={{ mt: 2 }}>
-                                {isHRAdmin && (
-                                    <FormControl fullWidth sx={{ mb: 2 }}>
-                                        <InputLabel>Appraisal Scope</InputLabel>
-                                        <Select
-                                            value={formData.scope?.type || 'organization'}
-                                            label="Appraisal Scope"
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                scope: {
-                                                    ...formData.scope,
-                                                    type: e.target.value as any,
-                                                    targetIds: [] // Clear targets when type changes
-                                                }
-                                            })}
-                                        >
-                                            <MenuItem value="organization">Entire Organization</MenuItem>
-                                            <MenuItem value="team">Specific Teams</MenuItem>
-                                        </Select>
-                                    </FormControl>
-                                )}
-
-                                {!isHRAdmin && (
-                                    <Alert severity="info" sx={{ mb: 2 }}>
-                                        Creating appraisal cycle for your team(s).
-                                    </Alert>
-                                )}
-
-                                {(formData.scope?.type === 'team' || !isHRAdmin) && (
-                                    <FormControl fullWidth>
-                                        <InputLabel>Select Teams</InputLabel>
-                                        <Select
-                                            multiple
-                                            value={formData.scope?.targetIds || []}
-                                            label="Select Teams"
-                                            onChange={(e) => {
-                                                const value = e.target.value;
-                                                setFormData({
+                <Grid size={{ xs: 12, lg: 4 }}>
+                    {isNewCycle ? (
+                        <Card sx={{ mb: 3 }}>
+                            <CardContent>
+                                <Typography variant="h6" gutterBottom>Launch Summary</Typography>
+                                <Stack spacing={2}>
+                                    <Box>
+                                        <Typography variant="overline" color="text.secondary">Selected Participants</Typography>
+                                        <Typography variant="h3" fontWeight={700}>{selectionSummary.selected}</Typography>
+                                    </Box>
+                                    <Divider />
+                                    <Stack spacing={1}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CheckCircle color="success" fontSize="small" />
+                                            <Typography variant="body2">The cycle becomes active as soon as you create it.</Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CheckCircle color="success" fontSize="small" />
+                                            <Typography variant="body2">Employees start with self-assessment.</Typography>
+                                        </Box>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <CheckCircle color="success" fontSize="small" />
+                                            <Typography variant="body2">Managers only join when their team member submits.</Typography>
+                                        </Box>
+                                    </Stack>
+                                </Stack>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        <Card sx={{ mb: 3 }}>
+                            <CardContent>
+                                <Typography variant="h6" gutterBottom>Scope Configuration</Typography>
+                                <Box sx={{ mt: 2 }}>
+                                    {isHRAdmin && (
+                                        <FormControl fullWidth sx={{ mb: 2 }}>
+                                            <InputLabel>Appraisal Scope</InputLabel>
+                                            <Select
+                                                value={formData.scope?.type || 'organization'}
+                                                label="Appraisal Scope"
+                                                onChange={(e) => setFormData({
                                                     ...formData,
                                                     scope: {
                                                         ...formData.scope,
-                                                        type: 'team',
-                                                        targetIds: typeof value === 'string' ? value.split(',') : value as string[]
+                                                        type: e.target.value as any,
+                                                        targetIds: []
                                                     }
-                                                });
-                                            }}
-                                            renderValue={(selected) => {
-                                                if (selected.length === 0) return <em>Select teams...</em>;
-                                                return managedTeams
-                                                    .filter(t => selected.includes(t.teamId || t.id || t._id))
-                                                    .map(t => t.teamName || t.name)
-                                                    .join(', ');
-                                            }}
-                                        >
-                                            {managedTeams.length > 0 ? (
-                                                managedTeams.map((team: any) => (
-                                                    <MenuItem key={team.teamId || team.id || team._id} value={team.teamId || team.id || team._id}>
-                                                        {team.teamName || team.name}
-                                                    </MenuItem>
-                                                ))
-                                            ) : (
-                                                <MenuItem disabled>No managed teams found</MenuItem>
-                                            )}
-                                        </Select>
-                                    </FormControl>
-                                )}
-                            </Box>
-                        </CardContent>
-                    </Card>
+                                                })}
+                                            >
+                                                <MenuItem value="organization">Entire Organization</MenuItem>
+                                                <MenuItem value="team">Specific Teams</MenuItem>
+                                            </Select>
+                                        </FormControl>
+                                    )}
+
+                                    {!isHRAdmin && (
+                                        <Alert severity="info" sx={{ mb: 2 }}>
+                                            This cycle is limited to your managed teams.
+                                        </Alert>
+                                    )}
+
+                                    {(formData.scope?.type === 'team' || !isHRAdmin) && (
+                                        <FormControl fullWidth>
+                                            <InputLabel>Select Teams</InputLabel>
+                                            <Select
+                                                multiple
+                                                value={formData.scope?.targetIds || []}
+                                                label="Select Teams"
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    setFormData({
+                                                        ...formData,
+                                                        scope: {
+                                                            ...formData.scope,
+                                                            type: 'team',
+                                                            targetIds: typeof value === 'string' ? value.split(',') : value as string[]
+                                                        }
+                                                    });
+                                                }}
+                                                renderValue={(selected) => {
+                                                    if (selected.length === 0) return <em>Select teams...</em>;
+                                                    return (managedTeams as ManagedTeamOption[])
+                                                        .filter((team) => selected.includes(normalizeManagedTeamId(team)))
+                                                        .map((team) => normalizeManagedTeamName(team))
+                                                        .join(', ');
+                                                }}
+                                            >
+                                                {(managedTeams as ManagedTeamOption[]).length > 0 ? (
+                                                    (managedTeams as ManagedTeamOption[]).map((team) => (
+                                                        <MenuItem key={normalizeManagedTeamId(team)} value={normalizeManagedTeamId(team)}>
+                                                            {normalizeManagedTeamName(team)}
+                                                        </MenuItem>
+                                                    ))
+                                                ) : (
+                                                    <MenuItem disabled>No managed teams found</MenuItem>
+                                                )}
+                                            </Select>
+                                        </FormControl>
+                                    )}
+                                </Box>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     <Card sx={{ mb: 3 }}>
                         <CardContent>

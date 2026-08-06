@@ -37,6 +37,21 @@
         <button class="admin-filter-btn" onclick="filterPlans('inactive')">Inactive</button>
       </div>
 
+      <div class="admin-card" style="margin-bottom: 16px;">
+        <div class="admin-card-header">
+          <div>
+            <div class="admin-card-title">Seemplify Learning - External App</div>
+            <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">
+              Simple LMS has moved out of IDP. Open the external Seemplify Learning workspace.
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <a href="<%= simpleLmsExternalWorkspaceUrl %>" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">Open Workspace</a>
+            <a href="<%= simpleLmsExternalWorkspaceUrl %>?view=course-studio" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">Create Course</a>
+          </div>
+        </div>
+      </div>
+
       <% if (plans && plans.length > 0) { %>
         <div class="admin-table-container">
           <table class="admin-table" id="plansTable">
@@ -55,7 +70,7 @@
                 <tr data-status="<%= plan.isActive ? 'active' : 'inactive' %>">
                   <td>
                     <div style="display: flex; align-items: center; gap: 12px;">
-                      <div style="width: 40px; height: 40px; border-radius: 8px; background: <%= plan.color || '#3b82f6' %>; display: flex; align-items: center; justify-content: center;">
+                      <div style="width: 40px; height: 40px; border-radius: 8px; background: <%= plan.color || '#6366f1' %>; display: flex; align-items: center; justify-content: center;">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                           <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
                         </svg>
@@ -85,6 +100,7 @@
                       <% const limits = plan.limits.toObject ? plan.limits.toObject() : plan.limits; %>
                       <div>Members: <%= limits.maxMembers === null ? 'Unlimited' : limits.maxMembers %></div>
                       <div>Teams: <%= limits.maxTeams === null ? 'Unlimited' : limits.maxTeams %></div>
+                      <div>Seemplify Learning System Courses: <%= limits.maxSystemCourses === null || limits.maxSystemCourses === undefined ? 'Unlimited' : limits.maxSystemCourses %></div>
                     </div>
                   </td>
                   <td>
@@ -97,6 +113,9 @@
                     <% } %>
                     <% if (plan.isFeatured) { %>
                       <span class="status-badge" style="background: rgba(245,158,11,0.1); color: #f59e0b; margin-left: 4px;">Featured</span>
+                    <% } %>
+                    <% if (plan.isRequestable === false) { %>
+                      <span class="status-badge" style="background: rgba(15,23,42,0.08); color: var(--muted); margin-left: 4px;">Admin Assigned Only</span>
                     <% } %>
                   </td>
                   <td>
@@ -183,6 +202,14 @@
             </div>
           </div>
 
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Max Seemplify Learning System Courses</label>
+              <input type="number" id="maxSystemCourses" name="maxSystemCourses" class="admin-form-input" placeholder="Leave empty for unlimited">
+              <small style="color: var(--muted);">How many approved Seemplify Learning system courses this plan can access (null = unlimited)</small>
+            </div>
+          </div>
+
           <div class="admin-form-group">
             <label class="admin-form-label">Features</label>
             <div class="feature-grid">
@@ -216,8 +243,43 @@
               </label>
               <label class="feature-toggle">
                 <input type="checkbox" id="featureLms" name="features.lms">
-                <span class="feature-toggle-label">LMS</span>
+                <span class="feature-toggle-label">Seemplify Learning</span>
               </label>
+            </div>
+            <small style="color: var(--muted); display:block; margin-top:8px;">This toggle controls access to the external Seemplify Learning app.</small>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Hide Hub Cards</label>
+            <small style="color: var(--muted); display: block; margin-bottom: 8px;">Select apps whose cards should be hidden in the hub for orgs on this plan. Hides the card entirely (separate from access control).</small>
+            <div class="feature-grid" id="hideHubCardsGrid">
+              <% if (typeof hubApps !== 'undefined' && hubApps && hubApps.length > 0) { %>
+                <% hubApps.forEach(app => { %>
+                  <label class="feature-toggle">
+                    <input type="checkbox" name="hideHubCards" value="<%= app.appId %>" data-hide-app="<%= app.appId %>">
+                    <span class="feature-toggle-label"><%= app.name %></span>
+                  </label>
+                <% }) %>
+              <% } else { %>
+                <span style="color: var(--muted); font-size: 13px;">No hub apps configured.</span>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Show Coming Soon Cards</label>
+            <small style="color: var(--muted); display: block; margin-bottom: 8px;">Select "Coming Soon" cards to display in the hub for orgs on this plan. These are special non-clickable cards (Messaging, Payroll, Performance Management) shown as preview. Default: off.</small>
+            <div class="feature-grid" id="showComingSoonCardsGrid">
+              <% if (typeof comingSoonCards !== 'undefined' && comingSoonCards && comingSoonCards.length > 0) { %>
+                <% comingSoonCards.forEach(card => { %>
+                  <label class="feature-toggle">
+                    <input type="checkbox" name="showComingSoonCards" value="<%= card.cardId %>" data-coming-soon-card="<%= card.cardId %>">
+                    <span class="feature-toggle-label"><%= card.name %></span>
+                  </label>
+                <% }) %>
+              <% } else { %>
+                <span style="color: var(--muted); font-size: 13px;">No coming soon cards configured.</span>
+              <% } %>
             </div>
           </div>
 
@@ -228,7 +290,7 @@
             </div>
             <div class="admin-form-group">
               <label class="admin-form-label">Brand Color</label>
-              <input type="color" id="planColor" name="color" class="admin-form-input" value="#3b82f6" style="height: 42px;">
+              <input type="color" id="planColor" name="color" class="admin-form-input" value="#6366f1" style="height: 42px;">
             </div>
           </div>
 
@@ -245,6 +307,10 @@
             <label class="admin-form-checkbox">
               <input type="checkbox" id="isPublic" name="isPublic" checked>
               <span>Public</span>
+            </label>
+            <label class="admin-form-checkbox">
+              <input type="checkbox" id="isRequestable" name="isRequestable" checked>
+              <span>Requestable</span>
             </label>
             <label class="admin-form-checkbox">
               <input type="checkbox" id="isFeatured" name="isFeatured">
@@ -326,13 +392,15 @@
           document.getElementById('planDescription').value = plan.description || '';
           document.getElementById('pricingMonthly').value = plan.pricing?.monthly || 0;
           document.getElementById('pricingYearly').value = plan.pricing?.yearly || 0;
-          document.getElementById('maxMembers').value = plan.limits?.maxMembers || '';
-          document.getElementById('maxTeams').value = plan.limits?.maxTeams || '';
+          document.getElementById('maxMembers').value = plan.limits?.maxMembers ?? '';
+          document.getElementById('maxTeams').value = plan.limits?.maxTeams ?? '';
+          document.getElementById('maxSystemCourses').value = plan.limits?.maxSystemCourses ?? '';
           document.getElementById('displayOrder').value = plan.displayOrder || 0;
-          document.getElementById('planColor').value = plan.color || '#3b82f6';
+          document.getElementById('planColor').value = plan.color || '#6366f1';
           document.getElementById('badgeText').value = plan.badgeText || '';
           document.getElementById('isActive').checked = plan.isActive;
           document.getElementById('isPublic').checked = plan.isPublic;
+          document.getElementById('isRequestable').checked = plan.isRequestable !== false;
           document.getElementById('isFeatured').checked = plan.isFeatured;
 
           const features = plan.features || {};
@@ -344,6 +412,16 @@
           document.getElementById('featureOutlineDocs').checked = features.outlineDocs;
           document.getElementById('featureAiChat').checked = features.aiChat;
           document.getElementById('featureLms').checked = features.lms;
+
+          const hideHubCards = plan.hideHubCards || [];
+          document.querySelectorAll('[data-hide-app]').forEach(cb => {
+            cb.checked = hideHubCards.includes(cb.dataset.hideApp);
+          });
+
+          const showComingSoonCards = plan.showComingSoonCards || [];
+          document.querySelectorAll('[data-coming-soon-card]').forEach(cb => {
+            cb.checked = showComingSoonCards.includes(cb.dataset.comingSoonCard);
+          });
         }
       } else {
         title.textContent = 'Create New Plan';
@@ -384,7 +462,8 @@
         },
         limits: {
           maxMembers: document.getElementById('maxMembers').value ? parseInt(document.getElementById('maxMembers').value) : null,
-          maxTeams: document.getElementById('maxTeams').value ? parseInt(document.getElementById('maxTeams').value) : null
+          maxTeams: document.getElementById('maxTeams').value ? parseInt(document.getElementById('maxTeams').value) : null,
+          maxSystemCourses: document.getElementById('maxSystemCourses').value ? parseInt(document.getElementById('maxSystemCourses').value) : null
         },
         features: {
           recruiter: document.getElementById('featureRecruiter').checked,
@@ -401,7 +480,10 @@
         badgeText: document.getElementById('badgeText').value,
         isActive: document.getElementById('isActive').checked,
         isPublic: document.getElementById('isPublic').checked,
-        isFeatured: document.getElementById('isFeatured').checked
+        isRequestable: document.getElementById('isRequestable').checked,
+        isFeatured: document.getElementById('isFeatured').checked,
+        hideHubCards: Array.from(document.querySelectorAll('[name="hideHubCards"]:checked')).map(cb => cb.value),
+        showComingSoonCards: Array.from(document.querySelectorAll('[name="showComingSoonCards"]:checked')).map(cb => cb.value)
       };
 
       try {

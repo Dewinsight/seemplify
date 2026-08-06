@@ -1,9 +1,10 @@
 const Interview = require('../models/Interview');
 const nylasV3Service = require('../services/nylasV3Service');
 const transcriptSegmentationService = require('../services/transcriptSegmentationService');
+const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
 
 // Helper function to update pipeline status - copied from interviewCompletionService
-async function updatePipelineStatusOnCompletion(interview) {
+async function updatePipelineStatusOnCompletion(interview, organizationId = interview.organizationId) {
   try {
     if (!interview.jobId || !interview.candidateId) {
       console.log('ℹ️ No job/candidate link for pipeline status update');
@@ -13,7 +14,9 @@ async function updatePipelineStatusOnCompletion(interview) {
     console.log(`🔄 [MANUAL-SYNC] Updating pipeline status for candidate ${interview.candidateId} in job ${interview.jobId}`);
     
     const Job = require('../models/Job');
-    const job = await Job.findById(interview.jobId);
+    const jobQuery = { _id: interview.jobId };
+    if (organizationId) jobQuery.organization = organizationId;
+    const job = await Job.findOne(jobQuery);
     
     if (job) {
       const applicantIndex = job.applicants.findIndex(
@@ -27,12 +30,16 @@ async function updatePipelineStatusOnCompletion(interview) {
         // Only update if current status is interviewing
         if (previousStatus === 'interviewing') {
           // Check if there are other incomplete interviews for this candidate
-          const otherInterviews = await Interview.find({
+          const otherInterviewQuery = {
             candidateId: interview.candidateId,
             jobId: interview.jobId,
             _id: { $ne: interview._id },
             status: { $in: ['scheduled', 'confirmed', 'in_progress'] }
-          });
+          };
+          const scopedOtherInterviewQuery = organizationId
+            ? await buildInterviewOrganizationQuery(organizationId, otherInterviewQuery)
+            : otherInterviewQuery;
+          const otherInterviews = await Interview.find(scopedOtherInterviewQuery);
           
           if (otherInterviews.length === 0) {
             // No other pending interviews, move to next stage
@@ -79,8 +86,12 @@ const manualTranscriptSync = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId)
-      .populate('interviewerId', 'nylasGrantId');
+    const interviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { _id: interviewId }
+    );
+    const interview = await Interview.findOne(interviewQuery)
+      .populate('interviewerId', 'nylasGrantId nylasAccountId');
     
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
@@ -100,10 +111,12 @@ const manualTranscriptSync = async (req, res) => {
       console.log(`👥 [MANUAL-SYNC] Processing multi-candidate interview`);
       
       // Find the session holder (interview with notetaker ID)
-      const sessionInterviews = await Interview.find({
-        multiCandidateSessionId: interview.multiCandidateSessionId
-      }).sort({ multiCandidateOrder: 1 })
-        .populate('interviewerId', 'nylasGrantId');
+      const sessionInterviewQuery = await buildInterviewOrganizationQuery(
+        req.user.currentOrganization,
+        { multiCandidateSessionId: interview.multiCandidateSessionId }
+      );
+      const sessionInterviews = await Interview.find(sessionInterviewQuery).sort({ multiCandidateOrder: 1 })
+        .populate('interviewerId', 'nylasGrantId nylasAccountId');
       
       const sessionHolder = sessionInterviews.find(si => si.notetakerId) || sessionInterviews[0];
       
@@ -114,7 +127,7 @@ const manualTranscriptSync = async (req, res) => {
       console.log(`📝 [MANUAL-SYNC] Found session holder: ${sessionHolder._id}`);
       
       // Try to download transcript from session holder's notetaker
-      if (sessionHolder.notetakerId && sessionHolder.interviewerId?.nylasGrantId) {
+      if (sessionHolder.notetakerId) {
         try {
           // First check if we already have the transcript in the session holder
           if (!sessionHolder.transcript?.content) {
@@ -122,12 +135,13 @@ const manualTranscriptSync = async (req, res) => {
             
             // Get account credentials if interviewer has a linked Nylas account
             let accountCredentials = null;
-            if (sessionHolder.interviewerId.nylasAccountId) {
+            if (sessionHolder.interviewerId?.nylasAccountId) {
               const NylasAccount = require('../models/NylasAccount');
               const nylasAccount = await NylasAccount.findById(sessionHolder.interviewerId.nylasAccountId).select('+apiKey');
               if (nylasAccount) {
                 accountCredentials = {
                   apiKey: nylasAccount.apiKey,
+                  apiUri: nylasAccount.apiUri,
                   region: nylasAccount.region,
                   clientId: nylasAccount.clientId
                 };
@@ -135,11 +149,7 @@ const manualTranscriptSync = async (req, res) => {
             }
             
             // Get media from Nylas
-            const media = await nylasV3Service.getNotetakerMedia(
-              sessionHolder.interviewerId.nylasGrantId,
-              sessionHolder.notetakerId,
-              accountCredentials
-            );
+            const media = await nylasV3Service.getStandaloneNotetakerMedia(sessionHolder.notetakerId, accountCredentials);
             
             if (!media.transcript?.url) {
               return res.status(404).json({ 
@@ -150,10 +160,7 @@ const manualTranscriptSync = async (req, res) => {
             }
             
             // Download the transcript content
-            const transcript = await nylasV3Service.getTranscript(
-              sessionHolder.interviewerId.nylasGrantId,
-              sessionHolder.notetakerId
-            );
+            const transcript = await nylasV3Service.getStandaloneTranscript(sessionHolder.notetakerId, accountCredentials);
             
             if (!transcript.content) {
               return res.status(404).json({ 
@@ -174,6 +181,7 @@ const manualTranscriptSync = async (req, res) => {
               confidence: null
             };
             sessionHolder.transcriptAvailableAt = new Date();
+            sessionHolder.notetakerType = 'standalone';
             
             if (media.recording?.url) {
               sessionHolder.recordingUrl = media.recording.url;
@@ -187,7 +195,8 @@ const manualTranscriptSync = async (req, res) => {
           try {
             const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(
               interviewId, 
-              true // include overflow
+              true, // include overflow
+              req.user.currentOrganization
             );
             
             if (!segmentedTranscript.transcript || !segmentedTranscript.transcript.content) {
@@ -239,8 +248,8 @@ const manualTranscriptSync = async (req, res) => {
         }
       } else {
         return res.status(400).json({
-          error: 'Session holder missing notetaker ID or grant ID',
-          message: 'Cannot download transcript without notetaker information'
+          error: 'Session holder missing notetaker ID',
+          message: 'Cannot download transcript without a notetaker ID'
         });
       }
     }
@@ -256,22 +265,16 @@ const manualTranscriptSync = async (req, res) => {
         });
       }
       
-      if (!interview.interviewerId?.nylasGrantId) {
-        return res.status(400).json({
-          error: 'Interviewer grant ID not found',
-          message: 'Cannot access notetaker without valid grant'
-        });
-      }
-      
       try {
         // Get account credentials if interviewer has a linked Nylas account
         let accountCredentials = null;
-        if (interview.interviewerId.nylasAccountId) {
+        if (interview.interviewerId?.nylasAccountId) {
           const NylasAccount = require('../models/NylasAccount');
           const nylasAccount = await NylasAccount.findById(interview.interviewerId.nylasAccountId).select('+apiKey');
           if (nylasAccount) {
             accountCredentials = {
               apiKey: nylasAccount.apiKey,
+              apiUri: nylasAccount.apiUri,
               region: nylasAccount.region,
               clientId: nylasAccount.clientId
             };
@@ -279,11 +282,7 @@ const manualTranscriptSync = async (req, res) => {
         }
         
         // Get media from Nylas
-        const media = await nylasV3Service.getNotetakerMedia(
-          interview.interviewerId.nylasGrantId,
-          interview.notetakerId,
-          accountCredentials
-        );
+        const media = await nylasV3Service.getStandaloneNotetakerMedia(interview.notetakerId, accountCredentials);
         
         if (!media.transcript?.url) {
           return res.status(404).json({
@@ -294,10 +293,7 @@ const manualTranscriptSync = async (req, res) => {
         }
         
         // Download the transcript content
-        const transcript = await nylasV3Service.getTranscript(
-          interview.interviewerId.nylasGrantId,
-          interview.notetakerId
-        );
+        const transcript = await nylasV3Service.getStandaloneTranscript(interview.notetakerId, accountCredentials);
         
         if (!transcript.content) {
           return res.status(404).json({
@@ -318,6 +314,7 @@ const manualTranscriptSync = async (req, res) => {
           confidence: null
         };
         interview.transcriptAvailableAt = new Date();
+        interview.notetakerType = 'standalone';
         
         if (media.recording?.url) {
           interview.recordingUrl = media.recording.url;
@@ -373,7 +370,11 @@ const forceInterviewCompletion = async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId);
+    const interviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { _id: interviewId }
+    );
+    const interview = await Interview.findOne(interviewQuery);
     
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
@@ -401,7 +402,7 @@ const forceInterviewCompletion = async (req, res) => {
     
     // Update pipeline status
     try {
-      await updatePipelineStatusOnCompletion(interview);
+      await updatePipelineStatusOnCompletion(interview, req.user.currentOrganization);
     } catch (pipelineError) {
       console.error('Error updating pipeline status:', pipelineError);
     }

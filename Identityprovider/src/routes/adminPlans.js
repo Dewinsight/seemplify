@@ -3,6 +3,55 @@ import { requireAdminAuth, auditLog, adminRateLimit } from '../middleware/adminA
 import { subscriptionService } from '../services/subscriptionService.js'
 
 const router = express.Router()
+const PLAN_FEATURE_KEYS = [
+  'recruiter',
+  'leaveManagement',
+  'payrollManagement',
+  'performanceManagement',
+  'timeAttendance',
+  'outlineDocs',
+  'aiChat',
+  'lms'
+]
+
+const parseLimitValue = (value, label) => {
+  if (value === undefined) return undefined
+  if (value === null || value === '') return null
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${label} must be a non-negative number or null`)
+  }
+  return Math.floor(parsed)
+}
+
+const sanitizeLimits = (limitsInput = {}) => {
+  if (!limitsInput || typeof limitsInput !== 'object') return {}
+
+  const sanitized = {}
+  const maxMembers = parseLimitValue(limitsInput.maxMembers, 'maxMembers')
+  const maxTeams = parseLimitValue(limitsInput.maxTeams, 'maxTeams')
+  const maxStorage = parseLimitValue(limitsInput.maxStorage, 'maxStorage')
+  const maxSystemCourses = parseLimitValue(limitsInput.maxSystemCourses, 'maxSystemCourses')
+
+  if (maxMembers !== undefined) sanitized.maxMembers = maxMembers
+  if (maxTeams !== undefined) sanitized.maxTeams = maxTeams
+  if (maxStorage !== undefined) sanitized.maxStorage = maxStorage
+  if (maxSystemCourses !== undefined) sanitized.maxSystemCourses = maxSystemCourses
+
+  return sanitized
+}
+
+const sanitizeFeatures = (featuresInput = {}) => {
+  if (!featuresInput || typeof featuresInput !== 'object') return {}
+
+  return PLAN_FEATURE_KEYS.reduce((acc, key) => {
+    if (featuresInput[key] === true || featuresInput[key] === false) {
+      acc[key] = featuresInput[key]
+    }
+    return acc
+  }, {})
+}
 
 /**
  * Admin Plans API Routes
@@ -57,8 +106,11 @@ router.post('/', auditLog('create_plan'), async (req, res) => {
       pricing,
       limits,
       features,
+      hideHubCards,
+      showComingSoonCards,
       isActive,
       isPublic,
+      isRequestable,
       isFeatured,
       isTrial,
       trialDays,
@@ -71,16 +123,28 @@ router.post('/', auditLog('create_plan'), async (req, res) => {
     if (!name) {
       return res.status(400).json({ error: 'Plan name is required' })
     }
+    if (!slug) {
+      return res.status(400).json({ error: 'Plan slug is required' })
+    }
+    if (!/^[a-z0-9-]+$/.test(String(slug).trim())) {
+      return res.status(400).json({ error: 'Plan slug must contain only lowercase letters, numbers, and hyphens' })
+    }
+
+    const sanitizedLimits = sanitizeLimits(limits || {})
+    const sanitizedFeatures = sanitizeFeatures(features || {})
 
     const planData = {
       name,
       slug,
       description,
       pricing: pricing || {},
-      limits: limits || {},
-      features: features || {},
+      limits: sanitizedLimits,
+      features: sanitizedFeatures,
+      hideHubCards: Array.isArray(hideHubCards) ? hideHubCards : [],
+      showComingSoonCards: Array.isArray(showComingSoonCards) ? showComingSoonCards : [],
       isActive: isActive !== false,
       isPublic: isPublic !== false,
+      isRequestable: isRequestable !== false,
       isFeatured: isFeatured || false,
       isTrial: isTrial || false,
       trialDays: trialDays || 14,
@@ -97,6 +161,9 @@ router.post('/', auditLog('create_plan'), async (req, res) => {
     })
   } catch (error) {
     console.error('Error creating plan:', error)
+    if (error.message?.includes('must be a non-negative number')) {
+      return res.status(400).json({ error: error.message })
+    }
     if (error.code === 11000) {
       return res.status(400).json({ error: 'Plan name or slug already exists' })
     }
@@ -117,8 +184,11 @@ router.put('/:planId', auditLog('update_plan'), async (req, res) => {
       pricing,
       limits,
       features,
+      hideHubCards,
+      showComingSoonCards,
       isActive,
       isPublic,
+      isRequestable,
       isFeatured,
       isTrial,
       trialDays,
@@ -131,13 +201,21 @@ router.put('/:planId', auditLog('update_plan'), async (req, res) => {
 
     // Only include fields that were provided
     if (name !== undefined) planData.name = name
-    if (slug !== undefined) planData.slug = slug
+    if (slug !== undefined) {
+      if (!slug || !/^[a-z0-9-]+$/.test(String(slug).trim())) {
+        return res.status(400).json({ error: 'Plan slug must contain only lowercase letters, numbers, and hyphens' })
+      }
+      planData.slug = slug
+    }
     if (description !== undefined) planData.description = description
     if (pricing !== undefined) planData.pricing = pricing
-    if (limits !== undefined) planData.limits = limits
-    if (features !== undefined) planData.features = features
+    if (limits !== undefined) planData.limits = sanitizeLimits(limits)
+    if (features !== undefined) planData.features = sanitizeFeatures(features)
+    if (hideHubCards !== undefined) planData.hideHubCards = Array.isArray(hideHubCards) ? hideHubCards : []
+    if (showComingSoonCards !== undefined) planData.showComingSoonCards = Array.isArray(showComingSoonCards) ? showComingSoonCards : []
     if (isActive !== undefined) planData.isActive = isActive
     if (isPublic !== undefined) planData.isPublic = isPublic
+    if (isRequestable !== undefined) planData.isRequestable = isRequestable
     if (isFeatured !== undefined) planData.isFeatured = isFeatured
     if (isTrial !== undefined) planData.isTrial = isTrial
     if (trialDays !== undefined) planData.trialDays = trialDays
@@ -155,6 +233,9 @@ router.put('/:planId', auditLog('update_plan'), async (req, res) => {
     console.error('Error updating plan:', error)
     if (error.message === 'Plan not found') {
       return res.status(404).json({ error: 'Plan not found' })
+    }
+    if (error.message?.includes('must be a non-negative number')) {
+      return res.status(400).json({ error: error.message })
     }
     if (error.code === 11000) {
       return res.status(400).json({ error: 'Plan name or slug already exists' })

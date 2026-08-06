@@ -1,30 +1,204 @@
+const crypto = require('crypto');
 const Handlebars = require('handlebars');
+const { isMailConfigured, mailTransportStatus, sendMail } = require('./mailClient');
 const { decodeHtmlEntities, decodeObjectHtmlEntities } = require('../utils/htmlDecode');
+const {
+  resolveOrganizationBrand,
+  requireOrganizationBrand
+} = require('../utils/organizationBrand');
+const {
+  isHtmlLike,
+  escapeHtml,
+  sanitizeEmailHtml,
+  plainTextToEmailHtml,
+  htmlToText
+} = require('../utils/emailHtmlSanitizer');
+
+/** Flattens a provider-shaped recipient list into bare mailboxes. */
+function toMailboxList(value) {
+  if (!value) return [];
+  const items = Array.isArray(value) ? value : [value];
+  return items
+    .map((item) => (typeof item === 'string' ? item : item?.email))
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+}
+
+/** Provider attachments carry base64 in `content`; the contract names it `data`. */
+function normalizeProviderAttachments(value) {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const items = value
+    .filter((item) => item && (item.content || item.data) && (item.name || item.filename))
+    .map((item) => ({
+      name: item.name || item.filename,
+      contentType: item.contentType || 'application/octet-stream',
+      data: String(item.data || item.content)
+    }));
+  return items.length > 0 ? items : undefined;
+}
+
+/**
+ * Last-resort idempotency key for send sites that have no business identifier
+ * of their own. Identical content to identical recipients is treated as one
+ * event; any change in recipient, subject or body produces a new key.
+ */
+function messageDigestKey(tag, recipients, subject, html, text) {
+  const digest = crypto.createHash('sha256')
+    .update(JSON.stringify([tag, recipients.map((item) => item.toLowerCase()).sort(), subject || '', html || '', text || '']))
+    .digest('hex');
+  return `${tag}:${digest.slice(0, 32)}`;
+}
+
+/** Minimal fetch-Response stand-in for the provider-shaped call sites. */
+function providerResponse(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body)
+  };
+}
 
 class EmailService {
   constructor() {
     this.templateCache = new Map();
-    this.fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-    this.apiKey = process.env.BREVO_API_KEY;
-    this.apiBaseUrl = 'https://api.brevo.com/v3/smtp/email';
-    
-    // Log configuration status on startup
+    this.apiBaseUrl = mailTransportStatus().baseUrl;
+
+    // Log configuration status on startup. The credential itself is never printed.
     console.log('📧 Email Service Configuration:');
-    console.log('  - API Key:', this.apiKey ? 'Set' : '❌ MISSING');
-    console.log('  - API Base URL:', this.apiBaseUrl);
-    
-    if (!this.apiKey) {
-      console.error('❌ BREVO_API_KEY environment variable is not set! Emails will fail to send.');
+    console.log('  - Mail service:', isMailConfigured() ? 'Configured' : '❌ MISSING');
+    console.log('  - Mail service URL:', this.apiBaseUrl || '(not set)');
+
+    if (!isMailConfigured()) {
+      console.error('❌ MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL are not set! Emails will fail to send.');
+    }
+
+    // Every send site in this service builds one provider-shaped payload and
+    // then inspects a fetch Response. Adapting at that seam keeps all of those
+    // call sites, their error handling and their business semantics unchanged
+    // while the transport underneath becomes the Seemplify mail service.
+    this.fetch = (_url, init) => this.deliverProviderPayload(init);
+  }
+
+  /**
+   * Translates one provider-shaped payload into the mail-service contract and
+   * answers a minimal fetch-Response so existing callers keep working.
+   */
+  async deliverProviderPayload(init) {
+    let payload = {};
+    try {
+      payload = JSON.parse(String(init?.body || '{}'));
+    } catch (error) {
+      return providerResponse(400, { message: 'The email payload was not valid JSON.' });
+    }
+
+    const recipients = toMailboxList(payload.to);
+    const idempotencyKey = String(payload.idempotencyKey || '').trim()
+      // Without a caller-supplied business identifier, derive one from the
+      // message itself so an accidental double submit collapses to one send.
+      || messageDigestKey(payload.tag || 'recruiter_email', recipients, payload.subject, payload.htmlContent, payload.textContent);
+
+    try {
+      const result = await sendMail({
+        from: payload.sender?.email || undefined,
+        fromName: payload.sender?.name || undefined,
+        to: recipients,
+        cc: toMailboxList(payload.cc),
+        bcc: toMailboxList(payload.bcc),
+        replyTo: payload.replyTo?.email || payload.replyTo || undefined,
+        subject: payload.subject,
+        html: payload.htmlContent,
+        text: payload.textContent,
+        tag: payload.tag || undefined,
+        attachments: normalizeProviderAttachments(payload.attachment || payload.attachments),
+        idempotencyKey
+      });
+      return providerResponse(202, { status: result.status, messageId: result.messageId });
+    } catch (error) {
+      // Surface the classification without leaking the token or the body.
+      return providerResponse(error.status || 500, {
+        message: error.message,
+        code: error.code,
+        retryable: Boolean(error.retryable)
+      });
     }
   }
-  
+
   // Diagnostic method to check email service health
   checkConfiguration() {
+    const status = mailTransportStatus();
     return {
-      hasApiKey: !!this.apiKey,
-      apiBaseUrl: this.apiBaseUrl,
-      isConfigured: !!this.apiKey
+      hasApiKey: status.configured,
+      apiBaseUrl: status.baseUrl,
+      isConfigured: status.configured
     };
+  }
+
+  getOrganizationBrand(organizationName = null) {
+    return resolveOrganizationBrand(organizationName);
+  }
+
+  requireOrganizationBrand(organizationName) {
+    return requireOrganizationBrand(organizationName);
+  }
+
+  ensureOrganizationSubject(subject, organizationName = null) {
+    const brand = this.getOrganizationBrand(organizationName);
+    const decodedSubject = this.applyOrganizationBrand(
+      decodeHtmlEntities(subject || ''),
+      brand
+    );
+    const normalizedSubject = decodedSubject.toLowerCase().trim();
+    const normalizedBrand = brand.toLowerCase().trim();
+
+    if (
+      normalizedSubject.startsWith(`${normalizedBrand} -`) ||
+      normalizedSubject.startsWith(`${normalizedBrand}:`)
+    ) {
+      return decodedSubject;
+    }
+
+    return `${brand} - ${decodedSubject}`.trim();
+  }
+
+  applyOrganizationBrand(content, organizationName = null) {
+    if (!content) {
+      return content;
+    }
+    const brand = this.getOrganizationBrand(organizationName);
+    // Replace standalone product labels and the retired Mega placeholder.
+    // Do not replace labels inside URLs, domains, or email addresses.
+    return String(content).replace(
+      /(^|[^A-Za-z0-9_./@-])(smarthr|mega)(?=$|[^A-Za-z0-9_./@-])/gi,
+      (_match, prefix) => `${prefix}${brand}`
+    );
+  }
+
+  normalizeInterviewTemplate(template) {
+    if (!template) {
+      return template;
+    }
+
+    // Convert known preview/demo literals back to runtime variables.
+    // This protects real sends if a preview-rendered template is accidentally saved.
+    const replacements = [
+      [/jane\s+doe|jane\s+deo/gi, '{{candidateName}}'],
+      [/senior\s+product\s+designer/gi, '{{jobTitle}}'],
+      [/tuesday,\s+february\s+24,\s+2026/gi, '{{interviewDate}}'],
+      [/10:00\s+am\s+est/gi, '{{interviewTime}}'],
+      [/https:\/\/teams\.microsoft\.com\/l\/meetup-join\/example/gi, '{{meetingLink}}'],
+      [/please have your portfolio ready for screen sharing\./gi, '{{notes}}'],
+      [/michael\s+adams/gi, '{{interviewerName}}'],
+      [/smarthr/gi, '{{organizationName}}'],
+      [/\bmega\b/gi, '{{organizationName}}']
+    ];
+
+    let normalized = String(template);
+    for (const [pattern, variable] of replacements) {
+      normalized = normalized.replace(pattern, variable);
+    }
+
+    return normalized;
   }
   
   /**
@@ -55,6 +229,8 @@ class EmailService {
       .replace(/&gt;/g, ">")
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'");
+
+    decodedTemplate = this.normalizeInterviewTemplate(decodedTemplate);
     
     console.log('🔍 [EmailService.processTemplate] After HTML decoding, contains {{/if:', decodedTemplate.includes('{{/if'));
     
@@ -102,7 +278,7 @@ class EmailService {
       console.log('⚠️ [EmailService.processTemplate] Falling back to regex-based processing...');
       
       // Fallback to regex-based processing
-      return this.fallbackProcessTemplate(template, data);
+      return this.fallbackProcessTemplate(decodedTemplate, data);
     }
   }
   
@@ -175,25 +351,26 @@ class EmailService {
     // Use passed URL or fallback to environment variable or default
     const baseUrl = frontendUrl || process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetUrl = `${baseUrl}/reset-password/${token}`;
+    const organizationName = this.getOrganizationBrand();
     
     const emailData = {
       sender: {
-        name: 'SmartHR',
-        email: 'michael.egbo@aiinnigeria.com',
+        name: organizationName,
+        email: 'no-reply@aiinnigeria.com',
       },
       to: [
         {
           email: to,
         },
       ],
-      subject: decodeHtmlEntities('Password Reset Request - SmartHR'),
+      subject: this.ensureOrganizationSubject('Password Reset Request', organizationName),
       textContent: `
 SMARTHR - PASSWORD RESET REQUEST
 ===============================
 
 Hello,
 
-You have requested to reset your password for your SmartHR account.
+You have requested to reset your password for your ${organizationName} account.
 
 RESET YOUR PASSWORD:
 Click the link below or copy and paste it into your browser:
@@ -210,10 +387,10 @@ If you have any questions, contact our support team:
 - Reply to this email for assistance
 
 Best regards,
-The SmartHR Team
+The ${organizationName} Team
 
 ---
-SmartHR - Smart Hiring, Smarter Results
+${organizationName} - Smart Hiring, Smarter Results
 This email was sent to ${to} because a password reset was requested for your account.
       `,
       htmlContent: `
@@ -224,13 +401,15 @@ This email was sent to ${to} because a password reset was requested for your acc
       `,
     };
 
+    emailData.textContent = this.applyOrganizationBrand(emailData.textContent, organizationName);
+    emailData.htmlContent = this.applyOrganizationBrand(emailData.htmlContent, organizationName);
+
     try {
       console.log('Sending password reset email to:', to);
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -252,50 +431,54 @@ This email was sent to ${to} because a password reset was requested for your acc
   }
 
   async sendOrganizationInviteEmail(to, inviterName, organizationName, appUrl) {
+    const brandName = this.requireOrganizationBrand(organizationName);
     const emailData = {
       sender: {
-        name: 'SmartHR Team',
-        email: 'michael.egbo@aiinnigeria.com',
+        name: brandName,
+        email: 'no-reply@aiinnigeria.com',
       },
       to: [
         {
           email: to,
         },
       ],
-      subject: decodeHtmlEntities(`Invitation to join ${organizationName} on SmartHR`),
+      subject: this.ensureOrganizationSubject(`Invitation to join ${brandName}`, brandName),
       textContent: `
 Hello,
 
-${inviterName} has invited you to join ${organizationName} on SmartHR.
+${inviterName} has invited you to join ${brandName}.
 
 To get started, simply visit: ${appUrl}
 
-Sign in to your existing account or create a new one to collaborate with your team on SmartHR.
+Sign in to your existing account or create a new one to collaborate with your team on ${brandName}.
 
 Best regards,
-The SmartHR Team
+The ${brandName} Team
 
 ---
-This email was sent to ${to} because ${inviterName} invited you to join ${organizationName}.
+This email was sent to ${to} because ${inviterName} invited you to join ${brandName}.
       `,
       htmlContent: `
         <p>Hello,</p>
-        <p><strong>${inviterName}</strong> has invited you to join <strong>${organizationName}</strong> on SmartHR.</p>
+        <p><strong>${inviterName}</strong> has invited you to join <strong>${brandName}</strong>.</p>
         <p>To get started, simply visit: <a href="${appUrl}">${appUrl}</a></p>
-        <p>Sign in to your existing account or create a new one to collaborate with your team on SmartHR.</p>
-        <p>Best regards,<br>The SmartHR Team</p>
+        <p>Sign in to your existing account or create a new one to collaborate with your team on ${brandName}.</p>
+        <p>Best regards,<br>The ${brandName} Team</p>
         <hr>
-        <p><small>This email was sent to ${to} because ${inviterName} invited you to join ${organizationName}.</small></p>
+        <p><small>This email was sent to ${to} because ${inviterName} invited you to join ${brandName}.</small></p>
       `
     };
 
+    emailData.textContent = this.applyOrganizationBrand(emailData.textContent, brandName);
+    emailData.htmlContent = this.applyOrganizationBrand(emailData.htmlContent, brandName);
+
     try {
-      console.log('Sending organization invite email with data:', JSON.stringify(emailData, null, 2));
+      // Recipients and subject only: message bodies are never logged.
+      console.log('Sending organization invite email to:', toMailboxList(emailData.to).join(', '), '|', emailData.subject);
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -317,7 +500,7 @@ This email was sent to ${to} because ${inviterName} invited you to join ${organi
     }
   }
 
-  async sendInterviewInviteEmail(to, templateData, customTemplate = null, bccEmails = [], ccEmails = []) {
+  async sendInterviewInviteEmail(to, templateData, customTemplate = null, bccEmails = [], ccEmails = [], options = {}) {
     try {
       console.log('Sending interview invitation email to:', to);
       console.log('📊 Raw template data:', JSON.stringify(templateData, null, 2));
@@ -342,8 +525,17 @@ This email was sent to ${to} because ${inviterName} invited you to join ${organi
       
       console.log('📝 [EmailService] Template BEFORE processing (first 500 chars):', customTemplate.substring(0, 500));
       
-      // Process the template with the provided data
-      const textContent = this.processTemplate(customTemplate, normalizedData);
+      // Process and sanitize template output.
+      const renderedTemplate = this.processTemplate(customTemplate, normalizedData);
+      const hasHtmlMarkup = isHtmlLike(customTemplate) || isHtmlLike(renderedTemplate);
+      const textContent = hasHtmlMarkup ? htmlToText(renderedTemplate) : renderedTemplate;
+      const htmlContent = hasHtmlMarkup
+        ? sanitizeEmailHtml(renderedTemplate)
+        : sanitizeEmailHtml(plainTextToEmailHtml(renderedTemplate));
+
+      if (!htmlContent) {
+        throw new Error('Email template produced empty content after sanitization.');
+      }
       
       // ✅ CRITICAL: Log the processed result for debugging
       console.log('📝 [EmailService] Template AFTER processing (first 500 chars):', textContent.substring(0, 500));
@@ -354,23 +546,39 @@ This email was sent to ${to} because ${inviterName} invited you to join ${organi
         hasNotesPlaceholder: textContent.includes('{{notes}}')
       });
       
-      // Create HTML version with basic formatting
-      const htmlContent = textContent.replace(/\n/g, '<br>');
-      
+      const organizationName = this.requireOrganizationBrand(normalizedData.organizationName);
       const emailData = {
         sender: {
-          name: decodeHtmlEntities(normalizedData.organizationName),
-          email: 'michael.egbo@aiinnigeria.com',
+          name: organizationName,
+          email: 'no-reply@aiinnigeria.com',
         },
         to: [
           {
             email: to,
           },
         ],
-        subject: decodeHtmlEntities(`Interview Invitation: ${normalizedData.jobTitle} - ${normalizedData.interviewDate}`),
-        textContent,
-        htmlContent,
+        subject: this.ensureOrganizationSubject(`Interview Invitation: ${normalizedData.jobTitle} - ${normalizedData.interviewDate}`, organizationName),
+        textContent: this.applyOrganizationBrand(textContent, organizationName),
+        htmlContent: this.applyOrganizationBrand(htmlContent, organizationName),
       };
+
+      // Add attachments if provided (e.g., job description PDF).
+      if (Array.isArray(options.attachments) && options.attachments.length > 0) {
+        const normalizedAttachments = options.attachments
+          .filter(item => item && item.content && (item.name || item.filename))
+          .map(item => ({
+            name: item.name || item.filename,
+            content: item.content,
+            contentType: item.contentType || 'application/pdf'
+          }));
+
+        if (normalizedAttachments.length > 0) {
+          // Brevo SMTP API expects `attachment` (singular) as an array.
+          // Keep `attachments` for backward compatibility with existing integrations.
+          emailData.attachment = normalizedAttachments;
+          emailData.attachments = normalizedAttachments;
+        }
+      }
 
       // Add CC recipients if provided
       if (ccEmails && ccEmails.length > 0) {
@@ -382,13 +590,13 @@ This email was sent to ${to} because ${inviterName} invited you to join ${organi
         emailData.bcc = bccEmails.map(email => ({ email: email }));
       }
       
-      console.log('Sending interview email with data:', JSON.stringify(emailData, null, 2));
+      // Recipients and subject only: message bodies are never logged.
+      console.log('Sending interview email to:', toMailboxList(emailData.to).join(', '), '|', emailData.subject);
       
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -414,18 +622,19 @@ This email was sent to ${to} because ${inviterName} invited you to join ${organi
    */
   async sendAdminInviteWithPassword(to, name, loginEmail, initialPassword) {
     try {
+      const organizationName = this.getOrganizationBrand();
       // Hardcoded production URL - do not use environment variables
       const portalUrl = 'https://smarthr.aiinnigeria.com/admin/login';
 
-      const subject = decodeHtmlEntities('Your SmartHR Admin Account Details');
+      const subject = this.ensureOrganizationSubject('Your Admin Account Details', organizationName);
       const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
           <div style="background: linear-gradient(90deg, #2563eb, #7c3aed); padding: 20px; border-radius: 8px 8px 0 0; color: #fff;">
-            <h2 style="margin: 0;">SmartHR Admin Invitation</h2>
+            <h2 style="margin: 0;">${organizationName} Admin Invitation</h2>
           </div>
           <div style="padding: 24px; color: #111827;">
             <p>Hello ${name || 'there'},</p>
-            <p>You have been granted access to the <strong>SmartHR Admin Portal</strong>.</p>
+            <p>You have been granted access to the <strong>${organizationName} Admin Portal</strong>.</p>
             <div style="background:#f3f4f6; padding:16px; border-radius:8px; border:1px solid #e5e7eb;">
               <p style="margin:0 0 8px 0; font-weight:600;">Your login details:</p>
               <p style="margin:4px 0;"><strong>Email:</strong> ${loginEmail}</p>
@@ -444,12 +653,12 @@ This email was sent to ${to} because ${inviterName} invited you to join ${organi
 
       const emailData = {
         sender: {
-          name: 'SmartHR',
-          email: 'michael.egbo@aiinnigeria.com',
+          name: organizationName,
+          email: 'no-reply@aiinnigeria.com',
         },
         to: [{ email: to }],
         subject,
-        htmlContent
+        htmlContent: this.applyOrganizationBrand(htmlContent, organizationName)
       };
 
       console.log('📨 Sending admin invite (Brevo) to:', to, 'portalUrl:', portalUrl);
@@ -457,7 +666,6 @@ This email was sent to ${to} because ${inviterName} invited you to join ${organi
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -515,28 +723,29 @@ Best regards,
       // Create HTML version with basic formatting
       const htmlContent = textContent.replace(/\n/g, '<br>');
       
+      const organizationName = this.requireOrganizationBrand(decodedData.organizationName);
       const emailData = {
         sender: {
-          name: decodeHtmlEntities(decodedData.organizationName),
-          email: 'michael.egbo@aiinnigeria.com',
+          name: organizationName,
+          email: 'no-reply@aiinnigeria.com',
         },
         to: [
           {
             email: to,
           },
         ],
-        subject: decodeHtmlEntities(`Interview Cancelled: ${decodedData.jobTitle} - ${decodedData.interviewDate}`),
-        textContent,
-        htmlContent,
+        subject: this.ensureOrganizationSubject(`Interview Cancelled: ${decodedData.jobTitle} - ${decodedData.interviewDate}`, organizationName),
+        textContent: this.applyOrganizationBrand(textContent, organizationName),
+        htmlContent: this.applyOrganizationBrand(htmlContent, organizationName),
       };
       
-      console.log('Sending interview cancellation email with data:', JSON.stringify(emailData, null, 2));
+      // Recipients and subject only: message bodies are never logged.
+      console.log('Sending interview cancellation email to:', toMailboxList(emailData.to).join(', '), '|', emailData.subject);
       
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -558,24 +767,25 @@ Best regards,
   }
 
   async sendAdminPasswordResetOTP(to, otp, adminName) {
+    const organizationName = this.getOrganizationBrand();
     const emailData = {
       sender: {
-        name: 'SmartHR',
-        email: 'michael.egbo@aiinnigeria.com',
+        name: organizationName,
+        email: 'no-reply@aiinnigeria.com',
       },
       to: [
         {
           email: to,
         },
       ],
-      subject: 'Admin Password Reset - OTP Verification - SmartHR',
+      subject: this.ensureOrganizationSubject('Admin Password Reset - OTP Verification', organizationName),
       textContent: `
 SMARTHR - ADMIN PASSWORD RESET OTP
 ==================================
 
 Hello ${adminName || 'Admin'},
 
-You have requested to reset your SmartHR admin account password.
+You have requested to reset your ${organizationName} admin account password.
 
 YOUR OTP CODE:
 ${otp}
@@ -586,19 +796,19 @@ IMPORTANT INFORMATION:
 - This is for admin account access only
 
 SECURITY NOTICE:
-If you did not request this password reset, please contact the system administrator immediately at michael.egbo@aiinnigeria.com
+If you did not request this password reset, please contact the system administrator immediately at no-reply@aiinnigeria.com
 
 For security reasons, please do not share this OTP with anyone.
 
 Best regards,
-SmartHR Admin Team
+${organizationName} Admin Team
 
 This is an automated email. Please do not reply to this message.
       `,
       htmlContent: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
           <div style="text-align: center; margin-bottom: 30px; padding: 20px; background-color: #1f2937; border-radius: 8px;">
-            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">SmartHR</h1>
+            <h1 style="color: #ffffff; margin: 0; font-size: 28px;">${organizationName}</h1>
             <p style="color: #9ca3af; margin: 5px 0 0 0; font-size: 14px;">Admin Portal</p>
           </div>
           
@@ -606,7 +816,7 @@ This is an automated email. Please do not reply to this message.
             <h2 style="color: #1f2937; margin-top: 0;">Admin Password Reset</h2>
             <p style="color: #374151; line-height: 1.6;">Hello ${adminName || 'Admin'},</p>
             <p style="color: #374151; line-height: 1.6;">
-              You have requested to reset your SmartHR admin account password. Please use the following OTP to verify your identity:
+              You have requested to reset your ${organizationName} admin account password. Please use the following OTP to verify your identity:
             </p>
             
             <div style="text-align: center; margin: 30px 0;">
@@ -626,13 +836,13 @@ This is an automated email. Please do not reply to this message.
           
           <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b; margin-bottom: 20px;">
             <p style="margin: 0; color: #92400e; font-size: 14px;">
-              <strong>🛡️ Security Notice:</strong> This is a sensitive admin account operation. If you didn't request this reset, please contact the system administrator immediately at <a href="mailto:michael.egbo@aiinnigeria.com" style="color: #92400e;">michael.egbo@aiinnigeria.com</a>
+              <strong>🛡️ Security Notice:</strong> This is a sensitive admin account operation. If you didn't request this reset, please contact the system administrator immediately at <a href="mailto:no-reply@aiinnigeria.com" style="color: #92400e;">no-reply@aiinnigeria.com</a>
             </p>
           </div>
           
           <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
             <p style="margin: 0; color: #6b7280; font-size: 12px;">
-              This email was sent from SmartHR Admin Portal<br>
+              This email was sent from ${organizationName} Admin Portal<br>
               Please do not reply to this email
             </p>
           </div>
@@ -640,13 +850,15 @@ This is an automated email. Please do not reply to this message.
       `,
     };
 
+    emailData.textContent = this.applyOrganizationBrand(emailData.textContent, organizationName);
+    emailData.htmlContent = this.applyOrganizationBrand(emailData.htmlContent, organizationName);
+
     try {
       const fetch = await this.fetch;
       const response = await fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'accept': 'application/json',
-          'api-key': this.apiKey,
           'content-type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -675,9 +887,10 @@ This is an automated email. Please do not reply to this message.
    */
   async sendAdminNotification(to, subject, message) {
     try {
+      const organizationName = this.getOrganizationBrand();
       const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>SmartHR Admin Notification</h2>
+          <h2>${organizationName} Admin Notification</h2>
           <p>${message}</p>
           <p>Please log into the admin dashboard to take action.</p>
           <div style="margin: 20px 0;">
@@ -687,25 +900,24 @@ This is an automated email. Please do not reply to this message.
               Open Admin Dashboard
             </a>
           </div>
-          <p>Thank you,<br>The SmartHR System</p>
+          <p>Thank you,<br>The ${organizationName} System</p>
         </div>
       `;
       
       const payload = {
         sender: {
-        name: 'SmartHR',
-        email: 'michael.egbo@aiinnigeria.com',
+        name: organizationName,
+        email: 'no-reply@aiinnigeria.com',
       },
         to: [{ email: to }],
-        subject,
-        htmlContent
+        subject: this.ensureOrganizationSubject(subject, organizationName),
+        htmlContent: this.applyOrganizationBrand(htmlContent, organizationName)
       };
       
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'api-key': this.apiKey
         },
         body: JSON.stringify(payload)
       });
@@ -738,6 +950,14 @@ This is an automated email. Please do not reply to this message.
    * @returns {Object} - Status of the email sending operation
    */
   async sendUserNotification(to, subject, message, options = {}) {
+    const hasOrganizationBrand =
+      Object.prototype.hasOwnProperty.call(options, 'senderName') ||
+      Object.prototype.hasOwnProperty.call(options, 'organizationName');
+    const requestedBrand = options.senderName ?? options.organizationName;
+    const senderDisplayName = hasOrganizationBrand
+      ? this.requireOrganizationBrand(requestedBrand)
+      : this.getOrganizationBrand();
+
     try {
       // Check if this is a custom HTML email (like interview feedback)
       const isCustomHtml = options.htmlContent || message.includes('<div') || message.includes('<html');
@@ -752,7 +972,7 @@ This is an automated email. Please do not reply to this message.
         htmlContent = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
             <div style="text-align: center; padding: 20px 0; background-color: #ffffff; border-radius: 8px 8px 0 0; border-bottom: 2px solid #007bff;">
-              <h1 style="color: #007bff; margin: 0; font-size: 28px;">SmartHR</h1>
+              <h1 style="color: #007bff; margin: 0; font-size: 28px;">${senderDisplayName}</h1>
               <p style="color: #555555; margin: 5px 0 0 0; font-size: 16px;">Smart Hiring, Smarter Results</p>
             </div>
             
@@ -766,14 +986,14 @@ This is an automated email. Please do not reply to this message.
                   style="background-color: #007bff; color: white; padding: 12px 25px; 
                         text-decoration: none; border-radius: 5px; font-weight: bold;
                         display: inline-block; font-size: 16px;">
-                  Go to SmartHR
+                  Go to ${senderDisplayName}
                 </a>
               </div>
             </div>
             
             <div style="margin-top: 20px; text-align: center; color: #888888; font-size: 14px;">
-              <p>Thank you for using SmartHR.</p>
-              <p>© ${new Date().getFullYear()} SmartHR. All rights reserved.</p>
+              <p>Thank you for using ${senderDisplayName}.</p>
+              <p>© ${new Date().getFullYear()} ${senderDisplayName}. All rights reserved.</p>
             </div>
           </div>
         `;
@@ -781,16 +1001,19 @@ This is an automated email. Please do not reply to this message.
       
       const payload = {
         sender: {
-        name: 'SmartHR',
-        email: 'michael.egbo@aiinnigeria.com',
+        name: senderDisplayName,
+        email: 'no-reply@aiinnigeria.com',
       },
         to: [{ email: to }],
-        subject,
-        htmlContent
+        subject: this.ensureOrganizationSubject(subject, senderDisplayName),
+        htmlContent: this.applyOrganizationBrand(htmlContent, senderDisplayName)
       };
       
       // Add attachments if provided
       if (options.attachments && options.attachments.length > 0) {
+        // Brevo SMTP API expects `attachment` (singular) as an array.
+        // Keep `attachments` for backward compatibility with any existing callers.
+        payload.attachment = options.attachments;
         payload.attachments = options.attachments;
       }
       
@@ -798,7 +1021,6 @@ This is an automated email. Please do not reply to this message.
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'api-key': this.apiKey
         },
         body: JSON.stringify(payload)
       });
@@ -928,28 +1150,29 @@ This is an automated email. Please do not reply to this message.
         </html>
       `;
       
+      const organizationName = this.requireOrganizationBrand(templateData.organizationName);
       const emailData = {
         sender: {
-          name: 'SmartHR',
-          email: 'michael.egbo@aiinnigeria.com',
+          name: organizationName,
+          email: 'no-reply@aiinnigeria.com',
         },
         to: [
           {
             email: to,
           },
         ],
-        subject: `Interview Notification: ${templateData.candidateName} - ${templateData.jobTitle}`,
-        textContent,
-        htmlContent,
+        subject: this.ensureOrganizationSubject(`Interview Notification: ${templateData.candidateName} - ${templateData.jobTitle}`, organizationName),
+        textContent: this.applyOrganizationBrand(textContent, organizationName),
+        htmlContent: this.applyOrganizationBrand(htmlContent, organizationName),
       };
       
-      console.log('Sending interview notification email with data:', JSON.stringify(emailData, null, 2));
+      // Recipients and subject only: message bodies are never logged.
+      console.log('Sending interview notification email to:', toMailboxList(emailData.to).join(', '), '|', emailData.subject);
       
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -970,19 +1193,140 @@ This is an automated email. Please do not reply to this message.
     }
   }
 
+  /**
+   * Send one consolidated participant digest for multi-candidate interview sessions (Brevo).
+   * @param {string} to - Participant email
+   * @param {Object} digestData - Consolidated digest details
+   * @returns {Object} send status
+   */
+  async sendMultiCandidateParticipantDigestEmail(to, digestData = {}) {
+    try {
+      const {
+        participantName,
+        timezone = 'UTC',
+        sessionStartTime,
+        sessionEndTime,
+        sharedMeetingLink = '',
+        entries = []
+      } = digestData;
+
+      if (!to || !entries.length) {
+        return { success: false, message: 'No recipient or digest entries provided' };
+      }
+
+      const sessionDateObj = sessionStartTime ? new Date(sessionStartTime) : new Date();
+      const sessionDateLabel = sessionDateObj.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        timeZone: timezone
+      });
+
+      const sessionStartLabel = sessionStartTime
+        ? new Date(sessionStartTime).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: timezone,
+            timeZoneName: 'short'
+          })
+        : '';
+
+      const sessionEndLabel = sessionEndTime
+        ? new Date(sessionEndTime).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: timezone,
+            timeZoneName: 'short'
+          })
+        : '';
+
+      const subject = `Interview Schedule: ${entries.length} Candidates - ${sessionDateLabel}`;
+      const organizationName = this.requireOrganizationBrand(digestData.organizationName);
+      const safeParticipantName = escapeHtml(participantName || 'Team Member');
+      const safeSessionDateLabel = escapeHtml(sessionDateLabel);
+      const safeSessionStartLabel = escapeHtml(sessionStartLabel);
+      const safeSessionEndLabel = escapeHtml(sessionEndLabel);
+      const safeSharedMeetingLink = escapeHtml(sharedMeetingLink);
+
+      const rowsHtml = entries
+        .map(entry => `
+          <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(entry.candidateName || 'Candidate')}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(entry.jobTitle || 'Interview')}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(entry.formattedTime || new Date(entry.startTime).toLocaleString('en-US'))}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(String(entry.duration || 0))} min</td>
+            <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">
+              <a href="${escapeHtml(entry.feedbackUrl || '#')}" style="color: #2563eb; text-decoration: none;">Open Feedback</a>
+            </td>
+          </tr>
+        `)
+        .join('');
+
+      const htmlContent = sanitizeEmailHtml(`
+        <div style="font-family: Arial, sans-serif; max-width: 760px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+          <div style="padding: 20px; background: #111827; color: #ffffff;">
+            <h2 style="margin: 0;">Multi-Candidate Interview Digest</h2>
+            <p style="margin: 8px 0 0 0; color: #d1d5db;">${safeSessionDateLabel}</p>
+          </div>
+          <div style="padding: 20px;">
+            <p>Hello ${safeParticipantName},</p>
+            <p>You have <strong>${entries.length}</strong> interview${entries.length > 1 ? 's' : ''} scheduled for this session.</p>
+            ${sessionStartLabel && sessionEndLabel ? `<p><strong>Session Window:</strong> ${safeSessionStartLabel} - ${safeSessionEndLabel}</p>` : ''}
+            ${sharedMeetingLink ? `<p><strong>Shared Meeting Link:</strong> <a href="${safeSharedMeetingLink}" style="color: #2563eb;">${safeSharedMeetingLink}</a></p>` : ''}
+            <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px;">
+              <thead>
+                <tr style="background: #f3f4f6; text-align: left;">
+                  <th style="padding: 10px;">Candidate</th>
+                  <th style="padding: 10px;">Role</th>
+                  <th style="padding: 10px;">Interview Time</th>
+                  <th style="padding: 10px;">Duration</th>
+                  <th style="padding: 10px;">Feedback</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+            <p style="margin-top: 20px; color: #4b5563;">Calendar invites remain on each candidate slot as usual.</p>
+          </div>
+        </div>
+      `);
+
+      return await this.sendUserNotification(
+        to,
+        this.ensureOrganizationSubject(subject, organizationName),
+        `You have ${entries.length} interviews scheduled on ${sessionDateLabel}.`,
+        {
+          senderName: organizationName,
+          htmlContent
+        }
+      );
+    } catch (error) {
+      console.error('Error sending multi-candidate participant digest email:', error);
+      return {
+        success: false,
+        message: `Failed to send participant digest email: ${error.message}`
+      };
+    }
+  }
+
   async sendFeedbackOTP(to, otp, candidateName, jobTitle) {
     try {
+      const organizationName = this.getOrganizationBrand();
       const emailData = {
         sender: {
-          name: 'SmartHR',
-          email: 'michael.egbo@aiinnigeria.com',
+          name: organizationName,
+          email: 'no-reply@aiinnigeria.com',
         },
         to: [
           {
             email: to,
           },
         ],
-        subject: 'Verify Your Email - Interview Feedback Submission',
+        subject: this.ensureOrganizationSubject('Verify Your Email - Interview Feedback Submission', organizationName),
         textContent: `
 SMARTHR - EMAIL VERIFICATION
 =============================
@@ -997,12 +1341,12 @@ This code will expire in 10 minutes.
 If you did not request this verification, please ignore this email.
 
 Best regards,
-SmartHR Team
+${organizationName} Team
         `,
         htmlContent: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
             <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: linear-gradient(135deg, #3b82f6, #9333ea); border-radius: 8px;">
-              <h1 style="color: #ffffff; margin: 0; font-size: 28px;">SmartHR</h1>
+              <h1 style="color: #ffffff; margin: 0; font-size: 28px;">${organizationName}</h1>
               <p style="color: #e0e7ff; margin: 5px 0 0 0; font-size: 14px;">Interview Feedback System</p>
             </div>
             
@@ -1032,18 +1376,20 @@ SmartHR Team
             </div>
             
             <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
-              <p style="margin: 0;">This is an automated email from SmartHR. Please do not reply.</p>
-              <p style="margin: 5px 0 0 0;">© ${new Date().getFullYear()} SmartHR. All rights reserved.</p>
+              <p style="margin: 0;">This is an automated email from ${organizationName}. Please do not reply.</p>
+              <p style="margin: 5px 0 0 0;">© ${new Date().getFullYear()} ${organizationName}. All rights reserved.</p>
             </div>
           </div>
         `,
       };
+
+      emailData.textContent = this.applyOrganizationBrand(emailData.textContent, organizationName);
+      emailData.htmlContent = this.applyOrganizationBrand(emailData.htmlContent, organizationName);
       
       const response = await this.fetch(this.apiBaseUrl, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData),
@@ -1077,28 +1423,30 @@ SmartHR Team
    * @param {String} options.subject - Email subject
    * @param {String} options.html - HTML content
    * @param {String} options.text - Plain text content (optional)
-   * @param {String} options.senderName - Sender display name (optional)
    * @returns {Promise} Send result
    */
-  async sendEmail({ to, subject, html, text, senderName }) {
-    if (!this.apiKey) {
-      console.error('❌ BREVO_API_KEY environment variable is not set! Email will fail to send.');
+  async sendEmail({ to, subject, html, text, organizationName = null }) {
+    if (!isMailConfigured()) {
+      console.error('❌ MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL are not set! Email will fail to send.');
       throw new Error('Email service not properly configured');
     }
 
     try {
+      const brandName = organizationName == null
+        ? this.getOrganizationBrand()
+        : this.requireOrganizationBrand(organizationName);
       const emailData = {
         sender: {
-          name: decodeHtmlEntities(senderName) || 'SmartHR',
-          email: 'michael.egbo@aiinnigeria.com',
+          name: brandName,
+          email: 'no-reply@aiinnigeria.com',
         },
         to: [{ email: to }],
-        subject: decodeHtmlEntities(subject),
-        htmlContent: html
+        subject: this.ensureOrganizationSubject(subject, brandName),
+        htmlContent: this.applyOrganizationBrand(html, brandName)
       };
 
       if (text) {
-        emailData.textContent = text;
+        emailData.textContent = this.applyOrganizationBrand(text, brandName);
       }
 
       console.log('Sending email to:', to);
@@ -1106,7 +1454,6 @@ SmartHR Team
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'api-key': this.apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(emailData)

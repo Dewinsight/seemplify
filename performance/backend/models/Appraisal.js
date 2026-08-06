@@ -179,6 +179,18 @@ const appraisalSchema = new mongoose.Schema({
       max: 5
     },
 
+    // AI rating suggestion shown to the employee (not the employee's final self-rating)
+    aiRatingSuggestion: {
+      suggestedRating: { type: Number, min: 1, max: 5 },
+      ratingJustification: String,
+      keyStrengths: [String],
+      developmentAreas: [String],
+      calibrationNotes: String,
+      confidence: { type: Number, min: 0, max: 1 },
+      modelUsed: String,
+      generatedAt: Date
+    },
+
     // AI-generated insights on self-assessment
     aiInsights: {
       strengths: [String],
@@ -293,6 +305,7 @@ const appraisalSchema = new mongoose.Schema({
     competencyScore: Number,  // Weighted competency score
     ratingLabel: String,      // e.g., "Exceeds Expectations"
     ratingColor: String,
+    justification: String,
 
     // Breakdown
     breakdown: {
@@ -338,7 +351,7 @@ const appraisalSchema = new mongoose.Schema({
     linkedDocumentId: { type: mongoose.Schema.Types.ObjectId, ref: 'AppraisalDocument' }, // If referencing uploaded document
     structuredData: {
       // Extracted structured information from this exchange
-      type: { type: String, enum: ['achievement', 'challenge', 'learning', 'goal', 'skill', 'competency'] },
+      type: { type: String, enum: ['achievement', 'challenge', 'learning', 'goal', 'skill', 'competency', 'report'] },
       data: mongoose.Schema.Types.Mixed
     },
     aiContext: {

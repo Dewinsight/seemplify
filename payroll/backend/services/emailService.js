@@ -1,78 +1,74 @@
+const crypto = require('crypto');
 const dotenv = require('dotenv');
+const { isMailConfigured, sendMail } = require('./mailClient');
 
 // Load environment variables
 dotenv.config();
 
 /**
- * Payroll Email Service using Brevo API
- * Uses same BREVO_API_KEY as IdP
+ * Derives a stable idempotency key from the business event, so a re-run of the
+ * same pay period cannot deliver a second copy of the same notice.
+ */
+function businessEventKey(kind, ...parts) {
+    const digest = crypto.createHash('sha256')
+        .update([kind, ...parts.map((part) => String(part == null ? '' : part))].join('\u0000'))
+        .digest('hex');
+    return `${kind}:${digest.slice(0, 32)}`;
+}
+
+/**
+ * Payroll email service. Delivery goes through the self-hosted Seemplify mail
+ * service, which every Seemplify app shares.
  */
 class PayrollEmailService {
     constructor() {
-        this.apiKey = process.env.BREVO_API_KEY;
-        this.apiBaseUrl = 'https://api.brevo.com/v3/smtp/email';
-        this.senderEmail = process.env.SENDER_EMAIL || 'michael.egbo@aiinnigeria.com';
-        this.senderName = process.env.SENDER_NAME || 'Seemplify Payroll';
+        this.senderEmail = process.env.MAIL_FROM_EMAIL || process.env.SENDER_EMAIL || 'michael.egbo@aiinnigeria.com';
+        this.senderName = process.env.MAIL_FROM_NAME || process.env.SENDER_NAME || 'Seemplify Payroll';
         this.payrollUrl = process.env.PAYROLL_URL || 'http://localhost:3000';
 
-        // Log configuration status on startup
+        // Log configuration status on startup. The credential itself is never printed.
         console.log('📧 Payroll Email Service Configuration:');
-        console.log('  - API Key:', this.apiKey ? '✅ Set' : '❌ MISSING');
+        console.log('  - Mail service:', isMailConfigured() ? '✅ Configured' : '❌ MISSING');
         console.log('  - Sender Email:', this.senderEmail);
         console.log('  - Sender Name:', this.senderName);
 
-        if (!this.apiKey) {
-            console.error('❌ BREVO_API_KEY environment variable is not set! Emails will fail to send.');
+        if (!isMailConfigured()) {
+            console.error('❌ MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL are not set! Emails will fail to send.');
         }
     }
 
+    /** True when the mail service URL, credential and sender are all present. */
+    isConfigured() {
+        return isMailConfigured();
+    }
+
     /**
-     * Generic email sending method
+     * Generic email sending method.
+     * @param {{to: string, subject: string, html: string, text?: string, idempotencyKey?: string, tag?: string}} options
      */
-    async sendEmail({ to, subject, html, text }) {
-        if (!this.apiKey) {
-            console.warn('⚠️ BREVO_API_KEY not configured! Skipping email.');
+    async sendEmail({ to, subject, html, text, idempotencyKey, tag }) {
+        if (!this.isConfigured()) {
+            console.warn('⚠️ The Seemplify mail service is not configured! Skipping email.');
             return { skipped: true, reason: 'Email service not configured' };
         }
 
         try {
-            const emailData = {
-                sender: {
-                    name: this.senderName,
-                    email: this.senderEmail,
-                },
-                to: [{ email: to }],
-                subject: subject,
-                htmlContent: html
-            };
-
-            if (text) {
-                emailData.textContent = text;
-            }
-
             console.log('📨 Sending email to:', to, 'Subject:', subject);
-
-            const response = await fetch(this.apiBaseUrl, {
-                method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'api-key': this.apiKey,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(emailData)
+            const result = await sendMail({
+                from: this.senderEmail,
+                fromName: this.senderName,
+                to: [to],
+                subject,
+                html,
+                text,
+                tag,
+                idempotencyKey: String(idempotencyKey || '').trim() || crypto.randomUUID()
             });
-
-            const responseBody = await response.json();
-
-            if (!response.ok) {
-                console.error('❌ Brevo API Error:', responseBody);
-                throw new Error(`Failed to send email: ${responseBody.message || response.statusText}`);
-            }
-
-            console.log('✅ Email sent successfully via Brevo');
-            return responseBody;
+            console.log('✅ Email accepted by the Seemplify mail service');
+            return result;
         } catch (error) {
-            console.error('❌ Error sending email:', error);
+            // Only the classification is logged: never the token or the body.
+            console.error('❌ Error sending email:', error.message);
             throw error;
         }
     }
@@ -136,7 +132,10 @@ class PayrollEmailService {
             to,
             subject: `Your Payslip for ${periodLabel} is Ready 💰`,
             html: htmlContent,
-            text: `Hi ${displayName}, your payslip for ${periodLabel} is now available. Net Pay: ${currency} ${netPay.toLocaleString()}. View at: ${this.payrollUrl}/payslips`
+            text: `Hi ${displayName}, your payslip for ${periodLabel} is now available. Net Pay: ${currency} ${netPay.toLocaleString()}. View at: ${this.payrollUrl}/payslips`,
+            tag: 'payslip_ready',
+            // One payslip notice per employee per pay period.
+            idempotencyKey: businessEventKey('payslip_ready', to, period.year, period.month)
         });
     }
 
@@ -213,7 +212,8 @@ class PayrollEmailService {
             to,
             subject: `Your ${requestType.replace(/_/g, ' ')} Request - ${statusLabel}`,
             html: htmlContent,
-            text: `Hi ${displayName}, your ${requestType.replace(/_/g, ' ')} request for ${currency} ${amount.toLocaleString()} has been ${status}. ${notes ? 'Notes: ' + notes : ''}`
+            text: `Hi ${displayName}, your ${requestType.replace(/_/g, ' ')} request for ${currency} ${amount.toLocaleString()} has been ${status}. ${notes ? 'Notes: ' + notes : ''}`,
+            tag: 'compensation_request_decision'
         });
     }
 
@@ -223,6 +223,9 @@ class PayrollEmailService {
     async sendPayrollCompleteNotification(to, adminName, period, totalEmployees, totalPayroll, currency = 'USD') {
         const displayName = adminName || 'HR Admin';
         const periodLabel = `${new Date(0, period.month - 1).toLocaleString('default', { month: 'long' })} ${period.year}`;
+        const totalPayrollLabel = currency === 'MIXED'
+            ? 'Mixed currencies'
+            : `${currency} ${Number(totalPayroll || 0).toLocaleString()}`;
 
         const htmlContent = `
       <!DOCTYPE html>
@@ -256,7 +259,7 @@ class PayrollEmailService {
               </div>
               <div style="display: flex; justify-content: space-between;">
                 <span style="color: #666;">Total Payroll:</span>
-                <span style="font-weight: bold; font-size: 20px; color: #16a34a;">${currency} ${totalPayroll.toLocaleString()}</span>
+                <span style="font-weight: bold; font-size: 20px; color: #16a34a;">${totalPayrollLabel}</span>
               </div>
             </div>
             
@@ -282,7 +285,9 @@ class PayrollEmailService {
             to,
             subject: `Payroll Run Complete - ${periodLabel} ✅`,
             html: htmlContent,
-            text: `Hi ${displayName}, the payroll run for ${periodLabel} has been completed. ${totalEmployees} employees processed. Total: ${currency} ${totalPayroll.toLocaleString()}`
+            text: `Hi ${displayName}, the payroll run for ${periodLabel} has been completed. ${totalEmployees} employees processed. Total: ${totalPayrollLabel}`,
+            tag: 'payroll_run_complete',
+            idempotencyKey: businessEventKey('payroll_run_complete', to, period.year, period.month)
         });
     }
 
@@ -339,7 +344,8 @@ class PayrollEmailService {
             to,
             subject: `${requestCount} Pending Approval(s) Awaiting Review ⏳`,
             html: htmlContent,
-            text: `Hi ${displayName}, you have ${requestCount} pending compensation request(s) awaiting your review. View at: ${this.payrollUrl}/admin/approvals`
+            text: `Hi ${displayName}, you have ${requestCount} pending compensation request(s) awaiting your review. View at: ${this.payrollUrl}/admin/approvals`,
+            tag: 'pending_approvals_digest'
         });
     }
 }

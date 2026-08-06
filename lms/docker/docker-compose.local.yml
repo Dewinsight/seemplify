@@ -1,0 +1,83 @@
+version: "3.7"
+# Local-only LMS development stack (no Dokploy, no Traefik)
+# Run:
+#   cd c:\Users\Michael\Documents\GitHub\seemplify\lms\docker
+#   docker-compose -f docker-compose.local.yml up
+
+services:
+  mariadb:
+    image: mariadb:10.8
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123}
+    volumes:
+      - mariadb-local-data:/var/lib/mysql
+    networks:
+      - lms-local
+
+  redis:
+    image: redis:alpine
+    networks:
+      - lms-local
+
+  frappe:
+    image: frappe/bench:latest
+    ports:
+      - "8000:8000"
+    command: >
+      bash -lc "set -e;
+        if [ ! -f /home/frappe/.initialized ]; then
+          echo 'Initializing local LMS bench from /workspace-lms ...';
+          bench init --skip-redis-config-generation frappe-bench;
+          cd frappe-bench;
+          bench set-mariadb-host mariadb;
+          bench set-redis-cache-host redis://redis:6379;
+          bench set-redis-queue-host redis://redis:6379;
+          bench set-redis-socketio-host redis://redis:6379;
+          sed -i '/redis/d' ./Procfile;
+          sed -i '/watch/d' ./Procfile;
+          bench get-app lms;
+          echo 'Overlaying with local LMS code...';
+          rm -rf apps/lms;
+          cp -r /workspace-lms apps/lms;
+          bench new-site localhost --force --mariadb-root-password 123 --admin-password admin123 --no-mariadb-socket;
+          bench --site localhost install-app lms;
+          bench --site localhost set-config developer_mode 1;
+          bench --site localhost clear-cache;
+          bench use localhost;
+          if [ -f /workspace-lms/docker/setup-brevo-email.sh ]; then
+            bash /workspace-lms/docker/setup-brevo-email.sh /workspace-idp-env localhost || true;
+          fi;
+          touch /home/frappe/.initialized;
+        fi;
+        cd /home/frappe/frappe-bench;
+        bench start;"
+    environment:
+      - SHELL=/bin/bash
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-123}
+      - BREVO_SMTP_KEY=${BREVO_SMTP_KEY:-}
+      - BREVO_SMTP_LOGIN=${BREVO_SMTP_LOGIN:-}
+      - BREVO_API_KEY=${BREVO_API_KEY:-}
+      - BREVO_FROM_EMAIL=${BREVO_FROM_EMAIL:-}
+      - SENDER_EMAIL=${SENDER_EMAIL:-}
+      - SENDER_NAME=${SENDER_NAME:-}
+    working_dir: /home/frappe
+    volumes:
+      - .:/workspace
+      - ..:/workspace-lms
+      - ../../Identityprovider/.env:/workspace-idp-env:ro
+      - frappe-local-data:/home/frappe
+    networks:
+      - lms-local
+
+volumes:
+  mariadb-local-data:
+  frappe-local-data:
+
+networks:
+  lms-local:
+    driver: bridge

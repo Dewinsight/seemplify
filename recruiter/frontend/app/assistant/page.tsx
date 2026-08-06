@@ -70,6 +70,7 @@ import useWebSocket from "@/hooks/useWebSocket"
 import ThinkingProcess from "@/components/ThinkingProcess"
 import MessageRenderer from "@/components/MessageRenderer"
 import { GuideRenderer } from "@/components/ai-assistant/GuideRenderer"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
 
 // Chat Session Interface
 interface ChatSession {
@@ -192,7 +193,7 @@ function ChatSessionItem({
             : 'bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 group-hover:from-blue-100 group-hover:to-indigo-100 dark:group-hover:from-blue-900/30 dark:group-hover:to-indigo-900/30'
         }`}>
           <MessageCircle className={`h-5 w-5 transition-colors duration-300 ${
-            isActive ? 'text-white' : 'text-muted-foreground dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'
+            isActive ? 'text-white' : 'text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400'
           }`} />
         </div>
         
@@ -204,12 +205,12 @@ function ChatSessionItem({
           }`}>
             {session.title}
           </h3>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground dark:text-gray-400 mt-1">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-1">
             <Clock className="h-3 w-3" />
             <span>{formatDate(session.lastActivity)}</span>
             {session.messageCount > 0 && (
               <>
-                <span className="text-gray-300 dark:text-muted-foreground">•</span>
+                <span className="text-gray-300 dark:text-gray-600">•</span>
                 <Badge variant="secondary" className="text-xs px-1.5 py-0.5 h-auto">
                   {session.messageCount}
                 </Badge>
@@ -241,6 +242,8 @@ function ChatSessionItem({
 export default function AssistantPage() {
   const { toast } = useToast()
   const router = useRouter()
+  const { isFeatureEnabled } = useFeatureFlags()
+  const bulkCvUploadEnabled = isFeatureEnabled('bulkCvUpload')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { state } = useUser()
   const user = state.user
@@ -889,7 +892,9 @@ export default function AssistantPage() {
             { label: "View Jobs", icon: "briefcase", action: "navigate", data: { url: "/jobs" } },
             { label: "View Candidates", icon: "users", action: "navigate", data: { url: "/candidates" } },
             { label: "View Dashboard", icon: "bar-chart", action: "navigate", data: { url: "/" } },
-            { label: "Upload CVs", icon: "upload", action: "navigate", data: { url: "/bulk-upload" } },
+            ...(bulkCvUploadEnabled
+              ? [{ label: "Upload CVs", icon: "upload", action: "navigate", data: { url: "/bulk-upload" } }]
+              : []),
             { label: "View Calendar", icon: "calendar", action: "navigate", data: { url: "/calendar" } }
           ]
         }
@@ -1275,7 +1280,9 @@ export default function AssistantPage() {
         timestamp: new Date(),
         actions: [
           { label: "Upload Single CV", icon: "upload", action: "navigate", data: { url: "/candidates/new" } },
-          { label: "Bulk Upload CVs", icon: "upload", action: "navigate", data: { url: "/bulk-upload" } },
+          ...(bulkCvUploadEnabled
+            ? [{ label: "Bulk Upload CVs", icon: "upload", action: "navigate", data: { url: "/bulk-upload" } }]
+            : []),
           { label: "Create Candidate Manually", icon: "plus", action: "navigate", data: { url: "/candidates/new" } }
         ]
       }
@@ -1509,7 +1516,7 @@ export default function AssistantPage() {
                       <h2 className="text-base font-bold bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
                         Chat History
                       </h2>
-                      <p className="text-xs text-muted-foreground dark:text-gray-400 font-medium">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
                         {chatSessions.length} conversations
                       </p>
                     </div>
@@ -1528,7 +1535,7 @@ export default function AssistantPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                      className="hidden lg:flex h-8 w-8 hover:bg-muted/50 dark:hover:bg-gray-800 rounded-lg"
+                      className="hidden lg:flex h-8 w-8 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
                       title="Collapse Sidebar"
                     >
                       <ChevronRight className="h-4 w-4 rotate-180" />
@@ -1537,7 +1544,7 @@ export default function AssistantPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => setSidebarOpen(false)}
-                      className="lg:hidden h-8 w-8 hover:bg-muted/50 dark:hover:bg-gray-800 rounded-lg"
+                      className="lg:hidden h-8 w-8 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -1549,10 +1556,10 @@ export default function AssistantPage() {
                     onClick={() => setSidebarCollapsed(false)}
                     variant="ghost"
                     size="icon"
-                    className="h-10 w-10 hover:bg-muted/50 dark:hover:bg-gray-800 rounded-lg"
+                    className="h-10 w-10 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
                     title="Expand Sidebar"
                   >
-                    <Menu className="h-5 w-5 text-muted-foreground dark:text-gray-400" />
+                    <Menu className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                   </Button>
                   <Button
                     onClick={createNewChatSession}
@@ -1581,7 +1588,7 @@ export default function AssistantPage() {
                         <div className="absolute inset-0 w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 animate-ping opacity-20 mx-auto" />
                       </div>
                       <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">Loading conversations</h3>
-                      <p className="text-xs text-muted-foreground dark:text-gray-400">Fetching your chat history...</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Fetching your chat history...</p>
                       <div className="mt-3 flex justify-center space-x-1">
                         <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></div>
                         <div className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce delay-100"></div>
@@ -1595,7 +1602,7 @@ export default function AssistantPage() {
                       <MessageCircle className="h-8 w-8 text-blue-500 dark:text-blue-400" />
                     </div>
                     <h3 className="text-base font-bold text-gray-800 dark:text-gray-200 mb-2">No conversations yet</h3>
-                    <p className="text-xs text-muted-foreground dark:text-gray-400 max-w-48 mx-auto leading-relaxed mb-4">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-48 mx-auto leading-relaxed mb-4">
                       Start your first conversation with the AI assistant to see your chat history here
                     </p>
                     <Button
@@ -1647,7 +1654,7 @@ export default function AssistantPage() {
                     className={`h-10 w-10 rounded-lg transition-all duration-200 relative group ${
                       currentChatSession?.sessionId === session.sessionId
                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                        : 'hover:bg-muted/50 dark:hover:bg-gray-800 text-muted-foreground dark:text-gray-400'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'
                     }`}
                     title={session.title}
                   >
@@ -1662,7 +1669,7 @@ export default function AssistantPage() {
                     variant="ghost"
                     size="icon"
                     onClick={() => setSidebarCollapsed(false)}
-                    className="h-8 w-8 rounded-lg text-gray-400 hover:text-muted-foreground dark:hover:text-gray-300 hover:bg-muted/50 dark:hover:bg-gray-800 mt-2"
+                    className="h-8 w-8 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 mt-2"
                     title={`+${chatSessions.length - 5} more chats`}
                   >
                     <span className="text-xs font-bold">+{chatSessions.length - 5}</span>
@@ -1682,7 +1689,7 @@ export default function AssistantPage() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setSidebarOpen(true)}
-                className="h-8 w-8 hover:bg-muted/50 dark:hover:bg-gray-800 rounded-lg"
+                className="h-8 w-8 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
               >
                 <Menu className="h-4 w-4" />
               </Button>
@@ -1690,7 +1697,7 @@ export default function AssistantPage() {
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
                   <Bot className="h-4 w-4 text-white" />
                 </div>
-                <h1 className="text-base font-bold text-foreground dark:text-gray-100">
+                <h1 className="text-base font-bold text-gray-900 dark:text-gray-100">
                   {currentChatSession?.title || 'SMART HR Assistant'}
                 </h1>
               </div>
@@ -1704,10 +1711,10 @@ export default function AssistantPage() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setSidebarCollapsed(false)}
-                className="h-10 w-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 hover:bg-muted/50 dark:hover:bg-gray-800 rounded-lg shadow-lg"
+                className="h-10 w-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg shadow-lg"
                 title="Expand Sidebar"
               >
-                <Menu className="h-5 w-5 text-muted-foreground dark:text-gray-400" />
+                <Menu className="h-5 w-5 text-gray-600 dark:text-gray-400" />
               </Button>
             </div>
           )}
@@ -1742,18 +1749,18 @@ export default function AssistantPage() {
                     
                     <div className="flex-1 space-y-3 min-w-0">
                       <div className="flex items-center justify-between">
-                        <p className={`text-sm font-semibold ${message.type === "user" ? "text-white/90" : "text-foreground dark:text-gray-100"}`}>
+                        <p className={`text-sm font-semibold ${message.type === "user" ? "text-white/90" : "text-gray-900 dark:text-gray-100"}`}>
                           {message.type === "user" ? "You" : "AI Assistant"}
                         </p>
                         <div className="flex items-center gap-2">
-                          <p className={`text-xs ${message.type === "user" ? "text-white/70" : "text-muted-foreground dark:text-gray-400"}`}>
+                          <p className={`text-xs ${message.type === "user" ? "text-white/70" : "text-gray-500 dark:text-gray-400"}`}>
                             {formatTimestamp(message.timestamp)}
                           </p>
                           {message.type === "assistant" && !message.isLoading && (
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-muted/50 dark:hover:bg-gray-700"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-100 dark:hover:bg-gray-700"
                               onClick={() => copyMessage(message.content)}
                             >
                               <Copy className="h-3 w-3" />
@@ -1766,7 +1773,7 @@ export default function AssistantPage() {
                         <div className="space-y-3">
                           {/* Show streaming content if available */}
                           {message.content && (
-                            <div className="text-sm leading-relaxed text-foreground dark:text-gray-300 mb-4">
+                            <div className="text-sm leading-relaxed text-gray-700 dark:text-gray-300 mb-4">
                               <MessageRenderer 
                                 content={message.content} 
                                 isUser={false}
@@ -1784,7 +1791,7 @@ export default function AssistantPage() {
                                 <div className="w-4 h-4 bg-blue-500 rounded-full animate-pulse"></div>
                                 <div className="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-50"></div>
                               </div>
-                              <span className="text-sm text-muted-foreground dark:text-gray-400 font-medium">
+                              <span className="text-sm text-gray-600 dark:text-gray-400 font-medium">
                                 {isProcessing ? 'Processing your request...' : 'AI is thinking...'}
                               </span>
                             </div>
@@ -1821,7 +1828,7 @@ export default function AssistantPage() {
                           {/* REMOVED: Job Form Rendering - AI Assistant no longer creates jobs */}
                           {message.isJobForm ? (
                             <div className="w-full p-6 text-center bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                              <p className="text-foreground dark:text-gray-300">
+                              <p className="text-gray-700 dark:text-gray-300">
                                 ℹ️ Job creation form has been removed. Please use the Jobs page to create new jobs.
                               </p>
                             </div>
@@ -1830,7 +1837,7 @@ export default function AssistantPage() {
                               <GuideRenderer guide={message.guideData as any} />
                             </div>
                           ) : (
-                            <div className={`text-sm leading-relaxed ${message.type === "user" ? "text-white/95" : "text-foreground dark:text-gray-300"}`}>
+                            <div className={`text-sm leading-relaxed ${message.type === "user" ? "text-white/95" : "text-gray-700 dark:text-gray-300"}`}>
                               <MessageRenderer 
                                 content={message.content} 
                                 isUser={message.type === "user"}
@@ -1872,7 +1879,7 @@ export default function AssistantPage() {
                                   <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
                                     isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
                                   }`}></div>
-                                  <span className="text-xs font-medium text-muted-foreground dark:text-gray-400">
+                                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                                     Confidence: {Math.round(message.metadata.confidence * 100)}%
                                   </span>
                                   <div className="w-16 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -1885,7 +1892,7 @@ export default function AssistantPage() {
                               )}
                                {/* Display agent steps if they exist */}
                               {message.metadata.agentSteps && message.metadata.agentSteps.length > 0 && (
-                                <details className="text-muted-foreground dark:text-gray-400">
+                                <details className="text-gray-500 dark:text-gray-400">
                                   <summary className="cursor-pointer hover:underline">Agent Activity</summary>
                                   <ul className="list-disc list-inside pl-4 mt-1 text-xs">
                                     {message.metadata.agentSteps.map((step, idx) => (
@@ -1929,8 +1936,8 @@ export default function AssistantPage() {
                       <Sparkles className="h-4 w-4 text-white" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-foreground dark:text-gray-100">Quick Actions</h3>
-                      <p className="text-sm text-muted-foreground dark:text-gray-400">Get started with these common tasks</p>
+                      <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Quick Actions</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Get started with these common tasks</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -1946,10 +1953,10 @@ export default function AssistantPage() {
                               {React.cloneElement(prompt.icon, { className: "text-white h-4 w-4" })}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <h4 className="font-semibold text-foreground dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300 text-sm">
+                              <h4 className="font-semibold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300 text-sm">
                                 {prompt.text}
                               </h4>
-                              <p className="text-xs text-muted-foreground dark:text-gray-400 mt-1">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                 {prompt.followUp}
                               </p>
                             </div>
@@ -1999,7 +2006,7 @@ export default function AssistantPage() {
                           handleSendMessage();
                         }
                       }}
-                      className="flex-1 min-h-10 max-h-24 resize-none bg-transparent border-0 focus:ring-0 focus-visible:ring-0 px-0 py-2 placeholder:text-gray-400 dark:placeholder:text-muted-foreground text-foreground dark:text-gray-100 text-sm leading-relaxed"
+                      className="flex-1 min-h-10 max-h-24 resize-none bg-transparent border-0 focus:ring-0 focus-visible:ring-0 px-0 py-2 placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100 text-sm leading-relaxed"
                       disabled={isAssistantTyping || isFileParsing}
                     />
                   </div>
@@ -2014,7 +2021,7 @@ export default function AssistantPage() {
                       size="icon"
                       onClick={triggerFileInput}
                       disabled={isAssistantTyping || isProcessing || !isConnected || isFileParsing}
-                      className="h-10 w-10 rounded-lg text-muted-foreground hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-300"
+                      className="h-10 w-10 rounded-lg text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-300"
                       title="Attach PDF or Word document"
                     >
                       {isFileParsing ? (

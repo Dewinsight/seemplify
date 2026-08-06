@@ -10,6 +10,7 @@ interface EmailSettings {
     shortlist?: string;
     rejection?: string;
     shortlistRejection?: string;
+    applicationConfirmation?: string;
   };
   emailSignature?: string;
   ccEmails?: string[];
@@ -128,6 +129,9 @@ class CandidateEmailService {
   async updateEmailSettings(jobId: string, settings: EmailSettings): Promise<{ emailSettings: EmailSettings }> {
     const response = await apiRequest(`/api/candidate-emails/job/${jobId}/email-settings`, {
       method: 'PUT',
+      headers: {
+        'X-Skip-Body-Sanitization': 'true'
+      },
       body: JSON.stringify(settings)
     });
 
@@ -145,7 +149,7 @@ class CandidateEmailService {
   async sendTestEmail(
     jobId: string,
     testEmail: string,
-    templateType: 'advancement' | 'shortlist' | 'rejection' | 'shortlist-rejection'
+    templateType: 'advancement' | 'shortlist' | 'rejection' | 'shortlist-rejection' | 'application-confirmation'
   ): Promise<EmailResult> {
     const response = await apiRequest('/api/candidate-emails/test-email', {
       method: 'POST',

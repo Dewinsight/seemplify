@@ -88,12 +88,13 @@
    "fieldtype": "Section Break"
   },
   {
-   "default": "0",
+   "default": "1",
    "fieldname": "show_submission_history",
    "fieldtype": "Check",
    "label": "Show Submission History"
   },
   {
+   "default": "60",
    "fieldname": "passing_percentage",
    "fieldtype": "Int",
    "in_list_view": 1,

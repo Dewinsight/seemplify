@@ -1,15 +1,15 @@
 <template>
-	<div class="">
+	<div class="lms-course-outline">
 		<div
 			v-if="title && (outline.data?.length || allowEdit)"
-			class="flex items-center justify-between space-x-2 mb-4 px-2"
+			class="lms-outline-header flex items-center justify-between space-x-2 mb-4 px-2"
 			:class="{
 				'sticky top-0 z-10 bg-surface-white border-b px-3 py-2.5 sm:px-5':
 					allowEdit,
 			}"
 		>
 			<div
-				class="font-semibold text-lg leading-5 text-ink-gray-9"
+				class="lms-outline-title font-semibold text-lg leading-5 text-ink-gray-9"
 				:class="{ 'font-medium text-p-base': allowEdit }"
 			>
 				{{ __(title) }}
@@ -19,6 +19,7 @@
 			</Button>
 		</div>
 		<div
+			class="lms-outline-shell"
 			:class="{
 				'border-2 rounded-md py-2 px-2': showOutline && outline.data?.length,
 			}"
@@ -31,7 +32,7 @@
 				@end="updateChapterOrder"
 			>
 				<template #item="{ element: chapter, index }">
-					<div class="chapter-item">
+					<div class="chapter-item lms-outline-chapter-item">
 						<Disclosure
 							v-slot="{ open }"
 							:key="chapter.name"
@@ -39,7 +40,7 @@
 						>
 							<DisclosureButton
 								ref=""
-								class="flex items-center w-full p-2 group"
+								class="lms-outline-chapter-button flex items-center w-full p-2 group"
 							>
 								<ChevronRight
 									:class="{
@@ -48,10 +49,10 @@
 										hidden: chapter.is_scorm_package,
 										open: index == 1,
 									}"
-									class="h-4 w-4 text-ink-gray-9 stroke-1"
+									class="lms-outline-chevron h-4 w-4 text-ink-gray-9 stroke-1"
 								/>
 								<div
-									class="text-base text-left text-ink-gray-9 font-medium leading-5 ml-2"
+									class="lms-outline-chapter-title text-base text-left text-ink-gray-9 font-medium leading-5 ml-2"
 									@click="redirectToChapter(chapter)"
 								>
 									{{ chapter.title }}
@@ -73,7 +74,10 @@
 									</Tooltip>
 								</div>
 							</DisclosureButton>
-							<DisclosurePanel v-if="!chapter.is_scorm_package">
+							<DisclosurePanel
+								v-if="!chapter.is_scorm_package"
+								class="lms-outline-lessons-panel"
+							>
 								<Draggable
 									v-if="!chapter.is_scorm_package"
 									:list="chapter.lessons"
@@ -85,10 +89,11 @@
 								>
 									<template #item="{ element: lesson }">
 										<div
-											class="outline-lesson pl-8 py-2 pr-4 text-ink-gray-9"
-											:class="
-												isActiveLesson(lesson.number) ? 'bg-surface-gray-3' : ''
-											"
+											class="outline-lesson lms-outline-lesson pl-8 py-2 pr-4 text-ink-gray-9"
+											:class="{
+												'bg-surface-gray-3 lms-outline-lesson-active':
+													isActiveLesson(lesson.number),
+											}"
 										>
 											<router-link
 												:to="{
@@ -100,18 +105,20 @@
 													},
 												}"
 											>
-												<div class="flex items-center text-sm leading-5 group">
+												<div
+													class="lms-outline-lesson-link flex items-center text-sm leading-5 group"
+												>
 													<MonitorPlay
 														v-if="lesson.icon === 'icon-youtube'"
-														class="h-4 w-4 stroke-1 mr-2"
+														class="lms-outline-lesson-icon h-4 w-4 stroke-1 mr-2"
 													/>
 													<HelpCircle
 														v-else-if="lesson.icon === 'icon-quiz'"
-														class="h-4 w-4 stroke-1 mr-2"
+														class="lms-outline-lesson-icon h-4 w-4 stroke-1 mr-2"
 													/>
 													<FileText
 														v-else-if="lesson.icon === 'icon-list'"
-														class="h-4 w-4 text-ink-gray-9 stroke-1 mr-2"
+														class="lms-outline-lesson-icon h-4 w-4 text-ink-gray-9 stroke-1 mr-2"
 													/>
 													{{ lesson.title }}
 													<Trash2

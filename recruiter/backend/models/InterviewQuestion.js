@@ -94,11 +94,26 @@ const InterviewQuestionSchema = new mongoose.Schema({
     generatedAt: Date,
     model: String,
     prompt: String,
+    promptVersion: String,
+    requestId: String,
+    routeVersion: Number,
     confidence: Number,
     questionType: String
   },
   // Advanced AI quality metrics
   qualityMetrics: {
+    semanticQualityScore: {
+      type: Number,
+      min: 0,
+      max: 1,
+      default: null
+    },
+    qualityIssues: [{ type: String, trim: true }],
+    analysisStatus: {
+      type: String,
+      enum: ['pending', 'complete', 'manual_review'],
+      default: 'pending'
+    },
     difficultyCalibration: {
       type: Number,
       min: 0,
@@ -115,11 +130,11 @@ const InterviewQuestionSchema = new mongoose.Schema({
       type: Number,
       min: 0,
       max: 1,
-      default: 0
+      default: null
     },
     legalCompliance: {
       type: Boolean,
-      default: true
+      default: null
     },
     // Detailed bias analysis breakdown
     biasAnalysis: {
@@ -182,17 +197,17 @@ const InterviewQuestionSchema = new mongoose.Schema({
       type: Number,
       min: 0,
       max: 1,
-      default: 0
+      default: null
     },
     isBiased: {
       type: Boolean,
-      default: false
+      default: null
     },
     aiNeutralityConfidence: {
       type: Number,
       min: 0,
       max: 1,
-      default: 0
+      default: null
     },
     aiRecommendation: {
       type: String,
@@ -200,7 +215,7 @@ const InterviewQuestionSchema = new mongoose.Schema({
     },
     lastAnalyzed: {
       type: Date,
-      default: Date.now
+      default: null
     }
   },
   // Usage tracking
@@ -518,4 +533,4 @@ InterviewQuestionSchema.methods._generateRecommendations = function() {
   return recommendations;
 };
 
-module.exports = mongoose.model('InterviewQuestion', InterviewQuestionSchema); 
+module.exports = mongoose.model('InterviewQuestion', InterviewQuestionSchema);

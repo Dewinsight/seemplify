@@ -129,6 +129,20 @@ VITE_API_BASE_URL=/api
 
 ---
 
+### Step 4b: Logo Persistence (Optional but Recommended)
+
+Organization logos are stored in `uploads/logos/`. **Without a volume, logos are lost on every deploy.**
+
+1. In Dokploy, go to **Application → Settings → Volumes** (or Storage)
+2. Add a volume mount:
+   - **Host path:** `/home/seemplify/approver-uploads` (create if needed)
+   - **Container path:** `/app/uploads`
+3. Save and redeploy
+
+See `LOGO-PERSISTENCE-SETUP.md` for details.
+
+---
+
 ### Step 5: Verify Deployment
 
 #### Check DNS Resolution

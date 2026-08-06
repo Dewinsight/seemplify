@@ -1,8 +1,105 @@
 import express from 'express'
 import { requireAdminAuth, auditLog, adminRateLimit } from '../middleware/adminAuth.js'
 import { subscriptionService } from '../services/subscriptionService.js'
+import { Organization } from '../models/Organization.js'
+import { Account } from '../models/Account.js'
+import { invalidateClaimsCache } from '../index.js'
 
 const router = express.Router()
+const SUBSCRIPTION_FEATURE_KEYS = [
+  'recruiter',
+  'leaveManagement',
+  'payrollManagement',
+  'performanceManagement',
+  'timeAttendance',
+  'outlineDocs',
+  'aiChat',
+  'lms'
+]
+
+const parseOptionalLimitOverride = (value, fieldName) => {
+  if (value === undefined) return undefined
+  if (value === null || value === '') return null
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${fieldName} must be a non-negative number or null`)
+  }
+  return Math.floor(parsed)
+}
+
+const sanitizeCustomLimits = (customLimitsInput = {}) => {
+  if (!customLimitsInput || typeof customLimitsInput !== 'object') return undefined
+
+  const sanitized = {}
+  const maxMembers = parseOptionalLimitOverride(customLimitsInput.maxMembers, 'customLimits.maxMembers')
+  const maxTeams = parseOptionalLimitOverride(customLimitsInput.maxTeams, 'customLimits.maxTeams')
+  const maxStorage = parseOptionalLimitOverride(customLimitsInput.maxStorage, 'customLimits.maxStorage')
+  const maxSystemCourses = parseOptionalLimitOverride(customLimitsInput.maxSystemCourses, 'customLimits.maxSystemCourses')
+
+  if (maxMembers !== undefined) sanitized.maxMembers = maxMembers
+  if (maxTeams !== undefined) sanitized.maxTeams = maxTeams
+  if (maxStorage !== undefined) sanitized.maxStorage = maxStorage
+  if (maxSystemCourses !== undefined) sanitized.maxSystemCourses = maxSystemCourses
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined
+}
+
+const sanitizeCustomFeatures = (customFeaturesInput = {}) => {
+  if (!customFeaturesInput || typeof customFeaturesInput !== 'object') return undefined
+
+  const sanitized = {}
+  SUBSCRIPTION_FEATURE_KEYS.forEach((key) => {
+    const value = customFeaturesInput[key]
+    if (value === true || value === false || value === null) {
+      sanitized[key] = value
+    }
+  })
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined
+}
+
+async function invalidateClaimsForOrganization(organizationId) {
+  const normalizedOrganizationId = organizationId?.toString?.() || String(organizationId || '').trim()
+  if (!normalizedOrganizationId) {
+    return
+  }
+
+  const organization = await Organization.findById(normalizedOrganizationId)
+    .select('owner members.account')
+    .lean()
+
+  if (!organization) {
+    return
+  }
+
+  const accountIds = new Set()
+  if (organization.owner) {
+    accountIds.add(String(organization.owner))
+  }
+
+  for (const member of organization.members || []) {
+    if (member?.account) {
+      accountIds.add(String(member.account))
+    }
+  }
+
+  if (accountIds.size === 0) {
+    return
+  }
+
+  const accounts = await Account.find({
+    _id: { $in: Array.from(accountIds) }
+  })
+    .select('sub')
+    .lean()
+
+  for (const account of accounts) {
+    if (account?.sub) {
+      invalidateClaimsCache(account.sub)
+    }
+  }
+}
 
 /**
  * Admin Subscriptions API Routes
@@ -93,6 +190,9 @@ router.post('/', auditLog('create_subscription_direct'), async (req, res) => {
       return res.status(400).json({ error: 'Valid billing cycle (monthly/yearly) is required' })
     }
 
+    const sanitizedCustomLimits = sanitizeCustomLimits(customLimits)
+    const sanitizedCustomFeatures = sanitizeCustomFeatures(customFeatures)
+
     const subscription = await subscriptionService.createSubscriptionDirectly(
       {
         organizationId,
@@ -100,12 +200,14 @@ router.post('/', auditLog('create_subscription_direct'), async (req, res) => {
         billingCycle,
         startDate,
         endDate,
-        customLimits,
-        customFeatures,
+        customLimits: sanitizedCustomLimits,
+        customFeatures: sanitizedCustomFeatures,
         notes
       },
       req.user._id
     )
+
+    await invalidateClaimsForOrganization(subscription.organization)
 
     res.status(201).json({
       message: 'Subscription created successfully',
@@ -115,6 +217,9 @@ router.post('/', auditLog('create_subscription_direct'), async (req, res) => {
     console.error('Error creating subscription:', error)
     if (error.message === 'Organization not found' || error.message === 'Plan not found') {
       return res.status(404).json({ error: error.message })
+    }
+    if (error.message?.includes('must be a non-negative number')) {
+      return res.status(400).json({ error: error.message })
     }
     res.status(500).json({ error: 'Failed to create subscription' })
   }
@@ -139,6 +244,8 @@ router.post('/:subscriptionId/extend', auditLog('extend_subscription'), async (r
       notes
     )
 
+    await invalidateClaimsForOrganization(subscription.organization)
+
     res.json({
       message: `Subscription extended by ${days} days`,
       subscription
@@ -149,6 +256,41 @@ router.post('/:subscriptionId/extend', auditLog('extend_subscription'), async (r
       return res.status(404).json({ error: 'Subscription not found' })
     }
     res.status(500).json({ error: 'Failed to extend subscription' })
+  }
+})
+
+/**
+ * POST /api/admin/subscriptions/:subscriptionId/expire
+ * Expire a subscription immediately
+ */
+router.post('/:subscriptionId/expire', auditLog('expire_subscription'), async (req, res) => {
+  try {
+    const { reason } = req.body
+
+    const subscription = await subscriptionService.expireSubscription(
+      req.params.subscriptionId,
+      req.user._id,
+      reason
+    )
+
+    await invalidateClaimsForOrganization(subscription.organization)
+
+    res.json({
+      message: 'Subscription expired successfully',
+      subscription
+    })
+  } catch (error) {
+    console.error('Error expiring subscription:', error)
+    if (error.message === 'Subscription not found') {
+      return res.status(404).json({ error: 'Subscription not found' })
+    }
+    if (
+      error.message === 'Subscription is already expired' ||
+      error.message === 'Cancelled subscriptions cannot be expired'
+    ) {
+      return res.status(400).json({ error: error.message })
+    }
+    res.status(500).json({ error: 'Failed to expire subscription' })
   }
 })
 
@@ -165,6 +307,8 @@ router.post('/:subscriptionId/cancel', auditLog('cancel_subscription'), async (r
       reason,
       req.user._id
     )
+
+    await invalidateClaimsForOrganization(subscription.organization)
 
     res.json({
       message: 'Subscription cancelled',
@@ -192,6 +336,8 @@ router.post('/:subscriptionId/suspend', auditLog('suspend_subscription'), async 
       reason
     )
 
+    await invalidateClaimsForOrganization(subscription.organization)
+
     res.json({
       message: 'Subscription suspended',
       subscription
@@ -215,6 +361,8 @@ router.post('/:subscriptionId/reactivate', auditLog('reactivate_subscription'), 
       req.params.subscriptionId
     )
 
+    await invalidateClaimsForOrganization(subscription.organization)
+
     res.json({
       message: 'Subscription reactivated',
       subscription
@@ -235,13 +383,17 @@ router.post('/:subscriptionId/reactivate', auditLog('reactivate_subscription'), 
 router.put('/:subscriptionId/customizations', auditLog('update_subscription_customizations'), async (req, res) => {
   try {
     const { customLimits, customFeatures, notes } = req.body
+    const sanitizedCustomLimits = sanitizeCustomLimits(customLimits)
+    const sanitizedCustomFeatures = sanitizeCustomFeatures(customFeatures)
 
     const subscription = await subscriptionService.updateSubscriptionCustomizations(
       req.params.subscriptionId,
-      customLimits,
-      customFeatures,
+      sanitizedCustomLimits,
+      sanitizedCustomFeatures,
       notes
     )
+
+    await invalidateClaimsForOrganization(subscription.organization)
 
     res.json({
       message: 'Subscription customizations updated',
@@ -251,6 +403,9 @@ router.put('/:subscriptionId/customizations', auditLog('update_subscription_cust
     console.error('Error updating subscription customizations:', error)
     if (error.message === 'Subscription not found') {
       return res.status(404).json({ error: 'Subscription not found' })
+    }
+    if (error.message?.includes('must be a non-negative number')) {
+      return res.status(400).json({ error: error.message })
     }
     res.status(500).json({ error: 'Failed to update subscription customizations' })
   }

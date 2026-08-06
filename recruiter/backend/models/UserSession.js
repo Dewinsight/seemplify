@@ -44,6 +44,9 @@ const UserSessionSchema = new mongoose.Schema({
 });
 
 UserSessionSchema.index({ user: 1, revoked: 1 });
+UserSessionSchema.index({ user: 1, createdAt: -1 });
+UserSessionSchema.index({ createdAt: -1 });
+UserSessionSchema.index({ lastActivityAt: -1 });
 UserSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('UserSession', UserSessionSchema);

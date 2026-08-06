@@ -6,9 +6,12 @@ import { UserProvider } from '@/context/UserContext';
 import { OrganizationProvider } from '@/context/OrganizationContext';
 import { TutorialProvider } from '@/context/TutorialContext';
 import { BrandProvider } from '@/context/BrandContext';
+import BrandTitle from '@/components/BrandTitle';
 import { TutorialRenderer } from '@/components/tutorial/TutorialRenderer';
 import AppShell from '@/components/AppShell';
 import { InactivityWarning } from '@/components/InactivityWarning';
+import { AiRuntimeGateDialog } from '@/components/AiRuntimeGateDialog';
+import { FeatureFlagsProvider } from '@/context/FeatureFlagsContext';
 
 interface ConditionalProvidersProps {
   children: React.ReactNode;
@@ -18,33 +21,36 @@ export default function ConditionalProviders({ children }: ConditionalProvidersP
   const pathname = usePathname();
   const isAdminRoute = pathname?.startsWith('/admin');
   const isPublicRoute = pathname?.startsWith('/public');
-  const isOidcRoute = pathname?.startsWith('/oidc');
-  const isLoginRoute = pathname?.startsWith('/login');
-  const isSignupRoute = pathname?.startsWith('/signup');
 
-  console.log('🔀 ConditionalProviders:', { pathname, isAdminRoute, isPublicRoute, isOidcRoute });
+  console.log('🔀 ConditionalProviders:', { pathname, isAdminRoute, isPublicRoute });
 
-  // For admin, public, oidc, login, and signup routes, skip all the regular providers and just render children
-  // These routes need to be lightweight to handle authentication flows quickly
-  if (isAdminRoute || isPublicRoute || isOidcRoute || isLoginRoute || isSignupRoute) {
-    console.log('🚀 Lightweight route detected - skipping regular providers');
-    return <>{children}</>;
+  // BrandProvider always wraps everything so branding is available on every route
+  if (isAdminRoute || isPublicRoute) {
+    console.log('🚀 Admin or Public route detected - skipping regular providers');
+    return (
+      <FeatureFlagsProvider>
+        <BrandProvider><BrandTitle />{children}</BrandProvider>
+      </FeatureFlagsProvider>
+    );
   }
 
-  // For regular routes, use all the providers and AppShell
   return (
-    <BrandProvider>
-      <AuthProvider>
-        <UserProvider>
-          <OrganizationProvider>
-            <TutorialProvider>
-              <AppShell>{children}</AppShell>
-              <InactivityWarning />
-              <TutorialRenderer />
-            </TutorialProvider>
-          </OrganizationProvider>
-        </UserProvider>
-      </AuthProvider>
-    </BrandProvider>
+    <FeatureFlagsProvider>
+      <BrandProvider>
+        <BrandTitle />
+        <AuthProvider>
+          <UserProvider>
+            <OrganizationProvider>
+              <TutorialProvider>
+                <AppShell>{children}</AppShell>
+                <InactivityWarning />
+                <AiRuntimeGateDialog />
+                <TutorialRenderer />
+              </TutorialProvider>
+            </OrganizationProvider>
+          </UserProvider>
+        </AuthProvider>
+      </BrandProvider>
+    </FeatureFlagsProvider>
   );
 }

@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { Bot, Users, Briefcase, Sparkles, TrendingUp, UserPlus, ArrowRight, Check, Zap, RefreshCw, AlertTriangle } from "lucide-react"
+import { Bot, Users, Briefcase, Sparkles, TrendingUp, UserPlus, ArrowRight, Check, Zap, RefreshCw, AlertTriangle, ListPlus } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import assistantService from "@/services/assistantService"
@@ -15,6 +16,7 @@ import interviewStageService from "@/services/interviewStageService"
 import creditsService from "@/services/creditsService"
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
+import { AddToCandidateListDialog } from "@/components/candidate-lists/AddToCandidateListDialog"
 
 export default function TestAIMatchingPage() {
   const { toast } = useToast()
@@ -33,7 +35,13 @@ export default function TestAIMatchingPage() {
   const [bulkSelecting, setBulkSelecting] = useState(false)
   const [selectedForBulkAdd, setSelectedForBulkAdd] = useState<Set<string>>(new Set())
   const [showRefreshDialog, setShowRefreshDialog] = useState(false)
-  const [aiMatchingCost, setAiMatchingCost] = useState<number>(10) // Default fallback for display
+  const [aiMatchingCost, setAiMatchingCost] = useState<number>(11) // Fallback until API returns plan costs
+  const [matchLimit, setMatchLimit] = useState(25)
+  const [listTopN, setListTopN] = useState(25)
+  const [showListDialog, setShowListDialog] = useState(false)
+  const [listEntries, setListEntries] = useState<any[]>([])
+
+  const getCandidateId = (candidate: any) => candidate?.candidateId || candidate?.id || candidate?._id
 
   // Fetch credit costs on mount
   useEffect(() => {
@@ -41,7 +49,7 @@ export default function TestAIMatchingPage() {
       try {
         const creditStatus = await creditsService.getCreditStatus()
         if (creditStatus.success && creditStatus.credits.creditCosts) {
-          setAiMatchingCost(creditStatus.credits.creditCosts.aiMatching || 10)
+          setAiMatchingCost(creditStatus.credits.creditCosts.aiMatching || 11)
         }
       } catch (error) {
         console.error('Failed to fetch credit costs:', error)
@@ -94,12 +102,18 @@ export default function TestAIMatchingPage() {
       }
 
       // Get matching results
-      const results = await assistantService.getMatchingReport(job._id, forceRefresh)
+      const results = await assistantService.getMatchingReport(job._id, forceRefresh, matchLimit)
       setMatchingResults(results)
+      setListTopN(Math.min(matchLimit, results.topCandidates?.length || matchLimit))
       
       // Check which candidates are already in pipeline
-      const pipelineData = await pipelineService.getCandidatesWithStages(job._id)
-      const inPipeline = new Set(pipelineData.map((c: any) => c._id))
+      const pipelineData = await pipelineService.getDetailedPipeline(job._id)
+      const inPipeline = new Set<string>(
+        (pipelineData.pipeline?.stages || [])
+          .flatMap((stage: any) => stage.candidates || [])
+          .map((applicant: any) => String(applicant.candidate?._id || applicant.candidate || ""))
+          .filter(Boolean)
+      )
       setCandidatesInPipeline(inPipeline)
       
       const cacheMessage = results.fromCache 
@@ -161,9 +175,7 @@ export default function TestAIMatchingPage() {
       })
 
       // Move to selected stage
-      await pipelineService.moveCandidateToStage(selectedJob._id, candidateId, selectedStageId, {
-        notes: 'Initial stage assignment from AI matching'
-      })
+      await pipelineService.advanceCandidateToStage(selectedJob._id, candidateId, selectedStageId, 'Initial stage assignment from AI matching')
 
       setCandidatesInPipeline(prev => new Set([...prev, candidateId]))
       
@@ -210,7 +222,7 @@ export default function TestAIMatchingPage() {
     let successCount = 0
 
     for (const candidateId of candidatesToAdd) {
-      const candidate = matchingResults.topCandidates.find((c: any) => c.candidateId === candidateId)
+      const candidate = matchingResults.topCandidates.find((c: any) => getCandidateId(c) === candidateId)
       if (candidate) {
         try {
           await handleAddToPipeline(candidateId, candidate.name, candidate.similarityPercentage)
@@ -231,6 +243,35 @@ export default function TestAIMatchingPage() {
     }
   }
 
+  const openListFromMatches = (mode: "top" | "selected") => {
+    const selectedIds = selectedForBulkAdd
+    const rankedCandidates = mode === "selected"
+      ? (matchingResults?.topCandidates || []).filter((candidate: any) => selectedIds.has(getCandidateId(candidate)))
+      : (matchingResults?.topCandidates || []).slice(0, Math.max(1, listTopN))
+
+    const entries = rankedCandidates
+      .map((candidate: any, index: number) => ({
+        candidateId: getCandidateId(candidate),
+        rank: candidate.rank || index + 1,
+        score: candidate.similarityPercentage ?? candidate.relevanceScore ?? candidate.similarity,
+        source: "ai_matching",
+        notes: selectedJob?.title ? `${candidate.similarityPercentage || candidate.relevanceScore || 0}% match for ${selectedJob.title}` : undefined,
+      }))
+      .filter((entry: any) => entry.candidateId)
+
+    if (!entries.length) {
+      toast({
+        title: "No candidates available",
+        description: mode === "selected" ? "Select candidates first." : "Run matching with a larger result limit.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setListEntries(entries)
+    setShowListDialog(true)
+  }
+
   return (
     <div className="container mx-auto py-8 max-w-7xl">
       <div className="mb-8">
@@ -238,8 +279,25 @@ export default function TestAIMatchingPage() {
           AI Matching Test with Embeddings
         </h1>
         <p className="text-gray-600">
-          Test the AI-powered candidate matching using Azure OpenAI embeddings and Weaviate vector database
+          Test the AI-powered candidate matching using Azure OpenAI embeddings and Weaviate vector search
         </p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-gray-700" htmlFor="match-limit">
+              Candidates to rank
+            </label>
+            <Input
+              id="match-limit"
+              type="number"
+              min={1}
+              max={5000}
+              value={matchLimit}
+              onChange={(event) => setMatchLimit(Math.min(Math.max(Number(event.target.value) || 1, 1), 5000))}
+              className="w-32"
+            />
+          </div>
+          <p className="text-sm text-gray-500 pb-2">Max 5,000</p>
+        </div>
       </div>
 
       {/* Load Jobs Button */}
@@ -379,6 +437,31 @@ export default function TestAIMatchingPage() {
                   <Users className="h-5 w-5 text-blue-500" />
                   Top Matching Candidates
                 </CardTitle>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={matchingResults.topCandidates.length || 1}
+                    value={listTopN}
+                    onChange={(event) => setListTopN(Math.min(Math.max(Number(event.target.value) || 1, 1), matchingResults.topCandidates.length || 1))}
+                    className="h-9 w-24"
+                    aria-label="Top candidates to save"
+                  />
+                  <Button size="sm" variant="outline" onClick={() => openListFromMatches("top")}>
+                    <ListPlus className="h-4 w-4 mr-2" />
+                    List top
+                  </Button>
+                  {bulkSelecting && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openListFromMatches("selected")}
+                      disabled={selectedForBulkAdd.size === 0}
+                    >
+                      <ListPlus className="h-4 w-4 mr-2" />
+                      List selected
+                    </Button>
+                  )}
                 
                 {/* Pipeline Controls */}
                 {pipelineStages.length > 0 && (
@@ -429,18 +512,20 @@ export default function TestAIMatchingPage() {
                     )}
                   </div>
                 )}
+                </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {matchingResults.topCandidates.slice(0, 10).map((candidate: any, index: number) => {
-                  const isInPipeline = candidatesInPipeline.has(candidate.candidateId || candidate.id)
-                  const isAddingThis = addingToPipeline.has(candidate.candidateId || candidate.id)
-                  const isSelectedForBulk = selectedForBulkAdd.has(candidate.candidateId || candidate.id)
+                  const candidateId = getCandidateId(candidate)
+                  const isInPipeline = candidatesInPipeline.has(candidateId)
+                  const isAddingThis = addingToPipeline.has(candidateId)
+                  const isSelectedForBulk = selectedForBulkAdd.has(candidateId)
                   
                   return (
                     <div 
-                      key={candidate.id} 
+                      key={candidateId || candidate.id}
                       className={`border rounded-lg p-4 transition-all ${
                         isSelectedForBulk ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
                       } ${isInPipeline ? 'opacity-60' : ''}`}
@@ -453,11 +538,11 @@ export default function TestAIMatchingPage() {
                               checked={isSelectedForBulk}
                               onChange={(e) => {
                                 if (e.target.checked) {
-                                  setSelectedForBulkAdd(prev => new Set([...prev, candidate.candidateId || candidate.id]))
+                                  setSelectedForBulkAdd(prev => new Set([...prev, candidateId]))
                                 } else {
                                   setSelectedForBulkAdd(prev => {
                                     const next = new Set(prev)
-                                    next.delete(candidate.candidateId || candidate.id)
+                                    next.delete(candidateId)
                                     return next
                                   })
                                 }
@@ -536,7 +621,7 @@ export default function TestAIMatchingPage() {
                           <Button
                             size="sm"
                             onClick={() => handleAddToPipeline(
-                              candidate.candidateId || candidate.id,
+                              candidateId,
                               candidate.name,
                               candidate.similarityPercentage
                             )}
@@ -626,6 +711,21 @@ export default function TestAIMatchingPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AddToCandidateListDialog
+        open={showListDialog}
+        onOpenChange={setShowListDialog}
+        entries={listEntries}
+        source="ai_matching"
+        sourceRef={{ jobId: selectedJob?._id, jobTitle: selectedJob?.title }}
+        defaultName={`${selectedJob?.title || "AI matching"} - top ${listEntries.length || listTopN}`}
+        defaultDescription={selectedJob?.title ? `AI matching results for ${selectedJob.title}` : "AI matching results"}
+        countLabel={`${listEntries.length} ranked candidate${listEntries.length === 1 ? "" : "s"} will be saved.`}
+        onCompleted={() => {
+          setListEntries([])
+          setSelectedForBulkAdd(new Set())
+        }}
+      />
+
       {/* Credit Error Dialog */}
       <CreditErrorDialog 
         open={showCreditDialog} 
@@ -634,4 +734,4 @@ export default function TestAIMatchingPage() {
       />
     </div>
   )
-} 
+}

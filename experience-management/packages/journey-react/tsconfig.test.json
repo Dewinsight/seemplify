@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "baseUrl": ".",
+    "paths": {
+      "@seemplify/journey-react": ["./src/index.ts"],
+      "@seemplify/journey-browser-sdk": ["../journey-browser-sdk/src/index.ts"],
+      "@seemplify/journey-event-protocol": ["../journey-event-protocol/src/index.ts"]
+    },
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "examples/**/*.ts",
+    "examples/**/*.tsx"
+  ]
+}

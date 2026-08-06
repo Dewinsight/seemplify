@@ -1,0 +1,95 @@
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, Loader2, Upload } from 'lucide-react';
+import { useParams } from '@/lib/router';
+import { api, json } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import type { Collector, LogicRule, Question, Survey } from '@/types';
+
+function hasAnswer(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return false;
+  if (Array.isArray(value)) return value.some(hasAnswer);
+  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some(hasAnswer);
+  return true;
+}
+
+function ruleMatches(rule: LogicRule, answers: Record<string, any>) {
+  const actual = answers[rule.sourceQuestionId];
+  if (!hasAnswer(actual)) return false;
+  if (rule.operator === 'contains') return Array.isArray(actual) ? actual.map(String).includes(String(rule.value)) : String(actual).toLowerCase().includes(String(rule.value).toLowerCase());
+  if (rule.operator === 'not_equals') return String(actual) !== String(rule.value);
+  if (rule.operator === 'less_than') return Number(actual) < Number(rule.value);
+  if (rule.operator === 'greater_than') return Number(actual) > Number(rule.value);
+  return String(actual) === String(rule.value);
+}
+
+function isVisible(question: Question, answers: Record<string, any>) {
+  const displayRules = (question.logic || []).filter((rule) => rule.action === 'show');
+  const hidden = (question.logic || []).filter((rule) => rule.action === 'hide').some((rule) => ruleMatches(rule, answers));
+  return !hidden && (!displayRules.length || displayRules.every((rule) => ruleMatches(rule, answers)));
+}
+
+function QuestionInput({ question, value, collectorSlug, uploadGrant, onChange }: {
+  question: Question; value: any; collectorSlug: string; uploadGrant: string; onChange: (value: any) => void;
+}) {
+  const min = question.settings?.min ?? (['nps', 'multi_nps'].includes(question.type) ? 0 : 1);
+  const max = question.settings?.max ?? (['nps', 'multi_nps'].includes(question.type) ? 10 : question.type === 'ces' ? 7 : 5);
+  if (question.type === 'statement') return <div className="border-l-2 border-primary bg-muted/35 px-4 py-3 text-sm leading-6">{question.description || question.title}</div>;
+  if (question.type === 'long_text') return <Textarea rows={5} value={value || ''} onChange={(event) => onChange(event.target.value)} />;
+  if (['short_text', 'email', 'number', 'date'].includes(question.type)) return <Input type={question.type === 'short_text' ? 'text' : question.type} value={value || ''} onChange={(event) => onChange(event.target.value)} />;
+  if (question.type === 'contact') return <div className="grid gap-3 sm:grid-cols-2"><Input placeholder="Name" value={value?.name || ''} onChange={(event) => onChange({ ...(value || {}), name: event.target.value })} /><Input type="email" placeholder="Email" value={value?.email || ''} onChange={(event) => onChange({ ...(value || {}), email: event.target.value })} /></div>;
+  if (question.type === 'single_choice') return <div className="grid gap-2">{question.options.map((option) => <label key={option} className={`flex cursor-pointer items-center gap-3 border px-4 py-3 text-sm transition-colors ${value === option ? 'border-primary bg-accent/60' : 'hover:bg-muted/30'}`}><input type="radio" name={question.id} value={option} checked={value === option} onChange={() => onChange(option)} />{option}</label>)}</div>;
+  if (question.type === 'dropdown') return <select aria-label={question.title} value={value || ''} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select an option</option>{question.options.map((option) => <option value={option} key={option}>{option}</option>)}</select>;
+  if (question.type === 'multiple_choice') return <div className="grid gap-2">{question.options.map((option) => <label key={option} className={`flex cursor-pointer items-center gap-3 border px-4 py-3 text-sm transition-colors ${(value || []).includes(option) ? 'border-primary bg-accent/60' : 'hover:bg-muted/30'}`}><input type="checkbox" checked={(value || []).includes(option)} onChange={(event) => onChange(event.target.checked ? [...(value || []), option] : (value || []).filter((item: string) => item !== option))} />{option}</label>)}</div>;
+  if (question.type === 'multi_text') return <div className="space-y-3">{question.options.map((item) => <label className="grid gap-1.5 text-sm sm:grid-cols-[180px_1fr] sm:items-center" key={item}><span className="text-muted-foreground">{item}</span><Input aria-label={`${question.title}: ${item}`} value={value?.[item] || ''} onChange={(event) => onChange({ ...(value || {}), [item]: event.target.value })} /></label>)}</div>;
+  if (question.type === 'multi_nps') return <div className="space-y-5">{question.options.map((item) => <div key={item}><div className="mb-2 text-sm font-medium">{item}</div><div className="grid grid-cols-6 gap-1 sm:grid-cols-11">{Array.from({ length: 11 }, (_, index) => index).map((number) => <button aria-label={`${item}: ${number}`} type="button" key={number} onClick={() => onChange({ ...(value || {}), [item]: number })} className={`h-9 border text-xs font-medium transition-colors ${Number(value?.[item]) === number ? 'border-primary bg-primary text-primary-foreground' : 'bg-card hover:bg-muted'}`}>{number}</button>)}</div></div>)}</div>;
+  if (question.type === 'ranking') return <div className="space-y-2">{question.options.map((option, index) => <div className="grid grid-cols-[40px_1fr] items-center gap-2" key={option}><Input type="number" min={1} max={question.options.length} aria-label={`Rank ${option}`} value={value?.[option] || index + 1} onChange={(event) => onChange({ ...(value || {}), [option]: Number(event.target.value) })} /><span className="text-sm">{option}</span></div>)}</div>;
+  if (question.type === 'matrix') return <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className="p-2 text-left" /><th className="p-2">Poor</th><th className="p-2">Fair</th><th className="p-2">Good</th><th className="p-2">Excellent</th></tr></thead><tbody>{question.options.map((row) => <tr className="border-t" key={row}><td className="p-2">{row}</td>{['Poor', 'Fair', 'Good', 'Excellent'].map((choice) => <td className="p-2 text-center" key={choice}><input type="radio" name={`${question.id}-${row}`} checked={value?.[row] === choice} onChange={() => onChange({ ...(value || {}), [row]: choice })} /></td>)}</tr>)}</tbody></table></div>;
+  if (['nps', 'csat', 'ces', 'rating'].includes(question.type)) return <div><div className={`grid gap-1 ${question.type === 'nps' ? 'grid-cols-6 sm:grid-cols-11' : 'grid-cols-5'}`}>{Array.from({ length: max - min + 1 }, (_, index) => index + min).map((number) => <button type="button" key={number} onClick={() => onChange(number)} className={`h-10 border text-sm font-medium transition-colors ${Number(value) === number ? 'border-primary bg-primary text-primary-foreground' : 'bg-card hover:bg-muted'}`}>{number}</button>)}</div><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{question.settings?.minLabel || (question.type === 'nps' ? 'Not at all likely' : 'Low')}</span><span>{question.settings?.maxLabel || (question.type === 'nps' ? 'Extremely likely' : 'High')}</span></div></div>;
+  if (question.type === 'graphical_rating') return <div className="grid grid-cols-5 gap-2">{['Very poor', 'Poor', 'Fair', 'Good', 'Excellent'].map((label, index) => <button aria-label={label} title={label} type="button" key={label} onClick={() => onChange(index + 1)} className={`h-12 border text-xl transition-colors ${Number(value) === index + 1 ? 'border-primary bg-primary text-primary-foreground' : 'bg-card hover:bg-muted'}`}>{['😞', '🙁', '😐', '🙂', '😊'][index]}</button>)}</div>;
+  if (question.type === 'slider') return <div><input className="w-full accent-[hsl(var(--primary))]" type="range" min={min} max={max} value={value ?? min} onChange={(event) => onChange(Number(event.target.value))} /><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{min}</span><strong className="text-foreground">{value ?? min}</strong><span>{max}</span></div></div>;
+  if (['file', 'media'].includes(question.type)) return <label className="flex cursor-pointer items-center gap-3 border border-dashed p-4 text-sm hover:bg-muted/30"><Upload className="h-4 w-4" /><span>{value?.name || 'Choose a file'}</span><input className="sr-only" type="file" accept={question.type === 'media' ? 'audio/*,video/*' : 'image/*,application/pdf'} onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; const body = new FormData(); body.append('file', file); onChange(await api(`/api/public/collectors/${encodeURIComponent(collectorSlug)}/uploads`, { method: 'POST', headers: { 'x-upload-grant': uploadGrant, 'x-upload-question': question.id }, body })); }} /></label>;
+  return <Input value={value || ''} onChange={(event) => onChange(event.target.value)} />;
+}
+
+export function PublicSurveyPage() {
+  const { slug = '' } = useParams();
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const [data, setData] = useState<{ survey: Survey; collector: Collector; uploadGrant: string } | null>(null);
+  const [error, setError] = useState('');
+  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [page, setPage] = useState(1);
+  const [pageHistory, setPageHistory] = useState<number[]>([]);
+  const [startedAt] = useState(new Date().toISOString());
+  const [submitting, setSubmitting] = useState(false);
+  const [complete, setComplete] = useState(false);
+  useEffect(() => { api<{ survey: Survey; collector: Collector; uploadGrant: string }>(`/api/public/collectors/${slug}`).then(setData).catch((reason) => setError(reason.message)); }, [slug]);
+  useEffect(() => {
+    if (!data) return;
+    const questionId = params.get('answerQuestion'); const rawValue = params.get('answerValue');
+    if (!questionId || rawValue == null) return;
+    const question = (data.survey.questions || []).find((item) => item.id === questionId && item.page === 1);
+    if (!question) return;
+    const value = ['nps', 'csat', 'ces', 'rating', 'graphical_rating'].includes(question.type) && /^-?\d+(\.\d+)?$/.test(rawValue) ? Number(rawValue) : rawValue;
+    setAnswers((current) => ({ ...current, [question.id]: value }));
+  }, [data, params]);
+  const pages = useMemo(() => data ? Math.max(1, ...(data.survey.questions || []).map((question) => question.page || 1)) : 1, [data]);
+  const allQuestions = data?.survey.questions || [];
+  const questions = allQuestions.filter((question) => (question.page || 1) === page && isVisible(question, answers));
+  const missing = questions.filter((question) => question.required && question.type !== 'statement' && !hasAnswer(answers[question.id]));
+  function advance() {
+    const branch = allQuestions.filter((question) => (question.page || 1) === page).flatMap((question) => question.logic || []).find((rule) => rule.action === 'skip_to' && rule.targetQuestionId && ruleMatches(rule, answers));
+    const branchPage = branch ? allQuestions.find((question) => question.id === branch.targetQuestionId)?.page : undefined;
+    let next = branchPage && branchPage > page ? branchPage : page + 1;
+    while (next < pages && !allQuestions.some((question) => (question.page || 1) === next && isVisible(question, answers))) next += 1;
+    setPageHistory((current) => [...current, page]);
+    setPage(next);
+  }
+  function back() { const previous = pageHistory.at(-1); if (previous == null) return; setPageHistory((current) => current.slice(0, -1)); setPage(previous); }
+  async function submit(event: FormEvent) { event.preventDefault(); if (missing.length) return; if (page < pages) return advance(); if (!data) return; try { setSubmitting(true); await api(`/api/public/collectors/${slug}/responses${params.get('recipient') ? `?recipient=${encodeURIComponent(params.get('recipient')!)}` : ''}`, json('POST', { answers, startedAt, status: 'completed', respondentToken: params.get('recipient') || undefined, metadata: { source: data.collector.type } })); setComplete(true); } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not submit response'); } finally { setSubmitting(false); } }
+  if (error) return <main className="grid min-h-screen place-items-center bg-background p-6"><div className="max-w-md border bg-card p-8 text-center"><h1 className="text-xl font-semibold">Survey unavailable</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">{error}</p></div></main>;
+  if (!data) return <div className="min-h-screen animate-pulse bg-muted" />;
+  if (complete) return <main className="grid min-h-screen place-items-center bg-background p-6"><div className="max-w-lg text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-primary text-primary-foreground"><Check /></div><h1 className="mt-5 text-2xl font-semibold tracking-tight">Thank you</h1><p className="mt-2 text-base leading-7 text-muted-foreground">{data.survey.thankYouMessage}</p><div className="mt-8 text-xs text-muted-foreground">Powered by Seemplify Experience</div></div></main>;
+  return <main className="min-h-screen bg-background"><header className="border-b bg-card"><div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-5"><div className="text-sm font-semibold">{data.survey.theme?.brandName || 'Seemplify Experience'}</div><div className="text-xs text-muted-foreground">Page {page} of {pages}</div></div></header><div className="h-1 bg-muted"><div className="h-full bg-primary transition-all" style={{ width: `${(page / pages) * 100}%` }} /></div><form onSubmit={submit} className="mx-auto max-w-3xl px-5 py-10 sm:py-14"><div className="mb-10"><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{data.survey.title}</h1>{page === 1 && data.survey.description && <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{data.survey.description}</p>}</div><div className="space-y-9">{questions.map((question) => <section key={question.id}><label className="mb-3 block text-base font-medium"><span className="mr-2 text-sm text-muted-foreground">{(data.survey.questions || []).indexOf(question) + 1}.</span>{question.title}{question.required && question.type !== 'statement' && <span className="ml-1 text-destructive">*</span>}</label>{question.description && question.type !== 'statement' && <p className="-mt-2 mb-3 text-sm text-muted-foreground">{question.description}</p>}<QuestionInput question={question} value={answers[question.id]} collectorSlug={slug} uploadGrant={data.uploadGrant} onChange={(value) => setAnswers((current) => ({ ...current, [question.id]: value }))} /></section>)}</div>{missing.length > 0 && <p className="mt-8 text-sm text-destructive" role="alert">Please answer all required questions on this page.</p>}<div className="mt-10 flex justify-between border-t pt-5">{pageHistory.length ? <Button type="button" variant="outline" onClick={back}><ArrowLeft />Back</Button> : <span />}<Button type="submit" disabled={submitting || missing.length > 0}>{submitting ? <Loader2 className="animate-spin" /> : page < pages ? <ArrowRight /> : <Check />}{page < pages ? 'Continue' : submitting ? 'Submitting' : 'Submit response'}</Button></div><div className="mt-8 text-center text-xs text-muted-foreground">Your response is processed according to this survey's collection policy.</div></form></main>;
+}

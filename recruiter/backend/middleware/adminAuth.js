@@ -1,14 +1,44 @@
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
+const { updateAIRequestContext } = require('../services/aiRuntime/requestContext');
+
+const INVALID_TOKEN_VALUES = new Set(['null', 'undefined', '[object Object]']);
+
+function normalizeToken(value) {
+  if (!value || typeof value !== 'string') return null;
+
+  const token = value.replace(/^Bearer\s+/i, '').trim();
+  if (!token || INVALID_TOKEN_VALUES.has(token)) return null;
+
+  return token;
+}
+
+function getAdminToken(req) {
+  const adminHeader = req.header('x-admin-auth-token');
+  if (adminHeader !== undefined) return normalizeToken(adminHeader);
+
+  const authHeader = req.header('Authorization');
+  if (!authHeader || !/^Bearer\s+/i.test(authHeader)) return null;
+
+  return normalizeToken(authHeader);
+}
+
+function isJwtLike(token) {
+  return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
+}
 
 // Middleware to verify admin JWT token
 const adminAuth = async (req, res, next) => {
   try {
     // Get token from header
-    const token = req.header('x-admin-auth-token') || req.header('Authorization')?.replace('Bearer ', '');
+    const token = getAdminToken(req);
     
     if (!token) {
-      return res.status(401).json({ msg: 'No admin token, authorization denied' });
+      return res.status(401).json({ code: 'token_missing', msg: 'No admin token, authorization denied' });
+    }
+
+    if (!isJwtLike(token)) {
+      return res.status(401).json({ code: 'token_invalid', msg: 'Admin token is not valid' });
     }
 
     try {
@@ -17,7 +47,11 @@ const adminAuth = async (req, res, next) => {
       
       // Check if it's an admin token (has isAdmin flag)
       if (!decoded.isAdmin) {
-        return res.status(401).json({ msg: 'Not an admin token' });
+        return res.status(401).json({ code: 'token_invalid', msg: 'Not an admin token' });
+      }
+
+      if (!decoded.admin?.id) {
+        return res.status(401).json({ code: 'token_invalid', msg: 'Admin token is not valid' });
       }
       
       // Get admin from database
@@ -37,10 +71,20 @@ const adminAuth = async (req, res, next) => {
       
       // Add admin to request object
       req.admin = admin;
+      updateAIRequestContext({
+        sourceApp: 'admin',
+        actorId: admin.id,
+        actorName: admin.name,
+        actorEmail: admin.email
+      });
       next();
     } catch (err) {
-      console.error('Admin token verification failed:', err);
-      res.status(401).json({ msg: 'Admin token is not valid' });
+      const expired = err.name === 'TokenExpiredError';
+      console.warn('Admin token verification failed:', err.message);
+      res.status(401).json({
+        code: expired ? 'token_expired' : 'token_invalid',
+        msg: expired ? 'Admin token has expired' : 'Admin token is not valid'
+      });
     }
   } catch (err) {
     console.error('Admin auth middleware error:', err);

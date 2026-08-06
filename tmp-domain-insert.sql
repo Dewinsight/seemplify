@@ -1,0 +1,1 @@
+insert into domain values ('learning-aiinnigeria-20260304000816','learning.aiinnigeria.com',true,5012,'/',DEFAULT,'2026-03-04T00:08:16.059Z','ZJwveqext--O-giMdAbbr','letsencrypt',NULL,'application',NULL,NULL,NULL,'/',false);

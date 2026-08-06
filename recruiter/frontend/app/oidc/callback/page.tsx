@@ -22,10 +22,10 @@ export default function OidcCallbackPage() {
         const hash = window.location.hash
         const search = window.location.search
 
-        console.log('🔐 OIDC Callback processing:', {
+        console.log('OIDC Callback processing:', {
           hasHash: !!hash,
           hasSearch: !!search,
-          hasCookies: !!(getCookie('dev_jwt'))
+          hasCookies: !!getCookie('dev_jwt')
         })
 
         const hashParams = new URLSearchParams(hash.replace('#', ''))
@@ -43,11 +43,14 @@ export default function OidcCallbackPage() {
           getCookie('dev_expiresIn') ||
           '10m'
 
-        if (token && refreshToken) {
-          console.log('✅ Tokens found, initializing session...')
+        if (token) {
+          console.log('Tokens found, initializing session...')
 
-          // Store tokens directly using tokenManager (no AuthContext needed)
-          tokenManager.initialize(token, refreshToken, expiresIn)
+          if (refreshToken) {
+            tokenManager.initialize(token, refreshToken, expiresIn)
+          } else {
+            tokenManager.setAccessToken(token, expiresIn)
+          }
 
           // Clean up URL and cookies
           const url = new URL(window.location.href)
@@ -62,18 +65,25 @@ export default function OidcCallbackPage() {
           document.cookie = 'dev_refreshToken=; Max-Age=0; path=/'
           document.cookie = 'dev_expiresIn=; Max-Age=0; path=/'
 
-          // Redirect to organization check
           setStatus('Redirecting...')
-          console.log('🔄 Redirecting to organization check...')
           window.location.href = '/organization/check'
           return
         }
 
-        console.log('❌ No tokens found, redirecting to login...')
+        // AuthContext may have consumed tokens first and already initialized storage.
+        const existingToken = tokenManager.getAccessToken()
+        if (existingToken) {
+          console.log('Existing session detected, redirecting...')
+          setStatus('Redirecting...')
+          window.location.href = '/organization/check'
+          return
+        }
+
+        console.log('No tokens found, redirecting to login...')
         setStatus('No tokens found, redirecting to login...')
         router.replace('/login')
       } catch (error) {
-        console.error('❌ OIDC Callback error:', error)
+        console.error('OIDC Callback error:', error)
         setStatus('Error processing login, redirecting...')
         router.replace('/login')
       }

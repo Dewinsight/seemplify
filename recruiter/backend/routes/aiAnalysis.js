@@ -4,12 +4,45 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const { requireCredits, deductCredits } = require('../middleware/creditsMiddleware');
 const aiInterviewAnalysisService = require('../services/aiInterviewAnalysisService');
+const Interview = require('../models/Interview');
+const Job = require('../models/Job');
+const Candidate = require('../models/Candidate');
+const {
+  buildInterviewOrganizationQuery,
+  organizationOwnsJob
+} = require('../utils/organizationResourceScope');
+
+router.use(authMiddleware, requireOrganization);
+
+router.param('interviewId', async (req, res, next, interviewId) => {
+  try {
+    const query = await buildInterviewOrganizationQuery(req.user.currentOrganization, { _id: interviewId });
+    if (!await Interview.exists(query)) {
+      return res.status(404).json({ success: false, error: 'Interview not found' });
+    }
+    return next();
+  } catch (_error) {
+    return res.status(404).json({ success: false, error: 'Interview not found' });
+  }
+});
+
+router.param('jobId', async (req, res, next, jobId) => {
+  try {
+    if (!await organizationOwnsJob(jobId, req.user.currentOrganization)) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+    return next();
+  } catch (_error) {
+    return res.status(404).json({ success: false, error: 'Job not found' });
+  }
+});
 
 // Analyze interview transcript - with credits
 router.post('/interviews/:interviewId/analyze', authMiddleware, requireOrganization, requireCredits('aiAnalysis', 'analysis'), deductCredits, async (req, res) => {
   try {
     const analysis = await aiInterviewAnalysisService.analyzeInterviewTranscript(
-      req.params.interviewId
+      req.params.interviewId,
+      req.user.currentOrganization
     );
     
     res.json({ 
@@ -20,9 +53,10 @@ router.post('/interviews/:interviewId/analyze', authMiddleware, requireOrganizat
     });
   } catch (error) {
     console.error('Error analyzing interview:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -38,10 +72,18 @@ router.get('/candidates/:candidateId/ai-insights', authMiddleware, async (req, r
         error: 'jobId is required' 
       });
     }
+    const [candidateOwned, jobOwned] = await Promise.all([
+      Candidate.exists({ _id: req.params.candidateId, organization: req.user.currentOrganization }),
+      Job.exists({ _id: jobId, organization: req.user.currentOrganization })
+    ]);
+    if (!candidateOwned || !jobOwned) {
+      return res.status(404).json({ success: false, error: 'Candidate or job not found' });
+    }
     
     const insights = await aiInterviewAnalysisService.getCandidateInsights(
       req.params.candidateId,
-      jobId
+      jobId,
+      req.user.currentOrganization
     );
     
     res.json({ 
@@ -50,9 +92,10 @@ router.get('/candidates/:candidateId/ai-insights', authMiddleware, async (req, r
     });
   } catch (error) {
     console.error('Error getting candidate insights:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -63,7 +106,8 @@ router.get('/jobs/:jobId/comparative-analysis', authMiddleware, async (req, res)
     const { stageId } = req.query;
     const analysis = await aiInterviewAnalysisService.getComparativeAnalysis(
       req.params.jobId,
-      stageId
+      stageId,
+      req.user.currentOrganization
     );
     
     res.json({ 
@@ -72,9 +116,10 @@ router.get('/jobs/:jobId/comparative-analysis', authMiddleware, async (req, res)
     });
   } catch (error) {
     console.error('Error getting comparative analysis:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -83,7 +128,8 @@ router.get('/jobs/:jobId/comparative-analysis', authMiddleware, async (req, res)
 router.get('/interviews/:interviewId/recommendations', authMiddleware, async (req, res) => {
   try {
     const recommendations = await aiInterviewAnalysisService.getNextStepRecommendations(
-      req.params.interviewId
+      req.params.interviewId,
+      req.user.currentOrganization
     );
     
     res.json({ 
@@ -92,9 +138,10 @@ router.get('/interviews/:interviewId/recommendations', authMiddleware, async (re
     });
   } catch (error) {
     console.error('Error getting recommendations:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -117,7 +164,8 @@ router.post('/jobs/:jobId/analyze-all', authMiddleware, requireOrganization, asy
       query.stageId = stageId;
     }
     
-    const interviewsToAnalyze = await Interview.countDocuments(query);
+    const scopedQuery = await buildInterviewOrganizationQuery(req.user.currentOrganization, query);
+    const interviewsToAnalyze = await Interview.countDocuments(scopedQuery);
     
     if (interviewsToAnalyze === 0) {
       return res.json({ 
@@ -158,7 +206,8 @@ router.post('/jobs/:jobId/analyze-all', authMiddleware, requireOrganization, asy
     // Proceed with analysis
     const results = await aiInterviewAnalysisService.bulkAnalyzeInterviews(
       req.params.jobId,
-      stageId
+      stageId,
+      req.user.currentOrganization
     );
     
     // Deduct credits for successfully analyzed interviews
@@ -188,9 +237,10 @@ router.post('/jobs/:jobId/analyze-all', authMiddleware, requireOrganization, asy
     });
   } catch (error) {
     console.error('Error in bulk analysis:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -199,7 +249,11 @@ router.post('/jobs/:jobId/analyze-all', authMiddleware, requireOrganization, asy
 router.get('/interviews/:interviewId/analysis-status', authMiddleware, async (req, res) => {
   try {
     const Interview = require('../models/Interview');
-    const interview = await Interview.findById(req.params.interviewId)
+    const interviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { _id: req.params.interviewId }
+    );
+    const interview = await Interview.findOne(interviewQuery)
       .select('aiAnalysis transcript')
       .populate('stageId', 'name type');
     
@@ -227,9 +281,10 @@ router.get('/interviews/:interviewId/analysis-status', authMiddleware, async (re
     });
   } catch (error) {
     console.error('Error getting analysis status:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -238,7 +293,11 @@ router.get('/interviews/:interviewId/analysis-status', authMiddleware, async (re
 router.get('/interviews/:interviewId/analysis', authMiddleware, async (req, res) => {
   try {
     const Interview = require('../models/Interview');
-    const interview = await Interview.findById(req.params.interviewId)
+    const interviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { _id: req.params.interviewId }
+    );
+    const interview = await Interview.findOne(interviewQuery)
       .select('aiAnalysis')
       .populate('stageId', 'name type')
       .populate('candidateId', 'firstName lastName');
@@ -270,9 +329,10 @@ router.get('/interviews/:interviewId/analysis', authMiddleware, async (req, res)
     });
   } catch (error) {
     console.error('Error getting analysis results:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -282,12 +342,17 @@ router.post('/interviews/:interviewId/re-analyze', authMiddleware, requireOrgani
   try {
     // Force re-analysis by clearing existing analysis
     const Interview = require('../models/Interview');
-    await Interview.findByIdAndUpdate(req.params.interviewId, {
+    const interviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { _id: req.params.interviewId }
+    );
+    await Interview.findOneAndUpdate(interviewQuery, {
       $unset: { aiAnalysis: 1 }
     });
     
     const analysis = await aiInterviewAnalysisService.analyzeInterviewTranscript(
-      req.params.interviewId
+      req.params.interviewId,
+      req.user.currentOrganization
     );
     
     res.json({ 
@@ -298,9 +363,10 @@ router.post('/interviews/:interviewId/re-analyze', authMiddleware, requireOrgani
     });
   } catch (error) {
     console.error('Error re-analyzing interview:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -311,11 +377,16 @@ router.get('/jobs/:jobId/analysis-summary', authMiddleware, async (req, res) => 
     const Interview = require('../models/Interview');
     
     // Get all interviews for the job
-    const allInterviews = await Interview.find({ jobId: req.params.jobId });
-    const analyzedInterviews = await Interview.find({ 
-      jobId: req.params.jobId,
-      'aiAnalysis.analyzed': true 
-    });
+    const allInterviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { jobId: req.params.jobId }
+    );
+    const analyzedInterviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { jobId: req.params.jobId, 'aiAnalysis.analyzed': true }
+    );
+    const allInterviews = await Interview.find(allInterviewQuery);
+    const analyzedInterviews = await Interview.find(analyzedInterviewQuery);
     
     // Calculate summary statistics
     const summary = {
@@ -362,9 +433,10 @@ router.get('/jobs/:jobId/analysis-summary', authMiddleware, async (req, res) => 
     });
   } catch (error) {
     console.error('Error getting analysis summary:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
@@ -374,10 +446,11 @@ router.get('/jobs/:jobId/top-insights', authMiddleware, async (req, res) => {
   try {
     const Interview = require('../models/Interview');
     
-    const analyzedInterviews = await Interview.find({ 
-      jobId: req.params.jobId,
-      'aiAnalysis.analyzed': true 
-    }).select('aiAnalysis');
+    const analyzedInterviewQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { jobId: req.params.jobId, 'aiAnalysis.analyzed': true }
+    );
+    const analyzedInterviews = await Interview.find(analyzedInterviewQuery).select('aiAnalysis');
     
     if (analyzedInterviews.length === 0) {
       return res.json({
@@ -481,11 +554,12 @@ router.get('/jobs/:jobId/top-insights', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting top insights:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(error.statusCode || 500).json({
+      success: false,
+      code: error.code,
+      error: error.message
     });
   }
 });
 
-module.exports = router; 
+module.exports = router;

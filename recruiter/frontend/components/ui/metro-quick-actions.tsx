@@ -16,6 +16,7 @@ import {
 	TrendingUp,
 } from "lucide-react";
 import "@/styles/metro-layout.css";
+import { useFeatureFlags } from "@/context/FeatureFlagsContext";
 
 interface MetroAction {
 	id: string;
@@ -26,7 +27,6 @@ interface MetroAction {
 	color: string;
 	bgPattern?: string;
 	size?: "small" | "medium" | "large" | "wide" | "tall";
-	emphasis?: boolean;
 	stats?: {
 		value: string;
 		label: string;
@@ -59,6 +59,7 @@ const getSizeClass = (size: string) => {
 
 export function MetroQuickActions({ className, compact = false }: MetroQuickActionsProps) {
 	const { state } = useUser();
+	const { isFeatureEnabled } = useFeatureFlags();
 	const { analytics } = state;
 	const [todayInterviews, setTodayInterviews] = React.useState<number>(0);
 
@@ -74,7 +75,7 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 			.catch(() => setTodayInterviews(0));
 	}, []);
 
-	const actions: MetroAction[] = [
+	const allActions: MetroAction[] = [
 		{
 			id: "candidates",
 			title: "Candidates",
@@ -84,7 +85,6 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 			color: "metro-tile-indigo",
 			bgPattern: "dots",
 			size: "large",
-			emphasis: true,
 			stats: {
 				value: String(analytics?.overview?.totalCandidates?.value ?? 0),
 				label: "Total",
@@ -99,7 +99,6 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 			icon: <Briefcase />,
 			color: "metro-tile-teal",
 			size: "wide",
-			emphasis: true,
 			stats: {
 				value: String(analytics?.overview?.activeJobs?.value ?? 0),
 				label: "Active"
@@ -114,7 +113,6 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 			color: "metro-tile-slate",
 			bgPattern: "grid",
 			size: "wide",
-			emphasis: true,
 			stats: {
 				value: String(todayInterviews),
 				label: "Today"
@@ -149,6 +147,9 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 			size: "wide",
 		},
 	];
+	const actions = allActions.filter(
+		(action) => action.id !== "uploads" || isFeatureEnabled('bulkCvUpload')
+	);
 
 	// Background pattern class mapping
 	const getBackgroundPatternClass = (pattern?: string) => {
@@ -174,7 +175,6 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 						"metro-tile",
 						getSizeClass(action.size || "small"),
 						action.color,
-						action.emphasis && "metro-tile-emphasis",
 						"metro-tile-animate"
 					)}
 					style={{

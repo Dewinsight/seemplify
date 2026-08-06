@@ -1,0 +1,125 @@
+.ui-skin-v2 {
+	--v2-font-heading: 'Fredoka One', 'Baloo 2', 'Nunito', system-ui, sans-serif;
+	--v2-font-body: 'Nunito', 'Baloo 2', system-ui, sans-serif;
+	--v2-font-playful: 'Fredoka One', 'Baloo 2', 'Nunito', system-ui, sans-serif;
+	--v2-sidebar-start: #003f9e;
+	--v2-sidebar-end: #001a4d;
+	--v2-sidebar-ink: #f7f9ff;
+	--v2-page-bg: #eef4fb;
+	--v2-surface: #ffffff;
+	--v2-surface-soft: #e8f1ff;
+	--v2-text-strong: #08224a;
+	--v2-text: #243b5a;
+	--v2-text-muted: #667891;
+	--v2-border: #ccd8e8;
+	--v2-ring: rgba(0, 102, 204, 0.32);
+	--v2-shadow: 0 18px 38px rgba(8, 34, 74, 0.12);
+	--v2-shadow-soft: 0 8px 20px rgba(8, 34, 74, 0.08);
+	--v2-accent: #00a1e4;
+	--v2-accent-strong: #003f9e;
+	--v2-accent-gold: #f6b21a;
+	font-family: var(--v2-font-body);
+	background: var(--v2-page-bg);
+	color: var(--v2-text);
+}
+
+html[data-theme='dark'] .ui-skin-v2 {
+	--v2-sidebar-start: #002b73;
+	--v2-sidebar-end: #000f31;
+	--v2-sidebar-ink: #e9ecff;
+	--v2-page-bg: #08162e;
+	--v2-surface: #102345;
+	--v2-surface-soft: #172f5b;
+	--v2-text-strong: #ecf2ff;
+	--v2-text: #d0d9ef;
+	--v2-text-muted: #a2b0cf;
+	--v2-border: #294776;
+	--v2-ring: rgba(0, 161, 228, 0.5);
+	--v2-shadow: 0 20px 44px rgba(6, 10, 19, 0.45);
+	--v2-shadow-soft: 0 10px 26px rgba(6, 10, 19, 0.3);
+	--v2-accent: #5cc7ff;
+	--v2-accent-strong: #8bc9ff;
+	--v2-accent-gold: #f6c04d;
+}
+
+.ui-skin-v2,
+.ui-skin-v2 * {
+	font-family: var(--v2-font-body);
+}
+
+.ui-skin-v2 h1,
+.ui-skin-v2 h2,
+.ui-skin-v2 h3,
+.ui-skin-v2 h4,
+.ui-skin-v2 .font-extrabold,
+.ui-skin-v2 .font-bold {
+	font-family: var(--v2-font-heading);
+	letter-spacing: 0;
+}
+
+.ui-skin-v2 .text-ink-gray-9 {
+	color: var(--v2-text-strong) !important;
+}
+
+.ui-skin-v2 .text-ink-gray-8,
+.ui-skin-v2 .text-ink-gray-7,
+.ui-skin-v2 .text-ink-gray-6 {
+	color: var(--v2-text) !important;
+}
+
+.ui-skin-v2 .text-ink-gray-5 {
+	color: var(--v2-text-muted) !important;
+}
+
+.ui-skin-v2 .bg-surface-white {
+	background-color: var(--v2-surface) !important;
+}
+
+.ui-skin-v2 .bg-surface-menu-bar {
+	background: linear-gradient(180deg, var(--v2-sidebar-start), var(--v2-sidebar-end)) !important;
+}
+
+.ui-skin-v2 .bg-surface-gray-2 {
+	background-color: var(--v2-surface-soft) !important;
+}
+
+.ui-skin-v2 .bg-surface-gray-3,
+.ui-skin-v2 .bg-surface-gray-4 {
+	background-color: var(--v2-border) !important;
+}
+
+.ui-skin-v2 .bg-surface-selected {
+	background-color: #ffffff !important;
+}
+
+.ui-skin-v2 .border,
+.ui-skin-v2 .border-t,
+.ui-skin-v2 .border-r,
+.ui-skin-v2 .border-b,
+.ui-skin-v2 .border-l,
+.ui-skin-v2 .border-x,
+.ui-skin-v2 .border-y,
+.ui-skin-v2 .border-x-2,
+.ui-skin-v2 .border-y-2,
+.ui-skin-v2 .border-b-2,
+.ui-skin-v2 .border-t-2 {
+	border-color: var(--v2-border) !important;
+}
+
+.ui-skin-v2 .border-outline-gray-2,
+.ui-skin-v2 .border-outline-gray-3,
+.ui-skin-v2 .hover\:border-outline-gray-3:hover {
+	border-color: var(--v2-border) !important;
+}
+
+.ui-skin-v2 .focus-visible\:ring-outline-gray-3:focus-visible {
+	--tw-ring-color: var(--v2-ring) !important;
+}
+
+.ui-skin-v2 .rounded-md {
+	border-radius: 0.5rem;
+}
+
+.ui-skin-v2 .rounded {
+	border-radius: 0.5rem;
+}

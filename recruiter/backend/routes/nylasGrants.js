@@ -4,6 +4,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const nylasEmailService = require('../services/nylasEmailService');
 const User = require('../models/User');
+const { decodeHtmlEntities } = require('../utils/htmlDecode');
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 
 /**
@@ -149,8 +150,10 @@ router.post('/test-email', authMiddleware, requireOrganization, async (req, res)
     }
 
     const organization = await resolveOrganizationForEmail({
-      organizationId: req.user.currentOrganization
+      organizationId: req.user.currentOrganization,
+      userId: req.user.id
     });
+    const organizationName = decodeHtmlEntities(organization.name);
 
     // Test email data
     const templateData = {
@@ -162,7 +165,7 @@ router.post('/test-email', authMiddleware, requireOrganization, async (req, res)
       interviewType: 'Video',
       meetingLink: 'https://meet.google.com/test-link',
       interviewerName: user.name || user.email,
-      organizationName: organization.name,
+      organizationName,
       interviewerEmail: user.email
     };
 

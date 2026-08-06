@@ -2,40 +2,90 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
+import { getUserDisplayName } from '../utils/userDisplay';
+import { hasAnyCapability } from '../utils/access';
 
 const Dashboard: React.FC = () => {
-    const { user, activeDepartment } = useAuth();
+    const { user, activeDepartment, activeOrganization } = useAuth();
     const [stats, setStats] = useState<any>(null);
     const [recentProjects, setRecentProjects] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+
+    const [sortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+    const displayName = getUserDisplayName(user, 'there');
+    const canReviewProjects = hasAnyCapability(
+        activeOrganization,
+        ['projects.review.*', 'projects.override', 'dashboard.review'],
+        activeDepartment?._id || null
+    );
+    const submissionsLabel = canReviewProjects ? 'View All' : 'My Submissions';
 
     useEffect(() => {
         fetchData();
     }, [activeDepartment]);
 
+    const sortedProjects = React.useMemo(() => {
+        let sortableItems = [...recentProjects];
+        if (sortConfig !== null) {
+            sortableItems.sort((a, b) => {
+                let aValue = a[sortConfig.key];
+                let bValue = b[sortConfig.key];
+
+                // Handle nested keys like department.name
+                if (sortConfig.key === 'department') {
+                    aValue = a.department?.name || '';
+                    bValue = b.department?.name || '';
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [recentProjects, sortConfig]);
+
+    const handleDownload = () => {
+        const headers = ['Project Name', 'Department', 'Status', 'Score', 'Priority Score', 'Tier', 'Date'];
+        const csvContent = [
+            headers.join(','),
+            ...sortedProjects.map(p => [
+                `"${p.name}"`,
+                `"${p.department?.name || 'General'}"`,
+                `"${p.approvalStatus}"`,
+                p.score,
+                p.priorityScore || 'N/A',
+                p.tier || 'N/A',
+                `"${new Date(p.createdAt).toLocaleDateString()}"`
+            ].join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'initiatives_export.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+
     const fetchData = async () => {
         try {
             setLoading(true);
             const params = activeDepartment ? { department: activeDepartment._id } : {};
-
-            // Determine effective role for this context
-            let showStats = false;
-
-            const hasApproverRole = (perms: any) => {
-                const roles = perms?.roles || (perms?.role ? [perms.role] : []);
-                return roles.some((r: string) => ['GovernanceApprover', 'ExecutiveApprover', 'Approver'].includes(r));
-            };
-
-            if (user?.isAdmin) showStats = true;
-            else if (activeDepartment) {
-                const deptPerms = user?.permissions?.find(p =>
-                    (typeof p.department === 'object' ? p.department._id : p.department) === activeDepartment._id
-                );
-                if (hasApproverRole(deptPerms)) showStats = true;
-            } else {
-                // No active dept (Global view?) - show if they have ANY approver role
-                if (user?.permissions?.some(p => hasApproverRole(p))) showStats = true;
-            }
+            const showStats = hasAnyCapability(
+                activeOrganization,
+                ['dashboard.review'],
+                activeDepartment?._id || null
+            );
 
             if (showStats) {
                 const statsRes = await api.get('/dashboard/stats', { params });
@@ -55,14 +105,64 @@ const Dashboard: React.FC = () => {
 
     if (loading) return <div className="glass-panel">Loading dashboard...</div>;
 
+    const getGreeting = () => {
+        const hour = new Date().getHours();
+        if (hour < 6) return 'Burning the midnight oil';
+        if (hour < 12) return 'Good morning';
+        if (hour < 17) return 'Good afternoon';
+        if (hour < 21) return 'Good evening';
+        return 'Working late';
+    };
+
+    const getSubtitle = () => {
+        if (!stats && recentProjects.length === 0) {
+            return "Welcome to Mosaic! Submit your first initiative to get started.";
+        }
+        const parts: string[] = [];
+        if (stats) {
+            if (stats.pending > 0) {
+                parts.push(`${stats.pending} initiative${stats.pending === 1 ? '' : 's'} awaiting review`);
+            }
+            if (stats.approved > 0 && stats.total > 0) {
+                const rate = Math.round((stats.approved / stats.total) * 100);
+                parts.push(`${rate}% approval rate`);
+            }
+        }
+        if (recentProjects.length > 0) {
+            const today = new Date().toDateString();
+            const todayCount = recentProjects.filter(p => new Date(p.createdAt).toDateString() === today).length;
+            if (todayCount > 0) {
+                parts.push(`${todayCount} new today`);
+            }
+        }
+        if (parts.length > 0) return parts.join(' · ');
+        return `${recentProjects.length} initiative${recentProjects.length === 1 ? '' : 's'} across your portfolio.`;
+    };
+
     return (
         <div>
             <div className="page-header">
-                <div>
-                    <h1 style={{ margin: 0, fontSize: '2rem' }}>Welcome, {user?.username}</h1>
-                    <p style={{ color: 'var(--text-secondary)', margin: '0.5rem 0 0 0' }}>Here is what's happening today.</p>
+                <div style={{ width: '100%' }}>
+                    <h1 className="dashboard-greeting" style={{
+                        margin: 0,
+                        fontSize: '2rem',
+                        fontWeight: 700,
+                        color: 'var(--text-primary)',
+                    }}>
+                        {getGreeting()}, {displayName}
+                    </h1>
+                    <p className="dashboard-subtitle" style={{
+                        color: 'var(--text-secondary)',
+                        margin: '0.5rem 0 0 0',
+                        fontSize: '1rem',
+                    }}>
+                        {getSubtitle()}
+                    </p>
                 </div>
-                <Link to="/analyze" className="btn-primary" style={{ textDecoration: 'none' }}>+ New Initiative</Link>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', width: '100%' }}>
+                    <button onClick={handleDownload} className="btn-primary" style={{ textDecoration: 'none', background: 'var(--sterling-dark)', border: '1px solid var(--glass-border)' }}>Download CSV</button>
+                    <Link to="/analyze" className="btn-primary" style={{ textDecoration: 'none' }}>+ New Initiative</Link>
+                </div>
             </div>
 
             {stats && (
@@ -87,68 +187,131 @@ const Dashboard: React.FC = () => {
             )}
 
             <div className="dashboard-grid">
-                <div className="glass-panel">
+                <div className="glass-panel" style={{ overflow: 'hidden' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        <h3 style={{ margin: 0 }}>Recent Initiatives</h3>
-                        <Link to="/analyze?tab=view" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textDecoration: 'none' }}>View All →</Link>
+                        <h3 style={{ margin: 0 }}>{canReviewProjects ? 'Recent Initiatives' : 'My Recent Submissions'}</h3>
+                        <Link to="/analyze?tab=view" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textDecoration: 'none' }}>{submissionsLabel} →</Link>
                     </div>
                     {recentProjects.length === 0 ? (
                         <p style={{ color: 'var(--text-secondary)' }}>No projects found. Start a new initiative!</p>
                     ) : (
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
-                                        <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Project Name</th>
-                                        <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Department</th>
-                                        <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Status</th>
-                                        <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Score</th>
-                                        <th style={{ textAlign: 'left', padding: '1rem 0.5rem' }}>Date</th>
-                                        <th style={{ textAlign: 'right', padding: '1rem 0.5rem' }}>Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {recentProjects.map(p => (
-                                        <tr key={p._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                            <td style={{ padding: '1rem 0.5rem', fontWeight: 'bold' }}>{p.name}</td>
-                                            <td style={{ padding: '1rem 0.5rem', color: 'var(--text-secondary)' }}>{p.department?.name || 'General'}</td>
-                                            <td style={{ padding: '1rem 0.5rem' }}>
-                                                <span style={{
-                                                    padding: '0.25rem 0.75rem',
-                                                    borderRadius: '20px',
-                                                    fontSize: '0.85rem',
-                                                    background: p.approvalStatus === 'Approved' ? 'rgba(76, 175, 80, 0.2)' :
-                                                        p.approvalStatus === 'Rejected' ? 'rgba(244, 67, 54, 0.2)' : 'rgba(255, 193, 7, 0.2)',
-                                                    color: p.approvalStatus === 'Approved' ? '#81c784' :
-                                                        p.approvalStatus === 'Rejected' ? '#e57373' : '#ffd54f'
-                                                }}>
-                                                    {p.approvalStatus}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '1rem 0.5rem' }}>{p.score || 0}/100</td>
-                                            <td style={{ padding: '1rem 0.5rem', color: 'var(--text-secondary)' }}>{new Date(p.createdAt).toLocaleDateString()}</td>
-                                            <td style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>
-                                                <Link to={`/projects/${p._id}`} style={{ color: 'var(--sterling-gold)', textDecoration: 'none' }}>View →</Link>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {sortedProjects.slice(0, 5).map(p => {
+                                const statusText = String(p.approvalStatus || '');
+                                const isApproved = /approved/i.test(statusText);
+                                const isRejected = /rejected/i.test(statusText);
+                                return (
+                                <div
+                                    key={p._id}
+                                    onClick={() => window.location.href = `/projects/${p._id}`}
+                                    className="glass-card"
+                                    style={{
+                                        cursor: 'pointer',
+                                        padding: '1rem 1.25rem',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        flexWrap: 'wrap',
+                                        gap: '0.75rem',
+                                        transition: 'transform 0.2s, box-shadow 0.2s'
+                                    }}
+                                >
+                                    <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, marginBottom: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {p.name}
+                                        </div>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                            {p.department?.name || 'General'} • {new Date(p.createdAt).toLocaleDateString()}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexShrink: 0 }}>
+                                        <span style={{
+                                            padding: '0.25rem 0.75rem',
+                                            borderRadius: '20px',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 500,
+                                            background: isApproved ? 'rgba(76, 175, 80, 0.2)' :
+                                                isRejected ? 'rgba(244, 67, 54, 0.2)' : 'rgba(255, 193, 7, 0.2)',
+                                            color: isApproved ? '#81c784' :
+                                                isRejected ? '#e57373' : '#ffd54f'
+                                        }}>
+                                            {p.approvalStatus}
+                                        </span>
+                                        <span style={{ fontWeight: 600, color: 'var(--sterling-gold)' }}>
+                                            {p.priorityScore != null ? `${Number(p.priorityScore).toFixed(1)}/5` : `${p.score || 0}/100`}
+                                        </span>
+                                    </div>
+                                </div>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
 
-                <div className="glass-panel" style={{ height: 'fit-content' }}>
-                    <h3 style={{ marginBottom: '1rem' }}>Reviewer Guide</h3>
-                    <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                        <p>💡 <strong>Budget Rules:</strong> Projects over $500k require explicit executive sponsorship.</p>
-                        <p>🔒 <strong>Security:</strong> All customer-facing apps must pass SOC2 criteria.</p>
-                        <p>⚙️ <strong>Tech Stack:</strong> Stick to the approved list (React, Node, Py, Java) to ensure maintainability.</p>
-                        <hr style={{ borderColor: 'var(--glass-border)', margin: '1.5rem 0' }} />
-                        <div style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '8px' }}>
-                            <strong>Need to Override?</strong>
-                            <p style={{ margin: '0.5rem 0 0 0' }}>Admins can manually approve rejected projects if a valid business justification is provided in the audit log.</p>
+                <div className="glass-panel" style={{ height: 'fit-content', overflow: 'hidden' }}>
+                    <h3 style={{ marginBottom: '1rem' }}>🚀 Getting Started</h3>
+                    <div style={{ fontSize: '0.9rem', lineHeight: '1.8' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                            <span style={{
+                                background: 'var(--sterling-gold)',
+                                color: '#000',
+                                borderRadius: '50%',
+                                width: '24px',
+                                height: '24px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 'bold',
+                                fontSize: '0.8rem',
+                                flexShrink: 0
+                            }}>1</span>
+                            <div>
+                                <strong>Submit an Initiative</strong>
+                                <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)' }}>Click "+ New Initiative" to describe your project idea.</p>
+                            </div>
                         </div>
+                        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                            <span style={{
+                                background: 'var(--sterling-gold)',
+                                color: '#000',
+                                borderRadius: '50%',
+                                width: '24px',
+                                height: '24px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 'bold',
+                                fontSize: '0.8rem',
+                                flexShrink: 0
+                            }}>2</span>
+                            <div>
+                                <strong>AI Analysis</strong>
+                                <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)' }}>Mosaic AI evaluates your initiative against company policies.</p>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                            <span style={{
+                                background: 'var(--sterling-gold)',
+                                color: '#000',
+                                borderRadius: '50%',
+                                width: '24px',
+                                height: '24px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 'bold',
+                                fontSize: '0.8rem',
+                                flexShrink: 0
+                            }}>3</span>
+                            <div>
+                                <strong>Track Progress</strong>
+                                <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)' }}>Monitor approvals in the Initiatives page.</p>
+                            </div>
+                        </div>
+                        <hr style={{ borderColor: 'var(--glass-border)', margin: '1rem 0' }} />
+                        <Link to="/analyze" style={{ color: 'var(--sterling-gold)', fontWeight: 600, textDecoration: 'none' }}>
+                            Start your first initiative →
+                        </Link>
                     </div>
                 </div>
             </div>

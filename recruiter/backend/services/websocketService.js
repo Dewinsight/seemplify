@@ -2,7 +2,8 @@
 // WebSocket service for real-time communication with frontend
 
 const WebSocket = require('ws');
-const { streamMessageWithAgent } = require('./langchainAgentService');
+const { allowFeatureUpgrade } = require('../middleware/websocketFeatureGuard');
+const { getPlatformFeatureSettings } = require('./platformFeatureService');
 
 class WebSocketService {
   constructor() {
@@ -15,9 +16,16 @@ class WebSocketService {
    * @param {Object} server - HTTP server instance
    */
   initialize(server) {
-    this.wss = new WebSocket.Server({ 
-      server,
-      path: '/ws/assistant'
+    this.wss = new WebSocket.Server({ noServer: true });
+
+    server.on('upgrade', async (req, socket, head) => {
+      const pathname = new URL(req.url, 'http://localhost').pathname;
+      if (pathname !== '/ws/assistant') return;
+      if (!await allowFeatureUpgrade('aiAssistant', socket)) return;
+
+      this.wss.handleUpgrade(req, socket, head, (ws) => {
+        this.wss.emit('connection', ws, req);
+      });
     });
 
     this.wss.on('connection', (ws, req) => {
@@ -76,6 +84,20 @@ class WebSocketService {
   async handleMessage(clientId, message) {
     const client = this.clients.get(clientId);
     if (!client) return;
+
+    try {
+      const { features } = await getPlatformFeatureSettings();
+      if (!features.aiAssistant) {
+        this.sendError(clientId, 'AI Assistant is currently unavailable.');
+        client.ws.close(1008, 'AI Assistant is unavailable');
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to refresh AI Assistant availability:', error);
+      this.sendError(clientId, 'AI Assistant availability could not be verified.');
+      client.ws.close(1013, 'Feature settings unavailable');
+      return;
+    }
 
     console.log(`📨 Received message from ${clientId}:`, message.type);
 
@@ -152,6 +174,7 @@ class WebSocketService {
       this.sendError(clientId, 'Missing userInput in chat message');
       return;
     }
+    const { streamMessageWithAgent } = require('./langchainAgentService');
 
     // 🔍 DEBUG: Log session information to track the issue
     console.log(`💬 Processing chat for ${clientId}: "${userInput}"`);
@@ -331,4 +354,4 @@ class WebSocketService {
 
 // Export singleton instance
 const websocketService = new WebSocketService();
-module.exports = websocketService; 
+module.exports = websocketService;

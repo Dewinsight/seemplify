@@ -61,7 +61,10 @@
         "http://127.0.0.1:5001/api/auth/oidc/callback",
         "https://api.seemplifyai.com/api/auth/oidc/callback",
         "https://api-dev.seemplifyai.com/api/auth/oidc/callback",
-        "https://*.smarthr.com/api/auth/oidc/callback"
+        "https://*.smarthr.com/api/auth/oidc/callback",
+        "https://ibom.aiinnigeria.com/api/auth/oidc/callback",
+        "https://akwaibom.aiinnigeria.com/api/auth/oidc/callback",
+        "https://akwa.aiinnigeria.com/api/auth/oidc/callback"
       ],
       "allowed_origins": [
         "http://localhost:5000",
@@ -76,6 +79,10 @@
         "https://api-dev.seemplifyai.com",
         "https://auth-dev.seemplifyai.com",
         "https://smarthr.aiinnigeria.com",
+        "https://jetstone.aiinnigeria.com",
+        "https://akwaibom.aiinnigeria.com",
+        "https://ibom.aiinnigeria.com",
+        "https://akwa.aiinnigeria.com",
         "https://*.smarthr.com"
       ],
       "response_types": [
@@ -182,6 +189,32 @@
         "refresh_token"
       ],
       "token_endpoint_auth_method": "client_secret_basic"
+    },
+    {
+      "client_id": "zulip",
+      "client_secret": "zulip-seemplify-secret-2026",
+      "redirect_uri_patterns": [
+        "https://auth.chat.seemplifyai.com/complete/oidc/",
+        "https://*.chat.seemplifyai.com/complete/oidc/",
+        "https://chat.seemplifyai.com/complete/oidc/",
+        "https://chat.seemplifyai.com/complete/saml/",
+        "https://chat-dev.seemplifyai.com/complete/oidc/",
+        "http://localhost/complete/oidc/",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "allowed_origins": [
+        "https://auth.chat.seemplifyai.com",
+        "https://*.chat.seemplifyai.com",
+        "https://chat.seemplifyai.com",
+        "https://chat-dev.seemplifyai.com",
+        "http://localhost",
+        "https://auth.seemplifyai.com",
+        "https://auth-dev.seemplifyai.com"
+      ],
+      "response_types": ["code"],
+      "grant_types": ["authorization_code", "refresh_token"],
+      "token_endpoint_auth_method": "client_secret_post"
     },
     {
       "client_id": "time-attendance",

@@ -8,6 +8,7 @@ import {
     Clock,
     Save,
     BellRing,
+    Mail,
     Plus,
     Trash2,
     Edit2,
@@ -37,7 +38,23 @@ export default function SettingsPage() {
         try {
             setLoading(true);
             const data = await adminApi.getPolicy();
-            if (data?.policy) setPolicy(data.policy);
+            if (data?.policy) {
+                const normalizedPolicy = {
+                    ...data.policy,
+                    notifications: {
+                        ...(data.policy.notifications || {}),
+                        managerReports: {
+                            enabled: data.policy.notifications?.managerReports?.enabled !== false,
+                            frequency: data.policy.notifications?.managerReports?.frequency || 'weekly',
+                            sendHourUtc: Number.isFinite(data.policy.notifications?.managerReports?.sendHourUtc)
+                                ? data.policy.notifications.managerReports.sendHourUtc
+                                : 9,
+                            includeExcel: data.policy.notifications?.managerReports?.includeExcel !== false,
+                        },
+                    },
+                };
+                setPolicy(normalizedPolicy);
+            }
         } catch (error) {
             console.error('Failed to fetch settings', error);
         } finally {
@@ -251,6 +268,128 @@ export default function SettingsPage() {
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                                 />
                                 <p className="text-xs text-zinc-500 mt-1">Maximum allowed OT per day</p>
+                            </div>
+                        </div>
+                    )}
+                </section>
+
+                {/* Manager Reports */}
+                <section className="bg-zinc-900/50 border border-white/5 rounded-2xl p-6">
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-400">
+                                <Mail className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-semibold text-white">Manager Attendance Reports</h2>
+                                <p className="text-sm text-zinc-500">Automated report emails to line managers</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm text-zinc-400">Enabled</span>
+                            <button
+                                onClick={() =>
+                                    setPolicy({
+                                        ...policy,
+                                        notifications: {
+                                            ...policy.notifications,
+                                            managerReports: {
+                                                ...policy.notifications.managerReports,
+                                                enabled: !policy.notifications.managerReports.enabled,
+                                            },
+                                        },
+                                    })
+                                }
+                                className={cn(
+                                    "w-12 h-6 rounded-full p-1 transition-colors relative",
+                                    policy.notifications?.managerReports?.enabled ? "bg-teal-500" : "bg-zinc-700"
+                                )}
+                            >
+                                <div className={cn(
+                                    "w-4 h-4 rounded-full bg-white transition-transform",
+                                    policy.notifications?.managerReports?.enabled ? "translate-x-6" : "translate-x-0"
+                                )} />
+                            </button>
+                        </div>
+                    </div>
+
+                    {policy.notifications?.managerReports?.enabled && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in slide-in-from-top-4">
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-400 mb-2">Frequency</label>
+                                <select
+                                    value={policy.notifications.managerReports.frequency}
+                                    onChange={(e) =>
+                                        setPolicy({
+                                            ...policy,
+                                            notifications: {
+                                                ...policy.notifications,
+                                                managerReports: {
+                                                    ...policy.notifications.managerReports,
+                                                    frequency: e.target.value,
+                                                },
+                                            },
+                                        })
+                                    }
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+                                >
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly (Default)</option>
+                                    <option value="monthly">Monthly</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-400 mb-2">Send Hour (UTC)</label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={23}
+                                    value={policy.notifications.managerReports.sendHourUtc}
+                                    onChange={(e) =>
+                                        setPolicy({
+                                            ...policy,
+                                            notifications: {
+                                                ...policy.notifications,
+                                                managerReports: {
+                                                    ...policy.notifications.managerReports,
+                                                    sendHourUtc: Math.max(0, Math.min(23, parseInt(e.target.value) || 0)),
+                                                },
+                                            },
+                                        })
+                                    }
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-between p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 mt-7">
+                                <div>
+                                    <p className="text-sm font-medium text-white">Attach Excel Report</p>
+                                    <p className="text-xs text-zinc-500">Include full team workbook in email</p>
+                                </div>
+                                <button
+                                    onClick={() =>
+                                        setPolicy({
+                                            ...policy,
+                                            notifications: {
+                                                ...policy.notifications,
+                                                managerReports: {
+                                                    ...policy.notifications.managerReports,
+                                                    includeExcel: !policy.notifications.managerReports.includeExcel,
+                                                },
+                                            },
+                                        })
+                                    }
+                                    className={cn(
+                                        "w-12 h-6 rounded-full p-1 transition-colors relative",
+                                        policy.notifications?.managerReports?.includeExcel ? "bg-teal-500" : "bg-zinc-700"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "w-4 h-4 rounded-full bg-white transition-transform",
+                                        policy.notifications?.managerReports?.includeExcel ? "translate-x-6" : "translate-x-0"
+                                    )} />
+                                </button>
                             </div>
                         </div>
                     )}

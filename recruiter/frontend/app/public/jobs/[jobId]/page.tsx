@@ -371,28 +371,6 @@ export default function PublicJobPage() {
                 </Badge>
             </div>
 
-          {/* Application Counter */}
-          {job.candidateApplyLimit && job.candidateApplyLimit > 0 && (
-            <div className="mb-6 bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-slate-300">Applications Received</span>
-                <span className="font-semibold text-blue-300">
-                  {job.publicApplicationCount || 0} / {job.candidateApplyLimit}
-                </span>
-              </div>
-              <Progress 
-                value={((job.publicApplicationCount || 0) / job.candidateApplyLimit) * 100} 
-                className="h-2 bg-slate-700"
-              />
-              {job.publicApplicationCount && job.candidateApplyLimit && 
-               job.publicApplicationCount < job.candidateApplyLimit && (
-                <p className="text-xs text-slate-400 mt-2">
-                  {job.candidateApplyLimit - job.publicApplicationCount} spots remaining
-                </p>
-              )}
-            </div>
-          )}
-
           {/* Apply Button & Posted Date */}
           <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
             {(!job.candidateApplyLimit || job.candidateApplyLimit === 0 || 

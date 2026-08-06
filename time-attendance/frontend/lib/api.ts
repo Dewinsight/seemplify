@@ -120,6 +120,20 @@ export const timesheetApi = {
         const response = await api.post(`/timesheets/${id}/recall`);
         return response.data;
     },
+    exportExcel: async (id: string) => {
+        const response = await api.get(`/timesheets/${id}/export`, {
+            responseType: 'blob',
+        });
+
+        const disposition = response.headers['content-disposition'] || '';
+        const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+        const filename = match ? match[1] : `timesheet-${id}.xlsx`;
+
+        return {
+            blob: response.data,
+            filename,
+        };
+    },
 };
 
 // Attendance API helpers
@@ -131,6 +145,29 @@ export const attendanceApi = {
     getTeamStatus: async (teamId?: string) => {
         const response = await api.get('/attendance/team', { params: { teamId } });
         return response.data;
+    },
+    getTeamMemberDetail: async (userId: string) => {
+        const response = await api.get(`/attendance/team/${userId}`);
+        return response.data;
+    },
+    sendClockOutReminder: async (userId: string) => {
+        const response = await api.post(`/attendance/team/${userId}/notify-clock-out`);
+        return response.data;
+    },
+    exportTeamExcel: async (params?: { teamId?: string; status?: string; q?: string }) => {
+        const response = await api.get('/attendance/team/export', {
+            params,
+            responseType: 'blob',
+        });
+
+        const disposition = response.headers['content-disposition'] || '';
+        const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+        const filename = match ? match[1] : 'team-attendance-export.xlsx';
+
+        return {
+            blob: response.data,
+            filename,
+        };
     },
     getSummary: async (params?: any) => {
         const response = await api.get('/attendance/summary', { params });

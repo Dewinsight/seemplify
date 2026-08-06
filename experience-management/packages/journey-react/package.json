@@ -1,0 +1,78 @@
+{
+    "name":  "@seemplify/journey-react",
+    "version":  "0.1.0",
+    "private":  false,
+    "type":  "module",
+    "description":  "SSR-safe React provider and typed hooks for the Seemplify Journey Browser SDK.",
+    "author":  {
+                   "name":  "Seemplify"
+               },
+    "repository":  {
+                       "type":  "git",
+                       "url":  "git+https://github.com/michaelegbo/seemplify.git",
+                       "directory":  "experience-management/packages/journey-react"
+                   },
+    "homepage":  "https://github.com/michaelegbo/seemplify/tree/main/experience-management/packages/journey-react",
+    "bugs":  {
+                 "url":  "https://github.com/michaelegbo/seemplify/issues"
+             },
+    "keywords":  [
+                     "analytics",
+                     "customer-journey",
+                     "react",
+                     "typescript"
+                 ],
+    "sideEffects":  false,
+    "main":  "./dist/cjs/index.js",
+    "module":  "./dist/index.js",
+    "types":  "./dist/cjs/index.d.ts",
+    "exports":  {
+                    ".":  {
+                              "require":  {
+                                              "types":  "./dist/cjs/index.d.ts",
+                                              "default":  "./dist/cjs/index.js"
+                                          },
+                              "import":  {
+                                             "types":  "./dist/index.d.ts",
+                                             "default":  "./dist/index.js"
+                                         },
+                              "default":  "./dist/index.js"
+                          }
+                },
+    "files":  [
+                  "dist",
+                  "CHANGELOG.md",
+                  "README.md",
+                  "examples",
+                  "LICENSE"
+              ],
+    "publishConfig":  {
+                          "access":  "public",
+                          "registry":  "https://registry.npmjs.org/"
+                      },
+    "scripts":  {
+                    "clean":  "node ../../scripts/sdk-package-tools.mjs clean journey-react",
+                    "build":  "npm run clean \u0026\u0026 tsc -p tsconfig.json \u0026\u0026 tsc -p tsconfig.cjs.json \u0026\u0026 node ../../scripts/sdk-package-tools.mjs mark-cjs journey-react \u0026\u0026 npm run verify:artifacts",
+                    "typecheck":  "tsc --noEmit -p tsconfig.test.json",
+                    "test":  "tsx --tsconfig tsconfig.test.json --test test/*.test.tsx",
+                    "verify:artifacts":  "node ../../scripts/sdk-package-tools.mjs verify journey-react",
+                    "prepack":  "npm run build"
+                },
+    "dependencies":  {
+                         "@seemplify/journey-browser-sdk":  "0.1.0"
+                     },
+    "peerDependencies":  {
+                             "react":  "\u003e=18.3 \u003c20"
+                         },
+    "devDependencies":  {
+                            "@types/node":  "^24.1.0",
+                            "@types/react":  "^19.1.9",
+                            "@types/react-test-renderer":  "^19.1.0",
+                            "react":  "^19.1.1",
+                            "react-dom":  "^19.1.1",
+                            "react-test-renderer":  "^19.1.1",
+                            "tsx":  "^4.20.3",
+                            "typescript":  "^5.8.3"
+                        },
+    "license":  "MIT"
+}

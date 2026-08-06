@@ -124,6 +124,33 @@ const isHRAdmin = (req) => {
     return ['owner', 'admin', 'hr_manager'].includes(role);
 };
 
+const getDepartmentHeadPermissions = (req) => {
+    const organizations = req.user?.organizations || req.user?.userinfo?.organizations || [];
+    const currentOrg = organizations.find(org => org.id === req.organizationId);
+    return Array.isArray(currentOrg?.departmentHeadPermissions) ? currentOrg.departmentHeadPermissions : [];
+};
+
+const getDepartmentHeadScope = (req) => {
+    const headedDepartmentIds = getDepartmentHeadPermissions(req).map(permission => String(permission.id)).filter(Boolean);
+    const teams = req.user?.teams || req.user?.userinfo?.teams || [];
+    const scopedTeams = teams.filter(team =>
+        team.organizationId === req.organizationId &&
+        team.departmentId &&
+        headedDepartmentIds.includes(String(team.departmentId))
+    );
+    const directReports = new Set();
+    scopedTeams.forEach(team => {
+        (team.directReports || []).forEach(id => directReports.add(String(id)));
+        (team.directReportAccountIds || []).forEach(id => directReports.add(String(id)));
+    });
+
+    return {
+        headedDepartmentIds,
+        scopedTeams,
+        directReports: Array.from(directReports),
+    };
+};
+
 // Check if user is a line manager
 const isLineManager = (req) => {
     const teams = req.user.teams || [];
@@ -131,6 +158,10 @@ const isLineManager = (req) => {
         team.organizationId === req.organizationId &&
         ['line_manager', 'team_lead'].includes(team.role)
     );
+};
+
+const isDepartmentHead = (req) => {
+    return getDepartmentHeadPermissions(req).length > 0;
 };
 
 // Middleware to require HR Admin access
@@ -146,12 +177,13 @@ const requireHRAdmin = (req, res, next) => {
 
 // Middleware to require manager access
 const requireManager = (req, res, next) => {
-    if (!isHRAdmin(req) && !isLineManager(req)) {
+    if (!isHRAdmin(req) && !isLineManager(req) && !isDepartmentHead(req)) {
         return res.status(403).json({
             error: 'Manager access required',
             code: 'INSUFFICIENT_PERMISSIONS',
         });
     }
+    req.departmentHeadScope = getDepartmentHeadScope(req);
     next();
 };
 
@@ -163,4 +195,6 @@ module.exports = {
     requireManager,
     isHRAdmin,
     isLineManager,
+    isDepartmentHead,
+    getDepartmentHeadScope,
 };

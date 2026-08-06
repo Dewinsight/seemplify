@@ -1,9 +1,9 @@
 <template>
-	<div class="p-2">
+	<div class="lms-sidebar-user-dropdown p-2">
 		<Dropdown :options="userDropdownOptions">
 			<template v-slot="{ open, close }">
 				<button
-					class="flex h-12 py-2 items-center rounded-md duration-300 ease-in-out"
+					class="lms-sidebar-user-dropdown-button flex h-12 py-2 items-center rounded-md duration-300 ease-in-out"
 					:class="
 						isCollapsed
 							? 'px-0 w-auto'
@@ -17,7 +17,12 @@
 						:src="branding.data?.banner_image.file_url"
 						class="w-8 h-8 rounded flex-shrink-0"
 					/>
-					<LMSLogo v-else class="w-8 h-8 rounded flex-shrink-0" />
+					<img
+						v-else
+						:src="stanbicShield"
+						alt="Stanbic IBTC"
+						class="w-8 h-8 rounded flex-shrink-0 object-contain"
+					/>
 					<div
 						class="flex flex-1 flex-col text-left duration-300 ease-in-out"
 						:class="
@@ -26,19 +31,12 @@
 								: 'opacity-100 ml-2 w-auto'
 						"
 					>
-						<div class="text-base font-medium text-ink-gray-9 leading-none">
-							<span
-								v-if="
-									branding.data?.app_name && branding.data?.app_name != 'Frappe'
-								"
-							>
-								{{ branding.data?.app_name }}
-							</span>
-							<span v-else> Learning </span>
+						<div class="lms-sidebar-user-title text-base font-medium text-ink-gray-9 leading-none">
+							<span>STEM Series</span>
 						</div>
 						<div
 							v-if="userResource.data"
-							class="mt-1 text-sm text-ink-gray-7 leading-none"
+							class="lms-sidebar-user-name mt-1 text-sm text-ink-gray-7 leading-none"
 						>
 							{{ convertToTitleCase(userResource.data?.full_name) }}
 						</div>
@@ -75,7 +73,6 @@ import { createDialog } from '@/utils/dialogs'
 import Apps from '@/components/Sidebar/Apps.vue'
 import Configuration from '@/components/Sidebar/Configuration.vue'
 import FrappeCloudIcon from '@/components/Icons/FrappeCloudIcon.vue'
-import LMSLogo from '@/components/Icons/LMSLogo.vue'
 import SettingsModal from '@/components/Settings/Settings.vue'
 import {
 	ChevronDown,
@@ -98,6 +95,7 @@ const showSettingsModal = ref(false)
 const theme = ref('light')
 const frappeCloudBaseEndpoint = 'https://frappecloud.com'
 const $dialog = createDialog
+const stanbicShield = '/assets/lms/images/stanbic/stanbic-ibtc-icon-official.png'
 
 const props = defineProps({
 	isCollapsed: {
@@ -226,7 +224,7 @@ const userDropdownOptions = computed(() => {
 					icon: LogIn,
 					label: 'Log in',
 					onClick: () => {
-						window.location.href = '/login'
+						window.location.href = '/lms-login'
 					},
 					condition: () => {
 						return !isLoggedIn

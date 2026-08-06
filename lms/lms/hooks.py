@@ -16,10 +16,11 @@ app_license = "AGPL"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/lms/css/lms.css"
-# app_include_js = "/assets/lms/js/lms.js"
+app_include_js = ["/assets/lms/js/seemplify_login.js"]
 
 # include js, css files in header of web template
 web_include_css = "lms.bundle.css"
+web_include_js = ["/assets/lms/js/seemplify_login.js"]
 # web_include_css = "/assets/lms/css/lms.css"
 # web_include_js = "/assets/lms/js/lms.js"
 
@@ -42,10 +43,11 @@ web_include_css = "lms.bundle.css"
 # Home Pages
 # ----------
 
+# Dynamic homepage: guests see custom login, logged-in users see LMS
+get_website_user_home_page = "lms.website.get_home_page"
+
 # application home page (will override Website Settings)
 # home_page = "login"
-
-# Custom branded login page for LMS - merged with other route rules below
 
 # website user home page (by Role)
 # role_home_page = {
@@ -165,6 +167,7 @@ override_whitelisted_methods = {
 
 # Add all simple route rules here
 website_route_rules = [
+	{"from_route": "/lms-login", "to_route": "lms-login"},
 	{"from_route": "/lms/<path:app_path>", "to_route": "lms"},
 	{
 		"from_route": "/courses/<course_name>/<certificate_id>",
@@ -173,6 +176,11 @@ website_route_rules = [
 ]
 
 website_redirects = [
+	{"source": "/sign-up", "target": "/lms-login"},
+	{"source": "/signup", "target": "/lms-login"},
+	{"source": "/new-sign-up", "target": "/lms-login"},
+	{"source": "/forgot-password", "target": "/lms-login"},
+	{"source": "/forgot", "target": "/lms-login"},
 	{"source": "/update-profile", "target": "/edit-profile"},
 	{"source": "/courses", "target": "/lms/courses"},
 	{
@@ -192,6 +200,8 @@ website_redirects = [
 		"match_with_query_string": True,
 	},
 	{"source": "/statistics", "target": "/lms/statistics"},
+	{"source": "/login", "target": "/lms-login"},
+	{"source": "/login/", "target": "/lms-login"},
 ]
 
 update_website_context = [
@@ -248,6 +258,8 @@ page_renderer = [
 profile_url_prefix = "/users/"
 
 signup_form_template = "lms.plugins.show_custom_signup"
+
+on_login = "lms.lms.user.on_login"
 
 get_site_info = "lms.activation.get_site_info"
 

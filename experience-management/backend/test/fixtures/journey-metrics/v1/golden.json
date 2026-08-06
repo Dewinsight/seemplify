@@ -1,0 +1,251 @@
+{
+  "fixtureVersion": "journey-metric-golden/v1",
+  "cases": [
+    {
+      "name": "standard NPS deduplicates revisions and reports exclusions",
+      "request": {
+        "definition": {
+          "metricId": "stage-activation-nps",
+          "metricDefinitionVersion": "nps-definition/v3",
+          "label": "Activation NPS",
+          "metricType": "nps",
+          "scale": { "minimum": 0, "maximum": 10, "step": 1 },
+          "direction": "higher_is_better",
+          "formula": { "kind": "net_promoter_score", "detractorMaximum": 6, "promoterMinimum": 9 },
+          "sourceRefs": ["survey:activation/question:nps"],
+          "minimumSampleSize": 6,
+          "freshnessMaxAgeSeconds": 172800,
+          "decimalPlaces": 0
+        },
+        "period": { "start": "2026-07-01T00:00:00.000Z", "end": "2026-07-08T00:00:00.000Z", "timezone": "UTC" },
+        "asOf": "2026-07-08T00:00:00.000Z",
+        "samples": [
+          { "sampleId": "nps-1", "revision": 1, "sourceRef": "survey:activation/question:nps", "value": 10, "occurredAt": "2026-07-01T08:00:00.000Z" },
+          { "sampleId": "nps-2", "revision": 1, "sourceRef": "survey:activation/question:nps", "value": 9, "occurredAt": "2026-07-02T08:00:00.000Z" },
+          { "sampleId": "nps-3", "revision": 1, "sourceRef": "survey:activation/question:nps", "value": 8, "occurredAt": "2026-07-03T08:00:00.000Z" },
+          { "sampleId": "nps-4", "revision": 1, "sourceRef": "survey:activation/question:nps", "value": 6, "occurredAt": "2026-07-04T08:00:00.000Z" },
+          { "sampleId": "nps-5", "revision": 1, "sourceRef": "survey:activation/question:nps", "value": 10, "occurredAt": "2026-07-05T08:00:00.000Z" },
+          { "sampleId": "nps-5", "revision": 2, "sourceRef": "survey:activation/question:nps", "value": 0, "occurredAt": "2026-07-05T08:00:00.000Z" },
+          { "sampleId": "nps-bad", "sourceRef": "survey:activation/question:nps", "value": 11, "occurredAt": "2026-07-05T09:00:00.000Z" },
+          { "sampleId": "nps-invalid", "sourceRef": "survey:activation/question:nps", "value": 10, "occurredAt": "2026-07-06T08:00:00.000Z", "invalidReason": "Response was retracted." },
+          { "sampleId": "nps-outside", "sourceRef": "survey:activation/question:nps", "value": 10, "occurredAt": "2026-06-30T23:59:59.000Z" },
+          { "sampleId": "nps-future", "sourceRef": "survey:activation/question:nps", "value": 9, "occurredAt": "2026-07-09T08:00:00.000Z" }
+        ]
+      },
+      "expected": {
+        "metricId": "stage-activation-nps",
+        "metricType": "nps",
+        "metricDefinitionVersion": "nps-definition/v3",
+        "calculationVersion": "journey-metric-calculation/v1",
+        "value": 0,
+        "unit": "nps_score",
+        "numerator": 0,
+        "denominator": 5,
+        "sampleSize": 5,
+        "period": { "start": "2026-07-01T00:00:00.000Z", "end": "2026-07-08T00:00:00.000Z", "timezone": "UTC" },
+        "sourceRefs": ["survey:activation/question:nps"],
+        "freshness": { "status": "stale", "asOf": "2026-07-08T00:00:00.000Z", "latestObservedAt": "2026-07-05T08:00:00.000Z", "ageSeconds": 230400, "maximumAgeSeconds": 172800 },
+        "exclusions": {
+          "invalid": {
+            "count": 3,
+            "records": [
+              { "sampleId": "nps-bad", "reason": "VALUE_OUTSIDE_SCALE", "detail": "Value 11 is outside 0-10." },
+              { "sampleId": "nps-future", "reason": "OCCURRED_AFTER_AS_OF", "detail": "Future observations are not included in an as-of calculation." },
+              { "sampleId": "nps-invalid", "reason": "SOURCE_MARKED_INVALID", "detail": "Response was retracted." }
+            ]
+          },
+          "duplicate": { "count": 1, "records": [{ "sampleId": "nps-5", "excludedRevision": 1, "keptRevision": 2 }] },
+          "outsidePeriod": { "count": 1, "sampleIds": ["nps-outside"] }
+        },
+        "minimumSampleWarning": { "active": true, "minimumSampleSize": 6, "actualSampleSize": 5, "message": "Only 5 valid responses are available; at least 6 are required." },
+        "configuration": {
+          "scale": { "minimum": 0, "maximum": 10, "step": 1 },
+          "direction": "higher_is_better",
+          "formula": { "kind": "net_promoter_score", "detractorMaximum": 6, "promoterMinimum": 9 },
+          "favourable": null,
+          "decimalPlaces": 0
+        },
+        "breakdown": { "promoters": 2, "passives": 1, "detractors": 2 },
+        "explanation": "NPS = ((2 promoters [9-10] - 2 detractors [0-6]) / 5 valid responses) x 100 = 0. Scores between the two bands are passive. Higher is better."
+      }
+    },
+    {
+      "name": "CSAT mean preserves the legacy average while making its scale explicit",
+      "request": {
+        "definition": {
+          "metricId": "checkout-csat",
+          "metricDefinitionVersion": "csat-definition/v2",
+          "label": "Checkout satisfaction",
+          "metricType": "csat",
+          "scale": { "minimum": 1, "maximum": 5, "step": 1 },
+          "direction": "higher_is_better",
+          "formula": { "kind": "mean" },
+          "favourable": { "operator": "gte", "threshold": 4 },
+          "sourceRefs": ["survey:checkout/question:csat"],
+          "minimumSampleSize": 4,
+          "freshnessMaxAgeSeconds": 86400,
+          "decimalPlaces": 2
+        },
+        "period": { "start": "2026-07-01T00:00:00.000Z", "end": "2026-07-04T00:00:00.000Z", "timezone": "UTC" },
+        "asOf": "2026-07-04T00:00:00.000Z",
+        "samples": [
+          { "sampleId": "csat-1", "sourceRef": "survey:checkout/question:csat", "value": 5, "occurredAt": "2026-07-01T12:00:00.000Z" },
+          { "sampleId": "csat-2", "sourceRef": "survey:checkout/question:csat", "value": 4, "occurredAt": "2026-07-02T12:00:00.000Z" },
+          { "sampleId": "csat-3", "sourceRef": "survey:checkout/question:csat", "value": 3, "occurredAt": "2026-07-02T13:00:00.000Z" },
+          { "sampleId": "csat-4", "revision": 1, "sourceRef": "survey:checkout/question:csat", "value": 5, "occurredAt": "2026-07-03T12:00:00.000Z" },
+          { "sampleId": "csat-4", "revision": 2, "sourceRef": "survey:checkout/question:csat", "value": 1, "occurredAt": "2026-07-03T12:00:00.000Z" },
+          { "sampleId": "csat-numeric-string", "sourceRef": "survey:checkout/question:csat", "value": "5", "occurredAt": "2026-07-03T13:00:00.000Z" },
+          { "sampleId": "csat-off-step", "sourceRef": "survey:checkout/question:csat", "value": 3.5, "occurredAt": "2026-07-03T14:00:00.000Z" },
+          { "sampleId": "csat-at-exclusive-end", "sourceRef": "survey:checkout/question:csat", "value": 5, "occurredAt": "2026-07-04T00:00:00.000Z" }
+        ]
+      },
+      "expected": {
+        "metricId": "checkout-csat",
+        "metricType": "csat",
+        "metricDefinitionVersion": "csat-definition/v2",
+        "calculationVersion": "journey-metric-calculation/v1",
+        "value": 3.25,
+        "unit": "scale_points",
+        "numerator": 13,
+        "denominator": 4,
+        "sampleSize": 4,
+        "period": { "start": "2026-07-01T00:00:00.000Z", "end": "2026-07-04T00:00:00.000Z", "timezone": "UTC" },
+        "sourceRefs": ["survey:checkout/question:csat"],
+        "freshness": { "status": "fresh", "asOf": "2026-07-04T00:00:00.000Z", "latestObservedAt": "2026-07-03T12:00:00.000Z", "ageSeconds": 43200, "maximumAgeSeconds": 86400 },
+        "exclusions": {
+          "invalid": {
+            "count": 2,
+            "records": [
+              { "sampleId": "csat-numeric-string", "reason": "NON_NUMERIC_VALUE", "detail": "Metric values must be finite JSON numbers; numeric strings are not coerced." },
+              { "sampleId": "csat-off-step", "reason": "VALUE_OFF_SCALE_STEP", "detail": "Value 3.5 does not align to scale step 1." }
+            ]
+          },
+          "duplicate": { "count": 1, "records": [{ "sampleId": "csat-4", "excludedRevision": 1, "keptRevision": 2 }] },
+          "outsidePeriod": { "count": 1, "sampleIds": ["csat-at-exclusive-end"] }
+        },
+        "minimumSampleWarning": { "active": false, "minimumSampleSize": 4, "actualSampleSize": 4, "message": null },
+        "configuration": {
+          "scale": { "minimum": 1, "maximum": 5, "step": 1 },
+          "direction": "higher_is_better",
+          "formula": { "kind": "mean" },
+          "favourable": { "operator": "gte", "threshold": 4 },
+          "decimalPlaces": 2
+        },
+        "breakdown": { "favourable": 2, "unfavourable": 2 },
+        "explanation": "CSAT mean = 13 / 4 valid responses = 3.25 on the 1-5 scale. Favourable is >= 4. Higher is better."
+      }
+    },
+    {
+      "name": "CES effort mean supports a lower-is-better scale",
+      "request": {
+        "definition": {
+          "metricId": "support-effort",
+          "metricDefinitionVersion": "ces-effort-definition/v1",
+          "label": "Support effort",
+          "metricType": "ces",
+          "scale": { "minimum": 1, "maximum": 7, "step": 1 },
+          "direction": "lower_is_better",
+          "formula": { "kind": "mean" },
+          "favourable": { "operator": "lte", "threshold": 3 },
+          "sourceRefs": ["survey:support/question:effort"],
+          "minimumSampleSize": 3,
+          "freshnessMaxAgeSeconds": 604800,
+          "decimalPlaces": 2
+        },
+        "period": { "start": "2026-07-01T00:00:00.000Z", "end": "2026-08-01T00:00:00.000Z", "timezone": "UTC" },
+        "asOf": "2026-08-02T00:00:00.000Z",
+        "samples": [
+          { "sampleId": "ces-1", "sourceRef": "survey:support/question:effort", "value": 1, "occurredAt": "2026-07-10T12:00:00.000Z" },
+          { "sampleId": "ces-2", "sourceRef": "survey:support/question:effort", "value": 2, "occurredAt": "2026-07-15T12:00:00.000Z" },
+          { "sampleId": "ces-3", "sourceRef": "survey:support/question:effort", "value": 5, "occurredAt": "2026-07-20T12:00:00.000Z" },
+          { "sampleId": "ces-4", "sourceRef": "survey:support/question:effort", "value": 6, "occurredAt": "2026-07-25T12:00:00.000Z" }
+        ]
+      },
+      "expected": {
+        "metricId": "support-effort",
+        "metricType": "ces",
+        "metricDefinitionVersion": "ces-effort-definition/v1",
+        "calculationVersion": "journey-metric-calculation/v1",
+        "value": 3.5,
+        "unit": "scale_points",
+        "numerator": 14,
+        "denominator": 4,
+        "sampleSize": 4,
+        "period": { "start": "2026-07-01T00:00:00.000Z", "end": "2026-08-01T00:00:00.000Z", "timezone": "UTC" },
+        "sourceRefs": ["survey:support/question:effort"],
+        "freshness": { "status": "stale", "asOf": "2026-08-02T00:00:00.000Z", "latestObservedAt": "2026-07-25T12:00:00.000Z", "ageSeconds": 648000, "maximumAgeSeconds": 604800 },
+        "exclusions": {
+          "invalid": { "count": 0, "records": [] },
+          "duplicate": { "count": 0, "records": [] },
+          "outsidePeriod": { "count": 0, "sampleIds": [] }
+        },
+        "minimumSampleWarning": { "active": false, "minimumSampleSize": 3, "actualSampleSize": 4, "message": null },
+        "configuration": {
+          "scale": { "minimum": 1, "maximum": 7, "step": 1 },
+          "direction": "lower_is_better",
+          "formula": { "kind": "mean" },
+          "favourable": { "operator": "lte", "threshold": 3 },
+          "decimalPlaces": 2
+        },
+        "breakdown": { "favourable": 2, "unfavourable": 2 },
+        "explanation": "CES mean = 14 / 4 valid responses = 3.5 on the 1-7 scale. Favourable is <= 3. Lower is better."
+      }
+    },
+    {
+      "name": "CES ease can instead use a higher-is-better favourable percentage",
+      "request": {
+        "definition": {
+          "metricId": "self-service-ease",
+          "metricDefinitionVersion": "ces-ease-definition/v1",
+          "label": "Self-service ease",
+          "metricType": "ces",
+          "scale": { "minimum": 1, "maximum": 7, "step": 1 },
+          "direction": "higher_is_better",
+          "formula": { "kind": "favourable_percentage" },
+          "favourable": { "operator": "gte", "threshold": 5 },
+          "sourceRefs": ["survey:self-service/question:ease"],
+          "minimumSampleSize": 4,
+          "freshnessMaxAgeSeconds": 259200,
+          "decimalPlaces": 1
+        },
+        "period": { "start": "2026-07-01T00:00:00.000Z", "end": "2026-08-01T00:00:00.000Z", "timezone": "UTC" },
+        "asOf": "2026-08-01T00:00:00.000Z",
+        "samples": [
+          { "sampleId": "ease-1", "sourceRef": "survey:self-service/question:ease", "value": 7, "occurredAt": "2026-07-27T00:00:00.000Z" },
+          { "sampleId": "ease-2", "sourceRef": "survey:self-service/question:ease", "value": 5, "occurredAt": "2026-07-28T00:00:00.000Z" },
+          { "sampleId": "ease-3", "sourceRef": "survey:self-service/question:ease", "value": 4, "occurredAt": "2026-07-29T00:00:00.000Z" },
+          { "sampleId": "ease-4", "sourceRef": "survey:self-service/question:ease", "value": 1, "occurredAt": "2026-07-30T00:00:00.000Z" }
+        ]
+      },
+      "expected": {
+        "metricId": "self-service-ease",
+        "metricType": "ces",
+        "metricDefinitionVersion": "ces-ease-definition/v1",
+        "calculationVersion": "journey-metric-calculation/v1",
+        "value": 50,
+        "unit": "percent",
+        "numerator": 2,
+        "denominator": 4,
+        "sampleSize": 4,
+        "period": { "start": "2026-07-01T00:00:00.000Z", "end": "2026-08-01T00:00:00.000Z", "timezone": "UTC" },
+        "sourceRefs": ["survey:self-service/question:ease"],
+        "freshness": { "status": "fresh", "asOf": "2026-08-01T00:00:00.000Z", "latestObservedAt": "2026-07-30T00:00:00.000Z", "ageSeconds": 172800, "maximumAgeSeconds": 259200 },
+        "exclusions": {
+          "invalid": { "count": 0, "records": [] },
+          "duplicate": { "count": 0, "records": [] },
+          "outsidePeriod": { "count": 0, "sampleIds": [] }
+        },
+        "minimumSampleWarning": { "active": false, "minimumSampleSize": 4, "actualSampleSize": 4, "message": null },
+        "configuration": {
+          "scale": { "minimum": 1, "maximum": 7, "step": 1 },
+          "direction": "higher_is_better",
+          "formula": { "kind": "favourable_percentage" },
+          "favourable": { "operator": "gte", "threshold": 5 },
+          "decimalPlaces": 1
+        },
+        "breakdown": { "favourable": 2, "unfavourable": 2 },
+        "explanation": "CES favourable percentage = (2 responses matching >= 5 / 4 valid responses) x 100 = 50%. Higher is better."
+      }
+    }
+  ]
+}

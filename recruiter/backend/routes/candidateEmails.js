@@ -6,6 +6,8 @@ const Candidate = require('../models/Candidate');
 const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
 const pipelineProgressionService = require('../services/pipelineProgressionService');
 const authMiddleware = require('../middleware/authMiddleware');
+const { requireOrganization } = require('../middleware/organizationMiddleware');
+const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 
 /**
  * POST /api/candidate-emails/send-rejection
@@ -13,6 +15,7 @@ const authMiddleware = require('../middleware/authMiddleware');
  */
 router.post('/send-rejection',
   authMiddleware,
+  requireOrganization,
   [
     body('candidateId').isMongoId().withMessage('Invalid candidate ID'),
     body('jobId').isMongoId().withMessage('Invalid job ID'),
@@ -40,11 +43,7 @@ router.post('/send-rejection',
         isShortlistRejection
       });
 
-      // Build query to ensure job belongs to organization
-      const query = { _id: jobId };
-      if (organizationId) {
-        query.organization = organizationId;
-      }
+      const query = { _id: jobId, organization: organizationId };
 
       const job = await Job.findOne(query).populate('organization');
       if (!job) {
@@ -131,6 +130,7 @@ router.post('/send-rejection',
  */
 router.post('/send-bulk-rejection',
   authMiddleware,
+  requireOrganization,
   [
     body('candidates').isArray().withMessage('Candidates must be an array'),
     body('candidates.*.candidateId').isMongoId().withMessage('Invalid candidate ID'),
@@ -161,11 +161,7 @@ router.post('/send-bulk-rejection',
       for (const candidateData of candidates) {
         const { candidateId, jobId, stage } = candidateData;
 
-        // Build query to ensure job belongs to organization
-        const query = { _id: jobId };
-        if (organizationId) {
-          query.organization = organizationId;
-        }
+        const query = { _id: jobId, organization: organizationId };
 
         const job = await Job.findOne(query).populate('organization');
         const candidate = await Candidate.findById(candidateId);
@@ -273,16 +269,12 @@ router.post('/send-bulk-rejection',
  * GET /api/candidate-emails/job/:jobId/email-settings
  * Get email notification settings for a job
  */
-router.get('/job/:jobId/email-settings', authMiddleware, async (req, res) => {
+router.get('/job/:jobId/email-settings', authMiddleware, requireOrganization, async (req, res) => {
   try {
     const { jobId } = req.params;
     const organizationId = req.user?.currentOrganization;
 
-    // Build query to ensure job belongs to organization
-    const query = { _id: jobId };
-    if (organizationId) {
-      query.organization = organizationId;
-    }
+    const query = { _id: jobId, organization: organizationId };
 
     const job = await Job.findOne(query).select('emailSettings title');
     if (!job) {
@@ -291,7 +283,7 @@ router.get('/job/:jobId/email-settings', authMiddleware, async (req, res) => {
 
     res.json({
       success: true,
-      emailSettings: job.emailSettings || {},
+      emailSettings: decodeObjectHtmlEntities(job.emailSettings || {}),
       jobTitle: job.title
     });
 
@@ -311,6 +303,7 @@ router.get('/job/:jobId/email-settings', authMiddleware, async (req, res) => {
  */
 router.put('/job/:jobId/email-settings',
   authMiddleware,
+  requireOrganization,
   [
     body('enableAdvancementEmails').optional().isBoolean(),
     body('enableRejectionEmails').optional().isBoolean(),
@@ -333,22 +326,23 @@ router.put('/job/:jobId/email-settings',
 
       const { jobId } = req.params;
       const organizationId = req.user?.currentOrganization;
-      const emailSettings = req.body;
+      const emailSettings = decodeObjectHtmlEntities(req.body || {});
+      delete emailSettings.senderName;
 
-      // Build query to ensure job belongs to organization
-      const query = { _id: jobId };
-      if (organizationId) {
-        query.organization = organizationId;
-      }
+      const query = { _id: jobId, organization: organizationId };
 
       const job = await Job.findOne(query);
       if (!job) {
         return res.status(404).json({ msg: 'Job not found' });
       }
 
-      // Update email settings
+      // Update email settings without carrying forward the retired senderName field.
+      const currentEmailSettings = typeof job.emailSettings?.toObject === 'function'
+        ? job.emailSettings.toObject()
+        : { ...(job.emailSettings || {}) };
+      delete currentEmailSettings.senderName;
       job.emailSettings = {
-        ...job.emailSettings,
+        ...currentEmailSettings,
         ...emailSettings,
         lastUpdated: new Date(),
         updatedBy: req.user._id
@@ -361,7 +355,7 @@ router.put('/job/:jobId/email-settings',
       res.json({
         success: true,
         message: 'Email settings updated successfully',
-        emailSettings: job.emailSettings
+        emailSettings: decodeObjectHtmlEntities(job.emailSettings)
       });
 
     } catch (error) {
@@ -381,10 +375,11 @@ router.put('/job/:jobId/email-settings',
  */
 router.post('/test-email',
   authMiddleware,
+  requireOrganization,
   [
     body('jobId').isMongoId().withMessage('Invalid job ID'),
     body('testEmail').isEmail().withMessage('Valid test email required'),
-    body('templateType').isIn(['advancement', 'shortlist', 'rejection', 'shortlist-rejection']).withMessage('Invalid template type')
+    body('templateType').isIn(['advancement', 'shortlist', 'rejection', 'shortlist-rejection', 'application-confirmation']).withMessage('Invalid template type')
   ],
   async (req, res) => {
     try {
@@ -396,11 +391,7 @@ router.post('/test-email',
       const { jobId, testEmail, templateType } = req.body;
       const organizationId = req.user?.currentOrganization;
 
-      // Build query to ensure job belongs to organization
-      const query = { _id: jobId };
-      if (organizationId) {
-        query.organization = organizationId;
-      }
+      const query = { _id: jobId, organization: organizationId };
 
       const job = await Job.findOne(query).populate('organization');
       if (!job) {
@@ -453,6 +444,12 @@ router.post('/test-email',
             forceManual: true
           });
           break;
+        case 'application-confirmation':
+          emailResult = await candidateEmailNotificationService.sendApplicationConfirmationEmail({
+            candidate: testCandidate,
+            job
+          });
+          break;
       }
 
       console.log(`📧 Test ${templateType} email sent to ${testEmail} by ${req.user.email}`);
@@ -489,7 +486,8 @@ router.get('/templates/:templateName', async (req, res) => {
       'rejection-notice',
       'shortlist-rejection',
       'shortlist-congratulations',
-      'advancement-congratulations'
+      'advancement-congratulations',
+      'application-confirmation'
     ];
     
     if (!validTemplates.includes(templateName)) {
@@ -500,6 +498,7 @@ router.get('/templates/:templateName', async (req, res) => {
     const templateContent = await fs.readFile(templatePath, 'utf-8');
     
     res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.send(templateContent);
     
   } catch (error) {

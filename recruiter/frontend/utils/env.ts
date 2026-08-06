@@ -1,158 +1,120 @@
 // Runtime environment variable handler
-// This allows us to use environment variables at runtime in Docker
+// This allows us to use environment variables at runtime in Docker/static deployments.
 
 declare global {
   interface Window {
     __RUNTIME_CONFIG__?: {
       NEXT_PUBLIC_API_BASE_URL?: string;
       NEXT_PUBLIC_WS_BASE_URL?: string;
+      NEXT_PUBLIC_IDP_URL?: string;
       NEXT_PUBLIC_INACTIVITY_TIMEOUT?: string;
       NEXT_PUBLIC_INACTIVITY_WARNING_TIME?: string;
     };
   }
 }
 
-// Detect if running in local development environment
-function isLocalDevelopment(): boolean {
-  if (typeof window === 'undefined') {
-    // Server-side: check NODE_ENV
-    return process.env.NODE_ENV === 'development';
+type RuntimeConfig = {
+  NEXT_PUBLIC_API_BASE_URL: string;
+  NEXT_PUBLIC_WS_BASE_URL: string;
+  NEXT_PUBLIC_IDP_URL: string;
+  NEXT_PUBLIC_INACTIVITY_TIMEOUT: string;
+  NEXT_PUBLIC_INACTIVITY_WARNING_TIME: string;
+};
+
+const LOCALHOST_NAMES = new Set(['localhost', '127.0.0.1']);
+
+function getHostname(): string {
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    return window.location.hostname;
   }
-  
-  // Client-side: check hostname
-  const hostname = window.location.hostname;
-  return hostname === 'localhost' || 
-         hostname === '127.0.0.1' || 
-         hostname.startsWith('192.168.') ||
-         hostname.startsWith('10.') ||
-         hostname.endsWith('.local');
+  return '';
 }
 
-// Get runtime config from window object (injected by script) or fall back to process.env
-export function getRuntimeConfig() {
-  // In local development, ALWAYS use process.env values from .env.local
-  // This prevents the hardcoded production URLs in __runtime_config__.js from being used
-  if (isLocalDevelopment()) {
-    const config = {
-      NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
-      NEXT_PUBLIC_WS_BASE_URL: process.env.NEXT_PUBLIC_WS_BASE_URL,
-      NEXT_PUBLIC_INACTIVITY_TIMEOUT: process.env.NEXT_PUBLIC_INACTIVITY_TIMEOUT,
-      NEXT_PUBLIC_INACTIVITY_WARNING_TIME: process.env.NEXT_PUBLIC_INACTIVITY_WARNING_TIME,
-    };
-    
-    if (typeof window !== 'undefined') {
-      console.log('🏠 Local development detected - using .env.local configuration:', {
-        API_BASE_URL: config.NEXT_PUBLIC_API_BASE_URL,
-        WS_BASE_URL: config.NEXT_PUBLIC_WS_BASE_URL,
-      });
-    }
-    
-    return config;
-  }
-  
-  // In dev deployments, use build-time env vars instead of runtime config
-  if (typeof window !== 'undefined' && window.location.hostname.includes('-dev')) {
+function getDefaultsForHostname(hostname: string): {
+  apiBase: string;
+  wsBase: string;
+  idpBase: string;
+} {
+  const isLocal = LOCALHOST_NAMES.has(hostname);
+  if (isLocal) {
     return {
-      NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
-      NEXT_PUBLIC_WS_BASE_URL: process.env.NEXT_PUBLIC_WS_BASE_URL,
-      NEXT_PUBLIC_INACTIVITY_TIMEOUT: process.env.NEXT_PUBLIC_INACTIVITY_TIMEOUT,
-      NEXT_PUBLIC_INACTIVITY_WARNING_TIME: process.env.NEXT_PUBLIC_INACTIVITY_WARNING_TIME,
+      apiBase: 'http://localhost:5001',
+      wsBase: 'ws://localhost:5001',
+      idpBase: 'http://localhost:4000',
     };
   }
 
-  // In production, use runtime config from __runtime_config__.js if available
-  if (typeof window !== 'undefined' && window.__RUNTIME_CONFIG__) {
-    console.log('🌐 Production detected - using runtime configuration');
-    return window.__RUNTIME_CONFIG__;
+  const isDevHost = hostname.includes('-dev') || hostname.includes('.dev.');
+  if (isDevHost) {
+    return {
+      apiBase: 'https://api-dev.seemplifyai.com',
+      wsBase: 'wss://api-dev.seemplifyai.com',
+      idpBase: 'https://auth-dev.seemplifyai.com',
+    };
   }
-  
-  // Fallback to build-time env vars for non-Docker environments
+
+  const isAkwaIbom = hostname.includes('ibom') || hostname.includes('akwa') || hostname.includes('jetstone');
+  if (isAkwaIbom) {
+    return {
+      apiBase: 'https://api.seemplifyai.com',
+      wsBase: 'wss://api.seemplifyai.com',
+      idpBase: 'https://akwa.aiinnigeria.com',
+    };
+  }
+
   return {
-    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
-    NEXT_PUBLIC_WS_BASE_URL: process.env.NEXT_PUBLIC_WS_BASE_URL,
-    NEXT_PUBLIC_INACTIVITY_TIMEOUT: process.env.NEXT_PUBLIC_INACTIVITY_TIMEOUT,
-    NEXT_PUBLIC_INACTIVITY_WARNING_TIME: process.env.NEXT_PUBLIC_INACTIVITY_WARNING_TIME,
+    apiBase: 'https://api.seemplifyai.com',
+    wsBase: 'wss://api.seemplifyai.com',
+    idpBase: 'https://auth.seemplifyai.com',
+  };
+}
+
+// Get runtime config from window object (injected by script) or fall back to process.env + hostname defaults.
+export function getRuntimeConfig(): RuntimeConfig {
+  const hostname = getHostname();
+  const defaults = getDefaultsForHostname(hostname);
+  const runtimeCfg = typeof window !== 'undefined' ? window.__RUNTIME_CONFIG__ || {} : {};
+
+  return {
+    NEXT_PUBLIC_API_BASE_URL:
+      runtimeCfg.NEXT_PUBLIC_API_BASE_URL ||
+      process.env.NEXT_PUBLIC_API_BASE_URL ||
+      defaults.apiBase,
+    NEXT_PUBLIC_WS_BASE_URL:
+      runtimeCfg.NEXT_PUBLIC_WS_BASE_URL ||
+      process.env.NEXT_PUBLIC_WS_BASE_URL ||
+      defaults.wsBase,
+    NEXT_PUBLIC_IDP_URL:
+      runtimeCfg.NEXT_PUBLIC_IDP_URL ||
+      process.env.NEXT_PUBLIC_IDP_URL ||
+      defaults.idpBase,
+    NEXT_PUBLIC_INACTIVITY_TIMEOUT:
+      runtimeCfg.NEXT_PUBLIC_INACTIVITY_TIMEOUT ||
+      process.env.NEXT_PUBLIC_INACTIVITY_TIMEOUT ||
+      '1800000',
+    NEXT_PUBLIC_INACTIVITY_WARNING_TIME:
+      runtimeCfg.NEXT_PUBLIC_INACTIVITY_WARNING_TIME ||
+      process.env.NEXT_PUBLIC_INACTIVITY_WARNING_TIME ||
+      '300000',
   };
 }
 
 export function getApiBaseUrl(): string {
-  // CRITICAL: Check hostname-based environment BEFORE runtime config
-  // This prevents production config from being used in dev environment
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    
-    // Local development
-    if (hostname === 'localhost' || 
-        hostname === '127.0.0.1' || 
-        hostname.startsWith('192.168.') ||
-        hostname.startsWith('10.') ||
-        hostname.endsWith('.local')) {
-      const localUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5001';
-      console.log('🏠 Local development detected - using:', localUrl);
-      return localUrl;
-    }
-    
-    // Dev environment (e.g., app-dev.seemplifyai.com)
-    if (hostname.includes('-dev')) {
-      const devUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api-dev.seemplifyai.com';
-      console.log('🔧 Dev environment detected - using:', devUrl);
-      return devUrl;
-    }
-  }
-  
-  // Production: use runtime config if available, otherwise build-time env var
-  const config = getRuntimeConfig();
-  if (config.NEXT_PUBLIC_API_BASE_URL) {
-    console.log('🌐 Production - using runtime config:', config.NEXT_PUBLIC_API_BASE_URL);
-    return config.NEXT_PUBLIC_API_BASE_URL;
-  }
-  
-  console.log('⚙️ Production - using build-time env var:', process.env.NEXT_PUBLIC_API_BASE_URL);
-  return process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.seemplifyai.com';
+  return getRuntimeConfig().NEXT_PUBLIC_API_BASE_URL;
 }
 
 export function getWsBaseUrl(): string {
-  // CRITICAL: Check hostname-based environment BEFORE runtime config
-  // This prevents production config from being used in dev environment
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    
-    // Local development
-    if (hostname === 'localhost' || 
-        hostname === '127.0.0.1' || 
-        hostname.startsWith('192.168.') ||
-        hostname.startsWith('10.') ||
-        hostname.endsWith('.local')) {
-      const localUrl = process.env.NEXT_PUBLIC_WS_BASE_URL || 'ws://localhost:5001';
-      console.log('🏠 Local development detected - using:', localUrl);
-      return localUrl;
-    }
-    
-    // Dev environment (e.g., app-dev.seemplifyai.com)
-    if (hostname.includes('-dev')) {
-      const devUrl = process.env.NEXT_PUBLIC_WS_BASE_URL || 'wss://api-dev.seemplifyai.com';
-      console.log('🔧 Dev environment detected - using:', devUrl);
-      return devUrl;
-    }
-  }
-  
-  // Production: use runtime config if available, otherwise build-time env var
-  const config = getRuntimeConfig();
-  if (config.NEXT_PUBLIC_WS_BASE_URL) {
-    console.log('🌐 Production - using runtime config:', config.NEXT_PUBLIC_WS_BASE_URL);
-    return config.NEXT_PUBLIC_WS_BASE_URL;
-  }
-  
-  console.log('⚙️ Production - using build-time env var:', process.env.NEXT_PUBLIC_WS_BASE_URL);
-  return process.env.NEXT_PUBLIC_WS_BASE_URL || 'wss://api.seemplifyai.com';
+  return getRuntimeConfig().NEXT_PUBLIC_WS_BASE_URL;
+}
+
+export function getIdpBaseUrl(): string {
+  return getRuntimeConfig().NEXT_PUBLIC_IDP_URL;
 }
 
 export function getInactivityTimeout(): number {
-  const config = getRuntimeConfig();
-  return parseInt(config.NEXT_PUBLIC_INACTIVITY_TIMEOUT || '1800000');
+  return parseInt(getRuntimeConfig().NEXT_PUBLIC_INACTIVITY_TIMEOUT, 10);
 }
 
 export function getInactivityWarningTime(): number {
-  const config = getRuntimeConfig();
-  return parseInt(config.NEXT_PUBLIC_INACTIVITY_WARNING_TIME || '300000');
-} 
+  return parseInt(getRuntimeConfig().NEXT_PUBLIC_INACTIVITY_WARNING_TIME, 10);
+}

@@ -1,0 +1,86 @@
+{
+    "name":  "@seemplify/journey-event-protocol",
+    "version":  "0.1.0",
+    "private":  false,
+    "type":  "module",
+    "description":  "Canonical Connected Journey event protocol and conformance fixtures.",
+    "author":  {
+                   "name":  "Seemplify"
+               },
+    "repository":  {
+                       "type":  "git",
+                       "url":  "git+https://github.com/michaelegbo/seemplify.git",
+                       "directory":  "experience-management/packages/journey-event-protocol"
+                   },
+    "homepage":  "https://github.com/michaelegbo/seemplify/tree/main/experience-management/packages/journey-event-protocol",
+    "bugs":  {
+                 "url":  "https://github.com/michaelegbo/seemplify/issues"
+             },
+    "keywords":  [
+                     "customer-journey",
+                     "event-protocol",
+                     "json-schema",
+                     "typescript"
+                 ],
+    "sideEffects":  false,
+    "main":  "./dist/cjs/index.js",
+    "module":  "./dist/index.js",
+    "types":  "./dist/cjs/index.d.ts",
+    "exports":  {
+                    ".":  {
+                              "require":  {
+                                              "types":  "./dist/cjs/index.d.ts",
+                                              "default":  "./dist/cjs/index.js"
+                                          },
+                              "import":  {
+                                             "types":  "./dist/index.d.ts",
+                                             "default":  "./dist/index.js"
+                                         },
+                              "default":  "./dist/index.js"
+                          },
+                    "./mock":  {
+                                   "browser":  null,
+                                   "require":  {
+                                                   "types":  "./dist/cjs/mockIngestServer.d.ts",
+                                                   "default":  "./dist/cjs/mockIngestServer.js"
+                                               },
+                                   "import":  {
+                                                  "types":  "./dist/mockIngestServer.d.ts",
+                                                  "default":  "./dist/mockIngestServer.js"
+                                              }
+                               },
+                    "./schemas/v1/*":  "./schemas/v1/*",
+                    "./fixtures/v1/*":  "./fixtures/v1/*",
+                    "./openapi/v1/*":  "./openapi/v1/*"
+                },
+    "files":  [
+                  "dist",
+                  "schemas",
+                  "fixtures",
+                  "openapi",
+                  "EVENT-NAMING.md",
+                  "CHANGELOG.md",
+                  "README.md",
+                  "LICENSE"
+              ],
+    "publishConfig":  {
+                          "access":  "public",
+                          "registry":  "https://registry.npmjs.org/"
+                      },
+    "scripts":  {
+                    "clean":  "node ../../scripts/sdk-package-tools.mjs clean journey-event-protocol",
+                    "build":  "npm run clean \u0026\u0026 tsc -p tsconfig.json \u0026\u0026 tsc -p tsconfig.cjs.json \u0026\u0026 node ../../scripts/sdk-package-tools.mjs mark-cjs journey-event-protocol \u0026\u0026 npm run verify:artifacts",
+                    "typecheck":  "tsc --noEmit -p tsconfig.json",
+                    "test":  "tsx --test test/*.test.ts",
+                    "verify:artifacts":  "node ../../scripts/sdk-package-tools.mjs verify journey-event-protocol",
+                    "prepack":  "npm run build"
+                },
+    "devDependencies":  {
+                            "@types/node":  "^24.1.0",
+                            "ajv":  "^8.17.1",
+                            "ajv-formats":  "^3.0.1",
+                            "tsx":  "^4.20.3",
+                            "typescript":  "^5.8.3"
+                        },
+    "license":  "MIT"
+}

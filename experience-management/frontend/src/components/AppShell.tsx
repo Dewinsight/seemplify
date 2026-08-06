@@ -1,0 +1,378 @@
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { BarChart3, BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Code2, Cpu, FileCheck2, FileSearch, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, UsersRound, X } from 'lucide-react';
+import { Link, Navigate, NavLink, useLocation } from '@/lib/router';
+import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
+import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
+import { cn } from '@/lib/utils';
+import { AuthSessionProvider } from '@/lib/authSessionContext';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { SectionTutorial } from '@/components/tutorials/SectionTutorial';
+import { OpenAiAttribution } from '@/components/brand/OpenAiAttribution';
+import { ChatGptConnectionGate } from '@/components/settings/ChatGptConnectionGate';
+import {
+  AI_PROVIDER_CHANGED_EVENT,
+  requiresChatGptSetup,
+  type AiProviderState
+} from '@/lib/aiProvider';
+import { tutorialForPath } from '@/lib/tutorials';
+import type { AuthSession, PendingSpaceInvitation, SpaceSession, SubscriptionFeatures } from '@/types';
+
+type SubscriptionFeature = keyof SubscriptionFeatures;
+
+const navigation: Array<{ to: string; label: string; icon: typeof Gauge; end?: boolean; feature?: SubscriptionFeature }> = [
+  { to: '/', label: 'Overview', icon: Gauge, end: true },
+  { to: '/surveys', label: 'Surveys', icon: ClipboardList, feature: 'surveys' },
+  { to: '/campaigns', label: 'Campaigns', icon: Megaphone, feature: 'campaigns' },
+  { to: '/agreements', label: 'Agreements', icon: FileSignature, feature: 'agreements' },
+  { to: '/social-listening', label: 'Social listening', icon: Radar, feature: 'socialListening' },
+  { to: '/intelligence', label: 'Intelligence', icon: BrainCircuit, feature: 'terra' },
+  { to: '/assistant', label: 'Personal assistant', icon: MailCheck, feature: 'terra' },
+  { to: '/knowledge-bases', label: 'Knowledge bases', icon: BookOpenText, feature: 'knowledgeBases' },
+  { to: '/journey-maps', label: 'Journey maps', icon: Route, feature: 'journeyDesign' },
+  { to: '/journey-personas', label: 'Personas', icon: UsersRound, feature: 'journeyPersonas' },
+  { to: '/journey-research', label: 'Journey research', icon: FileSearch, feature: 'journeyEvidence' },
+  { to: '/journey-metrics', label: 'Journey metrics', icon: BarChart3, feature: 'journeyMetrics' },
+  { to: '/journeys', label: 'Journey maps (classic)', icon: Route, feature: 'terra' },
+  { to: '/ai-queue', label: 'AI queue', icon: Sparkles, feature: 'terra' },
+  { to: '/tickets', label: 'Service recovery', icon: Inbox, feature: 'serviceRecovery' },
+  { to: '/settings/developer', label: 'Developer', icon: Code2, feature: 'journeyConnected' },
+  { to: '/settings/space', label: 'Space settings', icon: Settings2 }
+];
+
+function featureEnabled(session: AuthSession | null, feature?: SubscriptionFeature) {
+  if (!feature) return true;
+  if (!session) return false;
+  return session.subscription ? session.subscription.features[feature] === true : true;
+}
+
+function routeFeature(path: string): SubscriptionFeature | undefined {
+  return navigation
+    .filter((item) => item.feature && (path === item.to || path.startsWith(`${item.to}/`)))
+    .sort((left, right) => right.to.length - left.to.length)[0]?.feature;
+}
+
+function Brand() {
+  return <Link to="/" className="flex h-16 shrink-0 items-center gap-3 border-b px-5">
+    <img src="/brand/experience-mark.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" />
+    <div><div className="text-sm font-semibold leading-4">Seemplify</div><div className="text-xs text-muted-foreground">Experience</div></div>
+  </Link>;
+}
+
+function PendingInvitationBar({ invitations, acceptingId, error, onAccept }: {
+  invitations: PendingSpaceInvitation[]; acceptingId: string; error: string;
+  onAccept: (invitation: PendingSpaceInvitation) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (!invitations.length) return null;
+  const visibleInvitations = expanded ? invitations : invitations.slice(0, 4);
+  const hiddenCount = invitations.length - visibleInvitations.length;
+  return <section className="border-b bg-card px-4 py-3 sm:px-6" aria-labelledby="pending-space-invitations-heading">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-3 xl:flex-row xl:items-start">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <MailOpen className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <div>
+          <h2 id="pending-space-invitations-heading" className="text-sm font-semibold">Space invitation{invitations.length === 1 ? '' : 's'}</h2>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">Accepting adds and opens the space. Its content remains private until then.</p>
+        </div>
+      </div>
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:w-[720px]">
+        {visibleInvitations.map((invitation) => <div key={invitation.id} className="flex min-w-0 items-center gap-3 border bg-background px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">{invitation.space.name}</div>
+            <div className="mt-0.5 truncate text-xs text-muted-foreground">{invitation.invitedBy} · {invitation.role}</div>
+          </div>
+          <Button size="sm" variant="outline" aria-label={`Accept invitation to ${invitation.space.name} and open it`} disabled={Boolean(acceptingId)} onClick={() => onAccept(invitation)}>
+            {acceptingId === invitation.id ? <LoaderCircle className="animate-spin" /> : null}Accept and open
+          </Button>
+        </div>)}
+        {(hiddenCount > 0 || expanded && invitations.length > 4) && <Button className="sm:col-span-2 sm:justify-self-start" size="sm" variant="ghost" onClick={() => setExpanded((current) => !current)}>
+          {expanded ? 'Show fewer invitations' : `Show ${hiddenCount} more invitation${hiddenCount === 1 ? '' : 's'}`}
+        </Button>}
+      </div>
+    </div>
+    {error && <div className="mx-auto mt-2 w-full max-w-[1440px] text-xs text-destructive" role="alert">{error}</div>}
+  </section>;
+}
+
+type RuntimeState = 'checking' | 'ready' | 'unavailable';
+
+function runtimeName(label: string) {
+  return label.replace(/\s*\([^)]*\)\s*$/, '').trim() || label;
+}
+
+function runtimeSummary(label: string) {
+  const match = label.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  return match ? `${match[1].trim()} · ${match[2].trim()}` : label;
+}
+
+function SidebarContent({ close, runtimeState, runtimeLabel, session, switching, onSwitch, selectorId }: {
+  close?: () => void; runtimeState: RuntimeState; runtimeLabel: string; session: AuthSession | null;
+  switching: boolean; onSwitch: (spaceId: string) => void; selectorId: string;
+}) {
+  async function signOut() {
+    try { await api('/api/auth/logout', { method: 'POST' }); }
+    finally { storeActiveSpaceId(null); window.location.assign('/login'); }
+  }
+  const status = runtimeState === 'ready' ? 'Ready' : runtimeState === 'checking' ? 'Checking' : 'Unavailable';
+  const StatusIcon = runtimeState === 'ready' ? CircleCheck : runtimeState === 'checking' ? LoaderCircle : CircleAlert;
+  return <>
+    <Brand />
+    <div className="border-b px-3 py-3">
+      <div className="flex items-center gap-2">
+        <label className="sr-only" htmlFor={selectorId}>Active space</label>
+        <select
+          id={selectorId}
+          aria-label="Active space"
+          className="h-9 min-w-0 flex-1 rounded-md border-input bg-background py-1 pl-2.5 pr-8 text-sm font-medium focus:border-ring focus:ring-1 focus:ring-ring"
+          disabled={!session?.activeSpace || switching}
+          value={session?.activeSpace?.id || ''}
+          onChange={(event) => onSwitch(event.target.value)}
+        >
+          {!session?.activeSpace && <option value="">Loading space…</option>}
+          {session?.spaces.map((space) => <option value={space.id} key={space.id}>{space.name}</option>)}
+        </select>
+        <Link to="/settings/space" onClick={close} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border bg-background text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Manage spaces"><Settings2 className="h-4 w-4" /></Link>
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-3 px-0.5 text-[11px] text-muted-foreground">
+        <span className="capitalize">{session?.activeSpace?.role || 'Loading'}</span>
+        <Link to="/settings/space?create=1" onClick={close} className="font-medium hover:text-foreground hover:underline">Create space</Link>
+      </div>
+    </div>
+    <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary navigation">
+      {navigation.filter((item) => featureEnabled(session, item.feature)).map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={close} className={({ isActive }) => cn('flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', isActive && 'bg-secondary text-secondary-foreground')}>
+        <Icon className="h-4 w-4" />{label}
+      </NavLink>)}
+    </nav>
+    <div className="relative z-10 shrink-0 border-t bg-card p-3">
+      {session?.permissions?.platformAdmin && <Link to="/admin" onClick={close} className="mb-1 flex h-9 items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"><ShieldCheck className="h-4 w-4" />Platform administration</Link>}
+      <Link to="/settings/profile" onClick={close} className="mb-2 block min-w-0 rounded-md px-2 py-1.5 hover:bg-muted/60" aria-label="Open your profile">
+        <div className="truncate text-xs font-semibold text-foreground">{session?.user?.name || 'Signed in'}</div>
+        <div className="mt-0.5 truncate text-[11px] text-muted-foreground" title={session?.user?.email || ''}>{session?.user?.email || 'Loading account…'}</div>
+      </Link>
+      <Link to="/my-documents" onClick={close} className="mb-1 flex h-9 items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"><FileCheck2 className="h-4 w-4" />My signed documents</Link>
+      {featureEnabled(session, 'terra') && <Link
+        to="/ai-queue"
+        onClick={close}
+        data-testid="sidebar-runtime-status"
+        aria-label={`Open AI queue. ${runtimeLabel}. ${status}.`}
+        className="group flex min-w-0 items-center gap-3 rounded-md px-2 py-2 outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Cpu className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-foreground">AI runtime</span>
+            <span
+              className={cn(
+                'flex shrink-0 items-center gap-1 text-[11px] font-medium',
+                runtimeState === 'ready' ? 'text-emerald-700' : runtimeState === 'checking' ? 'text-muted-foreground' : 'text-amber-700'
+              )}
+              aria-live="polite"
+              aria-atomic="true"
+              role="status"
+            >
+              <StatusIcon className={cn('h-3 w-3', runtimeState === 'checking' && 'animate-spin')} />{status}
+            </span>
+          </span>
+          <span data-testid="sidebar-runtime-provider" className="mt-0.5 block truncate text-[11px] text-muted-foreground" title={runtimeLabel}>{runtimeSummary(runtimeLabel)}</span>
+        </span>
+      </Link>}
+      <button onClick={signOut} className="mt-1 flex h-9 w-full items-center gap-3 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><LogOut className="h-4 w-4" />Sign out</button>
+      <div className="flex gap-3 px-2 pt-1 text-[11px] text-muted-foreground"><Link className="hover:text-foreground hover:underline" to="/legal/terms">Terms</Link><Link className="hover:text-foreground hover:underline" to="/legal/privacy">Privacy</Link></div>
+    </div>
+  </>;
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [runtime, setRuntime] = useState<any>(null);
+  const [providerState, setProviderState] = useState<AiProviderState | null>(null);
+  const [providerStateLoading, setProviderStateLoading] = useState(true);
+  const [providerStateError, setProviderStateError] = useState('');
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const [acceptingInvitationId, setAcceptingInvitationId] = useState('');
+  const [invitationError, setInvitationError] = useState('');
+  const location = useLocation();
+  const routePath = location.pathname.split(/[?#]/, 1)[0];
+  const tutorial = tutorialForPath(routePath);
+  const terraEnabled = featureEnabled(session, 'terra');
+  const providerGateExempt = routePath === '/settings/space' || routePath === '/settings/developer' || Boolean(session && !terraEnabled);
+  useEffect(() => { setMobileOpen(false); }, [routePath]);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [mobileOpen]);
+  const loadRuntime = useCallback(async () => {
+    try { setRuntime(await api<any>('/api/runtime')); }
+    catch { setRuntime({ terra: { reachable: false } }); }
+  }, []);
+  const loadProviderState = useCallback(async () => {
+    setProviderStateLoading(true);
+    setProviderStateError('');
+    try { setProviderState(await api<AiProviderState>('/api/ai-provider')); }
+    catch (reason) {
+      setProviderStateError(reason instanceof Error ? reason.message : 'Could not check your ChatGPT connection.');
+    } finally { setProviderStateLoading(false); }
+  }, []);
+  useEffect(() => { void loadRuntime(); const timer = setInterval(() => void loadRuntime(), 30_000); return () => clearInterval(timer); }, [loadRuntime]);
+  useEffect(() => {
+    let cancelled = false;
+    void api<AuthSession>('/api/auth/session').then(async (nextSession) => {
+      if (cancelled) return;
+      if (!nextSession.authenticated || !nextSession.user || !nextSession.activeSpace) {
+        window.location.assign('/login'); return;
+      }
+      if (!nextSession.emailVerified) {
+        window.location.assign(`/verify-email?email=${encodeURIComponent(nextSession.user.email)}`); return;
+      }
+      if (nextSession.onboardingRequired) {
+        window.location.assign('/onboarding'); return;
+      }
+      const stored = activeSpaceId();
+      const storedMembership = stored && nextSession.spaces.some((space) => space.id === stored);
+      if (storedMembership && stored !== nextSession.activeSpace.id) {
+        const selected = await api<SpaceSession>(`/api/spaces/${stored}/select`, json('POST', {}));
+        if (!cancelled) setSession({ ...nextSession, ...selected });
+        return;
+      }
+      storeActiveSpaceId(nextSession.activeSpace.id, false);
+      setSession(nextSession);
+    }).catch(() => null);
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!session?.activeSpace?.id) return;
+    void loadProviderState();
+  }, [loadProviderState, session?.activeSpace?.id]);
+  useEffect(() => {
+    const reloadProvider = () => {
+      void loadProviderState();
+      void loadRuntime();
+    };
+    window.addEventListener(AI_PROVIDER_CHANGED_EVENT, reloadProvider);
+    return () => window.removeEventListener(AI_PROVIDER_CHANGED_EVENT, reloadProvider);
+  }, [loadProviderState, loadRuntime]);
+  useEffect(() => {
+    if (!session?.authenticated) return;
+    const timer = window.setInterval(() => {
+      void api<AuthSession>('/api/auth/session').then((next) => {
+        if (!next.authenticated) {
+          storeActiveSpaceId(null);
+          window.location.assign('/login');
+          return;
+        }
+        setSession((current) => current ? {
+          ...current,
+          permissions: next.permissions,
+          pendingSpaceInvitations: next.pendingSpaceInvitations,
+          subscription: next.subscription
+        } : current);
+      }).catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [session?.authenticated]);
+  useEffect(() => subscribeToSpaceChanges((spaceId) => {
+    if (!session?.activeSpace || spaceId === session.activeSpace.id) return;
+    if (!confirmDiscardForSpaceSwitch()) return;
+    storeActiveSpaceId(spaceId, false);
+    allowConfirmedSpaceSwitchUnload();
+    window.location.reload();
+  }), [session?.activeSpace]);
+  async function switchSpace(spaceId: string) {
+    if (!spaceId || spaceId === session?.activeSpace?.id || switching) return;
+    if (!confirmDiscardForSpaceSwitch()) return;
+    try {
+      setSwitching(true);
+      const selected = await api<SpaceSession>(`/api/spaces/${spaceId}/select`, json('POST', {}));
+      allowConfirmedSpaceSwitchUnload();
+      storeActiveSpaceId(selected.activeSpace.id, false);
+      window.location.replace('/');
+    } catch { setSwitching(false); }
+  }
+  async function acceptInvitation(invitation: PendingSpaceInvitation) {
+    if (acceptingInvitationId || !confirmDiscardForSpaceSwitch()) return;
+    try {
+      setAcceptingInvitationId(invitation.id);
+      setInvitationError('');
+      const accepted = await api<SpaceSession & { pendingSpaceInvitations: PendingSpaceInvitation[] }>(
+        `/api/account/space-invitations/${encodeURIComponent(invitation.id)}/accept`, json('POST', {})
+      );
+      allowConfirmedSpaceSwitchUnload();
+      storeActiveSpaceId(accepted.activeSpace.id, false);
+      window.location.replace('/');
+    } catch (reason) {
+      setInvitationError(reason instanceof Error ? reason.message : 'Could not accept this invitation.');
+      setAcceptingInvitationId('');
+    }
+  }
+  const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(routePath);
+  const title = routePath === '/' ? 'Overview' : routePath === '/settings/profile' ? 'Your profile' : routePath.startsWith('/surveys/') ? 'Survey workspace' : routePath.startsWith('/campaigns/') ? 'Campaign workspace' : routePath.startsWith('/agreements/') ? 'Agreement workspace' : routePath.startsWith('/knowledge-bases/') ? 'Knowledge base workspace' : navigation.find((item) => item.to === routePath)?.label || 'Seemplify Experience';
+  const codexSelected = (runtime?.ai?.preference?.effectiveProvider || runtime?.ai?.preference?.provider) === 'codex';
+  const runtimeReady = codexSelected
+    ? runtime?.ai?.codex?.account?.connected === true
+    : runtime?.terra?.ready === true;
+  const runtimeState: RuntimeState = runtime === null ? 'checking' : runtimeReady ? 'ready' : 'unavailable';
+  const runtimeLabel = codexSelected
+    ? `ChatGPT / Codex${runtime?.ai?.codex?.selectedModel ? ` · ${runtime.ai.codex.selectedModel}` : ''}`
+    : runtime?.terra?.providerLabel || 'Experience AI';
+  const creationAction = routePath.startsWith('/agreements') && featureEnabled(session, 'agreements')
+    ? { to: '/agreements/new', label: 'New agreement' }
+    : (routePath === '/' || routePath.startsWith('/surveys')) && featureEnabled(session, 'surveys')
+      ? { to: '/surveys/new', label: 'New survey' }
+      : null;
+  const providerSetupRequired = Boolean(providerState && requiresChatGptSetup(providerState));
+  const providerExperienceReady = !providerStateLoading && !providerStateError && !providerSetupRequired;
+  const providerGateBlocking = !providerGateExempt
+    && (providerStateLoading || Boolean(providerStateError) || providerSetupRequired);
+  const routeBlockedByPlan = Boolean(session && !featureEnabled(session, routeFeature(routePath)));
+  const guardedChildren = routeBlockedByPlan
+    ? <Navigate to="/" />
+    : providerGateBlocking
+    ? (providerStateLoading
+      ? <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="h-4 w-4 animate-spin" />Checking your AI runtime&hellip;</div>
+      : null)
+    : children;
+  const sessionChildren = <AuthSessionProvider session={session}>{guardedChildren}</AuthSessionProvider>;
+  const providerGate = <ChatGptConnectionGate
+    state={providerState}
+    loading={providerStateLoading}
+    error={providerStateError}
+    exempt={providerGateExempt}
+    onStateChange={(next) => {
+      setProviderState(next);
+      setProviderStateError('');
+      setProviderStateLoading(false);
+      void loadRuntime();
+    }}
+    onRetry={() => void loadProviderState()}
+  />;
+  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex min-h-[52px] items-center justify-between gap-3 border-b bg-card px-4 py-2"><Link to="/agreements" className="flex min-w-0 items-center gap-2"><div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="truncate text-sm font-semibold">Seemplify Experience</span></Link><div className="flex shrink-0 items-center gap-2"><span className="hidden text-xs font-medium text-muted-foreground sm:inline">Agreement field editor</span>{providerExperienceReady && <SectionTutorial tutorial={tutorial} />}</div></header><main>{sessionChildren}</main>{providerGate}</div>;
+  return <div className="min-h-screen bg-background">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col overflow-hidden border-r bg-card md:flex"><SidebarContent selectorId="active-space-desktop" runtimeState={runtimeState} runtimeLabel={runtimeLabel} session={session} switching={switching} onSwitch={switchSpace} /></aside>
+    {mobileOpen && <div className="fixed inset-0 z-50 md:hidden">
+      <button aria-label="Dismiss navigation" className="absolute inset-0 bg-foreground/30" onClick={() => setMobileOpen(false)} />
+      <aside className="relative flex h-full w-[278px] flex-col overflow-hidden border-r bg-card shadow-panel"><button aria-label="Close navigation" className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent selectorId="active-space-mobile" close={() => setMobileOpen(false)} runtimeState={runtimeState} runtimeLabel={runtimeLabel} session={session} switching={switching} onSwitch={switchSpace} /></aside>
+    </div>}
+    <div className="min-w-0 md:pl-[248px]">
+      <header className="sticky top-0 z-20 flex h-16 min-w-0 items-center justify-between gap-2 overflow-hidden border-b bg-background/95 px-4 backdrop-blur sm:gap-3 sm:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3"><Button className="shrink-0 md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</div></div>
+        <div className="flex shrink-0 items-center gap-2">
+          {providerExperienceReady && <SectionTutorial tutorial={tutorial} />}
+          {codexSelected
+            ? <div className="hidden min-w-0 items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 sm:flex" title={runtimeLabel}>
+              <OpenAiAttribution compact showModel model={runtime?.ai?.codex?.selectedModel || undefined} />
+              <span className={cn('shrink-0 text-[11px] font-medium capitalize', runtimeState === 'ready' ? 'text-emerald-700' : runtimeState === 'checking' ? 'text-muted-foreground' : 'text-amber-700')}>{runtimeState}</span>
+            </div>
+            : <Badge variant={runtimeState === 'ready' ? 'success' : runtimeState === 'checking' ? 'outline' : 'warning'} className="hidden sm:inline-flex" title={runtimeLabel}>{runtimeName(runtimeLabel)} {runtimeState}</Badge>}
+          {creationAction && <Button asChild size="sm" className="max-[439px]:w-8 max-[439px]:px-0"><Link to={creationAction.to} aria-label={creationAction.label} title={creationAction.label}><Plus /><span className="max-[439px]:sr-only">{creationAction.label}</span></Link></Button>}
+        </div>
+      </header>
+      <PendingInvitationBar invitations={session?.pendingSpaceInvitations || []} acceptingId={acceptingInvitationId} error={invitationError} onAccept={(invitation) => void acceptInvitation(invitation)} />
+      <main className="mx-auto min-w-0 w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">{sessionChildren}</main>
+    </div>
+    {providerGate}
+  </div>;
+}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUserContext, useAppraisalCycles, useDirectReports } from '@/lib/hooks';
+import { useUserContext, useAppraisalCycles } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
   Box, Typography, Card, CardContent, Grid, Button, TextField, Chip, Alert,
@@ -16,8 +16,8 @@ import {
 import { gradients } from '../../theme';
 import {
   Add, PlayArrow, Pause, CheckCircle, Settings, People, Assessment,
-  Schedule, Edit, Delete, Visibility, Rocket, ArrowForward, Warning,
-  TrendingUp, Groups, Star
+  Schedule, Edit, Delete, Visibility, Rocket, Warning,
+  TrendingUp, Groups, Star, Insights
 } from '@mui/icons-material';
 
 interface AppraisalCycle {
@@ -47,6 +47,13 @@ interface AppraisalCycle {
     completedAppraisals: number;
     pendingSelfAssessment: number;
     pendingManagerReview: number;
+    pendingCalibration?: number;
+    pendingFinalReview?: number;
+    selfAssessmentSubmitted?: number;
+    managerReviewSubmitted?: number;
+    finalized?: number;
+    overdueAppraisals?: number;
+    averageRating?: number | null;
   };
 }
 
@@ -198,15 +205,41 @@ export default function AppraisalCyclesAdminPage() {
       });
 
       const result = response.data?.data || response.data;
+      const launchedCount = typeof result?.launched === 'number'
+        ? result.launched
+        : employeeData.length;
+      const failedCount = typeof result?.errors === 'number'
+        ? result.errors
+        : 0;
+      const firstFailure = Array.isArray(result?.errorDetails) && result.errorDetails.length > 0
+        ? result.errorDetails[0]?.error
+        : null;
+      const hasFailures = failedCount > 0;
+
+      if (launchedCount <= 0) {
+        setSnackbar({
+          open: true,
+          message: firstFailure
+            ? `Cycle launch failed: ${firstFailure}`
+            : 'Cycle launch failed. No appraisals were created.',
+          severity: 'error'
+        });
+        return;
+      }
+
       setSnackbar({
         open: true,
-        message: `Cycle launched successfully! ${result?.launched || employeeData.length} appraisals created.`,
-        severity: 'success'
+        message: hasFailures
+          ? `Cycle launched with issues: ${launchedCount} created, ${failedCount} failed.`
+          : `Cycle launched successfully! ${launchedCount} appraisals created.`,
+        severity: hasFailures ? 'info' : 'success'
       });
 
       mutate();
-      setLaunchDialogOpen(false);
-      setSelectedEmployees([]);
+      if (!hasFailures) {
+        setLaunchDialogOpen(false);
+        setSelectedEmployees([]);
+      }
     } catch (error: any) {
       console.error('Launch cycle error:', error);
       setSnackbar({
@@ -216,15 +249,6 @@ export default function AppraisalCyclesAdminPage() {
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleUpdatePhase = async (cycleId: string, phase: string) => {
-    try {
-      await api.patch(`/appraisals/cycles/${cycleId}/phase`, { phase });
-      mutate();
-    } catch (error) {
-      console.error('Update phase error:', error);
     }
   };
 
@@ -285,13 +309,21 @@ export default function AppraisalCyclesAdminPage() {
               {cycle.stats && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">Pending</Typography>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     <Tooltip title="Pending Self-Assessment">
                       <Chip size="small" label={cycle.stats.pendingSelfAssessment} color="warning" />
                     </Tooltip>
                     <Tooltip title="Pending Manager Review">
                       <Chip size="small" label={cycle.stats.pendingManagerReview} color="info" />
                     </Tooltip>
+                    <Tooltip title="Pending Calibration">
+                      <Chip size="small" label={cycle.stats.pendingCalibration || 0} color="secondary" variant="outlined" />
+                    </Tooltip>
+                    {(cycle.stats.overdueAppraisals || 0) > 0 && (
+                      <Tooltip title="Overdue Appraisals">
+                        <Chip size="small" label={cycle.stats.overdueAppraisals} color="error" />
+                      </Tooltip>
+                    )}
                   </Box>
                 </Box>
               )}
@@ -306,25 +338,14 @@ export default function AppraisalCyclesAdminPage() {
                     onClick={() => handleOpenLaunchDialog(cycle)}
                     size="small"
                   >
-                    Launch
+                    Finish Setup
                   </Button>
                 )}
                 {cycle.status === 'active' && (
                   <>
-                    <Button
-                      variant="outlined"
-                      startIcon={<ArrowForward />}
-                      onClick={() => {
-                        const phases = ['goalSetting', 'selfAssessment', 'managerReview', 'calibration', 'finalReview'];
-                        const currentIndex = phases.indexOf(cycle.currentPhase);
-                        if (currentIndex < phases.length - 1) {
-                          handleUpdatePhase(cycle._id, phases[currentIndex + 1]);
-                        }
-                      }}
-                      size="small"
-                    >
-                      Next Phase
-                    </Button>
+                    <Tooltip title="Phases now progress automatically from appraisal submissions. Manual phase advance was removed to prevent workflow drift.">
+                      <Chip size="small" color="info" variant="outlined" label="Phase Auto-Progress" />
+                    </Tooltip>
                     <Button
                       variant="outlined"
                       startIcon={<Visibility />}
@@ -349,6 +370,26 @@ export default function AppraisalCyclesAdminPage() {
   const activeCycles = cycles.filter((c: AppraisalCycle) => c.status === 'active');
   const draftCycles = cycles.filter((c: AppraisalCycle) => c.status === 'draft');
   const completedCycles = cycles.filter((c: AppraisalCycle) => c.status === 'completed');
+  const aggregatedStats = cycles.reduce((acc: any, cycle: AppraisalCycle) => {
+    const stats = cycle.stats || {} as any;
+    acc.totalEmployees += stats.totalEmployees || 0;
+    acc.completedAppraisals += stats.completedAppraisals || 0;
+    acc.pendingSelfAssessment += stats.pendingSelfAssessment || 0;
+    acc.pendingManagerReview += stats.pendingManagerReview || 0;
+    acc.pendingCalibration += stats.pendingCalibration || 0;
+    acc.overdueAppraisals += stats.overdueAppraisals || 0;
+    return acc;
+  }, {
+    totalEmployees: 0,
+    completedAppraisals: 0,
+    pendingSelfAssessment: 0,
+    pendingManagerReview: 0,
+    pendingCalibration: 0,
+    overdueAppraisals: 0
+  });
+  const completionRate = aggregatedStats.totalEmployees > 0
+    ? Math.round((aggregatedStats.completedAppraisals / aggregatedStats.totalEmployees) * 100)
+    : 0;
 
   return (
     <Box>
@@ -359,17 +400,30 @@ export default function AppraisalCyclesAdminPage() {
             Appraisal Cycle Management
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Create, launch, and manage performance appraisal cycles for your organization
+            Create, launch, and manage appraisal cycles from one place. New cycles now go live as soon as you create them.
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => router.push('/admin/appraisal-cycles/new')}
-        >
-          Create New Cycle
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button
+            variant="outlined"
+            startIcon={<Insights />}
+            onClick={() => router.push('/admin')}
+          >
+            View Analytics
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={() => router.push('/admin/appraisal-cycles/new')}
+          >
+            Create And Launch Cycle
+          </Button>
+        </Box>
       </Box>
+
+      <Alert severity="info" sx={{ mb: 3 }}>
+        New flow: define the cycle, choose participants, and create it once. Draft-only setup is now legacy behavior for older cycles.
+      </Alert>
 
       {/* Summary Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
@@ -393,7 +447,7 @@ export default function AppraisalCyclesAdminPage() {
             <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>
-                  <Typography variant="overline" color="text.secondary">Draft Cycles</Typography>
+                  <Typography variant="overline" color="text.secondary">Legacy Drafts</Typography>
                   <Typography variant="h3" fontWeight={700} color="warning.main">
                     {draftCycles.length}
                   </Typography>
@@ -423,13 +477,34 @@ export default function AppraisalCyclesAdminPage() {
             <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>
-                  <Typography variant="overline" color="text.secondary">Total Employees</Typography>
+                  <Typography variant="overline" color="text.secondary">Appraisals Launched</Typography>
                   <Typography variant="h3" fontWeight={700}>
-                    {activeCycles.reduce((sum: number, c: AppraisalCycle) => sum + (c.stats?.totalEmployees || 0), 0)}
+                    {aggregatedStats.totalEmployees}
                   </Typography>
                 </Box>
                 <People sx={{ fontSize: 40, color: 'primary.main', opacity: 0.7 }} />
               </Box>
+              <Typography variant="caption" color="text.secondary">
+                {aggregatedStats.completedAppraisals} completed ({completionRate}%)
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box>
+                  <Typography variant="overline" color="text.secondary">Bottlenecks</Typography>
+                  <Typography variant="h3" fontWeight={700} color="warning.main">
+                    {aggregatedStats.pendingSelfAssessment + aggregatedStats.pendingManagerReview + aggregatedStats.pendingCalibration}
+                  </Typography>
+                </Box>
+                <TrendingUp sx={{ fontSize: 40, color: 'warning.main', opacity: 0.7 }} />
+              </Box>
+              <Typography variant="caption" color="text.secondary">
+                Self {aggregatedStats.pendingSelfAssessment} | Manager {aggregatedStats.pendingManagerReview} | Calibration {aggregatedStats.pendingCalibration}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -442,7 +517,7 @@ export default function AppraisalCyclesAdminPage() {
         sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
       >
         <Tab label={<Badge badgeContent={activeCycles.length} color="success">Active</Badge>} />
-        <Tab label={<Badge badgeContent={draftCycles.length} color="warning">Drafts</Badge>} />
+        <Tab label={<Badge badgeContent={draftCycles.length} color="warning">Legacy Drafts</Badge>} />
         <Tab label="Completed" />
       </Tabs>
 
@@ -457,14 +532,14 @@ export default function AppraisalCyclesAdminPage() {
             activeCycles.length > 0 ? (
               activeCycles.map((cycle: AppraisalCycle) => renderCycleCard(cycle))
             ) : (
-              <Alert severity="info">No active cycles. Create and launch a cycle to get started.</Alert>
+                <Alert severity="info">No active cycles. Use Create And Launch Cycle to start a new appraisal run.</Alert>
             )
           )}
           {selectedTab === 1 && (
             draftCycles.length > 0 ? (
               draftCycles.map((cycle: AppraisalCycle) => renderCycleCard(cycle))
             ) : (
-              <Alert severity="info">No draft cycles.</Alert>
+                <Alert severity="info">No legacy draft cycles.</Alert>
             )
           )}
           {selectedTab === 2 && (

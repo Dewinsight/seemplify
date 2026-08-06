@@ -1,68 +1,97 @@
-# Deploy Frappe LMS to Dokploy Server
+# Deploy LMS to Dokploy-managed VM
 name: Deploy LMS
 
 on:
   push:
     branches: [main]
     paths:
-      - 'lms/**'
-      - '.github/workflows/deploy-lms.yml'
+      - "lms/**"
+      - ".github/workflows/deploy-lms.yml"
   workflow_dispatch:
 
+concurrency:
+  group: deploy-lms
+  cancel-in-progress: false
+
 env:
-  APP_NAME: lms
-  APP_PATH: lms
+  VM_HOST: 4.180.153.209
+  VM_USER: seemplify
+  LMS_SOURCE_PATH: /etc/dokploy/compose/lms-sj7l83/code
 
 jobs:
   deploy:
-    name: Deploy LMS to Server
+    name: Deploy to Dokploy VM
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Add server to known hosts
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts
-
-      - name: Deploy LMS Stack
-        run: |
-          echo "🚀 Deploying LMS..."
-          
-          # Pull latest code on server
-          ssh seemplify@4.180.153.209 "cd ~/lms-deploy && git fetch origin main && git reset --hard origin/main"
-          
-          # Sync LMS app code to the running container
-          FRAPPE_CONTAINER=$(ssh seemplify@4.180.153.209 "docker ps -q -f name=lms_frappe")
-          echo "📦 Frappe container: $FRAPPE_CONTAINER"
-          
-          if [ -n "$FRAPPE_CONTAINER" ]; then
-            echo "📂 Copying updated LMS code to container..."
-            ssh seemplify@4.180.153.209 "docker cp ~/lms-deploy/lms/. $FRAPPE_CONTAINER:/home/frappe/frappe-bench/apps/lms/"
-            
-            echo "🔨 Building frontend assets..."
-            ssh seemplify@4.180.153.209 "docker exec $FRAPPE_CONTAINER bash -c 'cd /home/frappe/frappe-bench && /home/frappe/.local/bin/bench build --app lms' || echo 'Build skipped (might need manual build)'"
-            
-            echo "🗑️ Clearing cache..."
-            ssh seemplify@4.180.153.209 "docker exec \$(docker ps -q -f name=lms_redis) redis-cli FLUSHALL"
-          else
-            echo "⚠️ No running frappe container found, deploying fresh stack..."
-            ssh seemplify@4.180.153.209 "cd ~/lms-deploy/lms/docker && docker stack deploy -c docker-compose.yml lms"
+          key="${SSH_PRIVATE_KEY:-$VM_SSH_KEY}"
+          if [ -z "$key" ]; then
+            echo "[ERROR] Missing SSH_PRIVATE_KEY or VM_SSH_KEY secret."
+            exit 1
           fi
-          
-          echo "✅ LMS deployment triggered!"
-          
-          # Wait for services to stabilize
-          sleep 10
-          
-          # Check service status
-          ssh seemplify@4.180.153.209 "docker service ls | grep lms"
-          
-          echo "✅ LMS deployment complete!"
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$key" > ~/.ssh/id_vm
+          chmod 600 ~/.ssh/id_vm
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Pull, deploy stack, and wait for health
+        run: |
+          ssh -i ~/.ssh/id_vm -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          SRC="/etc/dokploy/compose/lms-sj7l83/code"
+          SAFE="-c safe.directory=${SRC}"
+
+          sudo git ${SAFE} -C "${SRC}" fetch origin main
+          if [ -n "$(sudo git ${SAFE} -C "${SRC}" status --porcelain)" ]; then
+            sudo git ${SAFE} -C "${SRC}" stash push -u -m "pre-gh-lms-deploy-$(date -u +%Y%m%dT%H%M%SZ)" >/dev/null
+          fi
+          sudo git ${SAFE} -C "${SRC}" checkout main
+          sudo git ${SAFE} -C "${SRC}" pull --ff-only origin main
+          echo "source=$(sudo git ${SAFE} -C "${SRC}" rev-parse --short HEAD)"
+
+          sudo python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          src = Path("/etc/dokploy/compose/lms-sj7l83/code")
+          env_path = src / "lms/docker/.env"
+
+          for raw in env_path.read_text().splitlines():
+              line = raw.strip()
+              if not line or line.startswith("#") or "=" not in line:
+                  continue
+              key, value = line.split("=", 1)
+              os.environ[key.strip()] = value.strip()
+
+          subprocess.run(
+              ["docker", "stack", "deploy", "-c", str(src / "lms/docker/docker-compose.yml"), "lms"],
+              check=True,
+          )
+          PY
+
+          for _ in $(seq 1 120); do
+            replicas="$(docker service ls --filter name=lms_frappe --format '{{.Replicas}}' | head -n 1)"
+            status="$(curl -k -s -o /dev/null -w '%{http_code}' https://lms.seemplifyai.com/lms || true)"
+
+            if [ "${replicas}" = "1/1" ] && [ "${status}" = "200" ]; then
+              echo "health=ok"
+              exit 0
+            fi
+
+            echo "waiting replicas=${replicas:-none} status=${status:-none}"
+            sleep 5
+          done
+
+          echo "[ERROR] LMS did not become healthy."
+          docker service ps lms_frappe --no-trunc || true
+          docker service logs lms_frappe --tail 120 || true
+          exit 1
+          REMOTE

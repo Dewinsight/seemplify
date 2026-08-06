@@ -105,6 +105,20 @@ const TimeEntrySchema = new Schema({
         reason: String,
     },
 
+    // Auto clock-out state (stored on the originating clock_in entry)
+    autoClockOut: {
+        warningSentAt: Date,
+        warningEmailMessageId: String,
+        manualReminderSentAt: Date,
+        manualReminderEmailMessageId: String,
+        manualReminderSentBy: String,
+        autoClockedOutAt: Date,
+        autoClockOutEntryId: {
+            type: Schema.Types.ObjectId,
+            ref: 'TimeEntry',
+        },
+    },
+
     // Link to timesheet if aggregated
     timesheetId: {
         type: Schema.Types.ObjectId,

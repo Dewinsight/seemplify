@@ -17,6 +17,7 @@ import { formatDuration } from '@/lib/utils';
 export default function TimesheetsPage() {
     const [timesheets, setTimesheets] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [exporting, setExporting] = useState(false);
 
     // Future implementation: Add pagination and filters
     // const [page, setPage] = useState(1);
@@ -39,6 +40,38 @@ export default function TimesheetsPage() {
         }
     };
 
+    const handleQuickExport = async () => {
+        if (!timesheets.length) {
+            alert('No timesheets available to export.');
+            return;
+        }
+
+        const latestTimesheet = timesheets[0];
+        const timesheetId = latestTimesheet?._id || latestTimesheet?.id;
+        if (!timesheetId) {
+            alert('Unable to export: timesheet ID not found.');
+            return;
+        }
+
+        try {
+            setExporting(true);
+            const { blob, filename } = await timesheetApi.exportExcel(timesheetId);
+            const fileUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = fileUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(fileUrl);
+        } catch (error) {
+            console.error('Failed to export timesheet', error);
+            alert('Failed to export timesheet.');
+        } finally {
+            setExporting(false);
+        }
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -47,7 +80,12 @@ export default function TimesheetsPage() {
                     <p className="text-zinc-400">View and manage your weekly timesheet submissions</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">
+                    <button
+                        onClick={handleQuickExport}
+                        disabled={loading || exporting}
+                        title="Export latest timesheet to Excel"
+                        className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                         <Download className="h-5 w-5" />
                     </button>
                 </div>

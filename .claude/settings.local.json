@@ -20,7 +20,15 @@
       "Bash(dir \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\\\\time-attendance\\\\backend\")",
       "Bash(npm run lint:*)",
       "Bash(npx next lint:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Bash(xargs:*)",
+      "Bash(git status:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(ls -la \"C:\\\\Users\\\\Michael\\\\Documents\\\\GitHub\\\\seemplify\\\\approver\\\\frontend\\\\src\"\" 2>/dev/null | grep -E \"^d \")",
+      "Bash(grep -r PORT /c/Users/Michael/Documents/GitHub/seemplify/approver/backend/.env*)",
+      "Bash(find C:UsersMichaelDocumentsGitHubseemplifyIdentityprovidersrc -type f \\\\\\(-name *.jsx -o -name *.tsx \\\\\\))",
+      "Bash(grep -E \"\\\\.\\(js|jsx|tsx|tsx\\)$\")",
+      "Bash(find /c/Users/Michael/Documents/GitHub/seemplify -type f \\\\\\(-name ecosystem.config.js -o -name pm2.json -o -name tsconfig.json \\\\\\) -not -path */node_modules/* -not -path */.next/*)"
     ]
   }
 }

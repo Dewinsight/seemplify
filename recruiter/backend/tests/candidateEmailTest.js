@@ -25,7 +25,7 @@ const mockJob = {
     enableRejectionEmails: true,
     enableShortlistEmails: true,
     autoSendRejections: false,
-    senderName: 'Mega', // Legacy value must never be used as organization branding.
+    senderName: 'Mega', // Legacy value must not be used for organization branding.
     senderEmail: 'hr@testcompany.com'
   }
 };
@@ -61,7 +61,6 @@ async function testEmailNotificationService() {
     console.log('   ✅ Email configuration retrieved:', {
       enableAdvancementEmails: emailConfig.enableAdvancementEmails,
       enableRejectionEmails: emailConfig.enableRejectionEmails,
-      senderEmail: emailConfig.senderEmail
     });
 
     // Test 4: Email Template Processing (without sending)
@@ -93,7 +92,7 @@ async function testEmailNotificationService() {
 
     console.log('\n📧 Email Notification System Tests Complete!');
     console.log('\n📝 Manual Testing Instructions:');
-    console.log('   1. Set up BREVO_API_KEY in environment variables');
+    console.log('   1. Set up MAIL_API_BASE_URL, MAIL_API_TOKEN and MAIL_FROM_EMAIL in environment variables');
     console.log('   2. Create a test job with email settings enabled');
     console.log('   3. Test pipeline progression with real candidates');
     console.log('   4. Use the /api/candidate-emails/test-email endpoint');

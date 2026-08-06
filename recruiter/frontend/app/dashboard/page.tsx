@@ -13,7 +13,12 @@ import {
   Users,
   Briefcase,
   Clock,
+  FileSignature,
   FileText,
+  GraduationCap,
+  Bot,
+  ArrowRight,
+  Send,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import Link from "next/link"
@@ -28,13 +33,80 @@ import { MetroQuickActions } from "@/components/ui/metro-quick-actions"
 import { DashboardProfileCard } from "@/components/ui/dashboard-profile-card"
 import { ProgressiveDisclosure } from "@/components/ui/progressive-disclosure"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { getIdpBaseUrl } from "@/utils/env"
+import { getMySigningDocuments, getOnboardingRecords, type CandidateOnboarding, type MySigningDocuments } from "@/services/onboardingService"
+import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService"
+import { useFeatureFlags } from "@/context/FeatureFlagsContext"
+
+type WorkQueueSummary = {
+  onboarding: {
+    total: number;
+    active: number;
+    sentPackets: number;
+    completed: number;
+  };
+  aiInterviews: {
+    total: number;
+    open: number;
+    candidates: number;
+    completedSessions: number;
+  };
+  myDocuments: MySigningDocuments;
+};
+
+const emptyWorkQueueSummary: WorkQueueSummary = {
+  onboarding: {
+    total: 0,
+    active: 0,
+    sentPackets: 0,
+    completed: 0,
+  },
+  aiInterviews: {
+    total: 0,
+    open: 0,
+    candidates: 0,
+    completedSessions: 0,
+  },
+  myDocuments: {
+    pending: [],
+    signed: [],
+  },
+};
+
+function summarizeOnboarding(records: CandidateOnboarding[]) {
+  return {
+    total: records.length,
+    active: records.filter((record) => ["pending", "in_progress"].includes(record.status)).length,
+    sentPackets: records.reduce(
+      (count, record) =>
+        count + (record.envelopes || []).filter((envelope) => ["sent", "viewed", "partially_signed"].includes(envelope.status)).length,
+      0
+    ),
+    completed: records.filter((record) => record.status === "completed").length,
+  };
+}
+
+function summarizeAIInterviews(interviews: AIInterview[]) {
+  return {
+    total: interviews.length,
+    open: interviews.filter((interview) => !["completed", "cancelled", "expired"].includes(interview.status)).length,
+    candidates: interviews.reduce((count, interview) => count + (interview.candidateCount || 0), 0),
+    completedSessions: interviews.reduce((count, interview) => count + (interview.stats?.completed || 0), 0),
+  };
+}
 
 export default function Dashboard() {
   const { state, loadAnalytics, getUserDisplayName, isProfileComplete } = useUser()
   const { user, analytics, suggestions, isLoading } = state
   const { viewMode, setViewMode, sections } = useDashboardState()
+  const { isFeatureEnabled } = useFeatureFlags()
+  const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
+  const peopleTransitionsEnabled = isFeatureEnabled('peopleTransitions')
   const [showProfileModal, setShowProfileModal] = useState(false)
-
+  const [workQueues, setWorkQueues] = useState<WorkQueueSummary>(emptyWorkQueueSummary)
+  const [workQueuesLoading, setWorkQueuesLoading] = useState(false)
+  
   // State for metric detail modal
   const [selectedMetric, setSelectedMetric] = useState<{
     id: string;
@@ -48,15 +120,56 @@ export default function Dashboard() {
   useEffect(() => {
     if (user) {
       loadAnalytics()
-
+      
       const lastShown = localStorage.getItem('profileModalLastShown')
       const daysSinceLastShown = lastShown ? (Date.now() - parseInt(lastShown)) / (1000 * 60 * 60 * 24) : 999
-
+      
       if (!isProfileComplete() && daysSinceLastShown > 1) {
         setTimeout(() => setShowProfileModal(true), 2000)
       }
     }
   }, [user])
+
+  useEffect(() => {
+    if (!user) return;
+
+    let mounted = true;
+
+    async function loadWorkQueues() {
+      try {
+        setWorkQueuesLoading(true);
+        const [onboardingResult, aiInterviewsResult, myDocumentsResult] = await Promise.allSettled([
+          peopleTransitionsEnabled ? getOnboardingRecords() : Promise.resolve(null),
+          aiInterviewsEnabled ? aiInterviewService.list() : Promise.resolve(null),
+          peopleTransitionsEnabled ? getMySigningDocuments(8) : Promise.resolve(null),
+        ]);
+
+        if (!mounted) return;
+
+        setWorkQueues({
+          onboarding: onboardingResult.status === "fulfilled" && onboardingResult.value
+            ? summarizeOnboarding(onboardingResult.value.data || [])
+            : emptyWorkQueueSummary.onboarding,
+          aiInterviews: aiInterviewsResult.status === "fulfilled" && aiInterviewsResult.value
+            ? summarizeAIInterviews(aiInterviewsResult.value || [])
+            : emptyWorkQueueSummary.aiInterviews,
+          myDocuments: myDocumentsResult.status === "fulfilled" && myDocumentsResult.value
+            ? myDocumentsResult.value
+            : emptyWorkQueueSummary.myDocuments,
+        });
+      } catch (error) {
+        console.error("Failed to load dashboard work queues:", error);
+      } finally {
+        if (mounted) setWorkQueuesLoading(false);
+      }
+    }
+
+    loadWorkQueues();
+
+    return () => {
+      mounted = false;
+    };
+  }, [aiInterviewsEnabled, peopleTransitionsEnabled, user])
 
   const handleProfileModalClose = (open: boolean) => {
     setShowProfileModal(open)
@@ -69,7 +182,7 @@ export default function Dashboard() {
   const handleMetricClick = (metricId: string, title: string, currentValue: number) => {
     // Use REAL timeline data based on metric type
     let timelineData: any[] = [];
-
+    
     if (metricId === 'totalCandidates' || metricId === 'candidatesInReview') {
       // For candidate-related metrics, use candidates timeline
       timelineData = currentAnalytics.timeline?.candidates || [];
@@ -77,61 +190,61 @@ export default function Dashboard() {
       // For job-related metrics, use jobs timeline
       timelineData = currentAnalytics.timeline?.jobs || [];
     }
-
+    
     // Map to historical data format (REAL data only)
-    const historicalData = timelineData.length > 0
+    const historicalData = timelineData.length > 0 
       ? timelineData.map((item: any) => ({
-        date: item.date,
-        value: item.count || 0
-      }))
+          date: item.date,
+          value: item.count || 0
+        }))
       : undefined;
 
     // Use REAL breakdown data from backend distributions
     // ✅ FIXED: Backend returns 'name' and 'value', not 'status' and 'count'
     let breakdown: Array<{ category: string; value: number }> | undefined;
-
+    
     if (metricId === 'totalCandidates' || metricId === 'candidatesInReview') {
       // Real candidate status distribution
       const statusData = currentAnalytics.distributions?.candidatesByStatus || [];
-      breakdown = statusData.length > 0
+      breakdown = statusData.length > 0 
         ? statusData.map((item: any) => ({
-          category: item.name,  // ✅ Use 'name' from backend
-          value: item.value     // ✅ Use 'value' from backend
-        }))
+            category: item.name,  // ✅ Use 'name' from backend
+            value: item.value     // ✅ Use 'value' from backend
+          }))
         : undefined;
     } else if (metricId === 'activeJobs' || metricId === 'totalJobs') {
       // Real job status distribution
       const statusData = currentAnalytics.distributions?.jobsByStatus || [];
       breakdown = statusData.length > 0
         ? statusData.map((item: any) => ({
-          category: item.name,  // ✅ Use 'name' from backend
-          value: item.value     // ✅ Use 'value' from backend
-        }))
+            category: item.name,  // ✅ Use 'name' from backend
+            value: item.value     // ✅ Use 'value' from backend
+          }))
         : undefined;
     }
 
     // Generate insights ONLY from real data
     const insights: string[] = [];
-
+    
     if (historicalData && historicalData.length > 1) {
       const firstValue = historicalData[0].value;
       const lastValue = historicalData[historicalData.length - 1].value;
-
+      
       if (firstValue > 0) {
         const change = ((lastValue - firstValue) / firstValue) * 100;
         insights.push(`This metric has ${change > 0 ? 'increased' : 'decreased'} by ${Math.abs(change).toFixed(1)}% over the tracked period.`);
       }
-
+      
       // Add date range insight
       const firstDate = new Date(historicalData[0].date).toLocaleDateString();
       const lastDate = new Date(historicalData[historicalData.length - 1].date).toLocaleDateString();
       insights.push(`Data tracked from ${firstDate} to ${lastDate} (${historicalData.length} data points).`);
     }
-
+    
     if (breakdown && breakdown.length > 0) {
       const topCategory = breakdown.reduce((max, item) => item.value > max.value ? item : max);
       insights.push(`${topCategory.category} represents the largest segment with ${topCategory.value} items.`);
-
+      
       // Add total count insight
       const total = breakdown.reduce((sum, item) => sum + item.value, 0);
       insights.push(`Total of ${total} items distributed across ${breakdown.length} categories.`);
@@ -191,7 +304,7 @@ export default function Dashboard() {
               <Skeleton className="h-10 w-32" />
             </div>
           </div>
-
+          
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {[...Array(4)].map((_, i) => (
               <Skeleton key={i} className="h-32" />
@@ -203,34 +316,33 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 pt-4 lg:pt-6 max-w-[1400px] mx-auto dashboard-container relative z-10">
-      <div className="bg-noise" />
-      <ProfileCompletionModal
-        open={showProfileModal}
-        onOpenChange={handleProfileModalClose}
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 pt-4 lg:pt-6 max-w-[1400px] mx-auto dashboard-container bg-background">
+      <ProfileCompletionModal 
+        open={showProfileModal} 
+        onOpenChange={handleProfileModalClose} 
       />
-
+      
       <div className="space-y-8">
         {/* Simplified Header */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight gradient-text-primary">
+            <h1 className="text-3xl font-bold tracking-tight">
               Welcome back, {displayName}
             </h1>
             <p className="text-muted-foreground">
               Here's your recruitment overview
             </p>
           </div>
-
+          
           <div className="flex items-center gap-3">
             {/* Identity Hub Link */}
             <Button
               size="sm"
               asChild
-              className="bg-secondary/80 text-secondary-foreground hover:bg-secondary/60 shadow-sm transition-colors"
+              className="bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-sm hover:from-slate-800 hover:to-slate-600"
             >
               <a
-                href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+                href={getIdpBaseUrl()}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -248,7 +360,7 @@ export default function Dashboard() {
               {viewMode === 'simple' ? <Maximize2 className="h-4 w-4 mr-2" /> : <Minimize2 className="h-4 w-4 mr-2" />}
               {viewMode === 'simple' ? 'Detailed View' : 'Simple View'}
             </Button>
-
+            
             {/* Settings */}
             <DashboardSettings />
           </div>
@@ -256,19 +368,41 @@ export default function Dashboard() {
 
         {/* Profile Completion Alert */}
         {!profileComplete && suggestions.length > 0 && (
-          <Alert className="border-amber-500/50 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20 backdrop-blur-sm">
-            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-            <AlertDescription className="flex items-center justify-between text-amber-900/90 dark:text-amber-100/90">
+          <Alert className="border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50">
+            <AlertCircle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="flex items-center justify-between">
               <div>
-                <strong className="text-amber-700 dark:text-amber-200">Complete your profile</strong> to get the most out of Seemplify Recruiter
-                <Badge variant="secondary" className="ml-2 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-200 border-amber-200 dark:border-amber-700/50">
+                <strong>Complete your profile</strong> to get the most out of SmartHR
+                <Badge variant="secondary" className="ml-2">
                   {user?.profileCompletion.percentage}% complete
                 </Badge>
               </div>
-              <Button variant="outline" size="sm" asChild className="border-amber-600/30 dark:border-amber-600/50 text-amber-700 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/30 hover:text-amber-900 dark:hover:text-amber-100">
+              <Button variant="outline" size="sm" asChild>
                 <Link href="/settings">
                   <Settings className="mr-2 h-3.5 w-3.5" />
                   Complete Profile
+                </Link>
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {peopleTransitionsEnabled && workQueues.myDocuments.pending.length > 0 && (
+          <Alert className="rounded-md border-border bg-muted/40">
+            <FileSignature className="h-4 w-4 text-muted-foreground" />
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <strong>Documents waiting for your signature</strong>
+                <span className="ml-1 text-muted-foreground">
+                  {workQueues.myDocuments.pending.length === 1
+                    ? `${workQueues.myDocuments.pending[0].title} needs your review.`
+                    : `${workQueues.myDocuments.pending.length} packets need your review.`}
+                </span>
+              </div>
+              <Button asChild size="sm" variant="outline" className="w-fit">
+                <Link href="/my-documents">
+                  Open My Documents
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
             </AlertDescription>
@@ -370,6 +504,160 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Work queues</h2>
+            {workQueuesLoading && <Badge variant="secondary">Loading</Badge>}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            {peopleTransitionsEnabled && <Card className="rounded-md">
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                <div>
+                  <CardTitle className="text-base">People Transitions</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">Onboarding, exit, retirement packets, and signing progress</p>
+                </div>
+                <GraduationCap className="h-5 w-5 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.onboarding.total}</div>
+                    <div className="text-xs text-muted-foreground">Total</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.onboarding.active}</div>
+                    <div className="text-xs text-muted-foreground">Active</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.onboarding.sentPackets}</div>
+                    <div className="text-xs text-muted-foreground">Sent</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.onboarding.completed}</div>
+                    <div className="text-xs text-muted-foreground">Complete</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/people-transitions">
+                      Open transitions
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/people-transitions/new">
+                      <Send className="mr-2 h-4 w-4" />
+                      Start process
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>}
+
+            {aiInterviewsEnabled && <Card className="rounded-md">
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                <div>
+                  <CardTitle className="text-base">AI interviews</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">Automated interview packets and completed sessions</p>
+                </div>
+                <Bot className="h-5 w-5 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.total}</div>
+                    <div className="text-xs text-muted-foreground">Total</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.open}</div>
+                    <div className="text-xs text-muted-foreground">Open</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.candidates}</div>
+                    <div className="text-xs text-muted-foreground">Candidates</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.completedSessions}</div>
+                    <div className="text-xs text-muted-foreground">Complete</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/ai-interviews">
+                      Open AI interviews
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/ai-interviews">
+                      <Send className="mr-2 h-4 w-4" />
+                      Create interview
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>}
+
+            {peopleTransitionsEnabled && <Card className="rounded-md">
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+                <div>
+                  <CardTitle className="text-base">My Documents</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">Packets waiting for you and documents you have signed</p>
+                </div>
+                <FileSignature className="h-5 w-5 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.myDocuments.pending.length}</div>
+                    <div className="text-xs text-muted-foreground">To sign</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold">{workQueues.myDocuments.signed.length}</div>
+                    <div className="text-xs text-muted-foreground">Signed</div>
+                  </div>
+                </div>
+
+                {workQueues.myDocuments.pending.length > 0 ? (
+                  <div className="overflow-hidden rounded-md border">
+                    {workQueues.myDocuments.pending.slice(0, 3).map((item) => {
+                      const signerQuery = item.signer.key ? `?signer=${encodeURIComponent(item.signer.key)}` : "";
+                      return (
+                        <Link
+                          key={`pending-${item._id}-${item.signer.key || item.signer._id}`}
+                          href={`/my-documents/${item._id}${signerQuery}`}
+                          className="flex items-center justify-between gap-3 border-b px-3 py-3 text-sm last:border-b-0 hover:bg-muted/50"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-foreground">{item.title}</div>
+                            <div className="mt-1 truncate text-xs text-muted-foreground">
+                              {item.documentCount} document{item.documentCount === 1 ? "" : "s"}
+                              {item.assignedFieldCount ? ` - ${item.assignedFieldCount} assigned field${item.assignedFieldCount === 1 ? "" : "s"}` : ""}
+                            </div>
+                          </div>
+                          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                    No documents are waiting for your signature.
+                  </div>
+                )}
+
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/my-documents">
+                    Open My Documents
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>}
+          </div>
+        </div>
 
         {/* Analytics Section with Tabs */}
         {sections.analytics?.visible && (

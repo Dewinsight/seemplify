@@ -3,9 +3,9 @@
 import React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import {
-  Mail,
-  Building,
+import { 
+  Mail, 
+  Building, 
   Settings,
   CheckCircle,
   AlertTriangle,
@@ -54,7 +54,7 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
   const missingFields = backendMissingFields
     .map(field => fieldNameMap[field]?.label || field)
     .filter(Boolean);
-
+  
   // Count required vs optional missing fields
   const requiredMissing = backendMissingFields.filter(field => fieldNameMap[field]?.required).length;
   const optionalMissing = backendMissingFields.filter(field => !fieldNameMap[field]?.required).length;
@@ -74,15 +74,15 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
 
   return (
     <Card className={cn(
-      "overflow-hidden glass-card",
-      "border-border/50 dark:border-white/5 shadow-lg hover:shadow-xl transition-all duration-300",
+      "overflow-hidden bg-gradient-to-br from-card to-muted/30",
+      "border-border/50 shadow-lg hover:shadow-xl transition-all duration-300",
       className
     )} data-tutorial="dashboard-profile-card-inner">
       {/* Modern header with gradient */}
       <div className="relative h-24 sm:h-28 md:h-32 lg:h-28 xl:h-32 2xl:h-36 bg-gradient-to-br from-indigo-500 via-indigo-600 to-teal-600">
         <div className="absolute inset-0 bg-black/20" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-
+        
         {/* Pattern overlay */}
         <div className="absolute inset-0 opacity-20">
           <div className="absolute inset-0" style={{
@@ -92,10 +92,10 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
         </div>
 
         {/* Edit button */}
-        <Button
-          size="sm"
-          variant="ghost"
-          asChild
+        <Button 
+          size="sm" 
+          variant="ghost" 
+          asChild 
           className="absolute top-4 right-4 h-8 w-8 p-0 text-white hover:bg-white/20 backdrop-blur-sm"
         >
           <Link href="/settings">
@@ -142,7 +142,7 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
               <p className="text-sm font-medium">{user.profile.title}</p>
             </div>
           )}
-
+          
           {/* Display current organization from context */}
           {(currentOrganization?.name || user.company?.name) && (
             <div className="space-y-1">
@@ -193,11 +193,11 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
           </div>
 
           <div className="relative">
-            <Progress
-              value={completionPercentage}
+            <Progress 
+              value={completionPercentage} 
               className="h-2 bg-muted"
             />
-            <div
+            <div 
               className="absolute inset-0 h-2 rounded-full bg-gradient-to-r from-indigo-500 to-teal-500 opacity-20"
               style={{ width: `${completionPercentage}%` }}
             />
@@ -220,9 +220,9 @@ export function DashboardProfileCard({ className }: DashboardProfileCardProps) {
                   <span className="text-emerald-600 dark:text-emerald-400">All required fields complete!</span> Add {optionalMissing} optional field{optionalMissing !== 1 ? 's' : ''} to reach 100%
                 </p>
               )}
-              <Button
-                asChild
-                className="w-full bg-gradient-to-r from-indigo-500 to-teal-600 hover:from-indigo-600 hover:to-teal-700 text-white shadow-md hover:shadow-lg transition-all duration-300"
+              <Button 
+                asChild 
+                className="w-full bg-gradient-to-r from-indigo-500 to-teal-600 hover:from-indigo-600 hover:to-teal-700 text-white shadow-md hover:shadow-lg transition-all duration-300" 
                 size="sm"
               >
                 <Link href="/settings">

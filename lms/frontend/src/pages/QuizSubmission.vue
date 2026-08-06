@@ -15,9 +15,45 @@
 			</Button>
 		</div>
 	</header>
-	<div v-if="submissionDetails.doc" class="w-2/3 border-x mx-auto py-5">
-		<div class="text-xl px-10 font-semibold text-ink-gray-9 mb-5">
-			{{ submissionDetails.doc.member_name }}
+	<div v-if="submissionDetails.doc" class="lms-quiz-submission-detail w-2/3 border-x mx-auto py-5">
+		<div class="px-10 mb-5">
+			<div class="text-xl font-semibold text-ink-gray-9">
+				{{ submissionDetails.doc.member_name }}
+			</div>
+			<div class="text-sm text-ink-gray-6 mt-1">
+				{{ submissionDetails.doc.quiz_title }}
+			</div>
+		</div>
+		<div class="lms-quiz-submission-summary mx-10 mb-5">
+			<div>
+				<div class="lms-quiz-submission-summary-label">
+					{{ __('Score') }}
+				</div>
+				<div class="lms-quiz-submission-summary-value">
+					{{ submissionDetails.doc.score }} / {{ submissionDetails.doc.score_out_of }}
+				</div>
+			</div>
+			<div>
+				<div class="lms-quiz-submission-summary-label">
+					{{ __('Percentage') }}
+				</div>
+				<div class="lms-quiz-submission-summary-value">
+					{{ submissionPercentage }}%
+				</div>
+			</div>
+			<div>
+				<div class="lms-quiz-submission-summary-label">
+					{{ __('Pass Mark') }}
+				</div>
+				<div class="lms-quiz-submission-summary-value">
+					{{ passMark }}%
+				</div>
+			</div>
+			<Badge
+				class="self-center justify-self-start"
+				:theme="submissionPassed ? 'green' : 'red'"
+				:label="submissionPassed ? __('Passed') : __('Try Again')"
+			/>
 		</div>
 		<div class="space-y-4 border-b pb-5 px-10">
 			<div class="grid grid-cols-2 gap-5">
@@ -123,6 +159,18 @@ const submissionDetails = createDocumentResource({
 	doctype: 'LMS Quiz Submission',
 	name: props.submission,
 	auto: true,
+})
+
+const passMark = computed(() => {
+	return Number(submissionDetails.doc?.passing_percentage) || 60
+})
+
+const submissionPercentage = computed(() => {
+	return Math.max(0, Math.ceil(Number(submissionDetails.doc?.percentage || 0)))
+})
+
+const submissionPassed = computed(() => {
+	return submissionPercentage.value >= passMark.value
 })
 
 const breadcrumbs = computed(() => {

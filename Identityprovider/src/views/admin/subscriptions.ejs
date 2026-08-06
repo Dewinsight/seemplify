@@ -83,11 +83,15 @@
                   </td>
                   <td>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                      <button onclick="openCustomizationModal('<%= sub._id %>')" class="btn btn-sm btn-secondary">Customize</button>
                       <button onclick="extendSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary">Extend</button>
                       <% if (sub.status === 'active') { %>
                         <button onclick="suspendSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary" style="color: #f59e0b;">Suspend</button>
                       <% } else if (sub.status === 'suspended') { %>
                         <button onclick="reactivateSubscription('<%= sub._id %>')" class="btn btn-sm btn-success">Reactivate</button>
+                      <% } %>
+                      <% if (['active', 'suspended', 'pending_renewal'].includes(sub.status)) { %>
+                        <button onclick="expireSubscription('<%= sub._id %>', <%- JSON.stringify(sub.organization?.name || 'this organization') %>)" class="btn btn-sm btn-secondary" style="color: #ef4444;">Expire Now</button>
                       <% } %>
                       <% if (sub.status !== 'cancelled') { %>
                         <button onclick="cancelSubscription('<%= sub._id %>')" class="btn btn-sm btn-secondary" style="color: #ef4444;">Cancel</button>
@@ -173,6 +177,71 @@
             <label class="admin-form-label">Notes (optional)</label>
             <textarea id="notes" class="admin-form-textarea" rows="2" placeholder="Internal notes"></textarea>
           </div>
+
+          <details class="admin-form-group">
+            <summary class="admin-form-label" style="cursor: pointer;">Advanced Overrides (optional)</summary>
+            <small style="color: var(--muted); display: block; margin: 6px 0 10px;">These override plan defaults for this subscription only.</small>
+
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">Custom Max Members</label>
+                <input type="number" id="customMaxMembers" class="admin-form-input" min="0" placeholder="Leave empty to inherit">
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Custom Max Teams</label>
+                <input type="number" id="customMaxTeams" class="admin-form-input" min="0" placeholder="Leave empty to inherit">
+              </div>
+            </div>
+
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">Custom Max Storage (GB)</label>
+                <input type="number" id="customMaxStorage" class="admin-form-input" min="0" placeholder="Leave empty to inherit">
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Custom Max System Courses</label>
+                <input type="number" id="customMaxSystemCourses" class="admin-form-input" min="0" placeholder="Leave empty to inherit">
+              </div>
+            </div>
+
+            <div class="admin-form-group">
+              <label class="admin-form-label">Feature Overrides</label>
+              <div class="feature-grid">
+                <label class="feature-toggle">
+                  <input type="checkbox" id="customFeatureRecruiter">
+                  <span class="feature-toggle-label">Recruiter</span>
+                </label>
+                <label class="feature-toggle">
+                  <input type="checkbox" id="customFeatureLeaveManagement">
+                  <span class="feature-toggle-label">Leave Management</span>
+                </label>
+                <label class="feature-toggle">
+                  <input type="checkbox" id="customFeaturePayrollManagement">
+                  <span class="feature-toggle-label">Payroll Management</span>
+                </label>
+                <label class="feature-toggle">
+                  <input type="checkbox" id="customFeaturePerformanceManagement">
+                  <span class="feature-toggle-label">Performance Management</span>
+                </label>
+                <label class="feature-toggle">
+                  <input type="checkbox" id="customFeatureTimeAttendance">
+                  <span class="feature-toggle-label">Time & Attendance</span>
+                </label>
+                <label class="feature-toggle">
+                  <input type="checkbox" id="customFeatureOutlineDocs">
+                  <span class="feature-toggle-label">Outline Docs</span>
+                </label>
+                <label class="feature-toggle">
+                  <input type="checkbox" id="customFeatureAiChat">
+                  <span class="feature-toggle-label">AI Chat</span>
+                </label>
+                <label class="feature-toggle">
+                  <input type="checkbox" id="customFeatureLms">
+                  <span class="feature-toggle-label">Seemplify Learning</span>
+                </label>
+              </div>
+            </div>
+          </details>
         </div>
         <div class="admin-modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeSubscriptionModal()">Cancel</button>
@@ -215,7 +284,207 @@
     </div>
   </div>
 
+  <!-- Customization Modal -->
+  <div id="customizationModal" class="admin-modal-overlay" onclick="closeCustomizationModal()">
+    <div class="admin-modal" onclick="event.stopPropagation()">
+      <div class="admin-modal-header">
+        <div class="admin-modal-title">Customize Subscription</div>
+        <button class="admin-modal-close" onclick="closeCustomizationModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <form id="customizationForm" onsubmit="submitCustomization(event)">
+        <div class="admin-modal-body">
+          <input type="hidden" id="customSubId">
+
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Max Members Override</label>
+              <input type="number" id="overrideMaxMembers" class="admin-form-input" min="0" placeholder="Leave empty to inherit">
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Max Teams Override</label>
+              <input type="number" id="overrideMaxTeams" class="admin-form-input" min="0" placeholder="Leave empty to inherit">
+            </div>
+          </div>
+
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Max Storage Override (GB)</label>
+              <input type="number" id="overrideMaxStorage" class="admin-form-input" min="0" placeholder="Leave empty to inherit">
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Max System Courses Override</label>
+              <input type="number" id="overrideMaxSystemCourses" class="admin-form-input" min="0" placeholder="Leave empty to inherit">
+            </div>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Feature Overrides</label>
+            <small style="color: var(--muted); display: block; margin-bottom: 8px;">Set to Inherit to use plan defaults.</small>
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">Recruiter</label>
+                <select id="overrideFeatureRecruiter" class="admin-form-select">
+                  <option value="inherit">Inherit</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Leave</label>
+                <select id="overrideFeatureLeaveManagement" class="admin-form-select">
+                  <option value="inherit">Inherit</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">Payroll</label>
+                <select id="overrideFeaturePayrollManagement" class="admin-form-select">
+                  <option value="inherit">Inherit</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Performance</label>
+                <select id="overrideFeaturePerformanceManagement" class="admin-form-select">
+                  <option value="inherit">Inherit</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">Time & Attendance</label>
+                <select id="overrideFeatureTimeAttendance" class="admin-form-select">
+                  <option value="inherit">Inherit</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Outline Docs</label>
+                <select id="overrideFeatureOutlineDocs" class="admin-form-select">
+                  <option value="inherit">Inherit</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="admin-form-row">
+              <div class="admin-form-group">
+                <label class="admin-form-label">AI Chat</label>
+                <select id="overrideFeatureAiChat" class="admin-form-select">
+                  <option value="inherit">Inherit</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="admin-form-group">
+                <label class="admin-form-label">Seemplify Learning</label>
+                <select id="overrideFeatureLms" class="admin-form-select">
+                  <option value="inherit">Inherit</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Notes (optional)</label>
+            <textarea id="overrideNotes" class="admin-form-textarea" rows="2" placeholder="Reason for override"></textarea>
+          </div>
+        </div>
+        <div class="admin-modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeCustomizationModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Overrides</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
+    const createFeatureCheckboxMap = {
+      recruiter: 'customFeatureRecruiter',
+      leaveManagement: 'customFeatureLeaveManagement',
+      payrollManagement: 'customFeaturePayrollManagement',
+      performanceManagement: 'customFeaturePerformanceManagement',
+      timeAttendance: 'customFeatureTimeAttendance',
+      outlineDocs: 'customFeatureOutlineDocs',
+      aiChat: 'customFeatureAiChat',
+      lms: 'customFeatureLms'
+    };
+
+    const overrideFeatureSelectMap = {
+      recruiter: 'overrideFeatureRecruiter',
+      leaveManagement: 'overrideFeatureLeaveManagement',
+      payrollManagement: 'overrideFeaturePayrollManagement',
+      performanceManagement: 'overrideFeaturePerformanceManagement',
+      timeAttendance: 'overrideFeatureTimeAttendance',
+      outlineDocs: 'overrideFeatureOutlineDocs',
+      aiChat: 'overrideFeatureAiChat',
+      lms: 'overrideFeatureLms'
+    };
+
+    function parseOptionalNonNegativeInt(inputId, { nullWhenEmpty = false } = {}) {
+      const element = document.getElementById(inputId);
+      const raw = String(element?.value || '').trim();
+      if (!raw) return nullWhenEmpty ? null : undefined;
+
+      const parsed = Number.parseInt(raw, 10);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error('Only non-negative whole numbers are allowed for limit overrides.');
+      }
+      return parsed;
+    }
+
+    function buildCreateCustomizations() {
+      const customLimits = {};
+      const maxMembers = parseOptionalNonNegativeInt('customMaxMembers');
+      const maxTeams = parseOptionalNonNegativeInt('customMaxTeams');
+      const maxStorage = parseOptionalNonNegativeInt('customMaxStorage');
+      const maxSystemCourses = parseOptionalNonNegativeInt('customMaxSystemCourses');
+
+      if (maxMembers !== undefined) customLimits.maxMembers = maxMembers;
+      if (maxTeams !== undefined) customLimits.maxTeams = maxTeams;
+      if (maxStorage !== undefined) customLimits.maxStorage = maxStorage;
+      if (maxSystemCourses !== undefined) customLimits.maxSystemCourses = maxSystemCourses;
+
+      const customFeatures = {};
+      Object.entries(createFeatureCheckboxMap).forEach(([key, inputId]) => {
+        const element = document.getElementById(inputId);
+        if (element?.checked) customFeatures[key] = true;
+      });
+
+      return {
+        customLimits: Object.keys(customLimits).length > 0 ? customLimits : undefined,
+        customFeatures: Object.keys(customFeatures).length > 0 ? customFeatures : undefined
+      };
+    }
+
+    function resetCustomizationForm() {
+      document.getElementById('customizationForm').reset();
+      document.getElementById('overrideMaxMembers').value = '';
+      document.getElementById('overrideMaxTeams').value = '';
+      document.getElementById('overrideMaxStorage').value = '';
+      document.getElementById('overrideMaxSystemCourses').value = '';
+      Object.values(overrideFeatureSelectMap).forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) element.value = 'inherit';
+      });
+    }
+
     function openSubscriptionModal() {
       document.getElementById('subscriptionForm').reset();
       document.getElementById('subscriptionModal').classList.add('active');
@@ -228,14 +497,23 @@
     async function submitSubscription(e) {
       e.preventDefault();
 
-      const data = {
-        organizationId: document.getElementById('organizationId').value,
-        planId: document.getElementById('planId').value,
-        billingCycle: document.getElementById('billingCycle').value,
-        startDate: document.getElementById('startDate').value || undefined,
-        endDate: document.getElementById('endDate').value || undefined,
-        notes: document.getElementById('notes').value
-      };
+      let data;
+      try {
+        const { customLimits, customFeatures } = buildCreateCustomizations();
+        data = {
+          organizationId: document.getElementById('organizationId').value,
+          planId: document.getElementById('planId').value,
+          billingCycle: document.getElementById('billingCycle').value,
+          startDate: document.getElementById('startDate').value || undefined,
+          endDate: document.getElementById('endDate').value || undefined,
+          notes: document.getElementById('notes').value,
+          customLimits,
+          customFeatures
+        };
+      } catch (error) {
+        alert(error.message || 'Invalid override values');
+        return;
+      }
 
       try {
         const response = await fetch('/api/admin/subscriptions', {
@@ -265,6 +543,102 @@
 
     function closeExtendModal() {
       document.getElementById('extendModal').classList.remove('active');
+    }
+
+    async function openCustomizationModal(subId) {
+      resetCustomizationForm();
+      document.getElementById('customSubId').value = subId;
+
+      try {
+        const response = await fetch(`/api/admin/subscriptions/${subId}`);
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to load subscription details.');
+        }
+
+        const subscription = result.subscription || {};
+        const customLimits = subscription.customLimits || {};
+        const customFeatures = subscription.customFeatures || {};
+
+        document.getElementById('overrideMaxMembers').value = customLimits.maxMembers ?? '';
+        document.getElementById('overrideMaxTeams').value = customLimits.maxTeams ?? '';
+        document.getElementById('overrideMaxStorage').value = customLimits.maxStorage ?? '';
+        document.getElementById('overrideMaxSystemCourses').value = customLimits.maxSystemCourses ?? '';
+
+        Object.entries(overrideFeatureSelectMap).forEach(([key, inputId]) => {
+          const element = document.getElementById(inputId);
+          const value = customFeatures[key];
+          if (!element) return;
+          if (value === true) {
+            element.value = 'enabled';
+          } else if (value === false) {
+            element.value = 'disabled';
+          } else {
+            element.value = 'inherit';
+          }
+        });
+
+        document.getElementById('customizationModal').classList.add('active');
+      } catch (error) {
+        console.error('Error loading customization data:', error);
+        alert(error.message || 'Failed to load subscription customization data');
+      }
+    }
+
+    function closeCustomizationModal() {
+      document.getElementById('customizationModal').classList.remove('active');
+    }
+
+    async function submitCustomization(e) {
+      e.preventDefault();
+
+      const subId = document.getElementById('customSubId').value;
+      if (!subId) return;
+
+      let customLimits;
+      try {
+        customLimits = {
+          maxMembers: parseOptionalNonNegativeInt('overrideMaxMembers', { nullWhenEmpty: true }),
+          maxTeams: parseOptionalNonNegativeInt('overrideMaxTeams', { nullWhenEmpty: true }),
+          maxStorage: parseOptionalNonNegativeInt('overrideMaxStorage', { nullWhenEmpty: true }),
+          maxSystemCourses: parseOptionalNonNegativeInt('overrideMaxSystemCourses', { nullWhenEmpty: true })
+        };
+      } catch (error) {
+        alert(error.message || 'Invalid override limits');
+        return;
+      }
+
+      const customFeatures = {};
+      Object.entries(overrideFeatureSelectMap).forEach(([key, inputId]) => {
+        const value = String(document.getElementById(inputId)?.value || 'inherit');
+        if (value === 'enabled') customFeatures[key] = true;
+        else if (value === 'disabled') customFeatures[key] = false;
+        else customFeatures[key] = null;
+      });
+
+      const data = {
+        customLimits,
+        customFeatures,
+        notes: document.getElementById('overrideNotes').value
+      };
+
+      try {
+        const response = await fetch(`/api/admin/subscriptions/${subId}/customizations`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const result = await response.json();
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          alert(result.error || 'Failed to update subscription customizations');
+        }
+      } catch (error) {
+        console.error('Error updating customization:', error);
+        alert('Failed to update subscription customizations');
+      }
     }
 
     async function submitExtension(e) {
@@ -315,6 +689,31 @@
       } catch (error) {
         console.error('Error:', error);
         alert('Failed to suspend subscription');
+      }
+    }
+
+    async function expireSubscription(subId, organizationName) {
+      const reason = prompt('Reason for expiring this plan now (optional):');
+      if (reason === null) return;
+
+      if (!confirm(`Expire the current plan for ${organizationName || 'this organization'} now? Access will lock immediately and the grace period will start from today.`)) return;
+
+      try {
+        const response = await fetch(`/api/admin/subscriptions/${subId}/expire`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          const result = await response.json();
+          alert(result.error || 'Failed to expire subscription');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to expire subscription');
       }
     }
 

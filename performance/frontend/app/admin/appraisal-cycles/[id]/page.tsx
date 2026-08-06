@@ -39,6 +39,13 @@ interface AppraisalCycle {
         completedAppraisals: number;
         pendingSelfAssessment: number;
         pendingManagerReview: number;
+        pendingCalibration?: number;
+        pendingFinalReview?: number;
+        selfAssessmentSubmitted?: number;
+        managerReviewSubmitted?: number;
+        finalized?: number;
+        overdueAppraisals?: number;
+        averageRating?: number | null;
     };
 }
 
@@ -241,7 +248,44 @@ export default function AppraisalCycleDetailsPage() {
                                         <Typography variant="caption" color="text.secondary">Completed</Typography>
                                     </Box>
                                 </Grid>
+                                <Grid size={{ xs: 6 }}>
+                                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'warning.lighter', borderRadius: 1 }}>
+                                        <Typography variant="h6" fontWeight={700} color="warning.main">
+                                            {cycle.stats?.pendingSelfAssessment || 0}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">Pending Self</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid size={{ xs: 6 }}>
+                                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'info.lighter', borderRadius: 1 }}>
+                                        <Typography variant="h6" fontWeight={700} color="info.main">
+                                            {cycle.stats?.pendingManagerReview || 0}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">Pending Manager</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid size={{ xs: 6 }}>
+                                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'secondary.lighter', borderRadius: 1 }}>
+                                        <Typography variant="h6" fontWeight={700} color="secondary.main">
+                                            {cycle.stats?.pendingCalibration || 0}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">Pending Calibration</Typography>
+                                    </Box>
+                                </Grid>
+                                <Grid size={{ xs: 6 }}>
+                                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'error.lighter', borderRadius: 1 }}>
+                                        <Typography variant="h6" fontWeight={700} color="error.main">
+                                            {cycle.stats?.overdueAppraisals || 0}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">Overdue</Typography>
+                                    </Box>
+                                </Grid>
                             </Grid>
+                            {cycle.stats?.averageRating != null && (
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: 'block' }}>
+                                    Average final rating: {cycle.stats.averageRating}
+                                </Typography>
+                            )}
                         </CardContent>
                     </Card>
 

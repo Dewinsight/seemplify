@@ -1,4 +1,19 @@
 import mongoose from 'mongoose'
+import { normalizeAppAccess } from '../utils/appAccess.js'
+import {
+  buildSeedDepartments,
+  buildDepartmentLookup,
+  getGeneralDepartment,
+  normalizeDepartmentName
+} from '../utils/departments.js'
+
+function normalizeEmployeeId(value = '') {
+  return String(value || '').trim()
+}
+
+function getEmployeeIdKey(value = '') {
+  return normalizeEmployeeId(value).toLowerCase()
+}
 
 const OrganizationSchema = new mongoose.Schema({
   name: {
@@ -27,6 +42,41 @@ const OrganizationSchema = new mongoose.Schema({
       type: String,
       enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff'],
       default: 'recruiter'
+    },
+    designation: {
+      type: String,
+      trim: true,
+      maxLength: 120
+    },
+    employeeId: {
+      type: String,
+      trim: true,
+      maxLength: 80
+    },
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null
+    },
+    appAccess: {
+      mode: {
+        type: String,
+        enum: ['all', 'selected'],
+        default: 'all'
+      },
+      appIds: {
+        type: [String],
+        default: []
+      }
+    },
+    onboardingStatusOverride: {
+      type: String,
+      enum: ['not_started', 'pending', 'in_progress', 'completed', 'cancelled'],
+      default: undefined
+    },
+    onboardingStatusUpdatedAt: Date,
+    onboardingStatusUpdatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount'
     },
     joinedAt: {
       type: Date,
@@ -57,13 +107,71 @@ const OrganizationSchema = new mongoose.Schema({
     requireApproval: {
       type: Boolean,
       default: true
+    },
+    simpleLms: {
+      defaultCurrency: {
+        type: String,
+        trim: true,
+        uppercase: true,
+        default: 'NGN'
+      },
+      allowedCurrencies: {
+        type: [String],
+        default: ['NGN']
+      }
     }
   },
+  departments: [{
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      maxLength: 120
+    },
+    description: {
+      type: String,
+      trim: true,
+      maxLength: 500
+    },
+    parentDepartment: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null
+    },
+    headAccount: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount',
+      default: null
+    },
+    isSystem: {
+      type: Boolean,
+      default: false
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   // For linking with SmartHR organization during migration
   smarthrOrganizationId: {
     type: String,
     sparse: true,
     index: true
+  },
+  // Zulip realm ID for multi-organization isolation
+  // Each organization gets its own Zulip realm
+  zulipRealmId: {
+    type: String,
+    sparse: true,
+    index: true
+  },
+  // Zulip realm name (for display purposes)
+  zulipRealmName: {
+    type: String,
+    sparse: true
   },
   // Active subscription reference
   activeSubscription: {
@@ -106,6 +214,46 @@ OrganizationSchema.index({ subscriptionExpiresAt: 1 })
 
 // Pre-save middleware to update timestamp
 OrganizationSchema.pre('save', function(next) {
+  if (!Array.isArray(this.departments) || this.departments.length === 0) {
+    this.departments = buildSeedDepartments()
+  }
+
+  const departmentLookup = buildDepartmentLookup(this.departments)
+
+  if (Array.isArray(this.members)) {
+    this.members.forEach((member) => {
+      if (member.department && !departmentLookup.has(member.department.toString())) {
+        member.department = null
+      }
+    })
+  }
+
+  if (Array.isArray(this.departments)) {
+    this.departments.forEach((department) => {
+      department.updatedAt = Date.now()
+    })
+  }
+
+  if (this.settings?.simpleLms) {
+    const defaultCurrency = String(this.settings.simpleLms.defaultCurrency || 'NGN')
+      .trim()
+      .toUpperCase()
+      .slice(0, 3) || 'NGN'
+
+    const normalizedAllowedCurrencies = Array.isArray(this.settings.simpleLms.allowedCurrencies)
+      ? this.settings.simpleLms.allowedCurrencies
+        .map(currency => String(currency || '').trim().toUpperCase().slice(0, 3))
+        .filter(Boolean)
+      : []
+
+    if (!normalizedAllowedCurrencies.includes(defaultCurrency)) {
+      normalizedAllowedCurrencies.unshift(defaultCurrency)
+    }
+
+    this.settings.simpleLms.defaultCurrency = defaultCurrency
+    this.settings.simpleLms.allowedCurrencies = Array.from(new Set(normalizedAllowedCurrencies))
+  }
+
   this.updatedAt = Date.now()
   next()
 })
@@ -135,8 +283,156 @@ OrganizationSchema.methods.getMemberRole = function(accountId) {
   return member ? member.role : null
 }
 
+OrganizationSchema.methods.getGeneralDepartment = function() {
+  return getGeneralDepartment(this.departments || [])
+}
+
+OrganizationSchema.methods.getDepartmentById = function(departmentId) {
+  const targetId = departmentId?.toString()
+  return (this.departments || []).find((department) => department._id.toString() === targetId) || null
+}
+
+OrganizationSchema.methods.isDepartmentHead = function(accountId, departmentId = null) {
+  return (this.departments || []).some((department) => {
+    if (!department.headAccount) return false
+    if (department.headAccount.toString() !== accountId.toString()) return false
+    if (!departmentId) return true
+    return department._id.toString() === departmentId.toString()
+  })
+}
+
+OrganizationSchema.methods.addDepartment = async function(data = {}, createdBy = null) {
+  const name = normalizeDepartmentName(data.name)
+  if (!name) {
+    throw new Error('Department name is required')
+  }
+
+  const exists = (this.departments || []).some(
+    (department) => normalizeDepartmentName(department.name).toLowerCase() === name.toLowerCase()
+  )
+  if (exists) {
+    throw new Error('Department with this name already exists')
+  }
+
+  const parentDepartment = data.parentDepartment || this.getGeneralDepartment()?._id || null
+  if (parentDepartment && !this.getDepartmentById(parentDepartment)) {
+    throw new Error('Parent department not found')
+  }
+
+  this.departments.push({
+    name,
+    description: String(data.description || '').trim(),
+    parentDepartment,
+    headAccount: data.headAccount || null,
+    isSystem: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    createdBy
+  })
+
+  await this.save()
+  return this.departments[this.departments.length - 1]
+}
+
+OrganizationSchema.methods.updateDepartment = async function(departmentId, updates = {}) {
+  const department = this.getDepartmentById(departmentId)
+  if (!department) {
+    throw new Error('Department not found')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'name')) {
+    const nextName = normalizeDepartmentName(updates.name)
+    if (!nextName) {
+      throw new Error('Department name is required')
+    }
+    const duplicate = (this.departments || []).some((candidate) =>
+      candidate._id.toString() !== department._id.toString() &&
+      normalizeDepartmentName(candidate.name).toLowerCase() === nextName.toLowerCase()
+    )
+    if (duplicate) {
+      throw new Error('Department with this name already exists')
+    }
+    department.name = nextName
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'description')) {
+    department.description = String(updates.description || '').trim()
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'headAccount')) {
+    department.headAccount = updates.headAccount || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'parentDepartment')) {
+    const parentDepartment = updates.parentDepartment || null
+    if (parentDepartment && parentDepartment.toString() === department._id.toString()) {
+      throw new Error('Department cannot be its own parent')
+    }
+    if (parentDepartment && !this.getDepartmentById(parentDepartment)) {
+      throw new Error('Parent department not found')
+    }
+    department.parentDepartment = parentDepartment
+  }
+
+  department.updatedAt = new Date()
+  await this.save()
+  return department
+}
+
+OrganizationSchema.methods.getDerivedMemberDepartmentId = async function(accountId) {
+  const Team = mongoose.model('AiinTeam')
+  const teams = await Team.find({
+    organization: this._id,
+    'members.account': accountId,
+    'members.status': 'active'
+  }).select('department').lean()
+
+  const departmentIds = Array.from(new Set(
+    teams
+      .map((team) => team.department?.toString())
+      .filter(Boolean)
+  ))
+
+  return departmentIds[0] || null
+}
+
+OrganizationSchema.methods.syncMemberDepartmentFromTeams = async function(accountId) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString()
+  )
+
+  if (!member) {
+    return null
+  }
+
+  const departmentId = await this.getDerivedMemberDepartmentId(accountId)
+  member.department = departmentId
+
+  const Account = mongoose.model('AiinAccount')
+  await Account.updateOne(
+    { _id: accountId, 'organizations.organization': this._id },
+    { $set: { 'organizations.$.department': departmentId } }
+  )
+
+  await this.save()
+  return departmentId
+}
+
+OrganizationSchema.methods.syncMemberDepartmentsFromTeams = async function(accountIds = []) {
+  for (const accountId of accountIds) {
+    await this.syncMemberDepartmentFromTeams(accountId)
+  }
+}
+
 // Add member to organization
-OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null) {
+OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null, appAccess = null, options = {}) {
+  const normalizedAppAccess = normalizeAppAccess(appAccess)
+  const departmentId = null
+  const designation = String(options.designation || '').trim() || undefined
+  const employeeId = normalizeEmployeeId(options.employeeId) || undefined
+
+  this.assertActiveEmployeeIdAvailable(employeeId, accountId)
+
   // Check if already a member
   const existing = this.members.find(
     m => m.account.toString() === accountId.toString()
@@ -149,6 +445,10 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
     // Reactivate inactive member
     existing.status = 'active'
     existing.role = role
+    existing.appAccess = normalizedAppAccess
+    existing.designation = designation
+    existing.employeeId = employeeId
+    existing.department = departmentId
     existing.joinedAt = new Date()
     existing.invitedBy = invitedBy
     await this.save()
@@ -162,9 +462,26 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
           organizations: {
             organization: this._id,
             role: role,
+            department: departmentId,
+            appAccess: normalizedAppAccess,
             joinedAt: new Date(),
             isActive: true
           }
+        }
+      }
+    )
+    await Account.updateOne(
+      {
+        _id: accountId,
+        $or: [
+          { currentOrganization: { $exists: false } },
+          { currentOrganization: null }
+        ]
+      },
+      {
+        $set: {
+          currentOrganization: this._id,
+          updatedAt: new Date()
         }
       }
     )
@@ -175,6 +492,10 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
   this.members.push({
     account: accountId,
     role: role,
+    designation,
+    employeeId,
+    department: departmentId,
+    appAccess: normalizedAppAccess,
     joinedAt: new Date(),
     invitedBy: invitedBy,
     status: 'active'
@@ -191,9 +512,26 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
         organizations: {
           organization: this._id,
           role: role,
+          department: departmentId,
+          appAccess: normalizedAppAccess,
           joinedAt: new Date(),
           isActive: true
         }
+      }
+    }
+  )
+  await Account.updateOne(
+    {
+      _id: accountId,
+      $or: [
+        { currentOrganization: { $exists: false } },
+        { currentOrganization: null }
+      ]
+    },
+    {
+      $set: {
+        currentOrganization: this._id,
+        updatedAt: new Date()
       }
     }
   )
@@ -279,6 +617,99 @@ OrganizationSchema.methods.updateMemberRole = async function(accountId, newRole,
   )
 
   return this
+}
+
+OrganizationSchema.methods.updateMemberDetails = async function(accountId, updates = {}, updatedBy) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString()
+  )
+
+  if (!member) {
+    throw new Error('Member not found')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'designation')) {
+    member.designation = String(updates.designation || '').trim() || undefined
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'employeeId')) {
+    const employeeId = normalizeEmployeeId(updates.employeeId) || undefined
+    this.assertActiveEmployeeIdAvailable(employeeId, accountId)
+    member.employeeId = employeeId
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'department')) {
+    throw new Error('Department is derived from active team assignments')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'appAccess')) {
+    const normalizedAppAccess = normalizeAppAccess(updates.appAccess)
+    member.appAccess = normalizedAppAccess
+
+    const Account = mongoose.model('AiinAccount')
+    await Account.updateOne(
+      { _id: accountId, 'organizations.organization': this._id },
+      { $set: { 'organizations.$.appAccess': normalizedAppAccess } }
+    )
+  }
+
+  member.updatedAt = new Date()
+  member.updatedBy = updatedBy
+
+  await this.save()
+
+  return member
+}
+
+OrganizationSchema.methods.findActiveMemberByEmployeeId = function(employeeId, excludeAccountId = null) {
+  const employeeIdKey = getEmployeeIdKey(employeeId)
+  if (!employeeIdKey) return null
+
+  return (this.members || []).find((member) => {
+    if (member.status !== 'active') return false
+    if (excludeAccountId && member.account?.toString() === excludeAccountId.toString()) {
+      return false
+    }
+
+    return getEmployeeIdKey(member.employeeId) === employeeIdKey
+  }) || null
+}
+
+OrganizationSchema.methods.assertActiveEmployeeIdAvailable = function(employeeId, excludeAccountId = null) {
+  const normalizedEmployeeId = normalizeEmployeeId(employeeId)
+  if (!normalizedEmployeeId) return
+
+  const conflictingMember = this.findActiveMemberByEmployeeId(normalizedEmployeeId, excludeAccountId)
+  if (conflictingMember) {
+    throw new Error('Employee ID is already assigned to another active member')
+  }
+}
+
+OrganizationSchema.methods.setMemberOnboardingStatusOverride = async function(accountId, status, updatedBy) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString()
+  )
+
+  if (!member) {
+    throw new Error('Member not found')
+  }
+
+  const allowedStatuses = ['not_started', 'pending', 'in_progress', 'completed', 'cancelled']
+  const normalizedStatus = status == null ? null : String(status || '').trim().toLowerCase()
+
+  if (normalizedStatus && !allowedStatuses.includes(normalizedStatus)) {
+    throw new Error(`Invalid onboarding status. Must be one of: ${allowedStatuses.join(', ')}`)
+  }
+
+  member.onboardingStatusOverride = normalizedStatus || undefined
+  member.onboardingStatusUpdatedAt = new Date()
+  member.onboardingStatusUpdatedBy = updatedBy || undefined
+  member.updatedAt = new Date()
+  member.updatedBy = updatedBy || undefined
+
+  await this.save()
+
+  return member
 }
 
 // Transfer ownership (explicit method)

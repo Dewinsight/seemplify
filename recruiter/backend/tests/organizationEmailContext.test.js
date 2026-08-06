@@ -1,80 +1,104 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const { syncOrganizationNameFromIdp } = require('../utils/organizationIdentitySync');
 
-function mockOrganizationLookup(resolveValue) {
-  const requestedIds = [];
-  const lookupOrganization = async (id) => {
-    requestedIds.push(String(id));
-    return resolveValue(id);
-  };
-
-  return { requestedIds, lookupOrganization };
-}
-
-test('uses a populated job organization without a database lookup', async () => {
-  let lookupCalled = false;
-  const lookupOrganization = async () => {
-    lookupCalled = true;
-    throw new Error('Unexpected lookup');
-  };
-
-  const organization = await resolveOrganizationForEmail({
-    job: { organization: { _id: 'job-org', name: 'Acme Ltd' } },
-    organization: { _id: 'stale-org', name: 'Mega' }
-  }, { lookupOrganization });
-
-  assert.equal(organization.name, 'Acme Ltd');
-  assert.equal(lookupCalled, false);
-});
-
-test('resolves the job organization before a stale user organization', async () => {
-  const { requestedIds, lookupOrganization } = mockOrganizationLookup((id) => (
-    String(id) === 'job-org'
-      ? { _id: 'job-org', name: 'Acme Ltd' }
-      : { _id: 'stale-org', name: 'Mega' }
-  ));
-
-  const organization = await resolveOrganizationForEmail({
-    job: { organization: 'job-org' },
-    organization: { _id: 'stale-org', name: 'Mega' }
-  }, { lookupOrganization });
-
-  assert.equal(organization.name, 'Acme Ltd');
-  assert.deepEqual(requestedIds, ['job-org']);
-});
-
-test('uses the explicit organization id for a jobless interview', async () => {
-  const { lookupOrganization } = mockOrganizationLookup(() => ({ _id: 'current-org', name: 'Current Org' }));
-
-  const organization = await resolveOrganizationForEmail({
-    organizationId: 'current-org'
-  }, { lookupOrganization });
-
-  assert.equal(organization.name, 'Current Org');
-});
-
-test('does not fall back when the job organization cannot be resolved', async () => {
-  const { requestedIds, lookupOrganization } = mockOrganizationLookup(() => null);
-
-  await assert.rejects(
-    resolveOrganizationForEmail({
-      job: { organization: 'missing-job-org' },
-      organization: { _id: 'stale-org', name: 'Mega' }
-    }, { lookupOrganization }),
-    /organization name could not be resolved/
+test('uses a populated job organization without a lookup', async () => {
+  const organization = { _id: 'org-1', name: 'Acme Ltd' };
+  const resolved = await resolveOrganizationForEmail(
+    { job: { organization } },
+    { lookupOrganization: async () => assert.fail('lookup should not run') }
   );
-  assert.deepEqual(requestedIds, ['missing-job-org']);
+
+  assert.equal(resolved, organization);
 });
 
-test('rejects the send when no organization name can be resolved', async () => {
-  const { lookupOrganization } = mockOrganizationLookup(() => null);
+test('job organization wins over stale request context', async () => {
+  const resolved = await resolveOrganizationForEmail(
+    {
+      job: { organization: 'job-org' },
+      organization: { _id: 'stale-org', name: 'Mega' }
+    },
+    {
+      lookupOrganization: async (id) => {
+        assert.equal(id, 'job-org');
+        return { _id: id, name: 'Acme Ltd' };
+      }
+    }
+  );
 
+  assert.equal(resolved.name, 'Acme Ltd');
+});
+
+test('uses interview organization for a jobless interview', async () => {
+  const resolved = await resolveOrganizationForEmail(
+    { interview: { organizationId: 'interview-org' } },
+    {
+      lookupOrganization: async (id) => ({ _id: id, name: 'Interview Org' })
+    }
+  );
+
+  assert.equal(resolved.name, 'Interview Org');
+});
+
+test('repairs a legacy Mega name from the job organization IdP record', async () => {
+  const localOrganization = {
+    _id: 'job-org',
+    idpOrganizationId: 'idp-org',
+    name: 'Mega'
+  };
+  let persistedUpdate = null;
+
+  const resolved = await resolveOrganizationForEmail(
+    {
+      job: { organization: 'job-org' },
+      organizationId: 'request-org',
+      userId: 'user-1'
+    },
+    {
+      lookupOrganization: async (id) => {
+        assert.equal(id, 'job-org');
+        return localOrganization;
+      },
+      refreshOrganization: async (organization, userId) => {
+        assert.equal(organization, localOrganization);
+        assert.equal(userId, 'user-1');
+        return syncOrganizationNameFromIdp(
+          organization,
+          { id: 'idp-org', name: 'Acme Ltd' },
+          {
+            persistName: async (organizationId, name) => {
+              persistedUpdate = { organizationId, name };
+            }
+          }
+        );
+      }
+    }
+  );
+
+  assert.equal(resolved.name, 'Acme Ltd');
+  assert.deepEqual(persistedUpdate, {
+    organizationId: 'job-org',
+    name: 'Acme Ltd'
+  });
+});
+
+test('does not fall back when the job organization fails', async () => {
   await assert.rejects(
     resolveOrganizationForEmail(
-      { organizationId: 'missing-org' },
-      { lookupOrganization }
+      {
+        job: { organization: 'missing-job-org' },
+        organization: { _id: 'other-org', name: 'Other Org' }
+      },
+      { lookupOrganization: async () => null }
     ),
-    /organization name could not be resolved/
+    /organization could not be resolved/
+  );
+});
+
+test('rejects email without organization context', async () => {
+  await assert.rejects(
+    resolveOrganizationForEmail(),
+    /organization could not be resolved/
   );
 });

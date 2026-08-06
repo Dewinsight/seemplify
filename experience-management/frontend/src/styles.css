@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 90 14% 97%;
+    --foreground: 135 10% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 135 10% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 135 10% 13%;
+    --primary: 145 19% 24%;
+    --primary-foreground: 90 20% 98%;
+    --secondary: 100 11% 91%;
+    --secondary-foreground: 135 13% 22%;
+    --muted: 90 12% 93%;
+    --muted-foreground: 120 5% 43%;
+    --accent: 82 18% 89%;
+    --accent-foreground: 135 14% 19%;
+    --destructive: 2 62% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 100 8% 84%;
+    --input: 100 8% 78%;
+    --ring: 145 19% 36%;
+    --radius: 0.55rem;
+  }
+  * { @apply border-border; }
+  html { @apply bg-background; }
+  body { @apply m-0 min-w-[320px] bg-background font-sans text-foreground antialiased; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+  button, input, textarea, select { font: inherit; }
+  a { @apply text-inherit no-underline; }
+  ::selection { background: hsl(82 28% 79%); }
+}
+
+@layer components {
+  .page-title { @apply text-2xl font-semibold tracking-[-0.025em] sm:text-[1.75rem]; }
+  .page-description { @apply mt-1 max-w-3xl text-sm leading-6 text-muted-foreground; }
+  .section-title { @apply text-base font-semibold tracking-[-0.01em]; }
+  .field-label { @apply mb-1.5 block text-sm font-medium; }
+  .data-table { @apply w-full border-collapse text-sm; }
+  .data-table th { @apply border-b bg-muted/45 px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground; }
+  .data-table td { @apply border-b px-4 py-3 align-middle; }
+  .data-table tbody tr { @apply transition-colors hover:bg-muted/30; }
+  .metric-value { @apply text-2xl font-semibold tracking-[-0.035em]; }
+}
+
+/* Touch browsers use overlay scrollbars. Prevent react-remove-scroll from
+   applying desktop scrollbar compensation that widens the mobile viewport. */
+@media (hover: none) and (pointer: coarse) {
+  html body[data-scroll-locked] {
+    --removed-body-scroll-bar-size: 0px !important;
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+/* Radix delegates modal scroll locking to react-remove-scroll. Mobile browser
+   emulation can report a desktop-sized innerWidth while retaining the mobile
+   layout viewport, which is then mistaken for an 89px scrollbar. Scope the
+   zero-compensation fallback to this responsive lesson rather than changing
+   scrollbar handling for every desktop dialog. */
+@media (max-width: 767px) {
+  html[data-section-tutorial-open] { overflow-x: clip; }
+  html[data-section-tutorial-open] body[data-scroll-locked] {
+    --removed-body-scroll-bar-size: 0px !important;
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+}
+
+[data-sonner-toaster] {
+  pointer-events: none;
+}
+
+[data-sonner-toast] {
+  pointer-events: none;
+}
+
+[data-sonner-toast] button,
+[data-sonner-toast] a,
+[data-sonner-toast] [role="button"] {
+  pointer-events: auto;
+}
+
+.email-editor .tiptap p { margin: 0.45rem 0; }
+.email-editor .tiptap p:first-child { margin-top: 0; }
+.email-editor .tiptap p:last-child { margin-bottom: 0; }
+.email-editor .tiptap ul { margin: 0.6rem 0; list-style: disc; padding-left: 1.5rem; }
+.email-editor .tiptap ol { margin: 0.6rem 0; list-style: decimal; padding-left: 1.5rem; }
+.email-editor .tiptap li > p { margin: 0.15rem 0; }
+.email-editor .tiptap blockquote { margin: 0.75rem 0; border-left: 2px solid hsl(var(--border)); padding-left: 0.85rem; color: hsl(var(--muted-foreground)); }
+.email-editor .tiptap a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
+.email-editor .tiptap p.is-editor-empty:first-child::before { color: hsl(var(--muted-foreground)); content: attr(data-placeholder); float: left; height: 0; pointer-events: none; }

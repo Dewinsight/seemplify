@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 from frappe.model.naming import append_number_if_name_exists
-from frappe.utils import escape_html, random_string
+from frappe.utils import escape_html, random_string, validate_email_address
 from frappe.website.utils import cleanup_page_name, is_signup_disabled
 import requests
 
@@ -38,9 +38,50 @@ def after_insert(doc, method):
 
 
 @frappe.whitelist(allow_guest=True)
-def sign_up(email, full_name, verify_terms, user_category):
+def reset_password(user):
+	"""
+	Send password reset email to user. Wraps Frappe's reset_password for custom login page.
+	Accepts email or username. Returns True on success, raises on error.
+	"""
+	if not user or not str(user).strip():
+		frappe.throw(_("Please enter your email"))
+
+	# Resolve user by email or username
+	user_str = str(user).strip().lower()
+	user_name = frappe.db.get_value("User", {"email": user_str}, "name")
+	if not user_name:
+		user_name = frappe.db.get_value("User", user_str, "name")
+	if not user_name:
+		user_name = frappe.db.get_value("User", {"username": user_str}, "name")
+	if not user_name:
+		frappe.throw(_("User with email address {0} does not exist").format(user_str))
+
+	user_doc = frappe.get_doc("User", user_name)
+	if user_doc.name == "Administrator":
+		frappe.throw(_("Password reset for Administrator is not allowed"))
+	if not user_doc.enabled:
+		frappe.throw(_("User is disabled"))
+
+	user_doc.validate_reset_password()
+	user_doc._reset_password(send_email=True)
+	return True
+
+
+@frappe.whitelist(allow_guest=True)
+def sign_up(email, full_name, verify_terms=0, user_category=None):
 	if is_signup_disabled():
 		frappe.throw(_("Sign Up is disabled"), _("Not Allowed"))
+
+	email = (email or "").strip().lower()
+	full_name = (full_name or "").strip()
+	verify_terms = int(verify_terms or 0)
+	user_category = (user_category or "").strip()
+
+	if not full_name:
+		return 0, _("Please enter your full name")
+
+	if not email or not validate_email_address(email):
+		return 0, _("Please enter a valid email address")
 
 	user = frappe.db.get("User", {"email": email})
 	if user:
@@ -69,6 +110,7 @@ def sign_up(email, full_name, verify_terms, user_category):
 			"enabled": 1,
 			"new_password": random_string(10),
 			"user_type": "Website User",
+			"send_welcome_email": 1,
 		}
 	)
 	user.flags.ignore_permissions = True
@@ -106,9 +148,9 @@ def on_login(login_manager):
 	1. Setting home page for LMS app
 	2. Processing OAuth/SSO logins to assign LMS roles from IDP claims
 	"""
-	default_app = frappe.db.get_single_value("System Settings", "default_app")
-	if default_app == "lms":
-		frappe.local.response["home_page"] = "/lms"
+	# Always route web logins to LMS instead of Desk/App framework.
+	frappe.local.response["home_page"] = "/lms"
+	frappe.local.response["redirect_to"] = "/lms"
 	
 	# Check if this was an OAuth login and process LMS role
 	process_oauth_lms_role(login_manager)
@@ -158,10 +200,11 @@ def process_oauth_lms_role(login_manager):
 def get_oauth_userinfo_from_idp(user_email):
 	"""
 	Fetch user info from IDP's /me endpoint.
-	Uses the Social Login Key configuration for Seemplify.
+	Returns None if Social Login Key is not configured (social login disabled).
 	"""
 	try:
-		# Get the Social Login Key for Seemplify
+		if not frappe.db.exists("Social Login Key", "Seemplify"):
+			return None
 		social_login_key = frappe.get_doc("Social Login Key", "Seemplify")
 		
 		if not social_login_key or not social_login_key.enabled:

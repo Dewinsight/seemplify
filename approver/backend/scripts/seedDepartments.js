@@ -4,19 +4,24 @@ const path = require('path');
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
-const DepartmentSchema = new mongoose.Schema({
-    name: { type: String, required: true, unique: true },
-    description: String,
-    manager: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    createdAt: { type: Date, default: Date.now }
-});
-
-const Department = mongoose.model('Department', DepartmentSchema);
+const Department = require('../models/Department');
+const Organization = require('../models/Organization');
 
 const seedDepartments = async () => {
     try {
         await mongoose.connect(process.env.MONGO_URI);
         console.log('MongoDB Connected');
+
+        // Find or create Testing org
+        let org = await Organization.findOne({ slug: 'testing' });
+        if (!org) {
+            org = await new Organization({
+                name: 'Testing',
+                slug: 'testing',
+                description: 'Default organization'
+            }).save();
+            console.log('Created Testing organization');
+        }
 
         const depts = [
             { name: 'IT', description: 'Information Technology' },
@@ -28,9 +33,9 @@ const seedDepartments = async () => {
         ];
 
         for (const d of depts) {
-            const exists = await Department.findOne({ name: d.name });
+            const exists = await Department.findOne({ name: d.name, organization: org._id });
             if (!exists) {
-                await Department.create(d);
+                await Department.create({ ...d, organization: org._id });
                 console.log(`Created: ${d.name}`);
             } else {
                 console.log(`Exists: ${d.name}`);

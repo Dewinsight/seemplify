@@ -9,10 +9,6 @@ import {
   TrendingUp,
   Target,
   FileText,
-  MessageSquare,
-  Video,
-  GraduationCap,
-  BarChart3,
   Users,
   Settings,
   LogOut,
@@ -27,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useUserContext, useCurrentTeam } from '@/lib/hooks';
 import { authApi } from '@/lib/api';
+import PageGuide from './PageGuide';
 
 type NavItem = {
   name: string;
@@ -72,12 +69,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navigation: NavItem[] = useMemo(() => {
     const main: NavItem[] = [
       { name: 'Dashboard', href: '/dashboard', icon: TrendingUp, section: 'main' },
-      { name: 'My OKRs', href: '/okrs', icon: Target, badge: 'AI', section: 'main' },
-      { name: 'Appraisals', href: '/appraisals', icon: FileText, badge: 'AI', section: 'main' },
-      { name: 'Reviews', href: '/reviews', icon: BarChart3, badge: 'AI', section: 'main' },
-      { name: 'Feedback', href: '/feedback', icon: MessageSquare, section: 'main' },
-      { name: '1:1 Meetings', href: '/one-on-ones', icon: Video, section: 'main' },
-      { name: 'Development', href: '/development', icon: GraduationCap, section: 'main' },
+      { name: 'My OKRs', href: '/okrs', icon: Target, section: 'main' },
+      { name: 'Appraisals', href: '/appraisals', icon: FileText, section: 'main' },
     ];
 
     const manager: NavItem[] = isManager
@@ -88,7 +81,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     const admin: NavItem[] = isHRAdmin
       ? [
-        { name: 'Admin Panel', href: '/admin/appraisal-cycles', icon: Settings, section: 'admin' },
+        { name: 'Admin Panel', href: '/admin', icon: Settings, section: 'admin' },
       ]
       : [];
 
@@ -157,8 +150,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className={cn(
               "mx-auto mb-6 h-16 w-16 rounded-2xl flex items-center justify-center",
               isDarkMode
-                ? "bg-zinc-800/70 text-purple-300"
-                : "bg-purple-50 text-purple-600"
+                ? "bg-zinc-800/70 text-teal-300"
+                : "bg-teal-50 text-teal-700"
             )}>
               <Building2 className="h-8 w-8" />
             </div>
@@ -182,7 +175,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </p>
             <a
               href={hubUrl}
-              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 via-cyan-500 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition-all hover:shadow-teal-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
             >
               <LayoutGrid className="h-4 w-4" />
               Return to Hub
@@ -209,10 +202,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           : "border-gray-200/60 bg-white/80"
       )}>
         <div className="mx-auto px-4 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
+          <div className="flex h-[4.25rem] items-center justify-between">
             {/* Logo */}
             <Link href="https://seemplifyai.com" className="flex items-center gap-3 group">
-              <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 flex items-center justify-center shadow-lg shadow-purple-500/20 transition-transform duration-300 group-hover:scale-105">
+              <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-teal-500 via-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-teal-500/20 transition-transform duration-300 group-hover:scale-105">
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
               <div className="hidden sm:block">
@@ -229,7 +222,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center gap-2">
-              {navigation.filter(n => n.section === 'main').slice(0, 5).map((item) => {
+              {navigation.filter(n => n.section === 'main').map((item) => {
                 const active = pathname === item.href;
                 return (
                   <Link
@@ -249,7 +242,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     <item.icon className="h-4 w-4" />
                     {item.name}
                     {item.badge && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-teal-500 to-cyan-500 text-white">
                         {item.badge}
                       </span>
                     )}
@@ -274,6 +267,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               >
                 {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
+
+              {isHRAdmin && (
+                <Link
+                  href="/admin"
+                  className={cn(
+                    "hidden lg:inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                    isDarkMode
+                      ? "bg-gradient-to-r from-teal-500/80 to-cyan-500/80 text-white hover:from-teal-400 hover:to-cyan-400"
+                      : "bg-gradient-to-r from-teal-600 to-cyan-600 text-white hover:from-teal-500 hover:to-cyan-500"
+                  )}
+                >
+                  <Settings className="h-4 w-4" />
+                  Admin Panel
+                </Link>
+              )}
 
               {/* Organization & Team Switcher */}
               <div className="hidden md:block relative">
@@ -315,7 +323,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         isDarkMode ? "border-zinc-800/60 bg-zinc-900/50" : "border-gray-100 bg-gray-50"
                       )}>
                         <div className="flex items-center gap-2">
-                          <Building2 className={cn("h-4 w-4", isDarkMode ? "text-purple-400" : "text-purple-600")} />
+                          <Building2 className={cn("h-4 w-4", isDarkMode ? "text-teal-400" : "text-teal-700")} />
                           <span className={cn("text-sm font-semibold", isDarkMode ? "text-white" : "text-gray-900")}>
                             {currentOrganization?.name || 'Organization'}
                           </span>
@@ -370,8 +378,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                               className={cn(
                                 "inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
                                 isDarkMode
-                                  ? "bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
-                                  : "bg-purple-100 text-purple-700 hover:bg-purple-200"
+                                  ? "bg-teal-500/20 text-teal-300 hover:bg-teal-500/30"
+                                  : "bg-teal-100 text-teal-700 hover:bg-teal-200"
                               )}
                               onClick={() => setOrgDropdownOpen(false)}
                             >
@@ -422,7 +430,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   )}
                 >
                   <div className={cn(
-                    "h-9 w-9 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 flex items-center justify-center ring-2",
+                    "h-9 w-9 rounded-full bg-gradient-to-br from-teal-500 via-cyan-500 to-emerald-500 flex items-center justify-center ring-2",
                     isDarkMode ? "ring-zinc-800" : "ring-gray-200"
                   )}>
                     <span className="text-sm font-semibold text-white">{user?.name?.charAt(0) || 'U'}</span>
@@ -478,7 +486,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         )}
                         {isHRAdmin && (
                           <Link
-                            href="/admin/appraisal-cycles"
+                            href="/admin"
                             className={cn(
                               "block px-4 py-2 text-sm transition-colors",
                               isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
@@ -538,7 +546,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="p-4">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 flex items-center justify-center shadow-lg">
+                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-teal-500 via-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg">
                     <Sparkles className="h-5 w-5 text-white" />
                   </div>
                   <div>
@@ -670,7 +678,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       <item.icon className="h-4 w-4" />
                       {item.name}
                       {item.badge && (
-                        <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                        <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-gradient-to-r from-teal-500 to-cyan-500 text-white">
                           {item.badge}
                         </span>
                       )}
@@ -685,10 +693,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className={cn(
-        "pt-16 min-h-screen transition-colors duration-300",
+        "pt-[4.25rem] min-h-screen transition-colors duration-300",
         isDarkMode ? "" : "bg-slate-50"
       )}>
-        <div className="mx-auto px-4 py-8 lg:px-8 max-w-7xl">
+        <div className="mx-auto px-4 py-8 lg:px-8 xl:px-10 max-w-[1440px]">
+          <PageGuide />
           {children}
         </div>
       </main>

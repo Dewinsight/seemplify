@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { isAuthenticated, authApi } from '@/lib/api';
+import { formatPayrollMoney } from '@/lib/payrollMoney';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -39,14 +40,14 @@ const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 const fullMonthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 // Utility for formatting currency
-const formatCurrency = (amount: number, compact = false) => {
+const formatCurrency = (amount: number, compact = false, currency = 'USD') => {
   if (compact && amount >= 1000000) {
-    return `$${(amount / 1000000).toFixed(1)}M`;
+    return `${currency} ${(amount / 1000000).toFixed(1)}M`;
   }
   if (compact && amount >= 1000) {
-    return `$${(amount / 1000).toFixed(0)}K`;
+    return `${currency} ${(amount / 1000).toFixed(0)}K`;
   }
-  return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  return formatPayrollMoney(amount, currency);
 };
 
 // Color palette for charts
@@ -71,21 +72,7 @@ export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'departments' | 'workforce'>('overview');
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push('/login');
-      return;
-    }
-    checkAccess();
-  }, [router]);
-
-  useEffect(() => {
-    if (isHRAdmin) {
-      fetchAnalytics();
-    }
-  }, [year, isHRAdmin]);
-
-  const checkAccess = async () => {
+  const checkAccess = useCallback(async () => {
     try {
       const response = await authApi.getMe();
       const user = response.user;
@@ -104,9 +91,9 @@ export default function AnalyticsPage() {
       console.error('Failed to check access:', error);
       router.push('/login');
     }
-  };
+  }, [router]);
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
       const [analyticsData, headcountData] = await Promise.all([
@@ -121,7 +108,21 @@ export default function AnalyticsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [year]);
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      router.push('/login');
+      return;
+    }
+    checkAccess();
+  }, [router, checkAccess]);
+
+  useEffect(() => {
+    if (isHRAdmin) {
+      fetchAnalytics();
+    }
+  }, [isHRAdmin, fetchAnalytics]);
 
   const handleRefresh = () => {
     setRefreshing(true);

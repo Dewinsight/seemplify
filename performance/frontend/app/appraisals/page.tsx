@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useUserContext, useMyAppraisals, useTeamAppraisals, useAppraisalCycles } from '@/lib/hooks';
 import api from '@/lib/api';
@@ -16,7 +16,7 @@ import {
 import {
   Assignment, Person, CheckCircle, Schedule, PlayArrow, Edit,
   Visibility, Chat, Star, Warning, ArrowForward, Add, Refresh,
-  Psychology, AssessmentOutlined, Groups, TrendingUp, Rocket
+  Psychology, AssessmentOutlined, Groups, TrendingUp, Rocket, NotificationsActive
 } from '@mui/icons-material';
 import { gradients } from '../theme';
 
@@ -30,6 +30,27 @@ interface Appraisal {
   managerReview?: { submittedAt?: string; overallManagerRating?: number };
   finalRating?: { overall?: number; ratingLabel?: string };
   deadlines?: { selfAssessmentDue?: string; managerReviewDue?: string };
+  notifications?: Array<{
+    type?: string;
+    message?: string;
+    sentAt?: string;
+    readAt?: string;
+  }>;
+}
+
+interface ManagerNotification {
+  appraisalId: string;
+  cycleName?: string;
+  appraisalStatus?: string;
+  employee?: {
+    userId?: string;
+    name?: string;
+    email?: string;
+  };
+  type?: string;
+  message?: string;
+  sentAt?: string;
+  readAt?: string;
 }
 
 interface AppraisalCycle {
@@ -79,6 +100,7 @@ export default function AppraisalsPage() {
 
   const [selectedTab, setSelectedTab] = useState(0);
   const [selectedCycleId, setSelectedCycleId] = useState<string>('');
+  const [managerNotifications, setManagerNotifications] = useState<ManagerNotification[]>([]);
 
   const { appraisals: myAppraisals, isLoading: myLoading, mutate: mutateMyAppraisals } = useMyAppraisals({ cycleId: selectedCycleId || undefined });
   const { appraisals: teamAppraisals, isLoading: teamLoading, mutate: mutateTeamAppraisals } = useTeamAppraisals({ cycleId: selectedCycleId || undefined });
@@ -96,6 +118,30 @@ export default function AppraisalsPage() {
 
   // Handle employee filter from query params
   const employeeIdFilter = searchParams.get('employeeId');
+  const submittedFlow = searchParams.get('submitted');
+  const submittedAppraisalId = searchParams.get('appraisalId');
+
+  const loadManagerNotifications = useCallback(async () => {
+    if (!isManager) {
+      setManagerNotifications([]);
+      return;
+    }
+
+    try {
+      const response = await api.get('/appraisals/notifications/manager', {
+        params: { unreadOnly: true, limit: 20 }
+      });
+      const notifications = response.data?.data?.notifications || [];
+      setManagerNotifications(notifications);
+    } catch (error) {
+      console.error('Failed to fetch manager notifications', error);
+      setManagerNotifications([]);
+    }
+  }, [isManager]);
+
+  useEffect(() => {
+    loadManagerNotifications();
+  }, [loadManagerNotifications]);
 
 
 
@@ -145,28 +191,76 @@ export default function AppraisalsPage() {
   };
 
   const getStepStatus = (status: string, stepKey: string): 'completed' | 'active' | 'pending' => {
-    const stepOrder = ['selfAssessment', 'managerReview', 'calibration', 'finalReview'];
-    const currentStepIndex = stepOrder.indexOf(status.split('_')[0]) || 0;
-    const stepIndex = stepOrder.indexOf(stepKey);
+    const stepOrder = ['selfAssessment', 'managerReview', 'calibration', 'finalReview'] as const;
 
-    if (status === 'completed') return 'completed';
-    if (stepIndex < currentStepIndex) return 'completed';
-    if (status.includes(stepKey)) return 'active';
+    const activeStepIndex = (() => {
+      if (!status) return -1;
+      if (status === 'completed' || status === 'employee_acknowledged') return stepOrder.length;
+      if (['not_started', 'goal_setting', 'goal_approval_pending'].includes(status)) return -1;
+
+      if (status === 'self_assessment_submitted') return 1; // legacy data
+      if (status.startsWith('self_assessment')) return 0;
+      if (status.startsWith('manager_review')) return 1;
+
+      if (status.startsWith('discussion') || status.startsWith('calibration') || status === 'manager_review_submitted') return 2;
+      if (status === 'final_review_pending') return 3;
+
+      return -1;
+    })();
+
+    const stepIndex = stepOrder.indexOf(stepKey as any);
+
+    if (activeStepIndex === stepOrder.length) return 'completed';
+    if (stepIndex === -1) return 'pending';
+    if (activeStepIndex === -1) return 'pending';
+    if (stepIndex < activeStepIndex) return 'completed';
+    if (stepIndex === activeStepIndex) return 'active';
     return 'pending';
   };
 
-  const isOverdue = (deadline: string | undefined, status: string) => {
+  const isOverdue = (deadline: string | undefined, status: string, stage: 'self' | 'manager') => {
     if (!deadline) return false;
-    if (status.includes('submitted') || status === 'completed') return false;
-    return new Date(deadline) < new Date();
+    const due = new Date(deadline);
+    if (Number.isNaN(due.getTime())) return false;
+
+    const now = new Date();
+
+    if (stage === 'self') {
+      return ['self_assessment_pending', 'self_assessment_in_progress'].includes(status) && due < now;
+    }
+
+    return ['manager_review_pending', 'manager_review_in_progress', 'self_assessment_submitted'].includes(status) && due < now;
+  };
+
+  const unreadManagerNotificationCount = managerNotifications.filter((notification) => !notification.readAt).length;
+  const submittedAppraisal = submittedFlow === 'self'
+    ? myAppraisals.find((item: Appraisal) => item._id === submittedAppraisalId)
+    : null;
+
+  const handleOpenReviewFromNotification = async (appraisalId: string) => {
+    try {
+      await api.post(`/appraisals/${appraisalId}/manager-review/start`);
+    } catch (startError) {
+      console.error('Failed to start manager review from notification', startError);
+      try {
+        await api.post(`/appraisals/${appraisalId}/notifications/read`, {
+          types: ['self_assessment_submitted', 'manager_review_requested']
+        });
+      } catch (readError) {
+        console.error('Failed to mark notification as read', readError);
+      }
+    } finally {
+      await Promise.all([mutateTeamAppraisals(), loadManagerNotifications()]);
+      router.push(`/appraisals/${appraisalId}/manager-review`);
+    }
   };
 
   const renderAppraisalCard = (appraisal: Appraisal, isEmployee: boolean) => {
     const config = statusConfig[appraisal.status] || statusConfig['not_started'];
     const selfDue = appraisal.deadlines?.selfAssessmentDue;
     const managerDue = appraisal.deadlines?.managerReviewDue;
-    const selfOverdue = isOverdue(selfDue, appraisal.status);
-    const managerOverdue = isOverdue(managerDue, appraisal.status);
+    const selfOverdue = isOverdue(selfDue, appraisal.status, 'self');
+    const managerOverdue = isOverdue(managerDue, appraisal.status, 'manager');
 
     return (
       <Card
@@ -206,14 +300,14 @@ export default function AppraisalsPage() {
                     boxShadow: '0 4px 14px -4px rgba(99, 102, 241, 0.4)',
                   }}
                 >
-                  {isEmployee ? appraisal.manager.name[0] : appraisal.employee.name[0]}
+                  {isEmployee ? (appraisal.manager?.name?.[0] || 'M') : (appraisal.employee?.name?.[0] || 'E')}
                 </Avatar>
                 <Box>
                   <Typography variant="subtitle1" fontWeight={600}>
-                    {isEmployee ? 'Your Appraisal' : appraisal.employee.name}
+                    {isEmployee ? 'Your Appraisal' : (appraisal.employee?.name || 'Unknown Employee')}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {isEmployee ? `Manager: ${appraisal.manager.name}` : appraisal.employee.jobTitle || 'Team Member'}
+                    {isEmployee ? `Manager: ${appraisal.manager?.name || 'Unassigned'}` : (appraisal.employee?.jobTitle || 'Team Member')}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {appraisal.cycleId?.name || 'Performance Cycle'}
@@ -352,6 +446,32 @@ export default function AppraisalsPage() {
                     sx={{ ml: 1 }}
                   >
                     {appraisal.status === 'manager_review_in_progress' ? 'Continue' : 'Start'} Review
+                  </Button>
+                )}
+
+                {!isEmployee && (appraisal.status === 'calibration_pending' || appraisal.status === 'calibration_in_progress') && (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    color="secondary"
+                    startIcon={<TrendingUp />}
+                    onClick={() => router.push(`/appraisals/${appraisal._id}/calibration`)}
+                    sx={{ ml: 1 }}
+                  >
+                    {appraisal.status === 'calibration_in_progress' ? 'Continue Calibration' : 'Start Calibration'}
+                  </Button>
+                )}
+
+                {!isEmployee && appraisal.status === 'final_review_pending' && (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    color="success"
+                    startIcon={<CheckCircle />}
+                    onClick={() => router.push(`/appraisals/${appraisal._id}/final-review`)}
+                    sx={{ ml: 1 }}
+                  >
+                    Finalize
                   </Button>
                 )}
 
@@ -529,13 +649,94 @@ export default function AppraisalsPage() {
             <Button
               variant="contained"
               startIcon={<Add />}
-              onClick={() => router.push('/admin/appraisal-cycles')}
+              onClick={() => router.push('/admin')}
             >
-              Manage Cycles
+              Admin Panel
             </Button>
           )}
         </Box>
       </Box>
+
+      {submittedFlow === 'self' && (
+        <Alert
+          severity="success"
+          sx={{
+            mb: 3,
+            borderRadius: 3,
+            border: `1px solid ${alpha(theme.palette.success.main, 0.35)}`
+          }}
+        >
+          <Typography variant="subtitle2" fontWeight={700}>
+            Self-assessment submitted successfully
+          </Typography>
+          <Typography variant="body2">
+            {submittedAppraisal?.manager?.name
+              ? `Your manager (${submittedAppraisal.manager.name}) has been notified to start review.`
+              : 'Your manager has been notified to start review.'}
+          </Typography>
+        </Alert>
+      )}
+
+      {isManager && unreadManagerNotificationCount > 0 && (
+        <Paper
+          sx={{
+            p: 2.5,
+            mb: 3,
+            borderRadius: 3,
+            border: `1px solid ${alpha(theme.palette.warning.main, 0.35)}`,
+            background: `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.12)} 0%, ${alpha(theme.palette.background.paper, 0.94)} 100%)`
+          }}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, gap: 1 }}>
+            <Typography variant="subtitle1" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <NotificationsActive color="warning" fontSize="small" />
+              Manager Notifications
+            </Typography>
+            <Chip
+              size="small"
+              color="warning"
+              label={`${unreadManagerNotificationCount} new`}
+              sx={{ fontWeight: 700 }}
+            />
+          </Box>
+
+          <List sx={{ py: 0 }}>
+            {managerNotifications.slice(0, 4).map((notification, index) => (
+              <ListItem
+                key={`${notification.appraisalId}-${notification.sentAt || index}`}
+                sx={{
+                  px: 1.5,
+                  py: 1,
+                  mb: index < Math.min(managerNotifications.length, 4) - 1 ? 0.5 : 0,
+                  borderRadius: 2,
+                  bgcolor: alpha(theme.palette.background.paper, 0.75),
+                  border: `1px solid ${alpha(theme.palette.warning.main, 0.18)}`
+                }}
+              >
+                <ListItemAvatar>
+                  <Avatar sx={{ width: 34, height: 34, bgcolor: alpha(theme.palette.warning.main, 0.2), color: 'warning.dark' }}>
+                    {notification.employee?.name?.[0] || 'E'}
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={notification.message || `Time to review ${notification.employee?.name || 'this employee'} appraisal.`}
+                  secondary={notification.sentAt ? new Date(notification.sentAt).toLocaleString() : 'Just now'}
+                  primaryTypographyProps={{ variant: 'body2', fontWeight: 600 }}
+                  secondaryTypographyProps={{ variant: 'caption' }}
+                />
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => handleOpenReviewFromNotification(notification.appraisalId)}
+                  sx={{ ml: 1 }}
+                >
+                  Review
+                </Button>
+              </ListItem>
+            ))}
+          </List>
+        </Paper>
+      )}
 
       {/* Cycle Summary */}
       {selectedCycleId && renderCycleSummary()}

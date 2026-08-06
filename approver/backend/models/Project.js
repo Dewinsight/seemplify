@@ -3,30 +3,13 @@ const mongoose = require('mongoose');
 const ProjectSchema = new mongoose.Schema({
     name: { type: String, required: true },
     description: { type: String },
+    organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true },
     repoUrl: { type: String },
     filePath: { type: String }, // For local analysis if needed
     analysisResult: { type: Object }, // Store entire AI response
 
     // Multi-stage approval status for tiered workflow
-    approvalStatus: {
-        type: String,
-        enum: [
-            'Pending',              // Initial state
-            'AI Analyzing',         // AI is processing
-            'AI Approved',          // AI approved - final for Tier 1
-            'AI Rejected',          // AI rejected - may escalate for Tier 2/3
-            'Pending Governance',   // Waiting for Governance Committee
-            'Governance Approved',  // Governance approved - final for Tier 2
-            'Governance Rejected',  // Governance rejected - may escalate for Tier 3
-            'Pending Executive',    // Waiting for Executive approval
-            'Executive Approved',   // Final approval for Tier 3
-            'Executive Rejected',   // Final rejection
-            'Approved',             // Legacy/simple approved
-            'Rejected',             // Legacy/simple rejected
-            'Under Review'          // Legacy
-        ],
-        default: 'Pending'
-    },
+    approvalStatus: { type: String, default: 'Pending' },
     status: { type: String, enum: ['Pending', 'Approved', 'Rejected', 'Under Review'], default: 'Pending' }, // Simple status for backward compatibility
     score: { type: Number, default: 0 },
 
@@ -36,15 +19,15 @@ const ProjectSchema = new mongoose.Schema({
     priorityScore: { type: Number }, // Calculated priority score (1.0 - 5.0)
     scoringBreakdown: { type: Object }, // Individual scores for each parameter
     escalationTriggers: [{ type: String }], // List of triggered escalation reasons
-    workflowStage: {
-        type: String,
-        enum: ['Screening', 'Analysis', 'AI Review', 'Governance Committee', 'Executive Approval', 'Complete'],
-        default: 'Screening'
-    },
+    needEnhancedOversight: { type: Boolean, default: false }, // Priority Score 1.5–2.0: requires enhanced oversight
+    workflowStage: { type: String, default: 'Screening' },
+    workflowPolicy: { type: mongoose.Schema.Types.ObjectId, ref: 'WorkflowPolicy' },
+    currentStageKey: { type: String, default: null },
+    workflowPlan: { type: Object, default: null },
 
     // Approval history for audit trail
     approvalHistory: [{
-        stage: { type: String, enum: ['AI', 'Governance', 'Executive'] },
+        stage: { type: String },
         action: { type: String, enum: ['Approved', 'Rejected', 'Escalated'] },
         by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         reason: String,

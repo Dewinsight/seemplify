@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import { getActiveLineManagers, getDerivedManagerAccountId } from '../utils/teamManager.js'
 
 const TeamSchema = new mongoose.Schema({
   // Organization reference
@@ -28,6 +29,10 @@ const TeamSchema = new mongoose.Schema({
     type: String,
     trim: true,
     maxLength: 500
+  },
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    index: true
   },
 
   // Manager assignment (line manager of this team)
@@ -76,6 +81,7 @@ const TeamSchema = new mongoose.Schema({
 
 // Indexes for efficient queries
 TeamSchema.index({ organization: 1, parentTeam: 1 })
+TeamSchema.index({ organization: 1, department: 1 })
 TeamSchema.index({ manager: 1 })
 TeamSchema.index({ 'members.account': 1 })
 TeamSchema.index({ name: 'text' })
@@ -88,6 +94,7 @@ TeamSchema.index({ organization: 1, 'members.account': 1 })
 
 // Pre-save middleware to update timestamp
 TeamSchema.pre('save', function(next) {
+  this.manager = getDerivedManagerAccountId(this) || null
   this.updatedAt = Date.now()
   next()
 })
@@ -99,6 +106,15 @@ TeamSchema.virtual('memberCount').get(function() {
 
 // Add member to team
 TeamSchema.methods.addMember = async function(accountId, role = 'member') {
+  if (role === 'line_manager') {
+    const existingLineManager = getActiveLineManagers(this).find(
+      member => member.account.toString() !== accountId.toString()
+    )
+    if (existingLineManager) {
+      throw new Error('This team already has a line manager. Change the current line manager first.')
+    }
+  }
+
   // Check if already a member
   const existing = this.members.find(
     m => m.account.toString() === accountId.toString()
@@ -110,6 +126,7 @@ TeamSchema.methods.addMember = async function(accountId, role = 'member') {
 
     // Update Account's teams array
     await this.updateAccountTeamMembership(accountId, role)
+    await this.syncOrganizationMemberDepartment(accountId)
 
     return this
   }
@@ -124,6 +141,7 @@ TeamSchema.methods.addMember = async function(accountId, role = 'member') {
 
   // Update Account's teams array
   await this.updateAccountTeamMembership(accountId, role)
+  await this.syncOrganizationMemberDepartment(accountId)
 
   return this
 }
@@ -141,6 +159,7 @@ TeamSchema.methods.updateAccountTeamMembership = async function(accountId, role)
       { _id: accountId, 'teams.team': this._id },
       {
         $set: {
+          'teams.$.department': this.department || null,
           'teams.$.role': role,
           'teams.$.isActive': true
         }
@@ -154,6 +173,7 @@ TeamSchema.methods.updateAccountTeamMembership = async function(accountId, role)
           teams: {
             team: this._id,
             organization: this.organization,
+            department: this.department || null,
             role: role,
             joinedAt: new Date(),
             isActive: true
@@ -164,16 +184,19 @@ TeamSchema.methods.updateAccountTeamMembership = async function(accountId, role)
   }
 }
 
+TeamSchema.methods.syncOrganizationMemberDepartment = async function(accountId) {
+  const Organization = mongoose.model('AiinOrganization')
+  const organization = await Organization.findById(this.organization)
+  if (!organization) return
+
+  await organization.syncMemberDepartmentFromTeams(accountId)
+}
+
 // Remove member from team
 TeamSchema.methods.removeMember = async function(accountId) {
   this.members = this.members.filter(
     m => m.account.toString() !== accountId.toString()
   )
-
-  // If manager is being removed, clear manager
-  if (this.manager && this.manager.toString() === accountId.toString()) {
-    this.manager = null
-  }
 
   await this.save()
 
@@ -183,6 +206,8 @@ TeamSchema.methods.removeMember = async function(accountId) {
     { _id: accountId },
     { $pull: { teams: { team: this._id } } }
   )
+
+  await this.syncOrganizationMemberDepartment(accountId)
 
   return this
 }
@@ -196,18 +221,17 @@ TeamSchema.methods.updateMemberRole = async function(accountId, newRole) {
     throw new Error('Member not found in team')
   }
 
-  const oldRole = member.role
+  if (newRole === 'line_manager') {
+    const existingLineManager = getActiveLineManagers(this).find(
+      teamMember => teamMember.account.toString() !== accountId.toString()
+    )
+    if (existingLineManager) {
+      throw new Error('This team already has a line manager. Change the current line manager first.')
+    }
+  }
+
   member.role = newRole
   await this.save()
-
-  // If member was manager and role changed from line_manager, clear manager
-  if (this.manager &&
-      this.manager.toString() === accountId.toString() &&
-      oldRole === 'line_manager' &&
-      newRole !== 'line_manager') {
-    this.manager = null
-    await this.save()
-  }
 
   // Update Account's teams array
   const Account = mongoose.model('AiinAccount')
@@ -219,45 +243,9 @@ TeamSchema.methods.updateMemberRole = async function(accountId, newRole) {
   return this
 }
 
-// Set team manager
-// CRITICAL: Manager must have line_manager role in the team
+// Team manager is derived from the member with the line_manager role.
 TeamSchema.methods.setManager = async function(accountId) {
-  if (accountId === null) {
-    this.manager = null
-    await this.save()
-    return this
-  }
-
-  // CRITICAL: Verify account has line_manager role in team
-  const teamMember = this.members.find(
-    m => m.account.toString() === accountId.toString() && m.status === 'active'
-  )
-
-  if (!teamMember) {
-    throw new Error('Account must be a member of the team')
-  }
-
-  if (teamMember.role !== 'line_manager') {
-    throw new Error('Manager must have line_manager role in the team. Assign line_manager role first.')
-  }
-
-  // Verify account is member of organization
-  const Organization = mongoose.model('AiinOrganization')
-  const org = await Organization.findById(this.organization)
-  if (!org) {
-    throw new Error('Organization not found')
-  }
-
-  const orgMember = org.members.find(
-    m => m.account.toString() === accountId.toString() && m.status === 'active'
-  )
-  if (!orgMember) {
-    throw new Error('Manager must be a member of the organization')
-  }
-
-  this.manager = accountId
-  await this.save()
-  return this
+  throw new Error('Team manager is derived from the member with the line_manager role')
 }
 
 // Check if account is member of this team
@@ -433,6 +421,27 @@ TeamSchema.statics.buildTeamTree = async function(organizationId) {
   })
 
   return rootTeams
+}
+
+TeamSchema.statics.ensureDepartmentAssignments = async function(organizationId, fallbackDepartmentId) {
+  if (!organizationId || !fallbackDepartmentId) return 0
+
+  const result = await this.updateMany(
+    {
+      organization: organizationId,
+      $or: [
+        { department: null },
+        { department: { $exists: false } }
+      ]
+    },
+    {
+      $set: {
+        department: fallbackDepartmentId
+      }
+    }
+  )
+
+  return result.modifiedCount || 0
 }
 
 // Ensure virtual fields are serialized

@@ -32,8 +32,16 @@ const PlanSchema = new mongoose.Schema({
   limits: {
     maxMembers: { type: Number, default: null }, // null = unlimited
     maxTeams: { type: Number, default: null },   // null = unlimited
-    maxStorage: { type: Number, default: null }  // In GB, null = unlimited
+    maxStorage: { type: Number, default: null }, // In GB, null = unlimited
+    maxSystemCourses: { type: Number, default: null } // null = unlimited
   },
+
+  // Hub card visibility: appIds to hide from the hub for this plan (card not shown at all)
+  hideHubCards: [{ type: String, trim: true }],
+
+  // Coming soon cards: card IDs to show in hub for this plan (messaging, payroll, performance-management)
+  // These are special non-clickable "Coming Soon" cards, shown only when enabled per plan. Default: off.
+  showComingSoonCards: { type: [String], default: [] },
 
   // App Access Toggles
   features: {
@@ -57,6 +65,7 @@ const PlanSchema = new mongoose.Schema({
   // Plan Status
   isActive: { type: Boolean, default: true },
   isPublic: { type: Boolean, default: true }, // Visible to organizations
+  isRequestable: { type: Boolean, default: true }, // Can organizations request/renew this plan themselves
   isFeatured: { type: Boolean, default: false }, // Highlight in UI
   isTrial: { type: Boolean, default: false }, // Trial plan flag
   trialDays: { type: Number, default: 14 }, // Trial period in days

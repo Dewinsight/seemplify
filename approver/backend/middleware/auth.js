@@ -1,15 +1,25 @@
 const jwt = require('jsonwebtoken');
+const UserOrganization = require('../models/UserOrganization');
+const Role = require('../models/Role');
+const { ensureGovernanceConfigForOrganization } = require('../services/governanceConfigService');
+const { extractTokenFromRequest } = require('../utils/authSession');
+const {
+    buildRoleCatalog,
+    sanitizePermissions,
+    collectUserCapabilities,
+    toRoleArray,
+    hasAnyCapability
+} = require('../utils/access');
 
 const verifyToken = (req, res, next) => {
-    const token = req.headers['authorization'];
+    const token = extractTokenFromRequest(req);
 
     if (!token) {
         return res.status(403).json({ error: 'No token provided' });
     }
 
     try {
-        const bearer = token.split(' ')[1]; // Bearer <token>
-        const decoded = jwt.verify(bearer, process.env.JWT_SECRET || 'default_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
         req.user = decoded;
         next();
     } catch (error) {
@@ -19,23 +29,30 @@ const verifyToken = (req, res, next) => {
 
 const verifyRole = (requiredRoles) => {
     return (req, res, next) => {
-        // 1. Global Admin always passes
+        const required = Array.isArray(requiredRoles) ? requiredRoles : [requiredRoles];
+        if (required.length === 0) return next();
+
+        // 1. Org-level Admin always passes
         if (req.user.isAdmin) {
             return next();
         }
 
         // 2. Check legacy role field (if present) for backward compatibility
-        if (req.user.role && requiredRoles.includes(req.user.role)) {
+        if (req.user.role && required.includes(req.user.role)) {
             return next();
         }
 
-        // 3. Check Permissions Array - now supports multiple roles per department
-        // User has access if ANY of their roles in ANY department matches required roles
-        if (req.user.permissions && req.user.permissions.some(p => {
-            // Handle both old format (p.role) and new format (p.roles array)
-            const userRoles = p.roles || (p.role ? [p.role] : []);
-            return userRoles.some(r => requiredRoles.includes(r));
-        })) {
+        // 3. Direct role key match (dynamic role catalog)
+        const userRoleKeys = new Set();
+        (req.user.permissions || []).forEach((permission) => {
+            toRoleArray(permission).forEach(roleKey => userRoleKeys.add(roleKey));
+        });
+        if (Array.from(userRoleKeys).some(roleKey => required.includes(roleKey))) {
+            return next();
+        }
+
+        // 4. Capability match
+        if (hasAnyCapability(req.user, required, null, req.user.roleCatalog || {})) {
             return next();
         }
 
@@ -43,4 +60,60 @@ const verifyRole = (requiredRoles) => {
     };
 };
 
-module.exports = { verifyToken, verifyRole };
+// Inject organization context from X-Organization-Id header
+// Validates user actually belongs to the org via UserOrganization lookup
+const injectOrgContext = async (req, res, next) => {
+    const orgId = req.headers['x-organization-id'];
+    if (!orgId) {
+        return res.status(403).json({ error: 'No organization context. Select an organization.' });
+    }
+
+    try {
+        const membership = await UserOrganization.findOne({
+            user: req.user.id,
+            organization: orgId
+        }).populate('permissions.department');
+
+        if (!membership) {
+            return res.status(403).json({ error: 'You do not belong to this organization.' });
+        }
+
+        let roleDocs = await Role.find({ organization: orgId, isActive: true }, 'key capabilities');
+        if (roleDocs.length === 0) {
+            await ensureGovernanceConfigForOrganization(orgId);
+            roleDocs = await Role.find({ organization: orgId, isActive: true }, 'key capabilities');
+        }
+        const roleCatalog = buildRoleCatalog(roleDocs);
+        const validRoleKeys = Object.keys(roleCatalog);
+
+        req.organization = orgId;
+        req.membership = membership;
+        // Inject org-specific role data into req.user for downstream middleware (verifyRole)
+        req.user.isAdmin = membership.isAdmin;
+        req.user.permissions = sanitizePermissions(
+            membership.permissions || [],
+            validRoleKeys.length > 0 ? new Set(validRoleKeys) : null
+        );
+        req.user.roleCatalog = roleCatalog;
+        req.user.capabilities = collectUserCapabilities(req.user, roleCatalog);
+        next();
+    } catch (error) {
+        return res.status(500).json({ error: 'Error validating organization context' });
+    }
+};
+
+// Optional token - parses token if present but doesn't require it
+const optionalToken = (req, res, next) => {
+    const token = extractTokenFromRequest(req);
+    if (!token) return next();
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
+        req.user = decoded;
+    } catch (error) {
+        // Token invalid - continue without user context
+    }
+    next();
+};
+
+module.exports = { verifyToken, verifyRole, injectOrgContext, optionalToken };

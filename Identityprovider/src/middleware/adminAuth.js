@@ -170,13 +170,16 @@ export const setAdminContext = async (req, res, next) => {
   // Add pending counts for badges in navigation
   try {
     const SubscriptionRequest = (await import('../models/SubscriptionRequest.js')).default
+    const DemoRequest = (await import('../models/DemoRequest.js')).default
     res.locals.adminStats = {
-      pendingRequests: await SubscriptionRequest.countPending()
+      pendingRequests: await SubscriptionRequest.countPending(),
+      pendingDemoRequests: await DemoRequest.countDocuments({ status: 'new' })
     }
   } catch (error) {
     console.error('Failed to load admin stats:', error)
     res.locals.adminStats = {
-      pendingRequests: 0
+      pendingRequests: 0,
+      pendingDemoRequests: 0
     }
   }
 

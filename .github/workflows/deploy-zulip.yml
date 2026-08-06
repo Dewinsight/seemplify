@@ -1,0 +1,54 @@
+name: Deploy Zulip (Seemplify Chat)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'zulip/**'
+      - '.github/workflows/deploy-zulip.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Dokploy
+        run: |
+          echo "Deploying Zulip (Seemplify Chat) to Dokploy..."
+          
+          # Trigger Dokploy compose deployment
+          response=$(curl -s -w "\n%{http_code}" -X POST "${{ secrets.DOKPLOY_URL }}/api/compose.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"composeId": "${{ secrets.ZULIP_COMPOSE_ID }}"}')
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "Response: $body"
+          echo "HTTP Status: $http_code"
+          
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "Deployment triggered successfully!"
+          else
+            echo "Deployment failed with HTTP $http_code"
+            exit 1
+          fi
+
+      - name: Verify Deployment
+        run: |
+          echo "Waiting for deployment to complete..."
+          sleep 60
+          
+          # Check if site is accessible
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://chat.seemplifyai.com)
+          
+          if [ "$response" = "200" ] || [ "$response" = "302" ]; then
+            echo "Zulip is accessible at https://chat.seemplifyai.com"
+          else
+            echo "Warning: Site returned HTTP $response"
+          fi

@@ -8,8 +8,7 @@ router.use(requireAuth);
 router.use(requireOrganization);
 router.use(requireHRAdmin);
 
-// Get defined policy
-router.get('/policy', async (req, res) => {
+async function getPolicyHandler(req, res) {
     try {
         const organizationId = req.organizationId;
 
@@ -25,7 +24,11 @@ router.get('/policy', async (req, res) => {
         console.error('Get policy error:', error);
         res.status(500).json({ error: 'Failed to get policy' });
     }
-});
+}
+
+// Backward-compatible aliases for fetching policy
+router.get('/policy', getPolicyHandler);
+router.get('/attendance-policy', getPolicyHandler);
 
 // Update attendance policy  
 router.put('/attendance-policy', async (req, res) => {

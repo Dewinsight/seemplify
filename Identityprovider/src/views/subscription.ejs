@@ -66,7 +66,7 @@
     .alert-info {
       background: rgba(59, 130, 246, 0.1);
       border: 1px solid rgba(59, 130, 246, 0.3);
-      color: #3b82f6;
+      color: var(--brand);
     }
 
     .subscription-grid {
@@ -228,25 +228,7 @@
       transition: all 0.2s;
     }
 
-    .btn-primary {
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-      color: white;
-    }
 
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-    }
-
-    .btn-secondary {
-      background: var(--panel-strong);
-      border: 1px solid var(--border);
-      color: var(--text);
-    }
-
-    .btn-secondary:hover {
-      background: var(--hover-bg);
-    }
 
     .btn-danger {
       background: rgba(239, 68, 68, 0.1);
@@ -360,6 +342,24 @@
       </div>
     <% } %>
 
+    <% if (subscription && subscription.status !== 'active') { %>
+      <div class="alert alert-warning">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 8v4M12 16h.01" />
+        </svg>
+        <span>Your current plan is no longer active. Access in the IDP is locked until another requestable plan is approved.</span>
+      </div>
+    <% } else if (!subscription && organization) { %>
+      <div class="alert alert-warning">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 8v4M12 16h.01" />
+        </svg>
+        <span>This organization does not have an active plan. Request a plan to restore access.</span>
+      </div>
+    <% } %>
+
     <% if (!organization) { %>
       <div class="card">
         <div class="no-subscription">
@@ -435,7 +435,7 @@
                   <circle cx="12" cy="12" r="10" />
                   <path d="M12 8v4M12 16h.01" />
                 </svg>
-                <span>Your subscription expires in <%= subscription.daysUntilExpiry %> days. Consider renewing to avoid service interruption.</span>
+                <span>Your subscription expires in <%= subscription.daysUntilExpiry %> days. Request another plan now to avoid access being locked.</span>
               </div>
             <% } %>
 
@@ -453,8 +453,8 @@
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
               </svg>
               <h3>No Active Subscription</h3>
-              <p>Subscribe to a plan to access all features.</p>
-              <a href="/plans" class="btn btn-primary">View Plans</a>
+              <p>Request a plan to restore access to the IDP apps for this organization.</p>
+              <a href="/plans" class="btn btn-primary">Request a Plan</a>
             </div>
           <% } %>
         </div>

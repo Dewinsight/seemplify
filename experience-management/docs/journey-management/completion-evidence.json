@@ -1,0 +1,1416 @@
+{
+  "version": 1,
+  "lastUpdated": "2026-08-06",
+  "masterPlan": "docs/CONNECTED-JOURNEY-MANAGEMENT-MASTER-PLAN.md",
+  "traceabilityLedger": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+  "allowedClasses": ["Code", "Data", "Controls", "Tests", "Runtime", "Operations"],
+  "records": [
+    {
+      "evidenceId": "plan-ledger-structure-2026-08-05",
+      "requirementIds": ["P0-01", "P0-02", "P0-03", "P0-04", "P0-05", "P0-06", "P0-07", "P0-08"],
+      "class": "Code",
+      "summary": "The master-plan traceability ledger is structurally validated against the approved 85-item requirement set.",
+      "command": "npm run validate:journey-plan",
+      "artifactPath": "scripts/validate-journey-traceability.mjs",
+      "observed": {
+        "proves": [
+          "The traceability ledger contains the approved requirement IDs.",
+          "Each requirement row has a recognised state and non-empty evidence/gap statement."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the truth of any evidence statement.",
+        "Does not prove any requirement is actually complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "scripts/validate-journey-traceability.mjs"
+      ]
+    },
+    {
+      "evidenceId": "sdk-preflight-blockers-2026-08-05",
+      "requirementIds": ["P5A-06", "P5A-08", "X-04", "X-05"],
+      "class": "Tests",
+      "summary": "The SDK publish preflight records the current repository/workflow, external npm, and workstation blockers for an authorised publish path, and the repo now also has separate executable landing/delta checks for whether the required publish-state files have actually landed on `main`.",
+      "command": "npm run preflight:sdk:publish",
+      "artifactPath": "scripts/sdk-publish-preflight.mjs",
+      "observed": {
+        "currentBlockers": [
+          "Publish workflow remains disabled.",
+          "Current branch is not main.",
+          "npm authentication is unavailable on this machine.",
+          "npm scope @seemplify is not proven ready."
+        ],
+        "repoSideProof": [
+          "`npm run preflight:sdk:landing` now fails explicitly when `main` is still missing the required SDK publish-state files.",
+          "`npm run evidence:sdk:delta` now shows the exact required-file delta between the current working tree and `main`."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the SDKs are publishable today.",
+        "Does not prove the external npm organisation or trusted-publisher setup is complete.",
+        "Does not prove the broader connected-journey release gates are complete."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        ".github/workflows/publish-journey-sdks.yml.disabled",
+        "scripts/sdk-landing-preflight.mjs",
+        "scripts/sdk-publish-delta.mjs",
+        "scripts/sdk-publish-preflight.mjs",
+        "packages/SDK-PUBLISH-CHECKLIST.md",
+        "packages/SDK-RELEASE.md",
+        "packages/SDK-QUALIFICATION.json"
+      ]
+    },
+    {
+      "evidenceId": "sdk-release-shape-2026-08-05",
+      "requirementIds": ["P5A-06", "P5E-01", "P5E-02"],
+      "class": "Tests",
+      "summary": "The TypeScript SDK packages are in release shape locally and the native contract gates are integrated into the release verification path.",
+      "command": "npm run qualify:sdk && npm run verify:sdk:release && npm run test:journey-swift:contract && npm run test:journey-kotlin:contract",
+      "artifactPath": "packages/SDK-QUALIFICATION.json",
+      "observed": {
+        "proves": [
+          "The five npm SDK packages are MIT, non-private, and covered by repository-local release gates.",
+          "The release path includes deterministic build, packaging, and consumer checks.",
+          "Swift and Kotlin contract gates are explicitly part of the release story."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove npm publication occurred.",
+        "Does not prove real-device mobile qualification.",
+        "Does not prove the full connected-journey programme is complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "package.json",
+        "packages/SDK-QUALIFICATION.json",
+        "packages/SDK-RELEASE.md",
+        "packages/SDK-SUPPORT.md",
+        "scripts/sdk-package-tools.mjs"
+      ]
+    },
+    {
+      "evidenceId": "phase3-4-audit-reconciliation-2026-08-05",
+      "requirementIds": ["P3-01", "P3-02", "P3-04", "P3-05", "P3-06", "P3-07", "P3-09", "P4-01", "P4-04", "P4-05", "P4-07"],
+      "class": "Code",
+      "summary": "The programme audit was reconciled so that Phase 3 and 4 status reflects the existing durable backend, migration, and probe foundations rather than older pure-contract-only wording.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "backingFiles": [
+          "backend/src/journeyCollaboration.ts",
+          "backend/src/journeySavedViews.ts",
+          "backend/src/journeyPortfolio.ts",
+          "backend/src/journeyHierarchy.ts",
+          "backend/src/journeyServiceBlueprint.ts",
+          "backend/migrations/postgres/0029_journey_hierarchy_blueprints.sql"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the routed product surfaces are complete.",
+        "Does not prove these requirements are Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "backend/src/journeyCollaboration.ts",
+        "backend/src/journeySavedViews.ts",
+        "backend/src/journeyPortfolio.ts",
+        "backend/src/journeyHierarchy.ts",
+        "backend/src/journeyServiceBlueprint.ts"
+      ]
+    },
+    {
+      "evidenceId": "ratification-open-architecture-2026-08-05",
+      "requirementIds": ["P0-03", "P0-06", "P0-07", "X-04", "X-05", "X-08", "X-09"],
+      "class": "Operations",
+      "summary": "Architecture, quality-budget, and operations records remain proposed/unassigned, so ratification-dependent requirements cannot yet be treated as Verified from code alone.",
+      "artifactPath": "docs/journey-management/architecture/README.md",
+      "observed": {
+        "supportingDocuments": [
+          "docs/journey-management/architecture/README.md",
+          "docs/journey-management/architecture/QUALITY-BUDGETS.md",
+          "docs/journey-management/architecture/OPERATIONS-AND-INCIDENTS.md"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove implementation is absent.",
+        "Does prove that ratification evidence is still missing."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/journey-management/architecture/README.md",
+        "docs/journey-management/architecture/QUALITY-BUDGETS.md",
+        "docs/journey-management/architecture/OPERATIONS-AND-INCIDENTS.md"
+      ]
+    },
+    {
+      "evidenceId": "programme-outcome-blocker-sheet-2026-08-05",
+      "requirementIds": ["P1-01", "P1-08", "P2-05", "P3-01", "P4-01", "P5A-01", "P5A-07", "P5B-01", "P5C-01", "P5D-01", "X-01"],
+      "class": "Operations",
+      "summary": "The section-27 programme outcomes have been explicitly restated as a blocker sheet tied to the current traceability states rather than left only as broad narrative outcomes.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md",
+      "observed": {
+        "proves": [
+          "The audit now has an explicit blocker view for the twelve programme outcomes.",
+          "The current state is still below programme completion."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove any outcome is Verified.",
+        "Does not replace the detailed requirement ledger."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md"
+      ]
+    },
+    {
+      "evidenceId": "sdk-publication-blocker-sheet-2026-08-05",
+      "requirementIds": ["P5A-06", "P5A-08", "X-04", "X-05", "X-08"],
+      "class": "Operations",
+      "summary": "The SDK publication path has an explicit blocker sheet combining repo/workflow blockers, external npm blockers, and remaining programme gates that still constrain publication.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md",
+      "observed": {
+        "proves": [
+          "The audit now names the current SDK publish blockers in one place.",
+          "The SDKs remain unpublished from the current repository state.",
+          "Repo-side merge readiness toward `main` is now partially executable through dedicated landing and delta checks rather than prose alone."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove publish readiness.",
+        "Does not prove trusted publishing is configured."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md",
+        "packages/SDK-PUBLISH-CHECKLIST.md",
+        "packages/SDK-RELEASE.md",
+        "packages/SDK-QUALIFICATION.json",
+        "scripts/sdk-publish-preflight.mjs"
+      ]
+    },
+    {
+      "evidenceId": "sdk-main-landing-proof-2026-08-06",
+      "requirementIds": ["P5A-06", "X-08"],
+      "class": "Tests",
+      "summary": "Dedicated repo-side SDK landing checks now prove, non-publishingly, whether `main` contains the required SDK publish-state files and what exact required-file delta still exists between the current working tree and `main`.",
+      "command": "npm run preflight:sdk:landing && npm run evidence:sdk:delta",
+      "artifactPath": "scripts/sdk-landing-preflight.mjs",
+      "observed": {
+        "proves": [
+          "The repo now has an executable check that fails explicitly when `main` is still missing the minimum required SDK publish-state files.",
+          "The repo now has a companion delta report that shows the exact required-file difference between the current working tree and `main`, including untracked working-tree files.",
+          "As of Thursday, August 6, 2026, `main` still lacks the required SDK publish-state file set."
+        ],
+        "currentSummary": {
+          "requiredFilesMissingOnMain": 4,
+          "committedMainHeadDiffs": 2,
+          "workingTreeSdkPublishStateEntries": 4
+        }
+      },
+      "notClaimed": [
+        "Does not prove npm authentication, npm organisation ownership, or trusted-publisher configuration.",
+        "Does not prove the broader connected-journey release gates are complete.",
+        "Does not prove the SDKs are publishable today."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "package.json",
+        "packages/SDK-PUBLISH-CHECKLIST.md",
+        "packages/SDK-RELEASE.md",
+        "scripts/sdk-landing-preflight.mjs",
+        "scripts/sdk-publish-delta.mjs"
+      ]
+    },
+    {
+      "evidenceId": "sdk-publication-readiness-report-2026-08-06",
+      "requirementIds": ["P5A-06", "P5A-08", "X-04", "X-05", "X-08"],
+      "class": "Operations",
+      "summary": "A reproducible SDK publication-readiness artifact now combines repo-side landing status, required-file delta against `main`, publish-preflight blockers, and workstation limitations into one machine-readable plus markdown report.",
+      "command": "npm run report:sdk:publication-readiness",
+      "artifactPath": "docs/journey-management/operations/latest-sdk-publication-readiness-report.md",
+      "observed": {
+        "proves": [
+          "The repo can now materialise one non-publishing artifact that combines the current repo-side and external SDK publication blockers.",
+          "As of Thursday, August 6, 2026, the artifact records that the landing preflight still fails, four required SDK publish-state files are missing on `main`, and the publish preflight still fails.",
+          "The artifact also records the exact required-file delta against `main`, plus the current workstation trusted-publishing limitations."
+        ],
+        "currentSummary": {
+          "requiredFilesMissingOnMain": 4,
+          "committedMainHeadDiffs": 2,
+          "workingTreeSdkPublishStateEntries": 4,
+          "publishPreflightOk": false
+        }
+      },
+      "notClaimed": [
+        "Does not prove npm authentication, npm organisation ownership, or trusted-publisher configuration are complete.",
+        "Does not prove the broader connected-journey release gates are complete.",
+        "Does not prove the SDKs are publishable today."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "package.json",
+        "packages/SDK-PUBLISH-CHECKLIST.md",
+        "packages/SDK-RELEASE.md",
+        "scripts/generate-sdk-publication-readiness-report.mjs",
+        "scripts/sdk-landing-preflight.mjs",
+        "scripts/sdk-publish-delta.mjs",
+        "scripts/sdk-publish-preflight.mjs",
+        "docs/journey-management/operations/latest-sdk-publication-readiness-report.md",
+        "docs/journey-management/operations/latest-sdk-publication-readiness-report.json"
+      ]
+    },
+    {
+      "evidenceId": "outcome-visual-designed-journey-2026-08-05",
+      "requirementIds": ["P1-01", "P1-02", "P1-03", "P1-04", "P1-05", "P1-06", "P1-07", "P1-10", "P1-11", "P1-12", "P1-14", "P1-15"],
+      "class": "Operations",
+      "summary": "The visual multi-persona designed-journey outcome is in progress with strong Journey Map 2.0 foundations, but saved-view completion and release-grade proof remain open.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "In progress",
+        "blockingHighlights": [
+          "Saved views and filters remain incomplete at full release depth.",
+          "Accessibility, security/privacy, performance, and release-gate reruns remain open."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the outcome is Verified.",
+        "Does not prove Phase 1 release gates are complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-exact-existing-evidence-2026-08-05",
+      "requirementIds": ["P1-08", "P1-09", "P2-01", "P2-02", "P2-03", "P2-04", "X-04", "X-05", "X-06"],
+      "class": "Operations",
+      "summary": "The exact-existing-evidence outcome is in progress: authoritative evidence and Research Hub foundations exist, but security/privacy and retention-grade proof remain open.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "In progress",
+        "blockingHighlights": [
+          "Retention/deletion propagation remains incomplete.",
+          "Privacy/security and export negative-control gates remain open."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the full evidence experience is release-complete.",
+        "Does not prove privacy controls are Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-sdk-and-event-source-2026-08-05",
+      "requirementIds": ["P5A-01", "P5A-02", "P5A-03", "P5A-04", "P5A-05", "P5A-06", "X-01", "X-02", "X-03", "X-04", "X-05"],
+      "class": "Operations",
+      "summary": "The consent-aware SDK and governed event-source outcome is in progress: durable control/data-plane foundations and release-shaped SDK packages exist, but publication and release-grade gates remain open.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "In progress",
+        "supportingEvidenceIds": [
+          "sdk-release-shape-2026-08-05",
+          "sdk-preflight-blockers-2026-08-05",
+          "sdk-publication-blocker-sheet-2026-08-05",
+          "sdk-main-landing-proof-2026-08-06",
+          "sdk-publication-readiness-report-2026-08-06"
+        ],
+        "blockingHighlights": [
+          "npm publication has not occurred, and `main` still lacks the full required SDK publish-state file set.",
+          "Dogfood/security/privacy/operations gates remain open."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the SDKs are published.",
+        "Does not prove the full connected-journey runtime is externally releasable."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "packages/SDK-QUALIFICATION.json",
+        "packages/SDK-RELEASE.md",
+        "packages/SDK-PUBLISH-CHECKLIST.md",
+        "scripts/sdk-publish-preflight.mjs"
+      ]
+    },
+    {
+      "evidenceId": "outcome-customer-360-in-progress-2026-08-05",
+      "requirementIds": ["P5B-01", "P5B-02", "P5B-03", "P5B-04", "X-04", "X-05"],
+      "class": "Operations",
+      "summary": "Customer and Account 360 remain below product-completion threshold: persisted identity/profile foundations, first timeline/360 reads, and initial privacy/export plus privacy-operation-job foundations now exist, but full privacy-job completion proof and the broader 360 outcome are still missing.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "In progress",
+        "availableFoundation": [
+          "Pure identity reducer and policy tests exist.",
+          "A first persisted `/api/journey-identities` backend slice now exists.",
+          "Permissioned Customer 360 reads and purpose-specific privacy/export foundations now exist.",
+          "Durable suppression and erasure privacy-job requests now exist with explicit pending downstream propagation summaries."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove any Customer 360 product surface exists.",
+        "Does not prove privacy-job completion across stores."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-profile-privacy-export-foundation-2026-08-05",
+      "requirementIds": ["P5B-04", "X-05"],
+      "class": "Tests",
+      "summary": "A first backend privacy/export foundation now provides purpose-specific profile privacy states and governed JSON profile-export jobs, and blocks Customer 360/export reads when the requested purpose is denied or suppressed.",
+      "command": "npx tsx --test backend/test/journey-identity-routes.test.ts; npm run typecheck --workspace backend",
+      "observed": {
+        "state": "In progress",
+        "implementedSurface": [
+          "GET and PUT profile privacy-state routes for analytics, personalisation, research_contact, and marketing",
+          "Customer 360 and profile export denial when the requested purpose is denied or suppressed",
+          "Durable profile export-job storage plus export-job detail reads",
+          "Focused route proof for permission and privacy gating"
+        ],
+        "verifiedFiles": [
+          "backend/src/journeyIdentityRepository.ts",
+          "backend/src/journeyIdentityRoutes.ts",
+          "backend/src/platformSchema.ts",
+          "backend/test/journey-identity-routes.test.ts",
+          "backend/migrations/postgres/0031_journey_identity_profiles.sql"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove resumable correction, erasure, or retention propagation jobs exist.",
+        "Does not prove completion across every raw, derived, and action store.",
+        "Does not prove DPIA, legal-hold, or broader privacy operations are complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyIdentityRepository.ts",
+        "backend/src/journeyIdentityRoutes.ts",
+        "backend/src/platformSchema.ts",
+        "backend/test/journey-identity-routes.test.ts",
+        "backend/migrations/postgres/0031_journey_identity_profiles.sql",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-profile-privacy-jobs-foundation-2026-08-05",
+      "requirementIds": ["P5B-04", "X-05"],
+      "class": "Tests",
+      "summary": "A first backend privacy-operations slice now records durable suppression and erasure job requests, immediately applies suppression state where appropriate, immediately propagates to existing profile export bundles, materialised segment memberships, profile timeline events, identity sessions, and anonymous journey instances where no append-only stage-visit traces remain, and now reports only the truly remaining downstream targets, naming anonymous actual-path trace stores only when those traces actually block cleanup.",
+      "command": "npx tsx --test backend/test/journey-identity-routes.test.ts; npm run typecheck --workspace backend",
+      "observed": {
+        "state": "In progress",
+        "implementedSurface": [
+          "POST profile privacy-job route for suppress and erasure requests",
+          "GET privacy-job detail route for owner/admin actors",
+          "Immediate all-purpose suppression state application for suppression requests",
+          "Immediate propagation to existing profile export bundles, materialised segment memberships, profile timeline events, identity sessions, and anonymous journey instances",
+          "Queued erasure request recording with explicit pending propagation targets",
+          "Suppress and erasure job results exclude already-executed propagation targets from their pending-target lists",
+          "Anonymous-instance propagation remains pending rather than falsely executed when append-only anonymous stage visits still exist",
+          "Pending-target reporting now explicitly names anonymous stage visits, stage-rule decisions, and actual-path snapshots when append-only anonymous traces still block cleanup, and omits them when no such traces exist"
+        ],
+        "verifiedFiles": [
+          "backend/src/journeyIdentityRepository.ts",
+          "backend/src/journeyIdentityRoutes.ts",
+          "backend/src/platformSchema.ts",
+          "backend/test/journey-identity-routes.test.ts",
+          "backend/migrations/postgres/0031_journey_identity_profiles.sql"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove downstream erasure execution across events, evidence, aggregates, or actions beyond the now-executed export-bundle, materialised-segment, profile-timeline, identity-session, and anonymous-instance stores.",
+        "Does not prove resumable retention or legal-hold workflows exist.",
+        "Does not prove end-to-end privacy propagation is complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyIdentityRepository.ts",
+        "backend/src/journeyIdentityRoutes.ts",
+        "backend/src/platformSchema.ts",
+        "backend/test/journey-identity-routes.test.ts",
+        "backend/migrations/postgres/0031_journey_identity_profiles.sql",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-identity-correction-runs-foundation-2026-08-05",
+      "requirementIds": ["P5B-04"],
+      "class": "Tests",
+      "summary": "A first correction-window foundation now records durable correction runs whenever identity commands trigger merge-driven or late-source-fact rebuilds of profile timelines, derived sessions, and materialised segment memberships.",
+      "command": "npx tsx --test backend/test/journey-identity-routes.test.ts; npm run typecheck --workspace backend",
+      "observed": {
+        "state": "In progress",
+        "implementedSurface": [
+          "Durable correction-run rows written from the existing identity projection rebuild path",
+          "Reason classification for merge_command, late_source_fact, and ordinary identity_command rebuilds",
+          "Editor-only per-profile correction history route",
+          "Focused route proof that late-source-fact corrections are recorded and readable only by editor/admin actors"
+        ],
+        "verifiedFiles": [
+          "backend/src/journeyIdentityRepository.ts",
+          "backend/src/journeyIdentityRoutes.ts",
+          "backend/src/platformSchema.ts",
+          "backend/test/journey-identity-routes.test.ts",
+          "backend/migrations/postgres/0031_journey_identity_profiles.sql"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove bounded replay workers or resumable correction execution exist beyond the current inline rebuild path.",
+        "Does not prove late-event correction across anonymous journey instances, aggregates, evidence, or actions.",
+        "Does not prove full correction-window completion for Phase 5B."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyIdentityRepository.ts",
+        "backend/src/journeyIdentityRoutes.ts",
+        "backend/src/platformSchema.ts",
+        "backend/test/journey-identity-routes.test.ts",
+        "backend/migrations/postgres/0031_journey_identity_profiles.sql",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-human-governed-action-not-started-2026-08-05",
+      "requirementIds": ["P5D-01", "P5D-02", "P5D-03", "P5D-04", "X-01", "X-02", "X-03", "X-04", "X-05", "X-06", "X-07", "X-08"],
+      "class": "Operations",
+      "summary": "Safe consent-aware human-governed action remains not started at the product/runtime level: no workflow runtime or consequential-action proof chain exists yet.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "Not started",
+        "blockingHighlights": [
+          "Workflow definitions are not implemented.",
+          "Consequential-action runtime, adapters, and kill switches are not implemented."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove orchestration foundations are complete.",
+        "Does not prove any consequential-action safety guarantees."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-metrics-sentiment-operations-2026-08-05",
+      "requirementIds": ["P2-05", "P2-06", "P2-07", "P2-08", "P2-09", "P2-10", "P2-11"],
+      "class": "Operations",
+      "summary": "The trustworthy metrics/sentiment/operations outcome remains below completion: deterministic metric foundations exist, but the full analytics product and release-grade proof do not.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "Foundation",
+        "blockingHighlights": [
+          "Native ticket/social adapters remain incomplete.",
+          "Exports, privacy suppression, richer comparisons, and Phase 2 release proof remain open."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove a complete live metric product exists.",
+        "Does not prove Phase 2 performance/freshness gates are passed."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-portfolio-and-initiatives-2026-08-05",
+      "requirementIds": ["P3-01", "P3-02", "P3-03", "P3-04", "P3-05", "P3-06", "P3-07", "P3-08", "P3-09", "P3-10", "P3-11"],
+      "class": "Operations",
+      "summary": "The reusable portfolio and initiatives outcome has durable backend foundations and some collaboration/saved-view support, but remains below product-completion threshold.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "Foundation",
+        "blockingHighlights": [
+          "Portfolio product surfaces such as table/Kanban/matrix/dashboard remain incomplete.",
+          "Bridge-to-actions, full sharing/reporting, and Phase 3 entitlements/release gates remain open."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove a complete reusable portfolio product exists.",
+        "Does not prove Phase 3 governance/reporting/export proof is complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "backend/src/journeyPortfolio.ts",
+        "backend/src/journeyCollaboration.ts",
+        "backend/src/journeySavedViews.ts"
+      ]
+    },
+    {
+      "evidenceId": "outcome-hierarchy-and-service-blueprint-2026-08-05",
+      "requirementIds": ["P4-01", "P4-02", "P4-03", "P4-04", "P4-05", "P4-06", "P4-07", "P4-08"],
+      "class": "Operations",
+      "summary": "The hierarchy and service-blueprint outcome has durable schema and contract groundwork, but not the complete routed workspace/export/release proof required for completion.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "Foundation",
+        "blockingHighlights": [
+          "Mounted APIs and user-facing workspace breadth remain incomplete.",
+          "Export fidelity, taxonomy/health roll-up, and Phase 4 release gates remain open."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the service-blueprint workspace is shipped.",
+        "Does not prove hierarchy product surfaces are complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "backend/src/journeyHierarchy.ts",
+        "backend/src/journeyServiceBlueprint.ts",
+        "backend/migrations/postgres/0029_journey_hierarchy_blueprints.sql"
+      ]
+    },
+    {
+      "evidenceId": "outcome-debug-and-stage-rules-2026-08-05",
+      "requirementIds": ["P5A-03", "P5A-04", "P5A-05", "P5A-06", "P5A-07", "P5A-08"],
+      "class": "Operations",
+      "summary": "The debug-and-map-events-to-stage-rules outcome is in progress with durable control-plane, data-plane, and stage-processing foundations, but not with full release-grade proof.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "In progress",
+        "blockingHighlights": [
+          "Retained labelled reprojection remains open.",
+          "Dogfood reconciliation, larger-scale performance, and signed release approval remain open."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove stage-processing release readiness.",
+        "Does not prove externally releasable observability/operations depth."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-real-paths-and-observed-vs-designed-2026-08-05",
+      "requirementIds": ["P5A-07", "P5A-08", "P5C-01"],
+      "class": "Operations",
+      "summary": "The real-paths and designed-versus-observed outcome has advanced to an in-progress product slice: pure analytics and stage-processing groundwork now back a real actual-path API, durable subject-scoped snapshots and rollups, and a first known-profile stitched mode, but the broader Phase 5 outcome remains incomplete.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "In progress",
+        "blockingHighlights": [
+          "Product-scale designed-versus-observed reconciliation remains incomplete even though a first durable subject-scoped rollup read model now exists.",
+          "Broader known-identity pathing, comparisons at product scale, and operational correction remain open."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the full actual-path product is complete.",
+        "Does not prove designed-versus-observed comparison is shipped at product scale."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "actual-path-subject-scoped-surface-2026-08-05",
+      "requirementIds": ["P5C-01"],
+      "class": "Tests",
+      "summary": "A first actual-path product surface now exists through `/api/journey-metrics/actual-paths`, append-only snapshot routes, and a first durable rollup route that is also surfaced in Journey Metrics; the backend route now also supports a first known-profile stitched mode using existing anonymous-binding/account bridges, and the Journey Metrics workspace can now switch between anonymous-only and known-profile stitched modes across both the live view and persisted rollup/snapshot surfaces, with focused route/runtime proof, an initial designed-versus-observed comparison, freshness signals, snapshot-to-current reconciliation deltas, and successful backend/frontend validation.",
+      "command": "npx tsx --test backend/test/journey-actual-paths-routes.test.ts; npm run typecheck --workspace backend; npm run typecheck --workspace frontend; npm run build --workspace frontend",
+      "observed": {
+        "state": "In progress",
+        "implementedSurface": [
+          "Backend route `/api/journey-metrics/actual-paths`",
+          "Backend known-profile stitched mode on `/api/journey-metrics/actual-paths`",
+          "Backend routes for saving and rereading actual-path snapshots",
+          "Backend routes for materialising and reopening the latest actual-path rollup",
+          "Frontend Journey Metrics actual-path section",
+          "Frontend live actual-path subject-mode switch between anonymous-only and known-profile stitched views",
+          "Frontend latest-rollup status and refresh/materialize affordance for the selected subject scope",
+          "Designed-versus-observed stage-alignment comparison",
+          "Durable append-only snapshot save/read support",
+          "Snapshot freshness status against newer observed visits and completed reprojections",
+          "Recent snapshot history inspection",
+          "Historical snapshot reopen-by-id support",
+          "Snapshot-to-current reconciliation deltas for accepted counts, stage drift, and design-version drift",
+          "Explicit descriptive scope notes and subject-scoped persistence boundaries"
+        ],
+        "verifiedFiles": [
+          "backend/src/journeyActualPathAnalytics.ts",
+          "backend/src/journeyMetricRoutes.ts",
+          "frontend/src/lib/journeyMetrics.ts",
+          "frontend/src/pages/JourneyMetricsPage.tsx",
+          "backend/test/journey-actual-paths-routes.test.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove designed-versus-observed reconciliation or Customer 360 is complete.",
+        "Does not prove scheduler-driven rebuilds or full correction/reconciliation workflows exist.",
+        "Does not prove broad product-scale known-identity pathing is complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyActualPathAnalytics.ts",
+        "backend/src/journeyMetricRoutes.ts",
+        "frontend/src/lib/journeyMetrics.ts",
+        "frontend/src/pages/JourneyMetricsPage.tsx",
+        "backend/test/journey-actual-paths-routes.test.ts",
+        "backend/test/journey-path-analytics.test.ts"
+      ]
+    },
+    {
+      "evidenceId": "outcome-deterioration-gaps-risk-2026-08-05",
+      "requirementIds": ["P2-09", "P2-10", "P5C-01", "P5C-02", "P5C-03"],
+      "class": "Operations",
+      "summary": "The deterioration/gaps/abandonment/risk outcome remains not started at full-product scope: alerts and path foundations exist, but reviewed anomaly/risk and governed predictive layers do not.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "Not started",
+        "availableFoundation": [
+          "Metric-alert lifecycle foundations exist.",
+          "Actual-path analytics fixtures exist."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove reviewed risk detection exists.",
+        "Does not prove governed predictive analytics exists."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-roles-plans-quotas-runbooks-2026-08-05",
+      "requirementIds": ["X-01", "X-02", "X-03", "X-04", "X-05", "X-06", "X-07", "X-08", "X-09", "X-10"],
+      "class": "Operations",
+      "summary": "The cross-cutting governance/roles/plans/quotas/runbooks outcome remains at foundation level: several plan/quota/flag foundations exist, and the connected-journey ingest gate now emits a durable operations artifact, but full enforcement, privacy, ratified operations, and rollout evidence remain incomplete.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "Foundation",
+        "supportingEvidenceIds": [
+          "connected-journey-ingest-gate-report-2026-08-05"
+        ],
+        "blockingHighlights": [
+          "Route-by-route capability enforcement and privacy controls remain incomplete.",
+          "Ratified telemetry/SLOs/runbooks, rollout gates, and published documentation remain open despite the new durable ingest-gate operations artifact."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove governance is release-complete across the programme.",
+        "Does not prove operations/runbook/rollout gates are complete."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md",
+        "docs/journey-management/architecture/OPERATIONS-AND-INCIDENTS.md",
+        "docs/journey-management/architecture/QUALITY-BUDGETS.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-persona-journey-proof-chain-2026-08-05",
+      "requirementIds": ["P1-01", "P1-02", "P1-03", "P1-04", "P1-05", "P1-06", "P1-07", "P1-10", "P1-11", "P1-12", "P1-14", "P1-15"],
+      "class": "Tests",
+      "summary": "The visual designed-journey outcome already has a detailed traceability proof chain and strong Phase 1 foundations, but no requirement in that chain is yet Verified.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Visual multi-persona designed journey",
+        "currentState": "In progress"
+      },
+      "notClaimed": [
+        "Does not prove full release-grade completion for the visual designed-journey experience.",
+        "Does not prove saved-view, accessibility, or signed release gates are complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-evidence-without-second-km-proof-chain-2026-08-05",
+      "requirementIds": ["P1-08", "P1-09", "P2-01", "P2-02", "P2-03", "P2-04", "X-04", "X-05", "X-06"],
+      "class": "Tests",
+      "summary": "The no-second-knowledge-engine outcome has a clear proof chain with implemented evidence and Research Hub foundations, but privacy/security/release proof remains incomplete.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Exact existing evidence without a second knowledge engine",
+        "currentState": "In progress"
+      },
+      "notClaimed": [
+        "Does not prove end-to-end release readiness for evidence and Research Hub.",
+        "Does not prove privacy or retention controls are fully complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-metrics-proof-chain-2026-08-05",
+      "requirementIds": ["P2-05", "P2-06", "P2-07", "P2-08", "P2-09", "P2-10", "P2-11"],
+      "class": "Tests",
+      "summary": "The trustworthy metrics/sentiment/operations outcome is explicitly bound to its Phase 2 proof chain and remains below completion.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Trustworthy stage NPS/CSAT/CES, sentiment and operations",
+        "currentState": "Foundation"
+      },
+      "notClaimed": [
+        "Does not prove full analytics product completion.",
+        "Does not prove Phase 2 release gates are satisfied."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-portfolio-proof-chain-2026-08-05",
+      "requirementIds": ["P3-01", "P3-02", "P3-03", "P3-04", "P3-05", "P3-06", "P3-07", "P3-08", "P3-09", "P3-10", "P3-11"],
+      "class": "Tests",
+      "summary": "The reusable portfolio and initiatives outcome is now explicitly tied to its Phase 3 proof chain, showing durable foundations but incomplete productisation.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Reusable portfolio and owned initiatives",
+        "currentState": "Foundation"
+      },
+      "notClaimed": [
+        "Does not prove complete Phase 3 product surfaces.",
+        "Does not prove full reporting/export/governance release gates."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-hierarchy-proof-chain-2026-08-05",
+      "requirementIds": ["P4-01", "P4-02", "P4-03", "P4-04", "P4-05", "P4-06", "P4-07", "P4-08"],
+      "class": "Tests",
+      "summary": "The macro/subjourney and service-blueprint outcome is now explicitly tied to its Phase 4 proof chain, showing durable schema groundwork but incomplete product surfaces.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Macro/subjourneys and complete service blueprint",
+        "currentState": "Foundation"
+      },
+      "notClaimed": [
+        "Does not prove routed hierarchy/blueprint workspaces are complete.",
+        "Does not prove Phase 4 export or performance release gates are complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-stage-rule-debug-proof-chain-2026-08-05",
+      "requirementIds": ["P5A-03", "P5A-04", "P5A-05", "P5A-06", "P5A-07", "P5A-08"],
+      "class": "Tests",
+      "summary": "The debug-and-map-events-to-stage-rules outcome is explicitly tied to the current Phase 5A proof chain and remains below release completion, but it now has both runtime-30 retained reprojection execution proof and a durable destructive-isolated ingest-gate artifact that exercises runtime-18 stage processing.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Debug and map events to published stage rules",
+        "currentState": "In progress",
+        "supportingEvidenceIds": [
+          "runtime30-stage-reprojection-execution-2026-08-05",
+          "runtime30-stage-reprojection-multibatch-2026-08-05",
+          "connected-journey-ingest-gate-report-2026-08-05"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove production-scale retained reprojection or full dogfood completion.",
+        "Does not prove signed release approval."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-real-paths-proof-chain-2026-08-05",
+      "requirementIds": ["P5A-07", "P5A-08", "P5C-01"],
+      "class": "Tests",
+      "summary": "The real-paths and designed-versus-observed outcome is explicitly tied to the current proof chain and is now in progress because a first subject-scoped actual-path surface exists, but the broader outcome remains incomplete.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Real conversion/drop-off/duration/cohorts/paths and designed-versus-observed",
+        "currentState": "In progress"
+      },
+      "notClaimed": [
+        "Does not prove the full actual-path product exists.",
+        "Does not prove product-scale comparisons, broader reconciliation, or known-identity pathing are complete."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-identity-persistence-slice-2026-08-05",
+      "requirementIds": ["P5B-01"],
+      "class": "Tests",
+      "summary": "A first durable journey-identity backend slice now persists reducer-backed profiles, bindings, merges, memberships, source facts, tombstones, processed commands, and audit, and exposes a permissioned `/api/journey-identities` surface for list/detail/resolve and explicit identity commands.",
+      "command": "npx tsx --test backend/test/journey-identity-routes.test.ts; npm run typecheck --workspace backend",
+      "observed": {
+        "state": "In progress",
+        "implementedSurface": [
+          "SQLite-backed durable journey identity tables",
+          "Reducer-backed persisted command application",
+          "Journey identity profile list/detail routes",
+          "Journey identity resolve route",
+          "Explicit observe/identify/alias/merge/split/membership/delete command route",
+          "Member read-only and owner/admin mutation enforcement"
+        ],
+        "verifiedFiles": [
+          "backend/src/journeyIdentityPolicy.ts",
+          "backend/src/journeyIdentityRepository.ts",
+          "backend/src/journeyIdentityRoutes.ts",
+          "backend/src/platformSchema.ts",
+          "backend/src/app.ts",
+          "backend/test/journey-identity-routes.test.ts",
+          "backend/migrations/postgres/0031_journey_identity_profiles.sql"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove Customer/Account 360 timeline surfaces exist.",
+        "Does not prove consent, export, erasure, and retention propagation across all stores.",
+        "Does not prove PostgreSQL migration rollback/replay or broader concurrency proof has passed.",
+        "Does not prove account/group/session modelling or dynamic/materialised segments are complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyIdentityPolicy.ts",
+        "backend/src/journeyIdentityRepository.ts",
+        "backend/src/journeyIdentityRoutes.ts",
+        "backend/src/platformSchema.ts",
+        "backend/src/app.ts",
+        "backend/test/journey-identity-routes.test.ts",
+        "backend/migrations/postgres/0031_journey_identity_profiles.sql",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-identity-groups-and-timeline-slice-2026-08-05",
+      "requirementIds": ["P5B-02", "P5B-03"],
+      "class": "Tests",
+      "summary": "A follow-on journey-identity backend slice now adds durable account/group catalog rows plus rebuilt profile/group interaction timelines, exposed through permissioned `/api/journey-identities/groups` and profile/group timeline routes.",
+      "command": "npx tsx --test backend/test/journey-identity-routes.test.ts; npm run typecheck --workspace backend; npm run validate:journey-plan",
+      "observed": {
+        "state": "In progress",
+        "implementedSurface": [
+          "SQLite-backed journey identity groups table",
+          "SQLite-backed profile timeline read-model table",
+          "Aligned PostgreSQL runtime migration for groups and timeline tables",
+          "Journey identity group create/list/detail routes",
+          "Profile timeline route",
+          "Group timeline route",
+          "Focused route proof for group detail and timeline reads"
+        ],
+        "verifiedFiles": [
+          "backend/src/journeyIdentityRepository.ts",
+          "backend/src/journeyIdentityRoutes.ts",
+          "backend/src/platformSchema.ts",
+          "backend/test/journey-identity-routes.test.ts",
+          "backend/migrations/postgres/0031_journey_identity_profiles.sql"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove session modelling or dynamic/materialised segments are complete.",
+        "Does not prove any full Customer/Account 360 product UI exists.",
+        "Does not prove privacy-job completion, purpose filtering, or evidence-linked action workflows.",
+        "Does not prove broader concurrency, rollback/replay, or production-scale proof for the identity slice."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyIdentityRepository.ts",
+        "backend/src/journeyIdentityRoutes.ts",
+        "backend/src/platformSchema.ts",
+        "backend/test/journey-identity-routes.test.ts",
+        "backend/migrations/postgres/0031_journey_identity_profiles.sql",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-identity-sessions-slice-2026-08-05",
+      "requirementIds": ["P5B-02"],
+      "class": "Tests",
+      "summary": "A further journey-identity backend slice now adds a durable session read model derived from anonymous identifier bindings plus persisted identity source facts, exposed through profile session listing and session detail routes.",
+      "command": "npx tsx --test backend/test/journey-identity-routes.test.ts; npm run typecheck --workspace backend; npm run validate:journey-plan",
+      "observed": {
+        "state": "In progress",
+        "implementedSurface": [
+          "SQLite-backed journey identity sessions table",
+          "Aligned PostgreSQL runtime migration for journey identity sessions",
+          "Derived session rebuild from anonymous identity bindings and source facts",
+          "Profile sessions route",
+          "Session detail route",
+          "Focused route proof for session list/detail reads"
+        ],
+        "verifiedFiles": [
+          "backend/src/journeyIdentityRepository.ts",
+          "backend/src/journeyIdentityRoutes.ts",
+          "backend/src/platformSchema.ts",
+          "backend/test/journey-identity-routes.test.ts",
+          "backend/migrations/postgres/0031_journey_identity_profiles.sql"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove dynamic or materialised segments are complete.",
+        "Does not prove consent-aware session correction, suppression, or retention jobs.",
+        "Does not prove any Customer/Account 360 product UI exists.",
+        "Does not prove broader concurrency, rollback/replay, or production-scale proof for this identity slice."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyIdentityRepository.ts",
+        "backend/src/journeyIdentityRoutes.ts",
+        "backend/src/platformSchema.ts",
+        "backend/test/journey-identity-routes.test.ts",
+        "backend/migrations/postgres/0031_journey_identity_profiles.sql",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-identity-segments-slice-2026-08-05",
+      "requirementIds": ["P5B-02"],
+      "class": "Tests",
+      "summary": "A further connected-journey identity backend slice now adds segment/version/materialisation foundations with simple identity and membership rule clauses, exposed through permissioned segment list/detail and new-version routes.",
+      "command": "npx tsx --test backend/test/journey-identity-routes.test.ts; npm run typecheck --workspace backend; npm run validate:journey-plan",
+      "observed": {
+        "state": "In progress",
+        "implementedSurface": [
+          "SQLite-backed journey identity segments table",
+          "SQLite-backed immutable journey identity segment versions",
+          "SQLite-backed materialised journey identity segment memberships",
+          "Aligned PostgreSQL runtime migration for connected-journey segment tables",
+          "Permissioned journey identity segment list/detail/create/new-version routes",
+          "Materialised profile membership rebuilds from simple identity and membership rule clauses"
+        ],
+        "verifiedFiles": [
+          "backend/src/journeyIdentityRepository.ts",
+          "backend/src/journeyIdentityRoutes.ts",
+          "backend/src/platformSchema.ts",
+          "backend/test/journey-identity-routes.test.ts",
+          "backend/migrations/postgres/0031_journey_identity_profiles.sql"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove full consent-aware segment semantics across profile, account, event, metric, and survey conditions.",
+        "Does not prove segment correction workflows or a product UI.",
+        "Does not prove any Customer/Account 360 product surface exists.",
+        "Does not prove broader concurrency, rollback/replay, or production-scale proof for this identity slice."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyIdentityRepository.ts",
+        "backend/src/journeyIdentityRoutes.ts",
+        "backend/src/platformSchema.ts",
+        "backend/test/journey-identity-routes.test.ts",
+        "backend/migrations/postgres/0031_journey_identity_profiles.sql",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-customer-360-read-slice-2026-08-05",
+      "requirementIds": ["P5B-03"],
+      "class": "Tests",
+      "summary": "A first permissioned backend Customer 360 slice now composes profile/account detail over identity bindings, memberships, segment memberships, sessions, consent-state summaries, timelines, and stitched anonymous journey-instance evidence where current hashed-session/runtime data permits it, and the account plus plain profile/group/session/segment identity surfaces now filter suppressed or denied profiles and their derived traces from non-purpose-gated member/count/detail/timeline/session/correction/audit projections.",
+      "command": "npx tsx --test backend/test/journey-identity-routes.test.ts; npm run typecheck --workspace backend; npm run validate:journey-plan",
+      "observed": {
+        "state": "In progress",
+        "implementedSurface": [
+          "Permissioned profile Customer 360 route requiring declared purpose",
+          "Permissioned account Customer 360 route requiring declared purpose",
+          "Consent-state summary derived from accepted raw-event evidence",
+          "Anonymous journey-instance stitching via the shared identity hash key and durable stage-runtime rows",
+          "Focused route proof for purpose-gated profile/account 360 reads",
+          "Account Customer 360 member, segment, journey-instance, and timeline filtering when a member profile is suppressed for the requested purpose",
+          "Plain group/account detail and list projections suppress member rows and active-member counts for profiles suppressed for any purpose",
+          "Plain group/account timeline projections suppress timeline events for profiles suppressed for any purpose",
+          "Plain profile list/detail/timeline/session projections suppress suppressed profiles and their direct session reads",
+          "Plain profile correction-history projections suppress correction runs for profiles suppressed for any purpose",
+          "Plain identity audit projections suppress audit facts tied to profiles suppressed for any purpose",
+          "Plain segment detail projections suppress membership rows for profiles suppressed for any purpose"
+        ],
+        "verifiedFiles": [
+          "backend/src/journeyIdentityRepository.ts",
+          "backend/src/journeyIdentityRoutes.ts",
+          "backend/test/journey-identity-routes.test.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove a full end-user Customer/Account 360 product UI exists.",
+        "Does not prove broader connector-backed timelines for tickets, messages, agreements, and actions.",
+        "Does not prove full field-level sensitive attribute controls or export/privacy completion.",
+        "Does not prove broader concurrency, rollback/replay, or production-scale proof for this slice."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyIdentityRepository.ts",
+        "backend/src/journeyIdentityRoutes.ts",
+        "backend/test/journey-identity-routes.test.ts",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-IMPLEMENTATION-STATUS.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-customer-360-proof-chain-2026-08-05",
+      "requirementIds": ["P5B-01", "P5B-02", "P5B-03", "P5B-04", "X-04", "X-05"],
+      "class": "Tests",
+      "summary": "The Customer/Account 360 outcome is explicitly tied to its proof chain and remains incomplete at full-product scope even though persisted identity foundations now exist.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Permissioned Customer/Account 360",
+        "currentState": "In progress"
+      },
+      "notClaimed": [
+        "Does not prove any Customer/Account 360 product surface exists.",
+        "Does not prove privacy-job completion across raw/derived stores."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-deterioration-risk-proof-chain-2026-08-05",
+      "requirementIds": ["P2-09", "P2-10", "P5C-01", "P5C-02", "P5C-03"],
+      "class": "Tests",
+      "summary": "The deterioration/gaps/abandonment/risk outcome is explicitly tied to its proof chain and remains not started at the governed product level.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Detect deterioration, gaps, loops, abandonment and justified risk",
+        "currentState": "Not started"
+      },
+      "notClaimed": [
+        "Does not prove reviewed anomaly/risk detection exists.",
+        "Does not prove predictive churn/conversion controls exist."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-human-governed-action-proof-chain-2026-08-05",
+      "requirementIds": ["P5D-01", "P5D-02", "P5D-03", "P5D-04", "X-01", "X-02", "X-03", "X-04", "X-05", "X-06", "X-07", "X-08"],
+      "class": "Tests",
+      "summary": "The human-governed-action outcome is explicitly tied to its proof chain and remains not started at the runtime/product level.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Safe consent-aware idempotent human-governed action",
+        "currentState": "Not started"
+      },
+      "notClaimed": [
+        "Does not prove workflow runtime or action adapters exist.",
+        "Does not prove consequential-action safety gates exist."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "outcome-governance-proof-chain-2026-08-05",
+      "requirementIds": ["X-01", "X-02", "X-03", "X-04", "X-05", "X-06", "X-07", "X-08", "X-09", "X-10"],
+      "class": "Tests",
+      "summary": "The roles/plans/quotas/retention/flags/audit/observability/runbooks outcome is explicitly tied to the cross-cutting proof chain and remains below release completion, but the connected-journey ingest gate now contributes a durable machine-readable operations artifact to that chain.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "proofChainOutcome": "Roles, plans, quotas, retention, flags, audit, observability and runbooks",
+        "currentState": "Foundation",
+        "supportingEvidenceIds": [
+          "connected-journey-ingest-gate-report-2026-08-05"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove cross-cutting governance is release-complete.",
+        "Does not prove rollout gates and published documentation are complete."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md"
+      ]
+    },
+    {
+      "evidenceId": "priority1-tranche-plan-2026-08-05",
+      "requirementIds": ["P5A-04", "P5A-05", "P5A-06", "P5A-07", "P5A-08", "X-04", "X-05", "X-08"],
+      "class": "Operations",
+      "summary": "The current audit has been converted into a concrete Priority 1 tranche plan centered on stage reprojection, dogfood reconciliation, and operational release evidence for the connected-journey plane.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-PRIORITY-1-TRANCHE.md",
+      "observed": {
+        "proves": [
+          "The audit now names the exact files and tranche scope for the next highest-value connected-journey work.",
+          "The next implementation step is grounded in the current repo evidence rather than broad narrative intent."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the tranche is implemented yet.",
+        "Does not prove the connected-journey release gate is complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-PRIORITY-1-TRANCHE.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md"
+      ]
+    },
+    {
+      "evidenceId": "runtime30-stage-reprojection-design-2026-08-05",
+      "requirementIds": ["P5A-05", "P5A-07", "P5A-08", "X-08"],
+      "class": "Code",
+      "summary": "The audit has now been translated into a concrete runtime-30 design for governed retained stage reprojection, explicitly based on the repo's existing metric rebuild-run pattern.",
+      "artifactPath": "docs/journey-management/STAGE-REPROJECTION-RUNTIME-30.md",
+      "observed": {
+        "proves": [
+          "The next connected-journey runtime slice is specified with durable entities, execution model, invariants, and likely files to touch.",
+          "The design explicitly reuses the repo's existing durable rebuild pattern instead of inventing a parallel style."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove runtime 30 is implemented.",
+        "Does not prove retained reprojection is available yet."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/journey-management/STAGE-REPROJECTION-RUNTIME-30.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-PRIORITY-1-TRANCHE.md"
+      ]
+    },
+    {
+      "evidenceId": "dogfood-activation-report-2026-08-05",
+      "requirementIds": ["P5A-08", "X-08", "X-09"],
+      "class": "Runtime",
+      "summary": "A bounded Seemplify activation dogfood reconciliation artifact is now generated from current durable account, survey, journey, subscription, and AI-runtime records, and it now prefers authoritative onboarding and explicit workspace-creation audit milestones where available; the current August 6, 2026 local artifact still shows no ChatGPT-connected or ChatGPT-selected users and no journey-created milestones in the sampled evidence.",
+      "command": "npm run report:journey-dogfood",
+      "artifactPath": "docs/journey-management/dogfood/latest-activation-report.md",
+      "observed": {
+        "proves": [
+          "The repo now materialises a reproducible internal activation report instead of relying only on the dogfood plan prose.",
+          "Current local evidence can be reconciled into per-account activation milestones with explicit caveats.",
+          "AI runtime adoption now emits durable platform-audit events for future dogfood runs.",
+          "Onboarding completion and explicit workspace creation now also emit authoritative platform-audit events that the dogfood report prefers over reconstructed timestamps when present."
+        ],
+        "currentSummary": {
+          "accounts": 2,
+          "emailVerified": 2,
+          "onboardingCompleted": 2,
+          "ownedSpaces": 2,
+          "chatGptConnected": 0,
+          "chatGptSelected": 0,
+          "surveyCreated": 1,
+          "journeyCreated": 0,
+          "subscriptionRequested": 0,
+          "subscriptionActivated": 0,
+          "activationAuditEvents": 0,
+          "aiRuntimeAuditEvents": 0
+        }
+      },
+      "notClaimed": [
+        "Does not prove the full Seemplify activation dogfood journey is complete end to end.",
+        "Does not prove live ChatGPT connection/selection milestones are currently present in the sampled local evidence.",
+        "Does not prove historical ChatGPT connections made before the new audit hooks are recoverable.",
+        "Does not prove ratified SLO, privacy, or rollout gates."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "scripts/generate-journey-dogfood-report.mts",
+        "backend/src/aiProviderRoutes.ts",
+        "docs/journey-management/dogfood/latest-activation-report.md",
+        "docs/journey-management/dogfood/latest-activation-report.json"
+      ]
+    },
+    {
+      "evidenceId": "runtime30-stage-reprojection-execution-2026-08-05",
+      "requirementIds": ["P5A-05", "P5A-07", "P5A-08", "X-08"],
+      "class": "Runtime",
+      "summary": "Runtime-30 retained stage reprojection is no longer design-only: the durable queue/claim/checkpoint/complete path and the PostgreSQL probe both pass against current code.",
+      "command": "npx tsx --test backend/test/journey-stage-reprojection.test.ts && node scripts/test-postgres-e2e.mjs",
+      "artifactPath": "backend/src/journeyStageReprojection.ts",
+      "observed": {
+        "proves": [
+          "A retained reprojection run can be queued, claimed, checkpointed, and completed over accepted raw events.",
+          "The PostgreSQL end-to-end probe now passes the retained stage reprojection slice instead of failing on runtime-30 schema/query issues.",
+          "Runtime-30 is implemented as executable reprojection behaviour rather than remaining only a design note."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove release-grade large-scale reprojection performance.",
+        "Does not prove signed dogfood or operations approval for the connected-journey plane."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyStageReprojection.ts",
+        "backend/src/journeyStageProjectionCore.ts",
+        "backend/migrations/postgres/0030_journey_stage_reprojection.sql",
+        "backend/test/journey-stage-reprojection.test.ts",
+        "scripts/probe-journey-stage-reprojection-postgres.mjs",
+        "scripts/test-postgres-e2e.mjs"
+      ]
+    },
+    {
+      "evidenceId": "runtime30-stage-reprojection-multibatch-2026-08-05",
+      "requirementIds": ["P5A-05", "P5A-07", "P5A-08", "X-08"],
+      "class": "Runtime",
+      "summary": "The runtime-30 retained reprojection proof now includes a larger retained-history multi-batch PostgreSQL execution slice, not only the earlier tiny focused run.",
+      "command": "node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "scripts/probe-journey-stage-reprojection-postgres.mjs",
+      "observed": {
+        "proves": [
+          "The disposable PostgreSQL contract run on August 5, 2026 passed an expanded runtime-30 retained reprojection slice inside the broader runtime verification chain.",
+          "The reprojection run queued idempotently, completed in 6 bounded batches of 5, and processed 25 retained accepted raw events without deleting runtime rows.",
+          "The expanded slice preserved append-only attempts, produced one unchanged historical current-stage case plus 24 changed-current-stage outcomes, and completed in a bounded elapsed time in the recorded environment."
+        ],
+        "currentSummary": {
+          "runtimeSchemaVersion": 30,
+          "batches": 6,
+          "batchSize": 5,
+          "elapsedMs": 212,
+          "processedCount": 25,
+          "matchedCount": 25,
+          "changedCurrentStageCount": 24,
+          "unchangedCurrentStageCount": 1
+        }
+      },
+      "notClaimed": [
+        "Does not prove production-scale retained reprojection capacity.",
+        "Does not prove ratified SLOs, multi-node failover, or signed operational approval.",
+        "Does not prove the full connected-journey release gate is closed."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/test/journey-stage-reprojection.test.ts",
+        "scripts/probe-journey-stage-reprojection-postgres.mjs",
+        "scripts/test-postgres-e2e.mjs",
+        "backend/src/journeyStageReprojection.ts",
+        "backend/src/journeyStageProjectionCore.ts"
+      ]
+    },
+    {
+      "evidenceId": "connected-journey-ingest-gate-report-2026-08-05",
+      "requirementIds": ["P5A-04", "P5A-05", "P5A-07", "P5A-08", "X-08"],
+      "class": "Runtime",
+      "summary": "The destructive-isolated PostgreSQL ingest/security/load gate now emits a durable report artifact capturing runtime-30 connected-journey correctness, reconciliation, stage-processing exercise, and the still-open latency/operations blockers.",
+      "command": "JOURNEY_POSTGRES_GATE_ALLOW_DOCKER=true npm run report:journey-ingest-gate",
+      "artifactPath": "docs/journey-management/operations/latest-ingest-gate-report.md",
+      "observed": {
+        "proves": [
+          "A real two-process least-privilege PostgreSQL runtime gate completed successfully on August 6, 2026 and now persists machine-readable plus human-readable evidence artifacts.",
+          "Runtime schema 30 ingest correctness, deduplication, quota/rate-limit recovery, credential revocation, crash/restart recovery, and runtime-18 stage-processing exercise all passed in the same bounded run.",
+          "Reconciliation drift across raw events, dedupe, inbox, and metering was zero in the recorded run.",
+          "The same artifact honestly records zero stored/logged sentinel findings, least-privilege runtime-role proof, and that the observed local Docker p95 request latency remains outside the unratified 300 ms candidate target."
+        ],
+        "currentSummary": {
+          "runtimeSchemaVersion": 30,
+          "generatedLoadEvents": 600,
+          "latencyP95Ms": 4991.53,
+          "rawDedupeDrift": 0,
+          "rawInboxDrift": 0,
+          "rawMeterDrift": 0,
+          "stageProcessingExercised": true,
+          "leastPrivilegeRuntimeRole": true,
+          "outputAndLogSentinelFindings": 0,
+          "storedSentinelFindings": 0
+        },
+        "remainingBlockers": [
+          "INDEPENDENT_SECURITY_PRIVACY_REVIEW_PENDING",
+          "RATIFIED_HARDWARE_AND_LOAD_PROFILE_PENDING",
+          "MULTI_NODE_PRODUCTION_POSTGRES_FAILOVER_NOT_EXERCISED",
+          "SUSTAINED_RECOVERY_AND_LIVE_TRAFFIC_SOAK_PENDING",
+          "SIGNED_SLO_AND_CAPACITY_APPROVAL_PENDING"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove ratified production SLO or capacity approval.",
+        "Does not prove multi-node production PostgreSQL failover or sustained live-traffic soak.",
+        "Does not prove independent security/privacy review is complete."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "scripts/journey-postgres-ingest-security-load.mjs",
+        "scripts/generate-journey-ingest-gate-report.mts",
+        "docs/journey-management/operations/latest-ingest-gate-report.md",
+        "docs/journey-management/operations/latest-ingest-gate-report.json",
+        "docs/journey-management/architecture/QUALITY-BUDGETS.md",
+        "docs/journey-management/architecture/OPERATIONS-AND-INCIDENTS.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-ui-regression-sweep-2026-08-05",
+      "requirementIds": ["P1-04", "P1-05", "P1-06", "P2-05", "P5A-07"],
+      "class": "Tests",
+      "summary": "The previously failing journey editor, metrics, rich-card, AI-suggestion, map-v2, and stage-rule browser regressions were rerun and are green on the current worktree.",
+      "command": "npx playwright test e2e/journey-stage-rules-workspace.spec.ts e2e/journey-map-editor-session.spec.ts e2e/journey-metric-analytics.spec.ts e2e/journey-ai-suggestions.spec.ts e2e/journey-map-v2.spec.ts e2e/journey-rich-cards.spec.ts --project=desktop-chromium && PLAYWRIGHT_EXTERNAL_URL=http://127.0.0.1:5412 npx playwright test e2e/journey-stage-rules-workspace.spec.ts e2e/journey-map-editor-session.spec.ts --project=mobile-chromium",
+      "artifactPath": "frontend/src/components/journeys/JourneyRichCardWorkspace.tsx",
+      "observed": {
+        "proves": [
+          "The repaired rich-card upload flow now passes the owner desktop authoring path.",
+          "The targeted journey regressions across stage rules, editor sessions, metrics, AI suggestions, map-v2, and rich cards are green on desktop.",
+          "The mobile stage-rule navigation and mobile editor reachability regressions are green when rerun against the current bundle."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove the full browser matrix or all remaining accessibility gates.",
+        "Does not replace the complete end-to-end release rerun once the worktree settles."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "frontend/src/components/journeys/JourneyCardSurface.tsx",
+        "frontend/src/components/journeys/JourneyRichCardWorkspace.tsx",
+        "frontend/src/pages/JourneyMetricsPage.tsx",
+        "frontend/src/styles.css",
+        "e2e/journey-stage-rules-workspace.spec.ts",
+        "e2e/journey-map-editor-session.spec.ts",
+        "e2e/journey-metric-analytics.spec.ts",
+        "e2e/journey-ai-suggestions.spec.ts",
+        "e2e/journey-map-v2.spec.ts",
+        "e2e/journey-rich-cards.spec.ts"
+      ]
+    }
+  ]
+}

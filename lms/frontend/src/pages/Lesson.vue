@@ -149,7 +149,10 @@
 								v-if="zenModeEnabled"
 								class="flex items-center space-x-2 mt-2 md:mt-0"
 							>
-								<Button @click="showDiscussionsInZenMode()">
+								<Button
+									v-if="showLearnerCollaboration"
+									@click="showDiscussionsInZenMode()"
+								>
 									<template #icon>
 										<MessageCircleQuestion class="w-4 h-4 stroke-1.5" />
 									</template>
@@ -245,7 +248,7 @@
 						</div>
 						<div
 							v-if="lesson.data.content"
-							@mouseup="toggleInlineMenu"
+							@mouseup="showLearnerCollaboration ? toggleInlineMenu($event) : null"
 							class="ProseMirror prose prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:border-outline-gray-2 prose-th:border-outline-gray-2 prose-td:relative prose-th:relative prose-th:bg-surface-gray-2 prose-sm max-w-none !whitespace-normal mt-8"
 						>
 							<div id="editor"></div>
@@ -263,7 +266,7 @@
 						</div>
 					</div>
 					<div
-						v-if="lesson.data"
+						v-if="lesson.data && showLearnerCollaboration"
 						class="mt-10 pb-20 pt-5 border-t px-5"
 						ref="discussionsContainer"
 					>
@@ -292,9 +295,9 @@
 					</div>
 				</div>
 			</div>
-			<div class="sticky top-10">
-				<div class="bg-surface-menu-bar py-5 px-2 border-b">
-					<div class="text-lg font-semibold text-ink-gray-9">
+			<div class="sticky top-10 lms-lesson-outline-wrap">
+				<div class="bg-surface-menu-bar py-5 px-2 border-b lms-lesson-outline-header">
+					<div class="text-lg font-semibold text-ink-gray-9 lms-lesson-outline-title">
 						{{ lesson.data.course_title }}
 					</div>
 					<div
@@ -319,7 +322,7 @@
 		</div>
 	</div>
 	<InlineLessonMenu
-		v-if="lesson.data?.name"
+		v-if="lesson.data?.name && showLearnerCollaboration"
 		v-model="showInlineMenu"
 		:lesson="lesson.data?.name"
 		v-model:notes="notes"
@@ -384,6 +387,7 @@ const socket = inject('$socket')
 const router = useRouter()
 const route = useRoute()
 const allowDiscussions = ref(false)
+const showLearnerCollaboration = false
 const editor = ref(null)
 const instructorEditor = ref(null)
 const lessonProgress = ref(0)
@@ -902,7 +906,7 @@ watch(allowDiscussions, () => {
 })
 
 const redirectToLogin = () => {
-	window.location.href = `/login?redirect-to=/lms/courses/${props.courseName}`
+	window.location.href = `/lms-login?redirect-to=/lms/courses/${props.courseName}`
 }
 
 usePageMeta(() => {

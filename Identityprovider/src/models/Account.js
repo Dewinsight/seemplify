@@ -10,6 +10,7 @@ const AccountSchema = new mongoose.Schema({
     preferred_username: String,
     // Extended personal information for employee self-service
     personalInfo: {
+      dateOfBirth: Date,
       mailingAddress: {
         street: String,
         street2: String,
@@ -104,6 +105,20 @@ const AccountSchema = new mongoose.Schema({
       type: String,
       enum: ['owner', 'admin', 'hr_manager', 'recruiter', 'interviewer', 'staff']
     },
+    department: {
+      type: mongoose.Schema.Types.ObjectId
+    },
+    appAccess: {
+      mode: {
+        type: String,
+        enum: ['all', 'selected'],
+        default: 'all'
+      },
+      appIds: {
+        type: [String],
+        default: []
+      }
+    },
     joinedAt: {
       type: Date,
       default: Date.now
@@ -129,6 +144,9 @@ const AccountSchema = new mongoose.Schema({
     organization: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'AiinOrganization'
+    },
+    department: {
+      type: mongoose.Schema.Types.ObjectId
     },
     role: {
       type: String,
@@ -189,6 +207,136 @@ const AccountSchema = new mongoose.Schema({
     default: 'local'
   },
 
+  acquisition: {
+    firstTouch: {
+      sourceType: {
+        type: String,
+        enum: ['website_visit', 'campaign_click', 'signup', 'demo_request', 'manual', 'unknown'],
+        default: 'unknown'
+      },
+      source: String,
+      channel: String,
+      campaignId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaign'
+      },
+      batchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaignBatch'
+      },
+      recipientId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaignRecipient'
+      },
+      campaignName: String,
+      brevoCampaignId: Number,
+      brevoMessageId: String,
+      signedToken: String,
+      visitorId: String,
+      sessionId: String,
+      email: String,
+      landingPage: String,
+      referrer: String,
+      utm: {
+        source: String,
+        medium: String,
+        campaign: String,
+        term: String,
+        content: String
+      },
+      metadata: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+      },
+      occurredAt: Date
+    },
+    lastTouch: {
+      sourceType: {
+        type: String,
+        enum: ['website_visit', 'campaign_click', 'signup', 'demo_request', 'manual', 'unknown'],
+        default: 'unknown'
+      },
+      source: String,
+      channel: String,
+      campaignId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaign'
+      },
+      batchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaignBatch'
+      },
+      recipientId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'AiinCampaignRecipient'
+      },
+      campaignName: String,
+      brevoCampaignId: Number,
+      brevoMessageId: String,
+      signedToken: String,
+      visitorId: String,
+      sessionId: String,
+      email: String,
+      landingPage: String,
+      referrer: String,
+      utm: {
+        source: String,
+        medium: String,
+        campaign: String,
+        term: String,
+        content: String
+      },
+      metadata: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+      },
+      occurredAt: Date
+    },
+    conversionSource: {
+      type: String,
+      enum: ['website', 'campaign', 'demo_request', 'manual', 'unknown'],
+      default: 'unknown'
+    },
+    visitorId: String,
+    attributionSnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    }
+  },
+
+  // Dashboard notification view checkpoints (per organization)
+  notificationViews: {
+    documentsByOrganization: {
+      type: Map,
+      of: Date,
+      default: {}
+    },
+    simplePerformanceByOrganization: {
+      type: Map,
+      of: Date,
+      default: {}
+    },
+    simpleLmsByOrganization: {
+      type: Map,
+      of: Date,
+      default: {}
+    }
+  },
+
+  // Per-item notification read checkpoints
+  notificationReads: {
+    documentsAssignments: {
+      type: Map,
+      of: Date,
+      default: {}
+    },
+    simplePerformanceEvaluations: {
+      type: Map,
+      of: Date,
+      default: {}
+    }
+  },
+
   // =====================================================
   // EMPLOYEE PROFILE - HR Information
   // =====================================================
@@ -199,6 +347,7 @@ const AccountSchema = new mongoose.Schema({
 
     // Extended personal information
     personalInfo: {
+      dateOfBirth: Date,
       mailingAddress: {
         street: String,
         street2: String,
@@ -237,7 +386,7 @@ const AccountSchema = new mongoose.Schema({
       // Primary country for banking (determines which fields are required)
       country: {
         type: String,
-        enum: ['USA', 'UK', 'EU', 'Nigeria', 'Other'],
+        enum: ['USA', 'UK', 'EU', 'Nigeria', 'Ghana', 'Kenya', 'South Africa', 'Other'],
         default: 'USA'
       },
 
@@ -263,13 +412,14 @@ const AccountSchema = new mongoose.Schema({
           enum: ['checking', 'savings', 'current', 'salary'], // checking/savings = USA, current/salary = UK/Nigeria
           default: 'checking'
         },
-        accountHolderName: String,
-        percentage: { type: Number, default: 100 },  // For split deposits
-        isActive: { type: Boolean, default: true },
-        country: String,  // Store country per account
-        createdAt: { type: Date, default: Date.now }
-      }]
-    },
+          accountHolderName: String,
+          percentage: { type: Number, default: 100 },  // For split deposits
+          isActive: { type: Boolean, default: true },
+          country: String,  // Store country per account
+          createdAt: { type: Date, default: Date.now },
+          updatedAt: Date
+        }]
+      },
 
     // Dependents and beneficiaries
     dependents: [{
@@ -282,7 +432,25 @@ const AccountSchema = new mongoose.Schema({
       ssn: String,  // Encrypted - for tax purposes
       isBeneficiary: { type: Boolean, default: false },
       beneficiaryPercentage: { type: Number, default: 0 }
-    }]
+    }],
+    dependentsDeclaration: {
+      status: {
+        type: String,
+        enum: ['pending', 'none', 'provided'],
+        default: 'pending'
+      },
+      confirmedAt: Date,
+      lastUpdated: Date
+    },
+    completionReminders: {
+      lastSentAt: Date,
+      sendCount: { type: Number, default: 0 },
+      lastCompletedAt: Date,
+      lastMissingSteps: {
+        type: [String],
+        default: []
+      }
+    }
   },
 
   createdAt: { type: Date, default: Date.now }
@@ -357,4 +525,3 @@ AccountSchema.statics.findSuperAdmins = function () {
 }
 
 export const Account = mongoose.model('AiinAccount', AccountSchema)
-

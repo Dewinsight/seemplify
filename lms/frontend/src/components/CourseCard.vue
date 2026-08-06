@@ -1,11 +1,11 @@
 <template>
 	<div
 		v-if="course.title"
-		class="flex flex-col h-full rounded-md overflow-auto text-ink-gray-9"
+		class="lms-course-card flex flex-col h-full rounded-md overflow-auto text-ink-gray-9"
 		style="min-height: 350px"
 	>
 		<div
-			class="w-[100%] h-[168px] bg-cover bg-center bg-no-repeat border-t border-x rounded-t-md"
+			class="lms-course-card-cover w-[100%] h-[168px] bg-cover bg-center bg-no-repeat border-t border-x rounded-t-md"
 			:style="
 				course.image
 					? { backgroundImage: `url('${encodeURI(course.image)}')` }
@@ -35,7 +35,7 @@
 			</div> -->
 			<div
 				v-if="!course.image"
-				class="flex items-center justify-center text-white flex-1 font-extrabold my-auto px-5 text-center leading-6 h-full"
+				class="lms-course-card-cover-title flex items-center justify-center text-white flex-1 font-extrabold my-auto px-5 text-center leading-6 h-full"
 				:class="
 					course.title.length > 32
 						? 'text-lg'
@@ -47,8 +47,8 @@
 				{{ course.title }}
 			</div>
 		</div>
-		<div class="flex flex-col flex-auto p-4 border-x-2 border-b-2 rounded-b-md">
-			<div class="flex items-center justify-between mb-2">
+		<div class="lms-course-card-body flex flex-col flex-auto p-4 border-x-2 border-b-2 rounded-b-md">
+			<div class="lms-course-card-metrics flex items-center justify-between mb-2">
 				<div v-if="course.lessons">
 					<Tooltip :text="__('Lessons')">
 						<span class="flex items-center">
@@ -89,7 +89,7 @@
 				{{ course.title }}
 			</div>
 
-			<div class="short-introduction text-sm">
+			<div class="lms-course-card-description short-introduction text-sm">
 				{{ course.short_introduction }}
 			</div>
 
@@ -102,7 +102,7 @@
 				{{ Math.ceil(course.membership.progress) }}% {{ __('completed') }}
 			</div>
 
-			<div class="flex items-center justify-between mt-auto">
+			<div class="lms-course-card-footer flex items-center justify-between mt-auto">
 				<div class="flex avatar-group overlap">
 					<div
 						class="h-6 mr-1"

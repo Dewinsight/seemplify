@@ -1,0 +1,59 @@
+name: Experience Management CI
+on:
+  push:
+    branches: [main]
+    paths: ['experience-management/**', 'recruiter/backend/config/aiRuntimeCatalog.js', '.github/workflows/experience-management-ci.yml']
+  pull_request:
+    paths: ['experience-management/**', 'recruiter/backend/config/aiRuntimeCatalog.js', '.github/workflows/experience-management-ci.yml']
+jobs:
+  sdk-runtime-matrix:
+    name: SDK runtime (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    defaults:
+      run:
+        working-directory: experience-management
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: experience-management/package-lock.json
+      - run: npm ci
+      - run: npm run qualify:sdk
+      - run: npm run typecheck:sdk
+      - run: npm run test:sdk
+      - run: npm run build:sdk
+      - run: npm run test:sdk:browser-compat
+      - run: npm run test:sdk:consumer
+
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: experience-management
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+          cache-dependency-path: experience-management/package-lock.json
+      - run: npm i -g npm@11.5.1
+      - run: node -e "const [major, minor] = process.versions.node.split('.').map((value) => Number.parseInt(value, 10)); if (major !== 22 || minor < 14) throw new Error('Node 22.14.0+ required for the release-shaped verification lane');"
+      - run: node -e "const [major, minor, patch] = require('node:child_process').execSync('npm --version', { encoding: 'utf8' }).trim().split('.').map((value) => Number.parseInt(value, 10)); if (major < 11 || (major === 11 && minor < 5) || (major === 11 && minor === 5 && patch < 1)) throw new Error('npm 11.5.1+ required for the release-shaped verification lane');"
+      - run: npm ci
+      - run: npm run qualify:sdk
+      - run: npx playwright install --with-deps chromium
+      - run: npm run validate:journey-plan
+      - run: npm run test:all
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: experience-playwright-report
+          path: experience-management/playwright-report
+          if-no-files-found: ignore

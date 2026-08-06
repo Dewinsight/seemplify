@@ -8,11 +8,23 @@ class MemoryManager {
   constructor() {
     // Map to store memory instances by sessionKey (userId_chatSessionId)
     this.memoryInstances = new Map();
-    
-    // Cleanup old instances periodically (every 30 minutes)
+    this.cleanupInterval = null;
+    this.shutdownPromise = null;
+    this.start();
+  }
+
+  /**
+   * Start periodic cleanup without keeping short-lived processes alive.
+   */
+  start() {
+    if (this.cleanupInterval) return;
+    this.shutdownPromise = null;
     this.cleanupInterval = setInterval(() => {
-      this.cleanupOldInstances();
+      this.cleanupOldInstances().catch((error) => {
+        console.error('MemoryManager cleanup failed:', error);
+      });
     }, 30 * 60 * 1000);
+    this.cleanupInterval.unref?.();
   }
 
   /**
@@ -160,25 +172,40 @@ class MemoryManager {
    * Shutdown the memory manager and clean up
    */
   async shutdown() {
+    if (this.shutdownPromise) return this.shutdownPromise;
+    this.shutdownPromise = this.performShutdown();
+    return this.shutdownPromise;
+  }
+
+  async performShutdown() {
     // Clear the cleanup interval
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
     
-    // Flush all pending saves
-    for (const [key, data] of this.memoryInstances) {
-      await data.instance.flushPendingSaves();
+    // Flush every instance even if an individual persistence call fails.
+    const flushes = await Promise.allSettled(
+      [...this.memoryInstances.values()].map(({ instance }) => instance.flushPendingSaves())
+    );
+    const failedFlushes = flushes.filter(({ status }) => status === 'rejected');
+    if (failedFlushes.length > 0) {
+      console.error(`MemoryManager: ${failedFlushes.length} pending save flushes failed`);
     }
     
     // Clear all instances
     this.memoryInstances.clear();
     console.log('🛑 MemoryManager: Shutdown complete');
   }
+  stop() {
+    return this.shutdown();
+  }
 }
 
 // Create a singleton instance
 const memoryManager = new MemoryManager();
 
+if (require.main === module) {
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
   console.log('🛑 Shutting down memory manager...');
@@ -191,5 +218,6 @@ process.on('SIGTERM', async () => {
   await memoryManager.shutdown();
   process.exit(0);
 });
+}
 
-module.exports = memoryManager; 
+module.exports = memoryManager;

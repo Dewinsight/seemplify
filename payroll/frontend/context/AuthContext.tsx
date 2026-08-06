@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api, { handleAuthCallback as extractToken, isAuthenticated as checkToken } from '@/lib/api';
+import { resolvePayrollBackendOrigin } from '@/lib/runtimeConfig';
 
 // Types based on IdP organization roles
 export type OrganizationRole = 'owner' | 'admin' | 'hr_manager' | 'recruiter' | 'interviewer' | 'member';
@@ -149,7 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadUser]);
 
   const login = () => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006';
+    const apiUrl = resolvePayrollBackendOrigin();
     const returnTo = encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '');
     window.location.href = `${apiUrl}/api/auth/oidc/start?returnTo=${returnTo}`;
   };

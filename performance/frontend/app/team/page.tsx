@@ -19,7 +19,6 @@ import {
   Add, FilterList, Groups, Description
 } from '@mui/icons-material';
 import { gradients } from '../theme';
-import Layout from '@/components/Layout';
 
 interface TeamMember {
   userId: string;
@@ -137,7 +136,7 @@ export default function TeamHubPage() {
   };
 
   // Get user's managed teams for filter
-  const userManagedTeams = teams?.filter((t: any) => t.isManager || t.role === 'line_manager') || [];
+  const userManagedTeams = teams?.filter((t: any) => t.isManager || t.role === 'line_manager' || t.role === 'team_lead') || [];
   
   // Filter team members by selected team and search
   const filteredMembers = (allTeamMembers || []).filter((member: TeamMember) => {
@@ -207,24 +206,17 @@ export default function TeamHubPage() {
 
   if (!isManager && !isHRAdmin) {
     return (
-      <Layout>
-        <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-[rgb(var(--background-start-rgb))]' : 'bg-slate-50'}`}>
-          {isDarkMode && <div className="bg-noise" />}
-          <div className="relative mx-auto px-4 py-8 lg:px-8 max-w-7xl">
-            <Alert
-              severity="info"
-              sx={{ 
-                borderRadius: 3,
-                bgcolor: isDarkMode ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.05)',
-                color: isDarkMode ? '#93c5fd' : '#1e40af',
-                border: `1px solid ${isDarkMode ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)'}`,
-              }}
-            >
-              This page is for managers and HR administrators. You don't have direct reports to manage.
-            </Alert>
-          </div>
-        </div>
-      </Layout>
+      <Alert
+        severity="info"
+        sx={{
+          borderRadius: 3,
+          bgcolor: isDarkMode ? 'rgba(59, 130, 246, 0.1)' : 'rgba(59, 130, 246, 0.05)',
+          color: isDarkMode ? '#93c5fd' : '#1e40af',
+          border: `1px solid ${isDarkMode ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.1)'}`,
+        }}
+      >
+        This page is for managers and HR administrators. You don&apos;t have direct reports to manage.
+      </Alert>
     );
   }
 
@@ -293,10 +285,7 @@ export default function TeamHubPage() {
   ];
 
   return (
-    <Layout>
-      <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-[rgb(var(--background-start-rgb))]' : 'bg-slate-50'}`}>
-        {isDarkMode && <div className="bg-noise" />}
-        <div className="relative mx-auto px-4 py-8 lg:px-8 max-w-7xl space-y-8">
+    <div className="space-y-8">
           {/* Header */}
           <div className="space-y-2">
             <div className="flex items-center gap-3 flex-wrap">
@@ -728,8 +717,6 @@ export default function TeamHubPage() {
         <Add />
         New 1:1
       </button>
-        </div>
-      </div>
-    </Layout>
+    </div>
   );
 }

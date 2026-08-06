@@ -1,0 +1,11 @@
+{
+  "development": {
+    "baseUrl": "http://localhost:5001",
+    "callbackPath": "/api/interviews/oauth/callback"
+  },
+  "production": {
+    "baseUrl": "https://172-182-227-84.nip.io",
+    "callbackPath": "/api/interviews/oauth/callback"
+  }
+}
+

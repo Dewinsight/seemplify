@@ -1,4 +1,5 @@
 const Interview = require('../models/Interview');
+const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
 
 class TranscriptSegmentationService {
   // Debug log helper with context info
@@ -16,14 +17,16 @@ class TranscriptSegmentationService {
    * @param {String} fullTranscript - The complete transcript content
    * @returns {Object} Segmented transcripts for each candidate
    */
-  async segmentTranscriptBySession(sessionId, fullTranscript) {
+  async segmentTranscriptBySession(sessionId, fullTranscript, organizationId = null) {
     try {
       this._log('SEGMENT-SESSION', `Processing session: ${sessionId}`);
       
       // Get all interviews in this session
-      const interviews = await Interview.find({ 
-        multiCandidateSessionId: sessionId 
-      })
+      const sessionQuery = { multiCandidateSessionId: sessionId };
+      const scopedSessionQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, sessionQuery)
+        : sessionQuery;
+      const interviews = await Interview.find(scopedSessionQuery)
       .sort({ multiCandidateOrder: 1 })
       .populate('candidateId', 'firstName lastName email');
 
@@ -407,11 +410,14 @@ class TranscriptSegmentationService {
    * @param {Boolean} includeOverflow - Whether to include overflow segments
    * @returns {Object} Interview transcript with optional overflow
    */
-  async getInterviewTranscript(interviewId, includeOverflow = true) {
+  async getInterviewTranscript(interviewId, includeOverflow = true, organizationId = null) {
     try {
       this._log('GET-TRANSCRIPT', `Retrieving transcript for interview: ${interviewId}`);
       
-      const interview = await Interview.findById(interviewId)
+      const interviewQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, { _id: interviewId })
+        : { _id: interviewId };
+      const interview = await Interview.findOne(interviewQuery)
         .populate('candidateId', 'firstName lastName email');
       
       if (!interview) {
@@ -432,9 +438,11 @@ class TranscriptSegmentationService {
       this._log('GET-TRANSCRIPT', `Multi-candidate interview in session: ${interview.multiCandidateSessionId}`);
       
       // Get the full session transcript
-      const sessionInterviews = await Interview.find({
-        multiCandidateSessionId: interview.multiCandidateSessionId
-      }).sort({ multiCandidateOrder: 1 });
+      const sessionQuery = { multiCandidateSessionId: interview.multiCandidateSessionId };
+      const scopedSessionQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, sessionQuery)
+        : sessionQuery;
+      const sessionInterviews = await Interview.find(scopedSessionQuery).sort({ multiCandidateOrder: 1 });
       
       this._log('GET-TRANSCRIPT', `Found ${sessionInterviews.length} interviews in session`);
       
@@ -456,7 +464,8 @@ class TranscriptSegmentationService {
       // Segment the transcript
       const segmented = await this.segmentTranscriptBySession(
         interview.multiCandidateSessionId,
-        transcriptHolder.transcript.content
+        transcriptHolder.transcript.content,
+        organizationId
       );
       
       // Get this interview's segment

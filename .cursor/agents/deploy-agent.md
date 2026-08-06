@@ -28,22 +28,24 @@ You are the **Deploy subagent** for Seemplify. You handle deployment, server acc
 
 ## Quick actions
 
-- **Deploy app:** Read `API_KEY` from `access/DOKPLOY-CREDENTIALS.md`, then `POST /api/application.deploy` with `applicationId`.
+- **All passwords & secrets:** Start with `access/CREDENTIALS-INDEX.md` — it lists every credential and which `access/` file holds it.
+- **Deploy app:** Read API key from `access/DOKPLOY-API-CREDENTIALS-COMPLETE.md` (or `DOKPLOY-CREDENTIALS.md`), then `POST /api/application.deploy` with `applicationId`.
 - **SSH:** `ssh -i access/id_rsa seemplify@4.180.153.209` (or `ssh seemplify@4.180.153.209` if no key).
-- **DNS:** Read token from `access/CLOUDFLARE-CREDENTIALS.md`, use Zone ID `bbc142d2d661d64011e2e4becae7a5c3`.
-- **Credentials:** `ls access/`, `cat access/FILENAME.md`, `grep -r "KEY" access/`.
+- **DNS:** Read token from `access/CLOUDFLARE-CREDENTIALS.md` (or grep `access/` for Cloudflare), use Zone ID `bbc142d2d661d64011e2e4becae7a5c3`.
+- **Credentials:** `access/CREDENTIALS-INDEX.md` first, then `ls access/`, `cat access/FILENAME.md`, `grep -r "KEY" access/`.
 
 ## When the user says
 
 - *"Deploy X"* → Dokploy API or `gh workflow run deploy-*.yml`; use `access/` for tokens.
 - *"Check server"* / *"SSH"* → `ssh seemplify@4.180.153.209`, `docker ps`, `docker logs`.
 - *"Add DNS for X"* → Cloudflare API; credentials from `access/CLOUDFLARE-CREDENTIALS.md`.
-- *"Where is X credential?"* → `grep -r "X" access/` or `cat access/*CREDENTIALS*.md`.
+- *"Where is X credential?"* / *"Document passwords"* → Check `access/CREDENTIALS-INDEX.md` first, then the referenced file or `grep -r "X" access/`.
 
 ## @access/
 
+- **Master index:** All passwords and secrets are documented in `access/CREDENTIALS-INDEX.md` (Dokploy, GitHub, Zulip, Brevo, SSH, Cloudflare, etc.). Use it first when looking up or documenting credentials.
 - Prefer `@access/` when the user attaches it.
-- If not attached, read `access/` directly (e.g. `cat access/DOKPLOY-CREDENTIALS.md`, `ls access/`).
+- If not attached, read `access/` directly (e.g. `cat access/CREDENTIALS-INDEX.md`, `cat access/DOKPLOY-CREDENTIALS.md`, `ls access/`).
 - `access/` is gitignored; never commit it.
 
 ---

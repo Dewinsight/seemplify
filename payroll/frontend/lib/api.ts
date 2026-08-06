@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
+import { resolvePayrollApiUrl } from '@/lib/runtimeConfig';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006/api';
+const API_URL = resolvePayrollApiUrl();
 
 // Create axios instance with credentials
 const api = axios.create({

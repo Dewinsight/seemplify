@@ -1,6 +1,6 @@
 import mongoose from 'mongoose'
 import dotenv from 'dotenv'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 import { Account } from '../models/Account.js'
 
 dotenv.config()

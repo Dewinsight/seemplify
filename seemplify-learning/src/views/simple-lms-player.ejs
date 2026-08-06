@@ -1,0 +1,1484 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <style><%- include('../public/css/idp-theme.css') %></style>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/public-lms.css?v=20260304-2">
+  <link rel="stylesheet" href="/css/public-lms-refresh.css?v=20260319-1">
+  <script src="/js/theme.js?v=2"></script>
+  <style>
+    :root {
+      --player-hero-start: rgba(56, 189, 248, 0.16);
+      --player-hero-end: rgba(255, 255, 255, 0.92);
+      --player-surface: #ffffff;
+      --player-surface-strong: #f8fafc;
+      --player-pill-bg: #f8fafc;
+      --player-link: #0c4a6e;
+      --border: #e5e7eb;
+      --text: #0f172a;
+      --muted: #64748b;
+      --panel-solid: #ffffff;
+      --card-bg: #ffffff;
+      --input-bg: #ffffff;
+    }
+    [data-theme="dark"] {
+      --player-hero-start: rgba(56, 189, 248, 0.16);
+      --player-hero-end: rgba(255, 255, 255, 0.92);
+      --player-surface: #ffffff;
+      --player-surface-strong: #f8fafc;
+      --player-pill-bg: #f8fafc;
+      --player-link: #0c4a6e;
+      --border: #e5e7eb;
+      --text: #0f172a;
+      --muted: #64748b;
+      --panel-solid: #ffffff;
+      --card-bg: #ffffff;
+      --input-bg: #ffffff;
+    }
+    body.public-site.lmsv-player-page {
+      background: #ffffff;
+    }
+    .player-shell {
+      width: min(1320px, 100%);
+      margin: 0 auto;
+      padding: 0 24px 56px;
+      display: grid;
+      gap: 0;
+    }
+    .player-head {
+      border: none;
+      border-bottom: 1px solid var(--border);
+      border-radius: 0;
+      padding: clamp(28px, 3.4vw, 40px) 0 24px;
+      background: transparent;
+      box-shadow: none;
+    }
+    .player-title {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 38px);
+      letter-spacing: -0.03em;
+      line-height: 1.08;
+      color: var(--text);
+    }
+    .player-subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .player-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.8fr) minmax(300px, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding-top: 24px;
+    }
+    .player-main,
+    .player-side {
+      display: grid;
+      gap: 12px;
+    }
+    .player-curriculum-checkbox {
+      display: none;
+    }
+    .player-curriculum-toggle {
+      display: none;
+    }
+    .player-curriculum-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.58);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 1200;
+    }
+    .player-side-close {
+      display: none;
+    }
+    .player-card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      background: var(--card-bg);
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+      display: grid;
+      gap: 10px;
+    }
+    .player-media {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: linear-gradient(145deg, var(--player-hero-start), var(--player-hero-end));
+      min-height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .player-media iframe {
+      width: 100%;
+      height: 430px;
+      border: 0;
+      display: block;
+    }
+    .player-media video {
+      width: 100%;
+      height: 430px;
+      border: 0;
+      display: block;
+      background: #0f172a;
+    }
+    .player-media-audio {
+      width: min(760px, 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      background: var(--player-surface-strong);
+      display: grid;
+      gap: 10px;
+    }
+    .player-media-audio h4 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .player-media-audio audio {
+      width: 100%;
+    }
+    .player-media-source {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .player-fallback {
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      padding: 24px;
+      line-height: 1.6;
+    }
+    .player-pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .player-pill {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: var(--player-pill-bg);
+      color: var(--text);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+    .player-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .player-progress {
+      height: 9px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.22);
+      overflow: hidden;
+    }
+    .player-progress > span {
+      display: block;
+      height: 100%;
+      width: var(--progress, 0%);
+      background: linear-gradient(90deg, #22d3ee, #14b8a6);
+    }
+    .curriculum {
+      display: grid;
+      gap: 10px;
+      max-height: calc(100vh - 230px);
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .curriculum-chapter {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--player-surface);
+      padding: 9px;
+      display: grid;
+      gap: 7px;
+    }
+    .curriculum-chapter h3 {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+    .curriculum-chapter-title {
+      display: flex;
+      gap: 6px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+    .curriculum-chapter-number {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .curriculum-lesson {
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 8px;
+      padding: 7px 8px;
+      background: var(--player-surface-strong);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-decoration: none;
+    }
+    .curriculum-lesson.active {
+      border-color: rgba(8, 145, 178, 0.5);
+      background: rgba(8, 145, 178, 0.12);
+      color: #0c4a6e;
+    }
+    .curriculum-lesson-label {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+    }
+    .curriculum-lesson-label span:last-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .curriculum-lesson-number {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .curriculum-status {
+      color: #22c55e;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+    }
+    .curriculum-quiz-trigger {
+      width: 100%;
+      justify-content: center;
+    }
+    .quiz-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1600;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+    .quiz-modal.open {
+      display: flex;
+    }
+    .quiz-modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.62);
+    }
+    .quiz-modal-dialog {
+      position: relative;
+      width: min(860px, 100%);
+      max-height: calc(100dvh - 36px);
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--player-surface);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      box-shadow: 0 18px 44px rgba(2, 6, 23, 0.28);
+    }
+    .quiz-modal-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .quiz-modal-close {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--input-bg);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .quiz-modal-meta {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .quiz-section-head {
+      margin: 0;
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .quiz-modal-status {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .quiz-celebration {
+      border: 1px solid rgba(37, 99, 235, 0.16);
+      border-radius: 14px;
+      background: #f8fbff;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      color: var(--text);
+    }
+    .quiz-celebration.is-retry {
+      border-color: rgba(245, 158, 11, 0.24);
+      background: #fffaf0;
+    }
+    .quiz-celebration img {
+      width: 82px;
+      height: 82px;
+      object-fit: contain;
+    }
+    .quiz-celebration h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    .quiz-celebration p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .quiz-celebration strong {
+      color: var(--text);
+    }
+    .quiz-confetti {
+      position: fixed;
+      width: 9px;
+      height: 14px;
+      top: -18px;
+      left: 50%;
+      z-index: 2000;
+      border-radius: 2px;
+      pointer-events: none;
+      animation: quiz-confetti-fall 1.25s ease-out forwards;
+    }
+    @keyframes quiz-confetti-fall {
+      0% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 1; }
+      100% { transform: translate3d(var(--x, 0), calc(100vh + 80px), 0) rotate(var(--r, 360deg)); opacity: 0; }
+    }
+    .quiz-results {
+      display: grid;
+      gap: 8px;
+    }
+    .quiz-result-card {
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 8px;
+      padding: 8px;
+      background: var(--player-surface-strong);
+      display: grid;
+      gap: 6px;
+    }
+    .quiz-result-head {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .quiz-result-pass {
+      color: #15803d;
+    }
+    .quiz-result-fail {
+      color: #b91c1c;
+    }
+    .quiz-result-list {
+      margin: 0;
+      padding: 0 0 0 16px;
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .resource-list {
+      margin: 0;
+      padding: 0 0 0 18px;
+      display: grid;
+      gap: 5px;
+    }
+    .resource-list a { color: var(--player-link); }
+    .quiz-wrap {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--player-surface);
+      padding: 10px;
+      display: grid;
+      gap: 10px;
+    }
+    .quiz-q {
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 8px;
+      padding: 8px;
+      display: grid;
+      gap: 6px;
+      background: var(--player-surface-strong);
+    }
+    .quiz-q p {
+      margin: 0;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .quiz-option {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    @media (max-width: 1080px) {
+      .player-layout { grid-template-columns: 1fr; }
+      .player-curriculum-toggle { display: inline-flex; width: fit-content; margin-top: 10px; }
+      .player-curriculum-checkbox:checked ~ .player-curriculum-overlay { opacity: 1; pointer-events: auto; }
+      .player-side {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: min(92vw, 380px);
+        height: 100dvh;
+        padding: 14px;
+        border-left: 1px solid var(--border);
+        background: var(--panel-solid);
+        transform: translateX(100%);
+        transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+        z-index: 1201;
+        overflow-y: auto;
+        box-shadow: -12px 0 30px rgba(0, 0, 0, 0.32);
+        backdrop-filter: blur(18px);
+      }
+      .player-curriculum-checkbox:checked ~ .player-layout .player-side {
+        transform: translateX(0);
+      }
+      .player-side .player-card {
+        min-height: calc(100dvh - 28px);
+        box-shadow: none;
+      }
+      .player-side-close {
+        display: flex;
+        margin-left: auto;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        align-items: center;
+        justify-content: center;
+        color: var(--text);
+        background: var(--input-bg);
+        cursor: pointer;
+      }
+      .player-side-close svg {
+        width: 18px;
+        height: 18px;
+      }
+      .curriculum { max-height: unset; }
+      .player-media iframe,
+      .player-media video { height: 320px; }
+    }
+    @media (max-width: 760px) {
+      .player-shell { margin-bottom: 20px; }
+      .player-shell { padding: 0 14px 28px; }
+      .player-head { padding: 22px 0 16px; }
+      .player-card { padding: 11px; }
+      .player-media { min-height: 220px; }
+      .player-media iframe,
+      .player-media video { height: 240px; }
+      .quiz-celebration {
+        grid-template-columns: 1fr;
+        text-align: center;
+        justify-items: center;
+      }
+    }
+  </style>
+</head>
+<body class="public-site lmsv-player-page">
+  <%- include('./partials/nav', { user, activePage, activeLmsView: '' }) %>
+
+  <main class="player-shell">
+    <% const reviewSummary = courseReviewSummary || course.reviewSummary || { ratingAverage: 0, ratingAverageLabel: '0.0', ratingCount: 0, commentCount: 0, hasRatings: false, roundedStarCount: 0 } %>
+    <% const visibleCourseReviews = Array.isArray(recentCourseReviews) ? recentCourseReviews : [] %>
+    <% const currentPlayerPath = `/simple-lms/learn/${enrollment._id}/${encodeURIComponent(currentLesson.lessonKey)}` %>
+    <% const courseReviewAction = `/simple-lms/courses/${course._id}/reviews` %>
+    <section class="player-head">
+      <h1 class="player-title"><%= course.title %></h1>
+      <p class="player-subtitle">Lesson player for focused learning. Work through the curriculum on the right and track completion in real-time.</p>
+      <label for="player-curriculum-toggle" class="btn btn-secondary btn-sm player-curriculum-toggle">Open Curriculum</label>
+      <div class="player-pill-row">
+        <span class="player-pill"><%= course.levelLabel %></span>
+        <span class="player-pill"><%= progress.completedCount %>/<%= progress.lessonCount %> lessons completed</span>
+        <span class="player-pill">Progress <%= progress.progressPercent %>%</span>
+        <% if (courseCommentsEnabled && reviewSummary.hasRatings) { %>
+          <span class="player-pill"><%= `${reviewSummary.ratingAverageLabel}/5 from ${reviewSummary.ratingCount} learner${reviewSummary.ratingCount === 1 ? '' : 's'}` %></span>
+        <% } %>
+      </div>
+      <div class="player-progress" style="--progress:<%= Math.max(0, Math.min(100, Number(progress.progressPercent || 0))) %>%"><span></span></div>
+    </section>
+
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+
+    <input type="checkbox" id="player-curriculum-toggle" class="player-curriculum-checkbox">
+    <label for="player-curriculum-toggle" class="player-curriculum-overlay" aria-label="Close curriculum"></label>
+
+    <section class="player-layout">
+      <div class="player-main">
+        <article class="player-card">
+          <h2 style="margin:0;font-size:22px;letter-spacing:-0.02em;">
+            <%= `Lesson ${currentLesson.chapterOrder}.${currentLesson.lessonOrder}: ${currentLesson.title}` %>
+          </h2>
+          <div class="player-pill-row">
+            <span class="player-pill"><%= `Chapter ${currentLesson.chapterOrder}: ${currentLesson.chapterTitle}` %></span>
+            <span class="player-pill"><%= currentLesson.durationMinutes %> mins</span>
+            <% if (completedSet.has(currentLesson.lessonKey)) { %><span class="player-pill">Completed</span><% } %>
+          </div>
+          <div class="player-media">
+            <% if (lessonMedia && lessonMedia.kind === 'embed' && lessonMedia.embedUrl) { %>
+              <iframe src="<%= lessonMedia.embedUrl %>" allow="autoplay; fullscreen" allowfullscreen></iframe>
+            <% } else if (lessonMedia && lessonMedia.kind === 'video' && lessonMedia.directUrl) { %>
+              <video controls preload="metadata" src="<%= lessonMedia.directUrl %>" <%= autoplayRequested ? 'autoplay playsinline' : '' %>></video>
+            <% } else if (lessonMedia && lessonMedia.kind === 'audio' && lessonMedia.directUrl) { %>
+              <div class="player-media-audio">
+                <h4>Audio Lesson</h4>
+                <audio controls preload="metadata" src="<%= lessonMedia.directUrl %>" <%= autoplayRequested ? 'autoplay' : '' %>></audio>
+                <p class="player-media-source">Source: <%= lessonMedia.sourceLabel || 'Audio stream' %></p>
+              </div>
+            <% } else if (lessonMedia && lessonMedia.directUrl) { %>
+              <div class="player-fallback">Media link is available but cannot be embedded directly.<br><a href="<%= lessonMedia.directUrl %>" target="_blank" rel="noreferrer" class="btn btn-secondary btn-sm" style="margin-top:10px;">Open Media Link</a></div>
+            <% } else { %>
+              <div class="player-fallback">No video for this lesson yet. Continue with notes and resources below.</div>
+            <% } %>
+          </div>
+          <% if (lessonMedia && lessonMedia.rawUrl) { %>
+            <p class="player-media-source">Media source: <a href="<%= lessonMedia.rawUrl %>" target="_blank" rel="noreferrer"><%= lessonMedia.sourceLabel || 'External Link' %></a></p>
+          <% } %>
+          <% if (currentLesson.description) { %><p class="soft-note"><%= currentLesson.description %></p><% } %>
+          <% if (currentLesson.content) { %><div style="font-size:14px;line-height:1.7;color:var(--text);white-space:pre-wrap;"><%= currentLesson.content %></div><% } %>
+          <% if (currentLesson.resources && currentLesson.resources.length > 0) { %>
+            <div>
+              <h3 style="margin:0 0 6px;font-size:15px;">Resources</h3>
+              <ul class="resource-list">
+                <% currentLesson.resources.forEach((resource) => { %>
+                  <li><a href="<%= resource.url %>" target="_blank" rel="noreferrer"><%= resource.label %></a></li>
+                <% }) %>
+              </ul>
+            </div>
+          <% } %>
+          <% if (currentLesson.quizQuestions && currentLesson.quizQuestions.length > 0) {
+            const latestScore = Number(latestAttempt?.score || 0)
+            const latestMaxScore = Number(latestAttempt?.maxScore || 0)
+            const latestPercentage = latestMaxScore > 0 ? Math.round((latestScore / latestMaxScore) * 100) : 0
+            const latestPassed = latestPercentage >= 70
+          %>
+            <section class="quiz-wrap">
+              <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+                <div style="display:grid;gap:4px;">
+                  <h3 class="quiz-section-head">Lesson Quiz</h3>
+                  <p class="quiz-modal-meta">Answer <%= currentLesson.quizQuestions.length %> question<%= currentLesson.quizQuestions.length === 1 ? '' : 's' %>. Pass mark: 70%.</p>
+                  <% if (latestMaxScore > 0) { %>
+                    <p class="quiz-modal-status"><strong class="<%= latestPassed ? 'quiz-result-pass' : 'quiz-result-fail' %>"><%= latestPassed ? 'Passed' : 'Not passed' %></strong> - Latest score: <strong><%= latestScore %>/<%= latestMaxScore %></strong> (<%= latestPercentage %>%).</p>
+                  <% } else { %>
+                    <p class="quiz-modal-status">No attempt submitted yet.</p>
+                  <% } %>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" data-action="open-lesson-quiz"><%= latestMaxScore > 0 ? 'Retake Lesson Quiz' : 'Take Lesson Quiz' %></button>
+              </div>
+            </section>
+          <% } %>
+          <div class="player-actions">
+            <form id="markCompleteForm" method="post" action="/simple-lms/enrollments/<%= enrollment._id %>/lessons/<%= encodeURIComponent(currentLesson.lessonKey) %>/complete" style="display:inline-flex;">
+              <button class="btn btn-primary" type="submit">Mark Lesson Complete</button>
+            </form>
+            <% if (nextLesson) { %>
+              <form id="completeNextForm" method="post" action="/simple-lms/enrollments/<%= enrollment._id %>/lessons/<%= encodeURIComponent(currentLesson.lessonKey) %>/complete" style="display:inline-flex;">
+                <input type="hidden" name="next" value="1">
+                <button class="btn btn-secondary" type="submit">Complete & Next</button>
+              </form>
+            <% } %>
+            <% if (previousLesson) { %><a class="btn btn-secondary" href="/simple-lms/learn/<%= enrollment._id %>/<%= encodeURIComponent(previousLesson.lessonKey) %>">Previous Lesson</a><% } %>
+            <% if (nextLesson) { %><a class="btn btn-secondary" href="/simple-lms/learn/<%= enrollment._id %>/<%= encodeURIComponent(nextLesson.lessonKey) %>">Next Lesson</a><% } %>
+          </div>
+        </article>
+
+        <% if (courseCommentsEnabled) { %>
+          <article class="player-card">
+            <div class="player-headline">
+              <h2 style="margin:0;font-size:22px;letter-spacing:-0.02em;">Course Rating & Comments</h2>
+              <p class="soft-note">Update your rating as you work through the course. Other learners will see the latest published feedback.</p>
+            </div>
+
+            <div class="lmsv-review-panel-head" style="margin-bottom:2px;">
+              <div>
+                <p class="lmsv-detail-note" style="margin:0;">Overall learner feedback</p>
+              </div>
+              <div class="lmsv-review-score-card">
+                <strong><%= reviewSummary.ratingAverageLabel %></strong>
+                <div class="lmsv-review-stars" aria-hidden="true">
+                  <% for (let star = 1; star <= 5; star += 1) { %>
+                    <span class="<%= star <= (reviewSummary.roundedStarCount || 0) ? 'active' : '' %>">&#9733;</span>
+                  <% } %>
+                </div>
+                <span><%= reviewSummary.ratingCount > 0 ? `${reviewSummary.ratingCount} rating${reviewSummary.ratingCount === 1 ? '' : 's'}` : 'No ratings yet' %></span>
+              </div>
+            </div>
+
+            <div class="lmsv-review-grid">
+              <div class="lmsv-review-form-wrap">
+                <% if (canSubmitCourseReview) { %>
+                  <form method="post" action="<%= courseReviewAction %>" class="lmsv-review-form">
+                    <input type="hidden" name="returnTo" value="<%= currentPlayerPath %>">
+                    <div class="lmsv-review-rating-group">
+                      <span class="lmsv-review-label">Your rating</span>
+                      <div class="lmsv-review-rating-options">
+                        <% for (let star = 5; star >= 1; star -= 1) { %>
+                          <label class="lmsv-review-rating-option">
+                            <input type="radio" name="rating" value="<%= star %>" <%= Number(existingCourseReview?.rating || 0) === star ? 'checked' : '' %>>
+                            <span><%= `${star} star${star === 1 ? '' : 's'}` %></span>
+                          </label>
+                        <% } %>
+                      </div>
+                    </div>
+                    <label class="lmsv-review-field">
+                      <span class="lmsv-review-label">Comment</span>
+                      <textarea class="input" name="comment" rows="5" maxlength="1200" placeholder="What helped, what felt unclear, or what another learner should know."><%= existingCourseReview?.comment || '' %></textarea>
+                    </label>
+                    <% if (existingCourseReview?.moderationStatus === 'hidden') { %>
+                      <div class="lmsv-review-owner-note">
+                        Your current review is hidden from public view by the admin team. You can still update it here.
+                      </div>
+                    <% } %>
+                    <div class="lmsv-review-form-foot">
+                      <span class="lmsv-detail-note"><%= existingCourseReview ? 'Your existing review will be updated.' : 'Your review is tied to this course, not just this lesson.' %></span>
+                      <button type="submit" class="btn btn-primary btn-sm"><%= existingCourseReview ? 'Update Review' : 'Submit Review' %></button>
+                    </div>
+                  </form>
+                <% } %>
+              </div>
+
+              <div class="lmsv-review-list-wrap">
+                <% if (visibleCourseReviews.length > 0) { %>
+                  <div class="lmsv-review-list">
+                    <% visibleCourseReviews.forEach((review) => { %>
+                      <article class="lmsv-review-item">
+                        <div class="lmsv-review-item-head">
+                          <div>
+                            <strong><%= review.authorName %></strong>
+                            <span><%= review.updatedAtLabel || review.createdAtLabel || '' %><%= review.isEdited ? ' · edited' : '' %></span>
+                          </div>
+                          <div class="lmsv-review-stars" aria-hidden="true">
+                            <% for (let star = 1; star <= 5; star += 1) { %>
+                              <span class="<%= star <= Number(review.rating || 0) ? 'active' : '' %>">&#9733;</span>
+                            <% } %>
+                          </div>
+                        </div>
+                        <p class="lmsv-review-text"><%= review.comment || 'Left a rating without a written comment.' %></p>
+                        <% if (review.hasCreatorReply) { %>
+                          <div class="lmsv-review-response">
+                            <div class="lmsv-review-response-head">
+                              <strong><%= review.creatorReplyByName || 'Course creator' %></strong>
+                              <span><%= review.creatorReplyUpdatedAtLabel ? `Responded ${review.creatorReplyUpdatedAtLabel}` : 'Creator response' %></span>
+                            </div>
+                            <p class="lmsv-review-response-text"><%= review.creatorReply %></p>
+                          </div>
+                        <% } %>
+                      </article>
+                    <% }) %>
+                  </div>
+                <% } else { %>
+                  <div class="lmsv-review-empty">
+                    <strong>No course feedback yet</strong>
+                    <p>Be the first learner to rate this course.</p>
+                  </div>
+                <% } %>
+              </div>
+            </div>
+          </article>
+        <% } %>
+
+      </div>
+
+      <aside class="player-side">
+        <article class="player-card">
+          <label for="player-curriculum-toggle" class="player-side-close" aria-label="Close curriculum">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </label>
+          <div class="player-headline">
+            <h2 style="margin:0;font-size:22px;letter-spacing:-0.02em;">Curriculum</h2>
+            <p class="soft-note">Select any lesson to navigate. Completed lessons are flagged.</p>
+          </div>
+          <div class="curriculum">
+            <% chapterSections.forEach((chapter) => { %>
+              <section class="curriculum-chapter">
+                <div class="curriculum-chapter-title">
+                  <span class="curriculum-chapter-number"><%= `Chapter ${chapter.chapterNumber}` %></span>
+                  <h3><%= chapter.title %></h3>
+                </div>
+                <% chapter.lessons.forEach((lesson) => { %>
+                  <a class="curriculum-lesson <%= currentLesson.lessonKey === lesson.key ? 'active' : '' %>" href="/simple-lms/learn/<%= enrollment._id %>/<%= encodeURIComponent(lesson.key) %>">
+                    <span class="curriculum-lesson-label">
+                      <span class="curriculum-lesson-number"><%= `${chapter.chapterNumber}.${lesson.lessonNumber}` %></span>
+                      <span><%= lesson.title %></span>
+                    </span>
+                    <span style="display:flex;align-items:center;gap:6px;">
+                      <% if (completedSet.has(lesson.key)) { %><span class="curriculum-status">Done</span><% } %>
+                      <span><%= lesson.durationMinutes %>m</span>
+                    </span>
+                  </a>
+                <% }) %>
+                <% if (chapter.quizLessons && chapter.quizLessons.length > 0) { %>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm curriculum-quiz-trigger"
+                    data-action="open-chapter-quiz"
+                    data-chapter-key="<%= chapter.key %>">
+                    Take Chapter Quiz
+                  </button>
+                <% } %>
+              </section>
+            <% }) %>
+          </div>
+        </article>
+      </aside>
+    </section>
+  </main>
+
+  <div class="quiz-modal" id="chapterQuizModal" aria-hidden="true">
+    <div class="quiz-modal-backdrop" data-action="close-chapter-quiz"></div>
+    <div class="quiz-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="chapterQuizTitle">
+      <div class="quiz-modal-top">
+        <h2 id="chapterQuizTitle" style="margin:0;font-size:20px;letter-spacing:-0.02em;">Chapter Quiz</h2>
+        <button type="button" class="quiz-modal-close" data-action="close-chapter-quiz" aria-label="Close chapter quiz">&times;</button>
+      </div>
+      <p id="chapterQuizMeta" class="quiz-modal-meta"></p>
+      <form id="chapterQuizForm" class="quiz-wrap"></form>
+      <p id="chapterQuizStatus" class="quiz-modal-status"></p>
+      <div id="chapterQuizResults" class="quiz-results"></div>
+      <div class="player-actions">
+        <button type="submit" class="btn btn-primary" id="chapterQuizSubmit" form="chapterQuizForm">Submit Quiz</button>
+      </div>
+    </div>
+  </div>
+
+  <%- include('./partials/public-footer') %>
+  <script>
+    (() => {
+      const autoplayRequested = <%- JSON.stringify(Boolean(autoplayRequested)) %>
+      const mediaType = <%- JSON.stringify((lessonMedia && lessonMedia.kind) ? String(lessonMedia.kind) : '') %>
+      const mediaEmbedUrl = <%- JSON.stringify((lessonMedia && lessonMedia.embedUrl) ? String(lessonMedia.embedUrl) : '') %>
+      const mediaSourceLabel = <%- JSON.stringify((lessonMedia && lessonMedia.sourceLabel) ? String(lessonMedia.sourceLabel) : '') %>
+      const currentLessonDurationMinutes = Number(<%- JSON.stringify(Number((currentLesson && currentLesson.durationMinutes) || 0)) %>) || 0
+      const chapterQuizData = <%- JSON.stringify((chapterSections || []).map((chapter) => ({
+        key: chapter.key,
+        chapterNumber: chapter.chapterNumber,
+        title: chapter.title,
+        quizLessons: (chapter.quizLessons || []).map((lesson) => ({
+          key: lesson.key,
+          lessonNumber: lesson.lessonNumber,
+          title: lesson.title,
+          quizQuestions: (lesson.quizQuestions || []).map((question) => ({
+            prompt: question.prompt,
+            choices: (question.choices || []).map((choice) => ({ text: choice.text }))
+          }))
+        }))
+      }))) %>
+      const currentLessonQuizData = <%- JSON.stringify(currentLesson && Array.isArray(currentLesson.quizQuestions) && currentLesson.quizQuestions.length > 0 ? {
+        key: String(currentLesson.lessonKey || ''),
+        chapterNumber: Number(currentLesson.chapterNumber || 1),
+        lessonNumber: Number(currentLesson.lessonNumber || 1),
+        title: String(currentLesson.title || 'Current Lesson'),
+        quizQuestions: (currentLesson.quizQuestions || []).map((question) => ({
+          prompt: question.prompt,
+          choices: (question.choices || []).map((choice) => ({ text: choice.text }))
+        }))
+      } : null) %>
+      const latestLessonAttempt = <%- JSON.stringify(latestAttempt ? {
+        score: Number(latestAttempt.score || 0),
+        maxScore: Number(latestAttempt.maxScore || 0)
+      } : null) %>
+
+      const enrollmentId = <%- JSON.stringify(String((enrollment && enrollment._id) || '')) %>
+      const modal = document.getElementById('chapterQuizModal')
+      const form = document.getElementById('chapterQuizForm')
+      const titleNode = document.getElementById('chapterQuizTitle')
+      const metaNode = document.getElementById('chapterQuizMeta')
+      const statusNode = document.getElementById('chapterQuizStatus')
+      const resultsNode = document.getElementById('chapterQuizResults')
+      const submitButton = document.getElementById('chapterQuizSubmit')
+      const markCompleteForm = document.getElementById('markCompleteForm')
+      const completeNextForm = document.getElementById('completeNextForm')
+      const lessonIframe = document.querySelector('.player-media iframe')
+      const lessonNativeMedia = document.querySelector('.player-media video, .player-media audio')
+      let activeQuizSession = null
+      let submitting = false
+      let autoAdvanceSubmitting = false
+      let bypassQuizGateOnce = false
+      let driveWatchInterval = null
+      let currentLessonQuizPassed = Boolean(
+        latestLessonAttempt
+        && Number(latestLessonAttempt.maxScore || 0) > 0
+        && Math.round((Number(latestLessonAttempt.score || 0) / Number(latestLessonAttempt.maxScore || 1)) * 100) >= 70
+      )
+
+      const escapeHtml = (value) => String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+
+      const renderQuizCelebration = ({ passed, score, maxScore, percent }) => {
+        const title = passed ? 'Quiz complete' : 'Review and try again'
+        const message = passed
+          ? `Strong work. You scored ${score}/${maxScore} (${percent}%) and can continue the lesson path.`
+          : `You scored ${score}/${maxScore} (${percent}%). Review the feedback below, then try the quiz again.`
+        return `
+          <div class="quiz-celebration ${passed ? 'is-pass' : 'is-retry'}" role="status" aria-live="polite">
+            <img src="/images/stanbic/stanbic-quiz-trophy.png" alt="Quiz achievement trophy">
+            <div>
+              <h3>${title}</h3>
+              <p>${escapeHtml(message)}</p>
+            </div>
+          </div>
+        `
+      }
+
+      const launchQuizConfetti = () => {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+        const colors = ['#053c86', '#0ea5e9', '#f4b400', '#22c55e', '#ffffff']
+        for (let index = 0; index < 28; index += 1) {
+          const piece = document.createElement('span')
+          piece.className = 'quiz-confetti'
+          piece.style.background = colors[index % colors.length]
+          piece.style.left = `${18 + Math.random() * 64}%`
+          piece.style.animationDelay = `${Math.random() * 0.18}s`
+          piece.style.setProperty('--x', `${(Math.random() * 260) - 130}px`)
+          piece.style.setProperty('--r', `${180 + Math.random() * 540}deg`)
+          document.body.appendChild(piece)
+          window.setTimeout(() => piece.remove(), 1500)
+        }
+      }
+
+      const setModalOpen = (isOpen) => {
+        if (!modal) return
+        modal.classList.toggle('open', Boolean(isOpen))
+        modal.setAttribute('aria-hidden', isOpen ? 'false' : 'true')
+        document.body.style.overflow = isOpen ? 'hidden' : ''
+      }
+
+      const closeModal = () => {
+        if (submitting) return
+        activeQuizSession = null
+        if (form) form.innerHTML = ''
+        if (statusNode) statusNode.textContent = ''
+        if (resultsNode) resultsNode.innerHTML = ''
+        if (submitButton) submitButton.disabled = false
+        setModalOpen(false)
+      }
+
+      const openQuizSession = (session) => {
+        if (!session || !Array.isArray(session.quizLessons) || session.quizLessons.length === 0) return false
+        activeQuizSession = session
+        titleNode.textContent = session.title
+        const questionTotal = session.quizLessons.reduce((count, lesson) => count + ((lesson.quizQuestions || []).length), 0)
+        metaNode.textContent = `${session.meta} - ${questionTotal} question${questionTotal === 1 ? '' : 's'}`
+        statusNode.textContent = ''
+        if (resultsNode) resultsNode.innerHTML = ''
+        form.innerHTML = session.quizLessons.map((lesson) => `
+          <section>
+            <h3 class="quiz-section-head">Lesson ${session.chapterNumber ? `${session.chapterNumber}.` : ''}${lesson.lessonNumber}: ${escapeHtml(lesson.title)}</h3>
+            ${(lesson.quizQuestions || []).map((question, questionIndex) => `
+              <section class="quiz-q">
+                <p>${questionIndex + 1}. ${escapeHtml(question.prompt)}</p>
+                ${(question.choices || []).map((choice, choiceIndex) => `
+                  <label class="quiz-option">
+                    <input type="radio" name="${escapeHtml(lesson.key)}_answer_${questionIndex}" value="${choiceIndex}">
+                    <span>${escapeHtml(choice.text)}</span>
+                  </label>
+                `).join('')}
+              </section>
+            `).join('')}
+          </section>
+        `).join('')
+        setModalOpen(true)
+        return true
+      }
+
+      const openChapterQuiz = (chapterKey) => {
+        const chapter = chapterQuizData.find((entry) => String(entry.key) === String(chapterKey))
+        if (!chapter || !Array.isArray(chapter.quizLessons) || chapter.quizLessons.length === 0) return false
+        return openQuizSession({
+          mode: 'chapter',
+          title: `Chapter ${chapter.chapterNumber} Quiz`,
+          meta: chapter.title,
+          chapterNumber: chapter.chapterNumber,
+          quizLessons: chapter.quizLessons,
+          autoAdvanceOnPass: false
+        })
+      }
+
+      const openLessonQuiz = ({ autoAdvanceOnPass = false } = {}) => {
+        if (!currentLessonQuizData || !Array.isArray(currentLessonQuizData.quizQuestions) || currentLessonQuizData.quizQuestions.length === 0) {
+          return false
+        }
+        return openQuizSession({
+          mode: 'lesson',
+          title: `Lesson ${currentLessonQuizData.chapterNumber}.${currentLessonQuizData.lessonNumber} Quiz`,
+          meta: `${currentLessonQuizData.title} - pass to complete this lesson`,
+          chapterNumber: currentLessonQuizData.chapterNumber,
+          quizLessons: [currentLessonQuizData],
+          autoAdvanceOnPass
+        })
+      }
+
+      const shouldGateCurrentLessonQuiz = () => Boolean(
+        currentLessonQuizData
+        && Array.isArray(currentLessonQuizData.quizQuestions)
+        && currentLessonQuizData.quizQuestions.length > 0
+        && !currentLessonQuizPassed
+      )
+
+      const attemptNativeAutoplay = async () => {
+        if (!autoplayRequested || !lessonNativeMedia || typeof lessonNativeMedia.play !== 'function') return false
+        lessonNativeMedia.autoplay = true
+        if ('playsInline' in lessonNativeMedia) {
+          lessonNativeMedia.playsInline = true
+        }
+        lessonNativeMedia.setAttribute('autoplay', 'autoplay')
+        try {
+          const playAttempt = lessonNativeMedia.play()
+          if (playAttempt && typeof playAttempt.then === 'function') {
+            await playAttempt
+          }
+          return true
+        } catch (_) {
+          return false
+        }
+      }
+
+      const maybeOpenLessonQuizGate = ({ autoAdvanceOnPass = false } = {}) => {
+        if (!shouldGateCurrentLessonQuiz()) return false
+        return openLessonQuiz({ autoAdvanceOnPass })
+      }
+
+      const maybeAutoStartCurrentLesson = async () => {
+        if (!autoplayRequested) return
+
+        const hasNativeMedia = Boolean(lessonNativeMedia)
+        const hasEmbedMedia = Boolean(lessonIframe && mediaType === 'embed' && mediaEmbedUrl)
+
+        if (!hasNativeMedia && !hasEmbedMedia) {
+          maybeOpenLessonQuizGate({ autoAdvanceOnPass: true })
+          return
+        }
+
+        if (hasNativeMedia) {
+          await attemptNativeAutoplay()
+        }
+      }
+
+      const submitChapterQuiz = async (event) => {
+        event.preventDefault()
+        if (!activeQuizSession || submitting || !enrollmentId) return
+        submitting = true
+        statusNode.textContent = 'Submitting quiz...'
+        if (resultsNode) resultsNode.innerHTML = ''
+        if (submitButton) submitButton.disabled = true
+
+        try {
+          const lessonResults = []
+          let quizScore = 0
+          let quizMaxScore = 0
+
+          for (const lesson of activeQuizSession.quizLessons || []) {
+            const body = new URLSearchParams()
+            ;(lesson.quizQuestions || []).forEach((_, questionIndex) => {
+              const input = form.querySelector(`input[name="${lesson.key}_answer_${questionIndex}"]:checked`)
+              if (input) body.append(`answer_${questionIndex}`, input.value)
+            })
+
+            const response = await fetch(`/simple-lms/enrollments/${encodeURIComponent(enrollmentId)}/lessons/${encodeURIComponent(lesson.key)}/quiz?format=json`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+              },
+              body: body.toString(),
+              credentials: 'same-origin'
+            })
+            const payload = await response.json().catch(() => null)
+            if (!response.ok || !payload || payload.ok !== true) {
+              throw new Error((payload && payload.error) || 'Quiz submission failed.')
+            }
+
+            quizScore += Number(payload.score || 0)
+            quizMaxScore += Number(payload.maxScore || 0)
+            lessonResults.push({
+              lesson,
+              score: Number(payload.score || 0),
+              maxScore: Number(payload.maxScore || 0),
+              percentage: Number(payload.percentage || 0),
+              passed: Boolean(payload.passed),
+              questionResults: Array.isArray(payload.questionResults) ? payload.questionResults : []
+            })
+          }
+
+          const quizPercent = quizMaxScore > 0 ? Math.round((quizScore / quizMaxScore) * 100) : 0
+          const quizPassed = quizPercent >= 70
+          statusNode.innerHTML = renderQuizCelebration({
+            passed: quizPassed,
+            score: quizScore,
+            maxScore: quizMaxScore,
+            percent: quizPercent
+          })
+          if (quizPassed) {
+            launchQuizConfetti()
+          }
+
+          if (resultsNode) {
+            resultsNode.innerHTML = lessonResults.map((result) => {
+              const feedbackList = result.questionResults
+                .filter((entry) => !entry.isCorrect)
+                .map((entry) => {
+                  const question = result.lesson.quizQuestions[entry.questionIndex]
+                  const selectedChoice = entry.selectedIndex >= 0
+                    ? (question && question.choices && question.choices[entry.selectedIndex] ? question.choices[entry.selectedIndex].text : 'Invalid answer')
+                    : 'No answer selected'
+                  const correctChoice = entry.correctIndex >= 0
+                    ? (question && question.choices && question.choices[entry.correctIndex] ? question.choices[entry.correctIndex].text : 'Unavailable')
+                    : 'Unavailable'
+                  return `<li>Q${entry.questionIndex + 1}: you picked "${escapeHtml(selectedChoice)}"; correct answer is "${escapeHtml(correctChoice)}".</li>`
+                })
+              return `
+                <section class="quiz-result-card">
+                  <p class="quiz-result-head">
+                    <span>Lesson ${activeQuizSession.chapterNumber ? `${activeQuizSession.chapterNumber}.` : ''}${result.lesson.lessonNumber}: ${escapeHtml(result.lesson.title)}</span>
+                    <span class="${result.passed ? 'quiz-result-pass' : 'quiz-result-fail'}">${result.score}/${result.maxScore} (${result.percentage}%)</span>
+                  </p>
+                  ${feedbackList.length > 0
+                    ? `<ul class="quiz-result-list">${feedbackList.join('')}</ul>`
+                    : '<p class="quiz-modal-meta">All answers were correct for this lesson quiz.</p>'}
+                </section>
+              `
+            }).join('')
+          }
+
+          if (activeQuizSession.mode === 'lesson') {
+            currentLessonQuizPassed = Boolean(lessonResults[0]?.passed)
+          }
+
+          if (activeQuizSession.autoAdvanceOnPass && quizPassed) {
+            statusNode.insertAdjacentHTML('beforeend', '<p class="quiz-modal-meta">Moving to the next lesson...</p>')
+            window.setTimeout(() => {
+              activeQuizSession = null
+              if (form) form.innerHTML = ''
+              if (resultsNode) resultsNode.innerHTML = ''
+              setModalOpen(false)
+              submitAutoAdvance({ skipQuizGate: true })
+            }, 900)
+          }
+        } catch (error) {
+          statusNode.textContent = error && error.message ? error.message : 'Quiz submission failed. Please try again.'
+        } finally {
+          submitting = false
+          if (submitButton) submitButton.disabled = false
+        }
+      }
+
+      document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-action="open-chapter-quiz"]')
+        if (trigger) {
+          openChapterQuiz(trigger.getAttribute('data-chapter-key'))
+          return
+        }
+
+        const lessonTrigger = event.target.closest('[data-action="open-lesson-quiz"]')
+        if (lessonTrigger) {
+          openLessonQuiz({ autoAdvanceOnPass: false })
+          return
+        }
+
+        const close = event.target.closest('[data-action="close-chapter-quiz"]')
+        if (close) {
+          closeModal()
+        }
+      })
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeModal()
+      })
+
+      if (form) {
+        form.addEventListener('submit', submitChapterQuiz)
+      }
+
+      const submitAutoAdvance = ({ skipQuizGate = false } = {}) => {
+        if (autoAdvanceSubmitting) return
+        if (!skipQuizGate && maybeOpenLessonQuizGate({ autoAdvanceOnPass: true })) return
+        const targetForm = completeNextForm || markCompleteForm
+        if (!targetForm) return
+
+        autoAdvanceSubmitting = true
+        bypassQuizGateOnce = true
+        const marker = document.createElement('input')
+        marker.type = 'hidden'
+        marker.name = 'auto'
+        marker.value = '1'
+        targetForm.appendChild(marker)
+
+        if (typeof targetForm.requestSubmit === 'function') {
+          targetForm.requestSubmit()
+          return
+        }
+        targetForm.submit()
+      }
+
+      const bindQuizGateToCompletionForm = (targetForm, { autoAdvanceOnPass = false } = {}) => {
+        if (!targetForm) return
+        targetForm.addEventListener('submit', (event) => {
+          if (bypassQuizGateOnce) {
+            bypassQuizGateOnce = false
+            return
+          }
+          if (maybeOpenLessonQuizGate({ autoAdvanceOnPass })) {
+            event.preventDefault()
+          }
+        })
+      }
+
+      bindQuizGateToCompletionForm(markCompleteForm, { autoAdvanceOnPass: false })
+      bindQuizGateToCompletionForm(completeNextForm, { autoAdvanceOnPass: true })
+
+      if (lessonNativeMedia) {
+        lessonNativeMedia.addEventListener('ended', submitAutoAdvance, { once: true })
+      }
+
+      const normalizeEmbedUrl = (urlValue, updateParams = () => {}) => {
+        if (!urlValue) return null
+        try {
+          const parsed = new URL(urlValue, window.location.origin)
+          updateParams(parsed.searchParams)
+          return parsed.toString()
+        } catch (_) {
+          return null
+        }
+      }
+
+      const isYouTubeEmbedUrl = (urlValue) => {
+        const value = String(urlValue || '').toLowerCase()
+        return (
+          value.includes('youtube.com/embed/')
+          || value.includes('youtube-nocookie.com/embed/')
+        )
+      }
+
+      const isVimeoEmbedUrl = (urlValue) => String(urlValue || '').toLowerCase().includes('player.vimeo.com/video/')
+
+      const isGoogleDriveEmbedUrl = (urlValue) => {
+        const value = String(urlValue || '').toLowerCase()
+        return (
+          value.includes('drive.google.com/file/d/')
+          || value.includes('docs.google.com')
+        )
+      }
+
+      const configureYouTubeAutoAdvance = async (iframe, embedUrl) => {
+        if (!iframe || !embedUrl) return
+
+        const normalizedSrc = normalizeEmbedUrl(embedUrl, (params) => {
+          if (autoplayRequested) params.set('autoplay', '1')
+          if (!params.get('enablejsapi')) params.set('enablejsapi', '1')
+          if (!params.get('origin')) params.set('origin', window.location.origin)
+          if (!params.get('playsinline')) params.set('playsinline', '1')
+          if (!params.get('rel')) params.set('rel', '0')
+          if (!params.get('modestbranding')) params.set('modestbranding', '1')
+        })
+
+        if (normalizedSrc && iframe.getAttribute('src') !== normalizedSrc) {
+          iframe.setAttribute('src', normalizedSrc)
+        }
+
+        const ensureYouTubeApi = () => new Promise((resolve, reject) => {
+          if (window.YT && window.YT.Player) {
+            resolve(window.YT)
+            return
+          }
+
+          const existingTag = document.querySelector('script[data-player-api="youtube"]')
+          const previousReady = window.onYouTubeIframeAPIReady
+          window.onYouTubeIframeAPIReady = () => {
+            if (typeof previousReady === 'function') previousReady()
+            resolve(window.YT)
+          }
+
+          if (existingTag) return
+
+          const script = document.createElement('script')
+          script.src = 'https://www.youtube.com/iframe_api'
+          script.async = true
+          script.dataset.playerApi = 'youtube'
+          script.onerror = () => reject(new Error('YouTube API failed to load.'))
+          document.head.appendChild(script)
+        })
+
+        try {
+          const youtubeApi = await ensureYouTubeApi()
+          if (!youtubeApi || !youtubeApi.Player) return
+
+          if (!iframe.id) {
+            iframe.id = `lesson-media-youtube-${Date.now()}`
+          }
+
+          const registerStateListener = () => {
+            try {
+              iframe.contentWindow?.postMessage(
+                JSON.stringify({
+                  event: 'command',
+                  func: 'addEventListener',
+                  args: ['onStateChange']
+                }),
+                '*'
+              )
+              if (autoplayRequested) {
+                iframe.contentWindow?.postMessage(
+                  JSON.stringify({
+                    event: 'command',
+                    func: 'playVideo',
+                    args: []
+                  }),
+                  '*'
+                )
+              }
+            } catch (_) {
+              // Ignore postMessage failures.
+            }
+          }
+
+          iframe.addEventListener('load', registerStateListener)
+          if (iframe.contentWindow) registerStateListener()
+
+          window.addEventListener('message', (event) => {
+            if (!event || typeof event.origin !== 'string') return
+            const origin = event.origin.toLowerCase()
+            if (!origin.includes('youtube.com') && !origin.includes('youtube-nocookie.com')) return
+
+            let payload = event.data
+            if (typeof payload === 'string') {
+              try {
+                payload = JSON.parse(payload)
+              } catch (_) {
+                return
+              }
+            }
+            if (!payload || typeof payload !== 'object') return
+
+            const info = Number(payload.info)
+            const eventName = String(payload.event || '').toLowerCase()
+            if (eventName === 'onstatechange' && info === 0) {
+              submitAutoAdvance()
+            }
+          })
+
+          // eslint-disable-next-line no-new
+          new youtubeApi.Player(iframe.id, {
+            events: {
+              onReady: (event) => {
+                if (!autoplayRequested || !event?.target || typeof event.target.playVideo !== 'function') return
+                try {
+                  event.target.playVideo()
+                } catch (_) {
+                  // Ignore autoplay rejections and keep manual controls available.
+                }
+              },
+              onStateChange: (event) => {
+                if (event && event.data === youtubeApi.PlayerState.ENDED) {
+                  submitAutoAdvance()
+                }
+              }
+            }
+          })
+        } catch (_) {
+          // Ignore API load failures and keep manual controls available.
+        }
+      }
+
+      const configureGoogleDriveAutoAdvance = (iframe, durationMinutes) => {
+        if (!iframe) return
+
+        const normalizedSrc = normalizeEmbedUrl(iframe.getAttribute('src') || mediaEmbedUrl, (params) => {
+          if (autoplayRequested) params.set('autoplay', '1')
+        })
+        if (normalizedSrc && iframe.getAttribute('src') !== normalizedSrc) {
+          iframe.setAttribute('src', normalizedSrc)
+        }
+
+        const mediaContainer = iframe.closest('.player-media')
+        const expectedSeconds = durationMinutes > 0
+          ? Math.max(30, Math.round(durationMinutes * 60 * 0.9))
+          : 240
+        let interactionStarted = false
+        let watchedSeconds = 0
+
+        const cleanup = () => {
+          if (driveWatchInterval) {
+            window.clearInterval(driveWatchInterval)
+            driveWatchInterval = null
+          }
+        }
+
+        const startWatching = () => {
+          interactionStarted = true
+        }
+
+        mediaContainer?.addEventListener('click', startWatching)
+        mediaContainer?.addEventListener('pointerdown', startWatching)
+        iframe.addEventListener('load', startWatching)
+
+        window.addEventListener('message', (event) => {
+          if (!event || typeof event.origin !== 'string') return
+          if (!event.origin.toLowerCase().includes('google.com')) return
+          interactionStarted = true
+
+          const serialized = (() => {
+            if (typeof event.data === 'string') return event.data
+            try {
+              return JSON.stringify(event.data || {})
+            } catch {
+              return ''
+            }
+          })().toLowerCase()
+
+          if (
+            serialized.includes('ended')
+            || serialized.includes('completed')
+            || serialized.includes('finished')
+          ) {
+            cleanup()
+            submitAutoAdvance()
+          }
+        })
+
+        driveWatchInterval = window.setInterval(() => {
+          if (!interactionStarted) return
+          if (document.hidden) return
+          if (!document.hasFocus()) return
+
+          watchedSeconds += 1
+          if (watchedSeconds >= expectedSeconds) {
+            cleanup()
+            submitAutoAdvance()
+          }
+        }, 1000)
+
+        window.addEventListener('beforeunload', cleanup, { once: true })
+      }
+
+      const configureVimeoAutoAdvance = (iframe, embedUrl) => {
+        if (!iframe || !embedUrl) return
+
+        if (!iframe.id) {
+          iframe.id = `lesson-media-vimeo-${Date.now()}`
+        }
+        const playerId = iframe.id
+
+        const normalizedSrc = normalizeEmbedUrl(embedUrl, (params) => {
+          if (autoplayRequested) params.set('autoplay', '1')
+          if (!params.get('api')) params.set('api', '1')
+          params.set('player_id', playerId)
+        })
+
+        if (normalizedSrc && iframe.getAttribute('src') !== normalizedSrc) {
+          iframe.setAttribute('src', normalizedSrc)
+        }
+
+        const onLoad = () => {
+          try {
+            iframe.contentWindow?.postMessage(JSON.stringify({
+              method: 'addEventListener',
+              value: 'ended'
+            }), 'https://player.vimeo.com')
+            if (autoplayRequested) {
+              iframe.contentWindow?.postMessage(JSON.stringify({
+                method: 'play'
+              }), 'https://player.vimeo.com')
+            }
+          } catch (_) {
+            // Ignore cross-origin postMessage failures.
+          }
+        }
+
+        iframe.addEventListener('load', onLoad)
+        if (iframe.contentWindow) onLoad()
+
+        window.addEventListener('message', (event) => {
+          if (!event || typeof event.origin !== 'string' || !event.origin.includes('vimeo.com')) return
+
+          let payload = event.data
+          if (typeof payload === 'string') {
+            try {
+              payload = JSON.parse(payload)
+            } catch (_) {
+              return
+            }
+          }
+
+          if (!payload || typeof payload !== 'object') return
+          const eventName = String(payload.event || payload.method || '').toLowerCase()
+          const payloadPlayerId = String(payload.player_id || '')
+          if ((eventName === 'ended' || eventName === 'finish') && payloadPlayerId === playerId) {
+            submitAutoAdvance()
+          }
+        })
+      }
+
+      if (lessonIframe && mediaType === 'embed' && mediaEmbedUrl) {
+        if (isYouTubeEmbedUrl(mediaEmbedUrl)) {
+          configureYouTubeAutoAdvance(lessonIframe, mediaEmbedUrl)
+        } else if (isVimeoEmbedUrl(mediaEmbedUrl)) {
+          configureVimeoAutoAdvance(lessonIframe, mediaEmbedUrl)
+        } else if (isGoogleDriveEmbedUrl(mediaEmbedUrl) || String(mediaSourceLabel || '').toLowerCase().includes('google drive')) {
+          configureGoogleDriveAutoAdvance(lessonIframe, currentLessonDurationMinutes)
+        }
+      }
+
+      maybeAutoStartCurrentLesson()
+    })()
+  </script>
+</body>
+</html>
+
+
+

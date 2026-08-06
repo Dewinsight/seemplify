@@ -2,12 +2,168 @@ const express = require('express');
 const router = express.Router();
 const { PerformanceReview } = require('../models/PerformanceReview');
 const ReviewCycle = require('../models/ReviewCycle');
+const User = require('../models/User');
 const { 
   requireAuth, 
   requirePermission, 
   requireManager,
-  requireHRAdmin 
+  requireHRAdmin,
+  getUserRole,
+  getDirectReports
 } = require('../middleware/rbac');
+const appraisalAIService = require('../services/appraisalAIService');
+
+const resolveUserId = (sessionUser = {}) => {
+  return sessionUser.id || sessionUser.sub || sessionUser.userId || '';
+};
+
+const resolveRole = (req) => {
+  return req.userRole || getUserRole(req.session?.user) || 'employee';
+};
+
+const resolveDirectReports = (req) => {
+  return req.directReports || getDirectReports(req.session?.user || {});
+};
+
+const resolveOrganizationId = (req) => {
+  return (
+    req.currentOrganization?.id ||
+    req.currentOrganization?._id?.toString?.() ||
+    req.session?.currentOrganizationId ||
+    req.session?.user?.currentOrganization?.id ||
+    req.session?.user?.currentOrganization?._id?.toString?.() ||
+    req.session?.user?.userinfo?.current_organization?.id ||
+    req.session?.user?.userinfo?.currentOrganization?.id ||
+    req.session?.user?.organizations?.[0]?.id ||
+    req.session?.user?.userinfo?.organizations?.[0]?.id ||
+    null
+  );
+};
+
+const toStringId = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'object') {
+    if (value.userId) return String(value.userId);
+    if (value.id) return String(value.id);
+    if (value._id) return String(value._id);
+    if (value.sub) return String(value.sub);
+    if (typeof value.toString === 'function') return String(value.toString());
+  }
+  return null;
+};
+
+async function ensureReviewsForCycle(cycle) {
+  const orgId = cycle?.organizationId;
+  if (!orgId) {
+    return { created: 0, existing: 0, skipped: 0, total: 0 };
+  }
+
+  const orgUsers = await User.find({
+    $or: [
+      { currentOrganizationId: orgId },
+      { 'idpTeams.organizationId': orgId }
+    ]
+  })
+    .select('idpSub email idpTeams')
+    .lean();
+
+  if (!orgUsers.length) {
+    return { created: 0, existing: 0, skipped: 0, total: 0 };
+  }
+
+  const knownUserIds = new Set();
+  const participantRows = [];
+
+  orgUsers.forEach((userDoc) => {
+    const userId = toStringId(userDoc?.idpSub || userDoc?._id);
+    if (!userId) return;
+    knownUserIds.add(userId);
+    participantRows.push({
+      userId,
+      teams: Array.isArray(userDoc.idpTeams) ? userDoc.idpTeams : []
+    });
+  });
+
+  const existingReviews = await PerformanceReview.find({ cycleId: cycle._id }).select('userId').lean();
+  const existingByUserId = new Set(existingReviews.map((review) => String(review.userId)));
+
+  const rowsToCreate = [];
+  let skipped = 0;
+
+  participantRows.forEach((participant) => {
+    if (existingByUserId.has(participant.userId)) return;
+
+    const teamInOrg = participant.teams.find((team) => team?.organizationId === orgId) || participant.teams[0];
+    const managerFromTeam = toStringId(teamInOrg?.managerId);
+    let managerId = managerFromTeam && knownUserIds.has(managerFromTeam) ? managerFromTeam : null;
+
+    if (!managerId) {
+      managerId = toStringId(cycle.createdBy);
+    }
+
+    if (!managerId) {
+      skipped += 1;
+      return;
+    }
+
+    rowsToCreate.push({
+      cycleId: cycle._id,
+      userId: participant.userId,
+      managerId,
+      status: 'draft'
+    });
+  });
+
+  if (rowsToCreate.length > 0) {
+    await PerformanceReview.insertMany(rowsToCreate);
+  }
+
+  return {
+    created: rowsToCreate.length,
+    existing: existingByUserId.size,
+    skipped,
+    total: participantRows.length
+  };
+}
+
+const canAccessReview = (review, req) => {
+  const userId = resolveUserId(req.session?.user || {});
+  const role = resolveRole(req);
+  const directReports = resolveDirectReports(req) || [];
+
+  const isEmployee = review.userId === userId;
+  const isManager = review.managerId === userId;
+  const isDirectReport = directReports.includes(review.userId);
+  const isHRAdmin = role === 'hr_admin';
+
+  return {
+    allowed: isEmployee || isManager || isDirectReport || isHRAdmin,
+    userId,
+    role,
+    isEmployee,
+    isManager,
+    isDirectReport,
+    isHRAdmin
+  };
+};
+
+const getManagerSubmissionGuard = (review, req) => {
+  const access = canAccessReview(review, req);
+  const canSubmit = access.isManager || access.isHRAdmin;
+  if (!canSubmit) {
+    return {
+      ok: false,
+      status: 403,
+      payload: {
+        success: false,
+        error: 'Only the assigned manager or HR Admin can submit manager evaluation'
+      }
+    };
+  }
+  return { ok: true, access };
+};
 
 /**
  * GET /api/reviews - List performance reviews
@@ -17,8 +173,8 @@ const {
  */
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const userId = req.session.user.id || req.session.user.sub;
-    const role = req.userRole;
+    const userId = resolveUserId(req.session?.user || {});
+    const role = resolveRole(req);
     const { cycleId, status, userId: queryUserId } = req.query;
     
     let query = {};
@@ -34,7 +190,7 @@ router.get('/', requireAuth, async (req, res) => {
       }
     } else if (role === 'line_manager') {
       // Line Manager sees reviews where they are manager or employee
-      const directReports = req.directReports || [];
+      const directReports = resolveDirectReports(req) || [];
       query.$or = [
         { userId: userId }, // Own reviews
         { managerId: userId }, // Reviews they need to conduct
@@ -107,7 +263,7 @@ router.get('/', requireAuth, async (req, res) => {
  */
 router.get('/pending', requireManager, async (req, res) => {
   try {
-    const userId = req.session.user.id || req.session.user.sub;
+    const userId = resolveUserId(req.session?.user || {});
     
     // Reviews where self-evaluation is done but manager review is not
     const reviews = await PerformanceReview.find({
@@ -141,7 +297,7 @@ router.get('/pending', requireManager, async (req, res) => {
  */
 router.get('/direct-reports', requireManager, async (req, res) => {
   try {
-    const directReports = req.directReports || [];
+    const directReports = resolveDirectReports(req) || [];
     const { cycleId } = req.query;
     
     if (directReports.length === 0) {
@@ -197,17 +353,9 @@ router.get('/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Review not found' });
     }
     
-    // Check access
-    const userId = req.session.user.id || req.session.user.sub;
-    const role = req.userRole;
-    const directReports = req.directReports || [];
-    
-    const isEmployee = review.userId === userId;
-    const isManager = review.managerId === userId;
-    const isDirectReport = directReports.includes(review.userId);
-    const isHRAdmin = role === 'hr_admin';
-    
-    if (!isEmployee && !isManager && !isDirectReport && !isHRAdmin) {
+    const access = canAccessReview(review, req);
+
+    if (!access.allowed) {
       return res.status(403).json({ 
         success: false, 
         error: 'Access denied to this review' 
@@ -218,8 +366,8 @@ router.get('/:id', requireAuth, async (req, res) => {
       success: true, 
       data: review,
       permissions: {
-        canEditSelf: isEmployee && !review.selfEvaluation?.submittedAt,
-        canEditManager: (isManager || isHRAdmin) && review.selfEvaluation?.submittedAt,
+        canEditSelf: access.isEmployee && !review.selfEvaluation?.submittedAt,
+        canEditManager: (access.isManager || access.isHRAdmin) && review.selfEvaluation?.submittedAt,
         canView: true
       }
     });
@@ -242,7 +390,7 @@ router.post('/:id/self-evaluation', requireAuth, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Review not found' });
     }
     
-    const userId = req.session.user.id || req.session.user.sub;
+    const userId = resolveUserId(req.session?.user || {});
     
     if (review.userId !== userId) {
       return res.status(403).json({ 
@@ -295,15 +443,9 @@ router.post('/:id/manager-evaluation', requireManager, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Review not found' });
     }
     
-    const userId = req.session.user.id || req.session.user.sub;
-    const role = req.userRole;
-    
-    // Only assigned manager or HR Admin can submit
-    if (review.managerId !== userId && role !== 'hr_admin') {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Only the assigned manager can submit manager evaluation' 
-      });
+    const guard = getManagerSubmissionGuard(review, req);
+    if (!guard.ok) {
+      return res.status(guard.status).json(guard.payload);
     }
     
     // Check if self-evaluation is done (required before manager review)
@@ -315,12 +457,37 @@ router.post('/:id/manager-evaluation', requireManager, async (req, res) => {
     }
     
     const { content, rating, responses, aiSummary } = req.body;
+
+    // Optional AI summary generation when manager doesn't provide one.
+    let resolvedAISummary = aiSummary;
+    if (!resolvedAISummary && content) {
+      try {
+        const aiAssist = await appraisalAIService.assistManagerReview(
+          {
+            overallSummary: {
+              achievements: review.selfEvaluation?.content || '',
+              challenges: '',
+              learnings: '',
+              improvements: '',
+              goals: ''
+            },
+            overallSelfRating: review.selfEvaluation?.rating
+          },
+          content,
+          [],
+          { employeeName: review.userId }
+        );
+        resolvedAISummary = aiAssist?.draftSummary || aiAssist?.ratingJustification || undefined;
+      } catch (aiError) {
+        console.error('Manager evaluation AI summary error:', aiError);
+      }
+    }
     
     review.managerEvaluation = {
       content,
       rating,
       responses,
-      aiSummary,
+      aiSummary: resolvedAISummary,
       submittedAt: new Date()
     };
     
@@ -339,6 +506,89 @@ router.post('/:id/manager-evaluation', requireManager, async (req, res) => {
 });
 
 /**
+ * POST /api/reviews/:id/manager-ai-assist - Generate AI suggestions for manager review
+ * Line Manager or HR Admin only
+ */
+router.post('/:id/manager-ai-assist', requireManager, async (req, res) => {
+  try {
+    const review = await PerformanceReview.findById(req.params.id).populate('cycleId');
+
+    if (!review) {
+      return res.status(404).json({ success: false, error: 'Review not found' });
+    }
+
+    const guard = getManagerSubmissionGuard(review, req);
+    if (!guard.ok) {
+      return res.status(guard.status).json(guard.payload);
+    }
+
+    const managerNotes = req.body?.managerNotes || '';
+
+    const assistance = await appraisalAIService.assistManagerReview(
+      {
+        overallSummary: {
+          achievements: review.selfEvaluation?.content || '',
+          challenges: '',
+          learnings: '',
+          improvements: '',
+          goals: ''
+        },
+        overallSelfRating: review.selfEvaluation?.rating
+      },
+      managerNotes,
+      [],
+      { employeeName: review.userId }
+    );
+
+    res.json({
+      success: true,
+      data: assistance
+    });
+  } catch (error) {
+    console.error('Error getting manager AI assist:', error);
+    res.status(500).json({ success: false, error: 'Failed to get AI assistance' });
+  }
+});
+
+/**
+ * POST /api/reviews/:id/self-ai-suggest - Generate AI writing suggestion for self review
+ * Employee only (or HR Admin)
+ */
+router.post('/:id/self-ai-suggest', requireAuth, async (req, res) => {
+  try {
+    const review = await PerformanceReview.findById(req.params.id);
+
+    if (!review) {
+      return res.status(404).json({ success: false, error: 'Review not found' });
+    }
+
+    const access = canAccessReview(review, req);
+    if (!(access.isEmployee || access.isHRAdmin)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only the employee can request self-review suggestions'
+      });
+    }
+
+    const { field, existingContent, context } = req.body || {};
+    const suggestion = await appraisalAIService.generateSelfAssessmentSuggestion(
+      field || 'achievements',
+      context || '',
+      existingContent || review.selfEvaluation?.content || '',
+      { employeeName: req.session?.user?.name }
+    );
+
+    res.json({
+      success: true,
+      data: { suggestion }
+    });
+  } catch (error) {
+    console.error('Error getting self AI suggestion:', error);
+    res.status(500).json({ success: false, error: 'Failed to get AI suggestion' });
+  }
+});
+
+/**
  * POST /api/reviews/:id/request-peer-review - Request peer review
  * Employee can request peer reviews for their own review
  */
@@ -350,9 +600,10 @@ router.post('/:id/request-peer-review', requireAuth, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Review not found' });
     }
     
-    const userId = req.session.user.id || req.session.user.sub;
+    const userId = resolveUserId(req.session?.user || {});
+    const role = resolveRole(req);
     
-    if (review.userId !== userId && req.userRole !== 'hr_admin') {
+    if (review.userId !== userId && role !== 'hr_admin') {
       return res.status(403).json({ 
         success: false, 
         error: 'Only the employee or HR Admin can request peer reviews' 
@@ -399,9 +650,10 @@ router.post('/:id/request-peer-review', requireAuth, async (req, res) => {
 router.get('/cycles', requireAuth, async (req, res) => {
   try {
     let query = {};
-    
-    if (req.currentOrganization?.id) {
-      query.organizationId = req.currentOrganization.id;
+    const organizationId = resolveOrganizationId(req);
+
+    if (organizationId) {
+      query.organizationId = organizationId;
     }
     
     const cycles = await ReviewCycle.find(query)
@@ -425,13 +677,28 @@ router.get('/cycles', requireAuth, async (req, res) => {
  */
 router.post('/cycles', requireHRAdmin, async (req, res) => {
   try {
-    const userId = req.session.user.id || req.session.user.sub;
-    const { title, description, type, startDate, endDate, phases, settings, questions } = req.body;
+    const userId = resolveUserId(req.session?.user || {});
+    const organizationId = resolveOrganizationId(req);
+    const {
+      title,
+      description,
+      type,
+      startDate,
+      endDate,
+      phases,
+      settings,
+      questions,
+      autoActivate
+    } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, error: 'No active organization selected' });
+    }
     
     const cycle = new ReviewCycle({
       title,
       description,
-      organizationId: req.currentOrganization?.id,
+      organizationId,
       type: type || 'manager-only',
       startDate,
       endDate,
@@ -443,11 +710,21 @@ router.post('/cycles', requireHRAdmin, async (req, res) => {
     });
     
     await cycle.save();
+
+    let reviewCreation = null;
+    if (autoActivate === true) {
+      cycle.status = 'active';
+      await cycle.save();
+      reviewCreation = await ensureReviewsForCycle(cycle);
+    }
     
     res.status(201).json({ 
       success: true, 
       data: cycle,
-      message: 'Review cycle created successfully'
+      reviewCreation,
+      message: autoActivate === true
+        ? `Review cycle created and activated (${reviewCreation?.created || 0} reviews created)`
+        : 'Review cycle created successfully'
     });
   } catch (error) {
     console.error('Error creating review cycle:', error);
@@ -495,23 +772,25 @@ router.post('/cycles/:id/activate', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Review cycle not found' });
     }
     
-    if (cycle.status !== 'draft' && cycle.status !== 'planning') {
+    if (cycle.status !== 'draft' && cycle.status !== 'planning' && cycle.status !== 'active') {
       return res.status(400).json({ 
         success: false, 
-        error: 'Can only activate draft or planning cycles' 
+        error: 'Can only activate draft, planning, or active cycles'
       });
     }
     
-    cycle.status = 'active';
-    await cycle.save();
-    
-    // Note: In production, you would create individual reviews for each employee
-    // This would be done via a background job or by fetching all employees from IdP
+    if (cycle.status !== 'active') {
+      cycle.status = 'active';
+      await cycle.save();
+    }
+
+    const reviewCreation = await ensureReviewsForCycle(cycle);
     
     res.json({ 
       success: true, 
       data: cycle,
-      message: 'Review cycle activated successfully'
+      reviewCreation,
+      message: `Review cycle activated successfully (${reviewCreation.created} reviews created, ${reviewCreation.existing} existing)`
     });
   } catch (error) {
     console.error('Error activating review cycle:', error);

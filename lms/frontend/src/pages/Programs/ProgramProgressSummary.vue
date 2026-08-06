@@ -84,7 +84,16 @@ const props = defineProps<{
 	programMembers: ProgramMember[]
 }>()
 
-const progressList = ref<ProgramMember[]>(props.programMembers || [])
+const getFilteredMembers = () => {
+	if (!searchFilter.value) return props.programMembers || []
+	const filter = searchFilter.value.toLowerCase()
+	return (props.programMembers || []).filter((member) => {
+		const fullName = member.full_name || member.member || ''
+		return fullName.toLowerCase().includes(filter)
+	})
+}
+
+const progressList = ref<ProgramMember[]>(getFilteredMembers())
 
 const progressDistribution = computed(() => {
 	const categories = ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%']
@@ -110,15 +119,13 @@ const averageProgress = computed(() => {
 	return totalProgress / props.programMembers.length
 })
 
-watch(searchFilter, () => {
-	if (searchFilter.value) {
-		progressList.value = props.programMembers.filter((member) =>
-			member.full_name.toLowerCase().includes(searchFilter.value?.toLowerCase())
-		)
-	} else {
-		progressList.value = props.programMembers
-	}
-})
+watch(
+	[searchFilter, () => props.programMembers],
+	() => {
+		progressList.value = getFilteredMembers()
+	},
+	{ immediate: true }
+)
 
 const progressColumns = computed(() => {
 	return [

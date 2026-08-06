@@ -1,177 +1,324 @@
 const ExchangeRate = require('../models/ExchangeRate');
 
+const FALLBACK_CURRENCY_CODES = [
+  'USD', 'EUR', 'GBP', 'NGN', 'KES', 'ZAR', 'GHS', 'UGX', 'TZS', 'INR',
+  'AED', 'SAR', 'QAR', 'BHD', 'CAD', 'AUD', 'NZD', 'CHF', 'CNY', 'JPY',
+  'HKD', 'SGD', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'TRY', 'EGP', 'MAD',
+  'XOF', 'XAF', 'BRL', 'MXN', 'ARS', 'CLP', 'COP', 'PEN', 'PKR', 'BDT',
+  'MYR', 'THB', 'PHP', 'IDR', 'KRW',
+];
+
+const PINNED_CURRENCY_CODES = [
+  'USD', 'EUR', 'GBP', 'NGN', 'KES', 'ZAR', 'GHS', 'UGX', 'TZS', 'INR',
+  'AED', 'SAR', 'QAR', 'BHD', 'CAD', 'AUD', 'NZD', 'CHF', 'CNY', 'JPY',
+  'HKD', 'SGD',
+];
+
+let supportedCurrencyCache = null;
+
+function normalizeCurrencyCode(code) {
+  return String(code || '').trim().toUpperCase();
+}
+
+function getIntlCurrencyCodes() {
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.supportedValuesOf === 'function') {
+      const supported = Intl.supportedValuesOf('currency') || [];
+      if (supported.length > 0) {
+        return supported.map(normalizeCurrencyCode);
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to read Intl currency catalog, using fallback list:', err.message);
+  }
+
+  return FALLBACK_CURRENCY_CODES;
+}
+
+function getCurrencyDisplayName(code) {
+  try {
+    const displayNames = new Intl.DisplayNames(['en'], { type: 'currency' });
+    return displayNames.of(code) || code;
+  } catch (err) {
+    return code;
+  }
+}
+
+function getCurrencySymbol(code) {
+  try {
+    const parts = new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: code,
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).formatToParts(0);
+
+    return parts.find((part) => part.type === 'currency')?.value || code;
+  } catch (err) {
+    return code;
+  }
+}
+
+function getCurrencyDecimals(code) {
+  try {
+    return new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: code,
+    }).resolvedOptions().maximumFractionDigits;
+  } catch (err) {
+    return 2;
+  }
+}
+
+function buildCurrencyMetadata(code) {
+  const normalizedCode = normalizeCurrencyCode(code);
+  const name = getCurrencyDisplayName(normalizedCode);
+
+  return {
+    code: normalizedCode,
+    name,
+    symbol: getCurrencySymbol(normalizedCode),
+    decimals: getCurrencyDecimals(normalizedCode),
+    label: `${normalizedCode} - ${name}`,
+  };
+}
+
+function compareCurrencies(a, b) {
+  const pinnedIndexA = PINNED_CURRENCY_CODES.indexOf(a.code);
+  const pinnedIndexB = PINNED_CURRENCY_CODES.indexOf(b.code);
+
+  if (pinnedIndexA !== -1 || pinnedIndexB !== -1) {
+    if (pinnedIndexA === -1) return 1;
+    if (pinnedIndexB === -1) return -1;
+    return pinnedIndexA - pinnedIndexB;
+  }
+
+  return a.code.localeCompare(b.code);
+}
+
 /**
  * Currency Service
  * Handles currency conversion and exchange rate management
  */
 class CurrencyService {
-    constructor() {
-        // Supported currencies with metadata
-        this.supportedCurrencies = [
-            { code: 'USD', name: 'US Dollar', symbol: '$', decimals: 2 },
-            { code: 'EUR', name: 'Euro', symbol: '€', decimals: 2 },
-            { code: 'GBP', name: 'British Pound', symbol: '£', decimals: 2 },
-            { code: 'NGN', name: 'Nigerian Naira', symbol: '₦', decimals: 2 },
-            { code: 'KES', name: 'Kenyan Shilling', symbol: 'KSh', decimals: 2 },
-            { code: 'ZAR', name: 'South African Rand', symbol: 'R', decimals: 2 },
-            { code: 'INR', name: 'Indian Rupee', symbol: '₹', decimals: 2 },
-            { code: 'GHS', name: 'Ghanaian Cedi', symbol: 'GH₵', decimals: 2 },
-            { code: 'TZS', name: 'Tanzanian Shilling', symbol: 'TSh', decimals: 2 },
-            { code: 'UGX', name: 'Ugandan Shilling', symbol: 'USh', decimals: 0 },
-            { code: 'AED', name: 'UAE Dirham', symbol: 'د.إ', decimals: 2 },
-            { code: 'CAD', name: 'Canadian Dollar', symbol: 'C$', decimals: 2 },
-            { code: 'AUD', name: 'Australian Dollar', symbol: 'A$', decimals: 2 }
-        ];
+  buildSupportedCurrencyCatalog() {
+    if (supportedCurrencyCache) {
+      return supportedCurrencyCache;
     }
 
-    /**
-     * Get all supported currencies
-     */
-    getSupportedCurrencies() {
-        return this.supportedCurrencies;
+    const codes = Array.from(new Set(getIntlCurrencyCodes().map(normalizeCurrencyCode)))
+      .filter((code) => code.length === 3);
+
+    supportedCurrencyCache = codes
+      .map(buildCurrencyMetadata)
+      .sort(compareCurrencies);
+
+    return supportedCurrencyCache;
+  }
+
+  /**
+   * Get all supported currencies
+   */
+  getSupportedCurrencies() {
+    return this.buildSupportedCurrencyCatalog();
+  }
+
+  /**
+   * Get all supported currency codes
+   */
+  getSupportedCurrencyCodes() {
+    return this.getSupportedCurrencies().map((currency) => currency.code);
+  }
+
+  /**
+   * Get currency info by code
+   */
+  getCurrencyInfo(code) {
+    const normalizedCode = normalizeCurrencyCode(code);
+    return this.getSupportedCurrencies().find((currency) => currency.code === normalizedCode)
+      || (normalizedCode.length === 3 ? buildCurrencyMetadata(normalizedCode) : null);
+  }
+
+  /**
+   * Format amount with currency symbol
+   */
+  formatAmount(amount, currencyCode) {
+    const numericAmount = Number(amount || 0);
+    const normalizedCode = normalizeCurrencyCode(currencyCode) || 'USD';
+
+    try {
+      return new Intl.NumberFormat('en', {
+        style: 'currency',
+        currency: normalizedCode,
+      }).format(numericAmount);
+    } catch (err) {
+      const currency = this.getCurrencyInfo(normalizedCode);
+      const decimals = currency?.decimals ?? 2;
+      return `${normalizedCode} ${numericAmount.toLocaleString('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      })}`;
+    }
+  }
+
+  /**
+   * Convert amount between currencies
+   */
+  async convert(organizationId, amount, fromCurrency, toCurrency, date = new Date()) {
+    const normalizedFrom = normalizeCurrencyCode(fromCurrency);
+    const normalizedTo = normalizeCurrencyCode(toCurrency);
+
+    if (!normalizedFrom || !normalizedTo) {
+      throw new Error('Both source and target currencies are required');
     }
 
-    /**
-     * Get currency info by code
-     */
-    getCurrencyInfo(code) {
-        return this.supportedCurrencies.find(c => c.code === code.toUpperCase());
+    if (normalizedFrom === normalizedTo) {
+      return {
+        originalAmount: amount,
+        originalCurrency: normalizedFrom,
+        convertedAmount: amount,
+        targetCurrency: normalizedTo,
+        rate: 1,
+        direct: true,
+      };
     }
 
-    /**
-     * Format amount with currency symbol
-     */
-    formatAmount(amount, currencyCode) {
-        const currency = this.getCurrencyInfo(currencyCode);
-        if (!currency) {
-            return `${currencyCode} ${amount.toLocaleString()}`;
-        }
+    return ExchangeRate.convert(organizationId, amount, normalizedFrom, normalizedTo, date);
+  }
 
-        const formatted = amount.toLocaleString(undefined, {
-            minimumFractionDigits: currency.decimals,
-            maximumFractionDigits: currency.decimals
-        });
+  /**
+   * Get current exchange rate
+   */
+  async getRate(organizationId, fromCurrency, toCurrency, date = new Date()) {
+    return ExchangeRate.getCurrentRate(
+      organizationId,
+      normalizeCurrencyCode(fromCurrency),
+      normalizeCurrencyCode(toCurrency),
+      date
+    );
+  }
 
-        return `${currency.symbol}${formatted}`;
+  /**
+   * Get all active rates for organization
+   */
+  async getActiveRates(organizationId, baseCurrency = null) {
+    return ExchangeRate.getActiveRates(
+      organizationId,
+      baseCurrency ? normalizeCurrencyCode(baseCurrency) : null
+    );
+  }
+
+  /**
+   * Set exchange rate
+   */
+  async setRate(organizationId, baseCurrency, targetCurrency, rate, options = {}) {
+    const normalizedBase = normalizeCurrencyCode(baseCurrency);
+    const normalizedTarget = normalizeCurrencyCode(targetCurrency);
+
+    if (!normalizedBase || !normalizedTarget) {
+      throw new Error('Both base and target currencies are required');
     }
 
-    /**
-     * Convert amount between currencies
-     */
-    async convert(organizationId, amount, fromCurrency, toCurrency, date = new Date()) {
-        // Same currency
-        if (fromCurrency.toUpperCase() === toCurrency.toUpperCase()) {
-            return {
-                originalAmount: amount,
-                originalCurrency: fromCurrency,
-                convertedAmount: amount,
-                targetCurrency: toCurrency,
-                rate: 1,
-                direct: true
-            };
-        }
-
-        return ExchangeRate.convert(organizationId, amount, fromCurrency, toCurrency, date);
+    if (normalizedBase === normalizedTarget) {
+      throw new Error('Base and target currency must be different');
     }
 
-    /**
-     * Get current exchange rate
-     */
-    async getRate(organizationId, fromCurrency, toCurrency, date = new Date()) {
-        return ExchangeRate.getCurrentRate(organizationId, fromCurrency, toCurrency, date);
+    const deactivateQuery = {
+      organizationId,
+      baseCurrency: normalizedBase,
+      targetCurrency: normalizedTarget,
+      isActive: true,
+    };
+
+    if (options.source === 'api' && options.preserveManualOverrides !== false) {
+      deactivateQuery.source = { $ne: 'manual' };
     }
 
-    /**
-     * Get all active rates for organization
-     */
-    async getActiveRates(organizationId, baseCurrency = null) {
-        return ExchangeRate.getActiveRates(organizationId, baseCurrency);
+    await ExchangeRate.updateMany(
+      deactivateQuery,
+      {
+        isActive: false,
+        updatedAt: new Date(),
+      }
+    );
+
+    const exchangeRate = new ExchangeRate({
+      organizationId,
+      baseCurrency: normalizedBase,
+      targetCurrency: normalizedTarget,
+      rate,
+      effectiveDate: options.effectiveDate || new Date(),
+      expiresAt: options.expiresAt,
+      source: options.source || 'manual',
+      notes: options.notes,
+      createdBy: options.createdBy,
+      createdByName: options.createdByName,
+      isActive: true,
+    });
+
+    await exchangeRate.save();
+    return exchangeRate;
+  }
+
+  /**
+   * Bulk set rates (e.g., from API)
+   */
+  async setBulkRates(organizationId, baseCurrency, rates, options = {}) {
+    const normalizedBase = normalizeCurrencyCode(baseCurrency);
+    const results = [];
+
+    for (const [targetCurrency, rate] of Object.entries(rates || {})) {
+      const normalizedTarget = normalizeCurrencyCode(targetCurrency);
+      if (!normalizedTarget || normalizedTarget === normalizedBase) {
+        continue;
+      }
+
+      const result = await this.setRate(
+        organizationId,
+        normalizedBase,
+        normalizedTarget,
+        rate,
+        options
+      );
+      results.push(result);
     }
 
-    /**
-     * Set exchange rate
-     */
-    async setRate(organizationId, baseCurrency, targetCurrency, rate, options = {}) {
-        // Deactivate previous rate if exists
-        await ExchangeRate.updateMany(
-            {
-                organizationId,
-                baseCurrency: baseCurrency.toUpperCase(),
-                targetCurrency: targetCurrency.toUpperCase(),
-                isActive: true
-            },
-            { isActive: false }
-        );
+    return results;
+  }
 
-        // Create new rate
-        const exchangeRate = new ExchangeRate({
-            organizationId,
-            baseCurrency: baseCurrency.toUpperCase(),
-            targetCurrency: targetCurrency.toUpperCase(),
-            rate,
-            effectiveDate: options.effectiveDate || new Date(),
-            expiresAt: options.expiresAt,
-            source: options.source || 'manual',
-            notes: options.notes,
-            createdBy: options.createdBy,
-            createdByName: options.createdByName,
-            isActive: true
-        });
+  /**
+   * Calculate payroll in multiple currencies
+   */
+  async convertPayrollAmount(organizationId, amount, employeeCurrency, orgBaseCurrency) {
+    const normalizedEmployeeCurrency = normalizeCurrencyCode(employeeCurrency);
+    const normalizedBaseCurrency = normalizeCurrencyCode(orgBaseCurrency);
 
-        await exchangeRate.save();
-        return exchangeRate;
+    if (normalizedEmployeeCurrency === normalizedBaseCurrency) {
+      return {
+        originalAmount: amount,
+        originalCurrency: normalizedEmployeeCurrency,
+        convertedAmount: amount,
+        baseCurrency: normalizedBaseCurrency,
+        rate: 1,
+      };
     }
 
-    /**
-     * Bulk set rates (e.g., from API)
-     */
-    async setBulkRates(organizationId, baseCurrency, rates, options = {}) {
-        const results = [];
+    const conversion = await this.convert(
+      organizationId,
+      amount,
+      normalizedEmployeeCurrency,
+      normalizedBaseCurrency
+    );
 
-        for (const [targetCurrency, rate] of Object.entries(rates)) {
-            const result = await this.setRate(
-                organizationId,
-                baseCurrency,
-                targetCurrency,
-                rate,
-                options
-            );
-            results.push(result);
-        }
-
-        return results;
-    }
-
-    /**
-     * Calculate payroll in multiple currencies
-     */
-    async convertPayrollAmount(organizationId, amount, employeeCurrency, orgBaseCurrency) {
-        // If same currency, no conversion needed
-        if (employeeCurrency === orgBaseCurrency) {
-            return {
-                originalAmount: amount,
-                originalCurrency: employeeCurrency,
-                convertedAmount: amount,
-                baseCurrency: orgBaseCurrency,
-                rate: 1
-            };
-        }
-
-        const conversion = await this.convert(
-            organizationId,
-            amount,
-            employeeCurrency,
-            orgBaseCurrency
-        );
-
-        return {
-            originalAmount: amount,
-            originalCurrency: employeeCurrency,
-            convertedAmount: conversion.convertedAmount,
-            baseCurrency: orgBaseCurrency,
-            rate: conversion.rate
-        };
-    }
+    return {
+      originalAmount: amount,
+      originalCurrency: normalizedEmployeeCurrency,
+      convertedAmount: conversion.convertedAmount,
+      baseCurrency: normalizedBaseCurrency,
+      rate: conversion.rate,
+    };
+  }
 }
 
 module.exports = new CurrencyService();

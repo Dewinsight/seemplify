@@ -1,5 +1,8 @@
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const Organization = require('../models/Organization');
+const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const { normalizeOrganizationBrand } = require('../utils/organizationBrand');
 
 // Get notifications for current user
 exports.getUserNotifications = async (req, res) => {
@@ -42,13 +45,25 @@ exports.getUserNotifications = async (req, res) => {
     let orgIdToName = {};
     if (orgIdsSet.size > 0) {
       try {
-        const Organization = require('../models/Organization');
         const ids = Array.from(orgIdsSet);
-        const orgs = await Organization.find({ _id: { $in: ids } }).select('name').lean();
-        orgIdToName = orgs.reduce((acc, org) => {
-          acc[org._id.toString()] = org.name;
-          return acc;
-        }, {});
+        const orgs = await Organization.find({ _id: { $in: ids } })
+          .select('name idpOrganizationId')
+          .lean();
+        const organizationEntries = await Promise.all(orgs.map(async (org) => {
+          let resolvedOrganization = org;
+          if (!normalizeOrganizationBrand(org.name)) {
+            try {
+              resolvedOrganization = await resolveOrganizationForEmail({
+                organization: org,
+                userId
+              });
+            } catch (resolveError) {
+              console.warn(`Failed to resolve organization ${org._id} for notifications:`, resolveError.message);
+            }
+          }
+          return [org._id.toString(), normalizeOrganizationBrand(resolvedOrganization?.name) || null];
+        }));
+        orgIdToName = Object.fromEntries(organizationEntries);
       } catch (e) {
         console.warn('Failed to batch load organization names for notifications:', e.message);
       }
@@ -58,7 +73,7 @@ exports.getUserNotifications = async (req, res) => {
       const data = n.data || {};
       // DO NOT fallback to userCurrentOrg - each notification should have its own org data
       let organizationId = data.organizationId || data.orgId || data.organization || null;
-      let explicitName = data.organizationName || data.orgName || null;
+      const explicitName = normalizeOrganizationBrand(data.organizationName || data.orgName || null);
       
       // For older notifications without org data, try to derive from related entities
       if (!organizationId && !explicitName) {
@@ -75,7 +90,7 @@ exports.getUserNotifications = async (req, res) => {
         ...n,
         organization: {
           id: organizationId || null,
-          name: explicitName || lookedUpName || null
+          name: lookedUpName || explicitName || null
         }
       };
     });
@@ -194,9 +209,11 @@ exports.createTestNotification = async (req, res) => {
     let orgName = null;
     if (targetOrgId) {
       try {
-        const Organization = require('../models/Organization');
-        const org = await Organization.findById(targetOrgId).select('name').lean();
-        orgName = org?.name || null;
+        const org = await resolveOrganizationForEmail({
+          organizationId: targetOrgId,
+          userId
+        });
+        orgName = normalizeOrganizationBrand(org.name) || null;
       } catch (e) {
         console.warn('Failed to get org name for test notification:', e.message);
       }

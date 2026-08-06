@@ -46,7 +46,7 @@ class ConfigLoader {
    */
   getCurrentConfig() {
     const env = this.getEnvironment();
-    return this.config[env] || this.config.development;
+    return this.config[env] || this.config.production || this.config.development;
   }
 
   /**
@@ -75,4 +75,3 @@ class ConfigLoader {
 
 // Export a singleton instance
 module.exports = new ConfigLoader();
-

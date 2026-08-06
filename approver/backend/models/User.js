@@ -2,21 +2,20 @@ const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
+    firstName: { type: String, trim: true, default: '' },
+    lastName: { type: String, trim: true, default: '' },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    // Old fields (kept for migration or simple fallback if needed, but we will move to permissions)
-    // role: { type: String, enum: ['Admin', 'Approver', 'Requester'], default: 'Requester' },
-    // department: { type: String, default: 'General' },
 
-    isAdmin: { type: Boolean, default: false }, // Global Admin
+    // DEPRECATED — org membership now lives in UserOrganization model
+    // Kept temporarily for backward compatibility during migration
+    organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null },
+    isAdmin: { type: Boolean, default: false },
     permissions: [{
         department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
-        // Role hierarchy: Requester < GovernanceApprover < ExecutiveApprover
-        // GovernanceApprover replaces the old "Approver" role and can approve Tier 1 & 2
-        roles: [{ type: String, enum: ['Requester', 'GovernanceApprover', 'ExecutiveApprover'] }]
+        roles: [{ type: String, trim: true }]
     }],
 
-    // Legacy mapping helpers could be added, but field is enough
     isVerified: { type: Boolean, default: false },
     otp: {
         code: String,

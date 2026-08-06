@@ -168,9 +168,20 @@ const InterviewSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // How the notetaker was created: grant-connected (legacy) vs standalone (new API).
+  // null means "unknown/legacy" and is treated as grant-connected when a grantId exists.
+  notetakerType: {
+    type: String,
+    enum: ['grant', 'standalone'],
+    default: null
+  },
   notetakerStatus: {
     type: String,
     enum: ['pending', 'scheduled', 'enabled', 'joining', 'joined', 'recording', 'processing', 'completed', 'failed', 'cancelled', 'stopped', 'deleted'],
+    default: null
+  },
+  notetakerError: {
+    type: String,
     default: null
   },
   transcript: {
@@ -578,6 +589,8 @@ InterviewSchema.index({ nylasEventId: 1 });
 InterviewSchema.index({ stageId: 1 });
 InterviewSchema.index({ jobId: 1, stageId: 1 });
 InterviewSchema.index({ multiCandidateSessionId: 1, multiCandidateOrder: 1 });
+InterviewSchema.index({ organizationId: 1, createdAt: -1 });
+InterviewSchema.index({ createdAt: -1 });
 
 // Virtual for formatted duration
 InterviewSchema.virtual('formattedDuration').get(function() {

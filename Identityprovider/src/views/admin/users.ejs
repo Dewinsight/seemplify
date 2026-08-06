@@ -7,6 +7,181 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../../public/css/idp-theme.css') %>
+
+    .admin-subtitle {
+      margin: 6px 0 0;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card-header h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .badge-info {
+      background: rgba(59, 130, 246, 0.12);
+      color: #60a5fa;
+    }
+
+    .badge-success {
+      background: rgba(34, 197, 94, 0.12);
+      color: #4ade80;
+    }
+
+    .badge-purple {
+      background: rgba(139, 92, 246, 0.14);
+      color: #a78bfa;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .text-muted {
+      color: var(--muted);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 32px 16px;
+      color: var(--muted);
+    }
+
+    .empty-state svg {
+      margin-bottom: 12px;
+      opacity: 0.55;
+    }
+
+    .empty-state p {
+      margin: 0;
+    }
+
+    .alert-info {
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      color: #93c5fd;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .modal.open {
+      display: flex;
+    }
+
+    .modal-content {
+      width: min(100%, 620px);
+      max-height: 90vh;
+      overflow-y: auto;
+      background: var(--panel-solid);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text);
+    }
+
+    .modal-close {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 24px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .modal form {
+      padding: 18px 22px 22px;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .form-group input[type="email"],
+    .form-group input[type="password"],
+    .form-group input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-strong);
+      color: var(--text);
+      font-size: 14px;
+      padding: 10px 12px;
+    }
+
+    .form-hint {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 18px;
+    }
   </style>
   <link rel="stylesheet" href="/css/admin.css">
   <script src="/js/theme.js?v=2"></script>
@@ -16,7 +191,7 @@
   <div class="admin-layout">
     <%- include('../partials/admin-nav', { activePage: 'users' }) %>
 
-    <main class="admin-main">
+    <main class="admin-content">
       <div class="admin-header">
         <div>
           <h1>Admin Users</h1>
@@ -58,59 +233,61 @@
             <p>No administrators found</p>
           </div>
         <% } else { %>
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>Email</th>
-                <th>Name</th>
-                <th>Role</th>
-                <th>Created</th>
-                <% if (admin.isSuperAdmin) { %>
-                  <th>Actions</th>
-                <% } %>
-              </tr>
-            </thead>
-            <tbody>
-              <% admins.forEach(a => { %>
+          <div class="admin-table-container" style="border: none;">
+            <table class="admin-table">
+              <thead>
                 <tr>
-                  <td>
-                    <strong><%= a.email %></strong>
-                    <% if (a._id.toString() === admin.id.toString()) { %>
-                      <span class="badge badge-success" style="margin-left: 8px;">You</span>
-                    <% } %>
-                  </td>
-                  <td><%= a.profile?.name || '-' %></td>
-                  <td>
-                    <% if (a.isSuperAdmin) { %>
-                      <span class="badge badge-purple">Super Admin</span>
-                    <% } else { %>
-                      <span class="badge badge-info">System Admin</span>
-                    <% } %>
-                  </td>
-                  <td><%= new Date(a.createdAt).toLocaleDateString() %></td>
+                  <th>Email</th>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Created</th>
                   <% if (admin.isSuperAdmin) { %>
-                    <td>
-                      <div class="action-buttons">
-                        <% if (a._id.toString() !== admin.id.toString()) { %>
-                          <button class="btn btn-sm btn-secondary" onclick="editAdmin('<%= a._id %>', '<%= a.email %>', '<%= a.profile?.name || '' %>', <%= a.isSystemAdmin %>, <%= a.isSuperAdmin %>)">
-                            Edit
-                          </button>
-                          <button class="btn btn-sm btn-secondary" onclick="resetPassword('<%= a._id %>', '<%= a.email %>')">
-                            Reset Password
-                          </button>
-                          <button class="btn btn-sm btn-danger" onclick="removeAdmin('<%= a._id %>', '<%= a.email %>')">
-                            Remove
-                          </button>
-                        <% } else { %>
-                          <span class="text-muted">-</span>
-                        <% } %>
-                      </div>
-                    </td>
+                    <th>Actions</th>
                   <% } %>
                 </tr>
-              <% }) %>
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                <% admins.forEach(a => { %>
+                  <tr>
+                    <td>
+                      <strong><%= a.email %></strong>
+                      <% if (a._id.toString() === admin.id.toString()) { %>
+                        <span class="badge badge-success" style="margin-left: 8px;">You</span>
+                      <% } %>
+                    </td>
+                    <td><%= a.profile?.name || '-' %></td>
+                    <td>
+                      <% if (a.isSuperAdmin) { %>
+                        <span class="badge badge-purple">Super Admin</span>
+                      <% } else { %>
+                        <span class="badge badge-info">System Admin</span>
+                      <% } %>
+                    </td>
+                    <td><%= new Date(a.createdAt).toLocaleDateString() %></td>
+                    <% if (admin.isSuperAdmin) { %>
+                      <td>
+                        <div class="action-buttons">
+                          <% if (a._id.toString() !== admin.id.toString()) { %>
+                            <button class="btn btn-sm btn-secondary" onclick="editAdmin('<%= a._id %>', '<%= a.email %>', '<%= a.profile?.name || '' %>', <%= a.isSystemAdmin %>, <%= a.isSuperAdmin %>)">
+                              Edit
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="resetPassword('<%= a._id %>', '<%= a.email %>')">
+                              Reset Password
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="removeAdmin('<%= a._id %>', '<%= a.email %>')">
+                              Remove
+                            </button>
+                          <% } else { %>
+                            <span class="text-muted">-</span>
+                          <% } %>
+                        </div>
+                      </td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
         <% } %>
       </div>
     </main>

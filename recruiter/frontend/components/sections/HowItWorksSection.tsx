@@ -12,6 +12,7 @@ import {
   GraduationCap, 
   HeartHandshake 
 } from 'lucide-react';
+import { useBrandConfig } from '@/context/BrandContext';
 
 const steps = [
   {
@@ -49,6 +50,7 @@ const steps = [
 ];
 
 export default function HowItWorksSection() {
+  const brand = useBrandConfig();
   return (
     <section id="how-it-works" className="relative z-10 container mx-auto px-4 py-24 md:py-32">
       {/* Background decorations */}
@@ -64,8 +66,8 @@ export default function HowItWorksSection() {
             <Zap className="w-4 h-4 mr-2" />
             Simple & Powerful
           </motion.span>
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-black mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-green-100 to-emerald-100">
-            How SmartHR Works
+          <h2 className={`text-4xl md:text-5xl lg:text-6xl font-black mb-6 bg-clip-text text-transparent ${brand.id === 'jetstone' ? 'bg-gradient-to-r from-teal-900 via-cyan-800 to-teal-900' : 'bg-gradient-to-r from-white via-green-100 to-emerald-100'}`}>
+            How {brand.name} Works
           </h2>
           <p className="text-slate-300 text-xl max-w-3xl mx-auto leading-relaxed">
             Our integrated platform simplifies every aspect of your HR workflow with intelligent automation

@@ -1,6 +1,10 @@
 // Performance-specific permissions
 const requirePerformancePermission = (permission) => {
   return async (req, res, next) => {
+    const currentOrgId = req.user.currentOrganization?.id || req.user.currentOrganization;
+    const currentOrg = (req.user.organizations || req.user.userinfo?.organizations || []).find(org => org.id === currentOrgId);
+    const departmentHeadPermissions = Array.isArray(currentOrg?.departmentHeadPermissions) ? currentOrg.departmentHeadPermissions : [];
+
     // Check organization role permissions
     // Assuming req.user is populated by authMiddleware
     if (req.user.organizationRole === 'owner' || req.user.organizationPermissions?.includes('admin:performance')) {
@@ -16,6 +20,12 @@ const requirePerformancePermission = (permission) => {
     if (hasTeamPermission) {
       req.hasTeamPermission = true;
       req.teamPermissions = req.user.idpTeamPermissions;
+      return next();
+    }
+
+    if (departmentHeadPermissions.length > 0 && ['view:team-performance', 'view:team-analytics'].includes(permission)) {
+      req.hasDepartmentHeadAccess = true;
+      req.departmentHeadPermissions = departmentHeadPermissions;
       return next();
     }
     
@@ -74,7 +84,7 @@ const filterPerformanceData = (req, res, next) => {
   if (teamId) {
       // Check if user has access to this team's data
       // This is a simplified check. Real implementation would traverse hierarchy.
-      const hasAccess = req.user.idpTeams?.some(t => t.id === teamId) || req.hasFullAccess;
+      const hasAccess = req.user.idpTeams?.some(t => t.id === teamId) || req.hasFullAccess || req.hasDepartmentHeadAccess;
       
       if (!hasAccess) {
          return res.status(403).json({

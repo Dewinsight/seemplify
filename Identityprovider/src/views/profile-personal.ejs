@@ -9,7 +9,7 @@
         <%- include('../public/css/idp-theme.css') %>
     </style>
     <link rel="stylesheet" href="/css/main.css">
-    <link rel="stylesheet" href="/css/profile-dashboard.css">
+    <link rel="stylesheet" href="/css/profile-dashboard.css?v=2">
     <script src="/js/theme.js?v=2"></script>
 </head>
 
@@ -26,17 +26,20 @@
                 </div>
             </div>
 
-            <!-- Profile Navigation Tabs -->
-            <div class="profile-nav">
-                <a href="/profile">Dashboard</a>
-                <a href="/profile/personal" class="active">Personal Info</a>
-                <a href="/profile/documents">Documents</a>
-                <a href="/profile/banking">Banking</a>
-                <a href="/profile/dependents">Dependents</a>
-            </div>
+            <%- include('partials/profile-nav', { activeProfileSection }) %>
 
             <div id="alertSuccess" class="alert alert-success"></div>
             <div id="alertError" class="alert alert-error"></div>
+
+            <div class="card">
+                <h3 style="font-size: 18px; margin-bottom: 16px;">Core Personal Details</h3>
+                <div class="form-group">
+                    <label for="dateOfBirth">Date of Birth</label>
+                    <input type="date" id="dateOfBirth" name="dateOfBirth"
+                        value="<%= user.profile?.personalInfo?.dateOfBirth ? new Date(user.profile.personalInfo.dateOfBirth).toISOString().split('T')[0] : '' %>">
+                    <div class="form-hint">This is required for payroll and HR records.</div>
+                </div>
+            </div>
 
             <!-- Mailing Address -->
             <div class="card">
@@ -264,6 +267,7 @@
 
                 // Collect all data
                 const data = {
+                    dateOfBirth: document.getElementById('dateOfBirth').value || null,
                     mailingAddress: {
                         street: document.getElementById('street').value.trim(),
                         street2: document.getElementById('street2').value.trim(),
@@ -307,6 +311,11 @@
                         alertSuccess.textContent = result.message || 'Personal information updated successfully!';
                         alertSuccess.classList.add('show');
                         window.scrollTo({ top: 0, behavior: 'smooth' });
+                        if (result?.nextStep?.route && result.nextStep.key !== 'personal') {
+                            setTimeout(() => {
+                                window.location.href = `${result.nextStep.route}?wizard=1`;
+                            }, 900);
+                        }
                     } else {
                         alertError.textContent = result.error || 'Failed to update personal information';
                         alertError.classList.add('show');
@@ -324,7 +333,6 @@
                 }
             }
         </script>
-
         <script src="/js/invitation-gatekeeper.js"></script>
 </body>
 

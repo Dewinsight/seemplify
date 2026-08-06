@@ -32,8 +32,8 @@ router.get('/:orgId/subscription',
 
       // Get effective features and limits
       const [features, limits] = await Promise.all([
-        subscription.getEffectiveFeatures(),
-        subscription.getEffectiveLimits()
+        subscriptionService.getEffectiveFeatures(req.params.orgId),
+        subscriptionService.getEffectiveLimits(req.params.orgId)
       ])
 
       res.json({
@@ -202,6 +202,9 @@ router.post('/:orgId/subscription/request',
       }
       if (error.message === 'Plan not found or unavailable') {
         return res.status(400).json({ error: error.message })
+      }
+      if (error.message === 'Plan is not requestable') {
+        return res.status(400).json({ error: 'This plan cannot be requested or renewed manually.' })
       }
       if (error.message === 'You already have a pending subscription request') {
         return res.status(400).json({ error: error.message })

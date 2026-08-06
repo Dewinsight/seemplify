@@ -14,7 +14,7 @@
     "@mui/icons-material": "^7.0.1",
     "@mui/material": "^7.3.6",
     "@mui/material-nextjs": "^7.3.6",
-    "axios": "^1.13.2",
+    "axios": "^1.14.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
@@ -26,6 +26,9 @@
     "swr": "^2.3.8",
     "tailwind-merge": "^2.0.0",
     "tailwindcss-animate": "^1.0.7"
+  },
+  "overrides": {
+    "axios": "^1.14.0"
   },
   "devDependencies": {
     "@types/lodash": "^4.17.21",

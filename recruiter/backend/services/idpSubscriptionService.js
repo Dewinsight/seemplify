@@ -5,7 +5,10 @@
  * Used to check if an organization has access to Recruiter/SmartHR
  */
 
-const IDP_URL = process.env.IDP_URL || process.env.OIDC_ISSUER || 'http://localhost:4000'
+const DEFAULT_IDP_URL = process.env.NODE_ENV === 'development'
+  ? 'http://localhost:4000'
+  : 'https://auth.seemplifyai.com'
+const IDP_URL = process.env.IDP_URL || process.env.OIDC_ISSUER || DEFAULT_IDP_URL
 const FEATURE_KEY = 'recruiter'
 
 /**

@@ -3,6 +3,10 @@ export interface BrandConfig {
   name: string;
   shortName: string;
   tagline: string;
+  /** Sub-brand name displayed below/after the primary name (e.g. "Jetstone Education") */
+  subBrandName?: string;
+  /** Sub-brand tagline/descriptor */
+  subBrandTagline?: string;
   colors: {
     from: string;
     to: string;
@@ -11,7 +15,21 @@ export interface BrandConfig {
     secondary: string;
   };
   gradient: string;
-  patterns: string[]; // Domain patterns to match
+  patterns: string[];
+  logo?: string;
+  secondaryLogo?: string;
+  useImageLogo?: boolean;
+  footerText?: string;
+  loginHeading?: string;
+  loginSubheading?: string;
+  /** Full Tailwind className for marketing homepage root (optional; default purple/slate) */
+  landingRootClass?: string;
+  /** Full-page gradient for login/signup shells — use without h-screen prefix in code */
+  authShellClass?: string;
+  /** `<title>` and default `og:title` for link previews (defaults to `name`) */
+  metaTitle?: string;
+  /** Meta / Open Graph description (defaults to `tagline`) */
+  metaDescription?: string;
 }
 
 export const BRANDS: Record<string, BrandConfig> = {
@@ -19,7 +37,7 @@ export const BRANDS: Record<string, BrandConfig> = {
     id: 'smarthr',
     name: 'SmartHR',
     shortName: 'HR',
-    tagline: '✨ AI-Powered Recruitment',
+    tagline: 'AI-Powered Recruitment',
     colors: {
       from: 'from-blue-400',
       to: 'to-purple-500',
@@ -28,13 +46,45 @@ export const BRANDS: Record<string, BrandConfig> = {
       secondary: '#a855f7',
     },
     gradient: 'from-blue-400 to-purple-500',
-    patterns: ['smarthr', 'localhost', '127.0.0.1'],
+    patterns: ['smarthr', 'localhost', '127.0.0.1', 'app.seemplifyai', 'app-dev.seemplifyai'],
+    metaTitle: 'SmartHR',
+    metaDescription: 'Intelligent HR Management System',
+    footerText: '© 2025 SmartHR. All rights reserved.',
+    loginHeading: 'SmartHR',
+    loginSubheading: 'AI-Powered Recruitment',
+  },
+  jetstone: {
+    id: 'jetstone',
+    name: 'Govt. of Akwa Ibom State',
+    shortName: 'AKS',
+    tagline: 'The Land of Promise · Nigeria',
+    subBrandName: 'Jetstone Education',
+    subBrandTagline: 'Human Resource Management Portal',
+    colors: {
+      from: 'from-green-700',
+      to: 'to-amber-600',
+      pulse: 'bg-amber-400',
+      primary: '#15803d',
+      secondary: '#d97706',
+    },
+    gradient: 'from-green-700 to-amber-600',
+    patterns: ['jetstone', 'akwaibom', 'aiinnigeria', 'ibom.aiinnigeria.com'],
+    metaTitle: 'Akwa Ibom State — Human Resource Management Portal',
+    metaDescription:
+      'Official Akwa Ibom State government Human Resource Management Portal. Fair, transparent public-sector hiring.',
+    logo: '/logoakwa.png',
+    secondaryLogo: '/jetstone-logo.png',
+    useImageLogo: true,
+    footerText: '© 2025 Government of Akwa Ibom State. All rights reserved.',
+    landingRootClass:
+      'min-h-screen bg-gradient-to-br from-green-50 via-amber-50 to-white text-slate-900 overflow-x-hidden relative jetstone-light-theme',
+    authShellClass: 'bg-gradient-to-br from-green-50 via-amber-50 to-white jetstone-light-theme',
   },
   producive: {
     id: 'producive',
     name: 'Producive',
     shortName: 'PV',
-    tagline: '⚡ Productivity Unleashed',
+    tagline: 'Productivity Unleashed',
     colors: {
       from: 'from-orange-400',
       to: 'to-red-500',
@@ -44,6 +94,9 @@ export const BRANDS: Record<string, BrandConfig> = {
     },
     gradient: 'from-orange-400 to-red-500',
     patterns: ['producive', 'productive'],
+    footerText: '© 2025 Producive. All rights reserved.',
+    loginHeading: 'Producive',
+    loginSubheading: 'Productivity Unleashed',
   },
 };
 
@@ -59,8 +112,8 @@ export const getBrandById = (id: string): BrandConfig => {
 export const detectBrandFromHostname = (hostname: string): BrandConfig => {
   const lowerHostname = hostname.toLowerCase();
   
-  // Check environment variable override first
-  if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_BRAND) {
+  // Env override (SSR + client): use on Akwa Ibom / Jetstone deploys
+  if (process.env.NEXT_PUBLIC_BRAND) {
     const envBrand = BRANDS[process.env.NEXT_PUBLIC_BRAND];
     if (envBrand) return envBrand;
   }

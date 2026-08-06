@@ -1,17 +1,114 @@
 <!DOCTYPE html>
 <html>
-
 <head>
   <meta charset="UTF-8">
   <title>Invitations - <%= organization.name %> - AIIN Identity</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     <%- include('../public/css/idp-theme.css') %>
+    .access-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.16);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.28);
+    }
+    .app-access-mode-option {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      cursor: pointer;
+    }
+    .app-access-selector {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .app-access-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .app-access-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 8px;
+    }
+    .app-access-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+    .app-name {
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .field-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .field-toolbar label {
+      margin-bottom: 0;
+    }
+    .field-help {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .field-help.field-help-warning {
+      color: #f59e0b;
+    }
+    .inline-create-panel {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      display: none;
+    }
+    .inline-create-panel.active {
+      display: block;
+    }
+    .inline-create-panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .inline-create-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }
+    .inline-create-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+    }
   </style>
   <link rel="stylesheet" href="/css/main.css">
   <script src="/js/theme.js?v=2"></script>
 </head>
-
 <body>
   <%- include('partials/nav', { activePage: 'organizations' }) %>
 
@@ -21,68 +118,51 @@
     <div class="header">
       <div>
         <h1>Pending Invitations</h1>
-        <div class="header-subtitle">
-          <%= organization.name %>
-        </div>
+        <div class="header-subtitle"><%= organization.name %></div>
       </div>
       <div class="header-actions">
-        <button class="btn btn-primary" onclick="showInviteModal()">
-          + Invite Member
-        </button>
+        <button class="btn btn-primary" onclick="showInviteModal()">+ Invite Member</button>
       </div>
     </div>
 
-    <% if (typeof error !=='undefined' && error) { %>
-      <div class="alert alert-error">
-        <%= error %>
-      </div>
-      <% } %>
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
 
-        <% if (typeof success !=='undefined' && success) { %>
-          <div class="alert alert-success">
-            <%= success %>
+    <% if (invitations && invitations.length > 0) { %>
+      <% invitations.forEach(invite => { %>
+        <div class="card invite-card">
+          <div class="invite-info">
+            <div class="invite-email"><%= invite.email %></div>
+            <div class="invite-meta">
+              <span class="role-badge role-<%= invite.role %>"><%= invite.role %></span>
+              <span>Designation: <%= invite.designation || 'Not set' %></span>
+              <span>Employee ID: <%= invite.employeeId || 'Not set' %></span>
+              <span class="access-badge"><%= invite.appAccessLabel || 'All apps' %></span>
+              <span class="status-pending">Pending</span>
+              <span>Department: <%= invite.departmentName || 'General' %></span>
+              <span>Team: <%= invite.teamName || 'Not assigned' %></span>
+              <span>Invited by <%= invite.invitedBy?.name || invite.invitedBy?.email || 'Unknown' %></span>
+              <% if (invite.appAccess?.mode === 'selected' && invite.appAccessAppNames?.length) { %>
+                <span>Apps: <%= invite.appAccessAppNames.join(', ') %></span>
+              <% } %>
+              <span>Expires <%= new Date(invite.expiresAt).toLocaleDateString() %></span>
+            </div>
           </div>
-          <% } %>
-
-            <% if (invitations && invitations.length> 0) { %>
-              <% invitations.forEach(invite=> { %>
-                <div class="card invite-card">
-                  <div class="invite-info">
-                    <div class="invite-email">
-                      <%= invite.email %>
-                    </div>
-                    <div class="invite-meta">
-                      <span class="role-badge role-<%= invite.role %>">
-                        <%= invite.role %>
-                      </span>
-                      <span class="status-pending">Pending</span>
-                      <span>Invited by <%= invite.invitedBy?.name || invite.invitedBy?.email || 'Unknown' %></span>
-                      <span>Expires <%= new Date(invite.expiresAt).toLocaleDateString() %></span>
-                    </div>
-                  </div>
-                  <div class="invite-actions">
-                    <button class="btn btn-secondary btn-sm" onclick="resendInvite('<%= invite.id %>')">
-                      Resend
-                    </button>
-                    <button class="btn btn-danger btn-sm"
-                      onclick="cancelInvite('<%= invite.id %>', '<%= invite.email %>')">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-                <% }) %>
-                  <% } else { %>
-                    <div class="card empty-state">
-                      <h3>No pending invitations</h3>
-                      <p>Invite members to join your organization.</p>
-                      <button class="btn btn-primary" onclick="showInviteModal()">
-                        + Invite Member
-                      </button>
-                    </div>
-                    <% } %>
+          <div class="invite-actions">
+            <button class="btn btn-secondary btn-sm" onclick="resendInvite('<%= invite.id %>')">Resend</button>
+            <button class="btn btn-danger btn-sm" onclick="cancelInvite('<%= invite.id %>', '<%= invite.email %>')">Cancel</button>
+          </div>
+        </div>
+      <% }) %>
+    <% } else { %>
+      <div class="card empty-state">
+        <h3>No pending invitations</h3>
+        <p>Invite members to join your organization.</p>
+        <button class="btn btn-primary" onclick="showInviteModal()">+ Invite Member</button>
+      </div>
+    <% } %>
   </div>
 
-  <!-- Invite Modal -->
   <div class="modal" id="inviteModal">
     <div class="modal-content">
       <div class="modal-header">
@@ -104,9 +184,98 @@
             <option value="staff">Staff</option>
           </select>
         </div>
+        <div class="form-group">
+          <label for="designation">Designation *</label>
+          <input type="text" id="designation" name="designation" required placeholder="e.g. Software Engineer">
+        </div>
+        <div class="form-group">
+          <label for="employeeId">Employee ID</label>
+          <input type="text" id="employeeId" name="employeeId" maxlength="80" placeholder="e.g. EMP-0042">
+        </div>
+        <div class="form-group">
+          <div class="field-toolbar">
+            <label for="department">Department *</label>
+            <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
+              <button type="button" class="btn btn-secondary btn-sm" id="toggleCreateDepartmentBtn" onclick="toggleCreateDepartmentPanel()">+ Create department</button>
+            <% } %>
+          </div>
+          <select id="department" name="department" required onchange="syncTeamOptions()">
+            <% departments.forEach(department => { %>
+              <option value="<%= department.id %>"><%= department.name %></option>
+            <% }) %>
+          </select>
+          <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
+            <div class="inline-create-panel" id="createDepartmentPanel">
+              <div class="inline-create-panel-title">Create department</div>
+              <div class="inline-create-grid">
+                <div>
+                  <label for="newDepartmentName">Department name *</label>
+                  <input type="text" id="newDepartmentName" placeholder="e.g. Operations">
+                </div>
+                <div>
+                  <label for="newDepartmentParent">Parent department</label>
+                  <select id="newDepartmentParent"></select>
+                </div>
+              </div>
+              <div class="field-help">The new department will be added immediately and selected for this invitation.</div>
+              <div class="inline-create-actions">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleCreateDepartmentPanel(false)">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" id="createDepartmentBtn" onclick="createDepartmentFromInvite()">Create Department</button>
+              </div>
+            </div>
+          <% } %>
+        </div>
+        <div class="form-group">
+          <label for="team">Team *</label>
+          <select id="team" name="team" required>
+            <option value="">Select a team</option>
+          </select>
+          <div class="field-help" id="teamHelpText">Department is derived from the selected team.</div>
+        </div>
+        <div class="form-group">
+          <label>Initial App Access</label>
+          <div style="display: grid; gap: 10px;">
+            <label class="app-access-mode-option">
+              <input type="radio" name="appAccessMode" value="all" checked>
+              <div>
+                <strong>All apps</strong>
+                <span>Member gets all apps available to this organization plan.</span>
+              </div>
+            </label>
+            <label class="app-access-mode-option">
+              <input type="radio" name="appAccessMode" value="selected">
+              <div>
+                <strong>Selected apps only</strong>
+                <span>Choose a focused starter set now, and expand later if needed.</span>
+              </div>
+            </label>
+          </div>
+
+          <div id="appAccessSelector" class="app-access-selector" style="display: none;">
+            <div class="app-access-toolbar">
+              <span style="font-size: 12px; color: var(--muted);">Select at least one app</span>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="selectAllApps()">Select all</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="clearSelectedApps()">Clear</button>
+              </div>
+            </div>
+            <% if (availableApps && availableApps.length > 0) { %>
+              <div class="app-access-grid">
+                <% availableApps.forEach(app => { %>
+                  <label class="app-access-item">
+                    <input type="checkbox" class="app-access-checkbox" value="<%= app.appId %>">
+                    <span><span class="app-name"><%= app.name %></span></span>
+                  </label>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div style="font-size: 13px; color: var(--muted);">No apps are currently configured.</div>
+            <% } %>
+          </div>
+        </div>
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="hideInviteModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Send Invitation</button>
+          <button type="submit" class="btn btn-primary" id="sendInviteBtn">Send Invitation</button>
         </div>
       </form>
     </div>
@@ -114,84 +283,278 @@
 
   <script>
     const orgId = '<%= organization._id %>';
+    const canCreateDepartments = <%- JSON.stringify(['owner', 'admin', 'hr_manager'].includes(yourRole || '')) %>;
+    const availableApps = <%- JSON.stringify(availableApps || []) %>;
+    let departments = <%- JSON.stringify(departments || []) %>;
+    const teams = <%- JSON.stringify(teams || []) %>;
+
+    function sortDepartments(list) {
+      return [...list].sort((left, right) => left.name.localeCompare(right.name));
+    }
+
+    function getDefaultDepartmentId() {
+      return departments[0]?.id || '';
+    }
+
+    function renderDepartmentOptions(selectedDepartmentId = '') {
+      const departmentSelect = document.getElementById('department');
+      const sortedDepartments = sortDepartments(departments);
+      const fallbackDepartmentId = selectedDepartmentId || departmentSelect.value || sortedDepartments[0]?.id || '';
+      departmentSelect.innerHTML = sortedDepartments.length > 0
+        ? sortedDepartments.map((department) => (
+          `<option value="${department.id}"${department.id === fallbackDepartmentId ? ' selected' : ''}>${escapeHtml(department.name)}</option>`
+        )).join('')
+        : '<option value="">Select a department</option>';
+      departments = sortedDepartments;
+      return departmentSelect.value;
+    }
+
+    function renderDepartmentParentOptions(selectedParentId = '') {
+      if (!canCreateDepartments) return;
+      const parentSelect = document.getElementById('newDepartmentParent');
+      if (!parentSelect) return;
+      const fallbackParentId = selectedParentId || document.getElementById('department').value || getDefaultDepartmentId();
+      parentSelect.innerHTML = departments.map((department) => (
+        `<option value="${department.id}"${department.id === fallbackParentId ? ' selected' : ''}>${escapeHtml(department.name)}</option>`
+      )).join('');
+    }
 
     function showInviteModal() {
       document.getElementById('inviteModal').classList.add('active');
+      renderDepartmentOptions(document.getElementById('department').value || getDefaultDepartmentId());
+      syncTeamOptions();
+      updateAppAccessSelectorVisibility();
+      resetCreateDepartmentPanel();
     }
 
     function hideInviteModal() {
       document.getElementById('inviteModal').classList.remove('active');
       document.getElementById('inviteForm').reset();
+      clearSelectedApps();
+      renderDepartmentOptions(getDefaultDepartmentId());
+      syncTeamOptions();
+      updateAppAccessSelectorVisibility();
+      resetCreateDepartmentPanel();
+    }
+
+    function setTeamHelpText(message, isWarning = false) {
+      const helpText = document.getElementById('teamHelpText');
+      helpText.textContent = message;
+      helpText.classList.toggle('field-help-warning', Boolean(isWarning));
+    }
+
+    function syncTeamOptions(selectedTeamId = '') {
+      const departmentId = document.getElementById('department').value;
+      const teamSelect = document.getElementById('team');
+      const matchingTeams = teams.filter(team => team.departmentId === departmentId);
+      teamSelect.innerHTML = '<option value="">Select a team</option>' + matchingTeams.map(team => (
+        `<option value="${team.id}"${team.id === selectedTeamId ? ' selected' : ''}>${escapeHtml(team.name)}</option>`
+      )).join('');
+      teamSelect.disabled = matchingTeams.length === 0;
+      if (matchingTeams.length === 0) {
+        setTeamHelpText('No teams exist under this department yet. Create a team in People & Structure before sending the invitation.', true);
+      } else {
+        setTeamHelpText('Department is derived from the selected team.');
+      }
+    }
+
+    function toggleCreateDepartmentPanel(forceState = null) {
+      if (!canCreateDepartments) return;
+      const panel = document.getElementById('createDepartmentPanel');
+      const toggleBtn = document.getElementById('toggleCreateDepartmentBtn');
+      const shouldOpen = typeof forceState === 'boolean' ? forceState : !panel.classList.contains('active');
+      panel.classList.toggle('active', shouldOpen);
+      if (toggleBtn) {
+        toggleBtn.textContent = shouldOpen ? 'Hide create department' : '+ Create department';
+      }
+      if (shouldOpen) {
+        renderDepartmentParentOptions(document.getElementById('department').value || getDefaultDepartmentId());
+        const nameInput = document.getElementById('newDepartmentName');
+        nameInput?.focus();
+      }
+    }
+
+    function resetCreateDepartmentPanel() {
+      if (!canCreateDepartments) return;
+      document.getElementById('newDepartmentName').value = '';
+      renderDepartmentParentOptions(document.getElementById('department').value || getDefaultDepartmentId());
+      toggleCreateDepartmentPanel(false);
+    }
+
+    async function createDepartmentFromInvite() {
+      if (!canCreateDepartments) return;
+      const nameInput = document.getElementById('newDepartmentName');
+      const parentInput = document.getElementById('newDepartmentParent');
+      const createBtn = document.getElementById('createDepartmentBtn');
+      const name = nameInput.value.trim();
+      const parentDepartment = parentInput.value || getDefaultDepartmentId();
+
+      if (!name) {
+        alert('Department name is required.');
+        nameInput.focus();
+        return;
+      }
+
+      try {
+        createBtn.disabled = true;
+        createBtn.textContent = 'Creating...';
+        const response = await fetch(`/api/organizations/${orgId}/departments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name,
+            parentDepartment
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to create department');
+        }
+
+        departments = sortDepartments([
+          ...departments.filter((department) => department.id !== data.id),
+          {
+            id: data.id,
+            name: data.name,
+            parentDepartment: data.parentDepartment || ''
+          }
+        ]);
+        renderDepartmentOptions(data.id);
+        syncTeamOptions();
+        resetCreateDepartmentPanel();
+
+        if (!teams.some((team) => team.departmentId === data.id)) {
+          alert('Department created. Add a team under it in People & Structure before sending this invitation.');
+        }
+      } catch (error) {
+        alert(error.message || 'Failed to create department');
+      } finally {
+        createBtn.disabled = false;
+        createBtn.textContent = 'Create Department';
+      }
+    }
+
+    function updateAppAccessSelectorVisibility() {
+      const mode = document.querySelector('input[name="appAccessMode"]:checked')?.value || 'all';
+      document.getElementById('appAccessSelector').style.display = mode === 'selected' ? 'block' : 'none';
+    }
+
+    function getSelectedAppIds() {
+      return Array.from(document.querySelectorAll('.app-access-checkbox:checked')).map(cb => cb.value);
+    }
+
+    function selectAllApps() {
+      document.querySelectorAll('.app-access-checkbox').forEach(cb => { cb.checked = true; });
+    }
+
+    function clearSelectedApps() {
+      document.querySelectorAll('.app-access-checkbox').forEach(cb => { cb.checked = false; });
     }
 
     document.getElementById('inviteForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('email').value;
       const role = document.getElementById('role').value;
+      const designation = document.getElementById('designation').value.trim();
+      const employeeId = document.getElementById('employeeId').value.trim();
+      const department = document.getElementById('department').value;
+      const team = document.getElementById('team').value || null;
+      const appAccessMode = document.querySelector('input[name="appAccessMode"]:checked')?.value || 'all';
+      const selectedAppIds = appAccessMode === 'selected' ? getSelectedAppIds() : [];
+      const sendInviteBtn = document.getElementById('sendInviteBtn');
+
+      if (!designation) {
+        alert('Designation is required.');
+        return;
+      }
+      if (!team) {
+        alert('Team is required.');
+        return;
+      }
+      if (appAccessMode === 'selected' && selectedAppIds.length === 0) {
+        alert('Select at least one app or switch to "All apps".');
+        return;
+      }
 
       try {
+        sendInviteBtn.disabled = true;
+        sendInviteBtn.textContent = 'Sending...';
         const response = await fetch(`/api/organizations/${orgId}/invitations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, role })
+          body: JSON.stringify({
+            email,
+            role,
+            designation,
+            employeeId,
+            department,
+            team,
+            appAccess: { mode: appAccessMode, appIds: selectedAppIds }
+          })
         });
-
         if (response.ok) {
           window.location.reload();
         } else {
           const data = await response.json();
           alert(data.error || 'Failed to send invitation');
+          sendInviteBtn.disabled = false;
+          sendInviteBtn.textContent = 'Send Invitation';
         }
       } catch (error) {
         alert('Failed to send invitation');
+        sendInviteBtn.disabled = false;
+        sendInviteBtn.textContent = 'Send Invitation';
       }
     });
 
     async function resendInvite(inviteId) {
       if (!confirm('Resend invitation?')) return;
-
-      try {
-        const response = await fetch(`/api/invitations/${inviteId}/resend`, {
-          method: 'POST'
-        });
-
-        if (response.ok) {
-          alert('Invitation resent successfully');
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to resend invitation');
-        }
-      } catch (error) {
-        alert('Failed to resend invitation');
+      const response = await fetch(`/api/invitations/${inviteId}/resend`, { method: 'POST' });
+      if (response.ok) {
+        alert('Invitation resent successfully');
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to resend invitation');
       }
     }
 
     async function cancelInvite(inviteId, email) {
       if (!confirm(`Cancel invitation for ${email}?`)) return;
-
-      try {
-        const response = await fetch(`/api/invitations/${inviteId}`, {
-          method: 'DELETE'
-        });
-
-        if (response.ok) {
-          window.location.reload();
-        } else {
-          const data = await response.json();
-          alert(data.error || 'Failed to cancel invitation');
-        }
-      } catch (error) {
-        alert('Failed to cancel invitation');
+      const response = await fetch(`/api/invitations/${inviteId}`, { method: 'DELETE' });
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to cancel invitation');
       }
     }
 
-    // Close modal on outside click
-    document.getElementById('inviteModal').addEventListener('click', (e) => {
-      if (e.target.classList.contains('modal')) {
-        hideInviteModal();
-      }
-    });
-  </script>
-</body>
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
 
+    document.getElementById('inviteModal').addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) hideInviteModal();
+    });
+    document.querySelectorAll('input[name="appAccessMode"]').forEach(input => {
+      input.addEventListener('change', updateAppAccessSelectorVisibility);
+    });
+    renderDepartmentOptions(getDefaultDepartmentId());
+    syncTeamOptions();
+    updateAppAccessSelectorVisibility();
+    resetCreateDepartmentPanel();
+</script>
+</body>
 </html>
+
+
+
+
+
+
+
+
+
+

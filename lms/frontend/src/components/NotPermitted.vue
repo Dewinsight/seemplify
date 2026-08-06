@@ -34,7 +34,7 @@ const props = defineProps({
 	},
 	buttonLink: {
 		type: String,
-		default: '/login',
+		default: '/lms-login',
 	},
 })
 

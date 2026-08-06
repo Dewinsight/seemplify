@@ -1,4 +1,4 @@
-const { AzureOpenAI } = require('@azure/openai');
+const { AzureOpenAI, OpenAI } = require('openai');
 
 // Conversation phases in order
 const CONVERSATION_PHASES = [
@@ -22,7 +22,11 @@ const CONVERSATION_PHASES = [
 class AppraisalAIService {
   constructor() {
     this.client = null;
-    this.deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4';
+    this.deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME
+      || process.env.AZURE_OPENAI_DEPLOYMENT
+      || process.env.OPENAI_MODEL
+      || 'gpt-4.1-mini';
+    this.provider = null;
     this.initialized = false;
   }
 
@@ -34,20 +38,26 @@ class AppraisalAIService {
 
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
     const apiKey = process.env.AZURE_OPENAI_API_KEY;
-
-    if (!endpoint || !apiKey) {
-      console.warn('Azure OpenAI credentials not configured. AI features will be limited.');
-      return;
-    }
+    const openAIKey = process.env.OPENAI_API_KEY;
 
     try {
-      this.client = new AzureOpenAI({
-        endpoint,
-        apiKey,
-        apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-02-15-preview'
-      });
+      if (endpoint && apiKey) {
+        this.client = new AzureOpenAI({
+          endpoint,
+          apiKey,
+          apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview'
+        });
+        this.provider = 'azure';
+      } else if (openAIKey) {
+        this.client = new OpenAI({ apiKey: openAIKey });
+        this.provider = 'openai';
+      } else {
+        console.warn('No Azure or OpenAI credentials configured. AI features will be limited.');
+        return;
+      }
+
       this.initialized = true;
-      console.log('Appraisal AI Service initialized');
+      console.log(`Appraisal AI Service initialized (${this.provider})`);
     } catch (error) {
       console.error('Failed to initialize Appraisal AI Service:', error);
     }
@@ -110,7 +120,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Document analysis error:', error);
       return this.getFallbackDocumentAnalysis(documentText);
@@ -173,7 +183,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Self-assessment analysis error:', error);
       return this.getFallbackSelfAssessmentAnalysis();
@@ -236,7 +246,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Manager review assist error:', error);
       return { suggestions: ['AI assistance temporarily unavailable.'] };
@@ -264,9 +274,9 @@ Employee's Self-Rating: ${selfAssessment?.overallSelfRating}/5
 
 Competency Rating Gaps:
 ${managerReview.competencyRatings?.map(c => {
-  const selfRating = selfAssessment?.competencyRatings?.find(s => s.competencyId === c.competencyId);
-  return `- ${c.competencyName}: Manager ${c.managerRating}/5, Self ${selfRating?.selfRating || 'N/A'}/5`;
-}).join('\n') || 'No data'}
+      const selfRating = selfAssessment?.competencyRatings?.find(s => s.competencyId === c.competencyId);
+      return `- ${c.competencyName}: Manager ${c.managerRating}/5, Self ${selfRating?.selfRating || 'N/A'}/5`;
+    }).join('\n') || 'No data'}
 
 ${context.tenure ? `Employee Tenure: ${context.tenure}` : ''}
 ${context.previousRating ? `Previous Rating: ${context.previousRating}` : ''}
@@ -301,7 +311,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Bias check error:', error);
       return { hasPotentialBias: false, error: 'Bias check failed' };
@@ -378,7 +388,7 @@ Respond in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      return JSON.parse(content);
+      return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Development plan suggestion error:', error);
       return { suggestions: [] };
@@ -627,7 +637,7 @@ Generate a warm, professional greeting that:
 1. Addresses them by name
 2. Explains this will be a conversational self-assessment
 3. Briefly summarizes their OKRs and overall progress
-4. Asks them to start by reflecting on their first/highest-priority OKR
+4. Asks them which OKR they'd like to start with (they can reply with the OKR number or title). If they have no OKRs, ask them to list their top 2-3 priorities for the period.
 
 Keep the tone friendly but professional. Be encouraging about their progress.
 Format your response as natural conversation text (not JSON).`;
@@ -676,8 +686,20 @@ Format your response as natural conversation text (not JSON).`;
 
     const convState = appraisal.conversationAssessment || {};
     const currentPhase = convState.currentPhase || 'okr_reflection';
-    const currentOkrIndex = convState.currentOkrIndex || 0;
+    let currentOkrIndex = convState.currentOkrIndex || 0;
     const extractedData = convState.extractedData || {};
+
+    // If the employee replies with a bare OKR number ("2"), treat it as selecting that OKR.
+    if (currentPhase === 'okr_reflection' && okrs?.length) {
+      const trimmed = (userMessage || '').trim();
+      const okrNumMatch = trimmed.match(/^#?(\\d+)$/);
+      if (okrNumMatch) {
+        const selectedNum = parseInt(okrNumMatch[1], 10);
+        if (!Number.isNaN(selectedNum) && selectedNum >= 1 && selectedNum <= okrs.length) {
+          currentOkrIndex = selectedNum - 1;
+        }
+      }
+    }
 
     // Build conversation history (last 10 messages for context)
     const recentMessages = (appraisal.chatThread || [])
@@ -695,10 +717,19 @@ Format your response as natural conversation text (not JSON).`;
       return this.getFallbackConversationResponse(currentPhase, userMessage);
     }
 
+    const okrListForPrompt = (okrs || []).map((okr, idx) => {
+      const title = okr.title || okr.objectives?.[0]?.title || 'Untitled OKR';
+      return `${idx + 1}. ${title} (${okr.progress || 0}% complete)`;
+    }).join('\n');
+
     const systemPrompt = `You are guiding ${appraisal.employee?.name || 'the employee'} through their performance self-assessment.
 
 Current Phase: ${currentPhase}
 ${phaseContext}
+
+OKRs (${okrs.length}):
+${okrListForPrompt || 'No OKRs found for this period.'}
+Current OKR Index: ${currentOkrIndex} (1-based: ${currentOkrIndex + 1})
 
 ${documentContext ? `\nRecently uploaded document analysis:\n${JSON.stringify(documentContext, null, 2)}` : ''}
 
@@ -710,6 +741,13 @@ Guidelines:
 - Be conversational and supportive, not interrogative
 - If they mention quantifiable results, acknowledge those specifically
 
+Phase progression (drive this naturally without asking them to click anything):
+- okr_reflection: focus on ONE OKR at a time. If they choose a different OKR, set "selectedOkrIndex". When done with this OKR, set "shouldAdvanceOkr": true. After the last OKR, move to "achievements".
+- achievements: collect 2-5 key achievements (not necessarily tied to OKRs). Then move to "challenges".
+- challenges: collect 1-3 challenges and how they addressed them. Then move to "learnings".
+- learnings: collect 1-3 learnings/skills gained. Then move to "future_goals".
+- future_goals: collect 2-3 goals for next period. Then move to "report_generation".
+
 After processing their message, you should:
 1. Respond naturally to what they said
 2. Either ask a follow-up question OR transition to the next topic
@@ -719,14 +757,15 @@ After processing their message, you should:
 
 Respond to them and continue the conversation. If appropriate, extract any structured data (achievements, challenges, learnings, goals) from their response.
 
-Return a JSON object:
-{
-  "response": "Your conversational response to the employee",
-  "extractedData": {
-    "type": "achievement|challenge|learning|goal|skill|null",
-    "data": { "text": "...", "context": "..." } // or null if nothing to extract
-  },
-  "suggestedNextPhase": "${currentPhase}" or "next phase name if ready to move on",
+ Return a JSON object:
+ {
+   "response": "Your conversational response to the employee",
+   "extractedData": {
+     "type": "achievement|challenge|learning|goal|skill|null",
+     "data": { "text": "...", "context": "..." } // or null if nothing to extract
+   },
+  "suggestedNextPhase": "${currentPhase}" or a next phase from: initialized|okr_reflection|achievements|challenges|learnings|future_goals|competencies|report_generation|review|completed,
+  "selectedOkrNumber": null, // 1-based OKR number if the employee selected an OKR to discuss (e.g., they replied with an OKR number or title)
   "shouldAdvanceOkr": false, // true if done with current OKR and should move to next
   "confidence": 0.0-1.0
 }`;
@@ -745,20 +784,45 @@ Return a JSON object:
       });
 
       const content = response.choices[0]?.message?.content;
-      const parsed = JSON.parse(content);
+      const parsed = this.parseJsonResponse(content);
       const tokensUsed = response.usage?.total_tokens || 0;
 
       // Determine next phase
       let nextPhase = currentPhase;
       let nextOkrIndex = currentOkrIndex;
 
-      if (parsed.shouldAdvanceOkr && currentOkrIndex < okrs.length - 1) {
-        nextOkrIndex = currentOkrIndex + 1;
+      if (Number.isInteger(parsed.selectedOkrNumber) && parsed.selectedOkrNumber >= 1 && parsed.selectedOkrNumber <= okrs.length) {
+        nextOkrIndex = parsed.selectedOkrNumber - 1;
+      } else if (Number.isInteger(parsed.selectedOkrIndex) && parsed.selectedOkrIndex >= 0 && parsed.selectedOkrIndex < okrs.length) {
+        // Back-compat if the model returns a 0-based index.
+        nextOkrIndex = parsed.selectedOkrIndex;
+      } else if (parsed.shouldAdvanceOkr) {
+        if (currentOkrIndex < okrs.length - 1) {
+          nextOkrIndex = currentOkrIndex + 1;
+        } else if (currentPhase === 'okr_reflection') {
+          // If we just finished the last OKR, move the conversation forward.
+          nextPhase = 'achievements';
+        }
       } else if (parsed.suggestedNextPhase && parsed.suggestedNextPhase !== currentPhase) {
         const phaseIndex = CONVERSATION_PHASES.indexOf(parsed.suggestedNextPhase);
         if (phaseIndex > CONVERSATION_PHASES.indexOf(currentPhase)) {
           nextPhase = parsed.suggestedNextPhase;
         }
+      }
+
+      // Never jump directly to review from an earlier phase.
+      // Report generation must happen first so the frontend has a concrete draft to display.
+      if (nextPhase === 'review' && currentPhase !== 'review') {
+        nextPhase = 'report_generation';
+      }
+
+      const normalizedResponse = this.normalizeText(parsed.response).toLowerCase();
+      const indicatesReportGeneration = /generate(?:\\s+your|\\s+the)?\\s+(?:self-assessment|review)?\\s*report|report\\s+is\\s+ready|compile\\s+.*report/.test(normalizedResponse);
+      if (
+        indicatesReportGeneration
+        && (nextPhase === currentPhase || nextPhase === 'future_goals' || nextPhase === 'review')
+      ) {
+        nextPhase = 'report_generation';
       }
 
       return {
@@ -853,22 +917,6 @@ Keep it to 2-3 sentences.`;
     const extractedData = convState.extractedData || {};
     const chatThread = appraisal.chatThread || [];
 
-    // Compile conversation highlights
-    const employeeMessages = chatThread
-      .filter(m => m.sender?.role === 'employee')
-      .map(m => m.message)
-      .join('\n\n');
-
-    // Compile document insights
-    const documentInsights = documents
-      .filter(d => d.aiAnalysis?.summary)
-      .map(d => ({
-        name: d.originalName,
-        summary: d.aiAnalysis.summary,
-        achievements: d.aiAnalysis.extractedAchievements || [],
-        skills: d.aiAnalysis.identifiedSkills || []
-      }));
-
     // OKR performance summary
     const okrPerformance = okrs.map(okr => ({
       id: okr._id,
@@ -883,92 +931,104 @@ Keep it to 2-3 sentences.`;
       }))
     }));
 
-    if (!this.client) {
-      return this.getFallbackReport(extractedData, okrPerformance);
-    }
+    // Filter out low-signal extracted snippets (e.g., "no", "n/a")
+    const sanitizedExtractedData = this.sanitizeExtractedData(extractedData);
+    const groundedExtractedData = this.buildGroundedExtractedData(chatThread, sanitizedExtractedData);
 
-    const prompt = `Generate a comprehensive self-assessment report based on this conversation data.
+    // Ground the report body in employee conversation evidence to avoid generic/demo-like output.
+    const baseReport = this.getFallbackReport(groundedExtractedData, okrPerformance);
+    const draftSelfAssessment = {
+      overallSummary: baseReport.overallSummary,
+      okrAssessment: baseReport.okrAssessment,
+      overallSelfRating: null,
+      competencyRatings: []
+    };
 
-Employee: ${appraisal.employee?.name}
-Role: ${appraisal.employee?.jobTitle || 'Not specified'}
-Review Period: ${appraisal.cycleId?.name || 'Current Period'}
+    const conversationSignal = this.collectConversationSignal(chatThread, groundedExtractedData);
+    const missingInfo = this.getMissingSelfAssessmentInfo(conversationSignal);
+    const hasEnoughSignal = missingInfo.length === 0;
 
-OKR Performance:
-${okrPerformance.map(okr => `- ${okr.title}: ${okr.progress}% overall`).join('\n')}
-
-Employee's Conversation Highlights:
-${employeeMessages.substring(0, 4000)}
-
-Extracted Data from Conversation:
-- Achievements: ${extractedData.achievements?.map(a => a.text).join('; ') || 'None extracted'}
-- Challenges: ${extractedData.challenges?.map(c => c.text).join('; ') || 'None extracted'}
-- Skills: ${extractedData.skills?.map(s => s.skill).join(', ') || 'None extracted'}
-- Goals: ${extractedData.goals?.map(g => g.goal).join('; ') || 'None extracted'}
-
-Document Evidence:
-${documentInsights.map(d => `- ${d.name}: ${d.summary}`).join('\n') || 'No documents uploaded'}
-
-Generate a complete self-assessment report in JSON format:
-{
-  "overallSummary": {
-    "achievements": "2-3 paragraphs summarizing key achievements with specific examples and metrics",
-    "challenges": "1-2 paragraphs describing challenges faced and how they were addressed",
-    "learnings": "1-2 paragraphs about skills developed and knowledge gained",
-    "improvements": "1-2 paragraphs on areas for improvement, framed constructively",
-    "goals": "2-3 specific, measurable goals for the next period"
-  },
-  "okrAssessment": [
-    {
-      "okrId": "okr_id_here",
-      "okrTitle": "title",
-      "completionPercentage": 85,
-      "selfComments": "Specific commentary on this OKR's progress and outcomes"
-    }
-  ],
-  "suggestedOverallRating": 3,
-  "ratingJustification": "Brief explanation for the suggested rating",
-  "aiInsights": {
-    "strengths": ["strength1", "strength2"],
-    "developmentAreas": ["area1", "area2"],
-    "suggestions": ["suggestion1", "suggestion2"],
-    "sentiment": "positive|neutral|negative|mixed"
-  }
-}`;
-
-    try {
-      const response = await this.client.chat.completions.create({
-        model: this.deploymentName,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert HR analyst creating employee self-assessment reports. Write professionally, highlighting achievements with specifics while being honest about challenges. Frame everything constructively.'
-          },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.4,
-        max_tokens: 3000,
-        response_format: { type: 'json_object' }
-      });
-
-      const content = response.choices[0]?.message?.content;
-      const report = JSON.parse(content);
-
-      // Map OKR IDs back
-      if (report.okrAssessment) {
-        report.okrAssessment = report.okrAssessment.map((assessment, index) => ({
-          ...assessment,
-          okrId: okrs[index]?._id || assessment.okrId
-        }));
+    // Prevent "demo-ish" hallucinated reports when there's too little signal.
+    if (!hasEnoughSignal) {
+      let lowSignalInsights = null;
+      if (this.client) {
+        try {
+          lowSignalInsights = await this.analyzeSelfAssessment(draftSelfAssessment, baseReport.okrAssessment || [], []);
+        } catch (error) {
+          console.error('Low-signal AI insights generation error:', error);
+        }
       }
 
       return {
-        ...report,
-        tokensUsed: response.usage?.total_tokens || 0,
-        success: true
+        ...baseReport,
+        suggestedOverallRating: null,
+        ratingJustification: 'Not enough evidence was captured to suggest a rating yet.',
+        aiSuggestedRating: undefined,
+        aiInsights: {
+          strengths: lowSignalInsights?.strengths || baseReport.aiInsights?.strengths || [],
+          developmentAreas: lowSignalInsights?.developmentAreas || baseReport.aiInsights?.developmentAreas || [],
+          suggestions: lowSignalInsights?.suggestions || missingInfo,
+          sentiment: lowSignalInsights?.sentiment || 'neutral'
+        },
+        missingInfo,
+        tokensUsed: 0,
+        success: true,
+        fallback: true
+      };
+    }
+
+    if (!this.client) {
+      return baseReport;
+    }
+
+    try {
+      const [aiInsightsResult, aiSuggestionResult] = await Promise.allSettled([
+        this.analyzeSelfAssessment(draftSelfAssessment, baseReport.okrAssessment || [], []),
+        this.generateAISuggestedRating({
+          employee: appraisal.employee,
+          cycleId: appraisal.cycleId,
+          selfAssessment: draftSelfAssessment
+        }, okrs)
+      ]);
+
+      const aiInsights = aiInsightsResult.status === 'fulfilled' ? aiInsightsResult.value : null;
+      const aiSuggestion = aiSuggestionResult.status === 'fulfilled' ? aiSuggestionResult.value : null;
+
+      if (aiInsightsResult.status === 'rejected') {
+        console.error('AI insights generation failed during report creation:', aiInsightsResult.reason);
+      }
+      if (aiSuggestionResult.status === 'rejected') {
+        console.error('AI rating suggestion failed during report creation:', aiSuggestionResult.reason);
+      }
+
+      const suggestedRating = aiSuggestion?.suggestedRating ?? baseReport.suggestedOverallRating;
+      const ratingJustification = aiSuggestion?.ratingJustification ?? baseReport.ratingJustification;
+
+      return {
+        ...baseReport,
+        aiSuggestedRating: {
+          suggestedRating,
+          ratingJustification,
+          keyStrengths: aiSuggestion?.keyStrengths || [],
+          developmentAreas: aiSuggestion?.developmentAreas || [],
+          calibrationNotes: aiSuggestion?.calibrationNotes || undefined,
+          confidence: aiSuggestion?.confidenceScore || undefined
+        },
+        suggestedOverallRating: suggestedRating,
+        ratingJustification,
+        aiInsights: {
+          strengths: aiInsights?.strengths || baseReport.aiInsights?.strengths || [],
+          developmentAreas: aiInsights?.developmentAreas || baseReport.aiInsights?.developmentAreas || [],
+          suggestions: aiInsights?.suggestions || baseReport.aiInsights?.suggestions || [],
+          sentiment: aiInsights?.sentiment || 'neutral'
+        },
+        tokensUsed: aiSuggestion?.tokensUsed || 0,
+        success: true,
+        fallback: !aiInsights || !aiSuggestion
       };
     } catch (error) {
       console.error('Report generation error:', error);
-      return this.getFallbackReport(extractedData, okrPerformance);
+      return baseReport;
     }
   }
 
@@ -985,7 +1045,7 @@ Generate a complete self-assessment report in JSON format:
     // OKR Score Calculation
     const okrAssessment = appraisal.managerReview?.okrAssessment || appraisal.selfAssessment?.okrAssessment || [];
     const avgOkrCompletion = okrAssessment.length > 0
-      ? okrAssessment.reduce((sum, o) => sum + (o.managerVerifiedCompletion || o.completionPercentage || 0), 0) / okrAssessment.length
+      ? okrAssessment.reduce((sum, o) => sum + (o.managerVerifiedCompletion ?? o.completionPercentage ?? 0), 0) / okrAssessment.length
       : 0;
 
     // Convert percentage to 1-5 scale
@@ -1039,6 +1099,39 @@ Generate a complete self-assessment report in JSON format:
       5: 'Outstanding'
     };
     return labels[rating] || 'Meets Expectations';
+  }
+
+  /**
+   * Estimate a suggested rating from OKR completion + extracted data
+   * Used when AI is unavailable to avoid static 3.0 ratings.
+   */
+  estimateSelfSuggestedRating(okrPerformance = [], extractedData = {}) {
+    const okrAvg = okrPerformance.length > 0
+      ? okrPerformance.reduce((sum, o) => sum + (o.progress || 0), 0) / okrPerformance.length
+      : null;
+
+    const base = okrAvg !== null ? this.percentageToRating(okrAvg) : 3;
+
+    const achievements = extractedData.achievements?.length || 0;
+    const challenges = extractedData.challenges?.length || 0;
+    const skills = extractedData.skills?.length || 0;
+    const goals = extractedData.goals?.length || 0;
+
+    let bonus = 0;
+    if (achievements >= 4) bonus += 0.5;
+    else if (achievements >= 2) bonus += 0.25;
+    if (skills >= 2) bonus += 0.2;
+    if (goals >= 2) bonus += 0.1;
+    if (challenges >= 2 && achievements === 0) bonus -= 0.1;
+
+    const raw = base + bonus;
+    const suggested = Math.max(1, Math.min(5, Math.round(raw)));
+
+    return {
+      suggestedRating: suggested,
+      okrAverage: okrAvg,
+      evidenceCount: { achievements, challenges, skills, goals }
+    };
   }
 
   /**
@@ -1107,7 +1200,7 @@ Provide a recommendation in JSON format:
       });
 
       const content = response.choices[0]?.message?.content;
-      const result = JSON.parse(content);
+      const result = this.parseJsonResponse(content);
 
       return {
         ...result,
@@ -1132,6 +1225,433 @@ Provide a recommendation in JSON format:
   // CONVERSATION HELPER METHODS
   // =========================================
 
+  parseJsonResponse(content) {
+    if (content && typeof content === 'object') {
+      return content;
+    }
+
+    const raw = (content || '').toString().trim();
+    if (!raw) {
+      throw new Error('Model returned empty content when JSON was expected.');
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch (primaryError) {
+      const fencedMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      const candidate = fencedMatch?.[1] || raw;
+      const firstBrace = candidate.indexOf('{');
+      const lastBrace = candidate.lastIndexOf('}');
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        const jsonSlice = candidate.slice(firstBrace, lastBrace + 1);
+        return JSON.parse(jsonSlice);
+      }
+      throw primaryError;
+    }
+  }
+
+  normalizeText(value) {
+    return (value || '')
+      .toString()
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  isLowSignalText(value) {
+    const normalized = this.normalizeText(value).toLowerCase();
+    if (!normalized) return true;
+    return /^(?:n\/a|na|none|nothing|nil|no|nope|idk|i(?:\s+do)?n'?t know|not sure|skip|pass|same|none yet|nothing yet|no comment)$/i.test(normalized);
+  }
+
+  isMeaningfulText(value, options = {}) {
+    const {
+      minLength = 12,
+      minWords = 3,
+      allowSingleWord = false
+    } = options;
+    const normalized = this.normalizeText(value);
+    if (!normalized || this.isLowSignalText(normalized)) return false;
+
+    if (allowSingleWord) {
+      return normalized.length >= minLength;
+    }
+
+    const words = normalized.split(/\s+/).filter(Boolean);
+    return normalized.length >= minLength && words.length >= minWords;
+  }
+
+  truncateText(value, maxLength = 260) {
+    const normalized = this.normalizeText(value);
+    if (!normalized) return '';
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+  }
+
+  isOperationalConversationMessage(value) {
+    const normalized = this.normalizeText(value).toLowerCase();
+    if (!normalized) return true;
+
+    return (
+      /^(?:ok|okay|yes|yeah|yep|sure|continue|next|done|got it|understood|thanks|thank you|sounds good|looks good|fine)$/i.test(normalized) ||
+      /^#?\d+$/.test(normalized) ||
+      /^i want to discuss the okr:/i.test(normalized) ||
+      /^generate(?:\s+the|\s+my)?\s+report$/i.test(normalized) ||
+      /^view report$/i.test(normalized)
+    );
+  }
+
+  extractConversationSnippets(value, options = {}) {
+    const {
+      minLength = 12,
+      minWords = 3,
+      maxSnippetLength = 260
+    } = options;
+
+    const normalized = this.normalizeText(value);
+    if (!this.isMeaningfulText(normalized, { minLength, minWords })) {
+      return [];
+    }
+    if (this.isOperationalConversationMessage(normalized)) {
+      return [];
+    }
+
+    const rawParts = normalized
+      .split(/\n+/)
+      .flatMap((line) => line.split(/\s*[;|•]\s*/))
+      .map((part) => this.normalizeText(part.replace(/^[-*•\d.)\s]+/, '')))
+      .filter(Boolean);
+
+    const expandedParts = rawParts.flatMap((part) => {
+      if (part.length <= maxSnippetLength * 1.4) return [part];
+      return part
+        .split(/(?<=[.!?])\s+/)
+        .map((snippet) => this.normalizeText(snippet))
+        .filter(Boolean);
+    });
+
+    return expandedParts
+      .filter((part) => this.isMeaningfulText(part, { minLength, minWords }))
+      .map((part) => this.truncateText(part, maxSnippetLength));
+  }
+
+  toUniqueTextItems(items = [], options = {}) {
+    const {
+      maxItems = 6,
+      minLength = 12,
+      minWords = 3,
+      allowSingleWord = false,
+      maxSnippetLength = 260
+    } = options;
+
+    const unique = [];
+    const seen = new Set();
+
+    for (const item of items) {
+      const text = this.normalizeText(item);
+      if (!this.isMeaningfulText(text, { minLength, minWords, allowSingleWord })) continue;
+      if (this.isOperationalConversationMessage(text)) continue;
+
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      unique.push(this.truncateText(text, maxSnippetLength));
+      if (unique.length >= maxItems) break;
+    }
+
+    return unique;
+  }
+
+  mergeUniqueTextItems(primary = [], secondary = [], options = {}) {
+    return this.toUniqueTextItems([...(primary || []), ...(secondary || [])], options);
+  }
+
+  findEntryByText(items = [], text = '', fields = []) {
+    const target = this.normalizeText(text).toLowerCase();
+    if (!target || !Array.isArray(items) || items.length === 0) return null;
+
+    return items.find((entry) =>
+      fields.some((field) => this.normalizeText(entry?.[field]).toLowerCase() === target)
+    ) || null;
+  }
+
+  collectEmployeePhaseSnippets(chatThread = [], phases = [], options = {}) {
+    const {
+      maxItems = 6,
+      minLength = 12,
+      minWords = 3
+    } = options;
+
+    const phaseSet = new Set((phases || []).map((phase) => this.normalizeText(phase).toLowerCase()));
+    const snippets = [];
+
+    (chatThread || [])
+      .filter((message) => message?.sender?.role === 'employee')
+      .forEach((message) => {
+        const phase = this.normalizeText(message?.phase).toLowerCase();
+        if (phaseSet.size > 0 && !phaseSet.has(phase)) return;
+
+        const messageText = this.normalizeText(message?.message);
+        if (!messageText || this.isOperationalConversationMessage(messageText)) return;
+
+        const parts = this.extractConversationSnippets(messageText, {
+          minLength,
+          minWords
+        });
+        snippets.push(...parts);
+      });
+
+    return this.toUniqueTextItems(snippets, {
+      maxItems,
+      minLength,
+      minWords
+    });
+  }
+
+  buildGroundedExtractedData(chatThread = [], extractedData = {}) {
+    const extractedAchievements = extractedData.achievements || [];
+    const conversationAchievements = extractedAchievements.filter((item) => item?.extractedFrom !== 'document');
+    const documentAchievements = extractedAchievements.filter((item) => item?.extractedFrom === 'document');
+
+    const achievementSnippets = this.collectEmployeePhaseSnippets(
+      chatThread,
+      ['okr_reflection', 'achievements', 'review'],
+      { maxItems: 8, minLength: 8, minWords: 2 }
+    );
+    const challengeSnippets = this.collectEmployeePhaseSnippets(
+      chatThread,
+      ['challenges', 'review'],
+      { maxItems: 6, minLength: 8, minWords: 2 }
+    );
+    const learningSnippets = this.collectEmployeePhaseSnippets(
+      chatThread,
+      ['learnings', 'competencies', 'review'],
+      { maxItems: 6, minLength: 8, minWords: 2 }
+    );
+    const goalSnippets = this.collectEmployeePhaseSnippets(
+      chatThread,
+      ['future_goals', 'review'],
+      { maxItems: 6, minLength: 8, minWords: 2 }
+    );
+
+    let achievementTexts = this.mergeUniqueTextItems(
+      conversationAchievements.map((item) => item?.text),
+      achievementSnippets,
+      { maxItems: 8, minLength: 8, minWords: 2 }
+    );
+
+    // Use document-derived achievements only when we have no direct conversation evidence.
+    if (achievementTexts.length === 0) {
+      achievementTexts = this.toUniqueTextItems(
+        documentAchievements.map((item) => item?.text),
+        { maxItems: 6, minLength: 8, minWords: 2 }
+      );
+    }
+
+    const challengeTexts = this.mergeUniqueTextItems(
+      (extractedData.challenges || []).map((item) => item?.text),
+      challengeSnippets,
+      { maxItems: 6, minLength: 8, minWords: 2 }
+    );
+
+    const learningTexts = this.mergeUniqueTextItems(
+      (extractedData.skills || []).map((item) => item?.skill || item?.text),
+      learningSnippets,
+      { maxItems: 6, minLength: 3, minWords: 1, allowSingleWord: true }
+    );
+
+    const goalTexts = this.mergeUniqueTextItems(
+      (extractedData.goals || []).map((item) => item?.goal || item?.text),
+      goalSnippets,
+      { maxItems: 6, minLength: 6, minWords: 2 }
+    );
+
+    const achievements = achievementTexts.map((text) => {
+      const source = this.findEntryByText(extractedAchievements, text, ['text']);
+      return {
+        ...source,
+        text
+      };
+    });
+
+    const challenges = challengeTexts.map((text) => {
+      const source = this.findEntryByText(extractedData.challenges || [], text, ['text']);
+      return {
+        text,
+        resolution: this.truncateText(source?.resolution, 220),
+        learnings: this.truncateText(source?.learnings, 220)
+      };
+    });
+
+    const skills = learningTexts.map((skill) => {
+      const source = this.findEntryByText(extractedData.skills || [], skill, ['skill', 'text']);
+      return {
+        skill,
+        evidence: this.truncateText(source?.evidence || source?.context, 220)
+      };
+    });
+
+    const goals = goalTexts.map((goal) => {
+      const source = this.findEntryByText(extractedData.goals || [], goal, ['goal', 'text']);
+      return {
+        goal,
+        timeframe: this.truncateText(source?.timeframe, 120)
+      };
+    });
+
+    return {
+      achievements,
+      challenges,
+      skills,
+      goals
+    };
+  }
+
+  sanitizeExtractedData(extractedData = {}) {
+    const achievements = (extractedData.achievements || [])
+      .filter(item => this.isMeaningfulText(item?.text, { minLength: 8, minWords: 2 }))
+      .map(item => ({
+        ...item,
+        text: this.normalizeText(item?.text)
+      }));
+
+    const challenges = (extractedData.challenges || [])
+      .filter(item => this.isMeaningfulText(item?.text, { minLength: 8, minWords: 2 }))
+      .map(item => ({
+        ...item,
+        text: this.normalizeText(item?.text),
+        resolution: this.normalizeText(item?.resolution),
+        learnings: this.normalizeText(item?.learnings)
+      }));
+
+    const skills = (extractedData.skills || [])
+      .filter(item => this.isMeaningfulText(item?.skill || item?.text, { minLength: 3, allowSingleWord: true }))
+      .map(item => ({
+        ...item,
+        skill: this.normalizeText(item?.skill || item?.text),
+        evidence: this.normalizeText(item?.evidence || item?.context)
+      }));
+
+    const goals = (extractedData.goals || [])
+      .filter(item => this.isMeaningfulText(item?.goal || item?.text, { minLength: 6, minWords: 2 }))
+      .map(item => ({
+        ...item,
+        goal: this.normalizeText(item?.goal || item?.text),
+        timeframe: this.normalizeText(item?.timeframe)
+      }));
+
+    return {
+      achievements,
+      challenges,
+      skills,
+      goals
+    };
+  }
+
+  collectConversationSignal(chatThread = [], extractedData = {}) {
+    const employeeMessages = (chatThread || [])
+      .filter(m => m.sender?.role === 'employee')
+      .map(m => this.normalizeText(m.message))
+      .filter((msg) => msg && !this.isOperationalConversationMessage(msg));
+
+    const meaningfulMessages = employeeMessages.filter(msg =>
+      this.isMeaningfulText(msg, { minLength: 10, minWords: 2 })
+    );
+
+    const employeeWordCount = meaningfulMessages.reduce(
+      (sum, msg) => sum + msg.split(/\s+/).filter(Boolean).length,
+      0
+    );
+
+    const uniqueWords = new Set(
+      meaningfulMessages
+        .join(' ')
+        .toLowerCase()
+        .match(/[a-z0-9]+/g) || []
+    ).size;
+
+    const extractedCounts = {
+      achievements: extractedData.achievements?.length || 0,
+      challenges: extractedData.challenges?.length || 0,
+      learnings: extractedData.skills?.length || 0,
+      goals: extractedData.goals?.length || 0
+    };
+
+    const phaseDerivedCounts = {
+      achievements: 0,
+      challenges: 0,
+      learnings: 0,
+      goals: 0
+    };
+
+    (chatThread || [])
+      .filter(m => m.sender?.role === 'employee')
+      .forEach((message) => {
+        const text = this.normalizeText(message?.message);
+        if (this.isOperationalConversationMessage(text)) return;
+        if (!this.isMeaningfulText(text, { minLength: 10, minWords: 2 })) return;
+
+        const phase = this.normalizeText(message?.phase).toLowerCase();
+        if (phase === 'okr_reflection' || phase === 'achievements') {
+          phaseDerivedCounts.achievements += 1;
+        } else if (phase === 'challenges') {
+          phaseDerivedCounts.challenges += 1;
+        } else if (phase === 'learnings' || phase === 'competencies') {
+          phaseDerivedCounts.learnings += 1;
+        } else if (phase === 'future_goals') {
+          phaseDerivedCounts.goals += 1;
+        }
+      });
+
+    const inferredCounts = {
+      achievements: Math.max(extractedCounts.achievements, phaseDerivedCounts.achievements > 0 ? 1 : 0),
+      challenges: Math.max(extractedCounts.challenges, phaseDerivedCounts.challenges > 0 ? 1 : 0),
+      learnings: Math.max(extractedCounts.learnings, phaseDerivedCounts.learnings > 0 ? 1 : 0),
+      goals: Math.max(extractedCounts.goals, phaseDerivedCounts.goals > 0 ? 1 : 0)
+    };
+
+    return {
+      employeeMessageCount: employeeMessages.length,
+      meaningfulMessageCount: meaningfulMessages.length,
+      employeeWordCount,
+      uniqueWords,
+      extractedCounts,
+      inferredCounts,
+      phaseDerivedCounts,
+      totalExtracted:
+        extractedCounts.achievements +
+        extractedCounts.challenges +
+        extractedCounts.learnings +
+        extractedCounts.goals
+    };
+  }
+
+  getMissingSelfAssessmentInfo(signal) {
+    const missing = [];
+    const counts = signal?.inferredCounts || signal?.extractedCounts || {};
+
+    if ((counts.achievements || 0) < 1) {
+      missing.push('Add at least 1 key achievement (ideally with outcomes/metrics)');
+    }
+    if ((counts.challenges || 0) < 1) {
+      missing.push('Add at least 1 challenge and how you addressed it');
+    }
+    if ((counts.learnings || 0) < 1) {
+      missing.push('Add 1-2 learnings or skills you developed');
+    }
+    if ((counts.goals || 0) < 1) {
+      missing.push('Add 1-2 goals for the next period');
+    }
+    if (
+      ((signal?.employeeWordCount || 0) < 35 && (signal?.uniqueWords || 0) < 16) ||
+      (signal?.meaningfulMessageCount || 0) < 3
+    ) {
+      missing.push('Provide more specific detail and examples (metrics, outcomes, and context)');
+    }
+
+    return missing;
+  }
+
   buildPhaseContext(phase, currentOkr, extractedData) {
     const contexts = {
       okr_reflection: `Discussing OKR: "${currentOkr?.title || currentOkr?.objectives?.[0]?.title || 'Current OKR'}" (${currentOkr?.progress || 0}% complete)`,
@@ -1149,7 +1669,9 @@ Provide a recommendation in JSON format:
     const okrList = okrSummary.map((okr, i) => `${i + 1}. ${okr.title} (${okr.progress}% complete)`).join('\n');
 
     return {
-      greeting: `Hi ${employee.name}! Welcome to your self-assessment conversation.\n\nI see you have ${okrSummary.length} OKR(s) for this period:\n${okrList}\n\nLet's start by discussing your progress on the first one. What were your key accomplishments related to "${okrSummary[0]?.title || 'your objectives'}"?`,
+      greeting: okrSummary.length > 0
+        ? `Hi ${employee.name}! Welcome to your self-assessment conversation.\n\nI see you have ${okrSummary.length} OKR(s) for this period:\n${okrList}\n\nWhich OKR would you like to start with? Reply with the OKR number (e.g., "1") or paste the title.`
+        : `Hi ${employee.name}! Welcome to your self-assessment conversation.\n\nI couldn't find any OKRs for this period. To get started, what were your top 2-3 priorities, and what progress did you make on them?`,
       okrSummary,
       phase: 'okr_reflection',
       currentOkrIndex: 0,
@@ -1182,13 +1704,47 @@ Provide a recommendation in JSON format:
   }
 
   getFallbackReport(extractedData, okrPerformance) {
+    const heuristic = this.estimateSelfSuggestedRating(okrPerformance, extractedData);
+    const achievementItems = (extractedData.achievements || [])
+      .map(a => this.truncateText(a?.text, 280))
+      .filter(text => this.isMeaningfulText(text, { minLength: 8, minWords: 2 }))
+      .map(text => `- ${text}`);
+    const achievements = achievementItems.length > 0 ? achievementItems.join('\n') : 'Not provided.';
+
+    const challengeItems = (extractedData.challenges || [])
+      .map((c) => {
+        const challengeText = this.truncateText(c?.text, 280);
+        if (!this.isMeaningfulText(challengeText, { minLength: 8, minWords: 2 })) return null;
+        const resolution = this.truncateText(c?.resolution, 220);
+        if (resolution) return `- ${challengeText}\n  Resolution: ${resolution}`;
+        return `- ${challengeText}`;
+      })
+      .filter(Boolean);
+    const challenges = challengeItems.length > 0 ? challengeItems.join('\n') : 'Not provided.';
+
+    const learningItems = (extractedData.skills || [])
+      .map((s) => {
+        const skill = this.truncateText(s?.skill || s?.text, 220);
+        if (!this.isMeaningfulText(skill, { minLength: 3, minWords: 1, allowSingleWord: true })) return null;
+        const evidence = this.truncateText(s?.evidence, 180);
+        return evidence ? `- ${skill} (${evidence})` : `- ${skill}`;
+      })
+      .filter(Boolean);
+    const learnings = learningItems.length > 0 ? learningItems.join('\n') : 'Not provided.';
+
+    const goalItems = (extractedData.goals || [])
+      .map((g) => this.truncateText(g?.goal || g?.text, 240))
+      .filter((goal) => this.isMeaningfulText(goal, { minLength: 6, minWords: 2 }))
+      .map((goal) => `- ${goal}`);
+    const goals = goalItems.length > 0 ? goalItems.join('\n') : 'Not provided.';
+
     return {
       overallSummary: {
-        achievements: extractedData.achievements?.map(a => a.text).join('\n\n') || 'Please add your key achievements.',
-        challenges: extractedData.challenges?.map(c => c.text).join('\n\n') || 'Please describe challenges you faced.',
-        learnings: 'Please describe what you learned during this period.',
-        improvements: 'Please identify areas for improvement.',
-        goals: extractedData.goals?.map(g => g.goal).join('\n') || 'Please set goals for the next period.'
+        achievements,
+        challenges,
+        learnings,
+        improvements: 'Not provided.',
+        goals
       },
       okrAssessment: okrPerformance.map(okr => ({
         okrId: okr.id,
@@ -1196,8 +1752,10 @@ Provide a recommendation in JSON format:
         completionPercentage: okr.progress,
         selfComments: ''
       })),
-      suggestedOverallRating: 3,
-      ratingJustification: 'Please review and adjust based on your assessment.',
+      suggestedOverallRating: heuristic.suggestedRating,
+      ratingJustification: heuristic.okrAverage !== null
+        ? `Based on ${Math.round(heuristic.okrAverage)}% average OKR completion and ${heuristic.evidenceCount.achievements} achievements captured.`
+        : 'Based on the evidence captured in your conversation. Please review and adjust as needed.',
       aiInsights: {
         strengths: [],
         developmentAreas: [],

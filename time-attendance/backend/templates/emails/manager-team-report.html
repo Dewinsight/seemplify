@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Attendance Report</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: Arial, sans-serif; color: #0f172a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; padding: 24px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="760" cellpadding="0" cellspacing="0" style="max-width: 760px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+                    <tr>
+                        <td style="padding: 24px; background: linear-gradient(135deg, #0f172a, #1e293b); color: #ffffff;">
+                            <h1 style="margin: 0; font-size: 22px;">Team Attendance Report</h1>
+                            <p style="margin: 6px 0 0; font-size: 13px; color: #cbd5e1;">
+                                {{frequencyLabel}} report for {{periodLabel}}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td style="padding: 20px 24px;">
+                            <p style="margin: 0 0 12px; font-size: 14px;">Hello {{managerName}},</p>
+                            <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: #334155;">
+                                {{attachmentDescription}}
+                            </p>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin-bottom: 16px;">
+                                <tr>
+                                    <td style="padding: 10px 12px; background: #ecfdf5; border: 1px solid #d1fae5; font-size: 12px; font-weight: 700; color: #065f46;">Report Summary</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 0; border: 1px solid #e2e8f0; border-top: 0;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                                            {{summaryRowsHtml}}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin-bottom: 18px;">
+                                <tr>
+                                    <td style="padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #334155;">
+                                        Team Member Highlights
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 0; border: 1px solid #e2e8f0; border-top: 0;">
+                                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                                            <tr>
+                                                <th align="left" style="padding: 8px 10px; font-size: 11px; color: #64748b; border-bottom: 1px solid #e2e8f0;">Member</th>
+                                                <th align="right" style="padding: 8px 10px; font-size: 11px; color: #64748b; border-bottom: 1px solid #e2e8f0;">Hours</th>
+                                                <th align="right" style="padding: 8px 10px; font-size: 11px; color: #64748b; border-bottom: 1px solid #e2e8f0;">OT</th>
+                                                <th align="center" style="padding: 8px 10px; font-size: 11px; color: #64748b; border-bottom: 1px solid #e2e8f0;">Status</th>
+                                            </tr>
+                                            {{memberRowsHtml}}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom: 8px;">
+                                <tr>
+                                    <td style="border-radius: 8px; background: #0f766e;">
+                                        <a href="{{reportUrl}}" style="display: inline-block; padding: 12px 18px; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700;">
+                                            Open Team Reports
+                                        </a>
+                                    </td>
+                                    <td style="width: 10px;"></td>
+                                    <td style="border-radius: 8px; background: #334155;">
+                                        <a href="{{teamUrl}}" style="display: inline-block; padding: 12px 18px; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700;">
+                                            Open Team Dashboard
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 14px 0 0; font-size: 12px; color: #64748b;">
+                                Generated at {{generatedAt}}.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

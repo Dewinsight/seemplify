@@ -13,3 +13,8 @@ package-lock.json
 lms/public/frontend
 lms/www/lms.html
 frappe-ui
+output/
+test-results/
+playwright-report/
+.playwright/
+*.codex

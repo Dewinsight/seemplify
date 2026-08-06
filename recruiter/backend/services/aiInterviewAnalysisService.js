@@ -1,23 +1,28 @@
 const Interview = require('../models/Interview');
 const Job = require('../models/Job');
 const Candidate = require('../models/Candidate');
-const AzureOpenAIService = require('./azureOpenAIService');
+const AIModelService = require('./aiModelService');
+const { GROQ_120B } = require('../config/aiRuntimeCatalog');
 const embeddingService = require('./embeddingService');
 const transcriptSegmentationService = require('./transcriptSegmentationService');
+const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
 
 class AIInterviewAnalysisService {
   constructor() {
-    this.azureOpenAIService = new AzureOpenAIService();
+    this.aiModelService = new AIModelService();
   }
 
   /**
    * Analyze interview transcript
    */
-  async analyzeInterviewTranscript(interviewId) {
+  async analyzeInterviewTranscript(interviewId, organizationId = null) {
     try {
       console.log(`🤖 Starting AI analysis for interview ${interviewId}`);
       
-      const interview = await Interview.findById(interviewId)
+      const interviewQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, { _id: interviewId })
+        : { _id: interviewId };
+      const interview = await Interview.findOne(interviewQuery)
         .populate('stageId')
         .populate('jobId')
         .populate('candidateId');
@@ -31,19 +36,19 @@ class AIInterviewAnalysisService {
       }
       
       // Get stage context for analysis
-      const stageContext = await this._getStageContext(interview);
+      const stageContext = await this._getStageContext(interview, organizationId);
       
       // Perform comprehensive analysis
       const analysis = await this._performAnalysis(interview, stageContext);
       
       // Compare with other candidates
-      const comparativeAnalysis = await this._performComparativeAnalysis(interview, analysis);
+      const comparativeAnalysis = await this._performComparativeAnalysis(interview, analysis, organizationId);
       
       // Update interview with analysis results
       interview.aiAnalysis = {
         analyzed: true,
         analyzedAt: new Date(),
-        modelVersion: process.env.azure_openai_model || 'gpt-4.1',
+        modelVersion: GROQ_120B,
         insights: analysis.insights,
         comparativeAnalysis
       };
@@ -51,7 +56,7 @@ class AIInterviewAnalysisService {
       await interview.save();
       
       // Update pipeline recommendations
-      await this._updatePipelineRecommendations(interview, analysis);
+      await this._updatePipelineRecommendations(interview, analysis, organizationId);
       
       // Generate embeddings for semantic search
       await this._generateAnalysisEmbeddings(interview, analysis);
@@ -71,7 +76,7 @@ class AIInterviewAnalysisService {
     const analysisPrompt = this._buildAnalysisPrompt(interview.transcript, stageContext);
     
     try {
-      const response = await this.azureOpenAIService.analyzeInterview(analysisPrompt);
+      const response = await this.aiModelService.analyzeInterview(analysisPrompt);
       const parsedResponse = JSON.parse(response);
       
       return {
@@ -86,7 +91,10 @@ class AIInterviewAnalysisService {
       };
     } catch (error) {
       console.error('❌ Error in AI analysis:', error);
-      // Return default analysis on error
+      // A runtime-availability failure must not masquerade as a completed
+      // analysis: it would mark the interview analyzed with placeholder data
+      // and consume credits. Only parse-level noise degrades to the default.
+      if (error.code) throw error;
       return this._getDefaultAnalysis();
     }
   }
@@ -183,15 +191,19 @@ Focus on:
   /**
    * Perform comparative analysis
    */
-  async _performComparativeAnalysis(interview, analysis) {
+  async _performComparativeAnalysis(interview, analysis, organizationId = null) {
     try {
       // Get other interviews for the same job and stage
-      const otherInterviews = await Interview.find({
+      const comparisonQuery = {
         jobId: interview.jobId,
         stageId: interview.stageId,
         _id: { $ne: interview._id },
         'aiAnalysis.analyzed': true
-      }).select('aiAnalysis candidateId');
+      };
+      const scopedComparisonQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, comparisonQuery)
+        : comparisonQuery;
+      const otherInterviews = await Interview.find(scopedComparisonQuery).select('aiAnalysis candidateId');
       
       if (otherInterviews.length === 0) {
         return {
@@ -301,9 +313,12 @@ Focus on:
   /**
    * Update pipeline recommendations
    */
-  async _updatePipelineRecommendations(interview, analysis) {
+  async _updatePipelineRecommendations(interview, analysis, organizationId = null) {
     try {
-      const job = await Job.findById(interview.jobId);
+      const jobQuery = { _id: interview.jobId };
+      if (organizationId) jobQuery.organization = organizationId;
+      const job = await Job.findOne(jobQuery);
+      if (!job) return;
       const applicantIndex = job.applicants.findIndex(
         app => app.candidate.toString() === interview.candidateId.toString()
       );
@@ -328,13 +343,17 @@ Focus on:
   /**
    * Get candidate insights across all interviews
    */
-  async getCandidateInsights(candidateId, jobId) {
+  async getCandidateInsights(candidateId, jobId, organizationId = null) {
     try {
-      const interviews = await Interview.find({
+      const insightsQuery = {
         candidateId,
         jobId,
         'aiAnalysis.analyzed': true
-      }).populate('stageId');
+      };
+      const scopedInsightsQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, insightsQuery)
+        : insightsQuery;
+      const interviews = await Interview.find(scopedInsightsQuery).populate('stageId');
       
       if (interviews.length === 0) {
         return {
@@ -371,7 +390,7 @@ Focus on:
   /**
    * Get comparative analysis for a job
    */
-  async getComparativeAnalysis(jobId, stageId = null) {
+  async getComparativeAnalysis(jobId, stageId = null, organizationId = null) {
     try {
       const query = {
         jobId,
@@ -382,7 +401,10 @@ Focus on:
         query.stageId = stageId;
       }
       
-      const interviews = await Interview.find(query)
+      const scopedQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, query)
+        : query;
+      const interviews = await Interview.find(scopedQuery)
         .populate('candidateId', 'firstName lastName')
         .populate('stageId', 'name type');
       
@@ -429,9 +451,12 @@ Focus on:
   /**
    * Get next step recommendations
    */
-  async getNextStepRecommendations(interviewId) {
+  async getNextStepRecommendations(interviewId, organizationId = null) {
     try {
-      const interview = await Interview.findById(interviewId)
+      const recommendationQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, { _id: interviewId })
+        : { _id: interviewId };
+      const interview = await Interview.findOne(recommendationQuery)
         .populate('stageId')
         .populate('jobId');
       
@@ -467,7 +492,7 @@ Focus on:
   /**
    * Bulk analyze interviews
    */
-  async bulkAnalyzeInterviews(jobId, stageId = null) {
+  async bulkAnalyzeInterviews(jobId, stageId = null, organizationId = null) {
     try {
       const query = {
         jobId,
@@ -479,7 +504,10 @@ Focus on:
         query.stageId = stageId;
       }
       
-      const interviews = await Interview.find(query);
+      const scopedQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, query)
+        : query;
+      const interviews = await Interview.find(scopedQuery);
       
       if (interviews.length === 0) {
         return {
@@ -495,7 +523,7 @@ Focus on:
       
       for (const interview of interviews) {
         try {
-          const analysis = await this.analyzeInterviewTranscript(interview._id);
+          const analysis = await this.analyzeInterviewTranscript(interview._id, organizationId);
           results.push({
             interviewId: interview._id,
             success: true,
@@ -682,11 +710,15 @@ Focus on:
     };
   }
 
-  async _getStageContext(interview) {
+  async _getStageContext(interview, organizationId = null) {
+    const stageCountQuery = { jobId: interview.jobId };
+    const scopedStageCountQuery = organizationId
+      ? await buildInterviewOrganizationQuery(organizationId, stageCountQuery)
+      : stageCountQuery;
     return {
       job: interview.jobId,
       stage: interview.stageId,
-      totalStages: await Interview.countDocuments({ jobId: interview.jobId })
+      totalStages: await Interview.countDocuments(scopedStageCountQuery)
     };
   }
 
@@ -912,14 +944,16 @@ Focus on:
    * @param {String} sessionId - Multi-candidate session ID
    * @returns {Object} Comparative analysis of all candidates
    */
-  async analyzeMultiCandidateSession(sessionId) {
+  async analyzeMultiCandidateSession(sessionId, organizationId = null) {
     try {
       console.log(`🤖 Starting multi-candidate session analysis for: ${sessionId}`);
       
       // Get all interviews in this session
-      const interviews = await Interview.find({ 
-        multiCandidateSessionId: sessionId 
-      })
+      const sessionQuery = { multiCandidateSessionId: sessionId };
+      const scopedSessionQuery = organizationId
+        ? await buildInterviewOrganizationQuery(organizationId, sessionQuery)
+        : sessionQuery;
+      const interviews = await Interview.find(scopedSessionQuery)
       .populate('candidateId')
       .populate('jobId')
       .sort({ multiCandidateOrder: 1 });
@@ -938,7 +972,8 @@ Focus on:
       // Segment the transcript by candidates
       const segmentedData = await transcriptSegmentationService.segmentTranscriptBySession(
         sessionId,
-        transcriptHolder.transcript.content
+        transcriptHolder.transcript.content,
+        organizationId
       );
 
       // Analyze each candidate's segment
@@ -978,8 +1013,11 @@ Focus on:
 
       // Update each interview with its analysis
       for (const candidateAnalysis of candidateAnalyses) {
-        await Interview.findByIdAndUpdate(
-          candidateAnalysis.interviewId,
+        const updateQuery = organizationId
+          ? await buildInterviewOrganizationQuery(organizationId, { _id: candidateAnalysis.interviewId })
+          : { _id: candidateAnalysis.interviewId };
+        await Interview.findOneAndUpdate(
+          updateQuery,
           {
             'aiInterviewSummary': candidateAnalysis.analysis,
             'comparativeAnalysis': {
@@ -1034,12 +1072,128 @@ Focus on:
       Format as JSON.
     `;
 
-    const response = await this.azureOpenAIService.generateCompletion(prompt, {
+    const parsed = await this.aiModelService.generateStructuredObject(prompt, {
+      activity: 'interview.analysis',
+      promptVersion: 'interview-segment-analysis-v2',
       temperature: 0.3,
-      maxTokens: 1500
+      maxTokens: 1500,
+      schemaName: 'interview_segment_analysis'
     });
+    return this._normalizeSegmentAnalysis(parsed);
+  }
 
-    return JSON.parse(response);
+  _normalizeSegmentAnalysis(rawAnalysis) {
+    const source = rawAnalysis?.analysis && typeof rawAnalysis.analysis === 'object'
+      ? rawAnalysis.analysis
+      : rawAnalysis || {};
+
+    const pickArray = (...values) => {
+      for (const value of values) {
+        if (Array.isArray(value)) {
+          return value
+            .map((item) => {
+              if (typeof item === 'string') return item;
+              if (item && typeof item === 'object') {
+                return item.strength || item.concern || item.text || item.description || JSON.stringify(item);
+              }
+              return String(item || '').trim();
+            })
+            .filter(Boolean);
+        }
+      }
+      return [];
+    };
+
+    const toScore = (value) => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(0, Math.min(100, value));
+      }
+
+      const text = String(value || '').toLowerCase();
+      if (!text) return null;
+      if (text.includes('excellent') || text.includes('outstanding') || text.includes('expert')) return 90;
+      if (text.includes('strong') || text.includes('very good') || text.includes('advanced')) return 82;
+      if (text.includes('good')) return 75;
+      if (text.includes('intermediate') || text.includes('fair')) return 65;
+      if (text.includes('neutral') || text.includes('average')) return 55;
+      if (text.includes('weak') || text.includes('poor') || text.includes('limited')) return 40;
+      return null;
+    };
+
+    const strengths = pickArray(
+      source.strengths,
+      source.key_strengths,
+      source.keyStrengths,
+      source.identifiedStrengths
+    );
+
+    const concerns = pickArray(
+      source.concerns,
+      source.areas_of_concern,
+      source.areasOfConcern,
+      source.identifiedConcerns
+    );
+
+    const technical = source.technicalCompetency || source.technical_competency || source.technical || {};
+    const communication = source.communicationSkills || source.communication_skills || source.communication || {};
+    const cultural = source.culturalFit || source.cultural_fit || source.culture || {};
+
+    const technicalScore = toScore(technical.score ?? technical.assessment ?? technical.rating);
+    const communicationScore = toScore(communication.score ?? communication.assessment ?? communication.rating);
+    const culturalScore = toScore(cultural.score ?? cultural.assessment ?? cultural.rating);
+
+    const explicitScore = toScore(
+      source.overallScore ??
+      source.overall_score ??
+      source.score ??
+      source.totalScore ??
+      source.finalScore
+    );
+
+    const fallbackScores = [technicalScore, communicationScore, culturalScore].filter((value) => value !== null);
+    const calculatedScore = fallbackScores.length > 0
+      ? Math.round(fallbackScores.reduce((sum, value) => sum + value, 0) / fallbackScores.length)
+      : 60;
+
+    const overallScore = explicitScore ?? calculatedScore;
+
+    const decisionText = String(
+      source.recommendation ||
+      source.overall_recommendation?.decision ||
+      source.overallRecommendation?.decision ||
+      source.finalRecommendation?.decision ||
+      ''
+    ).toLowerCase();
+
+    let recommendation = 'additional_assessment';
+    if (decisionText.includes('strong_yes') || decisionText.includes('yes') || decisionText.includes('advance') || decisionText.includes('proceed')) {
+      recommendation = 'advance';
+    } else if (decisionText.includes('strong_no') || decisionText.includes('no') || decisionText.includes('reject')) {
+      recommendation = 'reject';
+    } else if (decisionText.includes('maybe') || decisionText.includes('caution') || decisionText.includes('additional')) {
+      recommendation = 'additional_assessment';
+    }
+
+    const rationale =
+      source.rationale ||
+      source.reasoning ||
+      source.overall_recommendation?.rationale ||
+      source.overallRecommendation?.reasoning ||
+      '';
+
+    return {
+      strengths,
+      concerns,
+      technicalCompetency: technical,
+      communicationSkills: communication,
+      culturalFit: cultural,
+      overallScore,
+      recommendation,
+      rationale,
+      strongerAreas: strengths.slice(0, 3).map((item) => ({ area: item })),
+      weakerAreas: concerns.slice(0, 3).map((item) => ({ area: item })),
+      raw: rawAnalysis
+    };
   }
 
   /**
@@ -1065,12 +1219,80 @@ Focus on:
       Format as JSON with rankings, differentiators, and recommendations.
     `;
 
-    const response = await this.azureOpenAIService.generateCompletion(prompt, {
+    const parsed = await this.aiModelService.generateStructuredObject(prompt, {
+      activity: 'interview.analysis',
+      promptVersion: 'interview-comparison-v2',
       temperature: 0.2,
-      maxTokens: 1000
+      maxTokens: 1000,
+      schemaName: 'interview_comparison'
+    });
+    return this._normalizeComparativeAnalysis(parsed, candidateAnalyses);
+  }
+
+  _normalizeComparativeAnalysis(rawComparative, candidateAnalyses) {
+    const toArray = (value) => {
+      if (Array.isArray(value)) return value;
+      if (value === null || value === undefined || value === '') return [];
+      return [value];
+    };
+
+    const normalized = {
+      rankings: {},
+      differentiators: toArray(rawComparative?.differentiators || rawComparative?.keyDifferentiators),
+      recommendations: toArray(rawComparative?.recommendations || rawComparative?.hiringRecommendations),
+      raw: rawComparative
+    };
+
+    const sortedByScore = [...candidateAnalyses].sort((a, b) => (b.analysis?.overallScore || 0) - (a.analysis?.overallScore || 0));
+    sortedByScore.forEach((candidate, index) => {
+      const candidateId = String(candidate.candidateId || candidate.interviewId || index);
+      normalized.rankings[candidateId] = {
+        overall: index + 1,
+        score: candidate.analysis?.overallScore || 0,
+        recommendation: candidate.analysis?.recommendation || 'additional_assessment'
+      };
     });
 
-    return JSON.parse(response);
+    const findCandidateId = (value) => {
+      const lowerValue = String(value || '').toLowerCase();
+      if (!lowerValue) return null;
+
+      const direct = candidateAnalyses.find((candidate) => String(candidate.candidateId || '').toLowerCase() === lowerValue);
+      if (direct) return String(direct.candidateId);
+
+      const byName = candidateAnalyses.find((candidate) => String(candidate.candidateName || '').toLowerCase() === lowerValue);
+      if (byName) return String(byName.candidateId);
+
+      return null;
+    };
+
+    const rawRankings = rawComparative?.rankings;
+    if (Array.isArray(rawRankings)) {
+      rawRankings.forEach((item) => {
+        const candidateId = findCandidateId(item?.candidateId || item?.candidate || item?.name);
+        if (!candidateId) return;
+
+        normalized.rankings[candidateId] = {
+          ...normalized.rankings[candidateId],
+          overall: Number(item.rank || item.overall || normalized.rankings[candidateId].overall),
+          score: Number(item.score ?? normalized.rankings[candidateId].score)
+        };
+      });
+    } else if (rawRankings && typeof rawRankings === 'object') {
+      Object.entries(rawRankings).forEach(([key, value]) => {
+        const candidateId = findCandidateId(key) || findCandidateId(value?.candidateId || value?.candidate || value?.name);
+        if (!candidateId) return;
+
+        normalized.rankings[candidateId] = {
+          ...normalized.rankings[candidateId],
+          overall: Number(value?.overall || value?.rank || normalized.rankings[candidateId]?.overall || 1),
+          score: Number(value?.score ?? normalized.rankings[candidateId]?.score ?? 0),
+          recommendation: value?.recommendation || normalized.rankings[candidateId]?.recommendation || 'additional_assessment'
+        };
+      });
+    }
+
+    return normalized;
   }
 
   /**
@@ -1080,7 +1302,7 @@ Focus on:
     const recommendations = [];
     
     // Find top candidates
-    const topCandidates = candidateAnalyses
+    const topCandidates = [...candidateAnalyses]
       .sort((a, b) => (b.analysis.overallScore || 0) - (a.analysis.overallScore || 0))
       .slice(0, 2);
     

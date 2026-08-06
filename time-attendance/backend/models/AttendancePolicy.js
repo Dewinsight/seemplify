@@ -160,7 +160,8 @@ const AttendancePolicySchema = new Schema({
         },
         autoClockOut: {
             enabled: { type: Boolean, default: false },
-            afterHours: { type: Number, default: 12 },  // Auto clock out after 12 hours
+            afterHours: { type: Number, default: 10 },  // Auto clock out after 10 hours
+            warningMinutesBefore: { type: Number, default: 30 }, // Warning email before auto clock-out
         },
     },
 
@@ -184,6 +185,16 @@ const AttendancePolicySchema = new Schema({
         emailOnRejection: { type: Boolean, default: true },
         reminderBeforeDeadline: { type: Boolean, default: true },
         reminderHoursBefore: { type: Number, default: 24 },
+        managerReports: {
+            enabled: { type: Boolean, default: true },
+            frequency: {
+                type: String,
+                enum: ['daily', 'weekly', 'monthly'],
+                default: 'weekly',
+            },
+            sendHourUtc: { type: Number, default: 9 }, // 0-23
+            includeExcel: { type: Boolean, default: true },
+        },
     },
 
     // Created/Updated by

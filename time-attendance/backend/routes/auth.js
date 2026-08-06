@@ -138,6 +138,8 @@ router.get('/oidc/callback', async (req, res) => {
         // Get user info
         const userinfo = await getUserInfo(tokenSet.access_token);
 
+        const currentOrganization = userinfo.currentOrganization || userinfo.current_organization || null;
+
         // Build user object
         const user = {
             id: userinfo.sub,
@@ -145,15 +147,14 @@ router.get('/oidc/callback', async (req, res) => {
             name: userinfo.name,
             organizations: userinfo.organizations || [],
             teams: userinfo.teams || [],
-            currentOrganization: userinfo.currentOrganization,
+            currentOrganization,
             accessToken: tokenSet.access_token,
             refreshToken: tokenSet.refresh_token,
             expiresAt: tokenSet.expires_at,
         };
 
         // Determine current organization ID
-        const currentOrgId = userinfo.currentOrganization?.id ||
-            userinfo.current_organization?.id ||
+        const currentOrgId = currentOrganization?.id ||
             userinfo.organizations?.[0]?.id;
 
         // Verify subscription access for the current organization

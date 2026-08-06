@@ -175,8 +175,9 @@ export default function TeamOKRsPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {directReports.map((member: any) => {
-                    const memberOkrs = okrsByUser[member.id] || [];
+                  {directReports.map((member: any, index: number) => {
+                    const memberId = member.userId || member.id || member.email || `member-${index}`;
+                    const memberOkrs = okrsByUser[memberId] || [];
                     const memberProgress = memberOkrs.length > 0
                       ? Math.round(memberOkrs.reduce((sum: number, okr: any) => sum + (okr.progress || 0), 0) / memberOkrs.length)
                       : 0;
@@ -184,7 +185,7 @@ export default function TeamOKRsPage() {
                     const statusColor = memberProgress >= 70 ? 'success' : memberProgress >= 40 ? 'warning' : 'error';
                     
                     return (
-                      <TableRow key={member.id}>
+                      <TableRow key={memberId}>
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                             <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
@@ -248,7 +249,7 @@ export default function TeamOKRsPage() {
                             <IconButton 
                               size="small" 
                               component={Link} 
-                              href={`/team/okrs/${member.id}`}
+                              href={`/team/${encodeURIComponent(String(memberId))}`}
                               disabled={memberOkrs.length === 0}
                             >
                               <Visibility fontSize="small" />

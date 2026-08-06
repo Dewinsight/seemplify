@@ -32,7 +32,8 @@ import {
   ArrowRight,
   ArrowLeft,
   FileText,
-  Download
+  Download,
+  Eye
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -95,6 +96,7 @@ interface EnhancedCandidatePopupProps {
   isOpen: boolean
   onClose: () => void
   onMoveToStage: (candidateId: string, stageId: string, notes?: string) => Promise<void>
+  onKeepInView?: (candidateId: string, reason?: string) => Promise<void>
   onScheduleInterview: () => void
   getDaysInStage: (date: string) => number
   getInitials: (candidate: any) => string
@@ -109,7 +111,7 @@ const getPriorityConfig = (priority: string) => {
     case 'low':
       return { color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-950/30', icon: <CheckCircle className="h-4 w-4" /> }
     default:
-      return { color: 'text-muted-foreground', bg: 'bg-muted/30 dark:bg-gray-950/30', icon: <Clock className="h-4 w-4" /> }
+      return { color: 'text-gray-600', bg: 'bg-gray-50 dark:bg-gray-950/30', icon: <Clock className="h-4 w-4" /> }
   }
 }
 
@@ -124,6 +126,7 @@ export function EnhancedCandidatePopup({
   isOpen,
   onClose,
   onMoveToStage,
+  onKeepInView,
   onScheduleInterview,
   getDaysInStage,
   getInitials
@@ -131,6 +134,7 @@ export function EnhancedCandidatePopup({
   const [selectedStage, setSelectedStage] = useState('')
   const [moveNotes, setMoveNotes] = useState('')
   const [isMoving, setIsMoving] = useState(false)
+  const [isKeepingInView, setIsKeepingInView] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
 
   if (!candidate) return null
@@ -156,6 +160,21 @@ export function EnhancedCandidatePopup({
       toast.error('Failed to move candidate')
     } finally {
       setIsMoving(false)
+    }
+  }
+
+  const handleKeepInView = async () => {
+    if (!candidate || !onKeepInView) return
+
+    setIsKeepingInView(true)
+    try {
+      await onKeepInView(candidate._id, moveNotes || undefined)
+      toast.success('Candidate moved to Keep in View')
+      setMoveNotes('')
+    } catch {
+      toast.error('Failed to keep candidate in view')
+    } finally {
+      setIsKeepingInView(false)
     }
   }
 
@@ -222,7 +241,7 @@ export function EnhancedCandidatePopup({
               </Avatar>
                   {/* Online Status Indicator */}
                   <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 sm:w-5 sm:h-5 bg-emerald-500 rounded-full border-2 border-white shadow-md flex items-center justify-center">
-                    <div className="w-1.5 h-1.5 bg-card rounded-full animate-pulse" />
+                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
                   </div>
                 </div>
                 
@@ -264,18 +283,18 @@ export function EnhancedCandidatePopup({
                   
                   {/* Contact Information */}
                   <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-2">
-                    <div className="flex items-center gap-1.5 bg-card/80 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-full backdrop-blur-sm shadow-sm border border-white/40 w-full sm:w-auto">
+                    <div className="flex items-center gap-1.5 bg-white/80 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-full backdrop-blur-sm shadow-sm border border-white/40 w-full sm:w-auto">
                       <Mail className="h-3.5 w-3.5 sm:h-3 sm:w-3 text-blue-600" />
                       <span className="font-medium text-xs text-slate-700 dark:text-slate-300 truncate">{candidate.email}</span>
                   </div>
                   {candidate.phone && (
-                      <div className="flex items-center gap-1.5 bg-card/80 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-full backdrop-blur-sm shadow-sm border border-white/40 w-full sm:w-auto">
+                      <div className="flex items-center gap-1.5 bg-white/80 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-full backdrop-blur-sm shadow-sm border border-white/40 w-full sm:w-auto">
                         <Phone className="h-3.5 w-3.5 sm:h-3 sm:w-3 text-emerald-600" />
                         <span className="font-medium text-xs text-slate-700 dark:text-slate-300">{candidate.phone}</span>
                     </div>
                   )}
                   {candidate.location && (
-                      <div className="flex items-center gap-1.5 bg-card/80 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-full backdrop-blur-sm shadow-sm border border-white/40 w-full sm:w-auto">
+                      <div className="flex items-center gap-1.5 bg-white/80 dark:bg-slate-800/80 px-2.5 py-1.5 rounded-full backdrop-blur-sm shadow-sm border border-white/40 w-full sm:w-auto">
                         <MapPin className="h-3.5 w-3.5 sm:h-3 sm:w-3 text-purple-600" />
                         <span className="font-medium text-xs text-slate-700 dark:text-slate-300">{candidate.location}</span>
                       </div>
@@ -316,31 +335,31 @@ export function EnhancedCandidatePopup({
             {/* Left Panel - Content */}
             <div className="flex-1 flex flex-col overflow-hidden min-h-0 p-2 sm:p-3 md:p-4">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col">
-                <TabsList className="flex-shrink-0 grid w-full grid-cols-2 sm:grid-cols-4 mb-3 bg-card/60 dark:bg-slate-800/60 backdrop-blur-sm p-1 rounded-xl shadow-lg border border-white/20">
+                <TabsList className="flex-shrink-0 grid w-full grid-cols-2 sm:grid-cols-4 mb-3 bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm p-1 rounded-xl shadow-lg border border-white/20">
                   <TabsTrigger 
                     value="overview" 
-                    className="data-[state=active]:bg-card data-[state=active]:shadow-md data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white transition-all duration-200 rounded-lg font-semibold text-sm min-h-[44px] px-2 sm:px-4 py-2"
+                    className="data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white transition-all duration-200 rounded-lg font-semibold text-sm min-h-[44px] px-2 sm:px-4 py-2"
                   >
                     <User className="h-5 w-5 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="hidden sm:inline">Overview</span>
                   </TabsTrigger>
                   <TabsTrigger 
                     value="stages" 
-                    className="data-[state=active]:bg-card data-[state=active]:shadow-md data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white transition-all duration-200 rounded-lg font-semibold text-sm min-h-[44px] px-2 sm:px-4 py-2"
+                    className="data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white transition-all duration-200 rounded-lg font-semibold text-sm min-h-[44px] px-2 sm:px-4 py-2"
                   >
                     <Target className="h-5 w-5 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="hidden sm:inline">Pipeline</span>
                   </TabsTrigger>
                   <TabsTrigger 
                     value="interviews" 
-                    className="data-[state=active]:bg-card data-[state=active]:shadow-md data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white transition-all duration-200 rounded-lg font-semibold text-sm min-h-[44px] px-2 sm:px-4 py-2"
+                    className="data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white transition-all duration-200 rounded-lg font-semibold text-sm min-h-[44px] px-2 sm:px-4 py-2"
                   >
                     <Calendar className="h-5 w-5 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="hidden sm:inline">Interviews</span>
                   </TabsTrigger>
                   <TabsTrigger 
                     value="ai-insights" 
-                    className="data-[state=active]:bg-card data-[state=active]:shadow-md data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white transition-all duration-200 rounded-lg font-semibold text-sm min-h-[44px] px-2 sm:px-4 py-2"
+                    className="data-[state=active]:bg-white data-[state=active]:shadow-md data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white transition-all duration-200 rounded-lg font-semibold text-sm min-h-[44px] px-2 sm:px-4 py-2"
                   >
                     <TrendingUp className="h-5 w-5 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                     <span className="hidden sm:inline">AI Insights</span>
@@ -440,18 +459,18 @@ export function EnhancedCandidatePopup({
                     </div>
                     <div className="space-y-2">
                       {candidate.position && (
-                        <div className="flex items-center justify-between p-2 bg-card/50 dark:bg-slate-800/50 rounded-lg">
+                        <div className="flex items-center justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded-lg">
                           <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Position:</span>
                           <span className="font-semibold text-sm text-slate-800 dark:text-slate-200">{candidate.position}</span>
                         </div>
                       )}
                       {candidate.experience && (
-                        <div className="flex items-center justify-between p-2 bg-card/50 dark:bg-slate-800/50 rounded-lg">
+                        <div className="flex items-center justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded-lg">
                           <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Experience:</span>
                           <span className="font-semibold text-sm text-slate-800 dark:text-slate-200">{candidate.experience}</span>
                         </div>
                       )}
-                      <div className="flex items-center justify-between p-2 bg-card/50 dark:bg-slate-800/50 rounded-lg">
+                      <div className="flex items-center justify-between p-2 bg-white/50 dark:bg-slate-800/50 rounded-lg">
                         <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Source:</span>
                         <Badge variant="outline" className="font-medium text-xs">{candidate.source}</Badge>
                       </div>
@@ -491,7 +510,7 @@ export function EnhancedCandidatePopup({
                   <CardContent>
                     <div className="space-y-3">
                       {candidate.stageHistory.map((stage, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-muted/30 dark:bg-gray-800/50 rounded-lg">
+                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                           <div className="flex items-center space-x-3">
                             <div 
                               className="w-3 h-3 rounded-full"
@@ -650,7 +669,7 @@ export function EnhancedCandidatePopup({
                                     return (
                                       <div 
                                         key={index} 
-                                        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 p-3 border rounded-lg hover:bg-muted/30 dark:hover:bg-gray-800/50 hover:shadow-md transition-all duration-200 hover:bg-green-100/50 dark:hover:bg-green-900/30 select-none relative z-10"
+                                        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:shadow-md transition-all duration-200 hover:bg-green-100/50 dark:hover:bg-green-900/30 select-none relative z-10"
                                         style={{ pointerEvents: 'auto' }}
                                       >
                                         <div className="flex items-center space-x-3 flex-1">
@@ -660,7 +679,7 @@ export function EnhancedCandidatePopup({
                                             interview.status === 'cancelled' ? "bg-red-500" : 
                                             interview.status === 'missed' ? "bg-orange-500" :
                                             interview.status === 'rescheduled' ? "bg-yellow-500" :
-                                            interview.status === 'no_show' ? "bg-muted/300" : "bg-gray-400"
+                                            interview.status === 'no_show' ? "bg-gray-500" : "bg-gray-400"
                                           )} />
                                           <div>
                                             <p className="font-medium">{stage?.name || 'Interview'}</p>
@@ -865,7 +884,7 @@ export function EnhancedCandidatePopup({
                   </div>
 
                   {/* Current Stage Highlight */}
-                  <div className="bg-card/80 dark:bg-slate-700/80 backdrop-blur-sm rounded-lg p-3 mb-4 border border-blue-200/50 dark:border-blue-700/50">
+                  <div className="bg-white/80 dark:bg-slate-700/80 backdrop-blur-sm rounded-lg p-3 mb-4 border border-blue-200/50 dark:border-blue-700/50">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Currently In</span>
                       <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
@@ -875,16 +894,22 @@ export function EnhancedCandidatePopup({
                       <Timer className="inline h-3 w-3 mr-1" />
                       {daysInStage} {daysInStage === 1 ? 'day' : 'days'} in stage
                     </div>
+                    {candidate.status === 'keep_in_view' && (
+                      <Badge variant="outline" className="mt-2 border-amber-300 text-amber-700 dark:border-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/20">
+                        <Eye className="h-3 w-3 mr-1" />
+                        Keep in View
+                      </Badge>
+                    )}
                   </div>
 
                   {/* Stage Selection */}
                   <div className="space-y-4">
                     <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Move to Stage</label>
                 <Select value={selectedStage} onValueChange={setSelectedStage}>
-                      <SelectTrigger className="w-full min-h-[44px] bg-card/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-300/50 dark:border-slate-600/50 hover:border-blue-400 dark:hover:border-blue-500 transition-colors">
+                      <SelectTrigger className="w-full min-h-[44px] bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-300/50 dark:border-slate-600/50 hover:border-blue-400 dark:hover:border-blue-500 transition-colors">
                         <SelectValue placeholder="Choose destination stage..." />
                   </SelectTrigger>
-                      <SelectContent className="bg-card/95 dark:bg-slate-800/95 backdrop-blur-sm border-slate-200 dark:border-slate-700 max-h-[60vh]">
+                      <SelectContent className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm border-slate-200 dark:border-slate-700 max-h-[60vh]">
                         {availableStages.map((stage) => (
                           <SelectItem 
                             key={stage._id} 
@@ -918,7 +943,7 @@ export function EnhancedCandidatePopup({
                   value={moveNotes}
                   onChange={(e) => setMoveNotes(e.target.value)}
                   rows={3}
-                      className="resize-none bg-card/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-300/50 dark:border-slate-600/50 focus:border-blue-400 dark:focus:border-blue-500 text-sm sm:text-base min-h-[80px]"
+                      className="resize-none bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border-slate-300/50 dark:border-slate-600/50 focus:border-blue-400 dark:focus:border-blue-500 text-sm sm:text-base min-h-[80px]"
                 />
 
                 <Button 
@@ -944,6 +969,27 @@ export function EnhancedCandidatePopup({
                         </div>
                   )}
                 </Button>
+                    {onKeepInView && (
+                      <Button
+                        onClick={handleKeepInView}
+                        disabled={isKeepingInView || candidate.status === 'keep_in_view'}
+                        variant="outline"
+                        className="w-full h-12 sm:h-auto border-amber-300 text-amber-800 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/30"
+                        size="lg"
+                      >
+                        {isKeepingInView ? (
+                          <div className="flex items-center space-x-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-amber-700 dark:border-amber-300" />
+                            <span>Updating...</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-2">
+                            <Eye className="h-4 w-4" />
+                            <span>{candidate.status === 'keep_in_view' ? 'Already in Keep in View' : 'Keep Candidate in View'}</span>
+                          </div>
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -974,7 +1020,7 @@ export function EnhancedCandidatePopup({
                               <Calendar className="h-4 w-4 mr-2" />
                               View Scheduled Interview
                             </Button>
-                            <div className="bg-card/60 dark:bg-slate-800/60 backdrop-blur-sm p-3 rounded-lg border border-emerald-200/50 dark:border-emerald-700/50">
+                            <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm p-3 rounded-lg border border-emerald-200/50 dark:border-emerald-700/50">
                               <div className="flex items-center justify-between">
                                 <div>
                                   <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
@@ -1013,7 +1059,7 @@ export function EnhancedCandidatePopup({
                       {candidate.resumeUrl && (
                         <Button 
                           variant="outline" 
-                          className="w-full justify-start bg-card/80 dark:bg-slate-800/80 backdrop-blur-sm hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-all duration-200" 
+                          className="w-full justify-start bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-all duration-200" 
                           onClick={() => window.open(candidate.resumeUrl, '_blank')}
                         >
                           <FileText className="h-4 w-4 mr-2 text-purple-600" />
@@ -1023,7 +1069,7 @@ export function EnhancedCandidatePopup({
 
                       <Button 
                         variant="outline" 
-                        className="w-full justify-start bg-card/80 dark:bg-slate-800/80 backdrop-blur-sm hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-all duration-200" 
+                        className="w-full justify-start bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-all duration-200" 
                         onClick={() => window.open(`/candidates/${candidate._id}?from=job-pipeline&jobId=${window.location.pathname.split('/')[2]}`, '_blank')}
                       >
                         <ExternalLink className="h-4 w-4 mr-2 text-indigo-600" />

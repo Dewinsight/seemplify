@@ -1,0 +1,11 @@
+{
+  "protocolVersion": "1.0",
+  "eventId": "018f4d85-4f31-7a1d-8f11-4d4ac3f10f75",
+  "call": "consent",
+  "occurredAt": "2026-08-04T12:40:00.000Z",
+  "userId": "customer_invalid_2",
+  "consent": {
+    "source": "privacy_center",
+    "updatedAt": "2026-08-04T12:40:00.000Z"
+  }
+}

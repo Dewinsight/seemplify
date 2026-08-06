@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const UserSession = require('../models/UserSession');
 const User = require('../models/User');
+const { recordLoginActivity } = require('./userActivityTrackingService');
 
 const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_TTL || '10m';
 const REFRESH_TOKEN_TTL_MS = parseInt(process.env.JWT_REFRESH_TTL_MS || `${30 * 24 * 60 * 60 * 1000}`, 10); // default 30 days
@@ -15,6 +16,7 @@ function generateRandomToken(bytes = 48) {
 }
 
 async function createSession({ user, fingerprint, userAgent, ip }) {
+  const now = new Date();
   const sessionId = crypto.randomUUID();
   const refreshToken = generateRandomToken();
   const refreshTokenHash = hashToken(refreshToken);
@@ -37,8 +39,26 @@ async function createSession({ user, fingerprint, userAgent, ip }) {
     refreshTokenHash,
     accessTokenId: sessionId,
     expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
-    lastActivityAt: new Date(),
+    lastActivityAt: now,
   });
+
+  try {
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: { lastLoginAt: now },
+        $inc: { loginCount: 1 }
+      }
+    );
+  } catch (error) {
+    console.warn('Unable to update login metadata:', error.message);
+  }
+
+  try {
+    await recordLoginActivity({ user, session, ip, userAgent, occurredAt: now });
+  } catch (error) {
+    console.warn('Unable to record login activity:', error.message);
+  }
       
       return {
     accessToken,
@@ -83,7 +103,9 @@ async function validateAccessToken(token) {
     throw new Error('session_revoked');
   }
 
-  const user = await User.findById(decoded.user.id).select('security');
+  const user = await User.findById(decoded.user.id)
+    .select('security currentOrganization email profile')
+    .populate('currentOrganization', 'name');
   if (!user) {
     throw new Error('user_not_found');
   }

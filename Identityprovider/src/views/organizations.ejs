@@ -83,10 +83,22 @@
                         <button type="submit" class="btn btn-secondary">Switch</button>
                       </form>
                       <% } %>
+                        <% if (['owner', 'admin'].includes(org.role)) { %>
+                          <button
+                            type="button"
+                            class="btn btn-secondary"
+                            data-org-id="<%= org.id %>"
+                            data-org-name="<%= org.name %>"
+                            data-org-description="<%= org.description || '' %>"
+                            onclick="showEditModalFromButton(this)">
+                            Edit
+                          </button>
+                        <% } %>
                         <a href="/organizations/<%= org.id %>/members" class="btn btn-secondary">Members</a>
                         <a href="/organizations/<%= org.id %>/teams" class="btn btn-secondary">Teams</a>
                         <% if (['owner', 'admin' ].includes(org.role)) { %>
                           <a href="/organizations/<%= org.id %>/invitations" class="btn btn-secondary">Invitations</a>
+                          <a href="/organizations/<%= org.id %>/notifications" class="btn btn-secondary">Notifications</a>
                           <% } %>
                             <% if (org.role==='owner' ) { %>
                               <button class="btn btn-danger"
@@ -155,10 +167,45 @@
     </div>
   </div>
 
+  <!-- Edit Organization Modal -->
+  <div class="modal" id="editModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Edit Organization</h2>
+        <button class="modal-close" onclick="hideEditModal()">&times;</button>
+      </div>
+      <form id="editForm">
+        <input type="hidden" id="editOrgId" name="orgId">
+        <div class="form-group">
+          <label for="editName">Organization Name *</label>
+          <input type="text" id="editName" name="name" required maxlength="100" placeholder="Enter organization name">
+        </div>
+        <div class="form-group">
+          <label for="editDescription">Description</label>
+          <textarea id="editDescription" name="description" maxlength="500" placeholder="Brief description (optional)"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideEditModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     // Track if we've already shown the popup this session
     const pendingInvitationsCount = <%= typeof pendingInvitationsCount !== 'undefined' ? pendingInvitationsCount : 0 %>;
     const popupShownKey = 'invitationsPopupShown_' + new Date().toDateString();
+
+    function persistTrialWelcome(payload) {
+      if (!payload) return;
+
+      try {
+        sessionStorage.setItem('trialWelcome', JSON.stringify(payload));
+      } catch (error) {
+        console.warn('Could not persist trial welcome payload:', error);
+      }
+    }
 
     function showCreateModal() {
       document.getElementById('createModal').classList.add('active');
@@ -166,6 +213,17 @@
 
     function hideCreateModal() {
       document.getElementById('createModal').classList.remove('active');
+    }
+
+    function showEditModalFromButton(button) {
+      document.getElementById('editOrgId').value = button.dataset.orgId || '';
+      document.getElementById('editName').value = button.dataset.orgName || '';
+      document.getElementById('editDescription').value = button.dataset.orgDescription || '';
+      document.getElementById('editModal').classList.add('active');
+    }
+
+    function hideEditModal() {
+      document.getElementById('editModal').classList.remove('active');
     }
 
     function showInvitationsPopup() {
@@ -183,7 +241,9 @@
       const listContainer = document.getElementById('invitationsList');
 
       try {
-        const response = await fetch('/api/invitations/pending');
+        const response = await fetch('/api/invitations/pending', {
+          credentials: 'same-origin' // Include session cookies
+        });
         if (!response.ok) throw new Error('Failed to load invitations');
 
         const invitations = await response.json();
@@ -242,7 +302,8 @@
       try {
         const response = await fetch(`/api/invitations/accept/${inviteId}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin' // Include session cookies
         });
 
         if (response.ok) {
@@ -263,9 +324,10 @@
       if (!confirm('Are you sure you want to decline this invitation?')) return;
 
       try {
-        const response = await fetch(`/api/invitations/${inviteId}/reject`, {
+        const response = await fetch(`/api/invitations/decline/${inviteId}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin' // Include session cookies
         });
 
         if (response.ok) {
@@ -287,7 +349,8 @@
 
       try {
         const response = await fetch(`/api/organizations/${orgId}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          credentials: 'same-origin' // Include session cookies
         });
 
         if (response.ok) {
@@ -312,6 +375,36 @@
         const response = await fetch('/api/organizations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin', // Include session cookies
+          body: JSON.stringify({
+            name: formData.get('name'),
+            description: formData.get('description')
+          })
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+          persistTrialWelcome(data.trialWelcome);
+          window.location.href = '/';
+        } else {
+          alert(data.error || 'Failed to create organization');
+        }
+      } catch (error) {
+        alert('Failed to create organization');
+      }
+    });
+
+    document.getElementById('editForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData(form);
+      const orgId = formData.get('orgId');
+
+      try {
+        const response = await fetch(`/api/organizations/${orgId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
           body: JSON.stringify({
             name: formData.get('name'),
             description: formData.get('description')
@@ -322,10 +415,11 @@
           window.location.reload();
         } else {
           const data = await response.json();
-          alert(data.error || 'Failed to create organization');
+          alert(data.error || 'Failed to update organization');
         }
       } catch (error) {
-        alert('Failed to create organization');
+        console.error('Update organization error:', error);
+        alert('Failed to update organization');
       }
     });
 
@@ -333,6 +427,12 @@
     document.getElementById('createModal').addEventListener('click', (e) => {
       if (e.target.classList.contains('modal')) {
         hideCreateModal();
+      }
+    });
+
+    document.getElementById('editModal').addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal')) {
+        hideEditModal();
       }
     });
 
@@ -355,7 +455,9 @@
   </script>
 
   <!-- Invitation Gatekeeper - Blocks page until invitation decision is made -->
-  <script src="/js/invitation-gatekeeper.js"></script>
+  <% if (organizations && organizations.length > 0) { %>
+    <script src="/js/invitation-gatekeeper.js"></script>
+  <% } %>
 </body>
 
 </html>

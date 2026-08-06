@@ -5,6 +5,10 @@
 
 const { Issuer } = require('openid-client')
 
+function resolveCurrentOrganization(userinfo = {}) {
+  return userinfo.currentOrganization || userinfo.current_organization || null
+}
+
 let cachedClient = null
 let cachedIssuerExpiry = null
 const ISSUER_CACHE_TTL = 60 * 60 * 1000 // 1 hour
@@ -53,7 +57,7 @@ async function claimsRefreshMiddleware(req, res, next) {
         req.session.user.organizations = freshUserinfo.organizations || []
         req.session.user.teams = freshUserinfo.teams || []
         req.session.user.team_permissions = freshUserinfo.team_permissions || []
-        req.session.user.currentOrganization = freshUserinfo.currentOrganization
+        req.session.user.currentOrganization = resolveCurrentOrganization(freshUserinfo)
 
         req.session.claimsNeedRefresh = false
         req.session.claimsLastRefreshed = Date.now()

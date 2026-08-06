@@ -1,8 +1,44 @@
-const { OpenAI } = require('openai');
 const crypto = require('crypto');
+const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
+const { GROQ_120B } = require('../config/aiRuntimeCatalog');
+
+const MATCH_ANALYSIS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['analysis'],
+  properties: {
+    analysis: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'candidate_id', 'candidate_name', 'skill_match_percentage', 'experience_fit',
+          'technical_strengths', 'skill_gaps', 'transferable_skills', 'cultural_alignment',
+          'growth_potential', 'interview_focus', 'contextual_explanation', 'confidence_score'
+        ],
+        properties: {
+          candidate_id: { type: 'string' },
+          candidate_name: { type: 'string' },
+          skill_match_percentage: { type: 'number', minimum: 0, maximum: 100 },
+          experience_fit: { type: 'number', minimum: 1, maximum: 10 },
+          technical_strengths: { type: 'array', items: { type: 'string' } },
+          skill_gaps: { type: 'array', items: { type: 'string' } },
+          transferable_skills: { type: 'array', items: { type: 'string' } },
+          cultural_alignment: { type: 'number', minimum: 1, maximum: 10 },
+          growth_potential: { type: 'number', minimum: 1, maximum: 10 },
+          interview_focus: { type: 'array', items: { type: 'string' } },
+          contextual_explanation: { type: 'string' },
+          confidence_score: { type: 'number', minimum: 1, maximum: 10 }
+        }
+      }
+    }
+  }
+};
 
 class GPTAnalysisCache {
-  constructor() {
+  constructor(namespace = 'ai-match-v1') {
+    this.namespace = namespace;
     this.cache = new Map();
     this.candidateTimestamps = new Map(); // Track when candidates were added
     this.ttl = 24 * 60 * 60 * 1000; // 24 hours
@@ -13,22 +49,22 @@ class GPTAnalysisCache {
     };
   }
 
-  // Cache GPT analysis for common patterns
+  // Cache model analysis for common patterns
   getCacheKey(job, candidate) {
     const jobHash = this.hashSkills(job.skills || []);
     const candidateHash = this.hashSkills(candidate.skills || []);
-    return `${jobHash}-${candidateHash}-${job.level || 'any'}-${candidate.experience || 0}`;
+    return `${this.namespace}-${jobHash}-${candidateHash}-${job.level || 'any'}-${candidate.experience || 0}`;
   }
 
   // Create batch key for job-candidate group analysis
   getBatchKey(job, candidates) {
     const candidateIds = candidates.map(c => c._id || c.id).sort().join(',');
-    return `job-batch-${job._id || job.id}-${candidateIds}`;
+    return `${this.namespace}-job-batch-${job._id || job.id}-${candidateIds}`;
   }
 
   hashSkills(skills) {
     if (!Array.isArray(skills)) return 'no-skills';
-    return crypto.createHash('md5').update(skills.sort().join(',')).digest('hex').substring(0, 8);
+    return crypto.createHash('md5').update([...skills].sort().join(',')).digest('hex').substring(0, 8);
   }
 
   // Track when candidates are added to ensure they're included in searches
@@ -105,7 +141,7 @@ class GPTAnalysisCache {
       }
     }
     
-    console.log(`🧠 GPT analyzing batch of ${candidates.length} candidates...`);
+    console.log(`🧠 LLM analyzing batch of ${candidates.length} candidates...`);
     this.stats.misses++;
     const analysis = await batchAnalyzer(job, candidates);
     
@@ -152,40 +188,45 @@ class GPTAnalysisCache {
 
 class GPTAnalysisService {
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.AZURE_OPENAI_API_KEY,
-      baseURL: process.env.AZURE_OPENAI_ENDPOINT ? 
-        `${process.env.AZURE_OPENAI_ENDPOINT}/openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT_NAME}` : 
-        'https://api.openai.com/v1',
-      defaultQuery: process.env.AZURE_OPENAI_API_VERSION ? { 'api-version': process.env.AZURE_OPENAI_API_VERSION } : {},
-      defaultHeaders: process.env.AZURE_OPENAI_API_KEY ? { 'api-key': process.env.AZURE_OPENAI_API_KEY } : {}
-    });
+    this.modelName = GROQ_120B;
     
-    this.cache = new GPTAnalysisCache();
-    this.isEnabled = process.env.ENABLE_GPT_MATCHING === 'true';
+    this.cache = new GPTAnalysisCache(`groq:${GROQ_120B}:route-v1:prompt-v3`);
+    const matchingToggle = process.env.ENABLE_LLM_MATCHING ?? process.env.ENABLE_GPT_MATCHING ?? 'false';
+    this.isEnabled = matchingToggle === 'true';
     
     // Setup cleanup interval (run every 6 hours)
-    setInterval(() => this.cache.cleanup(), 6 * 60 * 60 * 1000);
+    this.cleanupTimer = setInterval(() => this.cache.cleanup(), 6 * 60 * 60 * 1000);
+    this.cleanupTimer.unref?.();
     
-    console.log(`🚀 GPTAnalysisService initialized - Enabled: ${this.isEnabled}`);
+    console.log(`🚀 AI analysis service initialized - Enabled: ${this.isEnabled}, Model: ${this.modelName}`);
+  }
+
+  async refreshCacheNamespace() {
+    const settings = await aiRuntimeService.getSettings();
+    const route = settings.routes.find((item) => item.activity === 'matching.analysis');
+    if (!route) return;
+    this.modelName = route.model;
+    this.cache.namespace = `${route.provider}:${route.model}:route-v${route.routeVersion || 1}:prompt-v3`;
   }
 
   // Batch analyze candidates for a job with rich contextual insights
   async batchAnalyzeCandidates(job, candidates) {
     if (!this.isEnabled) {
-      console.log('📴 GPT Analysis disabled - falling back to legacy explanations');
+      console.log('📴 AI analysis disabled - falling back to legacy explanations');
       return this.generateLegacyExplanations(job, candidates);
     }
 
     try {
+      await this.refreshCacheNamespace();
       // Use caching for batch analysis
       return await this.cache.getOrAnalyzeBatch(job, candidates, async (job, candidates) => {
         const startTime = Date.now();
         
         const prompt = this.buildBatchAnalysisPrompt(job, candidates);
         
-        const response = await this.openai.chat.completions.create({
-          model: process.env.GPT_MODEL || "gpt-4.1",
+        const response = (await aiRuntimeService.structuredComplete('matching.analysis', {
+          promptVersion: 'matching-v3',
+          model: this.modelName,
           messages: [
             {
               role: "system",
@@ -196,20 +237,23 @@ class GPTAnalysisService {
               content: prompt
             }
           ],
-          response_format: { type: "json_object" },
+          jsonSchema: MATCH_ANALYSIS_SCHEMA,
+          schemaName: 'matching_analysis',
+          schemaStrict: true,
           temperature: 0.6 // Increased for faster decision-making while maintaining accuracy
-        });
+        })).raw;
 
         const analysis = JSON.parse(response.choices[0].message.content);
+        this.validateCandidateAlignment(analysis, candidates);
         const processingTime = Date.now() - startTime;
         
-        console.log(`⚡ GPT batch analysis completed in ${processingTime}ms for ${candidates.length} candidates`);
+        console.log(`⚡ LLM batch analysis completed in ${processingTime}ms for ${candidates.length} candidates`);
         
         return this.formatBatchAnalysisResponse(analysis, candidates);
       });
       
     } catch (error) {
-      console.error('❌ GPT Analysis failed:', error);
+      console.error('❌ LLM analysis failed:', error);
       console.log('🔄 Falling back to legacy explanations');
       return this.generateLegacyExplanations(job, candidates);
     }
@@ -238,6 +282,7 @@ ${candidates.map((candidate, index) => {
   const candidateSkills = this.normalizeSkills(candidate.skills);
   return `
 ${index + 1}. **${candidate.name}**
+   - Candidate ID: ${this.candidateIdentifier(candidate, index)}
    - Skills: ${candidateSkills.join(', ') || 'Not specified'}
    - Experience: ${candidate.experience || 'Not specified'} years
    - Location: ${candidate.location || 'Not specified'}
@@ -264,7 +309,7 @@ Return as JSON in this exact format:
 {
   "analysis": [
     {
-      "candidate_id": "candidate._id_here",
+      "candidate_id": "copy the exact Candidate ID supplied above",
       "candidate_name": "Name",
       "skill_match_percentage": 85,
       "experience_fit": 8,
@@ -285,26 +330,44 @@ Return as JSON in this exact format:
 }`;
   }
 
+  candidateIdentifier(candidate, index) {
+    return String(candidate?._id || candidate?.id || `candidate-${index + 1}`);
+  }
+
+  validateCandidateAlignment(gptAnalysis, candidates) {
+    if (!Array.isArray(gptAnalysis?.analysis) || gptAnalysis.analysis.length !== candidates.length) {
+      throw new Error('Matching analysis did not return exactly one result per candidate');
+    }
+    const expectedIds = candidates.map((candidate, index) => this.candidateIdentifier(candidate, index));
+    const returnedIds = gptAnalysis.analysis.map((item) => String(item?.candidate_id || ''));
+    if (new Set(returnedIds).size !== returnedIds.length || expectedIds.some((id) => !returnedIds.includes(id))) {
+      throw new Error('Matching analysis candidate IDs do not exactly match the supplied candidates');
+    }
+  }
+
   formatBatchAnalysisResponse(gptAnalysis, candidates) {
     const formatted = candidates.map((candidate, index) => {
-      const analysis = gptAnalysis.analysis?.[index] || {};
+      const candidateId = this.candidateIdentifier(candidate, index);
+      const analysis = gptAnalysis.analysis.find((item) => String(item.candidate_id || '') === candidateId);
+      if (!analysis) throw new Error(`Matching analysis is missing candidate ${candidateId}`);
+      const vectorScore = Math.max(0, Math.min(1, Number(candidate.score ?? candidate.relevanceScore ?? 0)));
       
       return {
         candidate: candidate,
         gptAnalysis: {
-          skillMatchPercentage: analysis.skill_match_percentage || 0,
-          experienceFit: analysis.experience_fit || 5,
-          technicalStrengths: analysis.technical_strengths || [],
-          skillGaps: analysis.skill_gaps || [],
-          transferableSkills: analysis.transferable_skills || [],
-          culturalAlignment: analysis.cultural_alignment || 5,
-          growthPotential: analysis.growth_potential || 5,
-          interviewFocus: analysis.interview_focus || [],
-          explanation: analysis.contextual_explanation || 'No detailed analysis available',
-          confidenceScore: analysis.confidence_score || 5
+          skillMatchPercentage: analysis.skill_match_percentage,
+          experienceFit: analysis.experience_fit,
+          technicalStrengths: analysis.technical_strengths,
+          skillGaps: analysis.skill_gaps,
+          transferableSkills: analysis.transferable_skills,
+          culturalAlignment: analysis.cultural_alignment,
+          growthPotential: analysis.growth_potential,
+          interviewFocus: analysis.interview_focus,
+          explanation: analysis.contextual_explanation,
+          confidenceScore: analysis.confidence_score
         },
         // Calculate enhanced relevance score
-        relevanceScore: this.calculateEnhancedRelevanceScore(analysis, candidate.score || 0.5)
+        relevanceScore: this.calculateEnhancedRelevanceScore(analysis, vectorScore)
       };
     });
 
@@ -346,22 +409,26 @@ Return as JSON in this exact format:
 
   // Fallback to legacy explanations if GPT fails
   generateLegacyExplanations(job, candidates) {
-    return candidates.map(candidate => ({
+    return candidates.map(candidate => {
+      const vectorScore = Math.max(0, Math.min(1, Number(candidate.score || candidate.relevanceScore || 0)));
+      return {
       candidate: candidate,
       gptAnalysis: {
-        skillMatchPercentage: 75,
-        experienceFit: 6,
+        skillMatchPercentage: Math.round(vectorScore * 100),
+        experienceFit: null,
         technicalStrengths: candidate.skills || [],
         skillGaps: [],
         transferableSkills: [],
-        culturalAlignment: 6,
-        growthPotential: 6,
-        interviewFocus: ['Discuss technical background', 'Explore career goals'],
-        explanation: 'Legacy analysis - GPT enhancement unavailable',
-        confidenceScore: 5
+        culturalAlignment: null,
+        growthPotential: null,
+        interviewFocus: [],
+        explanation: 'AI analysis is unavailable. This result uses semantic vector similarity only.',
+        confidenceScore: 0,
+        fallback: 'vector_only'
       },
-      relevanceScore: candidate.score || 0.5
-    }));
+      relevanceScore: vectorScore
+    };
+    }).sort((a, b) => b.relevanceScore - a.relevanceScore);
   }
 
   // Individual candidate analysis (for detailed views)
@@ -370,6 +437,7 @@ Return as JSON in this exact format:
       return this.generateLegacyExplanations(job, [candidate])[0];
     }
 
+    await this.refreshCacheNamespace();
     return await this.cache.getOrAnalyze(job, candidate, async (job, candidate) => {
       const batchResult = await this.batchAnalyzeCandidates(job, [candidate]);
       return batchResult[0];
@@ -391,4 +459,6 @@ Return as JSON in this exact format:
 // Singleton instance
 const gptAnalysisService = new GPTAnalysisService();
 
-module.exports = gptAnalysisService; 
+module.exports = gptAnalysisService;
+module.exports.GPTAnalysisService = GPTAnalysisService;
+module.exports.GPTAnalysisCache = GPTAnalysisCache;

@@ -8,6 +8,8 @@ const nylasV3Service = require('../services/nylasV3Service'); // Added missing i
 const transcriptSegmentationService = require('../services/transcriptSegmentationService');
 const aiInterviewAnalysisService = require('../services/aiInterviewAnalysisService');
 const { verifyNylasWebhook, logWebhookRequest } = require('../middleware/webhookVerification');
+const { requireOrganization } = require('../middleware/organizationMiddleware');
+const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
 
 // Webhook endpoints - no auth needed but requires signature verification
 router.post('/webhook', 
@@ -22,6 +24,18 @@ router.get('/webhook', (req, res) => {
     res.status(200).send(req.query.challenge);
   } else {
     res.status(200).send('Webhook endpoint ready');
+  }
+});
+
+router.use(authMiddleware, requireOrganization);
+
+router.param('interviewId', async (req, res, next, interviewId) => {
+  try {
+    const query = await buildInterviewOrganizationQuery(req.user.currentOrganization, { _id: interviewId });
+    if (!await Interview.exists(query)) return res.status(404).json({ error: 'Interview not found' });
+    return next();
+  } catch (_error) {
+    return res.status(404).json({ error: 'Interview not found' });
   }
 });
 
@@ -44,7 +58,8 @@ router.post('/force-join/:interviewId', async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId).populate('interviewerId');
+    const interviewQuery = await buildInterviewOrganizationQuery(req.user.currentOrganization, { _id: interviewId });
+    const interview = await Interview.findOne(interviewQuery).populate('interviewerId');
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
@@ -56,7 +71,7 @@ router.post('/force-join/:interviewId', async (req, res) => {
     console.log(`🚀 Force joining notetaker ${interview.notetakerId} for interview ${interviewId}`);
     
     // Get current notetaker status
-    const status = await nylasV3Service.getNotetakerStatus(interview.interviewerId.nylasGrantId, interview.notetakerId);
+    const status = await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId);
     console.log('Current notetaker status:', status);
     
     res.json({
@@ -79,7 +94,8 @@ router.post('/refresh-status/:interviewId', async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId).populate('interviewerId');
+    const interviewQuery = await buildInterviewOrganizationQuery(req.user.currentOrganization, { _id: interviewId });
+    const interview = await Interview.findOne(interviewQuery).populate('interviewerId');
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
@@ -91,7 +107,7 @@ router.post('/refresh-status/:interviewId', async (req, res) => {
     console.log(`🔄 Refreshing notetaker status for ${interview.notetakerId}`);
     
     // Get current notetaker status from Nylas
-    const status = await nylasV3Service.getNotetakerStatus(interview.interviewerId.nylasGrantId, interview.notetakerId);
+    const status = await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId);
     console.log('Fresh notetaker status from Nylas:', status);
     
     const notetakerData = status.data || status;
@@ -127,11 +143,11 @@ router.post('/cleanup-failed', authMiddleware, async (req, res) => {
   try {
     console.log('🧹 Manual cleanup of failed interviews requested');
     const { cleanupOldInterviews } = require('../services/interviewCompletionService');
-    await cleanupOldInterviews();
+    await cleanupOldInterviews(req.user.currentOrganization);
     
     // Also run a completion check to clean up recent failed interviews
     const { checkAndCompleteInterviews } = require('../services/interviewCompletionService');
-    const completedCount = await checkAndCompleteInterviews();
+    const completedCount = await checkAndCompleteInterviews(req.user.currentOrganization);
     
     res.json({
       success: true,
@@ -152,7 +168,8 @@ router.get('/debug/:interviewId', authMiddleware, async (req, res) => {
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId).populate('interviewerId');
+    const interviewQuery = await buildInterviewOrganizationQuery(req.user.currentOrganization, { _id: interviewId });
+    const interview = await Interview.findOne(interviewQuery).populate('interviewerId');
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
@@ -164,13 +181,13 @@ router.get('/debug/:interviewId', authMiddleware, async (req, res) => {
     console.log(`🐛 Getting raw Nylas data for notetaker ${interview.notetakerId}`);
     
     // Get current notetaker status from Nylas
-    const status = await nylasV3Service.getNotetakerStatus(interview.interviewerId.nylasGrantId, interview.notetakerId);
+    const status = await nylasV3Service.getStandaloneNotetakerStatus(interview.notetakerId);
     
     // Also try to get the transcript to see if it's available
     let transcriptAvailable = false;
     let transcriptError = null;
     try {
-      const transcript = await nylasV3Service.getTranscript(interview.interviewerId.nylasGrantId, interview.notetakerId);
+      const transcript = await nylasV3Service.getStandaloneTranscript(interview.notetakerId);
       if (transcript && transcript.content) {
         transcriptAvailable = true;
       }
@@ -212,7 +229,8 @@ router.post('/force-recording/:interviewId', authMiddleware, async (req, res) =>
   try {
     const { interviewId } = req.params;
     
-    const interview = await Interview.findById(interviewId);
+    const interviewQuery = await buildInterviewOrganizationQuery(req.user.currentOrganization, { _id: interviewId });
+    const interview = await Interview.findOne(interviewQuery);
     if (!interview) {
       return res.status(404).json({ error: 'Interview not found' });
     }
@@ -252,7 +270,8 @@ router.get('/transcript/segmented/:interviewId', authMiddleware, async (req, res
     
     const segmentedTranscript = await transcriptSegmentationService.getInterviewTranscript(
       interviewId, 
-      includeOverflow === 'true'
+      includeOverflow === 'true',
+      req.user.currentOrganization
     );
     
     res.json({
@@ -277,9 +296,11 @@ router.get('/transcript/session/:sessionId', authMiddleware, async (req, res) =>
     console.log(`🔍 Getting full session transcript for: ${sessionId}`);
     
     // Find the interview with transcript content
-    const interviews = await Interview.find({ 
-      multiCandidateSessionId: sessionId 
-    }).populate('candidateId', 'firstName lastName email');
+    const sessionQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { multiCandidateSessionId: sessionId }
+    );
+    const interviews = await Interview.find(sessionQuery).populate('candidateId', 'firstName lastName email');
     
     if (!interviews || interviews.length === 0) {
       return res.status(404).json({ 
@@ -300,7 +321,8 @@ router.get('/transcript/session/:sessionId', authMiddleware, async (req, res) =>
     // Segment the transcript
     const segmentedData = await transcriptSegmentationService.segmentTranscriptBySession(
       sessionId,
-      transcriptHolder.transcript.content
+      transcriptHolder.transcript.content,
+      req.user.currentOrganization
     );
     
     res.json({
@@ -334,7 +356,10 @@ router.post('/analysis/multi-candidate/:sessionId', authMiddleware, async (req, 
     
     console.log(`🤖 Starting multi-candidate analysis for session: ${sessionId}`);
     
-    const analysis = await aiInterviewAnalysisService.analyzeMultiCandidateSession(sessionId);
+    const analysis = await aiInterviewAnalysisService.analyzeMultiCandidateSession(
+      sessionId,
+      req.user.currentOrganization
+    );
     
     res.json({
       success: true,
@@ -357,9 +382,11 @@ router.get('/analysis/multi-candidate/:sessionId', authMiddleware, async (req, r
     const { sessionId } = req.params;
     
     // Find interviews in this session
-    const interviews = await Interview.find({ 
-      multiCandidateSessionId: sessionId 
-    }).populate('candidateId', 'firstName lastName email');
+    const sessionQuery = await buildInterviewOrganizationQuery(
+      req.user.currentOrganization,
+      { multiCandidateSessionId: sessionId }
+    );
+    const interviews = await Interview.find(sessionQuery).populate('candidateId', 'firstName lastName email');
     
     if (!interviews || interviews.length === 0) {
       return res.status(404).json({ 

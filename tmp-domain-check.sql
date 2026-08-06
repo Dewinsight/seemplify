@@ -1,0 +1,1 @@
+select count(*) from domain where host='learning.aiinnigeria.com';

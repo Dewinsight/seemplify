@@ -97,7 +97,7 @@ const initialNodes: Node[] = [
     id: '5',
     type: 'pipeline',
     position: { x: 720, y: 80 },
-    data: { label: 'Hired', count: 5, color: 'border-emerald-300 dark:border-emerald-800/50', icon: <CheckCircleIcon /> },
+    data: { label: 'Hired', count: 5, color: 'border-violet-300 dark:border-violet-800/50', icon: <CheckCircleIcon /> },
   },
 ]
 

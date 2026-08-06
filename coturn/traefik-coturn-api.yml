@@ -1,0 +1,24 @@
+# Optional: static Traefik config for TURN API (if not using Docker labels).
+# When using Dokploy + compose, the turn-api service labels in docker-compose.yml
+# are usually enough. Use this if you manage Traefik config files by hand.
+
+http:
+  routers:
+    turn-api-web:
+      rule: Host(`turn.seemplifyai.com`)
+      service: turn-api
+      entryPoints:
+        - web
+    turn-api-websecure:
+      rule: Host(`turn.seemplifyai.com`)
+      service: turn-api
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+  services:
+    turn-api:
+      loadBalancer:
+        servers:
+          - url: http://turn-api:3000
+        passHostHeader: true

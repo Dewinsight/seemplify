@@ -153,28 +153,17 @@ const managerSteps: TutorialStep[] = [
 const hrAdminSteps: TutorialStep[] = [
   {
     title: 'Create Appraisal Cycles',
-    description: 'Set up performance review periods',
+    description: 'Set up and launch appraisal periods in one flow',
     icon: <Settings color="primary" />,
     details: [
       'Define cycle name, type, and period dates',
       'Configure phases and deadlines',
       'Set competencies to evaluate',
       'Choose OKR vs competency weight for final rating',
-      'Enable/disable AI features, chat, and peer feedback'
+      'Enable or disable AI features, chat, and peer feedback',
+      'Select the employees who should participate before you create the cycle'
     ],
-    action: { label: 'Manage Cycles', href: '/admin/appraisal-cycles' }
-  },
-  {
-    title: 'Launch Cycles',
-    description: 'Initiate appraisals for employees',
-    icon: <Rocket color="success" />,
-    details: [
-      'Select employees to include in the cycle',
-      'Appraisals are created with manager assignments',
-      'Employees are notified to begin self-assessment',
-      'Track progress through the cycle dashboard'
-    ],
-    action: { label: 'Manage Cycles', href: '/admin/appraisal-cycles' }
+    action: { label: 'Create Cycle', href: '/admin/appraisal-cycles/new' }
   },
   {
     title: 'Monitor Progress',
@@ -184,7 +173,7 @@ const hrAdminSteps: TutorialStep[] = [
       'View real-time completion statistics',
       'Identify overdue appraisals',
       'Send reminders to pending reviewers',
-      'Advance cycle phases when ready'
+      'Watch the workflow move automatically as employees and managers submit their stages'
     ]
   },
   {
@@ -276,6 +265,10 @@ export default function TutorialPage() {
           Learn how to use the performance management portal effectively. Choose your role below to see relevant tutorials.
         </Typography>
       </Box>
+
+      <Alert severity="info" sx={{ mb: 4 }}>
+        Every page in the app now has its own in-context guide. Use the floating <strong>Guide</strong> button on any screen for page-specific instructions.
+      </Alert>
 
       {/* Quick Start Card */}
       <Paper sx={{ p: 3, mb: 4, bgcolor: 'primary.lighter', border: 1, borderColor: 'primary.main' }}>

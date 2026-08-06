@@ -9,7 +9,10 @@ export async function POST(
     const shortlistData = await request.json()
     
     // Forward the shortlist request to the backend
-    const backendResponse = await fetch(`${process.env.BACKEND_URL || 'http://localhost:5000'}/api/jobs/public/${jobId}/shortlist`, {
+    const backendBaseUrl =
+      process.env.BACKEND_URL ||
+      (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com');
+    const backendResponse = await fetch(`${backendBaseUrl}/api/jobs/public/${jobId}/shortlist`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

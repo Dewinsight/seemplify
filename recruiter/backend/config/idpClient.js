@@ -8,7 +8,10 @@
 const axios = require('axios');
 
 // Environment configuration
-const IDP_API_BASE_URL = process.env.IDP_API_BASE_URL || process.env.OIDC_ISSUER || 'http://localhost:4000';
+const DEFAULT_IDP_BASE_URL = process.env.NODE_ENV === 'development'
+  ? 'http://localhost:4000'
+  : 'https://auth.seemplifyai.com';
+const IDP_API_BASE_URL = process.env.IDP_API_BASE_URL || process.env.OIDC_ISSUER || DEFAULT_IDP_BASE_URL;
 
 /**
  * Create an axios instance configured for IdP API calls

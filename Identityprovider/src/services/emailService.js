@@ -1,82 +1,77 @@
+import crypto from 'node:crypto'
 import dotenv from 'dotenv'
+import { isMailConfigured, sendMail } from './mailClient.js'
 
 // Load environment variables BEFORE creating the service instance
 dotenv.config()
 
-// Note: Using Node.js built-in fetch (available in Node 18+)
+/**
+ * Derives a stable idempotency key from the business event rather than from the
+ * request. Re-sending the same reset token or the same one-time code is the
+ * same business event, so the mail service can collapse an accidental replay.
+ * The secret material is hashed, never transmitted.
+ */
+function businessEventKey(kind, ...parts) {
+  const digest = crypto.createHash('sha256').update([kind, ...parts.map((part) => String(part ?? ''))].join('\u0000')).digest('hex')
+  return `${kind}:${digest.slice(0, 32)}`
+}
 
 class EmailService {
   constructor() {
-    this.apiKey = process.env.BREVO_API_KEY
-    this.apiBaseUrl = 'https://api.brevo.com/v3/smtp/email'
-    this.senderEmail = process.env.SENDER_EMAIL || 'michael.egbo@aiinnigeria.com'
-    this.senderName = process.env.SENDER_NAME || 'AIIN Identity'
+    this.senderEmail = process.env.MAIL_FROM_EMAIL || process.env.SENDER_EMAIL || 'michael.egbo@aiinnigeria.com'
+    this.senderName = process.env.MAIL_FROM_NAME || process.env.SENDER_NAME || 'AIIN Identity'
     this.identityProviderUrl = process.env.ISSUER_URL || 'http://localhost:4000'
-    
-    // Log configuration status on startup
+
+    // Log configuration status on startup. The credential itself is never printed.
     console.log('📧 Identity Provider Email Service Configuration:')
-    console.log('  - API Key:', this.apiKey ? '✅ Set' : '❌ MISSING')
+    console.log('  - Mail service:', isMailConfigured() ? '✅ Configured' : '❌ MISSING')
     console.log('  - Sender Email:', this.senderEmail)
     console.log('  - Sender Name:', this.senderName)
-    
-    if (!this.apiKey) {
-      console.error('❌ BREVO_API_KEY environment variable is not set! Emails will fail to send.')
+
+    if (!isMailConfigured()) {
+      console.error('❌ MAIL_API_BASE_URL / MAIL_API_TOKEN / MAIL_FROM_EMAIL are not set! Emails will fail to send.')
     }
   }
-  
+
+  /** True when the mail service URL, credential and sender are all present. */
+  isConfigured() {
+    return isMailConfigured()
+  }
+
   /**
-   * Generic email sending method
+   * Generic email sending method.
    * @param {Object} options - Email options
    * @param {String} options.to - Recipient email
    * @param {String} options.subject - Email subject
    * @param {String} options.html - HTML content
    * @param {String} options.text - Plain text content (optional)
-   * @returns {Promise} Send result
+   * @param {String} [options.idempotencyKey] - Stable key for the business event
+   * @param {String} [options.tag] - Coarse business-event label
+   * @param {String} [options.replyTo] - Reply-to address
+   * @returns {Promise<{status: string, messageId: string, idempotentReplay: boolean}>}
    */
-  async sendEmail({ to, subject, html, text }) {
-    if (!this.apiKey) {
-      console.error('❌ BREVO_API_KEY not configured! Cannot send email.')
-      throw new Error('Email service not properly configured')
-    }
-
+  async sendEmail({ to, subject, html, text, idempotencyKey, tag, replyTo }) {
     try {
-      const emailData = {
-        sender: {
-          name: this.senderName,
-          email: this.senderEmail,
-        },
-        to: [{ email: to }],
-        subject: subject,
-        htmlContent: html
-      }
-
-      if (text) {
-        emailData.textContent = text
-      }
-
+      // Callers that own a business identifier pass it in; the rest fall back to
+      // a per-request key, which still protects against transport-level replay.
+      const key = String(idempotencyKey || '').trim() || crypto.randomUUID()
       console.log('📨 Sending email to:', to, 'Subject:', subject)
-      
-      const response = await fetch(this.apiBaseUrl, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'api-key': this.apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(emailData)
+      const result = await sendMail({
+        from: this.senderEmail,
+        fromName: this.senderName,
+        to,
+        subject,
+        html,
+        text,
+        tag,
+        replyTo,
+        idempotencyKey: key
       })
-
-      const responseBody = await response.json()
-
-      if (!response.ok) {
-        console.error('❌ Brevo API Error:', responseBody)
-        throw new Error(`Failed to send email: ${responseBody.message || response.statusText}`)
-      }
-
-      console.log('✅ Email sent successfully via Brevo')
-      return responseBody
+      console.log('✅ Email accepted by the Seemplify mail service')
+      return result
     } catch (error) {
-      console.error('❌ Error sending email:', error)
+      // Only the classification is logged: never the token or the message body.
+      console.error('❌ Error sending email:', error instanceof Error ? error.message : String(error))
       throw error
     }
   }
@@ -175,7 +170,9 @@ Need help? Contact us at support@aiinidentity.com
       to,
       subject: 'Welcome to AIIN Identity! 🎉',
       html: htmlContent,
-      text: textContent
+      text: textContent,
+      tag: 'welcome',
+      idempotencyKey: businessEventKey('welcome', to)
     })
   }
 
@@ -282,7 +279,9 @@ The AIIN Identity Team
       to,
       subject: 'Password Reset Request - AIIN Identity',
       html: htmlContent,
-      text: textContent
+      text: textContent,
+      tag: 'password_reset',
+      idempotencyKey: businessEventKey('password_reset', to, token)
     })
   }
 
@@ -371,7 +370,72 @@ Need help? Contact us at support@aiinidentity.com
       to,
       subject: 'Verify Your Email - AIIN Identity',
       html: htmlContent,
-      text: textContent
+      text: textContent,
+      tag: 'email_verification_otp',
+      idempotencyKey: businessEventKey('email_verification_otp', to, otp)
+    })
+  }
+
+  /**
+   * Send notification email with custom content
+   * @param {Object} options
+   * @param {String} options.to - Recipient email
+   * @param {String} options.toName - Recipient name
+   * @param {String} options.subject - Email subject
+   * @param {String} options.html - Custom HTML content
+   * @param {String} options.text - Plain text fallback
+   * @returns {Promise}
+   */
+  async sendNotificationEmail({ to, toName, subject, html, text, idempotencyKey, tag }) {
+    const displayName = toName || to.split('@')[0]
+
+    // Wrap custom HTML in branded template
+    const wrappedHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5;">
+        <div style="max-width: 600px; margin: 40px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <!-- Header with gradient -->
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; text-align: center;">
+            <h1 style="margin: 0; color: white; font-size: 20px; font-weight: 600;">AIIN Identity</h1>
+          </div>
+
+          <!-- Content -->
+          <div style="padding: 32px 24px; color: #333;">
+            <p style="font-size: 16px; margin: 0 0 16px;">Hi ${displayName},</p>
+            <div style="font-size: 16px; line-height: 1.6; color: #333;">
+              ${html}
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div style="background: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #e5e7eb;">
+            <p style="margin: 0 0 8px; font-size: 14px; color: #666;">
+              This notification was sent via AIIN Identity
+            </p>
+            <p style="margin: 0; font-size: 12px; color: #999;">
+              &copy; ${new Date().getFullYear()} AIIN Identity. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+
+    // Generate plain text from HTML if not provided
+    const plainText = text || `Hi ${displayName},\n\n${html.replace(/<[^>]*>/g, '').trim()}\n\n---\nThis notification was sent via AIIN Identity`
+
+    return this.sendEmail({
+      to,
+      subject,
+      html: wrappedHtml,
+      text: plainText,
+      tag: tag || 'notification',
+      idempotencyKey
     })
   }
 
@@ -454,7 +518,9 @@ If you did not request this, ignore this email.
       to,
       subject: 'Password Reset Code - AIIN Identity',
       html: htmlContent,
-      text: textContent
+      text: textContent,
+      tag: 'password_reset_otp',
+      idempotencyKey: businessEventKey('password_reset_otp', to, otp)
     })
   }
 }

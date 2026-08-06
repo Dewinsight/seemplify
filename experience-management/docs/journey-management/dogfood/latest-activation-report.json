@@ -1,0 +1,93 @@
+{
+  "generatedAt": "2026-08-06T01:23:53.707Z",
+  "databaseProvider": "sqlite",
+  "databasePath": "C:\\Users\\User\\Documents\\github\\seemplify\\.local-runtime\\experience-management\\experience.sqlite",
+  "summary": {
+    "users": 2,
+    "withEmailVerified": 2,
+    "withOnboardingCompleted": 2,
+    "withOwnedSpace": 2,
+    "withChatGptConnected": 0,
+    "withChatGptSelected": 0,
+    "withSurveyCreated": 1,
+    "withJourneyCreated": 0,
+    "withSubscriptionRequested": 0,
+    "withSubscriptionActivated": 0
+  },
+  "caveats": [
+    "Survey and journey milestones are reconciled at the owned-space level where legacy tables do not retain a direct creator user for every artifact.",
+    "ChatGPT connection and runtime-selection proof depends on platform_audit_events actions emitted by current AI runtime routes; older connections made before this audit hook may be absent.",
+    "Onboarding and explicit workspace-creation milestones prefer authoritative platform_audit_events when present and fall back to durable account/space records for older histories.",
+    "This artifact is for internal Seemplify dogfood evidence only and is not customer telemetry ingestion."
+  ],
+  "records": [
+    {
+      "user": {
+        "id": "427cb98d-583d-439a-ad85-f1d1f3fb5db0",
+        "email": "admin@seemplify.local",
+        "name": "Workspace admin"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "7fd9298b-4fc9-4836-8195-38ccc95e00d7",
+        "primaryOwnedSpaceName": "Workspace's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-07-29T08:54:03.902Z",
+        "emailVerifiedAt": "2026-07-29T08:54:03.902Z",
+        "onboardingCompletedAt": "2026-07-29T08:54:03.902Z",
+        "spaceCreatedAt": "2026-07-30T01:03:38.241Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": "2026-07-29T14:19:48.779Z",
+        "surveyPublishedAt": "2026-07-29T17:38:33.399Z",
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "surveyScope": "space",
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    },
+    {
+      "user": {
+        "id": "5f2236a7-9f22-4e23-9fab-d9f80a2de036",
+        "email": "michaelegbo@gmail.com",
+        "name": "Obiageli Egbo"
+      },
+      "scope": {
+        "primaryOwnedSpaceId": "e930f451-8658-46b2-a962-04314a9be1d4",
+        "primaryOwnedSpaceName": "Obiageli's space"
+      },
+      "milestones": {
+        "accountCreatedAt": "2026-07-29T22:30:12.936Z",
+        "emailVerifiedAt": "2026-07-29T22:30:12.936Z",
+        "onboardingCompletedAt": "2026-07-29T22:30:12.936Z",
+        "spaceCreatedAt": "2026-07-30T01:03:38.242Z",
+        "chatGptLoginStartedAt": null,
+        "chatGptConnectedAt": null,
+        "chatGptSelectedAt": null,
+        "localRuntimeSelectedAt": null,
+        "surveyCreatedAt": null,
+        "surveyPublishedAt": null,
+        "journeyCreatedAt": null,
+        "journeyPublishedAt": null,
+        "subscriptionRequestedAt": null,
+        "subscriptionActivatedAt": null
+      },
+      "evidence": {
+        "activationAuditEvents": 0,
+        "aiRuntimeAuditEvents": 0,
+        "surveyScope": null,
+        "journeyScope": null,
+        "subscriptionScope": null
+      }
+    }
+  ]
+}

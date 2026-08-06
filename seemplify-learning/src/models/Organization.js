@@ -1,0 +1,666 @@
+import mongoose from 'mongoose'
+import { normalizeAppAccess } from '../utils/appAccess.js'
+import { ORGANIZATION_MEMBER_ROLES, PARTNER_STATUS_VALUES, PARTNER_TYPES, normalizePartnerType } from '../utils/learningRoles.js'
+
+const OrganizationSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+    maxLength: 100
+  },
+  description: {
+    type: String,
+    trim: true,
+    maxLength: 500
+  },
+  partnerType: {
+    type: String,
+    enum: PARTNER_TYPES,
+    default: 'none',
+    index: true
+  },
+  owner: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinAccount',
+    required: true
+  },
+  members: [{
+    account: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount',
+      required: true
+    },
+    role: {
+      type: String,
+      enum: ORGANIZATION_MEMBER_ROLES,
+      default: 'recruiter'
+    },
+    appAccess: {
+      mode: {
+        type: String,
+        enum: ['all', 'selected'],
+        default: 'all'
+      },
+      appIds: {
+        type: [String],
+        default: []
+      }
+    },
+    joinedAt: {
+      type: Date,
+      default: Date.now
+    },
+    invitedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount'
+    },
+    status: {
+      type: String,
+      enum: ['active', 'inactive'],
+      default: 'active'
+    },
+    updatedAt: {
+      type: Date
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount'
+    },
+    agentCommissionRate: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: null
+    }
+  }],
+  settings: {
+    allowPublicInvites: {
+      type: Boolean,
+      default: false
+    },
+    requireApproval: {
+      type: Boolean,
+      default: true
+    },
+    simpleLms: {
+      defaultCurrency: {
+        type: String,
+        trim: true,
+        uppercase: true,
+        default: 'NGN'
+      },
+      allowedCurrencies: {
+        type: [String],
+        default: ['NGN']
+      }
+    }
+  },
+  partnerSettings: {
+    maxAgents: {
+      type: Number,
+      default: null
+    },
+    defaultAgentCommissionRate: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 10
+    },
+    agentInviteApproval: {
+      type: Boolean,
+      default: true
+    },
+    partnerStatus: {
+      type: String,
+      enum: PARTNER_STATUS_VALUES,
+      default: 'pending'
+    },
+    payoutProfile: {
+      accountName: {
+        type: String,
+        trim: true,
+        maxlength: 200,
+        default: ''
+      },
+      accountNumber: {
+        type: String,
+        trim: true,
+        maxlength: 64,
+        default: ''
+      },
+      bankName: {
+        type: String,
+        trim: true,
+        maxlength: 200,
+        default: ''
+      },
+      bankCode: {
+        type: String,
+        trim: true,
+        maxlength: 80,
+        default: ''
+      },
+      swiftCode: {
+        type: String,
+        trim: true,
+        maxlength: 80,
+        default: ''
+      },
+      currency: {
+        type: String,
+        trim: true,
+        uppercase: true,
+        maxlength: 3,
+        default: 'NGN'
+      },
+      paymentEmail: {
+        type: String,
+        trim: true,
+        lowercase: true,
+        maxlength: 320,
+        default: ''
+      },
+      country: {
+        type: String,
+        trim: true,
+        maxlength: 80,
+        default: ''
+      },
+      notes: {
+        type: String,
+        trim: true,
+        maxlength: 1200,
+        default: ''
+      },
+      updatedAt: Date
+    }
+  },
+  // For linking with SmartHR organization during migration
+  smarthrOrganizationId: {
+    type: String,
+    sparse: true,
+    index: true
+  },
+  // Zulip realm ID for multi-organization isolation
+  // Each organization gets its own Zulip realm
+  zulipRealmId: {
+    type: String,
+    sparse: true,
+    index: true
+  },
+  // Zulip realm name (for display purposes)
+  zulipRealmName: {
+    type: String,
+    sparse: true
+  },
+  // Active subscription reference
+  activeSubscription: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinSubscription'
+  },
+  // Subscription status cache (updated by subscription lifecycle)
+  subscriptionStatus: {
+    type: String,
+    enum: ['none', 'active', 'expired', 'suspended', 'grace_period'],
+    default: 'none'
+  },
+  // Quick access to current plan (cached for performance)
+  currentPlan: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AiinPlan'
+  },
+  // Subscription expiry date (cached for quick checks)
+  subscriptionExpiresAt: {
+    type: Date
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+})
+
+// Indexes for better performance
+OrganizationSchema.index({ name: 'text' })
+OrganizationSchema.index({ owner: 1 })
+OrganizationSchema.index({ 'members.account': 1 })
+OrganizationSchema.index({ createdAt: -1 })
+OrganizationSchema.index({ activeSubscription: 1 })
+OrganizationSchema.index({ subscriptionStatus: 1 })
+OrganizationSchema.index({ subscriptionExpiresAt: 1 })
+OrganizationSchema.index({ partnerType: 1, 'partnerSettings.partnerStatus': 1 })
+
+// Pre-save middleware to update timestamp
+OrganizationSchema.pre('save', function(next) {
+  this.partnerType = normalizePartnerType(this.partnerType, 'none')
+  if (!this.partnerSettings) {
+    this.partnerSettings = {}
+  }
+
+  if (this.partnerType === 'none') {
+    this.partnerSettings.partnerStatus = 'active'
+  }
+
+  if (this.settings?.simpleLms) {
+    const defaultCurrency = String(this.settings.simpleLms.defaultCurrency || 'NGN')
+      .trim()
+      .toUpperCase()
+      .slice(0, 3) || 'NGN'
+
+    const normalizedAllowedCurrencies = Array.isArray(this.settings.simpleLms.allowedCurrencies)
+      ? this.settings.simpleLms.allowedCurrencies
+        .map(currency => String(currency || '').trim().toUpperCase().slice(0, 3))
+        .filter(Boolean)
+      : []
+
+    if (!normalizedAllowedCurrencies.includes(defaultCurrency)) {
+      normalizedAllowedCurrencies.unshift(defaultCurrency)
+    }
+
+    this.settings.simpleLms.defaultCurrency = defaultCurrency
+    this.settings.simpleLms.allowedCurrencies = Array.from(new Set(normalizedAllowedCurrencies))
+  }
+
+  if (this.partnerSettings?.payoutProfile) {
+    this.partnerSettings.payoutProfile.currency = String(this.partnerSettings.payoutProfile.currency || 'NGN')
+      .trim()
+      .toUpperCase()
+      .slice(0, 3) || 'NGN'
+  }
+
+  if (Number.isFinite(Number(this.partnerSettings?.maxAgents))) {
+    const maxAgents = Math.round(Number(this.partnerSettings.maxAgents))
+    this.partnerSettings.maxAgents = maxAgents > 0 ? maxAgents : null
+  } else if (this.partnerSettings?.maxAgents !== null) {
+    this.partnerSettings.maxAgents = null
+  }
+
+  if (this.partnerSettings) {
+    const normalizedRate = Number(this.partnerSettings.defaultAgentCommissionRate)
+    if (!Number.isFinite(normalizedRate)) {
+      this.partnerSettings.defaultAgentCommissionRate = 10
+    } else {
+      this.partnerSettings.defaultAgentCommissionRate = Math.min(100, Math.max(0, normalizedRate))
+    }
+  }
+
+  this.updatedAt = Date.now()
+  next()
+})
+
+// Virtual for member count
+OrganizationSchema.virtual('memberCount').get(function() {
+  return this.members ? this.members.filter(m => m.status === 'active').length : 0
+})
+
+// Get owner count (for safety checks)
+OrganizationSchema.methods.getOwnerCount = function() {
+  return this.members.filter(m => m.role === 'owner' && m.status === 'active').length
+}
+
+// Check if account is a member
+OrganizationSchema.methods.isMember = function(accountId) {
+  return this.members.some(
+    m => m.account.toString() === accountId.toString() && m.status === 'active'
+  )
+}
+
+// Get member role
+OrganizationSchema.methods.getMemberRole = function(accountId) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString() && m.status === 'active'
+  )
+  return member ? member.role : null
+}
+
+// Add member to organization
+OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null, appAccess = null) {
+  const normalizedAppAccess = normalizeAppAccess(appAccess)
+
+  // Check if already a member
+  const existing = this.members.find(
+    m => m.account.toString() === accountId.toString()
+  )
+
+  if (existing) {
+    if (existing.status === 'active') {
+      throw new Error('User is already a member of this organization')
+    }
+    // Reactivate inactive member
+    existing.status = 'active'
+    existing.role = role
+    existing.appAccess = normalizedAppAccess
+    existing.joinedAt = new Date()
+    existing.invitedBy = invitedBy
+    await this.save()
+
+    // Update Account's organizations array
+    const Account = mongoose.model('AiinAccount')
+    await Account.updateOne(
+      { _id: accountId },
+      {
+        $push: {
+          organizations: {
+            organization: this._id,
+            role: role,
+            appAccess: normalizedAppAccess,
+            joinedAt: new Date(),
+            isActive: true
+          }
+        }
+      }
+    )
+
+    return this
+  }
+
+  this.members.push({
+    account: accountId,
+    role: role,
+    appAccess: normalizedAppAccess,
+    joinedAt: new Date(),
+    invitedBy: invitedBy,
+    status: 'active'
+  })
+
+  await this.save()
+
+  // Update Account's organizations array
+  const Account = mongoose.model('AiinAccount')
+  await Account.updateOne(
+    { _id: accountId },
+    {
+      $push: {
+        organizations: {
+          organization: this._id,
+          role: role,
+          appAccess: normalizedAppAccess,
+          joinedAt: new Date(),
+          isActive: true
+        }
+      }
+    }
+  )
+
+  return this
+}
+
+// Remove member from organization
+// CRITICAL: Prevent removing last owner
+OrganizationSchema.methods.removeMember = async function(accountId) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString()
+  )
+
+  if (!member) {
+    throw new Error('Member not found')
+  }
+
+  // CRITICAL: Prevent removing last owner
+  if (member.role === 'owner') {
+    const ownerCount = this.getOwnerCount()
+    if (ownerCount === 1) {
+      throw new Error('Cannot remove the last owner. Transfer ownership first.')
+    }
+  }
+
+  this.members = this.members.filter(
+    m => m.account.toString() !== accountId.toString()
+  )
+
+  await this.save()
+
+  // Also remove from Account's organizations array
+  const Account = mongoose.model('AiinAccount')
+  await Account.updateOne(
+    { _id: accountId },
+    { $pull: { organizations: { organization: this._id } } }
+  )
+
+  return this
+}
+
+// Update member role
+// CRITICAL: Prevent demoting last owner
+OrganizationSchema.methods.updateMemberRole = async function(accountId, newRole, updatedBy) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString()
+  )
+
+  if (!member) {
+    throw new Error('Member not found')
+  }
+
+  // CRITICAL: Prevent demoting last owner
+  if (member.role === 'owner' && newRole !== 'owner') {
+    const ownerCount = this.getOwnerCount()
+    if (ownerCount === 1) {
+      throw new Error('Cannot demote the last owner. Transfer ownership first.')
+    }
+  }
+
+  // CRITICAL: Only owner can assign owner role
+  if (newRole === 'owner') {
+    const updater = this.members.find(
+      m => m.account.toString() === updatedBy.toString()
+    )
+    if (updater?.role !== 'owner') {
+      throw new Error('Only current owner can assign owner role')
+    }
+  }
+
+  member.role = newRole
+  member.updatedAt = new Date()
+  member.updatedBy = updatedBy
+
+  await this.save()
+
+  // Update Account's organizations array
+  const Account = mongoose.model('AiinAccount')
+  await Account.updateOne(
+    { _id: accountId, 'organizations.organization': this._id },
+    { $set: { 'organizations.$.role': newRole } }
+  )
+
+  return this
+}
+
+// Transfer ownership (explicit method)
+// CRITICAL: Explicit owner transfer with validation
+OrganizationSchema.methods.transferOwnership = async function(newOwnerId, transferredBy) {
+  // Verify transferrer is current owner
+  const transferrer = this.members.find(
+    m => m.account.toString() === transferredBy.toString()
+  )
+  if (transferrer?.role !== 'owner') {
+    throw new Error('Only current owner can transfer ownership')
+  }
+
+  // Verify new owner is a member
+  const newOwner = this.members.find(
+    m => m.account.toString() === newOwnerId.toString()
+  )
+  if (!newOwner) {
+    throw new Error('New owner must be a member of the organization')
+  }
+
+  // Update old owner to admin (or keep as owner if multiple owners)
+  const ownerCount = this.getOwnerCount()
+  if (ownerCount === 1) {
+    // Only one owner, demote to admin
+    transferrer.role = 'admin'
+    transferrer.updatedAt = new Date()
+    transferrer.updatedBy = transferredBy
+  }
+  // If multiple owners, keep as owner
+
+  // Promote new owner
+  newOwner.role = 'owner'
+  newOwner.updatedAt = new Date()
+  newOwner.updatedBy = transferredBy
+  this.owner = newOwnerId // Update organization owner field
+
+  await this.save()
+
+  // Update Account records
+  const Account = mongoose.model('AiinAccount')
+  await Account.updateOne(
+    { _id: transferredBy, 'organizations.organization': this._id },
+    { $set: { 'organizations.$.role': ownerCount === 1 ? 'admin' : 'owner' } }
+  )
+  await Account.updateOne(
+    { _id: newOwnerId, 'organizations.organization': this._id },
+    { $set: { 'organizations.$.role': 'owner' } }
+  )
+
+  return this
+}
+
+// Check if account has permission
+OrganizationSchema.methods.hasPermission = function(accountId, permission) {
+  const member = this.members.find(
+    m => m.account.toString() === accountId.toString() && m.status === 'active'
+  )
+
+  if (!member) return false
+
+  // Define permissions for each role
+  const rolePermissions = {
+    owner: ['*'], // All permissions
+    admin: [
+      'manage_users',
+      'manage_organizations',
+      'manage_invitations',
+      'manage_members',
+      'manage_roles',
+      'manage_jobs',
+      'manage_candidates',
+      'view_analytics'
+    ],
+    hr_manager: [
+      'manage_jobs',
+      'manage_candidates',
+      'view_analytics'
+    ],
+    recruiter: [
+      'manage_candidates',
+      'view_jobs',
+      'view_candidates'
+    ],
+    interviewer: [
+      'view_candidates',
+      'view_jobs'
+    ],
+    partner_admin: [
+      'manage_agents',
+      'manage_partner_courses',
+      'view_partner_reports',
+      'manage_partner_settings'
+    ],
+    partner_user: [
+      'invite_agents',
+      'create_partner_course_drafts',
+      'view_partner_reports'
+    ],
+    sales_agent: [
+      'view_partner_catalog',
+      'view_own_sales',
+      'view_own_commissions'
+    ],
+    staff: [] // Staff role has no permissions by default
+  }
+
+  const permissions = rolePermissions[member.role] || []
+  return permissions.includes('*') || permissions.includes(permission)
+}
+
+// Static method to find organizations for an account
+OrganizationSchema.statics.findByAccount = function(accountId) {
+  return this.find({
+    'members.account': accountId,
+    'members.status': 'active'
+  })
+}
+
+// Check if organization has active subscription
+OrganizationSchema.methods.hasActiveSubscription = function() {
+  return this.subscriptionStatus === 'active' || this.subscriptionStatus === 'grace_period'
+}
+
+// Check if organization can access a specific app
+OrganizationSchema.methods.canAccessApp = async function(appKey) {
+  if (!this.activeSubscription) return false
+
+  await this.populate('activeSubscription')
+  if (!this.activeSubscription) return false
+
+  return this.activeSubscription.canAccessApp(appKey)
+}
+
+// Update subscription cache (called when subscription changes)
+OrganizationSchema.methods.updateSubscriptionCache = async function(subscription) {
+  if (!subscription) {
+    this.activeSubscription = null
+    this.subscriptionStatus = 'none'
+    this.currentPlan = null
+    this.subscriptionExpiresAt = null
+  } else {
+    this.activeSubscription = subscription._id
+    this.currentPlan = subscription.plan
+    this.subscriptionExpiresAt = subscription.endDate
+
+    // Determine status
+    if (subscription.status === 'suspended') {
+      this.subscriptionStatus = 'suspended'
+    } else if (subscription.status === 'active') {
+      this.subscriptionStatus = 'active'
+    } else if (subscription.isInGracePeriod) {
+      this.subscriptionStatus = 'grace_period'
+    } else {
+      this.subscriptionStatus = 'expired'
+    }
+  }
+
+  return this.save()
+}
+
+// Get subscription details with plan
+OrganizationSchema.methods.getSubscriptionDetails = async function() {
+  if (!this.activeSubscription) return null
+
+  await this.populate({
+    path: 'activeSubscription',
+    populate: { path: 'plan' }
+  })
+
+  return this.activeSubscription
+}
+
+// Static: Find organizations with expiring subscriptions
+OrganizationSchema.statics.findWithExpiringSubscriptions = function(days = 7) {
+  const futureDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+  return this.find({
+    subscriptionStatus: 'active',
+    subscriptionExpiresAt: { $lte: futureDate, $gte: new Date() }
+  }).populate(['activeSubscription', 'currentPlan', 'owner'])
+}
+
+// Static: Find organizations without subscription
+OrganizationSchema.statics.findWithoutSubscription = function() {
+  return this.find({
+    $or: [
+      { subscriptionStatus: 'none' },
+      { subscriptionStatus: { $exists: false } },
+      { activeSubscription: { $exists: false } }
+    ]
+  })
+}
+
+// Ensure virtual fields are serialized
+OrganizationSchema.set('toJSON', { virtuals: true })
+
+export const Organization = mongoose.model('AiinOrganization', OrganizationSchema)

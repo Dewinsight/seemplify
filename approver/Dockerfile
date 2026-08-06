@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for Approver Backend + Frontend
 # Build context MUST be approver/ (parent of backend/ and frontend/)
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ COPY frontend/public ./frontend/public
 RUN cd frontend && npm run build
 
 # Production stage
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -34,6 +34,8 @@ COPY --from=builder /app/middleware ./middleware
 COPY --from=builder /app/models ./models
 COPY --from=builder /app/routes ./routes
 COPY --from=builder /app/services ./services
+COPY --from=builder /app/utils ./utils
+COPY --from=builder /app/data ./data
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/package*.json ./
 

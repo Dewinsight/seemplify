@@ -3,11 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.10.0",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev -p 5000",
     "build": "next build",
     "start": "next start -p 5000",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:admin-activity": "node --test scripts/admin-activity-formatters.test.js",
+    "test:ai-runtime-admin": "node --test scripts/ai-runtime-admin-validation.test.js",
+    "test:candidate-emails": "node --test scripts/candidate-email-template-presets.test.js",
+    "test:platform-features": "node --test scripts/platform-features.test.js"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
@@ -60,6 +67,7 @@
     "lucide-react": "^0.454.0",
     "mammoth": "^1.9.1",
     "mathjs": "^12.0.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.49.0",
     "next": "16.0.10",
     "next-themes": "^0.4.6",
     "pdfjs-dist": "^5.3.31",

@@ -158,47 +158,37 @@ export default function OKRPage() {
   const handleAiSuggest = async () => {
     setIsAiLoading(true);
     try {
-      const response = await api.post('/okrs/ai-suggest', {
-        context: 'General OKRs',
-        role: user?.jobTitle || 'Employee'
+      const response = await api.post('/ai/generate-okrs', {
+        userRole: user?.jobTitle || 'Employee',
+        teamGoals: 'Improve team outcomes and delivery quality',
+        companyGoals: 'Drive measurable business impact this cycle'
       });
 
-      if (response.data?.data) {
+      const aiPayload = response.data?.data;
+      const okrSuggestions = Array.isArray(aiPayload?.okrs) ? aiPayload.okrs : [];
+
+      if (okrSuggestions.length > 0) {
         setNewOkr(prev => ({
           ...prev,
-          objectives: response.data.data.objectives || prev.objectives
+          objectives: okrSuggestions.map((okr: any) => ({
+            title: okr.objective || okr.title || '',
+            description: okr.priority ? `Priority: ${okr.priority}` : '',
+            keyResults: (Array.isArray(okr.keyResults) ? okr.keyResults : []).map((kr: string) => ({
+              title: kr,
+              metricType: 'percentage' as const,
+              startValue: 0,
+              targetValue: 100,
+              currentValue: 0
+            }))
+          })).filter((obj: any) => obj.title && obj.keyResults.length > 0)
         }));
+        setSnackbar({ open: true, message: 'AI suggestions generated!', severity: 'success' });
       } else {
-        // Fallback mock data
-        setNewOkr(prev => ({
-          ...prev,
-          objectives: [{
-            title: 'Improve Team Productivity',
-            description: 'Enhance overall team efficiency and output quality',
-            keyResults: [
-              { title: 'Reduce average task completion time by 20%', metricType: 'percentage', startValue: 0, targetValue: 20, currentValue: 0 },
-              { title: 'Achieve 95% on-time delivery rate', metricType: 'percentage', startValue: 80, targetValue: 95, currentValue: 80 },
-              { title: 'Complete 3 process improvement initiatives', metricType: 'number', startValue: 0, targetValue: 3, currentValue: 0 }
-            ]
-          }]
-        }));
+        setSnackbar({ open: true, message: 'AI could not generate structured OKR suggestions. Please try again.', severity: 'error' });
       }
-      setSnackbar({ open: true, message: 'AI suggestions generated!', severity: 'success' });
-    } catch (error) {
-      // Use fallback mock data on error
-      setNewOkr(prev => ({
-        ...prev,
-        objectives: [{
-          title: 'Improve Team Productivity',
-          description: 'Enhance overall team efficiency and output quality',
-          keyResults: [
-            { title: 'Reduce average task completion time by 20%', metricType: 'percentage', startValue: 0, targetValue: 20, currentValue: 0 },
-            { title: 'Achieve 95% on-time delivery rate', metricType: 'percentage', startValue: 80, targetValue: 95, currentValue: 80 },
-            { title: 'Complete 3 process improvement initiatives', metricType: 'number', startValue: 0, targetValue: 3, currentValue: 0 }
-          ]
-        }]
-      }));
-      setSnackbar({ open: true, message: 'AI suggestions generated!', severity: 'success' });
+    } catch (error: any) {
+      console.error('AI OKR suggestion error:', error);
+      setSnackbar({ open: true, message: error.response?.data?.error || 'Failed to generate AI suggestions', severity: 'error' });
     } finally {
       setIsAiLoading(false);
     }

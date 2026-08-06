@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Request Details - Admin - Seemplify IDP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    <%- include('../../public/css/idp-theme.css') %>
+
+    .request-detail-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .request-detail-stack {
+      display: grid;
+      gap: 20px;
+      align-content: start;
+    }
+
+    .request-detail-section {
+      display: grid;
+      gap: 14px;
+    }
+
+    .request-detail-row {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .request-detail-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .request-detail-key {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .request-detail-value {
+      word-break: break-word;
+    }
+
+    .request-alert {
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.45;
+      border: 1px solid transparent;
+    }
+
+    .request-alert-warning {
+      border-color: rgba(245, 158, 11, 0.35);
+      background: rgba(245, 158, 11, 0.08);
+      color: #f59e0b;
+    }
+
+    .request-alert-info {
+      border-color: rgba(99, 102, 241, 0.35);
+      background: rgba(99, 102, 241, 0.08);
+      color: #818cf8;
+    }
+
+    .request-subheading {
+      margin: 0 0 8px;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .request-message {
+      margin: 0;
+      white-space: pre-wrap;
+      line-height: 1.55;
+      color: var(--text);
+    }
+
+    .request-muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .request-header-meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 1100px) {
+      .request-detail-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .request-detail-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/theme.js?v=2"></script>
+</head>
+
+<body>
+  <% const isActionable = request.status === 'pending' && !request.isExpired; %>
+  <% const requestCode = request._id ? request._id.toString().slice(-8).toUpperCase() : 'UNKNOWN'; %>
+
+  <div class="admin-layout">
+    <%- include('../partials/admin-nav', { activePage: 'requests' }) %>
+
+    <main class="admin-content">
+      <div class="admin-header">
+        <div>
+          <h1>Request #<%= requestCode %></h1>
+          <div class="request-header-meta">
+            Submitted <%= new Date(request.createdAt).toLocaleString() %>
+            <% if (request.requestedBy) { %>
+              by <%= request.requestedBy.profile?.name || request.requestedBy.email || 'Unknown user' %>
+            <% } %>
+          </div>
+        </div>
+        <div class="admin-header-actions">
+          <a href="/admin/requests" class="btn btn-secondary">Back to Requests</a>
+          <% if (isActionable) { %>
+            <button type="button" class="btn btn-success" onclick="openApproveModal('<%= request._id %>')">Approve</button>
+            <button type="button" class="btn btn-danger" onclick="openRejectModal('<%= request._id %>')">Reject</button>
+          <% } %>
+        </div>
+      </div>
+
+      <% if (request.isExpired && request.status === 'pending') { %>
+        <div class="request-alert request-alert-warning">
+          This request has expired and can no longer be approved.
+        </div>
+      <% } else if (request.status !== 'pending') { %>
+        <div class="request-alert request-alert-info">
+          This request has already been <strong><%= request.status %></strong>.
+        </div>
+      <% } %>
+
+      <div class="request-detail-grid">
+        <section class="admin-card">
+          <div class="admin-card-header">
+            <div class="admin-card-title">Request Information</div>
+          </div>
+
+          <div class="request-detail-section">
+            <div class="request-detail-row">
+              <div class="request-detail-key">Organization</div>
+              <div class="request-detail-value">
+                <strong><%= request.organization?.name || 'Unknown organization' %></strong><br>
+                <span class="request-muted"><%= request.organization?._id || 'N/A' %></span>
+              </div>
+            </div>
+
+            <div class="request-detail-row">
+              <div class="request-detail-key">Plan</div>
+              <div class="request-detail-value">
+                <strong><%= request.plan?.name || 'Unknown plan' %></strong><br>
+                <span class="request-muted">
+                  <%= request.billingCycle || 'N/A' %> billing
+                  <% if (request.formattedPrice) { %>
+                    - <%= request.formattedPrice %>
+                  <% } %>
+                </span>
+              </div>
+            </div>
+
+            <div class="request-detail-row">
+              <div class="request-detail-key">Request Type</div>
+              <div class="request-detail-value">
+                <%= request.requestTypeDisplay || request.requestType || 'N/A' %>
+              </div>
+            </div>
+
+            <div class="request-detail-row">
+              <div class="request-detail-key">Status</div>
+              <div class="request-detail-value">
+                <span class="status-badge status-badge--<%= request.status %>"><%= request.status %></span>
+                <% if (request.isExpired && request.status === 'pending') { %>
+                  <span class="status-badge status-badge--expired" style="margin-left: 6px;">Expired</span>
+                <% } %>
+              </div>
+            </div>
+
+            <div class="request-detail-row">
+              <div class="request-detail-key">Contact</div>
+              <div class="request-detail-value">
+                <strong><%= request.contactInfo?.name || 'N/A' %></strong><br>
+                <span class="request-muted"><%= request.contactInfo?.email || 'N/A' %></span><br>
+                <span class="request-muted"><%= request.contactInfo?.phone || 'N/A' %></span>
+                <% if (request.contactInfo?.alternatePhone) { %>
+                  <br><span class="request-muted">Alt: <%= request.contactInfo.alternatePhone %></span>
+                <% } %>
+              </div>
+            </div>
+          </div>
+
+          <% if (request.message) { %>
+            <hr style="border: 0; border-top: 1px solid var(--border); margin: 18px 0;">
+            <h3 class="request-subheading">Requester Message</h3>
+            <p class="request-message"><%= request.message %></p>
+          <% } %>
+        </section>
+
+        <aside class="request-detail-stack">
+          <section class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Timeline</div>
+            </div>
+            <div class="request-detail-section">
+              <div class="request-detail-row">
+                <div class="request-detail-key">Submitted</div>
+                <div class="request-detail-value"><%= new Date(request.createdAt).toLocaleString() %></div>
+              </div>
+              <div class="request-detail-row">
+                <div class="request-detail-key">Expires</div>
+                <div class="request-detail-value"><%= request.expiresAt ? new Date(request.expiresAt).toLocaleString() : 'N/A' %></div>
+              </div>
+              <div class="request-detail-row">
+                <div class="request-detail-key">Processed</div>
+                <div class="request-detail-value"><%= request.processedAt ? new Date(request.processedAt).toLocaleString() : 'Not processed yet' %></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="admin-card">
+            <div class="admin-card-header">
+              <div class="admin-card-title">Processing</div>
+            </div>
+            <div class="request-detail-section">
+              <div class="request-detail-row">
+                <div class="request-detail-key">Processed By</div>
+                <div class="request-detail-value">
+                  <%= request.processedBy ? (request.processedBy.profile?.name || request.processedBy.email || 'Unknown admin') : 'Pending' %>
+                </div>
+              </div>
+
+              <div class="request-detail-row">
+                <div class="request-detail-key">Admin Notes</div>
+                <div class="request-detail-value"><%= request.adminNotes || 'None' %></div>
+              </div>
+
+              <div class="request-detail-row">
+                <div class="request-detail-key">Rejection Reason</div>
+                <div class="request-detail-value"><%= request.rejectionReason || 'N/A' %></div>
+              </div>
+
+              <div class="request-detail-row">
+                <div class="request-detail-key">Created Subscription</div>
+                <div class="request-detail-value"><%= request.createdSubscription || 'N/A' %></div>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <div id="approveModal" class="admin-modal-overlay" onclick="closeApproveModal()">
+    <div class="admin-modal" onclick="event.stopPropagation()">
+      <div class="admin-modal-header">
+        <div class="admin-modal-title">Approve Subscription Request</div>
+        <button class="admin-modal-close" type="button" onclick="closeApproveModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <form id="approveForm" onsubmit="submitApproval(event)">
+        <div class="admin-modal-body">
+          <input type="hidden" id="approveRequestId" value="<%= request._id %>">
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Admin Notes (optional)</label>
+            <textarea id="approveNotes" class="admin-form-textarea" rows="3" placeholder="Internal notes about this approval"></textarea>
+          </div>
+
+          <div class="admin-form-row">
+            <div class="admin-form-group">
+              <label class="admin-form-label">Custom Start Date (optional)</label>
+              <input type="date" id="customStartDate" class="admin-form-input">
+            </div>
+            <div class="admin-form-group">
+              <label class="admin-form-label">Custom End Date (optional)</label>
+              <input type="date" id="customEndDate" class="admin-form-input">
+            </div>
+          </div>
+        </div>
+        <div class="admin-modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeApproveModal()">Cancel</button>
+          <button type="submit" id="approveSubmitBtn" class="btn btn-success">Approve Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="rejectModal" class="admin-modal-overlay" onclick="closeRejectModal()">
+    <div class="admin-modal" onclick="event.stopPropagation()">
+      <div class="admin-modal-header">
+        <div class="admin-modal-title">Reject Subscription Request</div>
+        <button class="admin-modal-close" type="button" onclick="closeRejectModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <form id="rejectForm" onsubmit="submitRejection(event)">
+        <div class="admin-modal-body">
+          <input type="hidden" id="rejectRequestId" value="<%= request._id %>">
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Rejection Reason *</label>
+            <textarea id="rejectionReason" class="admin-form-textarea" rows="3" required placeholder="This reason will be sent to the organization"></textarea>
+          </div>
+
+          <div class="admin-form-group">
+            <label class="admin-form-label">Admin Notes (optional)</label>
+            <textarea id="rejectNotes" class="admin-form-textarea" rows="2" placeholder="Internal notes (not visible to organization)"></textarea>
+          </div>
+        </div>
+        <div class="admin-modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeRejectModal()">Cancel</button>
+          <button type="submit" id="rejectSubmitBtn" class="btn btn-danger">Reject Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function openApproveModal() {
+      document.getElementById('approveForm').reset();
+      document.getElementById('approveModal').classList.add('active');
+    }
+
+    function closeApproveModal() {
+      document.getElementById('approveModal').classList.remove('active');
+    }
+
+    function openRejectModal() {
+      document.getElementById('rejectForm').reset();
+      document.getElementById('rejectModal').classList.add('active');
+    }
+
+    function closeRejectModal() {
+      document.getElementById('rejectModal').classList.remove('active');
+    }
+
+    async function submitApproval(event) {
+      event.preventDefault();
+
+      const requestId = document.getElementById('approveRequestId').value;
+      const submitBtn = document.getElementById('approveSubmitBtn');
+      submitBtn.disabled = true;
+
+      const data = {
+        notes: document.getElementById('approveNotes').value,
+        customStartDate: document.getElementById('customStartDate').value || undefined,
+        customEndDate: document.getElementById('customEndDate').value || undefined
+      };
+
+      try {
+        const response = await fetch(`/api/admin/subscription-requests/${requestId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+          window.location.reload();
+          return;
+        }
+
+        alert(result.error || 'Failed to approve request');
+      } catch (error) {
+        console.error('Error approving request:', error);
+        alert('Failed to approve request');
+      } finally {
+        submitBtn.disabled = false;
+      }
+    }
+
+    async function submitRejection(event) {
+      event.preventDefault();
+
+      const requestId = document.getElementById('rejectRequestId').value;
+      const submitBtn = document.getElementById('rejectSubmitBtn');
+      submitBtn.disabled = true;
+
+      const data = {
+        reason: document.getElementById('rejectionReason').value,
+        notes: document.getElementById('rejectNotes').value
+      };
+
+      try {
+        const response = await fetch(`/api/admin/subscription-requests/${requestId}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+          window.location.reload();
+          return;
+        }
+
+        alert(result.error || 'Failed to reject request');
+      } catch (error) {
+        console.error('Error rejecting request:', error);
+        alert('Failed to reject request');
+      } finally {
+        submitBtn.disabled = false;
+      }
+    }
+  </script>
+</body>
+
+</html>

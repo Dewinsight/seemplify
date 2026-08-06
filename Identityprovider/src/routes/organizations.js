@@ -9,8 +9,18 @@ import {
   rateLimit
 } from '../middleware/permissions.js'
 import { requireAuthOrAPIToken, requireScopes } from '../middleware/apiAuth.js'
+import { invalidateClaimsCache } from '../index.js'
+import zulipService from '../services/zulipService.js'
+import { subscriptionService } from '../services/subscriptionService.js'
 
 const router = express.Router()
+
+const requireOrganizationDepartmentManager = (req, res, next) => {
+  if (!['owner', 'admin', 'hr_manager'].includes(req.memberRole)) {
+    return res.status(403).json({ error: 'Admin, owner, or HR manager role required' })
+  }
+  next()
+}
 
 // Helper: allow either session auth or API token with scopes for create
 const requireOrgCreateAuth = [
@@ -53,12 +63,38 @@ router.post('/',
         members: [{
           account: req.user._id,
           role: 'owner',
+          appAccess: {
+            mode: 'all',
+            appIds: []
+          },
           joinedAt: new Date(),
           status: 'active'
         }]
       })
 
-      // Update user's organizations array
+      let trialSubscription = null
+      try {
+        trialSubscription = await subscriptionService.assignDefaultTrialToOrganization(
+          organization._id,
+          req.user._id
+        )
+      } catch (trialError) {
+        await Organization.findByIdAndDelete(organization._id).catch(() => {})
+        throw trialError
+      }
+
+      // Provision Zulip realm for the organization
+      let zulipRealmInfo = null
+      try {
+        zulipRealmInfo = await zulipService.createZulipRealm(organization, req.user)
+        console.log('✅ Zulip realm provisioned:', zulipRealmInfo)
+      } catch (zulipError) {
+        console.error('❌ Failed to provision Zulip realm:', zulipError)
+        // Continue without failing - organization was created successfully
+        // Zulip provisioning can be retried later
+      }
+
+      // Update user's organizations array and set as current organization
       await Account.updateOne(
         { _id: req.user._id },
         {
@@ -66,22 +102,52 @@ router.post('/',
             organizations: {
               organization: organization._id,
               role: 'owner',
+              appAccess: {
+                mode: 'all',
+                appIds: []
+              },
               joinedAt: new Date(),
               isActive: true
             }
           },
-          $set: { currentOrganization: organization._id }
+          $set: { 
+            currentOrganization: organization._id,
+            updatedAt: new Date() // Update timestamp for cache invalidation
+          }
         }
       )
 
+      // Invalidate claims cache for this user to ensure fresh organization context
+      invalidateClaimsCache(req.user.sub)
+
       console.log('✅ Organization created:', organization.name, 'by', req.user.email)
+
+      const trialWelcome = subscriptionService.buildDefaultTrialWelcomePayload({
+        organizationName: organization.name,
+        subscription: trialSubscription
+      })
 
       res.status(201).json({
         id: organization._id,
         name: organization.name,
         description: organization.description,
         memberCount: 1,
-        role: 'owner'
+        role: 'owner',
+        assignedPlan: {
+          id: trialSubscription?.plan?._id || null,
+          name: trialSubscription?.plan?.name || null,
+          slug: trialSubscription?.plan?.slug || null,
+          isTrial: Boolean(trialSubscription?.plan?.isTrial),
+          trialDays: trialSubscription?.plan?.trialDays || null,
+          startDate: trialSubscription?.startDate || null,
+          endDate: trialSubscription?.endDate || null
+        },
+        trialWelcome,
+        zulip: zulipRealmInfo ? {
+          realmId: zulipRealmInfo.realmId,
+          realmStringId: zulipRealmInfo.realmStringId,
+          chatUrl: zulipRealmInfo.chatUrl
+        } : null
       })
     } catch (error) {
       console.error('Create organization error:', error)
@@ -136,9 +202,18 @@ router.get('/:orgId',
   requireOrganizationMember,
   async (req, res) => {
     try {
+      await req.organization.save()
       const organization = await Organization.findById(req.params.orgId)
         .populate('owner', 'email profile.name')
         .populate('members.account', 'email profile.name')
+
+      // Get Zulip realm info
+      let zulipInfo = null
+      try {
+        zulipInfo = await zulipService.getZulipRealmInfo(organization)
+      } catch (error) {
+        console.error('Error getting Zulip realm info:', error)
+      }
 
       res.json({
         id: organization._id,
@@ -152,11 +227,77 @@ router.get('/:orgId',
         settings: organization.settings,
         memberCount: organization.members.filter(m => m.status === 'active').length,
         yourRole: req.memberRole,
-        createdAt: organization.createdAt
+        createdAt: organization.createdAt,
+        zulip: zulipInfo
       })
     } catch (error) {
       console.error('Get organization error:', error)
       res.status(500).json({ error: 'Failed to get organization' })
+    }
+  }
+)
+
+router.get('/:orgId/departments',
+  requireAuth,
+  requireOrganizationMember,
+  async (req, res) => {
+    try {
+      await req.organization.save()
+      res.json({
+        departments: (req.organization.departments || []).map((department) => ({
+          id: department._id,
+          name: department.name,
+          description: department.description || '',
+          parentDepartment: department.parentDepartment || null,
+          headAccount: department.headAccount || null,
+          isSystem: !!department.isSystem
+        }))
+      })
+    } catch (error) {
+      console.error('Get departments error:', error)
+      res.status(500).json({ error: 'Failed to get departments' })
+    }
+  }
+)
+
+router.post('/:orgId/departments',
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationDepartmentManager,
+  async (req, res) => {
+    try {
+      const department = await req.organization.addDepartment(req.body || {}, req.user._id)
+      res.status(201).json({
+        id: department._id,
+        name: department.name,
+        description: department.description || '',
+        parentDepartment: department.parentDepartment || null,
+        headAccount: department.headAccount || null
+      })
+    } catch (error) {
+      console.error('Create department error:', error)
+      res.status(400).json({ error: error.message || 'Failed to create department' })
+    }
+  }
+)
+
+router.put('/:orgId/departments/:departmentId',
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationDepartmentManager,
+  async (req, res) => {
+    try {
+      const department = await req.organization.updateDepartment(req.params.departmentId, req.body || {})
+      res.json({
+        id: department._id,
+        name: department.name,
+        description: department.description || '',
+        parentDepartment: department.parentDepartment || null,
+        headAccount: department.headAccount || null
+      })
+    } catch (error) {
+      console.error('Update department error:', error)
+      res.status(400).json({ error: error.message || 'Failed to update department' })
     }
   }
 )
@@ -194,11 +335,35 @@ router.put('/:orgId',
         }
       }
 
-      const organization = await Organization.findByIdAndUpdate(
-        req.params.orgId,
-        { $set: updates },
-        { new: true }
-      )
+      const organization = req.organization
+
+      if (updates.name !== undefined) {
+        organization.name = updates.name
+      }
+      if (updates.description !== undefined) {
+        organization.description = updates.description
+      }
+      if (updates.settings !== undefined) {
+        organization.settings = updates.settings
+      }
+
+      await organization.save()
+
+      const memberAccountIds = Array.isArray(organization.members)
+        ? organization.members.map(member => member.account).filter(Boolean)
+        : []
+
+      if (memberAccountIds.length > 0) {
+        const memberAccounts = await Account.find({ _id: { $in: memberAccountIds } })
+          .select('sub')
+          .lean()
+
+        memberAccounts.forEach((account) => {
+          if (account?.sub) {
+            invalidateClaimsCache(account.sub)
+          }
+        })
+      }
 
       console.log('✅ Organization updated:', organization.name, 'by', req.user.email)
 
@@ -227,6 +392,15 @@ router.delete('/:orgId',
   async (req, res) => {
     try {
       const organization = req.organization
+
+      // Delete Zulip realm first (if exists)
+      try {
+        await zulipService.deleteZulipRealm(organization)
+        console.log('✅ Zulip realm deleted for:', organization.name)
+      } catch (zulipError) {
+        console.error('❌ Failed to delete Zulip realm:', zulipError)
+        // Continue with organization deletion even if Zulip cleanup fails
+      }
 
       // Remove organization from all members' accounts
       const memberIds = organization.members.map(m => m.account)
@@ -262,8 +436,16 @@ router.post('/:orgId/switch',
     try {
       await Account.updateOne(
         { _id: req.user._id },
-        { $set: { currentOrganization: req.params.orgId } }
+        { 
+          $set: { 
+            currentOrganization: req.params.orgId,
+            updatedAt: new Date() // Update timestamp for cache invalidation
+          } 
+        }
       )
+
+      // Invalidate claims cache for this user to ensure fresh organization context
+      invalidateClaimsCache(req.user.sub)
 
       console.log('✅ Switched to organization:', req.organization.name, 'by', req.user.email)
 

@@ -7,6 +7,11 @@ const UserSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
   },
+  idpSub: {
+    type: String,
+    index: true,
+    sparse: true
+  },
   password: {
     type: String,
     // Password not required if authenticated via OIDC
@@ -93,7 +98,11 @@ const UserSchema = new mongoose.Schema({
     hierarchyPath: [String],
     role: String, // 'member', 'line_manager', 'team_lead'
     isManager: Boolean,
+    managerId: String,
+    managerName: String,
+    managerEmail: String,
     directReports: [String], // Account IDs
+    directReportAccountIds: [String],
     joinedAt: Date
   }],
 
@@ -113,6 +122,10 @@ const UserSchema = new mongoose.Schema({
     slug: String,
     logo: String,
     role: String, // 'owner', 'admin', 'hr_manager', 'employee'
+    designation: String,
+    employeeId: String,
+    departmentId: String,
+    departmentName: String,
     joinedAt: Date
   }],
 
