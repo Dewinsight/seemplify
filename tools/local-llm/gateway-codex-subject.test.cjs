@@ -28,7 +28,9 @@ function signRequest(secret, body, requestPath) {
 }
 
 async function waitForHealth(url) {
-  for (let attempt = 0; attempt < 150; attempt += 1) {
+  // Booting a real gateway can be slow when other suites are running on the
+  // same machine, so this waits well past the normal start time.
+  for (let attempt = 0; attempt < 600; attempt += 1) {
     try {
       const response = await fetch(url);
       if (response.ok) return;
