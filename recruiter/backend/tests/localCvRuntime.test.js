@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const { runtimeProfileForActivity } = require('../../../tools/local-llm/runtime-profiles.cjs');
 const { spawn } = require('node:child_process');
 const test = require('node:test');
 
@@ -83,63 +84,28 @@ test('CV extraction is locked local while local question generation has audited 
     assert.equal(ACTIVITY_DEFINITIONS[activity].defaultLocal, true);
     assert.notEqual(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
   }
-  const experienceActivities = Object.keys(ACTIVITY_DEFINITIONS).filter((activity) => activity.startsWith('experience.'));
-  for (const activity of experienceActivities) {
-    assert.equal(routes.get(activity).provider, TERRA_PROVIDER);
-    assert.equal(routes.get(activity).model, TERRA_MODEL);
-    assert.equal(routes.get(activity).failoverPolicy, 'wait_local');
-    assert.equal(ACTIVITY_DEFINITIONS[activity].lockedProvider, true);
-  }
+  // Every other recruiter activity stays on Groq in the managed baseline.
   for (const [activity, route] of routes) {
-    if (['candidate.cv_parse', 'ai_interview.cv_parse', 'interview.questions', 'ai_interview.question_generation'].includes(activity) || experienceActivities.includes(activity) || CRM_ACTIVITIES.includes(activity)) continue;
+    if (['candidate.cv_parse', 'ai_interview.cv_parse', 'interview.questions', 'ai_interview.question_generation'].includes(activity)) continue;
     assert.equal(route.provider, GROQ_PROVIDER, `${activity} must remain on Groq`);
   }
+});
+
+test('Experience and CRM activities are not part of the recruiter catalog', () => {
+  // Those products run their own AI and call the shared gateway directly, so
+  // recruiter neither serves nor configures their activities.
+  const ids = Object.keys(ACTIVITY_DEFINITIONS);
+  assert.equal(ids.some((activity) => activity.startsWith('experience.')), false);
+  assert.equal(ids.some((activity) => activity.startsWith('xplorer.')), false);
   for (const activity of CRM_ACTIVITIES) {
-    assert.equal(routes.get(activity).provider, 'local-claude', activity);
-    assert.equal(routes.get(activity).model, 'sonnet', activity);
-    assert.equal(routes.get(activity).failoverPolicy, 'wait_local', activity);
+    assert.equal(Boolean(ACTIVITY_DEFINITIONS[activity]), false, `${activity} belongs to Xplorer CRM`);
   }
+  assert.equal(MANAGED_ROUTES.length, ids.length);
 });
 
-test('Experience catalog includes current and assistant activities as locked Terra routes', () => {
-  const routes = new Map(MANAGED_ROUTES.map((route) => [route.activity, route]));
-  const expected = [
-    'experience.survey_generation',
-    'experience.response_analysis',
-    'experience.insight_generation',
-    'experience.analyst_chat',
-    'experience.report_generation',
-    'experience.translation',
-    'experience.social_listening',
-    'experience.journey_mapping',
-    'experience.knowledge_answer',
-    'experience.knowledge_graph_extract',
-    'experience.social_reply_draft',
-    'experience.cross_source_intelligence',
-    ...EXPERIENCE_ASSISTANT_ACTIVITIES
-  ];
-  assert.equal(expected.length, 23);
-  assert.deepEqual(
-    Object.keys(ACTIVITY_DEFINITIONS).filter((activity) => activity.startsWith('experience.')),
-    expected
-  );
-  assert.equal(MANAGED_ROUTES.length, routes.size);
-  for (const activity of expected) {
-    const definition = ACTIVITY_DEFINITIONS[activity];
-    const route = routes.get(activity);
-    assert.equal(definition.provider, TERRA_PROVIDER, activity);
-    assert.equal(definition.model, TERRA_MODEL, activity);
-    assert.equal(definition.defaultLocal, true, activity);
-    assert.equal(definition.lockedProvider, true, activity);
-    assert.equal(definition.failoverPolicy, 'wait_local', activity);
-    assert.equal(route.provider, TERRA_PROVIDER, activity);
-    assert.equal(route.model, TERRA_MODEL, activity);
-    assert.equal(route.failoverPolicy, 'wait_local', activity);
-  }
-  assert.equal(Object.keys(ACTIVITY_DEFINITIONS).some((activity) => activity.startsWith('xplorer.')), false);
-});
-
-test('every Experience AI job activity is registered for gateway admission and usage metering', () => {
+test('the gateway still admits every Experience activity through its own runtime profile', () => {
+  // Recruiter no longer lists them, so gateway admission is what keeps
+  // Experience Management working: its profile owns the contract now.
   const aiJobsSource = fs.readFileSync(
     path.resolve(__dirname, '..', '..', '..', 'experience-management', 'backend', 'src', 'aiJobs.ts'),
     'utf8'
@@ -150,8 +116,13 @@ test('every Experience AI job activity is registered for gateway admission and u
   );
   assert.equal(usedActivities.has('experience.social_reply_draft'), true);
   assert.equal(usedActivities.has('experience.cross_source_intelligence'), true);
-  for (const activity of usedActivities) {
-    assert.ok(ACTIVITY_DEFINITIONS[activity], `${activity} must be registered in the canonical catalog`);
+  for (const activity of [...usedActivities, ...EXPERIENCE_ASSISTANT_ACTIVITIES]) {
+    assert.equal(runtimeProfileForActivity(activity), 'experience-management',
+      `${activity} must be admitted by the gateway`);
+  }
+  for (const activity of CRM_ACTIVITIES) {
+    assert.equal(runtimeProfileForActivity(activity), 'xplorer-crm',
+      `${activity} must be admitted by the gateway`);
   }
 });
 

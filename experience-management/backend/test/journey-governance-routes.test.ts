@@ -149,6 +149,29 @@ function grantPlatformRole(userId: string, roleId: 'viewer' | 'editor', reason: 
   );
 }
 
+function seedSurveyResponse(spaceId: string, suffix: string) {
+  const now = new Date().toISOString();
+  const surveyId = `governance-survey-${suffix}`;
+  const questionId = `governance-question-${suffix}`;
+  const collectorId = `governance-collector-${suffix}`;
+  const responseId = `governance-response-${suffix}`;
+  db.prepare(`INSERT INTO surveys
+    (id,space_id,title,description,purpose,audience,status,primary_metric,created_at,updated_at)
+    VALUES (?,?,'Governance evidence','','customer_experience','','active','csat',?,?)`)
+    .run(surveyId, spaceId, now, now);
+  db.prepare(`INSERT INTO questions
+    (id,survey_id,page,position,type,title,description,required,options_json,settings_json,logic_json)
+    VALUES (?,?,1,0,'long_text','What do you need?','',1,'[]','{}','[]')`).run(questionId, surveyId);
+  db.prepare(`INSERT INTO collectors (id,survey_id,name,type,slug,status,settings_json,created_at)
+    VALUES (?,?,'Governance collector','web',?,'open','{}',?)`).run(collectorId, surveyId, `governance-${suffix}`, now);
+  db.prepare(`INSERT INTO responses
+    (id,survey_id,collector_id,respondent_token,status,answers_json,metadata_json,started_at,completed_at,duration_seconds)
+    VALUES (?,?,?,'governance-respondent','completed',?,'{}',?,?,60)`)
+    .run(responseId, surveyId, collectorId,
+      JSON.stringify({ [questionId]: 'I need a clear owner before approval can proceed.' }), now, now);
+  return responseId;
+}
+
 test('journey route governance enforces member vs editor boundaries across map, saved-view, research, rich-card, suggestion, metric-alert, and identity surfaces', async () => {
   const owner = await ownerIdentity();
   const admin = await collaborator(owner.spaceId, 'admin', 'admin');
@@ -325,6 +348,7 @@ test('journey governance also pins persona, evidence, and space-template boundar
   });
   const workingMap = maps.getJourneyMap(owner.spaceId, definition.id, undefined, owner.userId)!;
   const stageKey = workingMap.stages[0]!.stageKey;
+  const responseId = seedSurveyResponse(owner.spaceId, 'persona-template');
 
   await inSpace(member.agent, 'post', `/api/journey-maps/${definition.id}/personas`, owner.spaceId)
     .send({ personaId: crypto.randomUUID() })
@@ -343,12 +367,15 @@ test('journey governance also pins persona, evidence, and space-template boundar
 
   const linkedMap = await inSpace(admin.agent, 'post', `/api/journey-maps/${definition.id}/personas`, owner.spaceId)
     .send({ personaId: persona.body.id }).expect(200);
-  const claimId = linkedMap.body.personas[0].claims.find((claim: any) => claim.type === 'goal').id;
+  const personaVersions = await inSpace(admin.agent, 'get', `/api/journey-personas/${persona.body.id}/versions`, owner.spaceId)
+    .expect(200);
+  const currentVersion = personaVersions.body.versions[0];
+  const claimId = currentVersion.claims.find((claim: any) => claim.type === 'goal').id;
 
   await inSpace(member.agent, 'delete', `/api/journey-maps/${definition.id}/personas/${persona.body.id}`, owner.spaceId)
     .expect(403).expect(({ body }) => assert.equal(body.code, 'JOURNEY_MAP_FORBIDDEN'));
 
-  const card = await inSpace(owner.agent, 'post', `/api/journey-maps/${definition.id}/cards`, owner.spaceId).send({
+  await inSpace(owner.agent, 'post', `/api/journey-maps/${definition.id}/cards`, owner.spaceId).send({
     expectedRevision: linkedMap.body.definition.revision,
     stageKey,
     kind: 'action',
@@ -358,18 +385,16 @@ test('journey governance also pins persona, evidence, and space-template boundar
   const evidence = await inSpace(admin.agent, 'post', '/api/journey-evidence', owner.spaceId).send({
     targetType: 'persona',
     targetId: persona.body.id,
-    sourceType: 'manual_note',
-    sourceRef: `note:${crypto.randomUUID()}`,
-    sourceLabel: 'Manual approver note',
-    excerpt: 'Approvers need an explicit owner before they proceed.',
+    sourceType: 'survey_response',
+    sourceRef: responseId,
     assessment: 'supports'
   }).expect(201);
 
   await inSpace(member.agent, 'post', '/api/journey-evidence', owner.spaceId).send({
     targetType: 'persona',
     targetId: persona.body.id,
-    sourceType: 'manual_note',
-    sourceRef: `note:${crypto.randomUUID()}`,
+    sourceType: 'survey_response',
+    sourceRef: responseId,
     assessment: 'supports'
   }).expect(403).expect(({ body }) => assert.equal(body.code, 'JOURNEY_MAP_FORBIDDEN'));
 
@@ -384,14 +409,14 @@ test('journey governance also pins persona, evidence, and space-template boundar
     .expect(200);
 
   await inSpace(member.agent, 'post',
-    `/api/journey-personas/${persona.body.id}/versions/${persona.body.currentVersionId}/claims/${claimId}/evidence`,
+    `/api/journey-personas/${persona.body.id}/versions/${currentVersion.id}/claims/${claimId}/evidence`,
     owner.spaceId)
     .send({ expectedRevision: persona.body.revision, evidenceLinkId: evidence.body.id })
     .expect(403).expect(({ body }) => assert.equal(body.code, 'JOURNEY_MAP_FORBIDDEN'));
-  await inSpace(member.agent, 'post', `/api/journey-personas/${persona.body.id}/versions/${persona.body.currentVersionId}/submit`, owner.spaceId)
+  await inSpace(member.agent, 'post', `/api/journey-personas/${persona.body.id}/versions/${currentVersion.id}/submit`, owner.spaceId)
     .send({ expectedRevision: persona.body.revision, comment: 'Member cannot submit for review.' })
     .expect(403).expect(({ body }) => assert.equal(body.code, 'JOURNEY_MAP_FORBIDDEN'));
-  await inSpace(member.agent, 'post', `/api/journey-personas/${persona.body.id}/versions/${persona.body.currentVersionId}/withdraw`, owner.spaceId)
+  await inSpace(member.agent, 'post', `/api/journey-personas/${persona.body.id}/versions/${currentVersion.id}/withdraw`, owner.spaceId)
     .send({ expectedRevision: persona.body.revision, comment: 'Member cannot withdraw review.' })
     .expect(403).expect(({ body }) => assert.equal(body.code, 'JOURNEY_MAP_FORBIDDEN'));
   await inSpace(member.agent, 'delete', `/api/journey-personas/${persona.body.id}`, owner.spaceId)
@@ -404,7 +429,7 @@ test('journey governance also pins persona, evidence, and space-template boundar
     .expect(403).expect(({ body }) => assert.equal(body.code, 'JOURNEY_MAP_FORBIDDEN'));
 
   const linkedPersona = await inSpace(admin.agent, 'post',
-    `/api/journey-personas/${persona.body.id}/versions/${persona.body.currentVersionId}/claims/${claimId}/evidence`,
+    `/api/journey-personas/${persona.body.id}/versions/${currentVersion.id}/claims/${claimId}/evidence`,
     owner.spaceId)
     .send({ expectedRevision: persona.body.revision, evidenceLinkId: evidence.body.id })
     .expect(201);

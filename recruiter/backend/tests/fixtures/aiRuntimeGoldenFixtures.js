@@ -286,17 +286,6 @@ const genericSpecs = [
   ['report-analysis', 'report.analysis', 'Summarize a synthetic report showing offer acceptance rose from 70% to 80%.', 'Offer acceptance increased by 10 percentage points.', ['10 percentage points']],
   ['chat-introduction', 'ai_interview.chat.introduction', 'Introduce this question without revealing an answer: How did you improve API reliability?', 'How did you improve API reliability? You may ask for clarification or answer when ready.', ['API reliability', 'clarification']],
   ['chat-acknowledgement', 'ai_interview.chat.acknowledgement', 'Acknowledge an answer without scoring it and direct the candidate to confirm.', 'Thank you. Use the confirm button when you are ready to continue.', ['confirm']]
-  ,['crm-knowledge-ask', 'knowledge.ask', 'Using only policy-1, explain the escalation window of 48 hours.', 'Policy-1 states that the escalation window is 48 hours.', ['policy-1', '48 hours']]
-  ,['crm-source-ingestion', 'knowledge.source_ingestion', 'Summarize the supplied source metadata for policy-1.', 'Policy-1 is the supplied knowledge source.', ['policy-1', 'knowledge source']]
-  ,['crm-draft-generation', 'knowledge.draft_generation', 'Draft a grounded policy note using policy-1 and its 48-hour escalation window.', 'Draft: policy-1 requires escalation within 48 hours.', ['policy-1', '48 hours']]
-  ,['crm-inbox-classification', 'inbox.classification', 'Classify this message: I cannot access my account.', 'Account access issue', ['account', 'access']]
-  ,['crm-case-recommendation', 'case.recommendation', 'Recommend the next step for a case with an unverified billing postcode after failed payments.', 'Verify the billing postcode before retrying the payment.', ['verify', 'billing postcode']]
-  ,['crm-ai-advisory', 'ai.advisory', 'Advise an agent handling three failed payments after an address change.', 'Verify the changed billing address before another payment attempt.', ['verify', 'billing address']]
-  ,['crm-ai-copilot', 'ai.copilot', 'Help an agent explain the next safe action for a failed payment.', 'Confirm the customer billing details and document the outcome.', ['billing details', 'document']]
-  ,['crm-summarization', 'summarization', 'Summarize: the customer changed address and three payments failed.', 'Three payments failed after the customer changed address.', ['three payments', 'changed address']]
-  ,['crm-action-classification', 'action.classification', 'Classify this action: verify the customer billing postcode.', 'Verification action', ['verification']]
-  ,['crm-interview-reasoning', 'ai.interview.reasoning', 'Assess only this evidence: the candidate reduced incidents by 35%.', 'The supplied evidence shows a measured reliability improvement of 35%.', ['reliability', '35%']]
-  ,['crm-interview-chat', 'ai.interview.chat', 'Ask a concise follow-up about how the candidate reduced incidents by 35%.', 'Which actions directly contributed to the 35% incident reduction?', ['actions', '35%']]
 ];
 
 const textActivities = new Set([
@@ -604,10 +593,9 @@ const experienceFixtures = [
     output: { title: 'Onboarding decision brief', executiveSummary: 'Setup clarity is the supplied priority.', body: 'Decision-1 supports revising the onboarding guide and assigning an owner.', decisions: ['Revise the onboarding guide.'], actionItems: [{ action: 'Assign an owner.', owner: 'Unassigned', dueDate: 'Not supplied', sourceRef: 'decision-1' }], citations: [{ sourceRef: 'decision-1', excerpt: 'Revise the onboarding guide.' }], limitations: ['No due date was supplied.'] }
   }
 ];
-fixtures.push(...experienceFixtures.map((fixture) => ({
-  id: fixture.id, activity: fixture.activity, azureBaselineScore: 8.5,
-  messages: [{ role: 'user', content: fixture.prompt }], schema: fixture.schema,
-  expectedKeywords: fixture.keywords, expectedOutput: fixture.output
-})));
+// Experience Management runs its own AI and is not routed by this catalog, so
+// its fixtures are no longer part of the recruiter evaluation set. The
+// definitions above are kept for whoever moves them into that product.
+void experienceFixtures;
 
 module.exports = fixtures;
