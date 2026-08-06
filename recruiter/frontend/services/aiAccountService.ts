@@ -34,6 +34,11 @@ async function readJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     const error = new Error(body.msg || body.message || 'The ChatGPT connection request failed');
     (error as any).code = body.code;
+    // A throttled sign-in is only recoverable if the caller knows the wait, so
+    // it survives the trip from the gateway to the button that has to be
+    // disabled for that long.
+    (error as any).retryAfterSeconds = Number(body.retryAfterSeconds)
+      || Number(response.headers.get('retry-after')) || 0;
     throw error;
   }
   return body as T;

@@ -64,11 +64,17 @@ async function callGateway(operation, userId, { timeoutMs = 30_000, fetchImpl = 
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new AIRuntimeError(payload.message || `ChatGPT ${operation} failed`, {
+    // A rate-limited sign-in is only actionable if the wait travels with it,
+    // so it is carried as data rather than buried in the message text.
+    const retryAfterSeconds = Number(payload.retryAfterSeconds)
+      || Number(response.headers?.get?.('retry-after')) || 0;
+    const error = new AIRuntimeError(payload.message || `ChatGPT ${operation} failed`, {
       code: String(payload.code || 'CHATGPT_CONTROL_FAILED'),
       statusCode: response.status,
       retryable: payload.retryable === true
     });
+    if (retryAfterSeconds > 0) error.retryAfterSeconds = retryAfterSeconds;
+    throw error;
   }
   return payload;
 }

@@ -1015,9 +1015,14 @@ exports.startPublicChatgptLogin = async (req, res) => {
     const { login, account } = await interviewCodexAccountService.startLogin(session);
     return res.json({ login, account: account.toPublicJSON() });
   } catch (error) {
+    // A candidate cannot ask anyone for help, so a throttled sign-in has to
+    // say how long the wait is rather than just failing.
+    const retryAfterSeconds = Number(error.retryAfterSeconds) || 0;
+    if (retryAfterSeconds > 0) res.set('Retry-After', String(retryAfterSeconds));
     return res.status(error.statusCode || 503).json({
       error: error.code || 'CHATGPT_LOGIN_FAILED',
-      message: error.message || 'ChatGPT sign-in could not be started'
+      message: error.message || 'ChatGPT sign-in could not be started',
+      ...(retryAfterSeconds > 0 ? { retryAfterSeconds } : {})
     });
   }
 };

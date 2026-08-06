@@ -347,6 +347,11 @@ async function parseError(response: Response): Promise<Error> {
   const error: any = new Error(data.message || data.error || `Request failed with status ${response.status}`);
   error.data = data;
   error.status = response.status;
+  error.code = data.error || data.code;
+  // Carried out of the body so a throttled retry can be counted down rather
+  // than guessed at.
+  error.retryAfterSeconds = Number(data.retryAfterSeconds)
+    || Number(response.headers.get('retry-after')) || 0;
   return error;
 }
 

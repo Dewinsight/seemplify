@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { usePathname } from "next/navigation"
-import { Bot, Copy, ExternalLink, Loader2, LogOut, RefreshCw } from "lucide-react"
+import { AlertCircle, Check, Copy, ExternalLink, Loader2, LogOut, RefreshCw, ShieldCheck } from "lucide-react"
 import { OpenAILogo } from "@/components/ui/openai-logo"
 import { Button } from "@/components/ui/button"
 import {
@@ -14,7 +14,6 @@ import {
   DialogTitle
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   aiAccountService,
   chatGptSetupState,
@@ -32,9 +31,12 @@ const LOCAL_CHOICE_KEY = "seemplify_ai_runtime_gate_choice"
 // Routes a signed-out person can be on. A stale token can briefly read as
 // authenticated, so the path is checked too: the gate is for people using the
 // workspace, never for someone looking at a sign-in screen.
+// "/" is the marketing landing page, not the workspace — matched exactly, so
+// it never swallows the authenticated routes beneath it.
 const SIGNED_OUT_ROUTES = [
-  "/login", "/signup", "/logout", "/oidc", "/auth",
-  "/forgot-password", "/reset-password", "/verify", "/join", "/public", "/admin"
+  "/", "/login", "/signup", "/logout", "/oidc", "/auth",
+  "/forgot-password", "/reset-password", "/verify", "/join", "/public", "/admin",
+  "/privacy", "/terms", "/cookies", "/docs"
 ]
 
 /**
@@ -59,8 +61,24 @@ export function ChatGptConnectionGate() {
   const [error, setError] = useState("")
   const [copied, setCopied] = useState(false)
   const [localChoice, setLocalChoice] = useState(false)
+  // When the gateway throttles sign-in attempts it says how long the wait is;
+  // the gate counts it down instead of leaving a button that only fails again.
+  const [cooldownUntil, setCooldownUntil] = useState(0)
+  const [cooldownLeft, setCooldownLeft] = useState(0)
   const pollInFlight = useRef(false)
   const consentInFlight = useRef(false)
+
+  useEffect(() => {
+    if (!cooldownUntil) return
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000))
+      setCooldownLeft(left)
+      if (left === 0) { setCooldownUntil(0); setError("") }
+    }
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [cooldownUntil])
 
   const refresh = useCallback(async () => {
     if (pollInFlight.current) return null
@@ -138,7 +156,7 @@ export function ChatGptConnectionGate() {
   }, [open, deviceLogin, refresh, acknowledgeConsent])
 
   async function connect(restart = false) {
-    if (busy) return
+    if (busy || cooldownLeft > 0) return
     setWorking(restart ? "restart" : "connect")
     setError("")
     setCopied(false)
@@ -163,7 +181,13 @@ export function ChatGptConnectionGate() {
         setDeviceLogin(login)
       }
     } catch (reason: any) {
-      setError(reason?.message || "ChatGPT sign-in could not be started.")
+      const wait = Number(reason?.retryAfterSeconds) || 0
+      if (wait > 0) setCooldownUntil(Date.now() + wait * 1000)
+      setError(
+        reason?.message
+        || (wait > 0 ? "Too many sign-in attempts. Please wait before trying again."
+          : "ChatGPT sign-in could not be started.")
+      )
     } finally {
       setWorking("")
     }
@@ -194,141 +218,198 @@ export function ChatGptConnectionGate() {
   if (!open) return null
 
   const accountName = account?.connectedEmail || "your ChatGPT account"
+  const cooling = cooldownLeft > 0
+  const countdown = `${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, "0")}`
 
   return (
     <Dialog open onOpenChange={() => undefined}>
       <DialogContent
         data-testid="chatgpt-connection-gate"
-        className="max-w-[95vw] sm:max-w-md"
+        className="max-w-[95vw] gap-0 overflow-hidden rounded-2xl border-black/10 p-0 shadow-2xl sm:max-w-[440px] dark:border-white/10"
         showCloseButton={false}
         onEscapeKeyDown={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
       >
-        <DialogHeader>
-          <div className="mb-1 flex items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0d0d0d] text-white shadow-sm dark:bg-white dark:text-[#0d0d0d]">
-              <OpenAILogo className="h-6 w-6" />
-            </span>
-            <div className="min-w-0">
-              <DialogTitle className="text-left text-base leading-tight">
-                {needsConsent ? "Use ChatGPT for this workspace" : "Connect ChatGPT to continue"}
-              </DialogTitle>
-              <p className="mt-0.5 text-xs text-muted-foreground">Powered by your OpenAI account</p>
-            </div>
-          </div>
-          <DialogDescription>
+        {/* OpenAI's own sign-in surfaces are centred, monochrome and quiet —
+            this reads as a continuation of that, not a product dialog. */}
+        <DialogHeader className="items-center space-y-0 px-7 pb-6 pt-9 text-center">
+          <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0d0d0d] text-white shadow-sm ring-1 ring-black/5 dark:bg-white dark:text-[#0d0d0d] dark:ring-white/10">
+            <OpenAILogo className="h-8 w-8" />
+          </span>
+          <DialogTitle className="text-center text-[22px] font-semibold leading-tight tracking-[-0.01em]">
+            {needsConsent ? "Use ChatGPT for this workspace" : "Connect ChatGPT to continue"}
+          </DialogTitle>
+          <DialogDescription className="mx-auto mt-2 max-w-[19rem] text-center text-[14.5px] leading-relaxed">
             {needsConsent
-              ? `${accountName} is connected. Confirm to make it the AI runtime for your work.`
+              ? "Confirm this account as the AI runtime for your work."
               : setup === "required"
-                ? "This workspace runs AI on your own ChatGPT account, and the local model is turned off. Connect your account to use AI features."
+                ? "This workspace runs AI on your own ChatGPT account. Sign in with OpenAI to use AI features."
                 : "This workspace runs AI on your own ChatGPT account by default. Connect it, or continue on the local model."}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-3 px-7">
+          {connected && (
+            <div
+              className="flex items-center gap-3 rounded-xl border border-black/10 bg-muted/30 px-3.5 py-3 dark:border-white/10"
+              data-testid="chatgpt-gate-account"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0d0d0d] text-sm font-medium text-white dark:bg-white dark:text-[#0d0d0d]">
+                {accountName.charAt(0).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{accountName}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {account?.planType ? `ChatGPT ${account.planType}` : "Signed in with OpenAI"}
+                </span>
+              </span>
+              <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            </div>
+          )}
+
           <p
-            className="rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground"
+            className="flex gap-2.5 rounded-xl border border-black/10 px-3.5 py-3 text-[12.5px] leading-relaxed text-muted-foreground dark:border-white/10"
             data-testid="chatgpt-gate-disclosure"
           >
-            Continuing allows candidate data, job descriptions, and interview content in the AI tasks
-            you run to be processed by OpenAI using your connected account.
-            {setup === "choice" ? " You can continue with the local AI runtime instead." : null}
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Candidate data, job descriptions, and interview content in the AI tasks you run are
+              processed by OpenAI on your connected account.
+              {setup === "choice" ? " You can continue with the local AI runtime instead." : null}
+            </span>
           </p>
 
           {deviceLogin && (
-            <div className="space-y-3 rounded-md border p-4" data-testid="chatgpt-gate-device-login">
-              <div>
-                <p className="text-sm font-medium">Finish signing in with OpenAI</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Open the secure page, enter the one-time code, then return here. This window updates automatically.
-                </p>
+            <div
+              className="rounded-xl border border-black/10 px-3.5 py-4 dark:border-white/10"
+              data-testid="chatgpt-gate-device-login"
+            >
+              <p className="text-center text-[12.5px] text-muted-foreground">
+                Enter this code on the OpenAI page
+              </p>
+              <div className="mt-2.5 flex items-center gap-2">
+                <Input
+                  id="chatgpt-gate-device-code"
+                  data-testid="chatgpt-gate-device-code"
+                  readOnly
+                  aria-label="One-time code"
+                  value={deviceLogin.userCode || ""}
+                  className="h-12 rounded-lg border-black/10 bg-muted/30 text-center font-mono text-xl font-semibold tracking-[0.3em] dark:border-white/10"
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 w-12 shrink-0 rounded-lg border-black/10 p-0 dark:border-white/10"
+                  aria-label={copied ? "Code copied" : "Copy code"}
+                  onClick={() => void copyCode()}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </Button>
               </div>
-              <div>
-                <Label htmlFor="chatgpt-gate-device-code">One-time code</Label>
-                <div className="mt-1 flex gap-2">
-                  <Input
-                    id="chatgpt-gate-device-code"
-                    data-testid="chatgpt-gate-device-code"
-                    readOnly
-                    value={deviceLogin.userCode || ""}
-                    className="h-11 text-center font-mono text-lg tracking-[0.35em]"
-                    onFocus={(event) => event.currentTarget.select()}
-                  />
-                  <Button type="button" variant="outline" onClick={() => void copyCode()}>
-                    <Copy className="mr-1 h-4 w-4" />{copied ? "Copied" : "Copy"}
-                  </Button>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />Waiting for OpenAI…
-                </span>
-                {deviceLogin.verificationUrl && (
-                  <Button asChild size="sm">
-                    <a href={deviceLogin.verificationUrl} target="_blank" rel="noreferrer noopener">
-                      Open OpenAI<ExternalLink className="ml-1 h-4 w-4" />
-                    </a>
-                  </Button>
-                )}
-              </div>
+              <p className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground" role="status">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />Waiting for you to finish on OpenAI…
+              </p>
             </div>
           )}
 
           {error && (
             <div
-              className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+              className="flex gap-2.5 rounded-xl border border-destructive/30 bg-destructive/5 px-3.5 py-3 text-[13px] leading-relaxed text-destructive"
               role="alert"
               data-testid="chatgpt-gate-error"
             >
-              {error}
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                {error}
+                {cooling && (
+                  <span className="mt-1 block font-medium tabular-nums" data-testid="chatgpt-gate-cooldown">
+                    You can try again in {countdown}.
+                  </span>
+                )}
+              </span>
             </div>
           )}
         </div>
 
-        <DialogFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* A blocking dialog must never trap someone: signing out is
-                always available, and a stuck sign-in can be started over. */}
-            <Button type="button" variant="ghost" size="sm" onClick={signOut} data-testid="chatgpt-gate-logout">
-              <LogOut className="mr-1 h-4 w-4" />Sign out
+        <DialogFooter className="mt-6 flex-col gap-2 px-7 pb-4 sm:flex-col sm:space-x-0">
+          {deviceLogin ? (
+            <Button
+              asChild
+              className="h-11 w-full rounded-xl bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+              data-testid="chatgpt-gate-open-openai"
+            >
+              <a href={deviceLogin.verificationUrl || "https://chatgpt.com"} target="_blank" rel="noreferrer noopener">
+                <OpenAILogo className="mr-2 h-4 w-4" />Open OpenAI
+                <ExternalLink className="ml-2 h-3.5 w-3.5 opacity-70" />
+              </a>
             </Button>
-            {(deviceLogin || account?.status === "pending") && (
-              <Button type="button" variant="ghost" size="sm" disabled={busy}
-                data-testid="chatgpt-gate-start-over" onClick={() => void connect(true)}>
-                {working === "restart" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
-                Start over
-              </Button>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+          ) : needsConsent ? (
+            <Button
+              type="button"
+              disabled={busy}
+              className="h-11 w-full rounded-xl bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+              data-testid="chatgpt-gate-enable"
+              onClick={() => void acknowledgeConsent()}
+            >
+              {working === "consent"
+                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                : <OpenAILogo className="mr-2 h-4 w-4" />}
+              Continue with ChatGPT
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              disabled={busy || cooling}
+              className="h-11 w-full rounded-xl bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] disabled:opacity-60 dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+              data-testid="chatgpt-gate-connect"
+              onClick={() => void connect()}
+            >
+              {working === "connect"
+                ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                : <OpenAILogo className="mr-2 h-4 w-4" />}
+              {cooling ? `Try again in ${countdown}` : "Sign in with OpenAI"}
+            </Button>
+          )}
+
           {setup === "choice" && (
             <Button
               type="button"
               variant="outline"
+              className="h-11 w-full rounded-xl border-black/10 text-[15px] font-medium dark:border-white/10"
               data-testid="chatgpt-gate-use-local"
               onClick={continueWithLocal}
             >
               Continue with local AI
             </Button>
           )}
-          {deviceLogin ? (
-            <Button asChild disabled={busy} data-testid="chatgpt-gate-open-openai">
-              <a href={deviceLogin.verificationUrl || "https://chatgpt.com"} target="_blank" rel="noreferrer noopener">
-                Open OpenAI<ExternalLink className="ml-1 h-4 w-4" />
-              </a>
+
+          {/* A blocking dialog must never trap someone: signing out is always
+              reachable, and a stuck sign-in can be started over. */}
+          <div className="flex w-full items-center justify-center gap-1 border-t border-black/5 pt-3 text-xs dark:border-white/5">
+            <Button
+              type="button" variant="ghost" size="sm"
+              className="h-8 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground"
+              onClick={signOut} data-testid="chatgpt-gate-logout"
+            >
+              <LogOut className="mr-1.5 h-3.5 w-3.5" />Sign out
             </Button>
-          ) : needsConsent ? (
-            <Button type="button" disabled={busy} data-testid="chatgpt-gate-enable" onClick={() => void acknowledgeConsent()}>
-              {working === "consent" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Bot className="mr-1 h-4 w-4" />}
-              Use ChatGPT
-            </Button>
-          ) : (
-            <Button type="button" disabled={busy} data-testid="chatgpt-gate-connect" onClick={() => void connect()}>
-              {working === "connect" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Bot className="mr-1 h-4 w-4" />}
-              Connect ChatGPT
-            </Button>
-          )}
+            {(deviceLogin || account?.status === "pending") && (
+              <>
+                <span aria-hidden className="text-muted-foreground/40">·</span>
+                <Button
+                  type="button" variant="ghost" size="sm" disabled={busy || cooling}
+                  className="h-8 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground"
+                  data-testid="chatgpt-gate-start-over" onClick={() => void connect(true)}
+                >
+                  {working === "restart"
+                    ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+                  Start over
+                </Button>
+              </>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>

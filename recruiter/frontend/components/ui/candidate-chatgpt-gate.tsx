@@ -1,10 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Bot, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react"
+import { AlertCircle, Check, Copy, ExternalLink, Loader2, RefreshCw, ShieldCheck } from "lucide-react"
+import { OpenAILogo } from "@/components/ui/openai-logo"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import aiInterviewService, {
   type CandidateChatgptAccount,
@@ -34,6 +34,10 @@ export function CandidateChatgptGate({
   const [working, setWorking] = useState("")
   const [error, setError] = useState("")
   const [copied, setCopied] = useState(false)
+  // A throttled sign-in is counted down rather than left as a button that
+  // only fails again — a candidate has nobody to ask.
+  const [cooldownUntil, setCooldownUntil] = useState(0)
+  const [cooldownLeft, setCooldownLeft] = useState(0)
   const readyNotified = useRef(false)
   const pollInFlight = useRef(false)
 
@@ -61,6 +65,18 @@ export function CandidateChatgptGate({
     }
   }, [account, onReady])
 
+  useEffect(() => {
+    if (!cooldownUntil) return
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000))
+      setCooldownLeft(left)
+      if (left === 0) { setCooldownUntil(0); setError("") }
+    }
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [cooldownUntil])
+
   // While a device login is pending the only signal is the account turning
   // connected, so poll until it does.
   useEffect(() => {
@@ -72,17 +88,29 @@ export function CandidateChatgptGate({
   }, [login, refresh])
 
   async function connect(restart = false) {
-    if (working) return
+    if (working || cooldownLeft > 0) return
     setWorking(restart ? "restart" : "connect")
     setError("")
     setCopied(false)
     try {
       if (restart) await aiInterviewService.cancelPublicChatgptLogin(token).catch(() => undefined)
-      const { login: next, account: current } = await aiInterviewService.startPublicChatgptLogin(token)
+      let result
+      try {
+        result = await aiInterviewService.startPublicChatgptLogin(token)
+      } catch (reason: any) {
+        // A pending sign-in that cannot be resumed must not strand the
+        // candidate: clear it and issue a fresh code.
+        if (restart || reason?.code !== "CODEX_LOGIN_PENDING") throw reason
+        await aiInterviewService.cancelPublicChatgptLogin(token).catch(() => undefined)
+        result = await aiInterviewService.startPublicChatgptLogin(token)
+      }
+      const { login: next, account: current } = result
       setAccount(current)
       if (next.connected) await refresh()
       else setLogin(next)
     } catch (reason: any) {
+      const wait = Number(reason?.retryAfterSeconds) || 0
+      if (wait > 0) setCooldownUntil(Date.now() + wait * 1000)
       setError(reason?.message || "ChatGPT sign-in could not be started.")
     } finally {
       setWorking("")
@@ -114,89 +142,157 @@ export function CandidateChatgptGate({
 
   const connected = account?.status === "connected"
   const busy = Boolean(working)
+  const cooling = cooldownLeft > 0
+  const countdown = `${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, "0")}`
+  const accountName = account?.connectedEmail || "your ChatGPT account"
 
   return (
-    <div className="mx-auto w-full max-w-lg rounded-lg border bg-white p-6 shadow-sm dark:bg-gray-900" data-testid="candidate-chatgpt-gate">
-      <div className="flex items-start gap-3">
-        <Bot className="mt-1 h-6 w-6 text-blue-600" />
-        <div>
-          <h2 className="text-lg font-semibold">Connect ChatGPT to begin</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            This interview is conducted by AI running on <strong>your own ChatGPT account</strong>, so your
-            answers are processed on your plan rather than ours.
-          </p>
-        </div>
+    <div
+      className="mx-auto w-full max-w-[440px] overflow-hidden rounded-2xl border border-black/10 bg-white shadow-xl dark:border-white/10 dark:bg-[#171717]"
+      data-testid="candidate-chatgpt-gate"
+    >
+      <div className="flex flex-col items-center px-7 pb-6 pt-9 text-center">
+        <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0d0d0d] text-white shadow-sm ring-1 ring-black/5 dark:bg-white dark:text-[#0d0d0d] dark:ring-white/10">
+          <OpenAILogo className="h-8 w-8" />
+        </span>
+        <h2 className="text-[22px] font-semibold leading-tight tracking-[-0.01em]">
+          Connect ChatGPT to begin
+        </h2>
+        <p className="mx-auto mt-2 max-w-[20rem] text-[14.5px] leading-relaxed text-muted-foreground">
+          This interview is conducted by AI running on <strong className="font-medium text-foreground">your
+          own ChatGPT account</strong>, so your answers are processed on your plan rather than ours.
+        </p>
       </div>
 
-      <p className="mt-4 rounded-md border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
-        Connecting allows the questions you are asked and the answers you give to be processed by OpenAI
-        using your account. Voice audio is handled separately by the platform and is not sent to your account.
-      </p>
+      <div className="space-y-3 px-7">
+        <p className="flex gap-2.5 rounded-xl border border-black/10 px-3.5 py-3 text-[12.5px] leading-relaxed text-muted-foreground dark:border-white/10">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            The questions you are asked and the answers you give are processed by OpenAI on your
+            account. Voice audio is handled separately by the platform and is not sent to your account.
+          </span>
+        </p>
 
-      {connected && (
-        <div className="mt-4 rounded-md border p-3 text-sm" data-testid="candidate-chatgpt-connected">
-          <p className="font-medium">Connected as {account?.connectedEmail || "your ChatGPT account"}</p>
-          <label className="mt-3 flex items-start gap-2 text-xs leading-5">
-            <Checkbox
-              checked={Boolean(account?.dataSharingAcknowledgedAt)}
-              disabled={busy}
-              onCheckedChange={(value) => void acknowledge(value === true)}
-              data-testid="candidate-chatgpt-consent"
-            />
-            <span>I agree that my interview content is processed by OpenAI on my connected account.</span>
-          </label>
-        </div>
-      )}
+        {connected && (
+          <div
+            className="rounded-xl border border-black/10 px-3.5 py-3 dark:border-white/10"
+            data-testid="candidate-chatgpt-connected"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0d0d0d] text-sm font-medium text-white dark:bg-white dark:text-[#0d0d0d]">
+                {accountName.charAt(0).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{accountName}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {account?.planType ? `ChatGPT ${account.planType}` : "Signed in with OpenAI"}
+                </span>
+              </span>
+              <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <label className="mt-3 flex items-start gap-2.5 border-t border-black/5 pt-3 text-[12.5px] leading-relaxed dark:border-white/5">
+              <Checkbox
+                className="mt-0.5"
+                checked={Boolean(account?.dataSharingAcknowledgedAt)}
+                disabled={busy}
+                onCheckedChange={(value) => void acknowledge(value === true)}
+                data-testid="candidate-chatgpt-consent"
+              />
+              <span>I agree that my interview content is processed by OpenAI on my connected account.</span>
+            </label>
+          </div>
+        )}
 
-      {login && !login.connected && (
-        <div className="mt-4 space-y-3 rounded-md border p-4" data-testid="candidate-chatgpt-device-login">
-          <p className="text-sm font-medium">Finish signing in with OpenAI</p>
-          <div>
-            <Label htmlFor="candidate-chatgpt-code">One-time code</Label>
-            <div className="mt-1 flex gap-2">
+        {login && !login.connected && (
+          <div
+            className="rounded-xl border border-black/10 px-3.5 py-4 dark:border-white/10"
+            data-testid="candidate-chatgpt-device-login"
+          >
+            <p className="text-center text-[12.5px] text-muted-foreground">
+              Enter this code on the OpenAI page
+            </p>
+            <div className="mt-2.5 flex items-center gap-2">
               <Input
                 id="candidate-chatgpt-code"
                 readOnly
+                aria-label="One-time code"
                 value={login.userCode || ""}
-                className="font-mono tracking-widest"
+                className="h-12 rounded-lg border-black/10 bg-muted/30 text-center font-mono text-xl font-semibold tracking-[0.3em] dark:border-white/10"
                 onFocus={(event) => event.currentTarget.select()}
               />
-              <Button type="button" variant="outline" onClick={() => void copyCode()}>
-                <Copy className="mr-1 h-4 w-4" />{copied ? "Copied" : "Copy"}
+              <Button
+                type="button"
+                variant="outline"
+                className="h-12 w-12 shrink-0 rounded-lg border-black/10 p-0 dark:border-white/10"
+                aria-label={copied ? "Code copied" : "Copy code"}
+                onClick={() => void copyCode()}
+              >
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
+            <p className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground" role="status">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />Waiting for you to finish on OpenAI…
+            </p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <span className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />Waiting for OpenAI…
+        )}
+
+        {error && (
+          <div
+            className="flex gap-2.5 rounded-xl border border-destructive/30 bg-destructive/5 px-3.5 py-3 text-[13px] leading-relaxed text-destructive"
+            role="alert"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              {error}
+              {cooling && (
+                <span className="mt-1 block font-medium tabular-nums" data-testid="candidate-chatgpt-cooldown">
+                  You can try again in {countdown}.
+                </span>
+              )}
             </span>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 space-y-2 px-7 pb-7">
+        {login && !login.connected ? (
+          <>
             {login.verificationUrl && (
-              <Button asChild size="sm">
+              <Button
+                asChild
+                className="h-11 w-full rounded-xl bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+              >
                 <a href={login.verificationUrl} target="_blank" rel="noreferrer noopener">
-                  Open OpenAI<ExternalLink className="ml-1 h-4 w-4" />
+                  <OpenAILogo className="mr-2 h-4 w-4" />Open OpenAI
+                  <ExternalLink className="ml-2 h-3.5 w-3.5 opacity-70" />
                 </a>
               </Button>
             )}
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <p className="mt-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      )}
-
-      <div className="mt-5 flex justify-end">
-        {login && !login.connected ? (
-          <Button type="button" variant="ghost" disabled={busy} onClick={() => void connect(true)}>
-            {working === "restart" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
-            Restart sign-in
-          </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy || cooling}
+              className="h-9 w-full text-xs font-normal text-muted-foreground hover:text-foreground"
+              onClick={() => void connect(true)}
+            >
+              {working === "restart"
+                ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+              Start over
+            </Button>
+          </>
         ) : !connected ? (
-          <Button type="button" disabled={busy} onClick={() => void connect()} data-testid="candidate-chatgpt-connect">
-            {working === "connect" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Bot className="mr-1 h-4 w-4" />}
-            Connect ChatGPT
+          <Button
+            type="button"
+            disabled={busy || cooling}
+            className="h-11 w-full rounded-xl bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] disabled:opacity-60 dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+            onClick={() => void connect()}
+            data-testid="candidate-chatgpt-connect"
+          >
+            {working === "connect"
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <OpenAILogo className="mr-2 h-4 w-4" />}
+            {cooling ? `Try again in ${countdown}` : "Sign in with OpenAI"}
           </Button>
         ) : null}
       </div>

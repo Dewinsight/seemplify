@@ -14,10 +14,13 @@ const router = express.Router();
 
 function sendError(response, error) {
   const status = Number(error?.statusCode) || 500;
+  const retryAfterSeconds = Number(error?.retryAfterSeconds) || 0;
+  if (retryAfterSeconds > 0) response.set('Retry-After', String(retryAfterSeconds));
   return response.status(status).json({
     msg: error?.message || 'The ChatGPT connection request failed',
     code: error?.code || 'CHATGPT_REQUEST_FAILED',
-    retryable: error?.retryable === true
+    retryable: error?.retryable === true,
+    ...(retryAfterSeconds > 0 ? { retryAfterSeconds } : {})
   });
 }
 

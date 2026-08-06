@@ -1065,6 +1065,13 @@ const codexLoginLimiter = new BoundedFixedWindowRateLimiter({
   maxKeys: 5_000
 });
 
+/** "4 minutes" reads better than "247 seconds" in a message a person sees. */
+function formatWait(seconds) {
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? '' : 's'}`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
 function codexSubjectFromBody(rawBody) {
   let input;
   try { input = JSON.parse(rawBody || '{}'); }
@@ -1090,7 +1097,15 @@ async function handleCodexControl(request, response, rawBody, operation, request
   // Device logins are the expensive, abusable operation: one pending login per
   // subject already blocks a second, but a caller could otherwise churn them.
   if (operation === 'login/start' && !codexLoginLimiter.consume(subjectKey)) {
-    return sendJson(response, 429, { code: 'CODEX_LOGIN_RATE_LIMITED', retryable: true });
+    // Being turned away with no idea when to try again is a dead end, so the
+    // wait is part of the answer rather than something the caller must guess.
+    const retryAfterSeconds = Math.max(1, Math.ceil(codexLoginLimiter.retryAfterMs(subjectKey) / 1000));
+    return sendJson(response, 429, {
+      code: 'CODEX_LOGIN_RATE_LIMITED',
+      message: `Too many ChatGPT sign-in attempts. Try again in ${formatWait(retryAfterSeconds)}.`,
+      retryAfterSeconds,
+      retryable: true
+    }, { 'retry-after': String(retryAfterSeconds) });
   }
   try {
     if (operation === 'login/start') return sendJson(response, 200, await codexSessions.startDeviceLogin(subjectKey));
