@@ -28,6 +28,7 @@ logs/
 # Local test and automation artifacts
 .codex-temp/
 .local-runtime/
+platform/email/.env.runtime
 **/eng.traineddata
 output/
 test-results/

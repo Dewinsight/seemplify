@@ -1,0 +1,178 @@
+name: seemplify-mail
+
+services:
+  mariadb:
+    image: mariadb:10.11
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=200
+    environment:
+      MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_DATABASE: ${MARIADB_DATABASE:?Set MARIADB_DATABASE}
+      MARIADB_USER: ${MARIADB_USER:?Set MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?Set MARIADB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    networks:
+      - mail-internal
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  postal-web:
+    image: ghcr.io/postalserver/postal:3.3.7
+    restart: unless-stopped
+    command: postal web-server
+    environment: &postal-environment
+      POSTAL_CONFIG_FILE_PATH: /config/postal.yml
+    volumes: &postal-volumes
+      - postal-config:/config
+    ports:
+      - 127.0.0.1:5010:5000
+    networks:
+      mail-internal:
+        aliases:
+          - postal.seemplifyai.com
+      relay-internal: {}
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "ruby", "-e", "require 'socket'; TCPSocket.new('127.0.0.1', 5000).close"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  postal-worker:
+    image: ghcr.io/postalserver/postal:3.3.7
+    restart: unless-stopped
+    command: postal worker
+    environment: *postal-environment
+    volumes: *postal-volumes
+    networks:
+      - mail-internal
+      - relay-internal
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      postfix-relay:
+        condition: service_healthy
+
+  postal-smtp:
+    image: ghcr.io/postalserver/postal:3.3.7
+    restart: unless-stopped
+    command: postal smtp-server
+    environment: *postal-environment
+    volumes: *postal-volumes
+    ports:
+      - 127.0.0.1:2525:25
+    networks:
+      - mail-internal
+      - relay-internal
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "ruby", "-e", "require 'socket'; TCPSocket.new('127.0.0.1', 25).close"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  postfix-relay:
+    build:
+      context: ../relay
+    image: seemplify/mail-relay:local
+    restart: unless-stopped
+    environment:
+      RELAY_UPSTREAM_HOST: ${RELAY_UPSTREAM_HOST:-smtp.gmail.com}
+      RELAY_UPSTREAM_PORT: ${RELAY_UPSTREAM_PORT:-587}
+      RELAY_SMTP_USERNAME: ${RELAY_SMTP_USERNAME:?Set RELAY_SMTP_USERNAME}
+      RELAY_PASSWORD_FILE: /run/secrets/relay_smtp_password
+      RELAY_ALLOWED_NETWORKS: ${RELAY_ALLOWED_NETWORKS:-172.31.240.0/24}
+      RELAY_SENDER_DOMAIN: ${RELAY_SENDER_DOMAIN:-dewinsight.com}
+    volumes:
+      - relay-spool:/var/spool/postfix
+      - type: bind
+        source: ${RELAY_PASSWORD_PATH:?Set RELAY_PASSWORD_PATH}
+        target: /run/secrets/relay_smtp_password
+        read_only: true
+    networks:
+      - relay-internal
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  mail-api:
+    build:
+      context: ../api
+    image: seemplify/mail-api:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MAIL_API_PORT: "8080"
+      MAIL_API_RELEASE: local
+      MAIL_API_DATA_DIR: /var/lib/mail-api
+      MAIL_API_DOMAIN: ${MAIL_API_DOMAIN:-seemplifyai.com}
+      MAIL_API_BOUNCE_DOMAIN: ${MAIL_API_BOUNCE_DOMAIN:-bounce.seemplifyai.com}
+      MAIL_API_SEND_ENABLED: "true"
+      MAIL_API_KEYS: ${MAIL_API_KEYS:?Set MAIL_API_KEYS}
+      MAIL_API_ADDRESS_HASH_SALT: ${MAIL_API_ADDRESS_HASH_SALT:?Set MAIL_API_ADDRESS_HASH_SALT}
+      MAIL_API_POSTAL_BASE_URL: http://postal.seemplifyai.com:5000
+      MAIL_API_POSTAL_API_KEY: ${MAIL_API_POSTAL_API_KEY:?Set MAIL_API_POSTAL_API_KEY}
+      MAIL_API_POSTAL_WEBHOOK_TOKEN: ${MAIL_API_POSTAL_WEBHOOK_TOKEN:?Set MAIL_API_POSTAL_WEBHOOK_TOKEN}
+      MAIL_API_WEBHOOK_HMAC_SECRET: ${MAIL_API_WEBHOOK_HMAC_SECRET:?Set MAIL_API_WEBHOOK_HMAC_SECRET}
+      MAIL_API_TRUSTED_PROXY_HOPS: "0"
+      MAIL_API_RELAY_MODE: google
+      MAIL_API_RELAY_HOST: postfix-relay
+      MAIL_API_RELAY_PORT: "25"
+      MAIL_API_RELAY_UPSTREAM_HOST: ${RELAY_UPSTREAM_HOST:-smtp.gmail.com}
+      MAIL_API_RELAY_UPSTREAM_PORT: ${RELAY_UPSTREAM_PORT:-587}
+      MAIL_API_RELAY_USERNAME: ${RELAY_SMTP_USERNAME:?Set RELAY_SMTP_USERNAME}
+    volumes:
+      - mail-api-data:/var/lib/mail-api
+    ports:
+      - 127.0.0.1:5020:8080
+    networks:
+      - mail-internal
+    depends_on:
+      postal-web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:'+(process.env.MAIL_API_PORT||8080)+'/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  mariadb-data:
+    external: true
+    name: seemplify-mail_mariadb-data
+  postal-config:
+    external: true
+    name: seemplify-mail_postal-config
+  relay-spool:
+    external: true
+    name: seemplify-mail_relay-spool
+  mail-api-data:
+    external: true
+    name: seemplify-mail_mail-api-data
+
+networks:
+  mail-internal:
+    external: true
+    name: seemplify-mail_mail-internal
+  relay-internal:
+    external: true
+    name: seemplify-mail_relay-internal

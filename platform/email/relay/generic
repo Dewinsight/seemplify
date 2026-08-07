@@ -1,0 +1,4 @@
+# Google Workspace authenticates and signs this single Dew Insight identity.
+# Reply-To is not rewritten, so product replies can still return to Seemplify.
+/^[^@[:space:]]+@(psrp\.)?seemplifyai\.com$/ no-reply@dewinsight.com
+/^[^@[:space:]]+@seemplify-relay\.invalid$/ no-reply@dewinsight.com
