@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
 
 // Middleware to validate hub tokens for IdP-initiated SSO
 const validateHubToken = async (req, res, next) => {
@@ -15,7 +16,7 @@ const validateHubToken = async (req, res, next) => {
     // CRITICAL: Verify token signature, expiration, issuer, audience
     const decoded = jwt.verify(hubToken, process.env.HUB_TOKEN_SECRET, {
       algorithms: ['HS256'],
-      issuer: process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER,
+      issuer: getIdentityProviderIssuerUrl(),
       audience: process.env.PAYROLL_MANAGEMENT_URL || process.env.BACKEND_URL,
       maxAge: '5m', // Token valid for 5 minutes max
     });
@@ -123,7 +124,7 @@ const generateHubToken = (user, options = {}) => {
     currentOrganization: user.currentOrganization,
     purpose: 'hub_sso',
     aud: process.env.PAYROLL_MANAGEMENT_URL || process.env.BACKEND_URL,
-    iss: process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER,
+    iss: getIdentityProviderIssuerUrl(),
   };
 
   return jwt.sign(payload, process.env.HUB_TOKEN_SECRET, {

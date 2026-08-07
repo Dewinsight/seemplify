@@ -4,6 +4,7 @@
  */
 
 const { Issuer } = require('openid-client')
+const { getIdentityProviderIssuerUrl } = require('../config/identityProvider')
 
 let cachedClient = null
 let cachedIssuerExpiry = null
@@ -14,7 +15,7 @@ const ISSUER_CACHE_TTL = 60 * 60 * 1000 // 1 hour
  */
 async function getOidcClient() {
   const now = Date.now()
-  const issuerUrl = process.env.IDP_ISSUER_URL
+  const issuerUrl = getIdentityProviderIssuerUrl()
 
   if (cachedClient && cachedIssuerExpiry > now) {
     return cachedClient

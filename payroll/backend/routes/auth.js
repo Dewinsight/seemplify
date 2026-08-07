@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { Issuer, generators } = require('openid-client');
 const { requireAuth } = require('../middleware/rbac');
 const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
+const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -64,7 +65,7 @@ router.get('/oidc/start', async (req, res) => {
     });
 
     // Validate required environment variables
-    const issuerUrl = process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER_URL;
+    const issuerUrl = getIdentityProviderIssuerUrl();
     if (!issuerUrl) {
       return res.status(500).json({ error: 'IDP_ISSUER_URL not configured' });
     }
@@ -173,7 +174,7 @@ router.get('/oidc/callback', async (req, res) => {
 
   try {
     // Validate required environment variables
-    const issuerUrl = process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER_URL;
+    const issuerUrl = getIdentityProviderIssuerUrl();
     if (!issuerUrl) {
       return res.status(500).json({ error: 'IDP_ISSUER_URL not configured' });
     }

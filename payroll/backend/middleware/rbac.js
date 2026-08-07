@@ -39,6 +39,7 @@ try {
 }
 
 const axios = require('axios');
+const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
 
 // Validate Bearer token by calling IdP userinfo endpoint
 const getUserInfoFromIdP = async (accessToken) => {
@@ -52,7 +53,7 @@ const getUserInfoFromIdP = async (accessToken) => {
   }
 
   // Fallback to direct axios call
-  const idpUrl = process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER || 'http://localhost:4000';
+  const idpUrl = getIdentityProviderIssuerUrl('http://localhost:4000');
   const response = await axios.get(`${idpUrl}/oidc/userinfo`, {
     headers: {
       Authorization: `Bearer ${accessToken}`

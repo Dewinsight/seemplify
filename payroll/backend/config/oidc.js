@@ -1,4 +1,5 @@
 const { Issuer, generators } = require('openid-client');
+const { getIdentityProviderIssuerUrl } = require('./identityProvider');
 
 let client;
 let issuerInstance = null;
@@ -6,7 +7,7 @@ let issuerInstance = null;
 async function getOidcClient() {
   if (client) return client;
 
-  const issuerUrl = process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER_URL || 'http://localhost:4000';
+  const issuerUrl = getIdentityProviderIssuerUrl('http://localhost:4000');
   const issuer = await Issuer.discover(issuerUrl);
   issuerInstance = issuer;
   
