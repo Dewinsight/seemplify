@@ -11,7 +11,28 @@ export interface AiRuntimeAccount {
   dataSharingAcknowledgedAt: string | null;
   /** True only when the account is connected *and* consent is current. */
   routable: boolean;
+  rateLimits: AiPlanRateLimits | null;
+  usageLimit: AiPlanUsageLimit | null;
   lastError: string | null;
+}
+
+/** One of the plan's usage windows, as Codex last reported it. */
+export interface AiPlanWindow {
+  usedPercent: number | null;
+  windowMinutes: number | null;
+  resetsAt: string | null;
+}
+
+export interface AiPlanRateLimits {
+  primary: AiPlanWindow | null;
+  secondary: AiPlanWindow | null;
+  capturedAt: string | null;
+}
+
+/** The last refusal for exceeding the plan, which names when it lifts. */
+export interface AiPlanUsageLimit {
+  message: string;
+  at: string;
 }
 
 export interface AiDeviceLogin {

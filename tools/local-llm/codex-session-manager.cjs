@@ -166,6 +166,67 @@ function resolveCodexConfiguration({ models, modelCandidates, effortCandidates }
   };
 }
 
+/**
+ * Codex reports plan limits as usage windows. The exact field spelling has
+ * moved between CLI versions (snake_case and camelCase both appear, and the
+ * payload rides on more than one notification), so every known spelling is
+ * accepted and anything unrecognised is ignored rather than guessed at — a
+ * wrong number here would be worse than no number.
+ */
+function normalizeRateLimitWindow(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const usedPercent = Number(
+    raw.usedPercent ?? raw.used_percent ?? raw.percentUsed ?? raw.percent_used
+  );
+  const windowMinutes = Number(raw.windowMinutes ?? raw.window_minutes ?? raw.windowMins);
+  const resetsInSeconds = Number(
+    raw.resetsInSeconds ?? raw.resets_in_seconds ?? raw.secondsUntilReset ?? raw.seconds_until_reset
+  );
+  const resetsAtRaw = raw.resetsAt ?? raw.resets_at ?? raw.resetAt ?? raw.reset_at;
+  let resetsAt = null;
+  if (resetsAtRaw) {
+    const parsed = new Date(typeof resetsAtRaw === 'number' ? resetsAtRaw * 1000 : resetsAtRaw);
+    if (!Number.isNaN(parsed.getTime())) resetsAt = parsed.toISOString();
+  } else if (Number.isFinite(resetsInSeconds) && resetsInSeconds >= 0) {
+    resetsAt = new Date(Date.now() + resetsInSeconds * 1000).toISOString();
+  }
+  if (!Number.isFinite(usedPercent) && !resetsAt) return null;
+  return {
+    usedPercent: Number.isFinite(usedPercent) ? Math.max(0, Math.min(100, usedPercent)) : null,
+    windowMinutes: Number.isFinite(windowMinutes) && windowMinutes > 0 ? windowMinutes : null,
+    resetsAt
+  };
+}
+
+/** Pull a rate-limit snapshot out of whatever notification carried it. */
+function extractRateLimits(message) {
+  const candidates = [
+    message?.params?.rateLimits, message?.params?.rate_limits,
+    message?.params?.usage?.rateLimits, message?.params?.usage?.rate_limits,
+    message?.params?.turn?.usage?.rateLimits, message?.params?.turn?.usage?.rate_limits,
+    message?.params?.turn?.rateLimits, message?.params?.turn?.rate_limits
+  ];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const primary = normalizeRateLimitWindow(candidate.primary || candidate.hourly || candidate.short);
+    const secondary = normalizeRateLimitWindow(candidate.secondary || candidate.weekly || candidate.long);
+    if (primary || secondary) {
+      return { primary, secondary, capturedAt: new Date().toISOString() };
+    }
+  }
+  return null;
+}
+
+const USAGE_LIMIT_PATTERN = /usage limit|rate limit|quota|too many requests/i;
+
+/** A limit refusal names when the plan frees up again; that sentence is the
+ * most useful thing we can show, so it is kept verbatim. */
+function usageLimitFromMessage(text) {
+  const message = String(text || '').trim();
+  if (!message || !USAGE_LIMIT_PATTERN.test(message)) return null;
+  return { message, at: new Date().toISOString() };
+}
+
 function codexError(message, code, extra = {}) {
   const error = new Error(message);
   error.code = code;
@@ -258,6 +319,11 @@ class CodexSubjectSession {
     this.recent = [];
     this.stderr = [];
     this.loginState = null;
+    // What the account's plan currently allows, as last reported by Codex, and
+    // the last refusal for hitting it. Both are for showing the person whose
+    // plan is paying: a limit you cannot see is one you cannot plan around.
+    this.rateLimits = null;
+    this.usageLimit = null;
     this.stopped = false;
     this.turnTail = Promise.resolve();
     this.activeTurns = 0;
@@ -340,6 +406,10 @@ class CodexSubjectSession {
     }
     this.recent.push(message);
     this.recent = this.recent.slice(-200);
+    // Limits arrive as a side effect of ordinary traffic, so they are read off
+    // whatever notification carries them rather than polled for.
+    const limits = extractRateLimits(message);
+    if (limits) this.rateLimits = limits;
     const loginState = this.loginState;
     if (message.method === 'account/login/completed' && loginState && loginState.loginId === message.params?.loginId) {
       this.loginState = {
@@ -433,7 +503,9 @@ class CodexSubjectSession {
       planType: typeof account?.planType === 'string' ? account.planType : null,
       authMode: account?.type === 'chatgpt' ? 'chatgpt' : account?.type || null,
       pendingLogin: this.loginState?.pending === true,
-      loginError: this.loginState?.error || null
+      loginError: this.loginState?.error || null,
+      rateLimits: this.rateLimits,
+      usageLimit: this.usageLimit
     };
   }
 
@@ -570,11 +642,14 @@ class CodexSubjectSession {
       );
       const turn = completed.params?.turn;
       if (turn?.status !== 'completed') {
-        throw codexError(
-          turn?.error?.message || `Codex turn ended with ${String(turn?.status || 'an error')}.`,
-          'CODEX_TURN_FAILED'
-        );
+        const failure = turn?.error?.message || `Codex turn ended with ${String(turn?.status || 'an error')}.`;
+        // Remember a limit refusal so the account screen can explain the
+        // pause later, when the person goes looking for why nothing runs.
+        const limit = usageLimitFromMessage(failure);
+        if (limit) this.usageLimit = limit;
+        throw codexError(failure, 'CODEX_TURN_FAILED');
       }
+      this.usageLimit = null;
       if (!finalText) {
         const read = await this.request('thread/read', { threadId, includeTurns: true }, 30_000);
         const turns = Array.isArray(read?.thread?.turns) ? read.thread.turns : [];
@@ -707,6 +782,9 @@ const runSubjectTurn = (subjectKey, input) => sessionForSubject(subjectKey).turn
 module.exports = {
   CodexSubjectSession,
   PERMISSION_PROFILE,
+  extractRateLimits,
+  normalizeRateLimitWindow,
+  usageLimitFromMessage,
   allowedSourceApps,
   resolveSubjectRequest,
   accountStatusForSubject,

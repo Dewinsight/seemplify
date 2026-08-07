@@ -119,6 +119,16 @@ function applyStatus(account, status) {
   account.lastVerifiedAt = new Date();
   if (connected && !account.connectedAt) account.connectedAt = new Date();
   if (!connected) account.connectedAt = null;
+  // Limits belong to a connection, so they clear with it. While connected a
+  // reading is only ever replaced by a newer one: an unreachable gateway must
+  // not erase the last thing we knew about the plan.
+  if (!connected) {
+    account.rateLimits = null;
+    account.usageLimit = null;
+  } else {
+    if (status?.rateLimits) account.rateLimits = status.rateLimits;
+    if (status?.usageLimit !== undefined) account.usageLimit = status.usageLimit;
+  }
   account.lastError = String(status?.loginError || '').slice(0, 500);
   return account;
 }

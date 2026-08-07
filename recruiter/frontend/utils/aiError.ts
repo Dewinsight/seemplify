@@ -59,6 +59,18 @@ function looksLikeUsageLimit(text: string) {
 }
 
 /**
+ * Whether a failure is the connected ChatGPT plan running out rather than
+ * anything wrong with the product — the one case where the useful next step is
+ * to look at the plan, not to retry.
+ */
+export function isUsageLimitFailure(reason: any): boolean {
+  if (!reason) return false
+  const text = [reason.error, reason.details, reason.detail, reason.message, reason.msg]
+    .filter(Boolean).join(" ")
+  return looksLikeUsageLimit(text)
+}
+
+/**
  * The best user-facing sentence available for a failed AI call. Prefers the
  * runtime's own explanation over the endpoint's generic headline, because the
  * headline ("Failed to generate job description") only restates what the user
