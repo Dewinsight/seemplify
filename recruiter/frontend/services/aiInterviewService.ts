@@ -1,4 +1,5 @@
 import { apiRequest, getCurrentWsBaseUrl } from './apiConfig';
+import { aiErrorMessage } from '../utils/aiError';
 
 export interface AIInterviewQuestionSnapshot {
   questionId: string;
@@ -344,7 +345,9 @@ export interface PublicAIInterviewState {
 
 async function parseError(response: Response): Promise<Error> {
   const data = await response.json().catch(() => ({}));
-  const error: any = new Error(data.message || data.error || `Request failed with status ${response.status}`);
+  const error: any = new Error(
+    aiErrorMessage(data, `Request failed with status ${response.status}`)
+  );
   error.data = data;
   error.status = response.status;
   error.code = data.error || data.code;

@@ -1,4 +1,5 @@
 import { apiRequest, getAuthHeaders } from './apiConfig';
+import { aiError } from '../utils/aiError';
 
 interface JobAIData {
   title: string;
@@ -47,11 +48,9 @@ export const generateJobDescription = async (jobData: JobAIData): Promise<JobDes
       
       if (response.status === 401) {
         throw new Error('Authentication required. Please log in to use AI features.');
-      } else if (response.status === 500) {
-        throw new Error('AI service temporarily unavailable. Please try again in a moment.');
       }
-      
-      throw new Error(errorData.msg || errorData.error || `Request failed with status ${response.status}`);
+
+      throw aiError(errorData, response.status);
     }
 
     const result = await response.json();
@@ -64,7 +63,7 @@ export const generateJobDescription = async (jobData: JobAIData): Promise<JobDes
       throw new Error('Network connection error. Please check your internet connection.');
     }
     
-    throw new Error(error.message || 'An unexpected error occurred while generating the job description');
+    throw error instanceof Error ? error : aiError(error, undefined, 'An unexpected error occurred while generating the job description');
   }
 };
 
@@ -88,11 +87,9 @@ export const generateJobRequirements = async (jobData: JobAIData): Promise<JobRe
       
       if (response.status === 401) {
         throw new Error('Authentication required. Please log in to use AI features.');
-      } else if (response.status === 500) {
-        throw new Error('AI service temporarily unavailable. Please try again in a moment.');
       }
-      
-      throw new Error(errorData.msg || errorData.error || `Request failed with status ${response.status}`);
+
+      throw aiError(errorData, response.status);
     }
 
     const result = await response.json();
@@ -105,7 +102,7 @@ export const generateJobRequirements = async (jobData: JobAIData): Promise<JobRe
       throw new Error('Network connection error. Please check your internet connection.');
     }
     
-    throw new Error(error.message || 'An unexpected error occurred while generating the job requirements');
+    throw error instanceof Error ? error : aiError(error, undefined, 'An unexpected error occurred while generating the job requirements');
   }
 };
 
@@ -122,7 +119,7 @@ export const testAIConnection = async (): Promise<{ msg: string; response?: stri
     return await response.json();
   } catch (error: any) {
     console.error('Error testing AI connection:', error);
-    throw new Error(error.message || 'Network error occurred');
+    throw error instanceof Error ? error : aiError(error);
   }
 };
 

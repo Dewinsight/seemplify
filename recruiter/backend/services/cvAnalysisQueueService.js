@@ -3870,8 +3870,14 @@ async function getBatchStatus(publicId, organizationId) {
   const waitingJobs = jobs.filter((job) => ['queued', 'waiting_for_local_runtime'].includes(job.state));
   const activeJobs = jobs.filter((job) => job.state === 'processing');
   const completed = completedJobs.length + failedJobs.length + batch.rejected.length;
+  // A parked job looks identical to a slow one from the outside. Carrying the
+  // reason it is waiting is the difference between "still processing" and
+  // "your ChatGPT plan is out of quota until the 13th".
+  const parked = waitingJobs.find((job) => job.state === 'waiting_for_local_runtime' && job.lastError?.message);
   return {
     batchId: batch.publicId,
+    waitingReason: parked?.lastError?.message || null,
+    waitingCode: parked?.lastError?.code || null,
     totalFiles: batch.totalFiles,
     completed,
     successful: completedJobs.length,

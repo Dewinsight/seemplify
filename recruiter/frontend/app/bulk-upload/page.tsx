@@ -280,7 +280,16 @@ export default function BulkUploadPage() {
 
           {status.state === "waiting_for_local_runtime" && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Local CV analysis is offline. All {status.queued} waiting CVs are saved and will resume automatically.
+              {/* Saying only "waiting" leaves someone watching a spinner with no
+                  idea whether to wait a minute or a week — so the runtime's own
+                  reason is shown when it gave one. */}
+              <p className="font-medium">
+                AI analysis is paused. All {status.queued} waiting {status.queued === 1 ? "CV is" : "CVs are"} saved
+                and will resume automatically.
+              </p>
+              {status.waitingReason && (
+                <p className="mt-1 text-amber-800">{status.waitingReason}</p>
+              )}
             </div>
           )}
 

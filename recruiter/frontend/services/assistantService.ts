@@ -1,5 +1,6 @@
 import { apiRequest, getAuthHeaders, getCurrentApiBaseUrl } from './apiConfig';
 import { inspectResponseForAiRuntimeGate } from '../utils/aiRuntimeGateHandler';
+import { aiError, readAiError } from '../utils/aiError';
 
 // Message types
 export type MessageType = "user" | "assistant" | "system"
@@ -132,14 +133,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to send message');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error sending message:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -155,14 +155,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get chat history');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting chat history:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -179,14 +178,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to clear chat history');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error clearing chat history:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -204,14 +202,13 @@ class AssistantService {
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to search chat history');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error searching chat history:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -227,14 +224,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get session info');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting session info:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -250,14 +246,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get user sessions');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting user sessions:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -275,14 +270,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to deactivate session');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error deactivating session:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -300,14 +294,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to deactivate sessions');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error deactivating all sessions:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -322,14 +315,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to analyze candidates');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error analyzing candidates:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -346,14 +338,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to analyze jobs');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error analyzing jobs:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -375,14 +366,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get matching report');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting matching report:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -397,14 +387,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get hiring analytics');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting hiring analytics:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -419,14 +408,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to test connection');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error testing connection:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -441,14 +429,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get candidates');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting candidates:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -464,14 +451,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get chat sessions');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting chat sessions:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -488,14 +474,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to create chat session');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error creating chat session:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -512,14 +497,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to update chat session title');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error updating chat session title:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -535,14 +519,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to delete chat session');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error deleting chat session:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -558,14 +541,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to toggle chat session pin');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error toggling chat session pin:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -581,14 +563,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get chat session history');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting chat session history:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -603,14 +584,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get jobs');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting jobs:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -626,14 +606,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to generate job description');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error generating job description:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -657,14 +636,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to analyze file');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error analyzing file:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -684,14 +662,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to execute action');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error executing action:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -706,14 +683,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get candidate insights');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting candidate insights:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -728,14 +704,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get job insights');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting job insights:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -755,14 +730,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to generate report');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error generating report:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -781,8 +755,7 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get suggested prompts');
+        throw await readAiError(response);
       }
 
       const data = await response.json();
@@ -812,15 +785,14 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to convert speech to text');
+        throw await readAiError(response);
       }
 
       const data = await response.json();
       return data.text || '';
     } catch (error: any) {
       console.error('Error converting speech to text:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -840,14 +812,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get AI feedback');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting AI feedback:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 
@@ -862,14 +833,13 @@ class AssistantService {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw errorData; // Failed to get jobs for matching');
+        throw await readAiError(response);
       }
 
       return await response.json();
     } catch (error: any) {
       console.error('Error getting jobs for matching:', error);
-      throw new Error(error.message || 'Network error occurred');
+      throw error instanceof Error ? error : aiError(error);
     }
   }
 

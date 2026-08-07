@@ -206,7 +206,11 @@ test('AI Runtime exposes managed local inference, model inventory, and its durab
   assert.match(pageSource, /lane\.sustainedValidated \? 'Sustained' : 'Safe fallback'/);
   assert.match(pageSource, /lane\.oldestWaitMs/);
   assert.match(pageSource, /lane\.p95RunMs/);
-  assert.match(pageSource, /route\.provider === 'groq' \? 'Groq' : 'Managed local'/);
+  // A route on a connected ChatGPT account used to be labelled "Managed local",
+  // which named the wrong runtime and the wrong payer. Every provider column
+  // now goes through the one labeller that knows the difference.
+  assert.match(pageSource, /providerUsageLabel\(route\.provider, route\.model\)/);
+  assert.doesNotMatch(pageSource, /route\.provider === 'groq' \? 'Groq' : 'Managed local'/);
   assert.match(pageSource, /localRuntime\?\.failover\?\.intervalMinutes \? `Every \$\{localRuntime\.failover\.intervalMinutes\} minutes` : 'Not reported'/);
   assert.match(pageSource, /Gateway metering/);
   assert.match(pageSource, /localRuntime\?\.usageMetering/);
