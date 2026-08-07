@@ -174,7 +174,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
                             {orgMenuOpen && (
                                 <>
-                                    <button className="fixed inset-0 z-40 cursor-default" aria-label="Close organization menu" onClick={() => setOrgMenuOpen(false)} />
+                                    <button className="fixed inset-x-0 bottom-0 top-16 z-40 cursor-default" aria-label="Close organization menu" onClick={() => setOrgMenuOpen(false)} />
                                     <div className="absolute right-0 top-11 z-50 w-72 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-lg shadow-black/30" role="menu">
                                         <div className="border-b border-zinc-800 px-3 py-2.5 text-xs font-medium text-zinc-500">Switch organization</div>
                                         <div className="max-h-72 overflow-y-auto p-1">
@@ -227,7 +227,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
                             {userMenuOpen && (
                                 <>
-                                    <button className="fixed inset-0 z-40 cursor-default" aria-label="Close account menu" onClick={() => setUserMenuOpen(false)} />
+                                    <button className="fixed inset-x-0 bottom-0 top-16 z-40 cursor-default" aria-label="Close account menu" onClick={() => setUserMenuOpen(false)} />
                                     <div className="absolute right-0 top-11 z-50 w-64 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 shadow-lg shadow-black/30" role="menu">
                                         <div className="border-b border-zinc-800 px-4 py-3">
                                             <div className="truncate text-sm font-medium text-white">{user?.name}</div>
