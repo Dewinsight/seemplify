@@ -1,5 +1,5 @@
 const { Issuer, generators } = require('openid-client');
-const { getIdentityProviderIssuerUrl } = require('./identityProvider');
+const { getPayrollOidcClientConfig } = require('./identityProvider');
 
 let client;
 let issuerInstance = null;
@@ -7,14 +7,17 @@ let issuerInstance = null;
 async function getOidcClient() {
   if (client) return client;
 
-  const issuerUrl = getIdentityProviderIssuerUrl('http://localhost:4000');
+  const oidcConfig = getPayrollOidcClientConfig({
+    issuerUrlFallback: 'http://localhost:4000',
+  });
+  const issuerUrl = oidcConfig.issuerUrl;
   const issuer = await Issuer.discover(issuerUrl);
   issuerInstance = issuer;
   
   client = new issuer.Client({
-    client_id: process.env.OIDC_CLIENT_ID,
-    client_secret: process.env.OIDC_CLIENT_SECRET,
-    redirect_uris: [process.env.OIDC_REDIRECT_URI],
+    client_id: oidcConfig.clientId,
+    client_secret: oidcConfig.clientSecret,
+    redirect_uris: [oidcConfig.redirectUri],
     response_types: ['code']
   });
 

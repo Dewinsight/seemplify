@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const { Issuer, generators } = require('openid-client');
 const { requireAuth } = require('../middleware/rbac');
 const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
-const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
+const { getPayrollOidcClientConfig } = require('../config/identityProvider');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -65,18 +65,19 @@ router.get('/oidc/start', async (req, res) => {
     });
 
     // Validate required environment variables
-    const issuerUrl = getIdentityProviderIssuerUrl();
+    const oidcConfig = getPayrollOidcClientConfig();
+    const issuerUrl = oidcConfig.issuerUrl;
     if (!issuerUrl) {
       return res.status(500).json({ error: 'IDP_ISSUER_URL not configured' });
     }
 
-    const clientId = process.env.OIDC_CLIENT_ID;
-    const clientSecret = process.env.OIDC_CLIENT_SECRET;
+    const clientId = oidcConfig.clientId;
+    const clientSecret = oidcConfig.clientSecret;
     if (!clientId || !clientSecret) {
       return res.status(500).json({ error: 'OIDC client credentials not configured' });
     }
 
-    const redirectUri = process.env.OIDC_REDIRECT_URI;
+    const redirectUri = oidcConfig.redirectUri;
     if (!redirectUri) {
       return res.status(500).json({ error: 'OIDC_REDIRECT_URI not configured' });
     }
@@ -174,18 +175,19 @@ router.get('/oidc/callback', async (req, res) => {
 
   try {
     // Validate required environment variables
-    const issuerUrl = getIdentityProviderIssuerUrl();
+    const oidcConfig = getPayrollOidcClientConfig();
+    const issuerUrl = oidcConfig.issuerUrl;
     if (!issuerUrl) {
       return res.status(500).json({ error: 'IDP_ISSUER_URL not configured' });
     }
 
-    const clientId = process.env.OIDC_CLIENT_ID;
-    const clientSecret = process.env.OIDC_CLIENT_SECRET;
+    const clientId = oidcConfig.clientId;
+    const clientSecret = oidcConfig.clientSecret;
     if (!clientId || !clientSecret) {
       return res.status(500).json({ error: 'OIDC client credentials not configured' });
     }
 
-    const redirectUri = process.env.OIDC_REDIRECT_URI;
+    const redirectUri = oidcConfig.redirectUri;
 
     // Get state from cookie
     const stateCookie = req.cookies.oidc_state;
