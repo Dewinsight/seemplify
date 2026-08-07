@@ -359,7 +359,7 @@
         <div class="user-menu-section">
           <a href="/organizations" class="user-menu-link">Manage organizations</a>
           <% if (navOrganizations.length > 1) { %>
-            <button type="button" class="user-menu-action" onclick="if (typeof openOrgModal === 'function') { openOrgModal(); } else { window.location.href = '/organizations'; }">
+            <button type="button" class="user-menu-action" onclick="this.closest('details').open = false; if (typeof openOrgModal === 'function') { openOrgModal(); } else { window.location.href = '/organizations'; }">
               <span>Switch organization</span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
             </button>
