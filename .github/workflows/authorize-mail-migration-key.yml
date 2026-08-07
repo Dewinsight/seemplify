@@ -62,12 +62,15 @@ jobs:
           touch "$auth"
           chmod 600 "$auth"
           key="$(cat "$incoming")"
+          authorized="restrict $key"
           tmp="$(mktemp "$HOME/.ssh/authorized_keys.XXXXXX")"
-          grep -Fvx -- "$key" "$auth" > "$tmp" || true
-          if [ "$MIGRATION_ACTION" = add ]; then printf '%s\n' "$key" >> "$tmp"; fi
+          # Remove both the current restricted form and the legacy plain form
+          # so retries and cleanup remain exact and idempotent.
+          grep -Fvx -- "$authorized" "$auth" | grep -Fvx -- "$key" > "$tmp" || true
+          if [ "$MIGRATION_ACTION" = add ]; then printf '%s\n' "$authorized" >> "$tmp"; fi
           chmod 600 "$tmp"
           mv "$tmp" "$auth"
-          count="$(grep -Fc -- "$key" "$auth" || true)"
+          count="$(grep -Fc -- "$authorized" "$auth" || true)"
           if [ "$MIGRATION_ACTION" = add ]; then test "$count" -eq 1; else test "$count" -eq 0; fi
           printf 'Temporary migration authorization %s completed.\n' "$MIGRATION_ACTION"
           REMOTE
