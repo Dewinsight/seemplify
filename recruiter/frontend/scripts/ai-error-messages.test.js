@@ -78,6 +78,25 @@ test('a raw payload thrown by an older service still reads correctly', () => {
   assert.equal(messageFromAiFailure(undefined, 'Fallback'), 'Fallback');
 });
 
+test('a generation failure stays on screen until the user acts', () => {
+  // The job form had an effect that cleared aiAssistantError whenever the
+  // required fields were filled — which they always are by the time an API
+  // call fails. The panel rendered for one frame and vanished, so a usage-
+  // limit refusal looked like nothing happening at all. Only the missing-
+  // fields hint may clear itself.
+  const source = fs.readFileSync(path.join(__dirname, '..', 'app', 'jobs', 'new', 'page.tsx'), 'utf8');
+  assert.match(
+    source,
+    /aiAssistantError\.startsWith\("Please fill in"\)/,
+    'auto-clearing must be scoped to the validation hint'
+  );
+  assert.doesNotMatch(
+    source,
+    /if \(aiAssistantError && watchedTitle && watchedDepartment && watchedLocation\)/,
+    'the unscoped clear erased API failures on the next render'
+  );
+});
+
 test('no AI service flattens a failure to a generic network message', () => {
   // A regression guard: the old pattern silently destroyed every AI error
   // reason across 30-odd call sites.
