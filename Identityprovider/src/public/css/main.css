@@ -176,6 +176,30 @@ body.idp-workspace-page .profile-nav a.active {
   box-shadow: inset 0 -2px var(--brand);
 }
 
+body.idp-workspace-page .org-section-tabs {
+  display: flex;
+  gap: 24px;
+  margin: -10px 0 28px;
+  border-bottom: 1px solid var(--border);
+}
+
+body.idp-workspace-page .org-section-tab {
+  padding: 11px 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+body.idp-workspace-page .org-section-tab:hover {
+  color: var(--text);
+}
+
+body.idp-workspace-page .org-section-tab.active {
+  color: var(--text);
+  box-shadow: inset 0 -2px var(--brand);
+}
+
 body.idp-workspace-page .personal-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

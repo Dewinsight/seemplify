@@ -66,6 +66,218 @@
       color: var(--muted);
       font-size: 13px;
     }
+    .structure-layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      min-height: 520px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--panel);
+    }
+    .department-browser {
+      border-right: 1px solid var(--border);
+      background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+    }
+    .department-browser__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 58px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .department-browser__header h2 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .department-create {
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .department-create:hover { color: var(--text); background: var(--hover-bg); }
+    .department-list {
+      display: grid;
+      padding: 8px;
+    }
+    .department-list__item {
+      width: 100%;
+      padding: 11px 10px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: left;
+    }
+    .department-list__item:hover { background: var(--hover-bg); color: var(--text); }
+    .department-list__item.active { background: var(--panel-strong); color: var(--text); }
+    .department-list__name {
+      display: block;
+      overflow: hidden;
+      font-size: 13px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .department-list__meta {
+      display: block;
+      margin-top: 3px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .department-detail { min-width: 0; padding: 24px; }
+    .department-detail[hidden] { display: none; }
+    .department-detail__header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .department-detail__header h2 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -.025em;
+    }
+    .department-detail__description {
+      max-width: 620px;
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .department-detail__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .department-facts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0;
+      margin: 20px 0 26px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .department-fact { min-width: 0; padding: 13px 14px; }
+    .department-fact + .department-fact { border-left: 1px solid var(--border); }
+    .department-fact__label { color: var(--muted); font-size: 11px; }
+    .department-fact__value {
+      overflow: hidden;
+      margin-top: 3px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .department-teams__header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .department-teams__header h3 { margin: 0; font-size: 15px; }
+    .department-teams__header span { color: var(--muted); font-size: 12px; }
+    .team-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(250px, 1.25fr) auto;
+      gap: 18px;
+      align-items: center;
+      min-height: 82px;
+      padding: 14px 0;
+      border-top: 1px solid var(--border);
+    }
+    .team-row__name { color: var(--text); font-size: 14px; font-weight: 650; }
+    .team-row__path { margin-top: 3px; color: var(--muted); font-size: 11px; }
+    .team-row__leaders {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .team-row__leader-label { color: var(--muted); font-size: 10px; }
+    .team-row__leader-value { margin-top: 2px; color: var(--text-secondary); font-size: 12px; }
+    .team-row__actions { display: flex; justify-content: flex-end; gap: 6px; }
+    .structure-empty {
+      padding: 28px 0;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .members-section .stats { margin-top: 0; }
+    .members-section__heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .members-section__heading h2 { margin: 0; font-size: 18px; }
+    .members-section__heading p { margin: 0; font-size: 13px; }
+    .member-record {
+      display: block;
+      padding: 0;
+      overflow: hidden;
+    }
+    .member-record__summary {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.2fr) minmax(160px, .75fr) minmax(180px, 1fr) auto auto;
+      gap: 18px;
+      align-items: center;
+      min-height: 76px;
+      padding: 14px 18px;
+      cursor: pointer;
+      list-style: none;
+    }
+    .member-record__summary::-webkit-details-marker { display: none; }
+    .member-record__summary:hover { background: var(--hover-bg); }
+    .member-record__identity { min-width: 0; }
+    .member-record__identity .member-name { margin: 0; font-size: 14px; }
+    .member-record__identity .member-email { margin-top: 2px; font-size: 12px; }
+    .member-record__summary-label { color: var(--muted); font-size: 10px; }
+    .member-record__summary-value {
+      overflow: hidden;
+      margin-top: 2px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .member-record__chevron {
+      width: 18px;
+      height: 18px;
+      color: var(--muted);
+      transition: transform 150ms ease;
+    }
+    .member-record[open] .member-record__chevron { transform: rotate(90deg); }
+    .member-record__body {
+      padding: 0 18px 18px;
+      border-top: 1px solid var(--border);
+    }
+    @media (max-width: 900px) {
+      .structure-layout { grid-template-columns: 220px minmax(0, 1fr); }
+      .department-facts { grid-template-columns: 1fr; }
+      .department-fact + .department-fact { border-left: 0; border-top: 1px solid var(--border); }
+      .team-row { grid-template-columns: 1fr; gap: 10px; }
+      .team-row__actions { justify-content: flex-start; }
+    }
+    @media (max-width: 680px) {
+      .structure-layout { display: block; }
+      .department-browser { border-right: 0; border-bottom: 1px solid var(--border); }
+      .department-list { display: flex; overflow-x: auto; }
+      .department-list__item { min-width: 150px; }
+      .department-detail { padding: 18px; }
+      .department-detail__header { display: block; }
+      .department-detail__actions { margin-top: 16px; }
+      .team-row__leaders { grid-template-columns: 1fr; gap: 8px; }
+      .member-record__summary { grid-template-columns: 1fr auto; }
+      .member-record__summary > :not(.member-record__identity):not(.member-record__chevron) { display: none; }
+    }
   </style>
   <link rel="stylesheet" href="/css/main.css?v=3">
   <script src="/js/theme.js?v=2"></script>
@@ -93,79 +305,131 @@
       </div>
     </div>
 
-    <div class="split-layout">
-      <div class="card">
-        <div class="header" style="margin-bottom: 12px;">
-          <div>
-            <h2 style="margin: 0;">Departments</h2>
-            <div class="header-subtitle">Manage departments, department heads, and hierarchy from this same screen.</div>
-          </div>
-          <% if (canManageTeams) { %>
-            <button class="btn btn-secondary" onclick="showDepartmentModal()">+ Department</button>
-          <% } %>
-        </div>
-        <div class="inline-grid">
-          <% departments.forEach(department => { %>
-            <div class="card" style="margin: 0;">
-              <div style="font-weight: 700;"><%= department.name %></div>
-              <div class="mini-meta">
-                <span>Parent: <%= departments.find(d => d.id === department.parentDepartment)?.name || 'Root' %></span>
-                <span>Head: <%= department.headName || 'Not assigned' %></span>
-              </div>
-              <% if (department.description) { %>
-                <div style="margin-top: 8px; color: var(--muted); font-size: 13px;"><%= department.description %></div>
-              <% } %>
+    <%- include('partials/organization-tabs', { organization, yourRole, activeSection: activeView }) %>
+
+    <section data-organization-panel="structure" <%= activeView === 'structure' ? '' : 'hidden' %>>
+      <% if (departments && departments.length > 0) { %>
+        <div class="structure-layout">
+          <aside class="department-browser" aria-label="Departments">
+            <div class="department-browser__header">
+              <h2>Departments</h2>
               <% if (canManageTeams) { %>
-                <div style="margin-top: 12px;">
-                  <button class="btn btn-secondary btn-sm" onclick='editDepartment(<%- JSON.stringify(department) %>)'>Edit</button>
-                </div>
+                <button type="button" class="department-create" onclick="showDepartmentModal()">Add</button>
               <% } %>
             </div>
-          <% }) %>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="header" style="margin-bottom: 12px;">
-          <div>
-            <h2 style="margin: 0;">Teams</h2>
-            <div class="header-subtitle">Teams remain under departments, with hierarchy and membership managed here.</div>
-          </div>
-          <% if (canManageTeams) { %>
-            <button class="btn btn-primary" onclick="showCreateModal()">+ Team</button>
-          <% } %>
-        </div>
-
-        <% if (teams && teams.length > 0) { %>
-          <% teams.forEach(team => { %>
-            <div class="card team-card" data-team-id="<%= team.id %>" style="margin-bottom: 16px;">
-              <div class="team-info">
-                <div class="team-name"><%= team.name %></div>
-                <% if (team.description) { %><div class="team-description"><%= team.description %></div><% } %>
-                <div class="mini-meta">
-                  <span>Department: <strong><%= team.department?.name || 'General' %></strong></span>
-                  <span>Parent Team: <%= team.parentTeam?.name || 'None' %></span>
-                  <span>Line Manager: <span id="team-manager-<%= team.id %>"><%= team.manager?.name || team.manager?.email || 'Not assigned' %></span></span>
-                  <span id="team-member-count-<%= team.id %>"><%= team.memberCount || 0 %> member<%= team.memberCount !== 1 ? 's' : '' %></span>
-                </div>
-              </div>
-              <div class="team-actions">
-                <button class="btn btn-secondary btn-sm" onclick="manageMembers('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Members</button>
-                <% if (canManageTeams) { %>
-                  <button class="btn btn-secondary btn-sm" onclick='editTeam(<%- JSON.stringify(team) %>)'>Edit</button>
-                  <button class="btn btn-danger btn-sm" onclick="deleteTeam('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Delete</button>
-                <% } %>
-              </div>
+            <div class="department-list" role="tablist" aria-label="Select a department">
+              <% departments.forEach((department, index) => { %>
+                <% const departmentTeamCount = teams.filter(team => team.department?.id === department.id).length; %>
+                <button
+                  type="button"
+                  class="department-list__item<%= index === 0 ? ' active' : '' %>"
+                  role="tab"
+                  aria-selected="<%= index === 0 ? 'true' : 'false' %>"
+                  aria-controls="department-<%= department.id %>"
+                  data-department-tab="<%= department.id %>"
+                  onclick="selectDepartment('<%= department.id %>', true)"
+                >
+                  <span class="department-list__name"><%= department.name %></span>
+                  <span class="department-list__meta"><%= departmentTeamCount %> team<%= departmentTeamCount === 1 ? '' : 's' %></span>
+                </button>
+              <% }) %>
             </div>
-          <% }) %>
-        <% } else { %>
-          <div class="card empty-state" style="margin: 0;">
-            <h3>No teams yet</h3>
-            <p>Create teams to organize your department structure.</p>
+          </aside>
+
+          <div>
+            <% departments.forEach((department, index) => { %>
+              <% const departmentTeams = teams.filter(team => team.department?.id === department.id); %>
+              <% const departmentMemberCount = members.filter(member => member.departmentId === department.id).length; %>
+              <% const parentDepartment = departments.find(item => item.id === department.parentDepartment); %>
+              <section
+                class="department-detail"
+                id="department-<%= department.id %>"
+                data-department-panel="<%= department.id %>"
+                role="tabpanel"
+                <%= index === 0 ? '' : 'hidden' %>
+              >
+                <header class="department-detail__header">
+                  <div>
+                    <h2><%= department.name %></h2>
+                    <p class="department-detail__description"><%= department.description || 'Manage this department, its leadership, and the teams within it.' %></p>
+                  </div>
+                  <% if (canManageTeams) { %>
+                    <div class="department-detail__actions">
+                      <button type="button" class="btn btn-secondary btn-sm" onclick='editDepartment(<%- JSON.stringify(department) %>)'>Edit department</button>
+                      <button type="button" class="btn btn-primary btn-sm" onclick="showCreateModal('<%= department.id %>')">Create team</button>
+                    </div>
+                  <% } %>
+                </header>
+
+                <div class="department-facts">
+                  <div class="department-fact">
+                    <div class="department-fact__label">Department head</div>
+                    <div class="department-fact__value"><%= department.headName || 'Not assigned' %></div>
+                  </div>
+                  <div class="department-fact">
+                    <div class="department-fact__label">Reports into</div>
+                    <div class="department-fact__value"><%= parentDepartment?.name || 'Organization' %></div>
+                  </div>
+                  <div class="department-fact">
+                    <div class="department-fact__label">People</div>
+                    <div class="department-fact__value"><%= departmentMemberCount %> member<%= departmentMemberCount === 1 ? '' : 's' %></div>
+                  </div>
+                </div>
+
+                <div class="department-teams">
+                  <div class="department-teams__header">
+                    <h3>Teams</h3>
+                    <span><%= departmentTeams.length %> in this department</span>
+                  </div>
+                  <% if (departmentTeams.length > 0) { %>
+                    <% departmentTeams.forEach(team => { %>
+                      <% const teamLead = (team.members || []).find(teamMember => teamMember.role === 'team_lead'); %>
+                      <article class="team-row" data-team-id="<%= team.id %>">
+                        <div>
+                          <div class="team-row__name"><%= team.name %></div>
+                          <div class="team-row__path"><%= department.name %><%= team.parentTeam?.name ? ` / ${team.parentTeam.name}` : '' %> · <span id="team-member-count-<%= team.id %>"><%= team.memberCount || 0 %> member<%= team.memberCount === 1 ? '' : 's' %></span></div>
+                        </div>
+                        <div class="team-row__leaders">
+                          <div>
+                            <div class="team-row__leader-label">Team lead</div>
+                            <div class="team-row__leader-value"><%= teamLead?.name || teamLead?.email || 'Not assigned' %></div>
+                          </div>
+                          <div>
+                            <div class="team-row__leader-label">Line manager</div>
+                            <div class="team-row__leader-value" id="team-manager-<%= team.id %>"><%= team.manager?.name || team.manager?.email || 'Not assigned' %></div>
+                          </div>
+                        </div>
+                        <div class="team-row__actions">
+                          <button type="button" class="btn btn-secondary btn-sm" onclick="manageMembers('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Members</button>
+                          <% if (canManageTeams) { %>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick='editTeam(<%- JSON.stringify(team) %>)'>Edit</button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="deleteTeam('<%= team.id %>', <%= JSON.stringify(team.name) %>)">Delete</button>
+                          <% } %>
+                        </div>
+                      </article>
+                    <% }) %>
+                  <% } else { %>
+                    <div class="structure-empty">No teams in this department yet.<% if (canManageTeams) { %> Create the first team here to start assigning members.<% } %></div>
+                  <% } %>
+                </div>
+              </section>
+            <% }) %>
           </div>
-        <% } %>
+        </div>
+      <% } else { %>
+        <div class="card empty-state">
+          <h2>No departments yet</h2>
+          <p>Create a department first, then add teams and assign people within it.</p>
+          <% if (canManageTeams) { %><button type="button" class="btn btn-primary" onclick="showDepartmentModal()">Create department</button><% } %>
+        </div>
+      <% } %>
+    </section>
+
+    <section class="members-section" data-organization-panel="members" <%= activeView === 'members' ? '' : 'hidden' %>>
+      <div class="members-section__heading">
+        <h2>Members</h2>
+        <p>Search people and manage their organization-level details.</p>
       </div>
-    </div>
 
     <div class="stats">
       <div class="stat">
@@ -204,8 +468,8 @@
 
     <div class="member-grid">
       <% members.forEach(member => { %>
-        <div
-          class="card member-card"
+        <details
+          class="card member-card member-record"
           data-member-id="<%= member.id %>"
           data-member-name="<%= (member.name || '').toLowerCase() %>"
           data-member-email="<%= (member.email || '').toLowerCase() %>"
@@ -214,20 +478,32 @@
           data-member-department="<%= (member.departmentName || 'Unassigned').toLowerCase() %>"
           data-member-teams="<%= (member.teamNames || []).join('||').toLowerCase() %>"
         >
-          <div class="member-info">
-            <div class="member-name">
-              <%= member.name || 'No name' %>
-              <% if (member.isOwner) { %><span style="color: var(--brand-2); font-size: 12px;">(Primary Owner)</span><% } %>
-              <% if (member.id.toString() === user._id.toString()) { %><span style="color: var(--muted); font-size: 12px;">(You)</span><% } %>
+          <summary class="member-record__summary">
+            <div class="member-record__identity">
+              <div class="member-name">
+                <%= member.name || 'No name' %>
+                <% if (member.isOwner) { %><span style="color: var(--brand-2); font-size: 12px;">(Primary Owner)</span><% } %>
+                <% if (member.id.toString() === user._id.toString()) { %><span style="color: var(--muted); font-size: 12px;">(You)</span><% } %>
+              </div>
+              <div class="member-email"><%= member.email %></div>
             </div>
-            <div class="member-email"><%= member.email %></div>
-            <div class="member-meta">
-              <span class="role-badge role-<%= member.role %>"><%= member.role %></span>
+            <div>
+              <div class="member-record__summary-label">Department</div>
+              <div class="member-record__summary-value"><%= member.departmentName || 'Unassigned' %></div>
+            </div>
+            <div>
+              <div class="member-record__summary-label">Teams</div>
+              <div class="member-record__summary-value" id="member-teams-<%= member.id %>"><%= member.teamNames?.length ? member.teamNames.join(', ') : 'No team' %></div>
+            </div>
+            <span class="role-badge role-<%= member.role %>"><%= member.role %></span>
+            <svg class="member-record__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </summary>
+
+          <div class="member-record__body">
+            <div class="member-meta" style="margin-top: 14px;">
               <span class="role-badge onboarding-badge onboarding-<%= member.onboardingStatus %>">Onboarding: <%= member.onboardingStatus.replace('_', ' ') %></span>
-              <span id="member-teams-<%= member.id %>">Teams: <%= member.teamNames?.length ? member.teamNames.join(', ') : 'No team' %></span>
               <span>Joined <%= new Date(member.joinedAt).toLocaleDateString() %></span>
             </div>
-          </div>
 
           <div class="member-fields">
             <div>
@@ -319,7 +595,8 @@
               <button class="btn btn-danger btn-sm" onclick="removeMember('<%= member.id %>', '<%= member.email %>')">Remove</button>
             </div>
           <% } %>
-        </div>
+          </div>
+        </details>
       <% }) %>
     </div>
 
@@ -335,6 +612,7 @@
         <button class="btn btn-danger" onclick="leaveOrganization()">Leave Organization</button>
       </div>
     <% } %>
+    </section>
   </div>
 
   <div class="modal" id="transferModal">
@@ -471,6 +749,36 @@
     const orgMembers = <%- JSON.stringify(orgMembers || []) %>;
     const teams = <%- JSON.stringify(teams || []) %>;
     let activeMembersTeamId = '';
+
+    function selectDepartment(departmentId, updateHistory = false) {
+      const normalizedId = normalizeId(departmentId);
+      const tabs = Array.from(document.querySelectorAll('[data-department-tab]'));
+      const panels = Array.from(document.querySelectorAll('[data-department-panel]'));
+      if (!tabs.some(tab => tab.dataset.departmentTab === normalizedId)) return;
+
+      tabs.forEach((tab) => {
+        const isActive = tab.dataset.departmentTab === normalizedId;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        tab.tabIndex = isActive ? 0 : -1;
+      });
+      panels.forEach((panel) => {
+        panel.hidden = panel.dataset.departmentPanel !== normalizedId;
+      });
+
+      if (updateHistory) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', 'structure');
+        url.searchParams.set('department', normalizedId);
+        window.history.pushState({ departmentId: normalizedId }, '', url);
+      }
+    }
+
+    function selectDepartmentFromLocation() {
+      const requestedId = new URLSearchParams(window.location.search).get('department');
+      const fallbackId = document.querySelector('[data-department-tab]')?.dataset.departmentTab;
+      if (requestedId || fallbackId) selectDepartment(requestedId || fallbackId, false);
+    }
 
     function normalizeId(value) {
       return value == null ? '' : String(value);
@@ -625,8 +933,8 @@
       document.getElementById('membersModalContent').innerHTML = `
         <div class="mini-meta" style="margin-bottom: 16px;">
           <span>Department: ${escapeHtml(currentTeam.department?.name || 'General')}</span>
-          <span>Assigning a member to this team sets their department to this team's department.</span>
-          <span>The member marked Line Manager is treated as the team's manager.</span>
+          <span>Members can belong to multiple teams within this department.</span>
+          <span>Line Manager controls reporting; Team Lead identifies delivery leadership.</span>
         </div>
         ${(currentTeam.members || []).map(member => `
           <div class="card" style="margin-bottom: 12px;">
@@ -792,7 +1100,7 @@
         }
 
         const successMessage = data.message || 'Profile reminders sent';
-        window.location.href = `/organizations/${orgId}/members?success=${encodeURIComponent(successMessage)}`;
+        window.location.href = `/organizations/${orgId}/members?view=members&success=${encodeURIComponent(successMessage)}`;
       } catch (error) {
         alert('Failed to send profile reminders');
       } finally {
@@ -933,10 +1241,11 @@
       document.getElementById('departmentModal').classList.remove('active');
     }
 
-    function showCreateModal() {
+    function showCreateModal(departmentId = '') {
       document.getElementById('createForm').reset();
       hydrateDepartmentSelectors();
-      if (departments[0]) document.getElementById('teamDepartment').value = departments[0].id;
+      const selectedDepartmentId = departmentId || departments[0]?.id || '';
+      if (selectedDepartmentId) document.getElementById('teamDepartment').value = selectedDepartmentId;
       syncParentTeamOptions('teamDepartment', 'parentTeam', '');
       document.getElementById('createModal').classList.add('active');
     }
@@ -1111,6 +1420,8 @@
     });
 
     hydrateDepartmentSelectors();
+    selectDepartmentFromLocation();
+    window.addEventListener('popstate', selectDepartmentFromLocation);
     if (departments[0] && document.getElementById('teamDepartment')) {
       document.getElementById('teamDepartment').value = departments[0].id;
       syncParentTeamOptions('teamDepartment', 'parentTeam', '');

@@ -94,8 +94,8 @@
                             Edit
                           </button>
                         <% } %>
-                        <a href="/organizations/<%= org.id %>/members" class="btn btn-secondary">Members</a>
-                        <a href="/organizations/<%= org.id %>/teams" class="btn btn-secondary">Teams</a>
+                        <a href="/organizations/<%= org.id %>/members?view=members" class="btn btn-secondary">Members</a>
+                        <a href="/organizations/<%= org.id %>/members?view=structure" class="btn btn-secondary">Structure</a>
                         <% if (['owner', 'admin' ].includes(org.role)) { %>
                           <a href="/organizations/<%= org.id %>/invitations" class="btn btn-secondary">Invitations</a>
                           <a href="/organizations/<%= org.id %>/notifications" class="btn btn-secondary">Notifications</a>

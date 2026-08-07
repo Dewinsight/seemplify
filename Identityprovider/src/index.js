@@ -6213,6 +6213,7 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       canManageTeams: ['owner', 'admin'].includes(member.role) || organization.isDepartmentHead(req.user._id),
       yourRole: member.role,
       ownerCount: organization.getOwnerCount(),
+      activeView: req.query.view === 'members' ? 'members' : 'structure',
       user: req.user,
       error: req.query.error,
       success: req.query.success
@@ -8055,7 +8056,7 @@ app.get('/onboarding', getSessionUser, requireCurrentOrganizationActiveSubscript
 })
 
 app.get('/organizations/:orgId/teams', getSessionUser, async (req, res) => {
-  return res.redirect(`/organizations/${req.params.orgId}/members`)
+  return res.redirect(`/organizations/${req.params.orgId}/members?view=structure`)
 })
 
 // User's pending invitations page

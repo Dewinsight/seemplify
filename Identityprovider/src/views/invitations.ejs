@@ -113,7 +113,7 @@
   <%- include('partials/nav', { activePage: 'organizations' }) %>
 
   <div class="container">
-    <a href="/organizations/<%= organization._id %>/members" class="back-link">← Back to Members</a>
+    <a href="/organizations" class="back-link">← Back to Organizations</a>
 
     <div class="header">
       <div>
@@ -124,6 +124,8 @@
         <button class="btn btn-primary" onclick="showInviteModal()">+ Invite Member</button>
       </div>
     </div>
+
+    <%- include('partials/organization-tabs', { organization, yourRole, activeSection: 'invitations' }) %>
 
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>

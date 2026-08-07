@@ -1773,8 +1773,8 @@
         </div>
 
         <nav class="workspace-context__links" aria-label="Organization management">
-          <a href="/organizations/<%= currentOrg.id %>/members" class="workspace-context__link">Members</a>
-          <a href="/organizations/<%= currentOrg.id %>/teams" class="workspace-context__link">Teams</a>
+          <a href="/organizations/<%= currentOrg.id %>/members?view=members" class="workspace-context__link">Members</a>
+          <a href="/organizations/<%= currentOrg.id %>/members?view=structure" class="workspace-context__link">Structure</a>
           <% if (['owner', 'admin'].includes(currentOrg.role)) { %>
             <a href="/organizations/<%= currentOrg.id %>/invitations" class="workspace-context__link">Invitations</a>
           <% } %>
