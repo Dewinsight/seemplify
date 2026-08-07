@@ -3,7 +3,7 @@ function getIdentityProviderIssuerUrl(fallback) {
     process.env.OIDC_ISSUER_URL ||
     process.env.OIDC_ISSUER ||
     process.env.IDP_URL ||
-    fallback;
+    (process.env.NODE_ENV === 'production' ? 'https://auth.seemplifyai.com' : fallback);
 }
 
 module.exports = { getIdentityProviderIssuerUrl };
