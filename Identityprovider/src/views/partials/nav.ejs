@@ -1,3 +1,21 @@
+<%
+  const navOrganizations = (typeof organizations !== 'undefined' && Array.isArray(organizations)) ? organizations : [];
+  const navUserCurrentOrgId = user?.currentOrganization?._id?.toString?.()
+    || user?.currentOrganization?.toString?.()
+    || null;
+  const navRouteOrganization = typeof organization !== 'undefined' ? organization : null;
+  const navUserOrganization = user?.currentOrganization && typeof user.currentOrganization === 'object'
+    ? user.currentOrganization
+    : null;
+  const navCurrentOrganization = navOrganizations.find((item) => {
+    const itemId = item?.id?.toString?.() || item?._id?.toString?.() || null;
+    return item?.isCurrent || item?.isCurrentOrganization || (itemId && navUserCurrentOrgId && itemId === navUserCurrentOrgId);
+  }) || navRouteOrganization || navUserOrganization || null;
+  const navCurrentOrganizationId = navCurrentOrganization?.id?.toString?.()
+    || navCurrentOrganization?._id?.toString?.()
+    || null;
+  const navCurrentOrganizationRole = navCurrentOrganization?.role || null;
+%>
 <style>
   /* One canonical authenticated navbar across every IDP page. */
   body .top-nav.idp-global-nav {
@@ -94,6 +112,92 @@
     background: var(--hover-bg);
   }
 
+  body .idp-global-nav .user-menu {
+    width: 292px;
+    min-width: 292px;
+    padding: 8px;
+    border-radius: 10px;
+    background: var(--panel-solid);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+    backdrop-filter: none;
+  }
+
+  body .idp-global-nav .user-menu-organization {
+    padding: 10px 10px 9px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  body .idp-global-nav .user-menu-organization-label {
+    margin-bottom: 3px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  body .idp-global-nav .user-menu-organization-name {
+    overflow: hidden;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body .idp-global-nav .user-menu-organization-role {
+    margin-left: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+
+  body .idp-global-nav .user-menu-section {
+    display: grid;
+    gap: 2px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  body .idp-global-nav .user-menu-link,
+  body .idp-global-nav .user-menu-action {
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    text-decoration: none;
+  }
+
+  body .idp-global-nav .user-menu-link:hover,
+  body .idp-global-nav .user-menu-link.active,
+  body .idp-global-nav .user-menu-action:hover {
+    background: var(--hover-bg);
+    color: var(--text);
+  }
+
+  body .idp-global-nav .user-menu-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  body .idp-global-nav .user-menu-action svg {
+    width: 15px;
+    height: 15px;
+    color: var(--muted);
+  }
+
+  body .idp-global-nav .user-menu-logout {
+    margin-top: 0;
+    border: 0;
+    background: transparent;
+    color: var(--error);
+  }
+
   @media (max-width: 768px) {
     body .top-nav.idp-global-nav {
       min-height: 56px;
@@ -137,9 +241,17 @@
       </div>
     </div>
     <div class="mobile-drawer-account">
+      <% if (navCurrentOrganization && navCurrentOrganizationId) { %>
+        <a href="/organizations/<%= navCurrentOrganizationId %>/members?view=members" class="top-nav-link">Members</a>
+        <a href="/organizations/<%= navCurrentOrganizationId %>/members?view=structure" class="top-nav-link">Teams &amp; departments</a>
+        <% if (['owner', 'admin'].includes(navCurrentOrganizationRole)) { %>
+          <a href="/organizations/<%= navCurrentOrganizationId %>/invitations" class="top-nav-link">Invitations</a>
+        <% } %>
+      <% } %>
       <a href="/notifications" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'notifications' ? ' active' : '' %>">Notifications</a>
       <a href="/profile" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
-      <a href="/invitations/pending" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">Invitations</a>
+      <a href="/invitations/pending" class="top-nav-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">My invitations</a>
+      <a href="/organizations" class="top-nav-link">Manage organizations</a>
     </div>
     <a href="/logout" class="top-nav-logout">Sign out</a>
   </div>
@@ -224,9 +336,40 @@
         </svg>
       </summary>
       <div class="user-menu">
-        <a href="/notifications" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'notifications' ? ' active' : '' %>">Notifications</a>
-        <a href="/profile" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
-        <a href="/invitations/pending" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">Invitations</a>
+        <% if (navCurrentOrganization) { %>
+          <div class="user-menu-organization">
+            <div class="user-menu-organization-label">Current organization</div>
+            <div class="user-menu-organization-name">
+              <%= navCurrentOrganization.name || 'Organization' %>
+              <% if (navCurrentOrganizationRole) { %>
+                <span class="user-menu-organization-role"><%= navCurrentOrganizationRole %></span>
+              <% } %>
+            </div>
+          </div>
+        <% } %>
+        <% if (navCurrentOrganizationId) { %>
+          <div class="user-menu-section">
+            <a href="/organizations/<%= navCurrentOrganizationId %>/members?view=members" class="user-menu-link">Members</a>
+            <a href="/organizations/<%= navCurrentOrganizationId %>/members?view=structure" class="user-menu-link">Teams &amp; departments</a>
+            <% if (['owner', 'admin'].includes(navCurrentOrganizationRole)) { %>
+              <a href="/organizations/<%= navCurrentOrganizationId %>/invitations" class="user-menu-link">Invitations</a>
+            <% } %>
+          </div>
+        <% } %>
+        <div class="user-menu-section">
+          <a href="/organizations" class="user-menu-link">Manage organizations</a>
+          <% if (navOrganizations.length > 1) { %>
+            <button type="button" class="user-menu-action" onclick="if (typeof openOrgModal === 'function') { openOrgModal(); } else { window.location.href = '/organizations'; }">
+              <span>Switch organization</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+            </button>
+          <% } %>
+        </div>
+        <div class="user-menu-section">
+          <a href="/notifications" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'notifications' ? ' active' : '' %>">Notifications</a>
+          <a href="/profile" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'profile' ? ' active' : '' %>">Profile</a>
+          <a href="/invitations/pending" class="user-menu-link<%= typeof activePage !== 'undefined' && activePage === 'invitations' ? ' active' : '' %>">My invitations</a>
+        </div>
         <a href="/logout" class="user-menu-link user-menu-logout">Sign out</a>
       </div>
     </details>

@@ -1183,6 +1183,46 @@
       font-size: 11px;
       line-height: 16px;
     }
+    .hub-page-header__actions {
+      display: flex;
+      align-items: flex-start;
+      gap: 18px;
+      margin-left: auto;
+    }
+    .hub-organization {
+      min-width: 190px;
+      padding-left: 16px;
+      border-left: 1px solid var(--border);
+      text-align: right;
+    }
+    .hub-organization__label {
+      margin-bottom: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .hub-organization__name {
+      overflow: hidden;
+      max-width: 240px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 650;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .hub-organization__switch {
+      margin-top: 5px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .hub-organization__switch:hover { color: var(--text); }
     .workspace-layout {
       display: block;
     }
@@ -1303,114 +1343,6 @@
     }
     .app-card--coming-soon { opacity: 0.65; }
 
-    .workspace-context {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      margin: -4px 0 34px;
-      padding: 14px 0;
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-    }
-    .workspace-context__identity {
-      display: flex;
-      align-items: center;
-      min-width: 230px;
-      gap: 11px;
-    }
-    .workspace-context__icon {
-      flex: 0 0 auto;
-      width: 22px;
-      height: 22px;
-      color: var(--brand);
-    }
-    .workspace-context__copy { min-width: 0; }
-    .workspace-context__label {
-      margin-bottom: 2px;
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.3;
-    }
-    .workspace-context__name-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-    }
-    .workspace-context__name {
-      overflow: hidden;
-      color: var(--text);
-      font-size: 14px;
-      font-weight: 650;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .workspace-context__name-row .role-badge {
-      padding: 1px 5px;
-      border-radius: 4px;
-      font-size: 9px;
-      text-transform: capitalize;
-    }
-    .workspace-context__links {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      margin-left: 8px;
-    }
-    .workspace-context__link {
-      padding: 7px 9px;
-      border-radius: 6px;
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 12px;
-      font-weight: 550;
-    }
-    .workspace-context__link:hover {
-      background: var(--hover-bg);
-      color: var(--text);
-    }
-    .workspace-context__actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: auto;
-    }
-    .workspace-context__manage {
-      padding: 7px 9px;
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 12px;
-    }
-    .workspace-context__manage:hover { color: var(--text); }
-    .workspace-context__switch {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 36px;
-      padding: 0 11px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      background: transparent;
-      color: var(--text-secondary);
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    .workspace-context__switch:hover {
-      border-color: color-mix(in srgb, var(--muted) 50%, var(--border));
-      background: var(--hover-bg);
-      color: var(--text);
-    }
-    .workspace-context__switch svg {
-      width: 14px;
-      height: 14px;
-    }
-    .workspace-context__count {
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 500;
-    }
-
     .action-banner,
     .subscription-reminder-card {
       border-radius: 10px;
@@ -1419,12 +1351,6 @@
 
     @media (max-width: 980px) {
       .app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .workspace-context { flex-wrap: wrap; }
-      .workspace-context__links {
-        order: 3;
-        width: 100%;
-        margin-left: 33px;
-      }
     }
     @media (max-width: 768px) {
       body { padding: 0 0 32px; }
@@ -1445,23 +1371,8 @@
       .hub-page-header h1 { font-size: 24px; }
       .hub-page-header p { font-size: 13px; }
       .hub-notification-link { flex: 0 0 auto; }
-      .workspace-context {
-        align-items: flex-start;
-        gap: 12px;
-        margin-bottom: 28px;
-      }
-      .workspace-context__identity { min-width: 0; flex: 1; }
-      .workspace-context__links {
-        order: 2;
-        margin-left: 33px;
-        overflow-x: auto;
-      }
-      .workspace-context__actions {
-        order: 3;
-        width: calc(100% - 33px);
-        margin-left: 33px;
-      }
-      .workspace-context__switch { margin-left: auto; }
+      .hub-page-header__actions { gap: 12px; }
+      .hub-organization { min-width: 150px; }
       .app-grid { grid-template-columns: 1fr; }
       .app-card {
         min-height: 0;
@@ -1472,7 +1383,18 @@
     }
     @media (max-width: 480px) {
       .hub-page-header { display: block; }
-      .hub-notification-link { margin-top: 14px; }
+      .hub-page-header__actions {
+        align-items: center;
+        justify-content: space-between;
+        margin: 18px 0 0;
+      }
+      .hub-organization {
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        text-align: left;
+      }
+      .hub-notification-link { margin: 0; }
       .app-card__desc { font-size: 12px; }
     }
   </style>
@@ -1747,52 +1669,24 @@
         <h1>Your workspace</h1>
         <p>Open an application or manage access for <%= currentOrg ? currentOrg.name : 'your organization' %>.</p>
       </div>
-      <% if (notificationSummary && notificationSummary.totalUnread > 0) { %>
-        <a href="/notifications" class="hub-notification-link">
-          Notifications
-          <span class="hub-notification-count"><%= notificationSummary.totalUnread > 99 ? '99+' : notificationSummary.totalUnread %></span>
-        </a>
-      <% } %>
-    </header>
-
-    <% if (currentOrg) { %>
-      <section class="workspace-context" aria-label="Current organization">
-        <div class="workspace-context__identity">
-          <svg class="workspace-context__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M3 21h18M5 21V7l8-4 8 4v14M8 21v-4h8v4" />
-          </svg>
-          <div class="workspace-context__copy">
-            <div class="workspace-context__label">Current organization</div>
-            <div class="workspace-context__name-row">
-              <span class="workspace-context__name"><%= currentOrg.name %></span>
-              <% if (currentOrg.role) { %>
-                <span class="role-badge role-<%= currentOrg.role %>"><%= currentOrg.role %></span>
-              <% } %>
-            </div>
+      <div class="hub-page-header__actions">
+        <% if (notificationSummary && notificationSummary.totalUnread > 0) { %>
+          <a href="/notifications" class="hub-notification-link">
+            Notifications
+            <span class="hub-notification-count"><%= notificationSummary.totalUnread > 99 ? '99+' : notificationSummary.totalUnread %></span>
+          </a>
+        <% } %>
+        <% if (currentOrg) { %>
+          <div class="hub-organization" aria-label="Current organization">
+            <div class="hub-organization__label">You are working in</div>
+            <div class="hub-organization__name"><%= currentOrg.name %></div>
+            <% if (organizations.length > 1) { %>
+              <button type="button" class="hub-organization__switch" onclick="openOrgModal()">Switch organization</button>
+            <% } %>
           </div>
-        </div>
-
-        <nav class="workspace-context__links" aria-label="Organization management">
-          <a href="/organizations/<%= currentOrg.id %>/members?view=members" class="workspace-context__link">Members</a>
-          <a href="/organizations/<%= currentOrg.id %>/members?view=structure" class="workspace-context__link">Structure</a>
-          <% if (['owner', 'admin'].includes(currentOrg.role)) { %>
-            <a href="/organizations/<%= currentOrg.id %>/invitations" class="workspace-context__link">Invitations</a>
-          <% } %>
-          <a href="/profile" class="workspace-context__link">Profile</a>
-        </nav>
-
-        <div class="workspace-context__actions">
-          <a href="/organizations" class="workspace-context__manage">Manage organizations</a>
-          <button type="button" onclick="openOrgModal()" class="workspace-context__switch" aria-label="Switch organization (<%= organizations.length %> available)">
-            <span>Switch</span>
-            <span class="workspace-context__count"><%= organizations.length %></span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path d="m9 18 6-6-6-6" />
-            </svg>
-          </button>
-        </div>
-      </section>
-    <% } %>
+        <% } %>
+      </div>
+    </header>
 
     <div class="workspace-layout">
       <div class="workspace-primary">
