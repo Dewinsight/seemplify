@@ -219,6 +219,23 @@
     }
     .members-section__heading h2 { margin: 0; font-size: 18px; }
     .members-section__heading p { margin: 0; font-size: 13px; }
+    .members-overview {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 18px;
+      padding: 11px 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .members-overview__item {
+      padding: 0 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .members-overview__item:first-child { padding-left: 0; }
+    .members-overview__item + .members-overview__item { border-left: 1px solid var(--border); }
+    .members-overview__item strong { margin-right: 5px; color: var(--text); font-size: 13px; }
     .member-record {
       display: block;
       padding: 0;
@@ -279,7 +296,7 @@
       .member-record__summary > :not(.member-record__identity):not(.member-record__chevron) { display: none; }
     }
   </style>
-  <link rel="stylesheet" href="/css/main.css?v=3">
+  <link rel="stylesheet" href="/css/main.css?v=4">
   <script src="/js/theme.js?v=2"></script>
 </head>
 <body class="idp-workspace-page">
@@ -431,19 +448,10 @@
         <p>Search people and manage their organization-level details.</p>
       </div>
 
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-value"><%= members.length %></div>
-        <div class="stat-label">Total Members</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value"><%= departments.length %></div>
-        <div class="stat-label">Departments</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value role-badge role-<%= yourRole %>"><%= yourRole %></div>
-        <div class="stat-label">Your Role</div>
-      </div>
+    <div class="members-overview" aria-label="Member directory summary">
+      <div class="members-overview__item"><strong><%= members.length %></strong> members</div>
+      <div class="members-overview__item"><strong><%= departments.length %></strong> departments</div>
+      <div class="members-overview__item">Your role: <strong><%= yourRole %></strong></div>
     </div>
 
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
