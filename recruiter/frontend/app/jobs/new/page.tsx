@@ -184,8 +184,14 @@ export default function CreateJobPage() {
   const watchedLocation = useWatch({ control: form.control, name: "location" })
 
   useEffect(() => {
-    // Clear error if all required fields are filled
-    if (aiAssistantError && watchedTitle && watchedDepartment && watchedLocation) {
+    // Only the "fill in these fields first" hint clears itself once the fields
+    // are filled. A generation failure must stay on screen: this effect used to
+    // clear every error, which erased API failures on the very next render and
+    // left the user watching a silent button.
+    if (
+      aiAssistantError.startsWith("Please fill in")
+      && watchedTitle && watchedDepartment && watchedLocation
+    ) {
       setAiAssistantError("")
     }
   }, [watchedTitle, watchedDepartment, watchedLocation, aiAssistantError])
