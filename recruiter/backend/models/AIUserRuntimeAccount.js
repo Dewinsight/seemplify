@@ -31,6 +31,13 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
   /** Routing to a personal plan requires an explicit acknowledgement that task
    * content leaves for OpenAI. Revoking it stops routing immediately. */
   dataSharingAcknowledgedAt: { type: Date, default: null },
+  /** What the connected plan currently allows, as last reported by Codex. Kept
+   * so the account screen can show it even when the gateway is unreachable —
+   * a stale number with its timestamp beats no answer to "why has AI stopped".
+   * Shaped { primary, secondary, capturedAt }; the gateway normalises it. */
+  rateLimits: { type: mongoose.Schema.Types.Mixed, default: null },
+  /** The last "you've hit your limit" refusal, which names when it lifts. */
+  usageLimit: { type: mongoose.Schema.Types.Mixed, default: null },
   lastError: { type: String, default: '' }
 }, { timestamps: true });
 
@@ -47,6 +54,8 @@ AIUserRuntimeAccountSchema.methods.toPublicJSON = function toPublicJSON() {
     lastVerifiedAt: this.lastVerifiedAt,
     dataSharingAcknowledgedAt: this.dataSharingAcknowledgedAt,
     routable: this.isRoutable(),
+    rateLimits: this.rateLimits || null,
+    usageLimit: this.usageLimit || null,
     lastError: this.lastError || null
   };
 };

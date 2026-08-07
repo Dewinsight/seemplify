@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Check, Copy, ExternalLink, Loader2, RefreshCw, Unplug } from "lucide-react"
 import { OpenAILogo } from "@/components/ui/openai-logo"
+import { ChatGptPlanLimits } from "@/components/ui/chatgpt-plan-limits"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -274,6 +275,14 @@ export default function AiAccountPage() {
                 </Button>
               )}
             </div>
+          )}
+
+          {connected && (
+            <ChatGptPlanLimits
+              planType={account?.planType}
+              rateLimits={account?.rateLimits}
+              usageLimit={account?.usageLimit}
+            />
           )}
 
           {connected && (

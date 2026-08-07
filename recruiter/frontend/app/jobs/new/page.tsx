@@ -7,7 +7,8 @@ import { useForm, useWatch, type SubmitHandler } from "react-hook-form"
 import { z } from "zod"
 import { ChevronRight, Check, Loader2, Sparkles, Wand2, Plus, CheckCircle, XCircle, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { messageFromAiFailure } from "@/utils/aiError"
+import Link from "next/link"
+import { isUsageLimitFailure, messageFromAiFailure } from "@/utils/aiError"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
@@ -142,6 +143,7 @@ export default function CreateJobPage() {
   const [showCurrencyDialog, setShowCurrencyDialog] = useState(false)
   const [currencyRefreshKey, setCurrencyRefreshKey] = useState(0)
   const [aiAssistantError, setAiAssistantError] = useState<string>("")
+  const [aiAssistantLimited, setAiAssistantLimited] = useState(false)
 
   const form = useForm<JobFormValues>({
     resolver: zodResolver(jobFormSchema) as any,
@@ -285,6 +287,7 @@ export default function CreateJobPage() {
 
     if (missingFields.length > 0) {
       const errorMessage = `Please fill in ${missingFields.join(", ")} before generating the job description.`
+      setAiAssistantLimited(false)
       setAiAssistantError(errorMessage)
       toast({
         title: "Missing Information",
@@ -337,6 +340,7 @@ export default function CreateJobPage() {
     } catch (error: any) {
       setIsGeneratingDescription(false)
       const errorMessage = messageFromAiFailure(error, "Failed to generate job description. Please try again.")
+      setAiAssistantLimited(isUsageLimitFailure(error))
       setAiAssistantError(errorMessage)
       toast({
         title: "Generation Failed",
@@ -366,6 +370,7 @@ export default function CreateJobPage() {
 
     if (missingFields.length > 0) {
       const errorMessage = `Please fill in ${missingFields.join(", ")} before generating the job requirements.`
+      setAiAssistantLimited(false)
       setAiAssistantError(errorMessage)
       toast({
         title: "Missing Information",
@@ -398,6 +403,7 @@ export default function CreateJobPage() {
     } catch (error: any) {
       setIsGeneratingRequirements(false)
       const errorMessage = messageFromAiFailure(error, "Failed to generate job requirements. Please try again.")
+      setAiAssistantLimited(isUsageLimitFailure(error))
       setAiAssistantError(errorMessage)
       toast({
         title: "Generation Failed",
@@ -1134,7 +1140,19 @@ export default function CreateJobPage() {
                 <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 p-3">
                   <div className="flex items-start gap-2">
                     <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
-                    <p className="text-sm text-red-800 dark:text-red-200">{aiAssistantError}</p>
+                    <div className="space-y-1">
+                      <p className="text-sm text-red-800 dark:text-red-200">{aiAssistantError}</p>
+                      {/* Out of plan is not a product fault, so the useful next
+                          step is the plan itself rather than another retry. */}
+                      {aiAssistantLimited && (
+                        <Link
+                          href="/settings/ai-account"
+                          className="inline-block text-xs font-medium text-red-900 underline underline-offset-2 dark:text-red-200"
+                        >
+                          See your ChatGPT plan and limits
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
