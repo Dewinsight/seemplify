@@ -147,6 +147,27 @@
   box-sizing: border-box;
 }
 
+::view-transition-old(root) {
+  animation: idp-page-exit 110ms ease-in both;
+}
+
+::view-transition-new(root) {
+  animation: idp-page-enter 170ms ease-out both;
+}
+
+::view-transition-old(idp-navigation),
+::view-transition-new(idp-navigation) {
+  animation: none;
+}
+
+@keyframes idp-page-exit {
+  to { opacity: 0; }
+}
+
+@keyframes idp-page-enter {
+  from { opacity: 0; }
+}
+
 body {
   font-family: "IBM Plex Sans", system-ui, -apple-system, 'Segoe UI', sans-serif;
   background: var(--bg);
@@ -239,6 +260,7 @@ p {
 }
 
 .top-nav {
+  view-transition-name: idp-navigation;
   --top-nav-progress: 0;
   --top-nav-pad-y-start: 14px;
   --top-nav-pad-y-end: 6px;
@@ -308,6 +330,57 @@ p {
   transform: translateZ(0);
   will-change: padding, box-shadow, border-radius;
   transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.route-progress {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 10000;
+  height: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.route-progress span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--brand);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.route-progress.is-active {
+  opacity: 1;
+}
+
+.route-progress.is-active span {
+  animation: idp-route-progress 1.8s cubic-bezier(.2, .7, .2, 1) forwards;
+}
+
+@keyframes idp-route-progress {
+  0% { transform: scaleX(0); }
+  18% { transform: scaleX(.32); }
+  55% { transform: scaleX(.68); }
+  100% { transform: scaleX(.86); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 1ms;
+  }
+
+  .route-progress,
+  .route-progress span {
+    transition: none;
+    animation: none !important;
+  }
+
+  .route-progress.is-active span {
+    transform: scaleX(.86);
+  }
 }
 
 .top-action-strip {
