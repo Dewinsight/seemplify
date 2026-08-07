@@ -3610,10 +3610,12 @@ app.get('/', async (req, res) => {
 
     const hubBrand = getIdpBrand(req)
     const isAkwaIbomHub = hubBrand.name === 'Akwa Ibom State'
-    let apps = getHubApps({ isAkwaIbom: isAkwaIbomHub }).map(app => ({
-      ...app,
-      iconSvg: getAppIcon(app.icon)
-    }))
+    let apps = getHubApps({ isAkwaIbom: isAkwaIbomHub })
+      .filter(app => app.appId !== 'lms')
+      .map(app => ({
+        ...app,
+        iconSvg: getAppIcon(app.icon)
+      }))
 
     // Filter hub cards by per-member access scope
     if (memberAppAccess.mode === APP_ACCESS_MODE_SELECTED) {
@@ -3700,7 +3702,6 @@ app.get('/', async (req, res) => {
       receivedEvaluationCount,
       latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
       notificationSummary,
-      simpleLmsExternalWorkspaceUrl: SIMPLE_LMS_EXTERNAL_WORKSPACE_URL,
       profileCompletion,
       currentProfileSection: '',
       profileCompletionEnforced: !profileCompletion.complete,
