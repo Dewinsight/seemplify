@@ -494,6 +494,10 @@ export interface BulkUploadStatus {
   startedAt: string;
   completedAt: string | null;
   state: 'processing' | 'waiting_for_local_runtime' | 'completed';
+  /** Why the batch is parked, when it is — e.g. the ChatGPT plan's usage
+   * limit and when it resets. Null while work is moving normally. */
+  waitingReason?: string | null;
+  waitingCode?: string | null;
 }
 
 export const bulkUploadCVs = async (files: File[]): Promise<BulkUploadResponse> => {

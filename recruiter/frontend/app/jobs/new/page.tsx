@@ -7,6 +7,7 @@ import { useForm, useWatch, type SubmitHandler } from "react-hook-form"
 import { z } from "zod"
 import { ChevronRight, Check, Loader2, Sparkles, Wand2, Plus, CheckCircle, XCircle, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { messageFromAiFailure } from "@/utils/aiError"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
@@ -335,7 +336,7 @@ export default function CreateJobPage() {
       })
     } catch (error: any) {
       setIsGeneratingDescription(false)
-      const errorMessage = error.message || "Failed to generate job description. Please try again."
+      const errorMessage = messageFromAiFailure(error, "Failed to generate job description. Please try again.")
       setAiAssistantError(errorMessage)
       toast({
         title: "Generation Failed",
@@ -396,7 +397,7 @@ export default function CreateJobPage() {
       })
     } catch (error: any) {
       setIsGeneratingRequirements(false)
-      const errorMessage = error.message || "Failed to generate job requirements. Please try again."
+      const errorMessage = messageFromAiFailure(error, "Failed to generate job requirements. Please try again.")
       setAiAssistantError(errorMessage)
       toast({
         title: "Generation Failed",
