@@ -1,0 +1,169 @@
+# Deploy the Seemplify transactional-mail stack to Dokploy
+#
+# This deploys the compose application only. It never changes the cutover gates
+# (MAIL_API_REPLICAS, POSTAL_WORKER_REPLICAS, MAIL_TUNNEL_REPLICAS), never
+# opens MAIL_API_SEND_ENABLED, and never touches a volume. Those are operator
+# actions taken in Dokploy against the runbook, so a routine redeploy of main
+# cannot activate production sending or cut ingress over on its own.
+name: Deploy Mail Service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'platform/email/**'
+      - '.github/workflows/deploy-mail-service.yml'
+  workflow_dispatch:
+
+env:
+  APP_NAME: seemplify-mail
+  COMPOSE_FILE: platform/email/compose/docker-compose.dokploy.yml
+
+# A second run mid-deploy would race the first one's polling against a service
+# it did not start. Queue instead, and never cancel a deploy already in flight.
+concurrency:
+  group: deploy-mail-service
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate compose configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Structural checks only: no deployment value is available here, and none
+      # is wanted. This asserts the file still fails closed before it can reach
+      # the host.
+      - name: Validate production compose file
+        run: node platform/email/scripts/validate-compose-config.mjs --compose "$COMPOSE_FILE"
+
+      - name: Run mail platform checks
+        run: node --test platform/email/tests/*.test.mjs
+
+  deploy:
+    name: Deploy to Dokploy
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      # Fail before contacting Dokploy if configuration is incomplete, and name
+      # only the missing secret. `if [ -z "${{ secrets.X }}" ]` would paste the
+      # value into the shell command line, so each is read through the
+      # environment instead.
+      - name: Require deployment configuration
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          SEEMPLIFY_MAIL_COMPOSE_ID: ${{ secrets.SEEMPLIFY_MAIL_COMPOSE_ID }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in DOKPLOY_URL DOKPLOY_TOKEN SEEMPLIFY_MAIL_COMPOSE_ID; do
+            if [ -z "${!name:-}" ]; then
+              missing="${missing} ${name}"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):${missing}"
+            echo "SEEMPLIFY_MAIL_COMPOSE_ID is the Dokploy compose id for the ${APP_NAME} stack."
+            exit 1
+          fi
+          case "$DOKPLOY_URL" in
+            http://*|https://*) ;;
+            *) echo "::error::DOKPLOY_URL must start with http:// or https://"; exit 1 ;;
+          esac
+          echo "Deployment configuration is present."
+
+      - name: Trigger Dokploy compose deployment
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          SEEMPLIFY_MAIL_COMPOSE_ID: ${{ secrets.SEEMPLIFY_MAIL_COMPOSE_ID }}
+        run: |
+          set -euo pipefail
+          # --data @- keeps the compose id off the process list, and the token
+          # travels in a header read from the environment, so neither appears in
+          # the run log even with debug logging on.
+          status=$(printf '{"composeId":"%s"}' "$SEEMPLIFY_MAIL_COMPOSE_ID" \
+            | curl -sS -o /tmp/deploy.json -w '%{http_code}' \
+                --max-time 120 --retry 2 --retry-connrefused \
+                -X POST "${DOKPLOY_URL%/}/api/compose.deploy" \
+                -H "x-api-key: ${DOKPLOY_TOKEN}" \
+                -H 'Content-Type: application/json' \
+                -H 'accept: application/json' \
+                --data @-)
+
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Dokploy refused the deployment (HTTP $status)."
+            # The body is Dokploy's own error text and carries no credential,
+            # but it is truncated so an unexpected echo cannot dump a payload.
+            head -c 500 /tmp/deploy.json || true
+            exit 1
+          fi
+          echo "Deployment accepted by Dokploy (HTTP $status)."
+
+      # Dokploy builds asynchronously, so an accepted request is not a finished
+      # deploy. Poll the compose record until it settles. A poll that cannot
+      # read state is reported and does not silently pass.
+      - name: Await deployment result
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          SEEMPLIFY_MAIL_COMPOSE_ID: ${{ secrets.SEEMPLIFY_MAIL_COMPOSE_ID }}
+        run: |
+          set -euo pipefail
+          attempts=60
+          delay=15
+          unknown=0
+
+          for attempt in $(seq 1 "$attempts"); do
+            sleep "$delay"
+            status=$(curl -sS -o /tmp/compose.json -w '%{http_code}' \
+              --max-time 30 --retry 2 --retry-connrefused \
+              -G "${DOKPLOY_URL%/}/api/compose.one" \
+              --data-urlencode "composeId=${SEEMPLIFY_MAIL_COMPOSE_ID}" \
+              -H "x-api-key: ${DOKPLOY_TOKEN}" \
+              -H 'accept: application/json' || echo 000)
+
+            if [ "$status" != "200" ]; then
+              unknown=$((unknown + 1))
+              echo "Attempt ${attempt}/${attempts}: could not read compose state (HTTP ${status})."
+              if [ "$unknown" -ge 5 ]; then
+                echo "::error::Gave up: Dokploy state was unreadable five times."
+                exit 1
+              fi
+              continue
+            fi
+            unknown=0
+
+            # jq -r over a fixed field: no part of the response is executed.
+            state=$(jq -r '.composeStatus // .applicationStatus // "unknown"' /tmp/compose.json)
+            echo "Attempt ${attempt}/${attempts}: composeStatus=${state}"
+
+            case "$state" in
+              done)
+                echo "✅ ${APP_NAME} compose deployment finished."
+                exit 0
+                ;;
+              error)
+                echo "::error::Dokploy reported a failed deployment. Open the Dokploy deployment log for ${APP_NAME}."
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "::error::Deployment did not settle within $((attempts * delay)) seconds. Check Dokploy before retrying; the build may still be running."
+          exit 1
+
+      - name: Deployment notes
+        if: always()
+        run: |
+          echo "Deployed the compose definition only."
+          echo "Cutover gates and MAIL_API_SEND_ENABLED are unchanged by this workflow."
+          echo "Readiness: platform/email/scripts/linux/remote-readiness.sh"

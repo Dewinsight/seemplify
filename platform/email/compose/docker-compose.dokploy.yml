@@ -1,0 +1,362 @@
+# Production deployment of the Seemplify transactional-mail stack on the
+# Dokploy Linux host.
+#
+# This file is the Linux/production counterpart of `docker-compose.yml`, which
+# stays as the local Windows Docker Desktop definition. The two never share
+# volumes: the local project is `seemplify-mail`, this one is
+# `seemplify-mail-prod`, so every named volume below is isolated from the
+# machine the stack is migrating away from.
+#
+# Public API surface is unchanged. Applications keep calling
+# `POST /v1/messages` with `Authorization: Bearer <keyId>.<secret>`.
+#
+# Fail-closed defaults, all of which must be opened deliberately:
+#   * no host ports are published; the only ingress is the Cloudflare tunnel
+#   * MAIL_API_SEND_ENABLED defaults to false
+#   * the API, the Postal worker and the tunnel all default to 0 replicas
+#
+# Cutover gates. Exactly one production Mail API, one Postal worker and one
+# tunnel connector may be active. Until the local Windows stack is frozen these
+# stay at 0, so a half-finished migration cannot double-send a message or
+# publish a second connector for the same hostname. `scripts/validate-compose-config.mjs`
+# rejects any value other than 0 or 1 and the deploy workflow runs it first.
+name: seemplify-mail-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-postal-base: &postal-base
+  # Pinned to the same Postal version the local stack runs, so the migrated
+  # MariaDB schema is read by the code that wrote it.
+  image: ghcr.io/postalserver/postal:3.3.7
+  restart: unless-stopped
+  environment:
+    POSTAL_CONFIG_FILE_PATH: /config/postal.yml
+  volumes:
+    - postal-config:/config
+  logging: *logging
+
+services:
+  mariadb:
+    image: mariadb:10.11
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=200
+    environment:
+      MARIADB_AUTO_UPGRADE: "1"
+      MARIADB_DATABASE: ${MARIADB_DATABASE:?Set MARIADB_DATABASE}
+      MARIADB_USER: ${MARIADB_USER:?Set MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?Set MARIADB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    networks:
+      # Deliberately not on an egress network: the database that holds every
+      # queued message and Postal credential has no route off the host.
+      - mail-internal
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+        reservations:
+          memory: 256M
+
+  # Postal reads /config/postal.yml. The migration restores the real file into
+  # the `postal-config` volume before the stack is brought up; see
+  # `scripts/linux/restore-into-volumes.sh`. On a host where the restore has
+  # not run yet this service restarts until the config lands, which is the
+  # intended fail-closed behaviour rather than starting against a guessed
+  # configuration.
+  postal-web:
+    <<: *postal-base
+    command: postal web-server
+    networks:
+      mail-internal:
+        aliases:
+          # Preserves the Host header the Mail API already sends, so the
+          # migrated Postal configuration needs no change.
+          - postal.seemplifyai.com
+      mail-egress: {}
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "ruby", "-e", "require 'socket'; TCPSocket.new('127.0.0.1', 5000).close"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 640M
+        reservations:
+          memory: 192M
+
+  # CUTOVER GATE. The worker is the only component that hands a message to the
+  # relay, so leaving it at 0 replicas is what makes a staged production stack
+  # safe to run while the local one is still live.
+  postal-worker:
+    <<: *postal-base
+    command: postal worker
+    networks:
+      - mail-internal
+      - relay-internal
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      postfix-relay:
+        condition: service_healthy
+    deploy:
+      replicas: ${POSTAL_WORKER_REPLICAS:-0}
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 640M
+        reservations:
+          memory: 192M
+
+  postal-smtp:
+    <<: *postal-base
+    command: postal smtp-server
+    networks:
+      - mail-internal
+      - relay-internal
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "ruby", "-e", "require 'socket'; TCPSocket.new('127.0.0.1', 25).close"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 384M
+        reservations:
+          memory: 128M
+
+  postfix-relay:
+    build:
+      context: ../relay
+    image: seemplify/mail-relay:${MAIL_RELAY_TAG:-dokploy}
+    restart: unless-stopped
+    environment:
+      RELAY_UPSTREAM_HOST: ${RELAY_UPSTREAM_HOST:-smtp.gmail.com}
+      RELAY_UPSTREAM_PORT: ${RELAY_UPSTREAM_PORT:-587}
+      RELAY_SMTP_USERNAME: ${RELAY_SMTP_USERNAME:?Set RELAY_SMTP_USERNAME}
+      # Supplied only by protected Dokploy environment configuration. The
+      # entrypoint materializes it into a mode-0600 file on the tmpfs below and
+      # unsets the variable before Postfix is executed, so the credential is
+      # never in the Postfix process environment and never on disk.
+      RELAY_SMTP_PASSWORD: ${RELAY_SMTP_PASSWORD:?Set RELAY_SMTP_PASSWORD in protected Dokploy environment configuration}
+      RELAY_RUNTIME_SECRET_PATH: /run/relay/relay_smtp_password
+      RELAY_ALLOWED_NETWORKS: ${RELAY_ALLOWED_NETWORKS:?Set RELAY_ALLOWED_NETWORKS to the relay-internal subnet}
+      RELAY_SENDER_DOMAIN: ${RELAY_SENDER_DOMAIN:-dewinsight.com}
+    volumes:
+      - relay-spool:/var/spool/postfix
+    tmpfs:
+      - /run/relay:mode=0700,size=64k
+    networks:
+      - relay-internal
+      # Authenticated submission to smtp.gmail.com:587 needs egress. Nothing
+      # else on relay-internal has a route off the host.
+      - mail-egress
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          memory: 32M
+
+  # CUTOVER GATE. Held at 0 replicas until the local API is frozen, so only one
+  # Mail API ever owns the suppression list and the idempotency ledger.
+  mail-api:
+    build:
+      context: ../api
+    image: seemplify/mail-api:${MAIL_API_TAG:-dokploy}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MAIL_API_PORT: "8080"
+      MAIL_API_RELEASE: ${MAIL_API_RELEASE:-dokploy}
+      MAIL_API_DATA_DIR: /var/lib/mail-api
+      MAIL_API_DOMAIN: ${MAIL_API_DOMAIN:-seemplifyai.com}
+      MAIL_API_BOUNCE_DOMAIN: ${MAIL_API_BOUNCE_DOMAIN:-bounce.seemplifyai.com}
+      # Fail closed. Opening production sending is a deliberate, separate act;
+      # no deployment of this file changes it.
+      MAIL_API_SEND_ENABLED: ${MAIL_API_SEND_ENABLED:-false}
+      MAIL_API_KEYS: ${MAIL_API_KEYS:?Set MAIL_API_KEYS}
+      MAIL_API_ADDRESS_HASH_SALT: ${MAIL_API_ADDRESS_HASH_SALT:?Set MAIL_API_ADDRESS_HASH_SALT}
+      MAIL_API_POSTAL_BASE_URL: http://postal.seemplifyai.com:5000
+      MAIL_API_POSTAL_API_KEY: ${MAIL_API_POSTAL_API_KEY:?Set MAIL_API_POSTAL_API_KEY}
+      MAIL_API_POSTAL_WEBHOOK_TOKEN: ${MAIL_API_POSTAL_WEBHOOK_TOKEN:?Set MAIL_API_POSTAL_WEBHOOK_TOKEN}
+      MAIL_API_WEBHOOK_HMAC_SECRET: ${MAIL_API_WEBHOOK_HMAC_SECRET:?Set MAIL_API_WEBHOOK_HMAC_SECRET}
+      # One hop: the Cloudflare tunnel connector is the only thing in front of
+      # this service.
+      MAIL_API_TRUSTED_PROXY_HOPS: ${MAIL_API_TRUSTED_PROXY_HOPS:-1}
+      MAIL_API_RELAY_MODE: google
+      MAIL_API_RELAY_HOST: postfix-relay
+      MAIL_API_RELAY_PORT: "25"
+      MAIL_API_RELAY_UPSTREAM_HOST: ${RELAY_UPSTREAM_HOST:-smtp.gmail.com}
+      MAIL_API_RELAY_UPSTREAM_PORT: ${RELAY_UPSTREAM_PORT:-587}
+      MAIL_API_RELAY_USERNAME: ${RELAY_SMTP_USERNAME:?Set RELAY_SMTP_USERNAME}
+    volumes:
+      - mail-api-data:/var/lib/mail-api
+    networks:
+      # No egress. The API only ever talks to Postal, and only over
+      # mail-internal.
+      - mail-internal
+    depends_on:
+      postal-web:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:'+(process.env.MAIL_API_PORT||8080)+'/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *logging
+    deploy:
+      replicas: ${MAIL_API_REPLICAS:-0}
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          memory: 96M
+
+  # CUTOVER GATE. Two connectors serving the same hostname would split traffic
+  # between the old and the new stack during the migration, so this stays at 0
+  # until the local connector is stopped.
+  #
+  # MAIL_TUNNEL_IMAGE is required rather than defaulted: the pinned cloudflared
+  # image is an operator decision recorded in Dokploy, not a value this file
+  # should guess at.
+  cloudflared:
+    image: ${MAIL_TUNNEL_IMAGE:?Set MAIL_TUNNEL_IMAGE to a pinned cloudflare/cloudflared image}
+    restart: unless-stopped
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --metrics
+      - 0.0.0.0:2000
+      - run
+    environment:
+      # Validated as non-empty by scripts/validate-compose-config.mjs whenever
+      # MAIL_TUNNEL_REPLICAS is 1.
+      TUNNEL_TOKEN: ${MAIL_TUNNEL_TOKEN:-}
+      TUNNEL_TRANSPORT_PROTOCOL: ${MAIL_TUNNEL_TRANSPORT:-auto}
+    networks:
+      - mail-internal
+      - mail-egress
+    security_opt:
+      - no-new-privileges:true
+    # The cloudflared image is distroless: it carries no shell and no HTTP
+    # client, so there is nothing inside it that can honestly report tunnel
+    # readiness. Readiness is probed from outside instead, against
+    # /ready on the metrics listener and against the public hostname; see
+    # scripts/linux/remote-readiness.sh. `restart: unless-stopped` is what
+    # satisfies the "tunnel restarts automatically" contract.
+    logging: *logging
+    deploy:
+      replicas: ${MAIL_TUNNEL_REPLICAS:-0}
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          memory: 32M
+
+  # Nightly encrypted backup to Cloudflare R2. Held behind a profile so that
+  # deploying this file never starts billable object storage on its own; the
+  # host timer in scripts/linux/install-backup-timer.sh is what enables it, and
+  # only after the operator has supplied R2 credentials and an age recipient.
+  mail-backup:
+    profiles: ["backup"]
+    build:
+      context: ../backup
+    image: seemplify/mail-backup:${MAIL_BACKUP_TAG:-dokploy}
+    restart: "no"
+    environment:
+      BACKUP_MARIADB_HOST: mariadb
+      BACKUP_MARIADB_DATABASE: ${MARIADB_DATABASE:?Set MARIADB_DATABASE}
+      BACKUP_MARIADB_USER: root
+      BACKUP_MARIADB_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD}
+      # Public key only. A compromise of this host cannot decrypt any backup it
+      # has written.
+      # These remain empty during ordinary deploys. backup.sh validates them
+      # only when the opt-in backup profile is explicitly run.
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_R2_BUCKET: ${BACKUP_R2_BUCKET:-}
+      BACKUP_R2_ENDPOINT: ${BACKUP_R2_ENDPOINT:-}
+      BACKUP_R2_PREFIX: ${BACKUP_R2_PREFIX:-seemplify-mail}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      AWS_ACCESS_KEY_ID: ${BACKUP_R2_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_R2_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: auto
+    volumes:
+      - postal-config:/source/postal-config:ro
+      - mail-api-data:/source/mail-api-data:ro
+      - backup-work:/work
+    networks:
+      - mail-internal
+      - mail-egress
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+
+volumes:
+  # Plain named volumes: a redeploy of this compose recreates containers and
+  # leaves every one of these intact.
+  mariadb-data:
+  postal-config:
+  relay-spool:
+  mail-api-data:
+  backup-work:
+
+networks:
+  # No route off the host. MariaDB and the Mail API live here only.
+  mail-internal:
+    internal: true
+  # No route off the host. Carries Postal -> Postfix submission.
+  relay-internal:
+    internal: true
+  # The only network with egress. Attached to the relay (Google submission),
+  # cloudflared (tunnel), Postal (DNS) and the backup job (R2).
+  mail-egress:
+    internal: false

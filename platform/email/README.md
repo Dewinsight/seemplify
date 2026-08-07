@@ -19,6 +19,17 @@ This path does not depend on the home's public IP, PTR, Dynamic DNS, or
 Cloudflare Tunnel for SMTP. Cloudflare Tunnel remains the HTTPS ingress for the
 Mail API at `https://mail-control.seemplifyai.com`.
 
+## Documentation
+
+- [API integration](docs/INTEGRATION.md)
+- [Dokploy migration and rollback](docs/DOKPLOY-MIGRATION.md)
+- [Operations, backups and incidents](docs/OPERATIONS.md)
+- [Private access runbook template](docs/PRIVATE-ACCESS-RUNBOOK.template.md)
+
+The Dokploy compose is `compose/docker-compose.dokploy.yml`; its deployment is
+fail-closed until the API, worker, sending and tunnel gates are explicitly
+opened during the controlled cutover.
+
 ## Relay configuration
 
 1. Create `platform/email/.env.local` from `.env.example`.

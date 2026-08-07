@@ -1,0 +1,68 @@
+{
+  "schema": "seemplify-mail-cleanup/1",
+  "note": "The complete set of things the local cleanup phase is permitted to destroy. cleanup.ps1 reads this file and refuses any target that is not named here exactly. Nothing is matched by prefix, wildcard or Docker filter: a name either appears below or it is not touched.",
+  "project": "seemplify-mail",
+  "categories": {
+    "containers": {
+      "label": "Local mail stack containers",
+      "why": "The six containers of the retired local Compose project. Removing them frees the machine without touching any other stack on it.",
+      "names": [
+        "seemplify-mail-mariadb-1",
+        "seemplify-mail-postal-web-1",
+        "seemplify-mail-postal-worker-1",
+        "seemplify-mail-postal-smtp-1",
+        "seemplify-mail-postfix-relay-1",
+        "seemplify-mail-mail-api-1"
+      ],
+      "requireComposeProjectLabel": true
+    },
+    "volumes": {
+      "label": "Local mail state volumes",
+      "why": "Exactly four, and the only irreversible targets in this file. Every one of them has been migrated, verified and backed up before cleanup is allowed to run.",
+      "names": [
+        "seemplify-mail_mariadb-data",
+        "seemplify-mail_postal-config",
+        "seemplify-mail_relay-spool",
+        "seemplify-mail_mail-api-data"
+      ],
+      "exactCount": 4
+    },
+    "tunnel": {
+      "label": "Old mail tunnel connector",
+      "why": "The connector that served mail-control.seemplifyai.com from this machine. It is stopped at cutover and removed here so a restart cannot republish a second connector for a hostname the Dokploy stack now owns.",
+      "names": [],
+      "operatorNamed": true,
+      "containerImagePattern": "^cloudflare/cloudflared[:@]",
+      "serviceNamePattern": "^cloudflared$"
+    },
+    "migration": {
+      "label": "Temporary migration keys and archives",
+      "why": "The single-purpose SSH key pair, the authorized_keys line and every snapshot under the migration root. The key is short-lived by design and the snapshots hold a full database dump plus Postal's configuration.",
+      "relativePaths": [
+        "keys",
+        "snapshots"
+      ],
+      "rootEnvironmentVariable": "SEEMPLIFY_MAIL_MIGRATION_ROOT",
+      "defaultRootRelativeToRepository": ".local-runtime/mail-migration",
+      "keepRelativePaths": [
+        "journal.jsonl"
+      ]
+    },
+    "relay-runtime": {
+      "label": "Obsolete relay runtime",
+      "why": "The locally built images and the ignored .env.runtime file, which holds every mail credential in plaintext on this disk and has no purpose once production runs on Dokploy.",
+      "images": [
+        "seemplify/mail-relay:local",
+        "seemplify/mail-api:local"
+      ],
+      "repositoryRelativePaths": [
+        "platform/email/.env.runtime"
+      ]
+    }
+  },
+  "confirmationPhrase": "REMOVE LOCAL SEEMPLIFY MAIL",
+  "requiresCompletedPhases": [
+    "cutover",
+    "soak"
+  ]
+}
