@@ -276,6 +276,193 @@
       padding: 0 18px 18px;
       border-top: 1px solid var(--border);
     }
+
+    /* Solid, scalable management dialogs. This selector intentionally outranks main.css. */
+    body.idp-workspace-page .modal .modal-content {
+      background: var(--panel-solid);
+      backdrop-filter: none;
+    }
+    body.idp-workspace-page #membersModal {
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.82);
+    }
+    body.idp-workspace-page #membersModal .team-members-dialog {
+      display: flex;
+      flex-direction: column;
+      width: min(940px, 100%);
+      height: min(720px, calc(100vh - 32px));
+      max-height: calc(100vh - 32px);
+      padding: 0;
+      overflow: hidden;
+      border-radius: 10px;
+      background: var(--panel-solid);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+    }
+    #membersModal .modal-header {
+      flex: 0 0 auto;
+      min-height: 68px;
+      margin: 0;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-solid);
+    }
+    #membersModal .modal-header h2 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -0.02em;
+    }
+    #membersModal .modal-close {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      place-items: center;
+      border-radius: 7px;
+      font-size: 22px;
+      line-height: 1;
+    }
+    #membersModal .modal-close:hover { background: var(--hover-bg); color: var(--text); }
+    #membersModalContent {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .team-members-shell {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      min-height: 0;
+      width: 100%;
+      background: var(--panel-solid);
+    }
+    .team-members-summary {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 44px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .team-members-summary strong { color: var(--text-secondary); font-weight: 600; }
+    .team-members-toolbar {
+      display: grid;
+      flex: 0 0 auto;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 10px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-solid);
+    }
+    .team-member-search {
+      position: relative;
+      min-width: 0;
+    }
+    .team-member-search svg {
+      position: absolute;
+      top: 50%;
+      left: 11px;
+      width: 16px;
+      height: 16px;
+      color: var(--muted);
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+    .team-member-search input {
+      width: 100%;
+      height: 38px;
+      padding: 0 12px 0 36px;
+      border-radius: 7px;
+      background: var(--bg);
+      font-size: 13px;
+    }
+    .team-member-search input:focus {
+      border-color: var(--brand);
+      outline: 2px solid color-mix(in srgb, var(--brand) 28%, transparent);
+      outline-offset: 0;
+    }
+    .team-member-add-toggle { min-height: 38px; }
+    .team-member-add-panel {
+      flex: 0 0 auto;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-strong);
+    }
+    .team-member-add-panel[hidden] { display: none; }
+    .team-member-add-form {
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) minmax(190px, 240px) auto;
+      gap: 10px;
+      align-items: end;
+    }
+    .team-member-add-form .form-group { margin: 0; }
+    .team-member-add-form label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .team-member-add-form select { height: 38px; }
+    .team-members-table-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      scrollbar-gutter: stable;
+    }
+    .team-members-table {
+      width: 100%;
+      min-width: 680px;
+      border-collapse: collapse;
+    }
+    body.idp-workspace-page .team-members-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-solid);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0;
+      text-align: left;
+      text-transform: none;
+    }
+    .team-members-table th:nth-child(2) { width: 250px; }
+    .team-members-table th:last-child { width: 100px; text-align: right; }
+    .team-members-table td {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .team-members-table tbody tr:hover { background: var(--hover-bg); }
+    .team-member-name {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .team-member-email {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .team-member-id { color: var(--muted); font-weight: 500; }
+    .team-member-role-select {
+      width: 100%;
+      height: 36px;
+      font-size: 12px;
+    }
+    .team-member-action { text-align: right; }
+    .team-members-empty {
+      padding: 48px 20px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+    .team-members-empty[hidden] { display: none; }
     @media (max-width: 900px) {
       .structure-layout { grid-template-columns: 220px minmax(0, 1fr); }
       .department-facts { grid-template-columns: 1fr; }
@@ -294,6 +481,19 @@
       .team-row__leaders { grid-template-columns: 1fr; gap: 8px; }
       .member-record__summary { grid-template-columns: 1fr auto; }
       .member-record__summary > :not(.member-record__identity):not(.member-record__chevron) { display: none; }
+      body.idp-workspace-page #membersModal { padding: 0; }
+      body.idp-workspace-page #membersModal .team-members-dialog {
+        width: 100%;
+        height: 100%;
+        max-height: 100%;
+        border: 0;
+        border-radius: 0;
+      }
+      .team-members-toolbar { grid-template-columns: 1fr auto; padding: 10px 14px; }
+      .team-members-summary { padding-inline: 14px; }
+      .team-member-add-panel { padding: 12px 14px; }
+      .team-member-add-form { grid-template-columns: 1fr; }
+      #membersModal .modal-header { padding-inline: 14px; }
     }
   </style>
   <link rel="stylesheet" href="/css/main.css?v=4">
@@ -741,10 +941,10 @@
   </div>
 
   <div class="modal" id="membersModal">
-    <div class="modal-content">
+    <div class="modal-content team-members-dialog" role="dialog" aria-modal="true" aria-labelledby="membersModalTitle">
       <div class="modal-header">
         <h2 id="membersModalTitle">Team Members</h2>
-        <button class="modal-close" onclick="hideMembersModal()">&times;</button>
+        <button class="modal-close" onclick="hideMembersModal()" aria-label="Close team members">&times;</button>
       </div>
       <div id="membersModalContent"></div>
     </div>
@@ -937,54 +1137,127 @@
         if ((currentTeam.members || []).some((current) => normalizeId(current.id) === normalizeId(member.id))) return false;
         return !member.departmentId || normalizeId(member.departmentId) === normalizeId(currentTeam.department?.id);
       });
+      const teamMembers = currentTeam.members || [];
 
       document.getElementById('membersModalContent').innerHTML = `
-        <div class="mini-meta" style="margin-bottom: 16px;">
-          <span>Department: ${escapeHtml(currentTeam.department?.name || 'General')}</span>
-          <span>Members can belong to multiple teams within this department.</span>
-          <span>Line Manager controls reporting; Team Lead identifies delivery leadership.</span>
-        </div>
-        ${(currentTeam.members || []).map(member => `
-          <div class="card" style="margin-bottom: 12px;">
-            <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;">
-              <div>
-                <div style="font-weight: 600;">${escapeHtml(member.name || member.email)}${member.employeeId ? ` [${escapeHtml(member.employeeId)}]` : ''}</div>
-                <div style="color: var(--muted); font-size: 13px;">${escapeHtml(member.email)}</div>
-              </div>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <select onchange="updateTeamMemberRole('${currentTeam.id}', '${member.id}', this.value)">
-                  <option value="member" ${member.role === 'member' ? 'selected' : ''}>Member</option>
-                  <option value="line_manager" ${member.role === 'line_manager' ? 'selected' : ''}>Line Manager (manages team)</option>
-                  <option value="team_lead" ${member.role === 'team_lead' ? 'selected' : ''}>Team Lead</option>
-                </select>
-                <button class="btn btn-danger btn-sm" onclick="removeMemberFromTeam('${currentTeam.id}', '${member.id}', '${escapeHtml(member.name || member.email)}')">Remove</button>
-              </div>
-            </div>
+        <div class="team-members-shell">
+          <div class="team-members-summary">
+            <span>Department: <strong>${escapeHtml(currentTeam.department?.name || 'General')}</strong></span>
+            <span id="teamMembersResultCount">${teamMembers.length} ${teamMembers.length === 1 ? 'member' : 'members'}</span>
           </div>
-        `).join('') || '<p style="color: var(--muted);">No members yet.</p>'}
-        <div style="margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line);">
-          <form onsubmit="event.preventDefault(); addMemberToTeam('${currentTeam.id}');">
-            <div class="form-group">
-              <label for="newMemberId">Add Member</label>
-              <select id="newMemberId" required>
-                <option value="">Choose a member...</option>
-                ${availableMembers.map(member => `<option value="${member.id}">${escapeHtml(member.name || member.email)}${member.employeeId ? ` [${escapeHtml(member.employeeId)}]` : ''} (${escapeHtml(member.departmentName || 'Unassigned')})</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="newMemberRole">Role</label>
-              <select id="newMemberRole">
-                <option value="member">Member</option>
-                <option value="line_manager">Line Manager (manages team)</option>
-                <option value="team_lead">Team Lead</option>
-              </select>
-            </div>
-            <div class="form-actions">
-              <button class="btn btn-primary" type="submit">Add Member</button>
-            </div>
-          </form>
+
+          <div class="team-members-toolbar">
+            <label class="team-member-search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m20 20-3.5-3.5"></path>
+              </svg>
+              <input type="search" placeholder="Search by name, email, or employee ID" aria-label="Search team members" oninput="filterTeamMemberRows(this.value)">
+            </label>
+            <button id="teamMemberAddToggle" class="btn btn-primary team-member-add-toggle" type="button" aria-expanded="false" onclick="toggleTeamMemberAddPanel()">+ Add member</button>
+          </div>
+
+          <div id="teamMemberAddPanel" class="team-member-add-panel" hidden>
+            <form class="team-member-add-form" onsubmit="event.preventDefault(); addMemberToTeam('${currentTeam.id}');">
+              <div class="form-group">
+                <label for="newMemberId">Organization member</label>
+                <select id="newMemberId" required>
+                  <option value="">Choose a member...</option>
+                  ${availableMembers.map(member => `<option value="${member.id}">${escapeHtml(member.name || member.email)}${member.employeeId ? ` [${escapeHtml(member.employeeId)}]` : ''} (${escapeHtml(member.departmentName || 'Unassigned')})</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="newMemberRole">Team role</label>
+                <select id="newMemberRole">
+                  <option value="member">Member</option>
+                  <option value="line_manager">Line Manager</option>
+                  <option value="team_lead">Team Lead</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" type="submit" ${availableMembers.length ? '' : 'disabled'}>Add to team</button>
+            </form>
+          </div>
+
+          <div class="team-members-table-wrap">
+            <table class="team-members-table">
+              <thead>
+                <tr>
+                  <th scope="col">Member</th>
+                  <th scope="col">Team role</th>
+                  <th scope="col">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${teamMembers.map(member => {
+                  const memberName = member.name || member.email;
+                  const memberSearch = `${memberName} ${member.email || ''} ${member.employeeId || ''}`.toLowerCase();
+                  return `
+                    <tr data-team-member-row data-search="${escapeHtml(memberSearch)}">
+                      <td>
+                        <div class="team-member-name">${escapeHtml(memberName)}${member.employeeId ? ` <span class="team-member-id">[${escapeHtml(member.employeeId)}]</span>` : ''}</div>
+                        <div class="team-member-email">${escapeHtml(member.email || '')}</div>
+                      </td>
+                      <td>
+                        <select class="team-member-role-select" aria-label="Role for ${escapeHtml(memberName)}" onchange="updateTeamMemberRole('${currentTeam.id}', '${member.id}', this.value)">
+                          <option value="member" ${member.role === 'member' ? 'selected' : ''}>Member</option>
+                          <option value="line_manager" ${member.role === 'line_manager' ? 'selected' : ''}>Line Manager</option>
+                          <option value="team_lead" ${member.role === 'team_lead' ? 'selected' : ''}>Team Lead</option>
+                        </select>
+                      </td>
+                      <td class="team-member-action">
+                        <button
+                          type="button"
+                          class="btn btn-danger btn-sm"
+                          data-team-id="${escapeHtml(currentTeam.id)}"
+                          data-member-id="${escapeHtml(member.id)}"
+                          data-member-name="${escapeHtml(memberName)}"
+                          onclick="removeMemberFromTeam(this.dataset.teamId, this.dataset.memberId, this.dataset.memberName)">Remove</button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+            <div id="teamMembersEmpty" class="team-members-empty" ${teamMembers.length ? 'hidden' : ''}>${teamMembers.length ? 'No members match your search.' : 'No members are assigned to this team yet.'}</div>
+          </div>
         </div>
       `;
+    }
+
+    function filterTeamMemberRows(value) {
+      const query = String(value || '').trim().toLowerCase();
+      const rows = Array.from(document.querySelectorAll('[data-team-member-row]'));
+      let visibleCount = 0;
+
+      rows.forEach((row) => {
+        const isVisible = !query || (row.dataset.search || '').includes(query);
+        row.hidden = !isVisible;
+        if (isVisible) visibleCount += 1;
+      });
+
+      const resultCount = document.getElementById('teamMembersResultCount');
+      if (resultCount) {
+        resultCount.textContent = query
+          ? `${visibleCount} of ${rows.length} members`
+          : `${rows.length} ${rows.length === 1 ? 'member' : 'members'}`;
+      }
+
+      const emptyState = document.getElementById('teamMembersEmpty');
+      if (emptyState) {
+        emptyState.hidden = visibleCount > 0;
+        emptyState.textContent = rows.length ? 'No members match your search.' : 'No members are assigned to this team yet.';
+      }
+    }
+
+    function toggleTeamMemberAddPanel() {
+      const panel = document.getElementById('teamMemberAddPanel');
+      const toggle = document.getElementById('teamMemberAddToggle');
+      if (!panel || !toggle) return;
+
+      panel.hidden = !panel.hidden;
+      toggle.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
+      toggle.textContent = panel.hidden ? '+ Add member' : 'Cancel';
+      if (!panel.hidden) document.getElementById('newMemberId')?.focus();
     }
 
     async function refreshMembersModal(teamId, affectedMemberIds = []) {
