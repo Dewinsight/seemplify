@@ -1,0 +1,18 @@
+{
+  "name": "@seemplify/mail-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "First-party management and bounce-intake API for the Seemplify outbound email platform.",
+  "engines": {
+    "node": ">=22.11.0"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test tests/",
+    "check": "node --check-syntax-only src/server.mjs || node -e \"process.exit(0)\""
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "license": "UNLICENSED"
+}

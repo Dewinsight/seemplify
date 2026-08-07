@@ -1,0 +1,35 @@
+name: seemplify-mail
+
+services:
+  postfix-relay:
+    build:
+      context: ../relay
+    image: seemplify/mail-relay:local
+    restart: unless-stopped
+    environment:
+      RELAY_UPSTREAM_HOST: ${RELAY_UPSTREAM_HOST:-smtp.gmail.com}
+      RELAY_UPSTREAM_PORT: ${RELAY_UPSTREAM_PORT:-587}
+      RELAY_SMTP_USERNAME: ${RELAY_SMTP_USERNAME:?Set RELAY_SMTP_USERNAME}
+      RELAY_PASSWORD_FILE: /run/secrets/relay_smtp_password
+      RELAY_ALLOWED_NETWORKS: ${RELAY_ALLOWED_NETWORKS:-172.31.240.0/24}
+      RELAY_SENDER_DOMAIN: ${RELAY_SENDER_DOMAIN:-dewinsight.com}
+    volumes:
+      - type: volume
+        source: relay-spool
+        target: /var/spool/postfix
+      - type: bind
+        source: ${RELAY_PASSWORD_PATH:?Set RELAY_PASSWORD_PATH}
+        target: /run/secrets/relay_smtp_password
+        read_only: true
+    networks:
+      - relay-internal
+
+volumes:
+  relay-spool:
+    external: true
+    name: seemplify-mail_relay-spool
+
+networks:
+  relay-internal:
+    external: true
+    name: seemplify-mail_relay-internal

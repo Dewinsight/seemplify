@@ -1,0 +1,44 @@
+compatibility_level = 3.6
+biff = no
+append_dot_mydomain = no
+inet_interfaces = all
+inet_protocols = ipv4
+myhostname = seemplify-relay.invalid
+mydomain = invalid
+myorigin = $myhostname
+mydestination =
+mynetworks_style = host
+local_recipient_maps =
+local_transport = error:5.1.1 local delivery is disabled on this relay
+mailbox_size_limit = 0
+message_size_limit = 26214400
+disable_vrfy_command = yes
+notify_classes =
+
+smtpd_helo_required = yes
+smtpd_tls_security_level = none
+smtpd_sasl_auth_enable = no
+smtpd_client_restrictions = permit_mynetworks, reject
+smtpd_recipient_restrictions = permit_mynetworks, reject
+smtpd_relay_restrictions = permit_mynetworks, reject
+
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = texthash:/etc/postfix/sasl_passwd
+smtp_sasl_mechanism_filter = plain, login
+smtp_sasl_security_options = noanonymous
+smtp_sasl_tls_security_options = noanonymous
+smtp_tls_security_level = secure
+smtp_tls_CAfile = /etc/ssl/certs/ca-certificates.crt
+smtp_tls_mandatory_protocols = >=TLSv1.2
+smtp_tls_protocols = >=TLSv1.2
+smtp_tls_mandatory_ciphers = high
+smtp_tls_secure_cert_match = nexthop
+smtp_tls_note_starttls_offer = yes
+smtp_generic_maps = regexp:/etc/postfix/generic
+smtp_destination_concurrency_limit = 2
+
+minimal_backoff_time = 300s
+maximal_backoff_time = 4000s
+maximal_queue_lifetime = 1d
+bounce_queue_lifetime = 1d
+maillog_file = /dev/stdout
