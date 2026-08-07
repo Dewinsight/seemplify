@@ -34,9 +34,10 @@ curl -X POST 'https://mail-control.seemplifyai.com/v1/messages' \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: onboarding-12345' \
   --data '{
-    "from":{"email":"no-reply@dewinsight.com","name":"Seemplify Recruiter"},
-    "to":[{"email":"person@example.com","name":"Person"}],
-    "replyTo":{"email":"recruitment@seemplifyai.com"},
+    "from":"no-reply@seemplifyai.com",
+    "fromName":"Seemplify Recruiter",
+    "to":["person@example.com"],
+    "replyTo":"recruitment@seemplifyai.com",
     "subject":"Welcome to Seemplify",
     "text":"Welcome to Seemplify",
     "html":"<p>Welcome to Seemplify</p>"
@@ -56,8 +57,10 @@ const response = await fetch('https://mail-control.seemplifyai.com/v1/messages',
 if (response.status !== 202) throw new Error(`Mail API returned ${response.status}`);
 ```
 
-The authenticated visible/envelope sender is `no-reply@dewinsight.com`. A
-product may set its own display name and `Reply-To`, and both are preserved.
+Applications submit a Seemplify sender such as `no-reply@seemplifyai.com`.
+The authenticated last-mile relay normalizes the visible/envelope sender to
+`no-reply@dewinsight.com` for Google Workspace authentication. A product may
+set its own display name and `Reply-To`; both are preserved.
 
 ## Response contract
 

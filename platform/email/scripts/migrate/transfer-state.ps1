@@ -29,6 +29,7 @@ param(
     [int]    $RemotePort = 22,
     [string] $SnapshotPath,
     [string] $RemoteRoot = '/opt/seemplify-mail-migration',
+    [string] $RemoteProject = 'seemplify-mail-prod',
     # Restore into the production volumes after the remote checksum pass.
     [switch] $Restore,
     # Allow the restore to overwrite volumes that already hold data.
@@ -137,9 +138,9 @@ Write-MailLog -Level step -Message 'Restoring into the production volumes'
 Save-MailPhaseRecord -Phase 'restore' -Outcome 'started' -Detail @{ snapshot = $snapshotName } | Out-Null
 $forceFlag = ''
 if ($Force) { $forceFlag = ' --force' }
-$restore = Invoke-MailRemote -Remote $remote -Script "'$RemoteRoot/bin/restore-into-volumes.sh' --snapshot '$RemoteRoot/snapshots/$snapshotName'$forceFlag" -AllowFailure
-Write-Host $restore.Output
-if ($restore.ExitCode -ne 0) {
+$restoreResult = Invoke-MailRemote -Remote $remote -Script "'$RemoteRoot/bin/restore-into-volumes.sh' --snapshot '$RemoteRoot/snapshots/$snapshotName' --project '$RemoteProject'$forceFlag" -AllowFailure
+Write-Host $restoreResult.Output
+if ($restoreResult.ExitCode -ne 0) {
     Save-MailPhaseRecord -Phase 'restore' -Outcome 'failed' -Detail @{ snapshot = $snapshotName } | Out-Null
     throw "The remote restore failed. Production volumes were left as the script found them unless it says otherwise above."
 }

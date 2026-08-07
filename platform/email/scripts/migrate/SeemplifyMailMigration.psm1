@@ -73,7 +73,7 @@ function Invoke-Native {
     #>
     param(
         [Parameter(Mandatory)][string] $FilePath,
-        [Parameter(Mandatory)][string[]] $Arguments,
+        [Parameter(Mandatory)][AllowEmptyString()][string[]] $Arguments,
         [switch] $AllowFailure
     )
     $output = & $FilePath @Arguments 2>&1
@@ -134,7 +134,31 @@ function Invoke-MailContainerShell {
         [Parameter(Mandatory)][string] $Script,
         [switch] $AllowFailure
     )
-    return Invoke-Native -FilePath 'docker' -Arguments @('exec', $Container, 'sh', '-c', $Script) -AllowFailure:$AllowFailure
+    # Do not embed the program in a `sh -c` native argument: Windows PowerShell
+    # 5 strips nested quotes and can silently turn `SHOW DATABASES` into `SHOW`.
+    # Its redirected StandardInput also prepends a BOM. Copy a no-BOM temporary
+    # program instead; this preserves every quote and still keeps container-side
+    # credential expansion out of the host process command line.
+    if ($Container -notmatch '^[A-Za-z0-9_.-]+$') {
+        throw "Unsafe container name: $Container"
+    }
+    $name = 'seemplify-mail-{0}.sh' -f ([guid]::NewGuid().ToString('N'))
+    $local = Join-Path ([System.IO.Path]::GetTempPath()) $name
+    $remote = "/tmp/$name"
+    try {
+        [System.IO.File]::WriteAllText($local, ($Script -replace "`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
+        Invoke-Native -FilePath 'docker' -Arguments @('cp', $local, "${Container}:$remote") | Out-Null
+        $result = Invoke-Native -FilePath 'docker' -Arguments @('exec', $Container, 'sh', $remote) -AllowFailure
+        $exitCode = $result.ExitCode
+        $text = $result.Output
+    } finally {
+        Invoke-Native -FilePath 'docker' -Arguments @('exec', $Container, 'rm', '-f', $remote) -AllowFailure | Out-Null
+        if (Test-Path -LiteralPath $local) { Remove-Item -LiteralPath $local -Force }
+    }
+    if ($exitCode -ne 0 -and -not $AllowFailure) {
+        throw "docker exec exited with code ${exitCode}: $text"
+    }
+    return [pscustomobject]@{ ExitCode = $exitCode; Output = $text }
 }
 
 function Get-PostfixQueueReport {

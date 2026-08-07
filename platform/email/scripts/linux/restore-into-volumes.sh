@@ -151,6 +151,28 @@ if ! gunzip -c "$SNAPSHOT/mariadb.sql.gz" \
 fi
 ok 'Database imported.'
 
+# The logical dump intentionally excludes MariaDB's system schemas, so user
+# grants from the source host are not present after an import. The compose
+# bootstrap grants the application user only the bootstrap `postal` database,
+# while Postal keeps per-server message data in databases such as
+# `postal-server-3`. Reapply least-scope grants to every imported Postal
+# database before any Postal process is restarted.
+POSTAL_DB_USER=$(docker exec "$MARIADB_CONTAINER" sh -c 'printf %s "$MARIADB_USER"')
+case "$POSTAL_DB_USER" in
+  ''|*[!A-Za-z0-9_-]*) die 'MARIADB_USER is empty or contains unsafe identifier characters.' ;;
+esac
+POSTAL_DATABASES=$(docker exec "$MARIADB_CONTAINER" sh -c \
+  'mariadb --user=root --password="$MARIADB_ROOT_PASSWORD" -N -B -e "SHOW DATABASES LIKE '\''postal%'\''"')
+[ -n "$POSTAL_DATABASES" ] || die 'No imported Postal databases were found for grant restoration.'
+for database in $POSTAL_DATABASES; do
+  case "$database" in *[!A-Za-z0-9_-]*) die "Unsafe imported database name: $database" ;; esac
+  printf "GRANT ALL PRIVILEGES ON \`%s\`.* TO '%s'@'%%'; FLUSH PRIVILEGES;\n" \
+    "$database" "$POSTAL_DB_USER" \
+    | docker exec -i "$MARIADB_CONTAINER" sh -c \
+        'exec mariadb --user=root --password="$MARIADB_ROOT_PASSWORD"'
+done
+ok "Restored application grants across $(printf '%s\n' "$POSTAL_DATABASES" | wc -l | tr -d ' ') Postal database(s)."
+
 log 'Confirming the imported schema is readable'
 TABLE_COUNT=$(docker exec "$MARIADB_CONTAINER" sh -c \
   'mariadb --user=root --password="$MARIADB_ROOT_PASSWORD" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema NOT IN ('"'"'information_schema'"'"','"'"'performance_schema'"'"','"'"'mysql'"'"','"'"'sys'"'"')"' \

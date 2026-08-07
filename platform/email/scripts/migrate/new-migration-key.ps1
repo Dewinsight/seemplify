@@ -62,7 +62,10 @@ Write-MailLog -Level step -Message "Generating an ed25519 key pair for this migr
 # -N '' leaves the key unencrypted because every phase runs unattended over
 # BatchMode ssh. That is acceptable only because the key is single-purpose,
 # short-lived and removed by cleanup.ps1; it is not a general-access key.
-Invoke-Native -FilePath 'ssh-keygen' -Arguments @('-t', 'ed25519', '-f', $KeyPath, '-N', '', '-C', $comment, '-q') | Out-Null
+# Windows PowerShell 5 drops a literal empty native argument. The quoted-empty
+# token below reaches OpenSSH as an empty passphrase on both Windows PowerShell
+# and PowerShell 7.
+Invoke-Native -FilePath 'ssh-keygen' -Arguments @('-t', 'ed25519', '-f', $KeyPath, '-N', '""', '-C', $comment, '-q') | Out-Null
 
 if (-not (Test-Path $KeyPath) -or -not (Test-Path "$KeyPath.pub")) {
     throw 'ssh-keygen reported success but the key pair is not on disk.'

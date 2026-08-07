@@ -22,6 +22,7 @@ param(
     [string] $RemoteUser = 'root',
     [string] $KeyPath,
     [int]    $RemotePort = 22,
+    [string] $RemoteProject = 'seemplify-mail-prod',
     [string] $LocalApiBaseUrl = 'http://127.0.0.1:5020',
     [string] $PublicApiBaseUrl = 'https://mail-control.seemplifyai.com'
 )
@@ -144,11 +145,11 @@ if ($RemoteHost) {
             Add-Finding -Check 'remote/ssh' -Level fail -Detail "Could not run Docker on $($remote.Target). $($probe.Output)"
         }
 
-        $conflict = Invoke-MailRemote -Remote $remote -Script 'docker volume ls --format "{{.Name}}" | grep -c "^seemplify-mail-prod_" || true' -AllowFailure
+        $conflict = Invoke-MailRemote -Remote $remote -Script "docker volume ls --format '{{.Name}}' | grep -c '^${RemoteProject}_' || true" -AllowFailure
         $existing = 0
         if ($conflict.ExitCode -eq 0) { [int]::TryParse($conflict.Output.Trim(), [ref]$existing) | Out-Null }
         if ($existing -gt 0) {
-            Add-Finding -Check 'remote/volumes' -Level warn -Detail "$existing seemplify-mail-prod volume(s) already exist on the host. Restore refuses to overwrite a populated volume without -Force."
+            Add-Finding -Check 'remote/volumes' -Level warn -Detail "$existing $RemoteProject volume(s) already exist on the host. Restore refuses to overwrite a populated volume without -Force."
         } else {
             Add-Finding -Check 'remote/volumes' -Level ok -Detail 'No production mail volumes exist yet; the restore will create them.'
         }
