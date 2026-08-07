@@ -1,2 +1,277 @@
-/* Placeholder to avoid 404. Styles are in idp-theme.css */
+/* Shared workspace shell refinements for authenticated IDP pages. */
+
+body.idp-workspace-page {
+  padding: 0 0 64px;
+  background: var(--bg);
+  letter-spacing: -0.012em;
+}
+
+body.idp-workspace-page::before,
+body.idp-workspace-page::after {
+  display: none;
+}
+
+body.idp-workspace-page .top-nav {
+  width: 100%;
+  max-width: none;
+  min-height: 64px;
+  margin: 0 0 38px;
+  padding: 0 max(24px, calc((100vw - 1200px) / 2));
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  box-shadow: none;
+  position: sticky;
+  top: 0;
+  backdrop-filter: blur(16px);
+}
+
+body.idp-workspace-page .top-nav-link {
+  min-height: 64px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body.idp-workspace-page .top-nav-link.active {
+  background: transparent;
+  box-shadow: inset 0 -2px var(--brand);
+}
+
+body.idp-workspace-page > .container,
+body.idp-workspace-page > .subscription-container {
+  width: min(1120px, calc(100% - 48px));
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+body.idp-workspace-page .header,
+body.idp-workspace-page .page-header {
+  align-items: flex-end;
+  margin: 0 0 28px;
+  padding: 0 0 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+body.idp-workspace-page .header h1,
+body.idp-workspace-page .page-header h1 {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 660;
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+}
+
+body.idp-workspace-page .header-subtitle,
+body.idp-workspace-page .page-header p {
+  max-width: 560px;
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+body.idp-workspace-page .header-actions {
+  margin-left: auto;
+}
+
+body.idp-workspace-page .btn {
+  min-height: 38px;
+  padding: 8px 13px;
+  border-radius: 7px;
+  font-size: 13px;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+body.idp-workspace-page .btn:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+body.idp-workspace-page .btn-primary {
+  border: 1px solid var(--text);
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: none;
+}
+
+body.idp-workspace-page .btn-secondary {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+body.idp-workspace-page .btn-secondary:hover {
+  border-color: var(--muted);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+body.idp-workspace-page .card,
+body.idp-workspace-page .widget-card,
+body.idp-workspace-page .table-container {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: none;
+}
+
+body.idp-workspace-page .card::after {
+  display: none;
+}
+
+body.idp-workspace-page .card:hover,
+body.idp-workspace-page .widget-card:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--muted) 42%, var(--border));
+  box-shadow: none;
+}
+
+body.idp-workspace-page .org-card {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(360px, 1.45fr);
+  align-items: center;
+  gap: 32px;
+  min-height: 126px;
+  padding: 22px;
+}
+
+body.idp-workspace-page .org-actions {
+  justify-content: flex-end;
+}
+
+body.idp-workspace-page .current-badge,
+body.idp-workspace-page .role-badge,
+body.idp-workspace-page .status-badge {
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+
+body.idp-workspace-page .profile-nav {
+  justify-content: flex-start;
+  gap: 22px;
+  margin: -8px 0 26px;
+  padding: 0;
+  overflow-x: auto;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+body.idp-workspace-page .profile-nav a {
+  flex: 0 0 auto;
+  padding: 12px 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+body.idp-workspace-page .profile-nav a.active {
+  background: transparent;
+  color: var(--text);
+  box-shadow: inset 0 -2px var(--brand);
+}
+
+body.idp-workspace-page .personal-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 132px;
+  padding: 24px;
+}
+
+body.idp-workspace-page .dashboard-widgets {
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, .85fr);
+  gap: 16px;
+}
+
+body.idp-workspace-page .widget-card {
+  overflow: hidden;
+}
+
+body.idp-workspace-page .subscription-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, .85fr);
+  gap: 18px;
+}
+
+body.idp-workspace-page .subscription-grid + .card,
+body.idp-workspace-page .requests-section {
+  width: calc(62% - 6px);
+}
+
+body.idp-workspace-page table {
+  border-collapse: collapse;
+}
+
+body.idp-workspace-page th {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+body.idp-workspace-page td,
+body.idp-workspace-page th {
+  border-color: var(--border);
+}
+
+body.idp-workspace-page .modal-content {
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .32);
+}
+
+@media (max-width: 860px) {
+  body.idp-workspace-page .top-nav {
+    margin-bottom: 28px;
+    padding-inline: 20px;
+  }
+
+  body.idp-workspace-page > .container,
+  body.idp-workspace-page > .subscription-container {
+    width: min(100% - 32px, 700px);
+  }
+
+  body.idp-workspace-page .org-card,
+  body.idp-workspace-page .subscription-grid,
+  body.idp-workspace-page .dashboard-widgets {
+    grid-template-columns: 1fr;
+  }
+
+  body.idp-workspace-page .org-actions {
+    justify-content: flex-start;
+  }
+
+  body.idp-workspace-page .subscription-grid + .card,
+  body.idp-workspace-page .requests-section {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  body.idp-workspace-page .header,
+  body.idp-workspace-page .page-header {
+    align-items: flex-start;
+    padding-bottom: 18px;
+  }
+
+  body.idp-workspace-page .header-actions {
+    width: 100%;
+  }
+
+  body.idp-workspace-page .header-actions .btn {
+    width: auto;
+    flex: 1 1 140px;
+  }
+
+  body.idp-workspace-page .personal-summary {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
 
