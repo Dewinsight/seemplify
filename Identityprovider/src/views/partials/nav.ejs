@@ -1,3 +1,113 @@
+<style>
+  /* One canonical authenticated navbar across every IDP page. */
+  body .top-nav.idp-global-nav {
+    width: 100%;
+    max-width: none;
+    min-height: 64px;
+    margin: 0;
+    padding: 0 max(24px, calc((100vw - 1200px) / 2));
+    gap: 24px;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--bg);
+    box-shadow: none;
+    backdrop-filter: none;
+    transform: none;
+    will-change: auto;
+  }
+
+  body .idp-global-nav .top-nav-brand img,
+  body .idp-global-nav .top-nav-brand svg {
+    width: auto;
+    height: 28px;
+  }
+
+  body .idp-global-nav .top-nav-links {
+    align-self: stretch;
+    gap: 2px;
+    flex-wrap: nowrap;
+  }
+
+  body .idp-global-nav .top-nav-link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-height: 64px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  body .idp-global-nav .top-nav-link:hover {
+    border: 0;
+    background: transparent;
+    color: var(--text);
+  }
+
+  body .idp-global-nav .top-nav-link.active {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--text);
+  }
+
+  body .idp-global-nav .top-nav-link.active::after {
+    content: '';
+    position: absolute;
+    right: 14px;
+    bottom: 0;
+    left: 14px;
+    height: 2px;
+    background: var(--brand);
+  }
+
+  body .idp-global-nav .top-nav-user { gap: 8px; }
+
+  body .idp-global-nav .theme-toggle,
+  body .idp-global-nav .notification-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body .idp-global-nav .user-toggle {
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body .idp-global-nav .theme-toggle:hover,
+  body .idp-global-nav .notification-icon:hover,
+  body .idp-global-nav .user-toggle:hover {
+    background: var(--hover-bg);
+  }
+
+  @media (max-width: 768px) {
+    body .top-nav.idp-global-nav {
+      min-height: 56px;
+      padding: 0 14px;
+      gap: 12px;
+    }
+
+    body .idp-global-nav .top-nav-brand img,
+    body .idp-global-nav .top-nav-brand svg {
+      height: 24px;
+    }
+  }
+</style>
+
 <!-- Mobile Nav Checkbox (CSS-only toggle) -->
 <input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-checkbox">
 
@@ -37,7 +147,7 @@
 
 <!-- Top Navigation -->
 <div class="route-progress" data-route-progress aria-hidden="true"><span></span></div>
-<nav class="top-nav">
+<nav class="top-nav idp-global-nav">
   <a href="<%- brand.name === 'Akwa Ibom State' ? 'https://akwaibom.aiinnigeria.com' : 'https://seemplifyai.com' %>" class="top-nav-brand">
     <%- brand.navLogoHtml %>
   </a>
