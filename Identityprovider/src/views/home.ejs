@@ -1184,13 +1184,9 @@
       line-height: 16px;
     }
     .workspace-layout {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 304px;
-      gap: 32px;
-      align-items: start;
+      display: block;
     }
-    .workspace-primary,
-    .workspace-sidebar { min-width: 0; }
+    .workspace-primary { min-width: 0; }
     .workspace-section + .workspace-section { margin-top: 30px; }
     .section-title {
       margin: 0 0 14px;
@@ -1210,7 +1206,7 @@
     .apps { margin-top: 0; }
     .app-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
     }
     .app-card,
@@ -1307,134 +1303,113 @@
     }
     .app-card--coming-soon { opacity: 0.65; }
 
-    .workspace-panel {
-      overflow: hidden;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: var(--panel-solid);
-    }
-    .workspace-panel__header {
+    .workspace-context {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 15px 16px;
+      gap: 24px;
+      margin: -4px 0 34px;
+      padding: 14px 0;
+      border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
     }
-    .workspace-panel__header h2 {
-      margin: 0;
+    .workspace-context__identity {
+      display: flex;
+      align-items: center;
+      min-width: 230px;
+      gap: 11px;
+    }
+    .workspace-context__icon {
+      flex: 0 0 auto;
+      width: 22px;
+      height: 22px;
+      color: var(--brand);
+    }
+    .workspace-context__copy { min-width: 0; }
+    .workspace-context__label {
+      margin-bottom: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+    .workspace-context__name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .workspace-context__name {
+      overflow: hidden;
       color: var(--text);
       font-size: 14px;
       font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    .workspace-panel__header a {
+    .workspace-context__name-row .role-badge {
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 9px;
+      text-transform: capitalize;
+    }
+    .workspace-context__links {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 8px;
+    }
+    .workspace-context__link {
+      padding: 7px 9px;
+      border-radius: 6px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 550;
+    }
+    .workspace-context__link:hover {
+      background: var(--hover-bg);
+      color: var(--text);
+    }
+    .workspace-context__actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .workspace-context__manage {
+      padding: 7px 9px;
       color: var(--muted);
       text-decoration: none;
       font-size: 12px;
     }
-    .workspace-panel__header a:hover { color: var(--text); }
-    .org-summary {
-      display: flex;
+    .workspace-context__manage:hover { color: var(--text); }
+    .workspace-context__switch {
+      display: inline-flex;
       align-items: center;
-      gap: 12px;
-      padding: 18px 16px 14px;
-    }
-    .org-summary__icon {
-      display: grid;
-      flex: 0 0 auto;
-      width: 36px;
-      height: 36px;
-      place-items: center;
-      border: 1px solid color-mix(in srgb, var(--brand) 36%, var(--border));
-      border-radius: 8px;
-      background: color-mix(in srgb, var(--brand) 10%, transparent);
-      color: var(--brand-2);
-    }
-    .org-summary__body { min-width: 0; }
-    .org-summary__name {
-      overflow: hidden;
-      color: var(--text);
-      font-size: 15px;
-      font-weight: 650;
-      line-height: 1.35;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .org-summary__meta {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      margin-top: 3px;
-      color: var(--muted);
-      font-size: 11px;
-    }
-    .org-summary__meta .role-badge {
-      padding: 1px 5px;
-      border-radius: 5px;
-      font-size: 10px;
-      text-transform: capitalize;
-    }
-    .org-switch-action {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      width: calc(100% - 32px);
+      gap: 8px;
       min-height: 36px;
-      margin: 0 16px 16px;
-      padding: 0 10px;
+      padding: 0 11px;
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 7px;
       background: transparent;
       color: var(--text-secondary);
       cursor: pointer;
       font-size: 12px;
       font-weight: 600;
     }
-    .org-switch-action:hover {
+    .workspace-context__switch:hover {
+      border-color: color-mix(in srgb, var(--muted) 50%, var(--border));
       background: var(--hover-bg);
       color: var(--text);
     }
-    .org-switch-action__count {
+    .workspace-context__switch svg {
+      width: 14px;
+      height: 14px;
+    }
+    .workspace-context__count {
       color: var(--muted);
       font-size: 11px;
       font-weight: 500;
     }
-    .org-quick-links {
-      display: grid;
-      border-top: 1px solid var(--border);
-    }
-    .org-quick-link {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-height: 42px;
-      padding: 0 16px;
-      border-bottom: 1px solid var(--border);
-      color: var(--text-secondary);
-      text-decoration: none;
-      font-size: 12.5px;
-      font-weight: 550;
-    }
-    .org-quick-link:hover {
-      background: var(--hover-bg);
-      color: var(--text);
-    }
-    .org-quick-link svg {
-      width: 15px;
-      height: 15px;
-      color: var(--muted);
-    }
-    .org-panel-footer {
-      display: flex;
-      gap: 16px;
-      padding: 13px 16px;
-    }
-    .org-panel-footer a {
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 12px;
-    }
-    .org-panel-footer a:hover { color: var(--text); }
 
     .action-banner,
     .subscription-reminder-card {
@@ -1443,13 +1418,13 @@
     }
 
     @media (max-width: 980px) {
-      .workspace-layout { grid-template-columns: 1fr; }
-      .workspace-sidebar { order: -1; }
-      .org-quick-links { grid-template-columns: repeat(3, 1fr); }
-      .org-quick-link {
-        border-right: 1px solid var(--border);
+      .app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .workspace-context { flex-wrap: wrap; }
+      .workspace-context__links {
+        order: 3;
+        width: 100%;
+        margin-left: 33px;
       }
-      .org-quick-link:last-child { border-right: 0; }
     }
     @media (max-width: 768px) {
       body { padding: 0 0 32px; }
@@ -1470,6 +1445,23 @@
       .hub-page-header h1 { font-size: 24px; }
       .hub-page-header p { font-size: 13px; }
       .hub-notification-link { flex: 0 0 auto; }
+      .workspace-context {
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 28px;
+      }
+      .workspace-context__identity { min-width: 0; flex: 1; }
+      .workspace-context__links {
+        order: 2;
+        margin-left: 33px;
+        overflow-x: auto;
+      }
+      .workspace-context__actions {
+        order: 3;
+        width: calc(100% - 33px);
+        margin-left: 33px;
+      }
+      .workspace-context__switch { margin-left: auto; }
       .app-grid { grid-template-columns: 1fr; }
       .app-card {
         min-height: 0;
@@ -1477,8 +1469,6 @@
       }
       .app-card__meta { display: flex; }
       .app-card__arrow { display: block; }
-      .org-quick-links { grid-template-columns: 1fr; }
-      .org-quick-link { border-right: 0; }
     }
     @media (max-width: 480px) {
       .hub-page-header { display: block; }
@@ -1765,6 +1755,45 @@
       <% } %>
     </header>
 
+    <% if (currentOrg) { %>
+      <section class="workspace-context" aria-label="Current organization">
+        <div class="workspace-context__identity">
+          <svg class="workspace-context__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M3 21h18M5 21V7l8-4 8 4v14M8 21v-4h8v4" />
+          </svg>
+          <div class="workspace-context__copy">
+            <div class="workspace-context__label">Current organization</div>
+            <div class="workspace-context__name-row">
+              <span class="workspace-context__name"><%= currentOrg.name %></span>
+              <% if (currentOrg.role) { %>
+                <span class="role-badge role-<%= currentOrg.role %>"><%= currentOrg.role %></span>
+              <% } %>
+            </div>
+          </div>
+        </div>
+
+        <nav class="workspace-context__links" aria-label="Organization management">
+          <a href="/organizations/<%= currentOrg.id %>/members" class="workspace-context__link">Members</a>
+          <a href="/organizations/<%= currentOrg.id %>/teams" class="workspace-context__link">Teams</a>
+          <% if (['owner', 'admin'].includes(currentOrg.role)) { %>
+            <a href="/organizations/<%= currentOrg.id %>/invitations" class="workspace-context__link">Invitations</a>
+          <% } %>
+          <a href="/profile" class="workspace-context__link">Profile</a>
+        </nav>
+
+        <div class="workspace-context__actions">
+          <a href="/organizations" class="workspace-context__manage">Manage organizations</a>
+          <button type="button" onclick="openOrgModal()" class="workspace-context__switch" aria-label="Switch organization (<%= organizations.length %> available)">
+            <span>Switch</span>
+            <span class="workspace-context__count"><%= organizations.length %></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </button>
+        </div>
+      </section>
+    <% } %>
+
     <div class="workspace-layout">
       <div class="workspace-primary">
         <section class="workspace-section apps" aria-labelledby="applications-heading">
@@ -1871,60 +1900,6 @@
         </section>
       </div>
 
-      <% if (currentOrg) { %>
-        <aside class="workspace-sidebar" aria-label="Organization access">
-          <section class="workspace-panel">
-            <header class="workspace-panel__header">
-              <h2>Organization</h2>
-              <a href="/organizations">View all</a>
-            </header>
-
-            <div class="org-summary">
-              <div class="org-summary__icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 21h18M5 21V7l8-4 8 4v14M8 21v-4h8v4" />
-                </svg>
-              </div>
-              <div class="org-summary__body">
-                <div class="org-summary__name"><%= currentOrg.name %></div>
-                <div class="org-summary__meta">
-                  <% if (currentOrg.role) { %>
-                    <span class="role-badge role-<%= currentOrg.role %>"><%= currentOrg.role %></span>
-                  <% } %>
-                  <span><%= organizations.length %> organization<%= organizations.length === 1 ? '' : 's' %></span>
-                </div>
-              </div>
-            </div>
-
-            <button type="button" onclick="openOrgModal()" class="org-switch-action">
-              <span>Switch organization</span>
-              <span class="org-switch-action__count"><%= organizations.length %> available</span>
-            </button>
-
-            <nav class="org-quick-links" aria-label="Organization management">
-              <a href="/organizations/<%= currentOrg.id %>/members" class="org-quick-link">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                Members
-              </a>
-              <a href="/organizations/<%= currentOrg.id %>/teams" class="org-quick-link">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/></svg>
-                Teams
-              </a>
-              <% if (['owner', 'admin'].includes(currentOrg.role)) { %>
-                <a href="/organizations/<%= currentOrg.id %>/invitations" class="org-quick-link">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="m4 6 8 6 8-6"/></svg>
-                  Invitations
-                </a>
-              <% } %>
-            </nav>
-
-            <div class="org-panel-footer">
-              <a href="/profile">Profile</a>
-              <a href="/invitations/pending">My invitations</a>
-            </div>
-          </section>
-        </aside>
-      <% } %>
     </div>
     <% } %>
   </div>
