@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&amp;family=Instrument+Serif:ital@0;1&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&amp;family=Instrument+Sans:ital,wght@0,400..700;1,400..700&amp;family=Instrument+Serif:ital@0;1&amp;display=swap" rel="stylesheet">
   <style>
     <%- include('../public/css/idp-theme.css') %>
   </style>
@@ -1604,57 +1604,178 @@
     }
 
     .attendance-strip {
+      position: relative;
+      z-index: 2;
       display: grid;
-      grid-template-columns: minmax(210px, 1fr) auto auto;
+      grid-template-columns: 268px minmax(380px, 1fr) auto;
+      min-height: 140px;
       align-items: center;
-      gap: 18px;
-      margin: -4px 0 26px;
-      padding: 13px 15px;
-      background: var(--panel, #111114);
-      border: 1px solid var(--border);
-      border-left: 3px solid #14b8a6;
-      border-radius: 10px;
-      transition: padding 160ms ease, gap 160ms ease;
+      gap: 32px;
+      margin: -24px 0 0;
+      padding: 24px;
+      overflow: hidden;
+      border: 1px solid var(--hub-line);
+      border-radius: 24px;
+      background: var(--hub-canvas-raised);
+      color: var(--hub-ink);
+      box-shadow: var(--hub-card-shadow);
+      --attendance-muted: color-mix(in srgb, var(--hub-ink-soft) 78%, var(--hub-ink-faint));
+      transition: max-width 180ms ease, min-height 180ms ease, padding 180ms ease, gap 180ms ease;
     }
     .attendance-strip[hidden] { display: none; }
-    .attendance-strip__state { display: flex; align-items: center; gap: 11px; min-width: 0; }
-    .attendance-strip__dot { width: 9px; height: 9px; border-radius: 50%; background: #71717a; flex: none; }
-    .attendance-strip[data-state="working"] .attendance-strip__dot { background: #14b8a6; }
-    .attendance-strip[data-state="break"] .attendance-strip__dot { background: #f59e0b; }
-    .attendance-strip__label { color: var(--text); font-size: 14px; font-weight: 700; }
-    .attendance-strip__hint { margin-top: 2px; color: var(--muted); font-size: 12px; }
-    .attendance-strip__time { font: 650 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); letter-spacing: .02em; }
-    .attendance-strip__actions { display: flex; align-items: center; gap: 7px; }
-    .attendance-strip__toggle { width: 34px; height: 34px; display: inline-grid; place-items: center; flex: none; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
-    .attendance-strip__toggle:hover { color: var(--text); background: var(--hover-bg); }
-    .attendance-strip__toggle svg { width: 16px; height: 16px; transition: transform 160ms ease; }
-    .attendance-strip[data-collapsed="true"] { grid-template-columns: minmax(130px, 1fr) auto auto; max-width: 620px; margin-left: auto; padding: 9px 10px 9px 12px; }
-    .attendance-strip[data-collapsed="true"] .attendance-strip__hint,
-    .attendance-strip[data-collapsed="true"] .attendance-detail { display: none; }
-    .attendance-strip[data-collapsed="true"] .attendance-strip__actions { flex-wrap: nowrap; }
-    .attendance-strip[data-collapsed="true"] .attendance-strip__toggle svg { transform: rotate(180deg); }
-    .attendance-strip[data-reminder="true"] { border-left-color: #d97706; }
-    .attendance-strip[data-reminder="true"] .attendance-strip__hint { color: #d97706; }
-    .attendance-action {
-      min-height: 34px;
-      padding: 0 12px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      background: transparent;
-      color: var(--text);
-      font: inherit;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
+    .attendance-strip::before {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: #8b857a;
+      content: "";
     }
-    .attendance-action:hover { background: var(--hover-bg); border-color: var(--muted); }
-    .attendance-action--primary { background: #0f766e; border-color: #0f766e; color: white; }
-    .attendance-action--danger { color: #fca5a5; }
-    .attendance-action:disabled { opacity: .5; cursor: wait; }
-    .attendance-detail { color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 650; white-space: nowrap; }
-    .attendance-detail:hover { color: var(--text); }
-    [data-theme="light"] .attendance-strip { background: #fffdfa; border-color: #cbc6bc; border-left-color: #0f766e; }
-    [data-theme="light"] .attendance-strip[data-reminder="true"] { border-left-color: #b45309; }
+    .attendance-strip[data-state="working"]::before { background: #0ca678; }
+    .attendance-strip[data-state="break"]::before { background: #e99a12; }
+    .attendance-strip__summary,
+    .attendance-strip__progress { min-width: 0; }
+    .attendance-strip__status { display: flex; align-items: center; gap: 8px; }
+    .attendance-strip__dot { width: 8px; height: 8px; border-radius: 50%; background: #8b857a; flex: none; }
+    .attendance-strip[data-state="working"] .attendance-strip__dot { background: #0ca678; }
+    .attendance-strip[data-state="break"] .attendance-strip__dot { background: #e99a12; }
+    .attendance-strip__label {
+      color: var(--hub-ink);
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: .08em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+    .attendance-strip__clock { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; }
+    .attendance-strip__time {
+      color: var(--hub-ink);
+      font: 500 34px/1 "DM Mono", "SFMono-Regular", Consolas, monospace;
+      letter-spacing: -.04em;
+      font-variant-numeric: tabular-nums;
+    }
+    .attendance-strip__worked-label { color: var(--attendance-muted); font-size: 12px; }
+    .attendance-strip__meta,
+    .attendance-strip__break-summary {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+      color: var(--attendance-muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .attendance-strip__meta-item,
+    .attendance-strip__break-summary { display: inline-flex; align-items: center; gap: 5px; }
+    .attendance-strip__meta-item + .attendance-strip__meta-item::before {
+      width: 2px;
+      height: 2px;
+      margin-right: 2px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+    }
+    .attendance-strip__meta svg,
+    .attendance-strip__break-summary svg { width: 14px; height: 14px; flex: none; }
+    .attendance-strip__progress-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+    .attendance-strip__eyebrow {
+      color: var(--attendance-muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .1em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+    .attendance-strip__target { margin-top: 7px; color: var(--attendance-muted); font-size: 13px; }
+    .attendance-strip__target strong { color: var(--hub-ink); font-size: 15px; font-weight: 650; }
+    .attendance-strip__remaining { padding-bottom: 1px; color: var(--attendance-muted); font-size: 12px; white-space: nowrap; }
+    .attendance-strip__segments { display: grid; grid-template-columns: repeat(8, minmax(18px, 1fr)); gap: 7px; margin-top: 12px; }
+    .attendance-strip__segment {
+      position: relative;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--hub-ink) 9%, transparent);
+    }
+    .attendance-strip__segment::after {
+      position: absolute;
+      inset: 0;
+      width: var(--segment-fill, 0%);
+      border-radius: inherit;
+      background: #0ca678;
+      content: "";
+      transition: width 220ms ease;
+    }
+    .attendance-strip__hint {
+      display: none;
+      margin-top: 8px;
+      color: #d79a2b;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .attendance-strip[data-reminder="true"] .attendance-strip__hint,
+    .attendance-strip[data-error="true"] .attendance-strip__hint { display: block; }
+    .attendance-strip[data-error="true"] .attendance-strip__hint { color: #e66a6a; }
+    .attendance-strip__actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+    .attendance-action {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 17px;
+      border: 1px solid var(--hub-line-strong);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--hub-ink);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 650;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease;
+    }
+    .attendance-action svg { width: 15px; height: 15px; flex: none; }
+    .attendance-action[hidden] { display: none; }
+    .attendance-action:hover { transform: translateY(-1px); background: color-mix(in srgb, var(--hub-ink) 5%, transparent); }
+    .attendance-action--primary { border-color: #087f5b; background: #087f5b; color: #fff; }
+    .attendance-action--primary:hover { border-color: #066b4d; background: #066b4d; }
+    .attendance-action--danger { border-color: color-mix(in srgb, #e45a5a 40%, transparent); color: #f07a7a; }
+    [data-theme="light"] .attendance-action--danger { border-color: color-mix(in srgb, #b42318 30%, transparent); color: #b42318; }
+    [data-theme="light"] .attendance-strip__hint { color: #8a5b00; }
+    [data-theme="light"] .attendance-strip[data-error="true"] .attendance-strip__hint { color: #b42318; }
+    .attendance-action:disabled { transform: none; opacity: .52; cursor: wait; }
+    .attendance-strip__toggle {
+      display: inline-grid;
+      width: 44px;
+      height: 44px;
+      flex: none;
+      place-items: center;
+      padding: 0;
+      border: 1px solid var(--hub-line-strong);
+      border-radius: 50%;
+      background: transparent;
+      color: var(--hub-ink-soft);
+      cursor: pointer;
+      transition: background-color 140ms ease, color 140ms ease;
+    }
+    .attendance-strip__toggle:hover { background: color-mix(in srgb, var(--hub-ink) 5%, transparent); color: var(--hub-ink); }
+    .attendance-action:focus-visible,
+    .attendance-strip__toggle:focus-visible { outline: 2px solid var(--hub-brand); outline-offset: 3px; }
+    .attendance-strip__toggle svg { width: 16px; height: 16px; transition: transform 180ms ease; }
+    .attendance-strip[data-collapsed="true"] {
+      grid-template-columns: minmax(215px, 1fr) auto;
+      max-width: 560px;
+      min-height: 76px;
+      margin-left: auto;
+      padding: 14px 16px 14px 18px;
+      gap: 18px;
+    }
+    .attendance-strip[data-collapsed="true"] .attendance-strip__progress,
+    .attendance-strip[data-collapsed="true"] .attendance-strip__meta,
+    .attendance-strip[data-collapsed="true"] .attendance-strip__worked-label { display: none; }
+    .attendance-strip[data-collapsed="true"] .attendance-strip__clock { margin-top: 5px; }
+    .attendance-strip[data-collapsed="true"] .attendance-strip__time { font-size: 22px; }
+    .attendance-strip[data-collapsed="true"] .attendance-strip__toggle svg { transform: rotate(180deg); }
     .app-card-shell { position: relative; min-width: 0; }
     .app-card-shell > .app-card { height: 100%; }
     .attendance-card-toggle { position: absolute; right: 18px; bottom: 15px; z-index: 2; padding: 0; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 11px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
@@ -1695,11 +1816,6 @@
       }
       .app-card__meta { display: flex; }
       .app-card__arrow { display: block; }
-      .attendance-strip { grid-template-columns: 1fr auto; gap: 12px; }
-      .attendance-strip__time { text-align: right; }
-      .attendance-strip__actions { grid-column: 1 / -1; flex-wrap: wrap; }
-      .attendance-strip[data-collapsed="true"] { grid-template-columns: 1fr auto; max-width: none; }
-      .attendance-strip[data-collapsed="true"] .attendance-strip__actions { grid-column: 1 / -1; }
     }
     @media (max-width: 480px) {
       .hub-page-header { display: block; }
@@ -1930,20 +2046,8 @@
     .hub-organization__stats dd.is-positive { color: #34d399; }
     [data-theme="light"] .hub-organization__stats dd.is-positive { color: #059669; }
 
-    .attendance-strip {
-      margin: 34px 0 0;
-      border-color: var(--hub-line);
-      border-left-color: var(--hub-brand);
-      border-radius: 12px;
-      background: var(--hub-canvas-raised);
-      color: var(--hub-ink);
-      box-shadow: var(--hub-card-shadow);
-    }
-    [data-theme="light"] .attendance-strip { border-color: var(--hub-line); border-left-color: var(--hub-brand); background: var(--hub-canvas-raised); }
-    .attendance-strip__label, .attendance-strip__time { color: var(--hub-ink); }
-    .attendance-strip__hint, .attendance-detail { color: var(--hub-ink-faint); }
-
     .workspace-layout { padding-top: 56px; }
+    .attendance-strip + .workspace-layout { padding-top: 52px; }
     .workspace-section + .workspace-section { margin-top: 56px; }
     .apps {
       display: flex;
@@ -2122,6 +2226,14 @@
     @media (max-width: 980px) {
       .hub-page-header { grid-template-columns: 1fr; gap: 36px; }
       .hub-organization { max-width: 560px; }
+      .attendance-strip:not([data-collapsed="true"]) {
+        grid-template-columns: minmax(210px, .8fr) minmax(0, 1.2fr);
+        gap: 20px 24px;
+      }
+      .attendance-strip:not([data-collapsed="true"]) .attendance-strip__actions {
+        grid-column: 1 / -1;
+        justify-content: flex-end;
+      }
       .app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .apps-toolbar { align-items: flex-start; flex-direction: column; }
       .app-search { width: 100%; max-width: 420px; }
@@ -2135,6 +2247,19 @@
       .hub-page-header__actions { margin: 0; }
       .hub-organization { border-radius: 18px; }
       .workspace-layout { padding-top: 40px; }
+      .attendance-strip + .workspace-layout { padding-top: 40px; }
+      .attendance-strip:not([data-collapsed="true"]) {
+        grid-template-columns: 1fr;
+        margin-top: -18px;
+        padding: 20px;
+        gap: 20px;
+      }
+      .attendance-strip:not([data-collapsed="true"]) .attendance-strip__actions { grid-column: auto; justify-content: flex-start; }
+      .attendance-strip[data-collapsed="true"] {
+        width: 100%;
+        max-width: none;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
       .apps-heading-row { display: block; }
       .apps-result-count { margin-top: 12px; }
       .app-grid, .roadmap-grid { grid-template-columns: 1fr; }
@@ -2153,6 +2278,19 @@
       .app-filters { gap: 4px; }
       .app-filter { padding-inline: 10px; }
       body .app-card { padding: 18px; }
+      .attendance-strip:not([data-collapsed="true"]) .attendance-strip__actions { flex-wrap: wrap; }
+      .attendance-strip:not([data-collapsed="true"]) .attendance-action { flex: 1 1 120px; }
+      .attendance-strip__toggle { flex: none; }
+      .attendance-strip__segments { gap: 4px; }
+    }
+    @media (max-width: 600px) {
+      .attendance-strip[data-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
+      .attendance-strip[data-collapsed="true"] .attendance-strip__actions {
+        grid-column: 1;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+      .attendance-strip[data-collapsed="true"] .attendance-action { flex: 1 1 120px; }
     }
   </style>
   <script src="/js/theme.js?v=3"></script>
@@ -2463,20 +2601,59 @@
     </header>
 
     <% if (attendanceHubEnabled) { %>
-      <section id="attendanceStrip" class="attendance-strip" data-state="idle" aria-label="Today's attendance" aria-live="polite">
-        <div class="attendance-strip__state">
-          <span class="attendance-strip__dot" aria-hidden="true"></span>
-          <div>
-            <div id="attendanceLabel" class="attendance-strip__label">Attendance</div>
-            <div id="attendanceHint" class="attendance-strip__hint">Checking your status…</div>
+      <section id="attendanceStrip" class="attendance-strip" data-state="idle" data-preference-scope="<%= String(user?._id || 'user') %>:<%= String(currentOrg?._id || currentOrg?.id || 'workspace') %>" aria-label="Today's attendance">
+        <div class="attendance-strip__summary">
+          <div class="attendance-strip__status">
+            <span class="attendance-strip__dot" aria-hidden="true"></span>
+            <div id="attendanceLabel" class="attendance-strip__label" role="status" aria-live="polite" aria-atomic="true">Checking attendance</div>
+          </div>
+          <div class="attendance-strip__clock">
+            <span id="attendanceTime" class="attendance-strip__time">--:--:--</span>
+            <span class="attendance-strip__worked-label">worked</span>
+          </div>
+          <div class="attendance-strip__meta">
+            <span class="attendance-strip__meta-item">
+              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="10" rx="2" stroke="currentColor"/><path d="M5 2v3M11 2v3M2.5 6.5h11M8 8.5v2.75l1.75 1" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span id="attendanceShift">Shift &mdash;</span>
+            </span>
+            <span id="attendanceLocationItem" class="attendance-strip__meta-item">
+              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 14s4.5-4.12 4.5-7.5a4.5 4.5 0 1 0-9 0C3.5 9.88 8 14 8 14Z" stroke="currentColor"/><circle cx="8" cy="6.5" r="1.5" stroke="currentColor"/></svg>
+              <span id="attendanceLocation">Location &mdash;</span>
+            </span>
+          </div>
+          <div id="attendanceHint" class="attendance-strip__hint" role="status" aria-live="polite" aria-atomic="true"></div>
+        </div>
+        <div class="attendance-strip__progress">
+          <div class="attendance-strip__progress-head">
+            <div>
+              <div class="attendance-strip__eyebrow">Today</div>
+              <div class="attendance-strip__target"><strong id="attendanceWorkedShort">&mdash;</strong> / <span id="attendanceTarget">target pending</span></div>
+            </div>
+            <span id="attendanceRemaining" class="attendance-strip__remaining">Checking schedule</span>
+          </div>
+          <div class="attendance-strip__segments" aria-hidden="true">
+            <% for (let segmentIndex = 0; segmentIndex < 8; segmentIndex += 1) { %>
+              <span class="attendance-strip__segment" data-attendance-segment="<%= segmentIndex %>"></span>
+            <% } %>
+          </div>
+          <div id="attendanceBreakSummary" class="attendance-strip__break-summary">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 5.5h7v4a3.5 3.5 0 0 1-7 0v-4Z" stroke="currentColor"/><path d="M10.5 6.5H12a1.5 1.5 0 0 1 0 3h-1.5M2.5 13.5h9" stroke="currentColor" stroke-linecap="round"/><path d="M5 2.25v1.5M8 2.25v1.5" stroke="currentColor" stroke-linecap="round"/></svg>
+            <span>Breaks &mdash;</span>
           </div>
         </div>
-        <div id="attendanceTime" class="attendance-strip__time">00:00:00</div>
         <div class="attendance-strip__actions">
-          <button id="attendanceClockIn" class="attendance-action attendance-action--primary" type="button" hidden>Clock in</button>
-          <button id="attendanceBreak" class="attendance-action" type="button" hidden>Take break</button>
-          <button id="attendanceClockOut" class="attendance-action attendance-action--danger" type="button" hidden>Clock out</button>
-          <a class="attendance-detail" href="/launch/time-attendance">View details →</a>
+          <button id="attendanceClockIn" class="attendance-action attendance-action--primary" type="button" hidden>
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="m12.9 7.15-7.1-4.4A1 1 0 0 0 4.25 3.6v8.8a1 1 0 0 0 1.55.84l7.1-4.4a1 1 0 0 0 0-1.7Z"/></svg>
+            <span id="attendanceClockInLabel">Clock in</span>
+          </button>
+          <button id="attendanceBreak" class="attendance-action" type="button" hidden>
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 5.5h7v4a3.5 3.5 0 0 1-7 0v-4Z" stroke="currentColor"/><path d="M10.5 6.5H12a1.5 1.5 0 0 1 0 3h-1.5M2.5 13.5h9" stroke="currentColor" stroke-linecap="round"/></svg>
+            <span id="attendanceBreakLabel">Take break</span>
+          </button>
+          <button id="attendanceClockOut" class="attendance-action attendance-action--danger" type="button" hidden>
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>
+            <span>Clock out</span>
+          </button>
           <button id="attendanceToggle" class="attendance-strip__toggle" type="button" aria-expanded="true" aria-label="Collapse attendance controls" title="Collapse attendance controls">
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 12 5-5 5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
@@ -3051,19 +3228,48 @@
       const label = document.getElementById('attendanceLabel');
       const hint = document.getElementById('attendanceHint');
       const time = document.getElementById('attendanceTime');
+      const workedShort = document.getElementById('attendanceWorkedShort');
+      const target = document.getElementById('attendanceTarget');
+      const remaining = document.getElementById('attendanceRemaining');
+      const shift = document.getElementById('attendanceShift');
+      const locationItem = document.getElementById('attendanceLocationItem');
+      const location = document.getElementById('attendanceLocation');
+      const breakSummary = document.querySelector('#attendanceBreakSummary span');
+      const progressSegments = [...document.querySelectorAll('[data-attendance-segment]')];
       const clockIn = document.getElementById('attendanceClockIn');
+      const clockInLabel = document.getElementById('attendanceClockInLabel');
       const breakButton = document.getElementById('attendanceBreak');
+      const breakLabel = document.getElementById('attendanceBreakLabel');
       const clockOut = document.getElementById('attendanceClockOut');
       const toggle = document.getElementById('attendanceToggle');
       const cardToggle = document.getElementById('attendanceCardToggle');
       if (!strip) return;
 
       const COLLAPSE_KEY = 'seemplify:attendance-widget:collapsed';
+      const collapsePreferenceKey = `${COLLAPSE_KEY}:${strip.dataset.preferenceScope || 'default'}`;
       let credentials = null;
       let currentStatus = null;
       let statusReceivedAt = Date.now();
       let streamController = null;
       let reconnectTimer = null;
+      let statusRetryTimer = null;
+      let statusRequestGeneration = 0;
+
+      const readCollapsePreference = () => {
+        try {
+          return localStorage.getItem(collapsePreferenceKey) === '1';
+        } catch {
+          return false;
+        }
+      };
+
+      const writeCollapsePreference = (collapsed) => {
+        try {
+          localStorage.setItem(collapsePreferenceKey, collapsed ? '1' : '0');
+        } catch {
+          // Storage can be blocked by browser privacy settings; the widget still works for this page view.
+        }
+      };
 
       function setCollapsed(collapsed, persist = true) {
         strip.dataset.collapsed = String(Boolean(collapsed));
@@ -3074,28 +3280,61 @@
           toggle.title = instruction;
         }
         if (cardToggle) cardToggle.hidden = !collapsed;
-        if (persist) localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');
+        if (persist) writeCollapsePreference(collapsed);
       }
 
       function timeParts(timeZone) {
-        const parts = new Intl.DateTimeFormat('en-GB', {
-          timeZone: timeZone || 'UTC', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
-        }).formatToParts(new Date());
+        let formatter;
+        try {
+          formatter = new Intl.DateTimeFormat('en-GB', {
+            timeZone: timeZone || 'UTC', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+          });
+        } catch {
+          formatter = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'UTC', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+          });
+        }
+        const parts = formatter.formatToParts(new Date());
         return Object.fromEntries(parts.map(part => [part.type, part.value]));
+      }
+
+      function policyDayContext(policy, includeActiveOverrun = false) {
+        const now = timeParts(policy?.timezone);
+        const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+        const configuredWorkDays = Array.isArray(policy?.workDays) ? policy.workDays : [1, 2, 3, 4, 5];
+        const workDays = configuredWorkDays
+          .map(Number)
+          .filter(day => Number.isInteger(day) && day >= 0 && day <= 6);
+        const currentWeekday = dayMap[now.weekday];
+        const currentMinute = (Number(now.hour) * 60) + Number(now.minute);
+        const start = parseClockMinutes(policy?.shiftStart, '09:00');
+        const rawEnd = parseClockMinutes(policy?.shiftEnd, '17:00');
+        const overnight = rawEnd < start;
+        const carriesFromPreviousDay = overnight && (
+          currentMinute < rawEnd
+          || (includeActiveOverrun && currentStatus?.isClockedIn && currentMinute < start)
+        );
+        return {
+          currentMinute,
+          start,
+          rawEnd,
+          overnight,
+          effectiveMinute: carriesFromPreviousDay ? currentMinute + (24 * 60) : currentMinute,
+          scheduleWeekday: carriesFromPreviousDay ? (currentWeekday + 6) % 7 : currentWeekday,
+          isWorkday: workDays.includes(carriesFromPreviousDay ? (currentWeekday + 6) % 7 : currentWeekday),
+        };
       }
 
       function scheduledReminder() {
         const policy = currentStatus?.policy;
         if (!policy?.shiftStart || !policy?.shiftEnd) return null;
-        const now = timeParts(policy.timezone);
-        const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-        if (!policy.workDays?.includes(dayMap[now.weekday])) return null;
-        const minute = Number(now.hour) * 60 + Number(now.minute);
-        const parse = value => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
-        if (policy.clockInReminder !== false && !currentStatus.isClockedIn && minute >= parse(policy.shiftStart) + Number(policy.clockInReminderMinutesAfter ?? 15) && minute < parse(policy.shiftEnd)) {
+        const { start, rawEnd, overnight, effectiveMinute, isWorkday } = policyDayContext(policy, true);
+        const end = overnight ? rawEnd + (24 * 60) : rawEnd;
+        if (!isWorkday) return null;
+        if (policy.clockInReminder !== false && !currentStatus.isClockedIn && effectiveMinute >= start + Number(policy.clockInReminderMinutesAfter ?? 15) && effectiveMinute < end) {
           return `Your workday started at ${policy.shiftStart}. Remember to clock in.`;
         }
-        if (policy.clockOutReminder !== false && currentStatus.isClockedIn && !currentStatus.isOnBreak && minute >= parse(policy.shiftEnd) + Number(policy.clockOutReminderMinutesAfter ?? 0)) {
+        if (policy.clockOutReminder !== false && currentStatus.isClockedIn && !currentStatus.isOnBreak && effectiveMinute >= end + Number(policy.clockOutReminderMinutesAfter ?? 0)) {
           return `Your scheduled day ended at ${policy.shiftEnd}. Clock out when you finish.`;
         }
         return null;
@@ -3109,22 +3348,155 @@
         return [hours, minutes, seconds].map(value => String(value).padStart(2, '0')).join(':');
       };
 
+      const parseClockMinutes = (value, fallback) => {
+        const parse = (candidate) => {
+          const match = String(candidate || '').match(/^(\d{1,2}):(\d{2})$/);
+          if (!match) return null;
+          const hours = Number(match[1]);
+          const minutes = Number(match[2]);
+          return hours <= 23 && minutes <= 59 ? (hours * 60) + minutes : null;
+        };
+        return parse(value) ?? parse(fallback) ?? 0;
+      };
+
+      const formatClockTime = (value) => {
+        const minutes = parseClockMinutes(value, '00:00');
+        const hours = Math.floor(minutes / 60) % 24;
+        const suffix = hours >= 12 ? 'pm' : 'am';
+        return `${hours % 12 || 12}:${String(minutes % 60).padStart(2, '0')}${suffix}`;
+      };
+
+      const formatMinutesCompact = (total, includeZeroMinutes = false) => {
+        const safe = Math.max(0, Math.round(Number(total) || 0));
+        const hours = Math.floor(safe / 60);
+        const minutes = safe % 60;
+        if (!hours) return `${minutes}m`;
+        if (!minutes && !includeZeroMinutes) return `${hours}h`;
+        return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+      };
+
+      function targetMinutes() {
+        const policy = currentStatus?.policy || {};
+        const { start: shiftStart, rawEnd: shiftEnd, isWorkday } = policyDayContext(policy);
+        if (!isWorkday) return null;
+
+        const standardHours = Number(policy.standardHoursPerDay);
+        if (Number.isFinite(standardHours) && standardHours > 0) return Math.round(standardHours * 60);
+        const start = shiftStart;
+        let end = shiftEnd;
+        if (end === start) return 8 * 60;
+        if (end <= start) end += 24 * 60;
+        return Math.max(1, end - start);
+      }
+
+      function renderScheduleDetails() {
+        const policy = currentStatus?.policy || {};
+        const start = policy.shiftStart || '09:00';
+        const end = policy.shiftEnd || '17:00';
+        shift.textContent = `Shift ${formatClockTime(start)} – ${formatClockTime(end)}`;
+
+        const todayEntries = Array.isArray(currentStatus?.todayEntries) ? currentStatus.todayEntries : [];
+        const todayLocationEntry = [...todayEntries].reverse().find(entry => {
+          if (!['clock_in', 'clock_out'].includes(entry?.entryType)) return false;
+          const entryLocation = entry?.location;
+          return entryLocation?.address || entryLocation?.city || entryLocation?.area;
+        });
+        const currentSessionEntry = currentStatus?.isClockedIn && currentStatus?.lastClockEntry?.entryType === 'clock_in'
+          ? currentStatus.lastClockEntry
+          : null;
+        const recordedLocation = (currentSessionEntry || todayLocationEntry)?.location;
+        const locationLabel = recordedLocation?.address || recordedLocation?.city || recordedLocation?.area;
+        if (locationLabel) {
+          location.textContent = locationLabel;
+          locationItem.hidden = false;
+        } else if (policy.locationRequired) {
+          location.textContent = 'Location required';
+          locationItem.hidden = false;
+        } else {
+          location.textContent = 'Location flexible';
+          locationItem.hidden = false;
+        }
+
+        const dailyTarget = targetMinutes();
+        target.textContent = dailyTarget > 0 ? `${formatMinutesCompact(dailyTarget)} target` : 'No scheduled target';
+      }
+
+      function renderBreakDetails() {
+        const breakCount = (currentStatus?.todayEntries || []).filter(entry => entry.entryType === 'break_start').length;
+        let breakMinutes = Number(currentStatus?.breakTime?.minutes || 0);
+        if (currentStatus?.isOnBreak) breakMinutes += Math.max(0, Date.now() - statusReceivedAt) / 60000;
+        breakSummary.textContent = `Breaks ${breakCount} · ${formatMinutesCompact(Math.floor(breakMinutes))}`;
+      }
+
+      function renderProgress(totalSeconds) {
+        const workedMinutes = Math.max(0, totalSeconds / 60);
+        const goalMinutes = targetMinutes();
+        workedShort.textContent = formatMinutesCompact(Math.floor(workedMinutes));
+        if (!Number.isFinite(goalMinutes) || goalMinutes <= 0) {
+          remaining.textContent = 'No scheduled hours today';
+          progressSegments.forEach(segment => segment.style.setProperty('--segment-fill', '0%'));
+          return;
+        }
+        const ratio = Math.min(1, workedMinutes / goalMinutes);
+        remaining.textContent = `${formatMinutesCompact(Math.ceil(Math.max(0, goalMinutes - workedMinutes)), true)} to go`;
+        progressSegments.forEach((segment, index) => {
+          const segmentStart = index / progressSegments.length;
+          const fill = Math.max(0, Math.min(1, (ratio - segmentStart) * progressSegments.length));
+          segment.style.setProperty('--segment-fill', `${fill * 100}%`);
+        });
+      }
+
+      function renderReminder() {
+        if (strip.dataset.error === 'true') return;
+        const reminder = scheduledReminder();
+        strip.dataset.reminder = String(Boolean(reminder));
+        hint.textContent = reminder || '';
+      }
+
       function render() {
         if (!currentStatus) return;
         const working = currentStatus.isClockedIn && !currentStatus.isOnBreak;
         strip.dataset.state = currentStatus.isOnBreak ? 'break' : working ? 'working' : 'idle';
         label.textContent = currentStatus.isOnBreak ? 'On break' : working ? 'Clocked in' : 'Not clocked in';
-        const reminder = scheduledReminder();
-        strip.dataset.reminder = String(Boolean(reminder));
-        hint.textContent = reminder || (currentStatus.isOnBreak
-          ? 'Resume when you are ready.'
-          : working
-            ? 'Live from Time & Attendance.'
-            : 'Clock-in is explicit; signing in does not start time.');
+        strip.dataset.error = 'false';
+        renderReminder();
         clockIn.hidden = currentStatus.isClockedIn;
+        clockInLabel.textContent = currentStatus.policy?.requireNote ? 'Open to clock in' : 'Clock in';
+        clockIn.title = currentStatus.policy?.requireNote ? 'A note is required; continue in Time & Attendance' : '';
         breakButton.hidden = !currentStatus.isClockedIn;
         clockOut.hidden = !currentStatus.isClockedIn;
-        breakButton.textContent = currentStatus.isOnBreak ? 'Resume' : 'Take break';
+        breakLabel.textContent = currentStatus.isOnBreak ? 'Resume' : 'Take break';
+        renderScheduleDetails();
+        renderBreakDetails();
+      }
+
+      function renderUnavailable(error) {
+        currentStatus = null;
+        strip.dataset.state = 'idle';
+        strip.dataset.error = 'true';
+        strip.dataset.reminder = 'false';
+        label.textContent = 'Attendance unavailable';
+        hint.textContent = error?.message || 'Time & Attendance could not be reached.';
+        time.textContent = '--:--:--';
+        workedShort.textContent = '—';
+        target.textContent = 'target unavailable';
+        remaining.textContent = 'Try again shortly';
+        shift.textContent = 'Shift unavailable';
+        location.textContent = 'Location unavailable';
+        breakSummary.textContent = 'Breaks unavailable';
+        progressSegments.forEach(segment => segment.style.setProperty('--segment-fill', '0%'));
+        clockIn.hidden = true;
+        breakButton.hidden = true;
+        clockOut.hidden = true;
+      }
+
+      function scheduleStatusRetry(error) {
+        renderUnavailable(error);
+        if (statusRetryTimer) return;
+        statusRetryTimer = setTimeout(() => {
+          statusRetryTimer = null;
+          refreshStatus().then(connectStream).catch(scheduleStatusRetry);
+        }, 5000);
       }
 
       function tick() {
@@ -3134,6 +3506,9 @@
           seconds += Math.floor((Date.now() - statusReceivedAt) / 1000);
         }
         time.textContent = formatSeconds(seconds);
+        renderProgress(seconds);
+        renderBreakDetails();
+        renderReminder();
       }
 
       async function getCredentials(force = false) {
@@ -3160,31 +3535,47 @@
       }
 
       async function refreshStatus() {
-        currentStatus = await attendanceFetch('/clock/status');
-        statusReceivedAt = Date.now();
-        render();
-        tick();
+        const requestGeneration = ++statusRequestGeneration;
+        try {
+          const nextStatus = await attendanceFetch('/clock/status');
+          if (requestGeneration !== statusRequestGeneration) return false;
+          currentStatus = nextStatus;
+          statusReceivedAt = Date.now();
+          clearTimeout(statusRetryTimer);
+          statusRetryTimer = null;
+          render();
+          tick();
+          return true;
+        } catch (error) {
+          if (requestGeneration !== statusRequestGeneration) return false;
+          throw error;
+        }
       }
 
-      function getLocation() {
+      function getLocation(required = false) {
         if (!navigator.geolocation) return Promise.resolve(null);
         return new Promise(resolve => navigator.geolocation.getCurrentPosition(
           position => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy }),
           () => resolve(null),
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+          { enableHighAccuracy: required, timeout: required ? 10000 : 3000, maximumAge: 30000 }
         ));
       }
 
-      async function act(path, needsLocation = false) {
+      async function act(path, locationMode = 'none', triggerButton = null) {
         [clockIn, breakButton, clockOut].forEach(button => { button.disabled = true; });
         try {
-          const location = needsLocation ? await getLocation() : null;
-          if (needsLocation && currentStatus?.policy?.locationRequired && !location) {
+          const needsLocation = locationMode !== 'none';
+          const locationRequired = locationMode === 'required';
+          const location = needsLocation ? await getLocation(locationRequired) : null;
+          if (locationRequired && !location) {
             throw new Error('Location is required by your attendance policy. Allow location access and try again.');
           }
           await attendanceFetch(path, { method: 'POST', body: JSON.stringify({ location, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }) });
           await refreshStatus();
+          if (triggerButton?.hidden) toggle?.focus();
         } catch (error) {
+          strip.dataset.error = 'true';
+          strip.dataset.reminder = 'false';
           hint.textContent = error.message;
         } finally {
           [clockIn, breakButton, clockOut].forEach(button => { button.disabled = false; });
@@ -3201,6 +3592,7 @@
             headers: { Authorization: `Bearer ${access.token}` },
             signal: streamController.signal
           });
+          if (response.status === 401) credentials = null;
           if (!response.ok || !response.body) throw new Error('Live attendance connection failed');
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
@@ -3212,31 +3604,40 @@
             const messages = buffer.split('\n\n');
             buffer = messages.pop() || '';
             for (const message of messages) {
-              if (message.includes('event: attendance')) await refreshStatus();
+              if (message.includes('event: attendance')) {
+                await refreshStatus().catch(scheduleStatusRetry);
+              }
             }
           }
+          reconnectTimer = setTimeout(connectStream, 1000);
         } catch (error) {
           if (error.name !== 'AbortError') reconnectTimer = setTimeout(connectStream, 4000);
         }
       }
 
-      clockIn.addEventListener('click', () => act('/clock/in', true));
-      breakButton.addEventListener('click', () => act(currentStatus?.isOnBreak ? '/clock/break/end' : '/clock/break/start'));
-      clockOut.addEventListener('click', () => act('/clock/out', true));
+      clockIn.addEventListener('click', () => {
+        if (currentStatus?.policy?.requireNote) {
+          window.location.href = '/launch/time-attendance';
+          return;
+        }
+        act('/clock/in', currentStatus?.policy?.locationRequired ? 'required' : 'optional', clockIn);
+      });
+      breakButton.addEventListener('click', () => act(currentStatus?.isOnBreak ? '/clock/break/end' : '/clock/break/start', 'none', breakButton));
+      clockOut.addEventListener('click', () => act('/clock/out', 'optional', clockOut));
       toggle?.addEventListener('click', () => setCollapsed(strip.dataset.collapsed !== 'true'));
       cardToggle?.addEventListener('click', () => {
         setCollapsed(false);
         strip.scrollIntoView({ behavior: 'smooth', block: 'center' });
         toggle?.focus({ preventScroll: true });
       });
-      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1', false);
+      setCollapsed(readCollapsePreference(), false);
       setInterval(tick, 1000);
-      setInterval(async () => { credentials = null; await connectStream(); }, 90000);
-      refreshStatus().then(connectStream).catch(error => {
-        label.textContent = 'Attendance unavailable';
-        hint.textContent = error.message;
-        time.textContent = '—';
-      });
+      setInterval(() => refreshStatus().catch(scheduleStatusRetry), 60000);
+      setInterval(() => {
+        credentials = null;
+        connectStream();
+      }, 300000);
+      refreshStatus().then(connectStream).catch(scheduleStatusRetry);
     })();
   </script>
   <% } %>

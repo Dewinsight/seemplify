@@ -5,7 +5,7 @@ const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
 const geofenceService = require('../services/geofenceService');
 const { enrichLocationWithAddress } = require('../services/geocodingService');
 const { startOfWeek, endOfWeek, getISOWeek, getYear } = require('date-fns');
-const { evaluateClockIn, buildPolicySummary } = require('../services/attendanceRulesService');
+const { evaluateClockIn, buildPolicySummary, calculateDailyDurations, getPolicyDayBounds, inferDayStartState } = require('../services/attendanceRulesService');
 const attendanceEvents = require('../services/attendanceEventService');
 
 // Apply auth middleware to all clock routes
@@ -38,37 +38,27 @@ router.get('/status', async (req, res) => {
         const breakStatus = await TimeEntry.isOnBreak(userId, organizationId);
 
         const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
-        const todayEntries = await TimeEntry.getTodayEntries(userId, organizationId, policy.timezone || 'UTC');
+        const now = new Date();
+        const timezone = policy.timezone || 'UTC';
+        const { start: dayStart, timezone: resolvedTimezone } = getPolicyDayBounds(now, timezone);
+        const todayEntries = await TimeEntry.getTodayEntries(userId, organizationId, resolvedTimezone, now);
 
-        // Calculate time worked today
-        let timeWorkedMinutes = 0;
-        let breakMinutes = 0;
-        let clockInTime = null;
+        const { clockedInAtDayStart, onBreakAtDayStart } = inferDayStartState(todayEntries, {
+            dayStart,
+            isClockedIn: clockStatus.isClockedIn,
+            lastClockEntry: clockStatus.lastEntry,
+            isOnBreak: breakStatus.onBreak,
+            lastBreakEntry: breakStatus.lastBreakEntry,
+        });
 
-        for (let i = 0; i < todayEntries.length; i++) {
-            const entry = todayEntries[i];
-
-            if (entry.entryType === 'clock_in') {
-                clockInTime = entry.timestamp;
-            } else if (entry.entryType === 'clock_out' && clockInTime) {
-                timeWorkedMinutes += (entry.timestamp - clockInTime) / (1000 * 60);
-                clockInTime = null;
-            } else if (entry.entryType === 'break_start') {
-                // Find matching break end
-                const breakEnd = todayEntries.slice(i + 1).find(e => e.entryType === 'break_end');
-                if (breakEnd) {
-                    breakMinutes += (breakEnd.timestamp - entry.timestamp) / (1000 * 60);
-                }
-            }
-        }
-
-        // If still clocked in, add time until now
-        if (clockStatus.isClockedIn && clockInTime) {
-            timeWorkedMinutes += (Date.now() - clockInTime) / (1000 * 60);
-        }
-
-        // Subtract break time
-        timeWorkedMinutes -= breakMinutes;
+        const { timeWorkedMinutes, breakMinutes } = calculateDailyDurations(todayEntries, {
+            now,
+            dayStart,
+            clockedInAtDayStart,
+            onBreakAtDayStart,
+            isClockedIn: clockStatus.isClockedIn,
+            isOnBreak: breakStatus.onBreak,
+        });
 
         res.json({
             isClockedIn: clockStatus.isClockedIn,

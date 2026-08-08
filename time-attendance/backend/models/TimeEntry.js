@@ -161,11 +161,10 @@ TimeEntrySchema.methods.getPairedEntryType = function () {
 };
 
 // Static method to get today's entries for a user
-TimeEntrySchema.statics.getTodayEntries = async function (userId, organizationId, timezone = 'UTC') {
+TimeEntrySchema.statics.getTodayEntries = async function (userId, organizationId, timezone = 'UTC', now = new Date()) {
     const { startOfDay, endOfDay } = require('date-fns');
     const { zonedTimeToUtc, utcToZonedTime } = require('date-fns-tz');
 
-    const now = new Date();
     const localNow = utcToZonedTime(now, timezone);
     const todayStart = zonedTimeToUtc(startOfDay(localNow), timezone);
     const todayEnd = zonedTimeToUtc(endOfDay(localNow), timezone);

@@ -1,25 +1,35 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { Coffee, Loader2, Play, Square } from 'lucide-react';
 import { clockApi } from '@/lib/api';
 
+interface ClockStatus {
+    isClockedIn: boolean;
+    isOnBreak: boolean;
+    lastEntry?: any;
+    timeWorked?: { hours: number; minutes: number; seconds?: number };
+    policy?: { requireNote?: boolean };
+    _receivedAt?: number;
+}
+
 interface ClockWidgetProps {
-    initialStatus?: {
-        isClockedIn: boolean;
-        isOnBreak: boolean;
-        lastEntry?: any;
-        timeWorked?: { hours: number; minutes: number };
-    };
+    initialStatus?: ClockStatus;
     onStatusChange?: () => void;
 }
 
+const NOTE_REQUIRED_ERROR = 'Add a clock-in note before continuing.';
+
 export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidgetProps) {
-    const [status, setStatus] = useState(initialStatus || {
+    const noteId = useId();
+    const noteHelpId = `${noteId}-help`;
+    const [status, setStatus] = useState<ClockStatus>(initialStatus || {
         isClockedIn: false,
         isOnBreak: false,
         timeWorked: { hours: 0, minutes: 0 },
     });
+    const [policyLoaded, setPolicyLoaded] = useState(Boolean(initialStatus?.policy));
+    const [clockInNote, setClockInNote] = useState('');
     const [loading, setLoading] = useState(false);
     const [elapsedTime, setElapsedTime] = useState('00:00:00');
     const [message, setMessage] = useState<string | null>(null);
@@ -28,7 +38,8 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     const refreshStatus = useCallback(async () => {
         try {
             const next = await clockApi.getStatus();
-            setStatus({ ...next, _receivedAt: Date.now() } as any);
+            setStatus({ ...next, _receivedAt: Date.now() });
+            setPolicyLoaded(true);
         } catch (refreshError) {
             console.error('Failed to refresh status', refreshError);
         }
@@ -42,9 +53,9 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     useEffect(() => {
         let interval: NodeJS.Timeout | undefined;
         const update = () => {
-            const baseSeconds = (status.timeWorked as any)?.seconds ?? (status.timeWorked?.minutes || 0) * 60;
+            const baseSeconds = status.timeWorked?.seconds ?? (status.timeWorked?.minutes || 0) * 60;
             const liveSeconds = status.isClockedIn && !status.isOnBreak
-                ? Math.max(0, Math.floor((Date.now() - ((status as any)._receivedAt || Date.now())) / 1000))
+                ? Math.max(0, Math.floor((Date.now() - (status._receivedAt || Date.now())) / 1000))
                 : 0;
             const total = baseSeconds + liveSeconds;
             const hours = Math.floor(total / 3600);
@@ -77,16 +88,33 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
             setMessage(success);
             onStatusChange?.();
             setTimeout(() => setMessage(null), 2400);
+            return true;
         } catch (actionError: any) {
             const payload = actionError.response?.data;
             setError(payload?.details?.reason || payload?.error || 'The clock could not be updated.');
             setMessage(null);
+            return false;
         } finally {
             setLoading(false);
         }
     };
 
-    const clockIn = () => run('Confirming your location…', (location) => clockApi.clockIn(undefined, location), 'You are clocked in.');
+    const noteRequired = Boolean(status.policy?.requireNote);
+    const clockIn = async () => {
+        const note = clockInNote.trim();
+        if (noteRequired && !note) {
+            setMessage(null);
+            setError(NOTE_REQUIRED_ERROR);
+            return;
+        }
+
+        const succeeded = await run(
+            'Confirming your location…',
+            (location) => clockApi.clockIn(note || undefined, location),
+            'You are clocked in.',
+        );
+        if (succeeded) setClockInNote('');
+    };
     const clockOut = () => run('Closing today’s session…', (location) => clockApi.clockOut(undefined, location), 'You are clocked out.');
     const toggleBreak = async () => {
         try {
@@ -126,15 +154,53 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
                 <p className="mt-2 text-sm" style={{ color: 'var(--suite-muted)' }}>Recorded today</p>
             </div>
 
+            {!status.isClockedIn && noteRequired && (
+                <div className="mb-4">
+                    <div className="mb-2 flex items-baseline justify-between gap-3">
+                        <label htmlFor={noteId} className="text-sm font-medium" style={{ color: 'var(--suite-ink)' }}>
+                            Clock-in note
+                        </label>
+                        <span className="text-xs tabular-nums" style={{ color: 'var(--suite-subtle)' }}>
+                            {clockInNote.length}/500
+                        </span>
+                    </div>
+                    <textarea
+                        id={noteId}
+                        value={clockInNote}
+                        onChange={(event) => {
+                            setClockInNote(event.target.value);
+                            if (error === NOTE_REQUIRED_ERROR) setError(null);
+                        }}
+                        maxLength={500}
+                        rows={2}
+                        required
+                        disabled={loading}
+                        aria-describedby={noteHelpId}
+                        aria-invalid={error === NOTE_REQUIRED_ERROR}
+                        placeholder="What are you working on today?"
+                        className="block w-full resize-none rounded-lg border px-3 py-2.5 text-sm leading-5 outline-none transition-colors focus:ring-2 focus:ring-[var(--suite-accent)] disabled:cursor-wait disabled:opacity-60"
+                        style={{
+                            borderColor: error === NOTE_REQUIRED_ERROR ? 'var(--suite-danger)' : 'var(--suite-line-strong)',
+                            background: 'var(--suite-surface-muted)',
+                            color: 'var(--suite-ink)',
+                        }}
+                    />
+                    <p id={noteHelpId} className="mt-1.5 text-xs" style={{ color: 'var(--suite-muted)' }}>
+                        Required by your attendance policy.
+                    </p>
+                </div>
+            )}
+
             {(message || error) && (
-                <div className="mb-4 rounded-lg border px-3 py-2.5 text-sm" style={{ borderColor: error ? 'var(--suite-danger)' : 'var(--suite-line)', color: error ? 'var(--suite-danger)' : 'var(--suite-muted)', background: 'var(--suite-surface-muted)' }}>
+                <div role={error ? 'alert' : 'status'} className="mb-4 rounded-lg border px-3 py-2.5 text-sm" style={{ borderColor: error ? 'var(--suite-danger)' : 'var(--suite-line)', color: error ? 'var(--suite-danger)' : 'var(--suite-muted)', background: 'var(--suite-surface-muted)' }}>
                     {loading && <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />}{error || message}
                 </div>
             )}
 
             {!status.isClockedIn ? (
-                <button onClick={clockIn} disabled={loading} className="suite-button h-11 w-full disabled:opacity-50">
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Clock in
+                <button onClick={clockIn} disabled={loading || !policyLoaded} className="suite-button h-11 w-full disabled:cursor-wait disabled:opacity-50">
+                    {loading || !policyLoaded ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                    {policyLoaded ? 'Clock in' : 'Checking policy'}
                 </button>
             ) : (
                 <div className="grid grid-cols-2 gap-3">
