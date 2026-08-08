@@ -377,7 +377,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           className={cn(
                             'px-3 py-1.5 text-xs rounded-md font-medium transition-colors',
                             effectiveViewMode === 'admin'
-                              ? 'bg-zinc-700 text-white'
+                              ? 'suite-view-active'
                               : 'text-zinc-400 hover:text-zinc-200'
                           )}
                         >
@@ -388,7 +388,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           className={cn(
                             'px-3 py-1.5 text-xs rounded-md font-medium transition-colors',
                             effectiveViewMode === 'personal'
-                              ? 'bg-zinc-700 text-white'
+                              ? 'suite-view-active'
                               : 'text-zinc-400 hover:text-zinc-200'
                           )}
                         >

@@ -298,6 +298,7 @@ html.dark {
 }
 
 @layer components {
+  .suite-view-active { background: #fff; color: #171613; }
   .suite-dashboard { color: var(--suite-ink); }
   .suite-dashboard-header { @apply grid gap-6 border-b pb-7 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,.75fr)] lg:items-end; border-color: var(--suite-line); }
   .suite-dashboard-title { @apply text-3xl font-semibold tracking-[-0.035em] md:text-4xl; color: var(--suite-ink); }
@@ -332,4 +333,10 @@ html.dark {
   .suite-progress { @apply h-1.5 overflow-hidden rounded-sm; background: var(--suite-surface-muted); }
   .suite-progress > span { @apply block h-full; background: var(--suite-accent); }
   .suite-notice { @apply flex flex-col gap-3 rounded-xl border px-5 py-4 sm:flex-row sm:items-center sm:justify-between; background: var(--suite-surface); border-color: var(--suite-line-strong); }
+}
+
+html.light .suite-view-active,
+html[data-theme="light"] .suite-view-active {
+  background: #171613;
+  color: #fff;
 }
