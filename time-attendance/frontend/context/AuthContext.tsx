@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { api, authApi } from '@/lib/api';
 import { redirectToLogin, isPublicRoute, resetRedirectFlag } from '@/services/authGuard';
+import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/lib/centralSession';
 
 interface User {
     id: string;
@@ -50,7 +51,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
             }
 
-            const token = localStorage.getItem('access_token');
+            let token = localStorage.getItem('access_token');
+            if (isInvalidatedByCentralLogout(token)) {
+                localStorage.removeItem('access_token');
+                token = null;
+            }
             const isPublic = pathname ? isPublicRoute(pathname) : false;
 
             // If no token and not on public route, redirect to login
@@ -95,6 +100,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         handleInitialAuth();
     }, [pathname]);
+
+    useEffect(() => watchForCentralLogout(
+        () => localStorage.getItem('access_token'),
+        () => {
+            localStorage.removeItem('access_token');
+            setUser(null);
+            window.location.href = '/login';
+        }
+    ), []);
 
     const logout = async () => {
         try {

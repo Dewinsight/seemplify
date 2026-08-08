@@ -4019,6 +4019,16 @@ app.get('/logout', async (req, res) => {
     }
 
     res.clearCookie('_session')
+    // A parent-domain marker lets every Seemplify app reject browser tokens
+    // issued before this central logout, including already-open app tabs.
+    res.cookie('seemplify_logout_at', String(Date.now()), {
+      domain: process.env.NODE_ENV === 'production' ? '.seemplifyai.com' : undefined,
+      path: '/',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      httpOnly: false,
+      maxAge: 365 * 24 * 60 * 60 * 1000
+    })
     res.redirect('/login')
   } catch (err) {
     console.error('Hub logout error:', err)

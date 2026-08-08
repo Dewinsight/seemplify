@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { User, Organization } from '@/types';
 import { authApi } from '@/lib/api';
 import { websocketService } from '@/lib/websocket';
+import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/lib/centralSession';
 
 interface AuthContextType {
   user: User | null;
@@ -40,7 +41,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Check if we have a token before making the request
       const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-      if (!token) {
+      if (!token || isInvalidatedByCentralLogout(token)) {
+        localStorage.removeItem('accessToken');
         setUser(null);
         setCurrentOrganization(null);
         setIsLoading(false);
@@ -78,6 +80,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     loadUser();
   }, [loadUser]);
+
+  useEffect(() => watchForCentralLogout(
+    () => localStorage.getItem('accessToken'),
+    () => {
+      websocketService.disconnect();
+      localStorage.removeItem('accessToken');
+      setUser(null);
+      setCurrentOrganization(null);
+      window.location.href = '/login';
+    }
+  ), []);
 
   // WebSocket connection for real-time updates
   useEffect(() => {

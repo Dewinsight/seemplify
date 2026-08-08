@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api, { handleAuthCallback as extractToken, isAuthenticated as checkToken } from '@/lib/api';
 import { resolvePayrollBackendOrigin } from '@/lib/runtimeConfig';
+import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/lib/centralSession';
 
 // Types based on IdP organization roles
 export type OrganizationRole = 'owner' | 'admin' | 'hr_manager' | 'recruiter' | 'interviewer' | 'member';
@@ -97,6 +98,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         extractToken();
       }
 
+      const accessToken = localStorage.getItem('accessToken');
+      if (isInvalidatedByCentralLogout(accessToken)) {
+        localStorage.removeItem('accessToken');
+      }
+
       // Check if we have a token
       const hasToken = checkToken();
       if (!hasToken) {
@@ -148,6 +154,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     loadUser();
   }, [loadUser]);
+
+  useEffect(() => watchForCentralLogout(
+    () => localStorage.getItem('accessToken'),
+    () => {
+      localStorage.removeItem('accessToken');
+      setUser(null);
+      setCurrentOrganization(null);
+      window.location.href = '/login';
+    }
+  ), []);
 
   const login = () => {
     const apiUrl = resolvePayrollBackendOrigin();

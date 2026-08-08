@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { authApi } from '@/lib/api';
 import { websocketService } from '@/lib/websocket';
+import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/lib/centralSession';
 
 interface User {
   id: string;
@@ -77,7 +78,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Use provided token or check localStorage
       const accessToken = token || (typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null);
       
-      if (!accessToken) {
+      if (!accessToken || isInvalidatedByCentralLogout(accessToken)) {
+        localStorage.removeItem('accessToken');
         console.log('❌ No access token found');
         setUser(null);
         setCurrentOrganization(null);
@@ -145,6 +147,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     init();
   }, [loadUser]);
+
+  useEffect(() => watchForCentralLogout(
+    () => localStorage.getItem('accessToken'),
+    () => {
+      websocketService.disconnect();
+      localStorage.removeItem('accessToken');
+      setUser(null);
+      setCurrentOrganization(null);
+      window.location.href = '/login';
+    }
+  ), []);
 
   // WebSocket connection for real-time updates
   useEffect(() => {

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { setGlobalLogoutHandler, initializeInactivityTracking, cleanupInactivityTracking } from '@/services/apiConfig';
 import { tokenManager } from '@/utils/tokenManager';
 import { getApiBaseUrl } from '@/utils/env';
+import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/utils/centralSession';
 // Note: This import would create a circular dependency if used immediately, so we'll import dynamically
 
 interface AuthContextType {
@@ -65,7 +66,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const urlExpiresIn =
           hashParams.get('expiresIn') || searchParams.get('expiresIn') || getCookie('dev_expiresIn') || '10m';
 
-        if (urlToken) {
+        if (urlToken && !isInvalidatedByCentralLogout(urlToken)) {
           if (urlRefreshToken) {
             tokenManager.initialize(urlToken, urlRefreshToken, urlExpiresIn);
             setToken(urlToken);
@@ -84,7 +85,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         const storedToken = localStorage.getItem('jwt');
         const storedRefresh = localStorage.getItem('refreshToken');
-        if (storedToken) {
+        if (storedToken && !isInvalidatedByCentralLogout(storedToken)) {
           setToken(storedToken);
           setRefreshToken(storedRefresh);
           setIsAuthenticated(true);
@@ -101,6 +102,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       cleanupInactivityTracking();
     };
   }, []);
+
+  useEffect(() => watchForCentralLogout(
+    () => localStorage.getItem('jwt'),
+    () => {
+      cleanupInactivityTracking();
+      tokenManager.clearTokens();
+      setToken(null);
+      setRefreshToken(null);
+      setIsAuthenticated(false);
+      window.location.href = '/login';
+    }
+  ), []);
 
   const login = (newToken: string, newRefreshToken: string, expiresIn: string = '10m', skipRedirect: boolean = false) => {
     if (typeof window !== 'undefined') {
