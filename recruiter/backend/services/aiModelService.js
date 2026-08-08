@@ -895,7 +895,7 @@ ${cvText}`
       const messages = [
         {
           role: "system",
-          content: `You are an expert HR professional and job description writer. Create comprehensive, engaging, and professional job descriptions that attract top talent.
+          content: `You are a senior talent partner and workforce-planning specialist. Write a role-specific job description that gives a qualified candidate a clear picture of the work, expected outcomes, operating context, and selection criteria.
 
           CRITICAL FORMATTING RULES:
           1. DO NOT use any markdown formatting (no *, #, _, \`, etc.)
@@ -905,19 +905,20 @@ ${cvText}`
           5. Write in plain, clean text only
           6. Use natural language for emphasis instead of formatting symbols
 
-          Your job descriptions should be:
-          - Clear and compelling
-          - Well-structured with proper sections
-          - Include specific responsibilities and requirements
-          - Tailored to the specific role and industry
-          - Professional yet engaging tone
-          - Include growth opportunities and company culture elements
+          QUALITY RULES:
+          - Tailor every line to the supplied role, department, seniority, location, employment type, experience, and education
+          - Describe concrete ownership, collaboration, decisions, deliverables, and outcomes; avoid generic filler such as "work in a fast-paced environment"
+          - Distinguish essential requirements from useful skills and do not repeat the same idea across sections
+          - Use inclusive, direct language and realistic expectations for the stated seniority
+          - Do not invent a company name, salary, technology stack, reporting line, exact performance metric, legal entitlement, or benefit that was not supplied
+          - Benefits must be phrased as items the employer can confirm or customise, not as fabricated promises
+          - Make responsibilities observable and outcome-oriented without manufacturing numbers
 
           Return ONLY a compact JSON object with these fields:
-          - description: A concise job description, 2 short paragraphs, maximum 900 characters total
-          - responsibilities: Array of exactly 6 key responsibilities, each maximum 140 characters
-          - requirements: Array of exactly 6 requirements, each maximum 140 characters
-          - skills: Array of exactly 8 relevant skills, each maximum 60 characters
+          - description: 3 concise paragraphs, 1200 to 1800 characters total, covering role purpose, operating context, and expected impact
+          - responsibilities: Array of exactly 8 distinct, outcome-oriented responsibilities, each maximum 180 characters
+          - requirements: Array of exactly 8 genuinely necessary qualifications or experience criteria, each maximum 180 characters
+          - skills: Array of exactly 10 relevant technical and behavioural skills, each maximum 80 characters
           - benefits: Array of exactly 5 benefits and perks, each maximum 100 characters
 
           Remember: Each string should be clean, plain text with NO formatting symbols. Return no text before or after the JSON.`
@@ -942,23 +943,23 @@ ${cvText}`
         messages,
         {
           activity: 'job.description',
-          promptVersion: 'job-description-v2',
+          promptVersion: 'job-description-v3',
           jsonSchema: JOB_DESCRIPTION_SCHEMA,
           schemaName: 'job_description',
           schemaStrict: true,
-          max_completion_tokens: 2200,
-          retry_max_completion_tokens: 3200,
-          compact_max_completion_tokens: 1200,
-          compact_max_chars: 4200,
-          temperature: 0.4,
+          max_completion_tokens: 3200,
+          retry_max_completion_tokens: 4200,
+          compact_max_completion_tokens: 1800,
+          compact_max_chars: 7000,
+          temperature: 0.3,
           frequency_penalty: 0,
           presence_penalty: 0,
           schemaHint: `Use this schema exactly:
           {
-            "description": "Two concise paragraphs under 900 characters total.",
-            "responsibilities": ["Six concise responsibility strings."],
-            "requirements": ["Six concise requirement strings."],
-            "skills": ["Eight short skill strings."],
+            "description": "Three role-specific paragraphs between 1200 and 1800 characters total.",
+            "responsibilities": ["Eight distinct, outcome-oriented responsibility strings."],
+            "requirements": ["Eight genuinely necessary qualification or experience strings."],
+            "skills": ["Ten relevant technical and behavioural skill strings."],
             "benefits": ["Five concise benefit strings."]
           }`
         },

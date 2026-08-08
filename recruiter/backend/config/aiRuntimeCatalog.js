@@ -134,7 +134,7 @@ const ACTIVITY_DEFINITIONS = Object.freeze({
     failoverPolicy: 'wait_local'
   },
   'candidate.insights': { label: 'Candidate insights', group: 'Candidates', model: GROQ_120B, reasoningEffort: 'medium' },
-  'job.description': { label: 'Job description generation', group: 'Jobs', model: GROQ_120B, reasoningEffort: 'medium' },
+  'job.description': { label: 'Job description generation', group: 'Jobs', model: GROQ_120B, reasoningEffort: 'high' },
   'job.requirements': { label: 'Job requirements generation', group: 'Jobs', model: GROQ_120B, reasoningEffort: 'medium' },
   'job.normalize': { label: 'Job field normalization', group: 'Jobs', model: GROQ_120B, reasoningEffort: 'medium' },
   'matching.analysis': { label: 'Candidate matching analysis', group: 'Matching', model: GROQ_120B, reasoningEffort: 'high' },

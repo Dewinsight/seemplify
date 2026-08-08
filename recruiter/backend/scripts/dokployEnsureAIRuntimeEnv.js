@@ -38,6 +38,17 @@ function ensureAIRuntimeEnv(envText, randomBytes = crypto.randomBytes, localRunt
     }
     ensure(key, () => expected);
   };
+  const setExact = (key, expectedValue) => {
+    const expected = String(expectedValue).trim();
+    if (String(parsed.values.get(key) || '').trim() === expected) return;
+    parsed.values.set(key, expected);
+    added.push(key);
+  };
+  const remove = (key) => {
+    if (!parsed.values.has(key)) return;
+    parsed.values.delete(key);
+    added.push(key);
+  };
 
   ensure('AI_PROVIDER_ENCRYPTION_KEY', () => randomBytes(32).toString('base64'));
   ensure('AI_PROVIDER_ENCRYPTION_KEY_VERSION', () => 'v1');
@@ -54,18 +65,26 @@ function ensureAIRuntimeEnv(envText, randomBytes = crypto.randomBytes, localRunt
   }
   requireExact('AI_USAGE_OUTBOX_ENABLED', localRuntime.usageOutboxEnabled || 'true');
   requireExact('AI_USAGE_REDIS_HOST', localRuntime.usageRedisHost || 'dokploy-redis');
-  if (String(localRuntime.sharedSecret || '').trim()) {
+  if (String(localRuntime.chatgptBaseUrl || '').trim()) {
+    setExact('CHATGPT_GATEWAY_BASE_URL', localRuntime.chatgptBaseUrl);
+  }
+  if (String(localRuntime.chatgptSharedSecret || '').trim()) {
+    setExact('CHATGPT_GATEWAY_SHARED_SECRET', localRuntime.chatgptSharedSecret);
+  }
+  if (String(localRuntime.statusTokenSecret || '').trim()) {
+    ensure('CV_STATUS_TOKEN_SECRET', () => String(localRuntime.statusTokenSecret).trim());
+  }
+  if (String(localRuntime.concurrency || '').trim()) {
+    setExact('CV_ANALYSIS_QUEUE_CONCURRENCY', localRuntime.concurrency);
+  }
+  setExact('LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED', localRuntime.telemetryEnabled || 'false');
+
+  if (localRuntime.disableLocalRuntime === true) {
+    remove('LOCAL_LLM_BASE_URL');
+    remove('LOCAL_LLM_SHARED_SECRET');
+  } else if (String(localRuntime.sharedSecret || '').trim()) {
     ensure('LOCAL_LLM_SHARED_SECRET', () => String(localRuntime.sharedSecret).trim());
     ensure('LOCAL_LLM_BASE_URL', () => String(localRuntime.baseUrl || 'https://cv-llm.aiinnigeria.com').trim());
-    if (String(localRuntime.chatgptBaseUrl || '').trim()) {
-      const target = String(localRuntime.chatgptBaseUrl).trim();
-      if (String(parsed.values.get('CHATGPT_GATEWAY_BASE_URL') || '').trim() !== target) {
-        parsed.values.set('CHATGPT_GATEWAY_BASE_URL', target);
-        added.push('CHATGPT_GATEWAY_BASE_URL');
-      }
-    }
-    ensure('CV_STATUS_TOKEN_SECRET', () => String(localRuntime.statusTokenSecret || localRuntime.sharedSecret).trim());
-    ensure('CV_ANALYSIS_QUEUE_CONCURRENCY', () => String(localRuntime.concurrency || 1));
   }
 
   return { env: serializeEnv(parsed), added };
@@ -95,13 +114,15 @@ async function dokployRequest(url, token, options = {}) {
 async function main() {
   const token = String(process.env.DOKPLOY_TOKEN || '');
   const applicationId = String(process.env.RECRUITER_BACKEND_APP_ID || '');
-  const localSharedSecret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
+  const chatgptSharedSecret = String(process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
+  const chatgptBaseUrl = String(process.env.CHATGPT_GATEWAY_BASE_URL || '').trim();
   const cvStatusTokenSecret = String(process.env.CV_STATUS_TOKEN_SECRET || '').trim();
   const usageOutboxEnabled = String(process.env.AI_USAGE_OUTBOX_ENABLED || '').trim();
   const usageRedisHost = String(process.env.AI_USAGE_REDIS_HOST || '').trim();
   if (!token) throw new Error('DOKPLOY_TOKEN is required');
   if (!applicationId) throw new Error('RECRUITER_BACKEND_APP_ID is required');
-  if (!localSharedSecret) throw new Error('LOCAL_LLM_SHARED_SECRET is required');
+  if (!chatgptSharedSecret) throw new Error('CHATGPT_GATEWAY_SHARED_SECRET is required');
+  if (!chatgptBaseUrl) throw new Error('CHATGPT_GATEWAY_BASE_URL is required');
   if (!cvStatusTokenSecret) throw new Error('CV_STATUS_TOKEN_SECRET is required');
   if (usageOutboxEnabled !== 'true') throw new Error('AI_USAGE_OUTBOX_ENABLED must be true');
   if (!usageRedisHost) throw new Error('AI_USAGE_REDIS_HOST is required');
@@ -109,11 +130,14 @@ async function main() {
   const base = apiBase(process.env.DOKPLOY_URL);
   const app = await dokployRequest(`${base}/application.one?applicationId=${encodeURIComponent(applicationId)}`, token);
   const result = ensureAIRuntimeEnv(app.env, crypto.randomBytes, {
-    sharedSecret: localSharedSecret,
+    sharedSecret: process.env.LOCAL_LLM_SHARED_SECRET || '',
     baseUrl: process.env.LOCAL_LLM_BASE_URL || 'https://cv-llm.aiinnigeria.com',
-    chatgptBaseUrl: process.env.CHATGPT_GATEWAY_BASE_URL || '',
+    chatgptBaseUrl,
+    chatgptSharedSecret,
     statusTokenSecret: cvStatusTokenSecret,
-    concurrency: process.env.CV_ANALYSIS_QUEUE_CONCURRENCY || '1',
+    concurrency: process.env.CV_ANALYSIS_QUEUE_CONCURRENCY || '4',
+    telemetryEnabled: process.env.LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED || 'false',
+    disableLocalRuntime: String(process.env.RECRUITER_DISABLE_LOCAL_RUNTIME || '').trim().toLowerCase() === 'true',
     usageOutboxEnabled,
     usageRedisHost,
     oidcIssuer: process.env.OIDC_ISSUER || 'https://auth.seemplifyai.com',

@@ -19,8 +19,9 @@ const { AIRuntimeService } = require('../services/aiRuntime/aiRuntimeService');
 
 const TEST_ENV = {
   CHATGPT_GATEWAY_BASE_URL: 'http://chatgpt-gateway.test:11435',
+  CHATGPT_GATEWAY_SHARED_SECRET: 'hosted-chatgpt-provider-test-secret',
   LOCAL_LLM_BASE_URL: 'http://local-runtime.test:11435',
-  LOCAL_LLM_SHARED_SECRET: 'chatgpt-provider-test-secret'
+  LOCAL_LLM_SHARED_SECRET: 'managed-local-provider-test-secret'
 };
 
 function withEnv(run) {
@@ -369,6 +370,28 @@ test('a user-owned route without a resolved subject refuses to reach the gateway
       return true;
     });
     assert.equal(called, false, 'no request may leave without an owner for the bill');
+  });
+});
+
+test('a user-owned request never falls back to local runtime configuration', async () => {
+  await withEnv(async () => {
+    delete process.env.CHATGPT_GATEWAY_BASE_URL;
+    delete process.env.CHATGPT_GATEWAY_SHARED_SECRET;
+    let called = false;
+    const runtime = runtimeWith(settingsWithChatgpt(), async () => { called = true; return { ok: true }; });
+    await assert.rejects(runtime.localProviderRequest({
+      route: {
+        activity: 'assistant.chat', provider: CHATGPT_PROVIDER, model: CHATGPT_MODEL,
+        codexSubjectId: 'recruiter-user-1'
+      },
+      input: { messages: [{ role: 'user', content: 'x' }] },
+      context: { sourceApp: 'recruiter', usageExecutionId: 'no-local-fallback' },
+      requestId: 'no-local-fallback-request'
+    }), (error) => {
+      assert.equal(error.code, 'CHATGPT_GATEWAY_NOT_CONFIGURED');
+      return true;
+    });
+    assert.equal(called, false);
   });
 });
 

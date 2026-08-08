@@ -276,9 +276,16 @@ function log(level, message, metadata = {}) {
   return logWriteChain;
 }
 
-// Hosted Dokploy deployments receive the same service secret as Recruiter.
+// Hosted Dokploy deployments use a dedicated service credential shared only
+// with Recruiter; local development retains its own workstation credential.
 // Local workstation installs keep their existing file-backed secret.
-const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim() || ensureSecret(secretFile);
+const hostedSecret = String(process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
+if (hostedChatgptMode && !hostedSecret) {
+  throw new Error('CHATGPT_GATEWAY_SHARED_SECRET is required in hosted mode');
+}
+const secret = hostedChatgptMode
+  ? hostedSecret
+  : String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim() || ensureSecret(secretFile);
 const controlSecret = ensureSecret(controlSecretFile);
 const usageMeteringOutbox = new LocalUsageMeteringOutbox({
   directory: usageOutboxDir,

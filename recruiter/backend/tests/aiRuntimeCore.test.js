@@ -223,7 +223,9 @@ test('Experience routes use the application profile managed by Local Control Cen
 });
 
 test('local provider transport rejects production calls without a durable metering identity', async () => {
+  const previousBaseUrl = process.env.LOCAL_LLM_BASE_URL;
   const previousSecret = process.env.LOCAL_LLM_SHARED_SECRET;
+  process.env.LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11435';
   process.env.LOCAL_LLM_SHARED_SECRET = 'test-local-runtime-secret';
   let called = false;
   const runtime = new AIRuntimeService({
@@ -245,6 +247,8 @@ test('local provider transport rejects production calls without a durable meteri
       && error.retryable === false
     ));
   } finally {
+    if (previousBaseUrl === undefined) delete process.env.LOCAL_LLM_BASE_URL;
+    else process.env.LOCAL_LLM_BASE_URL = previousBaseUrl;
     if (previousSecret === undefined) delete process.env.LOCAL_LLM_SHARED_SECRET;
     else process.env.LOCAL_LLM_SHARED_SECRET = previousSecret;
   }

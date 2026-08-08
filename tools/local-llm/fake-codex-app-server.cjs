@@ -15,6 +15,8 @@ const readline = require('node:readline');
 
 const argv = process.argv.slice(2);
 const home = String(process.env.CODEX_HOME || '');
+let activeTurns = 0;
+let maxActiveTurns = 0;
 
 /** Recorded so a test can assert that platform credentials never reach a
  * process that is supposed to be running on a person's own ChatGPT plan. */
@@ -186,18 +188,26 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     }
     updateMarker({ lastTurnStart: message.params });
     const turnId = `fake-turn-${++turnSequence}`;
+    const threadId = String(message.params?.threadId || '');
+    const messageSequence = turnSequence;
+    activeTurns += 1;
+    maxActiveTurns = Math.max(maxActiveTurns, activeTurns);
+    updateMarker({ activeTurns, maxActiveTurns });
     result(id, { turn: { id: turnId, status: 'inProgress', items: [], error: null } });
     if (crashMarker('crash-during-turn')) {
       setTimeout(() => process.exit(24), 20);
       return;
     }
     const echoed = String(message.params?.input?.[0]?.text || '');
+    const echoTag = echoed.match(/request \d+/u)?.[0] || echoed.slice(0, 40);
     setTimeout(() => {
       send({
         method: 'item/completed',
         params: {
+          threadId,
+          turnId,
           item: {
-            id: `fake-message-${turnSequence}`, type: 'agentMessage', phase: 'commentary',
+            id: `fake-message-${messageSequence}`, type: 'agentMessage', phase: 'commentary',
             text: 'thinking out loud, must be ignored'
           }
         }
@@ -205,23 +215,28 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       send({
         method: 'item/completed',
         params: {
+          threadId,
+          turnId,
           item: {
-            id: `fake-final-${turnSequence}`, type: 'agentMessage', phase: 'final_answer',
+            id: `fake-final-${messageSequence}`, type: 'agentMessage', phase: 'final_answer',
             text: message.params?.outputSchema
               ? JSON.stringify({ answer: 'fake structured completion' })
-              : `fake completion for ${echoed.slice(0, 40)}`
+              : `fake completion for ${echoTag}`
           }
         }
       });
       send({
         method: 'turn/completed',
         params: {
+          threadId,
           turn: {
             id: turnId, status: 'completed', items: [], error: null,
             usage: { input_tokens: 11, output_tokens: 7, total_tokens: 18, cached_input_tokens: 3 }
           }
         }
       });
+      activeTurns = Math.max(0, activeTurns - 1);
+      updateMarker({ activeTurns, maxActiveTurns });
     }, 20);
     return;
   }

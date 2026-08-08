@@ -31,7 +31,9 @@ function verifyLocalUsageSignature({
   method = 'POST',
   requestPath = '/api/internal/ai/v1/local-usage/events',
   rawBody = '',
-  secret = process.env.LOCAL_LLM_SHARED_SECRET,
+  // The hosted ChatGPT gateway is the production caller. Keep the legacy
+  // local secret only as an explicit development fallback.
+  secret = process.env.CHATGPT_GATEWAY_SHARED_SECRET || process.env.LOCAL_LLM_SHARED_SECRET,
   now = Date.now(),
   nonceStore = seenNonces
 } = {}) {

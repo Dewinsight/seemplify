@@ -10,6 +10,7 @@ const subjectsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-subjects-'));
 process.env.CODEX_SUBJECTS_DIR = subjectsRoot;
 process.env.CODEX_CLI_PATH = path.join(__dirname, 'fake-codex-app-server.cjs');
 process.env.CODEX_PER_USER_SESSIONS = 'true';
+process.env.CODEX_MAX_CONCURRENT_TURNS_PER_SUBJECT = '4';
 // A platform credential in the ambient environment must never survive into a
 // per-user session; the fixture fails the launch contract if it does.
 process.env.CODEX_API_KEY = 'platform-key-that-must-not-leak';
@@ -177,7 +178,7 @@ test('a structured turn passes its schema through as the output contract', async
   assert.deepEqual(marker(subjectKey).lastTurnStart.outputSchema, schema);
 });
 
-test('turns on one subject are serialised rather than interleaved on shared stdio', async () => {
+test('turns on one subject run concurrently and stay isolated by thread id', async () => {
   const subjectKey = recruiterSubject();
   await connect(subjectKey);
   const turn = (index) => runCodexSubjectTurn({
@@ -191,6 +192,10 @@ test('turns on one subject are serialised rather than interleaved on shared stdi
   assert.equal(outputs.length, 3);
   assert.equal(new Set(outputs.map((output) => output.id)).size, 3, 'each turn needs its own identity');
   assert.ok(outputs.every((output) => /fake completion/u.test(output.content)));
+  assert.ok(outputs[0].content.includes('request 1'));
+  assert.ok(outputs[1].content.includes('request 2'));
+  assert.ok(outputs[2].content.includes('request 3'));
+  assert.ok(marker(subjectKey).maxActiveTurns >= 2, 'the app-server should receive overlapping turns');
 });
 
 test('the model catalogue is paginated to exhaustion and hides unavailable models', async () => {

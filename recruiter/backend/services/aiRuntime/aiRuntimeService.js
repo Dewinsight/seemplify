@@ -313,12 +313,25 @@ function orderedCandidates(entries) {
 }
 
 function codexModelCandidates(route) {
-  return orderedCandidates([[route.codexModel, 'admin_action']]);
+  const activity = String(route.activity || '');
+  const workloadModel = ['job.description', 'job.requirements'].includes(activity)
+    ? process.env.CHATGPT_JOB_GENERATION_MODEL || 'gpt-5.6-sol'
+    : ['candidate.cv_parse', 'ai_interview.cv_parse'].includes(activity)
+      ? process.env.CHATGPT_CV_MODEL || 'gpt-5.6-luna'
+      : '';
+  return orderedCandidates([
+    [workloadModel, workloadModel ? 'workload_policy' : ''],
+    [route.codexModel, 'admin_action']
+  ]);
 }
 
 function codexEffortCandidates(route) {
   const definition = ACTIVITY_DEFINITIONS[route.activity] || {};
+  const qualityEffort = ['job.description', 'job.requirements'].includes(String(route.activity || ''))
+    ? 'high'
+    : '';
   return orderedCandidates([
+    [qualityEffort, qualityEffort ? 'workload_policy' : ''],
     [route.reasoningEffort, 'admin_action'],
     [definition.reasoningEffort, 'action_default']
   ]);
@@ -775,10 +788,20 @@ class AIRuntimeService {
   }
 
   async localProviderRequest({ route, input, context, requestId, timeoutMs = 240_000, signal }) {
-    const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
-    if (!secret) {
-      throw new AIRuntimeError('Local CV runtime is not configured', {
-        code: 'AI_LOCAL_NOT_CONFIGURED', statusCode: 503, retryable: true
+    const userOwned = isUserOwnedProvider(route.provider);
+    const secret = String(userOwned
+      ? process.env.CHATGPT_GATEWAY_SHARED_SECRET || ''
+      : process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
+    const baseUrl = String(userOwned
+      ? process.env.CHATGPT_GATEWAY_BASE_URL || ''
+      : process.env.LOCAL_LLM_BASE_URL || '').replace(/\/+$/, '');
+    if (!secret || !baseUrl) {
+      throw new AIRuntimeError(userOwned
+        ? 'The hosted ChatGPT gateway is not configured'
+        : 'The managed local runtime is not configured', {
+        code: userOwned ? 'CHATGPT_GATEWAY_NOT_CONFIGURED' : 'AI_LOCAL_NOT_CONFIGURED',
+        statusCode: 503,
+        retryable: true
       });
     }
     if (!String(requestId || '').trim() || !String(context?.usageExecutionId || '').trim()) {
@@ -791,12 +814,6 @@ class AIRuntimeService {
     const usageEventId = deriveRuntimeUsageEventId({ context, route });
     const sourceApp = String(context.sourceApp || input.context?.sourceApp || 'recruiter').slice(0, 64);
     const experienceProfile = String(route.activity || '').startsWith('experience.');
-    const userOwned = isUserOwnedProvider(route.provider);
-    const baseUrl = String(
-      userOwned
-        ? process.env.CHATGPT_GATEWAY_BASE_URL || process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435'
-        : process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435'
-    ).replace(/\/+$/, '');
     const requiredEngine = userOwned || route.provider === 'local-codex'
       ? 'codex'
       : route.provider === 'local-claude'
@@ -861,8 +878,13 @@ class AIRuntimeService {
     } catch (error) {
       const abortError = activeAbortReason(signal, error);
       if (abortError) throw abortError;
-      throw new AIRuntimeError('Local CV runtime could not be reached', {
-        code: 'AI_LOCAL_UNAVAILABLE', statusCode: 503, retryable: true, details: sanitizeMessage(error.message)
+      throw new AIRuntimeError(userOwned
+        ? 'The hosted ChatGPT gateway could not be reached'
+        : 'The managed local runtime could not be reached', {
+        code: userOwned ? 'CHATGPT_GATEWAY_UNAVAILABLE' : 'AI_LOCAL_UNAVAILABLE',
+        statusCode: 503,
+        retryable: true,
+        details: sanitizeMessage(error.message)
       });
     }
   }

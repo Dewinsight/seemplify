@@ -20,11 +20,12 @@ jobs:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
           DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
           RECRUITER_BACKEND_APP_ID: ${{ secrets.RECRUITER_BACKEND_APP_ID }}
-          LOCAL_LLM_BASE_URL: https://cv-llm.aiinnigeria.com
           CHATGPT_GATEWAY_BASE_URL: ${{ secrets.CHATGPT_GATEWAY_BASE_URL }}
-          LOCAL_LLM_SHARED_SECRET: ${{ secrets.LOCAL_LLM_SHARED_SECRET }}
+          CHATGPT_GATEWAY_SHARED_SECRET: ${{ secrets.CHATGPT_GATEWAY_SHARED_SECRET }}
           CV_STATUS_TOKEN_SECRET: ${{ secrets.CV_STATUS_TOKEN_SECRET }}
-          CV_ANALYSIS_QUEUE_CONCURRENCY: "1"
+          CV_ANALYSIS_QUEUE_CONCURRENCY: "4"
+          LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED: "false"
+          RECRUITER_DISABLE_LOCAL_RUNTIME: "true"
           AI_USAGE_OUTBOX_ENABLED: "true"
           AI_USAGE_REDIS_HOST: dokploy-redis
           OIDC_ISSUER: https://auth.seemplifyai.com

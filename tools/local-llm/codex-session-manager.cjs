@@ -42,6 +42,11 @@ function resolveSubjectsDir(source = process.env) {
 const PERMISSION_PROFILE = 'seemplify-read-only';
 const MAX_SESSIONS = Math.max(1, Number(process.env.CODEX_MAX_SUBJECT_SESSIONS || 8));
 const IDLE_SESSION_MS = Math.max(60_000, Number(process.env.CODEX_SUBJECT_IDLE_MS || 10 * 60_000));
+const MAX_CONCURRENT_TURNS_PER_SUBJECT = Math.max(
+  1,
+  Math.min(8, Number(process.env.CODEX_MAX_CONCURRENT_TURNS_PER_SUBJECT || 1))
+);
+const MODEL_CACHE_MS = Math.max(30_000, Number(process.env.CODEX_MODEL_CACHE_MS || 5 * 60_000));
 
 /** Per-user sessions stay off until a deployment opts in, so the existing
  * shared-account Codex path is unaffected by merely shipping this module. */
@@ -326,8 +331,10 @@ class CodexSubjectSession {
     this.rateLimits = null;
     this.usageLimit = null;
     this.stopped = false;
-    this.turnTail = Promise.resolve();
+    this.maxConcurrentTurns = MAX_CONCURRENT_TURNS_PER_SUBJECT;
+    this.turnWaiters = [];
     this.activeTurns = 0;
+    this.modelCache = null;
     this.lastUsedAt = Date.now();
     this.lastFailure = null;
   }
@@ -592,11 +599,15 @@ class CodexSubjectSession {
   async logout() {
     await this.request('account/logout', {}, 30_000);
     this.loginState = null;
+    this.modelCache = null;
   }
 
   /** Paginated, with a seen-cursor guard so a misbehaving server cannot spin
    * this loop forever. */
   async models() {
+    if (this.modelCache && this.modelCache.expiresAt > Date.now()) {
+      return this.modelCache.models;
+    }
     const models = [];
     const seenCursors = new Set();
     let cursor = null;
@@ -612,19 +623,35 @@ class CodexSubjectSession {
       seenCursors.add(nextCursor);
       cursor = nextCursor;
     } while (cursor);
-    return models.filter((model) => model && !model.hidden && model.id && model.displayName);
+    const visible = models.filter((model) => model && !model.hidden && model.id && model.displayName);
+    this.modelCache = { models: visible, expiresAt: Date.now() + MODEL_CACHE_MS };
+    return visible;
   }
 
-  /** One turn at a time per subject: a session is a single process, so
-   * overlapping turns would interleave on the same stdio stream. */
-  turn(input) {
-    const run = this.turnTail.then(async () => {
+  async acquireTurnSlot() {
+    if (this.activeTurns < this.maxConcurrentTurns) {
       this.activeTurns += 1;
-      try { return await this.runTurn(input); }
-      finally { this.activeTurns -= 1; this.lastUsedAt = Date.now(); }
-    });
-    this.turnTail = run.then(() => undefined, () => undefined);
-    return run;
+      return;
+    }
+    await new Promise((resolve, reject) => this.turnWaiters.push({ resolve, reject }));
+  }
+
+  releaseTurnSlot() {
+    this.activeTurns = Math.max(0, this.activeTurns - 1);
+    const waiter = this.turnWaiters.shift();
+    if (!waiter) return;
+    this.activeTurns += 1;
+    waiter.resolve();
+  }
+
+  /** JSON-RPC request ids and app-server thread/turn ids make the stdio
+   * transport multiplexable. Bound concurrency keeps one bulk upload from
+   * becoming a minutes-long single-file queue while still protecting the
+   * connected account from an unbounded burst. */
+  async turn(input) {
+    await this.acquireTurnSlot();
+    try { return await this.runTurn(input); }
+    finally { this.releaseTurnSlot(); this.lastUsedAt = Date.now(); }
   }
 
   async runTurn(input) {
@@ -653,6 +680,10 @@ class CodexSubjectSession {
     let finalText = '';
     const listener = (message) => {
       if (message.method !== 'item/completed') return;
+      // Multiple threads may run on one app-server connection. Notifications
+      // are scoped by the protocol's thread id; never let another CV or job
+      // description overwrite this turn's final answer.
+      if (String(message.params?.threadId || '') !== threadId) return;
       const item = message.params?.item;
       if (item?.type === 'agentMessage' && typeof item.text === 'string' && item.phase !== 'commentary') {
         finalText = item.text;
@@ -719,6 +750,9 @@ class CodexSubjectSession {
     this.process = null;
     this.ready = null;
     this.failAll(codexError('The Codex App Server was stopped.', 'CODEX_SESSION_STOPPED'));
+    for (const waiter of this.turnWaiters.splice(0)) {
+      waiter.reject(codexError('The Codex App Server was stopped.', 'CODEX_SESSION_STOPPED'));
+    }
     if (!child || child.exitCode !== null) return Promise.resolve();
     return new Promise((resolve) => {
       let timer;
@@ -751,7 +785,7 @@ class CodexSubjectSession {
   get idleSince() { return this.lastUsedAt; }
 
   get busy() {
-    return this.pending.size > 0 || this.activeTurns > 0 || this.loginState?.pending === true;
+    return this.pending.size > 0 || this.activeTurns > 0 || this.turnWaiters.length > 0 || this.loginState?.pending === true;
   }
 }
 

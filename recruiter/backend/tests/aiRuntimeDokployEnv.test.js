@@ -17,7 +17,8 @@ test('Dokploy AI Runtime setup adds only missing security values', () => {
     'AI_GATEWAY_HMAC_SECRET',
     'AI_GATEWAY_ALLOWED_SERVICES',
     'AI_USAGE_OUTBOX_ENABLED',
-    'AI_USAGE_REDIS_HOST'
+    'AI_USAGE_REDIS_HOST',
+    'LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED'
   ]);
   assert.equal(parsed.get('MONGO_URI'), 'mongodb://example');
   assert.equal(parsed.get('EXISTING'), 'value');
@@ -25,6 +26,7 @@ test('Dokploy AI Runtime setup adds only missing security values', () => {
   assert.equal(Buffer.from(parsed.get('AI_GATEWAY_HMAC_SECRET'), 'base64').length, 48);
   assert.equal(parsed.get('AI_USAGE_OUTBOX_ENABLED'), 'true');
   assert.equal(parsed.get('AI_USAGE_REDIS_HOST'), 'dokploy-redis');
+  assert.equal(parsed.get('LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED'), 'false');
 });
 
 test('Dokploy AI Runtime setup never rotates existing secrets implicitly', () => {
@@ -34,7 +36,8 @@ test('Dokploy AI Runtime setup never rotates existing secrets implicitly', () =>
     'AI_GATEWAY_HMAC_SECRET=existing-hmac',
     'AI_GATEWAY_ALLOWED_SERVICES=ai-interview,worker',
     'AI_USAGE_OUTBOX_ENABLED=true',
-    'AI_USAGE_REDIS_HOST=dokploy-redis'
+    'AI_USAGE_REDIS_HOST=dokploy-redis',
+    'LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED=false'
   ].join('\n');
   const result = ensureAIRuntimeEnv(original, () => { throw new Error('must not generate'); });
 
@@ -42,20 +45,22 @@ test('Dokploy AI Runtime setup never rotates existing secrets implicitly', () =>
   assert.deepEqual(result.added, []);
 });
 
-test('Dokploy setup adds the externally supplied local CV runtime values without generating them', () => {
-  const result = ensureAIRuntimeEnv('', deterministicBytes, {
-    sharedSecret: 'local-shared-secret',
-    baseUrl: 'https://cv-llm.aiinnigeria.com',
+test('Dokploy setup configures the hosted gateway without creating a local dependency', () => {
+  const result = ensureAIRuntimeEnv('LOCAL_LLM_BASE_URL=https://cv-llm.aiinnigeria.com\nLOCAL_LLM_SHARED_SECRET=old-local-secret', deterministicBytes, {
     chatgptBaseUrl: 'http://seemplify-chatgpt-gateway:11435',
+    chatgptSharedSecret: 'hosted-gateway-secret',
     statusTokenSecret: 'opaque-status-secret',
-    concurrency: 1
+    concurrency: 4,
+    disableLocalRuntime: true
   });
   const parsed = parseEnv(result.env).values;
-  assert.equal(parsed.get('LOCAL_LLM_BASE_URL'), 'https://cv-llm.aiinnigeria.com');
   assert.equal(parsed.get('CHATGPT_GATEWAY_BASE_URL'), 'http://seemplify-chatgpt-gateway:11435');
-  assert.equal(parsed.get('LOCAL_LLM_SHARED_SECRET'), 'local-shared-secret');
+  assert.equal(parsed.get('CHATGPT_GATEWAY_SHARED_SECRET'), 'hosted-gateway-secret');
+  assert.equal(parsed.has('LOCAL_LLM_BASE_URL'), false);
+  assert.equal(parsed.has('LOCAL_LLM_SHARED_SECRET'), false);
   assert.equal(parsed.get('CV_STATUS_TOKEN_SECRET'), 'opaque-status-secret');
-  assert.equal(parsed.get('CV_ANALYSIS_QUEUE_CONCURRENCY'), '1');
+  assert.equal(parsed.get('CV_ANALYSIS_QUEUE_CONCURRENCY'), '4');
+  assert.equal(parsed.get('LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED'), 'false');
   assert.equal(parsed.get('AI_USAGE_OUTBOX_ENABLED'), 'true');
   assert.equal(parsed.get('AI_USAGE_REDIS_HOST'), 'dokploy-redis');
 });

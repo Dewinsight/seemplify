@@ -14,15 +14,17 @@ const { AIRuntimeError, signLocalRequest } = require('./aiRuntimeService');
 const SOURCE_APP = 'recruiter';
 
 function gatewayBaseUrl() {
-  return String(
-    process.env.CHATGPT_GATEWAY_BASE_URL
-    || process.env.LOCAL_LLM_BASE_URL
-    || 'http://127.0.0.1:11435'
-  ).replace(/\/+$/, '');
+  const baseUrl = String(process.env.CHATGPT_GATEWAY_BASE_URL || '').replace(/\/+$/, '');
+  if (!baseUrl) {
+    throw new AIRuntimeError('The hosted ChatGPT gateway URL is not configured', {
+      code: 'CHATGPT_GATEWAY_NOT_CONFIGURED', statusCode: 503, retryable: true
+    });
+  }
+  return baseUrl;
 }
 
 function gatewaySecret() {
-  const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
+  const secret = String(process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
   if (!secret) {
     throw new AIRuntimeError('The ChatGPT gateway is not configured', {
       code: 'CHATGPT_GATEWAY_NOT_CONFIGURED', statusCode: 503, retryable: true

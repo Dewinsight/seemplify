@@ -8,6 +8,7 @@ process.env.REDIS_PORT = process.env.CV_TEST_REDIS_PORT || '46379';
 process.env.REDIS_ENABLED = 'true';
 process.env.CV_ANALYSIS_QUEUE_CONCURRENCY = '1';
 process.env.CV_ANALYSIS_QUEUE_APPROVED_CONCURRENCY = '2';
+process.env.LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED = 'true';
 
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');

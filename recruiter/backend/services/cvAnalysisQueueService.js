@@ -3139,6 +3139,13 @@ async function recoverStaleJobs() {
 }
 
 async function publishTelemetry() {
+  // The workstation Control Center is an explicitly local development tool.
+  // Production queue state is already exposed by Recruiter's own admin SSE;
+  // publishing it to LOCAL_LLM_BASE_URL would recreate an external dependency
+  // and let a laptop pause or throttle the production queue.
+  if (String(process.env.LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED || '').trim().toLowerCase() !== 'true') {
+    return false;
+  }
   if (telemetryPublishPromise) {
     await telemetryPublishPromise;
     return publishTelemetry();
