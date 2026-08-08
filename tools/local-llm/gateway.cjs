@@ -34,7 +34,7 @@ const {
 const {
   ACTIVITY_DEFINITIONS,
   localProviderLabel
-} = require('../../recruiter/backend/config/aiRuntimeCatalog');
+} = require('./activity-catalog.cjs');
 const {
   RUNTIME_PROFILE_DEFINITIONS,
   RUNTIME_PROFILE_IDS,
