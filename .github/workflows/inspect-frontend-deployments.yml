@@ -43,10 +43,27 @@ jobs:
             branch,
             buildPath,
             updatedAt,
-            deployments: ((.deployments // []) | map({
+            deployments: ((.deployments // []) | sort_by(.createdAt) | reverse | map({
+              deploymentId,
               status,
               createdAt,
               updatedAt,
               errorMessage
             }) | .[0:5])
           }'
+
+          latest_deployment=$(printf '%s' "$response" | jq -r '(.deployments // []) | sort_by(.createdAt) | reverse | .[0].deploymentId // empty')
+          if [ -n "$latest_deployment" ]; then
+            echo "Sanitized latest deployment errors:"
+            curl -fsS -G \
+              -H "x-api-key: ${DOKPLOY_TOKEN}" \
+              -H "accept: application/json" \
+              --data-urlencode "deploymentId=${latest_deployment}" \
+              --data-urlencode "tail=400" \
+              "${DOKPLOY_URL%/}/api/deployment.readLogs" \
+              | jq -r '.. | strings' \
+              | grep -Ei 'error|failed|fatal|exception|cannot|not found|enoent|npm err|build failed|type error' \
+              | sed -E 's#(https?|ssh|git)://[^[:space:]]+#\1://[redacted]#g; s#(token|secret|password|authorization|api[_-]?key)[=: ]+[^[:space:]]+#\1=[redacted]#Ig' \
+              | tail -80 \
+              || true
+          fi
