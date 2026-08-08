@@ -54,12 +54,23 @@ export function ThemeProviderWrapper({ children }: ThemeProviderWrapperProps) {
       applyThemePreference(next);
       setModeState(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
     };
+    const syncResolvedMode = () => {
+      setModeState(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    };
     const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const observer = new MutationObserver(syncResolvedMode);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'data-theme'],
+    });
     window.addEventListener('focus', sync);
+    window.addEventListener('storage', sync);
     document.addEventListener('visibilitychange', sync);
     media.addEventListener('change', sync);
     return () => {
+      observer.disconnect();
       window.removeEventListener('focus', sync);
+      window.removeEventListener('storage', sync);
       document.removeEventListener('visibilitychange', sync);
       media.removeEventListener('change', sync);
     };

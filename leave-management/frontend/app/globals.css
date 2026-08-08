@@ -272,8 +272,17 @@ html:not(.dark) {
   --background-start-rgb: 15, 14, 19;
   --background-end-rgb: 15, 14, 19;
   --background: 255 15% 6%;
+  --foreground: 270 20% 97%;
   --card: 258 17% 10%;
+  --card-foreground: 270 20% 97%;
   --popover: 258 17% 10%;
+  --popover-foreground: 270 20% 97%;
+  --secondary: 260 14% 14%;
+  --secondary-foreground: 270 20% 97%;
+  --muted: 260 14% 14%;
+  --muted-foreground: 264 9% 66%;
+  --accent: 260 14% 14%;
+  --accent-foreground: 270 20% 97%;
   --border: 259 12% 20%;
   --input: 259 12% 20%;
 }
