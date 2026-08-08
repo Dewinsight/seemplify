@@ -1030,7 +1030,30 @@ class AIRuntimeService {
         : calculateEstimatedCost(usage, route.modelConfig?.pricing),
       rateLimit
     };
-    const result = await recordUsage(event);
+    let result;
+    try {
+      result = await recordUsage(event);
+    } catch (error) {
+      // The hosted gateway persists authoritative usage before returning the
+      // model response. If its later, richer backend reconciliation disagrees
+      // with that already-stored event, accounting must remain visibly
+      // unhealthy—but a completed user task must not be discarded. The
+      // gateway execution id proves this is the same metered execution; all
+      // other identity conflicts remain terminal.
+      if (
+        error?.code === 'AI_USAGE_IDENTITY_CONFLICT'
+        && status === 'success'
+        && /^localexec_[a-f0-9]{48}$/.test(String(data?.gatewayExecutionId || ''))
+      ) {
+        console.error('AI usage reconciliation conflict after a completed gateway response:', {
+          eventId: event.eventId,
+          gatewayExecutionId: data.gatewayExecutionId
+        });
+        result = { event: null, quota: null, duplicate: true, identityConflict: true };
+      } else {
+        throw error;
+      }
+    }
     if (result.quota) {
       void this.getSettings()
         .then((settings) => evaluateUsageAlerts({ event: result.event || event, quota: result.quota, settings }))

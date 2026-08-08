@@ -441,12 +441,16 @@ class EmbeddingService {
    */
   async generateEmbedding(text) {
     const RetryHelper = require('../utils/retryHelper');
+    // Azure rejects inputs above the model's 8,192-token ceiling. A character
+    // cap leaves ample room for non-ASCII and token-dense CV content while
+    // retaining the structured, highest-value fields at the start.
+    const embeddingInput = String(text || '').slice(0, 24_000);
     
     const generateOperation = async () => {
       const response = await axios.post(
         process.env.azure_openai_embedding_url,
         {
-          input: text,
+          input: embeddingInput,
           model: process.env.azure_openai_embedding_model?.trim() || 'text-embedding-3-large'
         },
         {

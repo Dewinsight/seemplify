@@ -527,6 +527,13 @@ export const getBulkUploadStatus = async (batchId: string): Promise<BulkUploadSt
   return response.json();
 };
 
+export const getRecentBulkUploadStatus = async (): Promise<BulkUploadStatus | null> => {
+  const response = await apiRequest('/api/bulk-upload/status/recent');
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error('Failed to retrieve the recent bulk upload');
+  return response.json();
+};
+
 export const retryBulkUpload = async (batchId: string): Promise<BulkUploadStatus & { promoted: number }> => {
   const response = await apiRequest(`/api/bulk-upload/status/${batchId}/retry`, { method: 'POST' });
   if (!response.ok) {

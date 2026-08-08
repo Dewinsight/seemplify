@@ -91,6 +91,15 @@ router.post(
 );
 
 // GET /api/bulk-upload/status/:batchId — Poll batch progress
+router.get('/status/recent', authMiddleware, requireOrganization, async (req, res) => {
+  const status = await cvAnalysisQueue.getRecentBatchStatus(
+    req.user.currentOrganization?.toString(),
+    req.user.id
+  );
+  if (!status) return res.status(404).json({ msg: 'No recent batch found' });
+  return res.json(status);
+});
+
 router.get('/status/:batchId', authMiddleware, requireOrganization, async (req, res) => {
   const status = await cvAnalysisQueue.getBatchStatus(req.params.batchId, req.user.currentOrganization?.toString());
   if (!status) {

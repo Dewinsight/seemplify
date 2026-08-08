@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import {
   bulkUploadCVs,
   getBulkUploadStatus,
+  getRecentBulkUploadStatus,
   retryBulkUpload,
   type BulkUploadStatus,
 } from "@/services/candidateService"
@@ -27,6 +28,7 @@ export default function BulkUploadPage() {
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const restoreAttemptedRef = useRef(false)
 
   const [pageState, setPageState] = useState<PageState>("idle")
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
@@ -106,6 +108,24 @@ export default function BulkUploadPage() {
     }
   }, [batchId, toast])
 
+  // A deployment or accidental refresh must not orphan a retained batch in
+  // browser memory. Restore this recruiter's latest actionable batch.
+  useEffect(() => {
+    if (restoreAttemptedRef.current || batchId || pageState !== "idle") return
+    restoreAttemptedRef.current = true
+    let cancelled = false
+    void getRecentBulkUploadStatus().then((recent) => {
+      if (cancelled || !recent || (recent.state === "completed" && recent.failed === 0)) return
+      setBatchId(recent.batchId)
+      setStatus(recent)
+      setPageState(recent.state === "completed" ? "completed" : "processing")
+      if (recent.startedAt) {
+        setElapsedSeconds(Math.max(0, Math.floor((Date.now() - new Date(recent.startedAt).getTime()) / 1000)))
+      }
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [batchId, pageState])
+
   useEffect(() => {
     if (pageState === "processing" && batchId) {
       pollStatus()
@@ -157,6 +177,7 @@ export default function BulkUploadPage() {
   const isParked = Boolean(status && (
     status.state === "waiting_for_local_runtime" || status.waitingReason || status.waitingCode
   ))
+  const canRetryFailed = Boolean(status && status.state === "completed" && status.failed > 0)
 
   const handleRetryAnalysis = async () => {
     if (!batchId || retrying) return
@@ -336,6 +357,17 @@ export default function BulkUploadPage() {
           {pollError && (
             <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               <AlertCircle className="mr-2 inline h-4 w-4" />{pollError}
+            </div>
+          )}
+
+          {canRetryFailed && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <p className="font-medium">One or more retained CVs could not finish processing.</p>
+              <p className="mt-1 text-red-700">Retry the saved files now; you do not need to upload them again.</p>
+              <Button className="mt-3" size="sm" onClick={handleRetryAnalysis} disabled={retrying}>
+                {retrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                Retry failed CVs
+              </Button>
             </div>
           )}
 

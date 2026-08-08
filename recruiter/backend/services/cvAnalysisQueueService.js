@@ -3904,6 +3904,15 @@ async function getBatchStatus(publicId, organizationId) {
   };
 }
 
+async function getRecentBatchStatus(organizationId, actorId) {
+  const batch = await CVProcessingBatch.findOne({
+    organization: organizationId,
+    actor: actorId,
+    createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+  }).sort({ createdAt: -1 }).select('publicId').lean();
+  return batch ? getBatchStatus(batch.publicId, organizationId) : null;
+}
+
 async function retryBatchNow(publicId, organizationId, requestedBy) {
   const batch = await CVProcessingBatch.findOne({
     publicId: String(publicId || ''),
@@ -3912,7 +3921,7 @@ async function retryBatchNow(publicId, organizationId, requestedBy) {
   if (!batch) return null;
   let promoted = 0;
   for (const job of batch.jobs || []) {
-    if (job.state !== 'waiting_for_local_runtime') continue;
+    if (!['waiting_for_local_runtime', 'failed'].includes(job.state)) continue;
     try {
       await retryJobNow(job.publicId, { requestedBy });
       promoted += 1;
@@ -3944,6 +3953,7 @@ module.exports = {
   closeForTests,
   enqueueExistingJob,
   getBatchStatus,
+  getRecentBatchStatus,
   retryBatchNow,
   getAdminJobDetail,
   getAdminJobSummaries,
