@@ -60,4 +60,18 @@ jobs:
             "${{ secrets.DOKPLOY_URL }}/api/application.one?applicationId=${{ secrets.RECRUITER_BACKEND_APP_ID }}" \
             | jq '{name, status, applicationStatus, buildType, sourceType, createdAt, updatedAt,
               deployments: ((.deployments // []) | map({status, createdAt, updatedAt, errorMessage}) | .[0:5])}'
+
+          echo "Sanitized Recruiter runtime errors from Dokploy:"
+          curl -sS -G \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "accept: application/json" \
+            --data-urlencode "applicationId=${{ secrets.RECRUITER_BACKEND_APP_ID }}" \
+            --data-urlencode "tail=300" \
+            --data-urlencode "since=30m" \
+            "${{ secrets.DOKPLOY_URL }}/api/application.readLogs" \
+            | jq -r '.. | strings' \
+            | grep -Ei 'error|failed|fatal|exception|mongo|redis|cannot|module|econn|timeout|listen|startup|crash' \
+            | sed -E 's#(mongodb(\+srv)?|redis|rediss|https?)://[^[:space:]]+#\1://[redacted]#g; s#(token|secret|password|authorization|api[_-]?key)[=: ]+[^[:space:]]+#\1=[redacted]#Ig' \
+            | tail -120 \
+            || true
           exit 1
