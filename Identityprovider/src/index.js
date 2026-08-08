@@ -1561,7 +1561,7 @@ app.get('/interaction/:uid', async (req, res) => {
 
           // Theme Toggle Logic
           function toggleTheme() {
-            const current = window.ThemeManager?.getTheme() || 'dark';
+            const current = document.documentElement.getAttribute('data-theme') || window.ThemeManager?.getTheme() || 'dark';
             const next = current === 'dark' ? 'light' : 'dark';
             window.ThemeManager?.setTheme(next);
             updateThemeIcon(next);
@@ -1822,7 +1822,7 @@ app.get('/signup/:uid', async (req, res) => {
         });
 
         function toggleTheme() {
-          const current = window.ThemeManager?.getTheme() || 'dark';
+          const current = document.documentElement.getAttribute('data-theme') || window.ThemeManager?.getTheme() || 'dark';
           const next = current === 'dark' ? 'light' : 'dark';
           window.ThemeManager?.setTheme(next);
           updateThemeIcon(next);
@@ -9355,7 +9355,7 @@ function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = nu
         }
 
         function toggleTheme() {
-          const current = window.ThemeManager?.getTheme() || 'dark';
+          const current = document.documentElement.getAttribute('data-theme') || window.ThemeManager?.getTheme() || 'dark';
           const next = current === 'dark' ? 'light' : 'dark';
           window.ThemeManager?.setTheme(next);
           updateThemeIcon(next);
@@ -9623,7 +9623,7 @@ function renderHubSignupPage(req, errorMsg, attributionValues = {}) {
         });
 
         function toggleTheme() {
-          const current = window.ThemeManager?.getTheme() || 'dark';
+          const current = document.documentElement.getAttribute('data-theme') || window.ThemeManager?.getTheme() || 'dark';
           const next = current === 'dark' ? 'light' : 'dark';
           window.ThemeManager?.setTheme(next);
           updateThemeIcon(next);
