@@ -23,7 +23,7 @@ export default function LoginPage() {
     // Using custom hook logic or standard search params if useSearchParams might be buggy in some next versions without Suspense, 
     // but standard hook is fine here.
     const searchParams = useSearchParams();
-    const { isAuthenticated, user } = useAuth(); // Assuming login method exists and redirects to API
+    const { isLoading, user } = useAuth();
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
     const [isProcessing, setIsProcessing] = useState(false);
 
@@ -44,9 +44,16 @@ export default function LoginPage() {
         // If we have a user, redirect to dashboard or the redirect URL
         if (user) {
             const redirectUrl = searchParams.get('redirect') || '/dashboard';
-            router.push(redirectUrl);
+            router.replace(redirectUrl);
+            return;
         }
-    }, [user, router, searchParams]);
+
+        if (!isLoading && !error && !isProcessing) {
+            setIsProcessing(true);
+            const apiUrl = getApiUrl();
+            window.location.href = `${apiUrl}/auth/oidc/start?returnTo=${encodeURIComponent(window.location.origin)}`;
+        }
+    }, [error, isLoading, isProcessing, user, router, searchParams]);
 
     const handleLogin = () => {
         setIsProcessing(true);

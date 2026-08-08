@@ -33,9 +33,15 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.push('/dashboard');
+      router.replace('/dashboard');
+      return;
     }
-  }, [isLoading, isAuthenticated, router]);
+
+    if (!isLoading && !isAuthenticated && !error && !isProcessing) {
+      setIsProcessing(true);
+      login();
+    }
+  }, [error, isLoading, isAuthenticated, isProcessing, login, router]);
 
   const handleLogin = () => {
     setIsProcessing(true);

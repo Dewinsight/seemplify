@@ -13,7 +13,6 @@ import {
     ChevronDown,
     Clock,
     LayoutGrid,
-    LogOut,
     Menu,
     Settings,
     Users,
@@ -37,7 +36,7 @@ const personalNavigation: NavItem[] = [
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
-    const { user, logout, switchOrganization, isLoading, isAuthenticated } = useAuth();
+    const { user, switchOrganization, isLoading, isAuthenticated } = useAuth();
     const [mobileOpen, setMobileOpen] = useState(false);
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [orgMenuOpen, setOrgMenuOpen] = useState(false);
@@ -236,15 +235,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                             <div className="mt-0.5 truncate text-xs text-zinc-500">{user?.email}</div>
                                         </div>
                                         <div className="p-1">
-                                            <button
-                                                type="button"
-                                                onClick={logout}
+                                            <a
+                                                href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'}
+                                                onClick={() => setUserMenuOpen(false)}
                                                 role="menuitem"
                                                 className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-white"
                                             >
-                                                <LogOut className="h-4 w-4 text-zinc-500" />
-                                                Sign out
-                                            </button>
+                                                <LayoutGrid className="h-4 w-4 text-zinc-500" />
+                                                Back to App Hub
+                                            </a>
                                         </div>
                                     </div>
                                 </>
@@ -348,14 +347,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                                     <div className="truncate text-sm font-medium text-zinc-200">{user?.name}</div>
                                     <div className="truncate text-xs text-zinc-500">{user?.email}</div>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={logout}
+                                <a
+                                    href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'}
                                     className="flex h-9 shrink-0 items-center gap-2 rounded-lg border border-zinc-800 px-3 text-sm text-zinc-300 hover:bg-zinc-900 hover:text-white"
                                 >
-                                    <LogOut className="h-4 w-4" />
-                                    Sign out
-                                </button>
+                                    <LayoutGrid className="h-4 w-4" />
+                                    App Hub
+                                </a>
                             </div>
                         </div>
                     </div>

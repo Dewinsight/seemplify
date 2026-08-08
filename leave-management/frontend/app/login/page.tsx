@@ -44,9 +44,15 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.push('/dashboard');
+      router.replace('/dashboard');
+      return;
     }
-  }, [isAuthenticated, isLoading, router]);
+
+    if (!isLoading && !isAuthenticated && !error && !isProcessing) {
+      setIsProcessing(true);
+      login();
+    }
+  }, [error, isAuthenticated, isLoading, isProcessing, login, router]);
 
   if (isLoading || isProcessing) {
     return (

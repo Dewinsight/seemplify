@@ -43,9 +43,9 @@ router.get('/oidc/start', (req, res) => {
             additionalParams.hub_token = hub_token;
         }
 
-        // If it's NOT IdP initiated (e.g. manual login), force login prompt
-        // If it IS IdP initiated (has hub_token), we might want prompt='none' or let IDP decide
-        if (!hub_token && !idp_initiated) {
+        // Reuse the central IdP session for normal direct and hub entry. Only
+        // explicit account-switch/re-auth flows should force credentials.
+        if (req.query.force_login === 'true') {
             additionalParams.prompt = 'login';
         }
 

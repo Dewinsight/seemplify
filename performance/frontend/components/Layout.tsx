@@ -11,7 +11,6 @@ import {
   FileText,
   Users,
   Settings,
-  LogOut,
   Menu,
   X,
   ChevronDown,
@@ -38,7 +37,7 @@ function cn(...classes: (string | boolean | undefined)[]) {
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, logout, isLoading: authLoading } = useAuth();
+  const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, isLoading: authLoading } = useAuth();
   const { user, role, isManager, isHRAdmin, teams, currentTeam: contextCurrentTeam } = useUserContext();
   const { currentTeam, availableTeams, mutate: mutateCurrentTeam } = useCurrentTeam();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -87,10 +86,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
     return [...main, ...manager, ...admin];
   }, [isManager, isHRAdmin]);
-
-  const handleLogout = async () => {
-    await logout();
-  };
 
   // Handle organization switch
   const handleSwitchOrganization = async (orgId: string) => {
@@ -484,19 +479,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             Admin Panel
                           </Link>
                         )}
-                        <button
+                        <a
+                          href={hubUrl}
                           className={cn(
                             "w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-2",
                             isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
                           )}
-                          onClick={() => {
-                            setUserDropdownOpen(false);
-                            handleLogout();
-                          }}
+                          onClick={() => setUserDropdownOpen(false)}
                         >
-                          <LogOut className="h-4 w-4" />
-                          Logout
-                        </button>
+                          <LayoutGrid className="h-4 w-4" />
+                          Back to App Hub
+                        </a>
                       </div>
                     </div>
                   </>

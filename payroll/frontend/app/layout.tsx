@@ -18,7 +18,6 @@ import {
   Clock,
   Calculator,
   Settings,
-  LogOut,
   Menu,
   X,
   ChevronDown,
@@ -130,12 +129,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     (Array.isArray(organizations) && organizations.length > 1
       ? organizations.find((o: any) => o.isCurrent)?.name || organizations[0]?.name
       : 'Organization');
-
-  const handleLogout = async () => {
-    setUserMenuOpen(false);
-    await authApi.logout();
-    router.push('/login');
-  };
 
   const handleSwitchOrganization = async (orgId: string) => {
     if (switchingOrg) return;
@@ -479,16 +472,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                               )}
                             </div>
                             <div className="py-2">
-                              <button
-                                className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors flex items-center gap-2"
-                                onClick={() => {
-                                  setUserMenuOpen(false);
-                                  handleLogout();
-                                }}
+                              <a
+                                href={hubUrl}
+                                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-800/70"
+                                onClick={() => setUserMenuOpen(false)}
                               >
-                                <LogOut className="h-4 w-4" />
-                                Logout
-                              </button>
+                                <LayoutGrid className="h-4 w-4" />
+                                Back to App Hub
+                              </a>
                             </div>
                           </div>
                         </>

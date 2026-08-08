@@ -53,6 +53,13 @@ export default function LoginPage() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isProcessingOIDC, setIsProcessingOIDC] = useState(false);
 
+  const startOidcLogin = () => {
+    setIsLoading(true)
+    const base = getApiBaseUrl()
+    const returnTo = encodeURIComponent(window.location.href)
+    window.location.href = `${base}/api/auth/oidc/start?returnTo=${returnTo}`
+  }
+
   // Mouse tracking for interactive background
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -106,6 +113,18 @@ export default function LoginPage() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || auth.isLoading || auth.isAuthenticated || isProcessingOIDC || isLoading) {
+      return
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    const hasCallbackToken = window.location.hash.includes('token=')
+    if (oidcConfig.enabled && !hasCallbackToken && !params.get('error')) {
+      startOidcLogin()
+    }
+  }, [auth.isAuthenticated, auth.isLoading, isLoading, isProcessingOIDC, oidcConfig.enabled])
 
 
   // Show OIDC processing loader
@@ -428,11 +447,7 @@ export default function LoginPage() {
                             type="button"
                             size="lg"
                             className={`w-full text-white font-semibold h-12 rounded-xl transition-all duration-300 shadow-lg hover:shadow-2xl border-0 focus:outline-none ${btnGrad}`}
-                            onClick={() => {
-                              const base = getApiBaseUrl()
-                              const returnTo = encodeURIComponent(window.location.href)
-                              window.location.href = `${base}/api/auth/oidc/start?returnTo=${returnTo}`
-                            }}
+                            onClick={startOidcLogin}
                             disabled={isLoading}
                           >
                             <div className="flex items-center justify-center space-x-3">

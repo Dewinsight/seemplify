@@ -125,9 +125,9 @@ router.get('/oidc/start', async (req, res) => {
       secure: isProduction,
     });
 
-    // For IdP-initiated SSO (from hub), don't force login - use existing session
-    // For app-initiated SSO (login button), optionally force fresh login
-    const promptValue = isIdpInitiated ? undefined : 'login';
+    // Reuse the central IdP session for direct app entry as well as hub entry.
+    // Only explicit account-switch/re-auth flows should force credentials.
+    const promptValue = req.query.force_login === 'true' ? 'login' : undefined;
 
     console.log('🔐 OIDC Auth Parameters:', {
       idp_initiated: isIdpInitiated,

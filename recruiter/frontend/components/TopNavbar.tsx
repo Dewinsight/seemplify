@@ -11,7 +11,7 @@ import {
   Bot,
   Settings,
   Menu,
-  LogOut,
+  LayoutGrid,
   User,
   Sun,
   Moon,
@@ -32,7 +32,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useTheme } from "next-themes";
 import { getAvailableThemeOptions } from "@/utils/themeConfig";
 import { useUser } from "@/context/UserContext";
-import { useAuth } from "@/context/AuthContext";
 import { useOrganization } from "@/context/OrganizationContext";
 import {
   DropdownMenu,
@@ -192,7 +191,6 @@ const TopNavbar = () => {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const { state, getUserDisplayName, getUserAvatar } = useUser();
-  const { logout } = useAuth();
   const { user } = state;
   const { currentOrganization } = useOrganization();
   const { isFeatureEnabled } = useFeatureFlags();
@@ -353,9 +351,11 @@ const TopNavbar = () => {
                   <DropdownMenuSeparator />
                 </>
               )}
-              <DropdownMenuItem onClick={() => logout()}>
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Log out</span>
+              <DropdownMenuItem asChild>
+                <a href={process.env.NEXT_PUBLIC_IDP_URL || "https://auth.seemplifyai.com"}>
+                  <LayoutGrid className="mr-2 h-4 w-4" />
+                  <span>Back to App Hub</span>
+                </a>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

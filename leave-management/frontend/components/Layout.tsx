@@ -11,7 +11,7 @@ import {
   Home,
   FileText,
   CheckSquare,
-  LogOut,
+  LayoutGrid,
   Menu,
   X,
   ChevronDown,
@@ -30,7 +30,7 @@ type NavItem = {
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { user, currentOrganization, logout, switchOrganization } = useAuth();
+  const { user, currentOrganization, switchOrganization } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -52,10 +52,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       : [];
     return [...main, ...admin];
   }, [hasAdminAccess]);
-
-  const handleLogout = async () => {
-    await logout();
-  };
 
   const handleOrgSwitch = async (orgId: string) => {
     await switchOrganization(orgId);
@@ -192,16 +188,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         >
                           Request Leave
                         </Link>
-                        <button
-                          className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center gap-2"
-                          onClick={() => {
-                            setUserDropdownOpen(false);
-                            handleLogout();
-                          }}
+                        <a
+                          href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+                          className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          onClick={() => setUserDropdownOpen(false)}
                         >
-                          <LogOut className="h-4 w-4" />
-                          Logout
-                        </button>
+                          <LayoutGrid className="h-4 w-4" />
+                          Back to App Hub
+                        </a>
                       </div>
                     </div>
                   </>

@@ -33,11 +33,16 @@ export default function LoginPage() {
       return;
     }
     if (isAuthenticated()) {
-      router.push('/');
+      router.replace('/');
+      return;
+    }
+    if (!error) {
+      setIsProcessing(true);
+      authApi.login();
       return;
     }
     setIsLoading(false);
-  }, [router]);
+  }, [error, router]);
 
   const handleLogin = () => {
     setIsProcessing(true);
