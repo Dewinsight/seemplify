@@ -782,6 +782,118 @@
     [data-theme="light"] .celebration-footnote {
       color: #15803d;
     }
+
+    /* Light mode needs material contrast, not more decoration. */
+    [data-theme="light"] body {
+      --bg: #e9e7e2;
+      --panel: #f7f6f2;
+      --panel-solid: #fbfaf7;
+      --panel-strong: #eceae5;
+      --border: #d4d0c8;
+      --text: #1d1c1a;
+      --text-secondary: #56534d;
+      --muted: #706c64;
+      --input-bg: #f4f2ed;
+      --hover-bg: #efede8;
+      --card-bg: #fbfaf7;
+      --card-shadow: 0 2px 8px rgba(43, 39, 33, 0.08);
+      background: #e9e7e2;
+    }
+    [data-theme="light"] body::before {
+      display: none;
+    }
+    [data-theme="light"] .hub-content::before {
+      display: none;
+    }
+    [data-theme="light"] .top-nav {
+      background: #f8f7f4;
+      border-color: #d2cec6;
+      box-shadow: 0 2px 8px rgba(43, 39, 33, 0.08);
+      backdrop-filter: none;
+    }
+    [data-theme="light"] .section-title::after {
+      background: #cfcbc3;
+    }
+    [data-theme="light"] .ghost-btn {
+      background: #f2f0eb;
+      border-color: #cfcbc3;
+      box-shadow: none;
+    }
+    [data-theme="light"] .ghost-btn:hover {
+      background: #e9e6df;
+      border-color: #aaa59c;
+      box-shadow: none;
+    }
+    [data-theme="light"] .hub-card {
+      background: #f7f6f2;
+      border-color: #d2cec6;
+      box-shadow: 0 2px 8px rgba(43, 39, 33, 0.08);
+    }
+    [data-theme="light"] .hub-card::after {
+      display: none;
+    }
+    [data-theme="light"] .org-top-strip {
+      background: #f8f7f4 !important;
+      border-bottom-color: #d2cec6 !important;
+    }
+    [data-theme="light"] .org-bottom-strip {
+      background: #efede8 !important;
+    }
+    [data-theme="light"] .settings-icon,
+    [data-theme="light"] .org-switch-btn,
+    [data-theme="light"] .org-count-badge {
+      background: #f8f7f4 !important;
+      border-color: #d2cec6 !important;
+      box-shadow: none;
+    }
+    [data-theme="light"] .org-switch-btn:hover {
+      transform: none;
+      border-color: #aaa59c !important;
+      box-shadow: none;
+    }
+    [data-theme="light"] .org-divider {
+      background: #cfcbc3 !important;
+    }
+    [data-theme="light"] .app-card {
+      background: #fbfaf7;
+      border-color: #d2cec6;
+      box-shadow: 0 1px 2px rgba(43, 39, 33, 0.06), 0 2px 8px rgba(43, 39, 33, 0.05);
+    }
+    [data-theme="light"] .app-card:hover {
+      transform: none;
+      background: #ffffff;
+      border-color: #aaa59c;
+      box-shadow: 0 2px 8px rgba(43, 39, 33, 0.1);
+    }
+    [data-theme="light"] .app-card--primary {
+      border-color: rgba(99, 102, 241, 0.5);
+      box-shadow: 0 1px 2px rgba(43, 39, 33, 0.06), inset 3px 0 rgba(99, 102, 241, 0.72);
+    }
+    [data-theme="light"] .app-card--primary:hover {
+      border-color: rgba(99, 102, 241, 0.68);
+      box-shadow: 0 2px 8px rgba(43, 39, 33, 0.1), inset 3px 0 rgba(99, 102, 241, 0.82);
+    }
+    [data-theme="light"] .app-card__icon {
+      border-color: color-mix(in srgb, var(--app-color, var(--brand)) 28%, #d2cec6);
+      box-shadow: none;
+    }
+    [data-theme="light"] .app-card__desc {
+      color: #625f58;
+    }
+    [data-theme="light"] .pill,
+    [data-theme="light"] .pill--soft {
+      background: #f0eee9;
+      border-color: #d6d2ca;
+      color: #5f5b54;
+    }
+    [data-theme="light"] .app-card--coming-soon {
+      background: #eeece7;
+      border-color: #cbc7bf;
+    }
+    [data-theme="light"] .empty {
+      background: #f1efea;
+      border-color: #c9c5bc;
+    }
     @media (max-width: 720px) {
       body { padding: 16px 12px 32px; }
       .hub-hero { grid-template-columns: 1fr; }
@@ -1396,6 +1508,58 @@
     .subscription-reminder-card {
       border-radius: 10px;
       box-shadow: none;
+    }
+
+    /* Final light-theme hierarchy for the compact workspace layout. */
+    [data-theme="light"] .top-nav {
+      background: #f8f7f4;
+      border-color: #d2cec6;
+      box-shadow: 0 2px 8px rgba(43, 39, 33, 0.08);
+    }
+    [data-theme="light"] .top-nav-link.active,
+    [data-theme="light"] .top-nav-link:hover {
+      background: transparent;
+    }
+    [data-theme="light"] .hub-page-header {
+      padding-bottom: 22px;
+      border-bottom: 1px solid #d2cec6;
+    }
+    [data-theme="light"] .hub-organization {
+      border-left-color: #c8c4bc;
+    }
+    [data-theme="light"] .hub-organization__switch,
+    [data-theme="light"] .hub-notification-link {
+      background: #f8f7f4;
+      border-color: #cbc7bf;
+    }
+    [data-theme="light"] .app-card {
+      background: #fbfaf7;
+      border-color: #d2cec6;
+      box-shadow: 0 1px 2px rgba(43, 39, 33, 0.06), 0 2px 8px rgba(43, 39, 33, 0.05);
+    }
+    [data-theme="light"] .app-card:hover {
+      background: #ffffff;
+      border-color: #aaa59c;
+      box-shadow: 0 2px 8px rgba(43, 39, 33, 0.1);
+    }
+    [data-theme="light"] .app-card--primary,
+    [data-theme="light"] .app-card--primary:hover {
+      background: #fbfaf7;
+      border-color: color-mix(in srgb, var(--app-color, var(--brand)) 56%, #d2cec6);
+      box-shadow: inset 3px 0 color-mix(in srgb, var(--app-color, var(--brand)) 78%, transparent), 0 2px 8px rgba(43, 39, 33, 0.07);
+    }
+    [data-theme="light"] .app-card--coming-soon {
+      background: #e3e0da;
+      border-color: #c9c5bd;
+    }
+    [data-theme="light"] .app-card__meta {
+      border-top-color: #dedad2;
+    }
+    [data-theme="light"] .action-banner,
+    [data-theme="light"] .subscription-reminder-card {
+      background: #fbfaf7;
+      border-color: #d2cec6;
+      box-shadow: 0 2px 8px rgba(43, 39, 33, 0.06);
     }
 
     @media (max-width: 980px) {
