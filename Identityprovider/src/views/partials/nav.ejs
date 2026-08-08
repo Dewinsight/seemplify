@@ -15,6 +15,14 @@
     || navCurrentOrganization?._id?.toString?.()
     || null;
   const navCurrentOrganizationRole = navCurrentOrganization?.role || null;
+  const navUserDisplayName = user.profile?.firstName || user.profile?.name || user.email.split('@')[0];
+  const navUserInitials = String(navUserDisplayName)
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join('')
+    .toUpperCase() || 'U';
 %>
 <style>
   /* One canonical authenticated navbar across every IDP page. */
@@ -100,16 +108,56 @@
   }
 
   body .idp-global-nav .user-toggle {
-    padding: 5px 8px;
+    gap: 9px;
+    min-height: 42px;
+    padding: 4px 7px 4px 5px;
+    border: 1px solid transparent;
     border-radius: 8px;
     background: transparent;
     box-shadow: none;
+  }
+
+  body .idp-global-nav .user-avatar {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--brand) 12%, var(--panel-solid));
+    color: var(--brand);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: 0.02em;
+  }
+
+  body .idp-global-nav .user-toggle .top-nav-user-info {
+    min-width: 0;
+    text-align: left;
+  }
+
+  body .idp-global-nav .user-toggle .top-nav-user-name,
+  body .idp-global-nav .user-toggle .top-nav-user-email {
+    overflow: hidden;
+    max-width: 180px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-theme="light"] body .idp-global-nav .user-avatar {
+    background: color-mix(in srgb, var(--brand) 8%, #fbfaf7);
   }
 
   body .idp-global-nav .theme-toggle:hover,
   body .idp-global-nav .notification-icon:hover,
   body .idp-global-nav .user-toggle:hover {
     background: var(--hover-bg);
+  }
+
+  body .idp-global-nav .user-toggle:hover,
+  body .idp-global-nav .user-dropdown[open] .user-toggle {
+    border-color: var(--border);
   }
 
   body .idp-global-nav .user-menu {
@@ -123,8 +171,28 @@
   }
 
   body .idp-global-nav .user-menu-organization {
-    padding: 10px 10px 9px;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
     border-bottom: 1px solid var(--border);
+  }
+
+  body .idp-global-nav .user-menu-organization-mark {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--hover-bg);
+    color: var(--brand);
+  }
+
+  body .idp-global-nav .user-menu-organization-mark svg {
+    width: 17px;
+    height: 17px;
   }
 
   body .idp-global-nav .user-menu-organization-label {
@@ -323,9 +391,10 @@
     </a>
     <details class="user-dropdown">
       <summary class="user-toggle">
+        <span class="user-avatar" aria-hidden="true"><%= navUserInitials %></span>
         <div class="top-nav-user-info">
           <div class="top-nav-user-name">
-            <%= user.profile?.firstName || user.profile?.name || user.email.split('@')[0] %>
+            <%= navUserDisplayName %>
           </div>
           <div class="top-nav-user-email">
             <%= user.email %>
@@ -338,12 +407,19 @@
       <div class="user-menu">
         <% if (navCurrentOrganization) { %>
           <div class="user-menu-organization">
-            <div class="user-menu-organization-label">Current organization</div>
-            <div class="user-menu-organization-name">
-              <%= navCurrentOrganization.name || 'Organization' %>
-              <% if (navCurrentOrganizationRole) { %>
-                <span class="user-menu-organization-role"><%= navCurrentOrganizationRole %></span>
-              <% } %>
+            <span class="user-menu-organization-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M4 20h16M6 20V8l6-4 6 4v12M9 20v-5h6v5" />
+              </svg>
+            </span>
+            <div>
+              <div class="user-menu-organization-label">Current workspace</div>
+              <div class="user-menu-organization-name">
+                <%= navCurrentOrganization.name || 'Organization' %>
+                <% if (navCurrentOrganizationRole) { %>
+                  <span class="user-menu-organization-role"><%= navCurrentOrganizationRole %></span>
+                <% } %>
+              </div>
             </div>
           </div>
         <% } %>

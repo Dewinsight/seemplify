@@ -1297,25 +1297,53 @@
     }
     .hub-page-header__actions {
       display: flex;
-      align-items: flex-start;
-      gap: 18px;
+      align-items: center;
+      gap: 10px;
       margin-left: auto;
     }
     .hub-organization {
-      min-width: 190px;
-      padding-left: 16px;
-      border-left: 1px solid var(--border);
-      text-align: right;
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      min-width: 260px;
+      max-width: 340px;
+      min-height: 56px;
+      padding: 8px 9px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--panel-solid);
+      text-align: left;
+    }
+    .hub-organization__mark {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--border));
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--brand) 10%, var(--panel-solid));
+      color: var(--brand);
+    }
+    .hub-organization__mark svg {
+      width: 18px;
+      height: 18px;
+    }
+    .hub-organization__identity {
+      min-width: 0;
     }
     .hub-organization__label {
-      margin-bottom: 3px;
+      margin-bottom: 1px;
       color: var(--muted);
-      font-size: 11px;
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: 0.045em;
       line-height: 1.35;
+      text-transform: uppercase;
     }
     .hub-organization__name {
       overflow: hidden;
-      max-width: 240px;
+      max-width: 190px;
       color: var(--text);
       font-size: 14px;
       font-weight: 650;
@@ -1326,13 +1354,12 @@
     .hub-organization__switch {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      min-height: 30px;
-      margin-top: 7px;
-      padding: 0 9px;
-      border: 1px solid var(--border);
+      gap: 4px;
+      min-height: 32px;
+      padding: 0 8px;
+      border: 0;
       border-radius: 7px;
-      background: var(--panel-solid);
+      background: var(--hover-bg);
       color: var(--text-secondary);
       cursor: pointer;
       font: inherit;
@@ -1342,13 +1369,12 @@
       transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
     .hub-organization__switch svg {
-      width: 14px;
-      height: 14px;
+      width: 13px;
+      height: 13px;
       color: var(--muted);
     }
     .hub-organization__switch:hover {
-      border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
-      background: var(--hover-bg);
+      background: color-mix(in srgb, var(--brand) 11%, var(--hover-bg));
       color: var(--text);
     }
     .hub-organization__switch:focus-visible {
@@ -1525,9 +1551,10 @@
       border-bottom: 1px solid #d2cec6;
     }
     [data-theme="light"] .hub-organization {
-      border-left-color: #c8c4bc;
+      background: #fbfaf7;
+      border-color: #cbc7bf;
+      box-shadow: 0 1px 2px rgba(43, 39, 33, 0.05);
     }
-    [data-theme="light"] .hub-organization__switch,
     [data-theme="light"] .hub-notification-link {
       background: #f8f7f4;
       border-color: #cbc7bf;
@@ -1585,7 +1612,7 @@
       .hub-page-header p { font-size: 13px; }
       .hub-notification-link { flex: 0 0 auto; }
       .hub-page-header__actions { gap: 12px; }
-      .hub-organization { min-width: 150px; }
+      .hub-organization { min-width: 240px; }
       .app-grid { grid-template-columns: 1fr; }
       .app-card {
         min-height: 0;
@@ -1602,10 +1629,9 @@
         margin: 18px 0 0;
       }
       .hub-organization {
+        width: 100%;
         min-width: 0;
-        padding: 0;
-        border: 0;
-        text-align: left;
+        max-width: none;
       }
       .hub-notification-link { margin: 0; }
       .app-card__desc { font-size: 12px; }
@@ -1891,15 +1917,21 @@
         <% } %>
         <% if (currentOrg) { %>
           <div class="hub-organization" aria-label="Current organization">
-            <div class="hub-organization__label">You are working in</div>
-            <div class="hub-organization__name"><%= currentOrg.name %></div>
+            <span class="hub-organization__mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M4 20h16M6 20V8l6-4 6 4v12M9 20v-5h6v5" />
+              </svg>
+            </span>
+            <div class="hub-organization__identity">
+              <div class="hub-organization__label">Current workspace</div>
+              <div class="hub-organization__name"><%= currentOrg.name %></div>
+            </div>
             <% if (organizations.length > 1) { %>
               <button type="button" class="hub-organization__switch" onclick="openOrgModal()" aria-label="Switch from <%= currentOrg.name %> to another organization">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path d="M7 7h11l-3-3" />
-                  <path d="M17 17H6l3 3" />
+                <span>Change</span>
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="m7 5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
-                <span>Switch</span>
               </button>
             <% } %>
           </div>
