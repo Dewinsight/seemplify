@@ -2,21 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { AlertCircle, ArrowRight, Calendar, Clock, LayoutGrid } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getIdpUrl } from '@/lib/env';
-import { attendanceApi, clockApi } from '@/lib/api';
+import { attendanceApi } from '@/lib/api';
 import ClockWidget from '@/components/ClockWidget';
-import Link from 'next/link';
-import {
-    ArrowRight,
-    Calendar,
-    Clock,
-    AlertCircle,
-    CheckCircle2,
-    MoreHorizontal
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
 
 export default function Dashboard() {
     const { user, isAuthenticated, isLoading: authLoading } = useAuth();
@@ -26,8 +17,7 @@ export default function Dashboard() {
 
     const fetchDashboardData = async () => {
         try {
-            const data = await attendanceApi.getDashboard();
-            setDashboardData(data);
+            setDashboardData(await attendanceApi.getDashboard());
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
         } finally {
@@ -37,47 +27,79 @@ export default function Dashboard() {
 
     useEffect(() => {
         if (!authLoading) {
-            if (!isAuthenticated) {
-                router.push('/login');
-            } else {
-                fetchDashboardData();
-            }
+            if (!isAuthenticated) router.push('/login');
+            else fetchDashboardData();
         }
     }, [isAuthenticated, authLoading, router]);
 
     if (authLoading || loading) {
         return (
-            <div className="flex items-center justify-center min-h-[60vh]">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-500"></div>
+            <div className="flex min-h-[60vh] items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--suite-line)] border-t-[var(--suite-accent)]" />
             </div>
         );
     }
 
+    const firstName = user?.name?.split(' ')[0] || 'there';
+    const organization = user?.currentOrganization?.name || 'your organization';
+    const totalHours = Number(dashboardData?.week?.totalHours || 0);
+    const progress = Math.min(100, Math.round((totalHours / 40) * 100));
+    const clockedIn = Boolean(dashboardData?.clock?.isClockedIn);
+
     return (
-        <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Welcome Section */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="suite-dashboard">
+            <header className="suite-dashboard-header">
                 <div>
-                    <h1 className="text-3xl font-semibold tracking-tight text-zinc-100 dark:text-zinc-100">
-                        Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {user?.name?.split(' ')[0]} 👋
+                    <h1 className="suite-dashboard-title">
+                        Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {firstName}.
                     </h1>
-                    <p className="text-zinc-400 mt-1">
-                        Track your attendance for <span className="text-teal-400 font-medium">{user?.currentOrganization?.name}</span>
+                    <p className="suite-dashboard-copy">
+                        Clock time, review today&apos;s activity, and keep the current week accurate for {organization}.
                     </p>
                 </div>
+                <div className="suite-context">
+                    <div className="suite-context-row">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <div className="suite-context-mark"><Clock className="h-5 w-5" /></div>
+                            <div className="min-w-0">
+                                <p className="suite-label">Current status</p>
+                                <p className="truncate text-base font-semibold">{clockedIn ? 'Clocked in' : 'Not clocked in'}</p>
+                            </div>
+                        </div>
+                        <a href={getIdpUrl()} className="suite-button-secondary">
+                            <LayoutGrid className="h-4 w-4" /> App Hub
+                        </a>
+                    </div>
+                    <div className="mt-4 flex items-center justify-between border-t pt-3 text-sm" style={{ borderColor: 'var(--suite-line)', color: 'var(--suite-muted)' }}>
+                        <span>{organization}</span>
+                        <span>Week {dashboardData?.currentTimesheet?.weekNumber || 1}</span>
+                    </div>
+                </div>
+            </header>
 
-                <a
-                    href={getIdpUrl()}
-                    className="px-4 py-2 rounded-lg bg-transparent hover:bg-zinc-800 text-sm font-medium text-zinc-300 transition-colors flex items-center gap-2 border border-zinc-700"
-                >
-                    <div className="w-2 h-2 rounded-full bg-teal-500" />
-                    App Hub
-                </a>
-            </div>
+            {dashboardData?.pendingApprovals > 0 && (
+                <div className="suite-notice mt-6">
+                    <div className="flex items-start gap-3">
+                        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" style={{ color: 'var(--suite-warning)' }} />
+                        <div>
+                            <p className="text-sm font-semibold">Timesheets need your review</p>
+                            <p className="mt-0.5 text-sm" style={{ color: 'var(--suite-muted)' }}>
+                                {dashboardData.pendingApprovals} pending {dashboardData.pendingApprovals === 1 ? 'submission is' : 'submissions are'} waiting.
+                            </p>
+                        </div>
+                    </div>
+                    <Link href="/approvals" className="suite-button">Review approvals <ArrowRight className="h-4 w-4" /></Link>
+                </div>
+            )}
 
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(320px,0.82fr)_minmax(0,1.68fr)]">
-                {/* Left Column - Clock Widget & Quick Stats */}
-                <div className="lg:col-span-1 space-y-6">
+            <section className="suite-section">
+                <div className="suite-section-heading">
+                    <div>
+                        <h2 className="suite-section-title">Today</h2>
+                        <p className="suite-section-copy">Your live clock and the work recorded so far.</p>
+                    </div>
+                </div>
+                <div className="grid gap-5 lg:grid-cols-[minmax(340px,.82fr)_minmax(0,1.18fr)]">
                     <ClockWidget
                         initialStatus={{
                             isClockedIn: dashboardData?.clock?.isClockedIn,
@@ -88,134 +110,70 @@ export default function Dashboard() {
                         onStatusChange={fetchDashboardData}
                     />
 
-                    {/* Today's Summary Card */}
-                    <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-6">
-                        <h3 className="text-sm font-semibold text-zinc-300 mb-4">Today&apos;s activity</h3>
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-900 border border-zinc-800">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-teal-500/10 text-teal-400">
-                                        <Clock className="h-4 w-4" />
+                    <div className="space-y-5">
+                        <div className="suite-metrics">
+                            <div className="suite-metric">
+                                <p className="suite-label">Weekly hours</p>
+                                <p className="suite-metric-value">{totalHours}h</p>
+                                <p className="mt-1 text-xs" style={{ color: 'var(--suite-positive)' }}>40h target</p>
+                            </div>
+                            <div className="suite-metric">
+                                <p className="suite-label">Days worked</p>
+                                <p className="suite-metric-value">{dashboardData?.week?.daysWorked || 0}</p>
+                                <p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>of 5 days</p>
+                            </div>
+                            <div className="suite-metric">
+                                <p className="suite-label">Daily average</p>
+                                <p className="suite-metric-value">{dashboardData?.week?.averageHoursPerDay || 0}h</p>
+                                <p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>8h target</p>
+                            </div>
+                            <div className="suite-metric">
+                                <p className="suite-label">Break time</p>
+                                <p className="suite-metric-value">{dashboardData?.today?.breakMinutes || 0}m</p>
+                                <p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>today</p>
+                            </div>
+                        </div>
+
+                        <div className="suite-panel p-5 sm:p-6">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <Calendar className="h-4 w-4" style={{ color: 'var(--suite-accent)' }} />
+                                        <h3 className="suite-card-title">Current timesheet</h3>
                                     </div>
-                                    <div>
-                                        <div className="text-sm font-medium text-white">Work Hours</div>
-                                        <div className="text-xs text-zinc-500">Net duration</div>
-                                    </div>
-                                </div>
-                                <div className="text-lg font-bold text-white font-mono">
-                                    {dashboardData?.today?.formatted || '00:00'}
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-900 border border-zinc-800">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
-                                        <Clock className="h-4 w-4" />
-                                    </div>
-                                    <div>
-                                        <div className="text-sm font-medium text-white">Break Time</div>
-                                        <div className="text-xs text-zinc-500">Total breaks</div>
-                                    </div>
-                                </div>
-                                <div className="text-lg font-bold text-white font-mono">
-                                    {dashboardData?.today?.breakMinutes}m
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Right Column - Weekly Overview & Timesheets */}
-                <div className="min-w-0 space-y-6">
-
-                    {/* Weekly Stats Grid */}
-                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-[1.15fr_0.9fr_0.9fr_1fr]">
-                        <div className="bg-zinc-900/50 border border-white/5 p-4 rounded-xl">
-                            <div className="text-xs text-zinc-500 mb-1">Weekly Hours</div>
-                            <div className="text-2xl font-bold text-white">{dashboardData?.week?.totalHours || 0}</div>
-                            <div className="text-xs text-teal-400 mt-1">On track</div>
-                        </div>
-                        <div className="bg-zinc-900/50 border border-white/5 p-4 rounded-xl">
-                            <div className="text-xs text-zinc-500 mb-1">Days Worked</div>
-                            <div className="text-2xl font-bold text-white">{dashboardData?.week?.daysWorked || 0}</div>
-                            <div className="text-xs text-zinc-500 mt-1">Target: 5</div>
-                        </div>
-                        <div className="bg-zinc-900/50 border border-white/5 p-4 rounded-xl">
-                            <div className="text-xs text-zinc-500 mb-1">Avg. Daily</div>
-                            <div className="text-2xl font-bold text-white">{dashboardData?.week?.averageHoursPerDay || 0}h</div>
-                            <div className="text-xs text-zinc-500 mt-1">Goal: 8h</div>
-                        </div>
-                        <div className="bg-zinc-900/50 border border-white/5 p-4 rounded-xl cursor-pointer hover:bg-zinc-800/50 transition-colors group">
-                            <div className="text-xs text-zinc-500 mb-1">Current Status</div>
-                            <div className="text-lg font-bold text-teal-400 flex items-center gap-2">
-                                Active
-                                <ArrowRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                            <div className="text-xs text-zinc-500 mt-1">Week {dashboardData?.currentTimesheet?.weekNumber || 1}</div>
-                        </div>
-                    </div>
-
-                    {/* Current Timesheet Status */}
-                    <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-6 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-6 opacity-10">
-                            <Calendar className="h-32 w-32 -mr-8 -mt-8" />
-                        </div>
-
-                        <div className="flex justify-between items-center mb-6 relative">
-                            <div>
-                                <h3 className="text-lg font-semibold text-white">Current Timesheet</h3>
-                                <p className="text-sm text-zinc-400">Week {dashboardData?.currentTimesheet?.weekNumber || '--'}, 2026</p>
-                            </div>
-                            <Link
-                                href="/timesheets/current"
-                                className="px-4 py-2 bg-white text-zinc-950 rounded-lg text-sm font-semibold hover:bg-zinc-200 transition-colors"
-                            >
-                                View Details
-                            </Link>
-                        </div>
-
-                        <div className="relative">
-                            <div className="flex items-center justify-between text-sm text-zinc-400 mb-2">
-                                <span>Progress</span>
-                                <span>{Math.min(100, Math.round(((dashboardData?.week?.totalHours || 0) / 40) * 100))}%</span>
-                            </div>
-                            <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-teal-500 rounded-full transition-all duration-500 ease-out"
-                                    style={{ width: `${Math.min(100, ((dashboardData?.week?.totalHours || 0) / 40) * 100)}%` }}
-                                />
-                            </div>
-                            <div className="mt-2 text-xs text-zinc-500 flex justify-between">
-                                <span>0h</span>
-                                <span>Target: 40h</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Pending Approvals (Manager Only) */}
-                    {dashboardData?.pendingApprovals > 0 && (
-                        <div className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl p-6">
-                            <div className="flex items-center gap-4">
-                                <div className="p-3 rounded-xl bg-amber-500/20 text-amber-400">
-                                    <AlertCircle className="h-6 w-6" />
-                                </div>
-                                <div className="flex-1">
-                                    <h3 className="text-lg font-semibold text-white">Pending Approvals</h3>
-                                    <p className="text-sm text-zinc-400">
-                                        You have <span className="text-amber-400 font-bold">{dashboardData.pendingApprovals}</span> timesheets waiting for your approval.
+                                    <p className="mt-1 text-sm" style={{ color: 'var(--suite-muted)' }}>
+                                        Week {dashboardData?.currentTimesheet?.weekNumber || '--'}, {new Date().getFullYear()}
                                     </p>
                                 </div>
-                                <Link
-                                    href="/approvals"
-                                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-semibold rounded-lg text-sm transition-colors shadow-lg shadow-amber-500/20"
-                                >
-                                    Review
-                                </Link>
+                                <Link href="/timesheets/current" className="suite-button-secondary">View details <ArrowRight className="h-4 w-4" /></Link>
+                            </div>
+                            <div className="mt-8">
+                                <div className="mb-2 flex justify-between text-sm" style={{ color: 'var(--suite-muted)' }}>
+                                    <span>{totalHours} of 40 hours</span><span>{progress}%</span>
+                                </div>
+                                <div className="suite-progress"><span style={{ width: `${progress}%` }} /></div>
                             </div>
                         </div>
-                    )}
+
+                        <div className="suite-panel">
+                            <div className="suite-list-row">
+                                <div>
+                                    <p className="text-sm font-semibold">Work recorded today</p>
+                                    <p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Net duration excluding breaks</p>
+                                </div>
+                                <p className="font-mono text-lg font-semibold">{dashboardData?.today?.formatted || '00:00'}</p>
+                            </div>
+                            <div className="suite-list-row">
+                                <div>
+                                    <p className="text-sm font-semibold">Clock state</p>
+                                    <p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Synced across the App Hub and attendance</p>
+                                </div>
+                                <span className="suite-status">{clockedIn ? 'Working' : 'Off clock'}</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            </section>
         </div>
     );
 }

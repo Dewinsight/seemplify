@@ -18,6 +18,7 @@ interface LeaveRequestCardProps {
   request: LeaveRequest;
   showUser?: boolean;
   showActions?: boolean;
+  compact?: boolean;
   onApprove?: (id: string) => void;
   onReject?: (id: string) => void;
 }
@@ -26,18 +27,18 @@ export default function LeaveRequestCard({
   request,
   showUser = false,
   showActions = false,
+  compact = false,
   onApprove,
   onReject,
 }: LeaveRequestCardProps) {
   return (
-    <div className="group bg-card dark:bg-gradient-to-br dark:from-zinc-900/80 dark:to-zinc-800/80 backdrop-blur-sm rounded-xl shadow-lg border border-border dark:border-zinc-700/50 p-5 hover:shadow-xl hover:border-purple-500/30 hover:-translate-y-0.5 transition-all duration-200 relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/0 via-purple-500/0 to-pink-500/0 group-hover:from-indigo-500/5 group-hover:via-purple-500/5 group-hover:to-pink-500/5 transition-all" />
-      <div className="flex justify-between items-start">
-        <div className="flex-1 relative">
+    <div className={cn('border-b last:border-b-0', compact ? 'px-5 py-4' : 'suite-panel p-5')} style={{ borderColor: 'var(--suite-line)' }}>
+      <div className="flex items-start justify-between gap-5">
+        <div className="min-w-0 flex-1">
           {showUser && (
             <div className="flex items-center mb-3">
-              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg ring-2 ring-zinc-700">
-                <User className="h-4 w-4 text-white" />
+              <div className="suite-icon h-9 w-9 rounded-full">
+                <User className="h-4 w-4" />
               </div>
               <div className="ml-2">
                 <p className="text-sm font-semibold text-foreground dark:text-zinc-100">{request.userName}</p>
@@ -46,11 +47,11 @@ export default function LeaveRequestCard({
             </div>
           )}
 
-          <div className="flex items-center gap-2 mb-3">
-            <span className={cn('inline-flex items-center rounded-lg px-3 py-1 text-xs font-semibold border', getLeaveTypeColor(request.leaveType))}>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className={cn('inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium', getLeaveTypeColor(request.leaveType))}>
               {getLeaveTypeLabel(request.leaveType)}
             </span>
-            <span className={cn('inline-flex items-center rounded-lg px-3 py-1 text-xs font-semibold border', getStatusColor(request.status))}>
+            <span className={cn('inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium', getStatusColor(request.status))}>
               {getStatusLabel(request.status)}
             </span>
           </div>
@@ -66,7 +67,7 @@ export default function LeaveRequestCard({
           </div>
 
           {request.reason && (
-            <p className="mt-3 text-sm text-muted-foreground line-clamp-2 bg-muted dark:bg-zinc-800/40 p-2 rounded-lg border border-border dark:border-zinc-700/30">{request.reason}</p>
+            <p className="mt-3 line-clamp-2 text-sm" style={{ color: 'var(--suite-muted)' }}>{request.reason}</p>
           )}
 
           {request.teamName && (
@@ -98,10 +99,11 @@ export default function LeaveRequestCard({
           )}
         </div>
 
-        <div className="flex flex-col items-end gap-2 relative">
+        <div className="flex shrink-0 flex-col items-end gap-2">
           <Link
             href={`/leave-requests/${request._id}`}
-            className="text-sm font-semibold text-purple-400 hover:text-purple-300 inline-flex items-center gap-1 transition-colors"
+            className="inline-flex items-center gap-1 text-sm font-semibold"
+            style={{ color: 'var(--suite-accent)' }}
           >
             View Details <ArrowUpRight className="h-4 w-4" />
           </Link>
@@ -111,7 +113,7 @@ export default function LeaveRequestCard({
               {onApprove && (
                 <button
                   onClick={() => onApprove(request._id)}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-emerald-500 to-green-600 rounded-lg hover:from-emerald-600 hover:to-green-700 shadow-lg shadow-green-500/20 hover:shadow-green-500/30 transition-all"
+                  className="suite-button h-8 text-xs"
                 >
                   Approve
                 </button>
@@ -119,7 +121,7 @@ export default function LeaveRequestCard({
               {onReject && (
                 <button
                   onClick={() => onReject(request._id)}
-                  className="px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-red-500 to-rose-600 rounded-lg hover:from-red-600 hover:to-rose-700 shadow-lg shadow-red-500/20 hover:shadow-red-500/30 transition-all"
+                  className="suite-button-secondary h-8 text-xs"
                 >
                   Reject
                 </button>
@@ -129,15 +131,15 @@ export default function LeaveRequestCard({
         </div>
       </div>
 
-      {request.status === 'approved' && request.approvedBy && (
-        <div className="mt-4 pt-4 border-t border-zinc-700/60 text-xs text-zinc-500 relative">
+      {request.status === 'approved' && request.approvedBy && !compact && (
+        <div className="mt-4 border-t pt-4 text-xs" style={{ borderColor: 'var(--suite-line)', color: 'var(--suite-muted)' }}>
           Approved by <span className="text-green-400 font-medium">{request.approvedBy.userName}</span> on{' '}
           {new Date(request.approvedBy.approvedAt).toLocaleDateString()}
         </div>
       )}
 
-      {request.status === 'rejected' && request.rejectedBy && (
-        <div className="mt-4 pt-4 border-t border-zinc-700/60 text-xs relative">
+      {request.status === 'rejected' && request.rejectedBy && !compact && (
+        <div className="mt-4 border-t pt-4 text-xs" style={{ borderColor: 'var(--suite-line)' }}>
           <span className="text-red-400 font-medium">Rejected:</span> <span className="text-zinc-400">{request.rejectedBy.rejectionReason}</span>
         </div>
       )}
