@@ -3896,10 +3896,10 @@ async function getBatchStatus(publicId, organizationId) {
   // A parked job looks identical to a slow one from the outside. Carrying the
   // reason it is waiting is the difference between "still processing" and
   // "your ChatGPT plan is out of quota until the 13th".
-  const parked = waitingJobs.find((job) => (
-    job.lastError?.message
-    && (job.state === 'waiting_for_local_runtime' || isRuntimeGateError(job.lastError))
-  ));
+  // A queued job carrying an error may actually be inside BullMQ's delayed
+  // retry state. Treat it as parked so the user can promote it immediately;
+  // a plain, healthy queued job has no lastError and keeps the normal spinner.
+  const parked = waitingJobs.find((job) => job.lastError?.message);
   return {
     batchId: batch.publicId,
     waitingReason: parked?.lastError?.message || null,
