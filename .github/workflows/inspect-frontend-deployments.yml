@@ -2,8 +2,31 @@ name: Inspect Frontend Deployments
 
 on:
   workflow_dispatch:
+    inputs:
+      clean_unused_images:
+        description: Remove Docker images not used by running containers before inspection
+        required: false
+        default: false
+        type: boolean
 
 jobs:
+  cleanup:
+    name: Clean unused Docker images
+    if: ${{ inputs.clean_unused_images }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Dokploy image cleanup
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+        run: |
+          curl -fsS -X POST \
+            -H "x-api-key: ${DOKPLOY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d '{}' \
+            "${DOKPLOY_URL%/}/api/settings.cleanUnusedImages"
+
   inspect:
     name: Inspect ${{ matrix.name }}
     runs-on: ubuntu-latest
