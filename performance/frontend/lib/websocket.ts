@@ -1,3 +1,5 @@
+import { resolvePerformanceWebSocketUrl } from './runtimeConfig';
+
 /**
  * WebSocket Service for Performance Management Frontend
  * Handles real-time notifications from the backend about membership changes
@@ -24,7 +26,7 @@ class WebSocketService {
     }
 
     this.userId = userId;
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:5004/ws';
+    const wsUrl = resolvePerformanceWebSocketUrl();
     
     console.log('🔌 Connecting to WebSocket:', wsUrl);
     

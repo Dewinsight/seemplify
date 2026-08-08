@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const { Issuer, generators } = require('openid-client');
 const { requireAuth } = require('../middleware/rbac');
 const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
-const { getPayrollOidcClientConfig } = require('../config/identityProvider');
+const { getPayrollOidcClientConfig, getPayrollFrontendUrl } = require('../config/identityProvider');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -83,7 +83,7 @@ router.get('/oidc/start', async (req, res) => {
     }
 
     // Get returnTo from query parameter or headers
-    const returnTo = req.query.returnTo || req.headers['referer'] || process.env.FRONTEND_URL || 'http://localhost:5007';
+    const returnTo = req.query.returnTo || req.headers['referer'] || getPayrollFrontendUrl();
 
     // Use cached issuer to avoid expensive discovery on every request
     const issuer = await getCachedIssuer(issuerUrl);
@@ -165,7 +165,7 @@ router.get('/oidc/callback', async (req, res) => {
     hasError: !!req.query.error
   });
 
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5007';
+  const frontendUrl = getPayrollFrontendUrl();
 
   // Handle errors from IdP
   if (req.query.error) {

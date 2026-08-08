@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
+import { resolvePerformanceApiUrl } from './runtimeConfig';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5004/api';
+const API_URL = resolvePerformanceApiUrl();
 
 // Create axios instance with credentials
 const api = axios.create({

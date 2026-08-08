@@ -1,11 +1,13 @@
 const { Issuer, generators } = require('openid-client');
+const { getPerformanceOidcClientConfig } = require('./identityProvider');
 
 let oidcClient = null;
 let oidcIssuer = null;
 
 const initializeOIDC = async () => {
   try {
-    const issuerUrl = process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER;
+    const config = getPerformanceOidcClientConfig({ issuerUrlFallback: 'http://localhost:4000' });
+    const issuerUrl = config.issuerUrl;
     if (!issuerUrl) {
       console.warn('IDP_ISSUER_URL/OIDC_ISSUER not set, OIDC authentication disabled');
       return null;
@@ -17,9 +19,9 @@ const initializeOIDC = async () => {
 
     // Initialize OIDC client with PKCE support
     oidcClient = new oidcIssuer.Client({
-      client_id: process.env.OIDC_CLIENT_ID,
-      client_secret: process.env.OIDC_CLIENT_SECRET,
-      redirect_uris: [process.env.OIDC_REDIRECT_URI],
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      redirect_uris: [config.redirectUri],
       response_types: ['code'],
       token_endpoint_auth_method: 'client_secret_basic',
     });
@@ -56,6 +58,7 @@ const generatePKCE = () => {
 // Generate authorization URL for login with PKCE
 const generateAuthUrl = (state, nonce, codeVerifier = null, additionalParams = {}) => {
   const client = getOIDCClient();
+  const config = getPerformanceOidcClientConfig({ redirectUriFallback: 'http://localhost:5004/api/auth/oidc/callback' });
 
   // Generate PKCE if not provided
   let pkce = null;
@@ -71,7 +74,7 @@ const generateAuthUrl = (state, nonce, codeVerifier = null, additionalParams = {
     scope: 'openid email profile organizations teams',
     state,
     nonce,
-    redirect_uri: process.env.OIDC_REDIRECT_URI,
+    redirect_uri: config.redirectUri,
     code_challenge: pkce.codeChallenge,
     code_challenge_method: 'S256',
     ...additionalParams,
@@ -88,6 +91,7 @@ const generateAuthUrl = (state, nonce, codeVerifier = null, additionalParams = {
 const exchangeCode = async (code, state, nonce, codeVerifier, iss = null) => {
   const client = getOIDCClient();
   const issuer = getOIDCIssuer();
+  const config = getPerformanceOidcClientConfig({ redirectUriFallback: 'http://localhost:5004/api/auth/oidc/callback' });
 
   const params = { code, state };
   const checks = {
@@ -102,7 +106,7 @@ const exchangeCode = async (code, state, nonce, codeVerifier, iss = null) => {
 
   try {
     const tokenSet = await client.callback(
-      process.env.OIDC_REDIRECT_URI,
+      config.redirectUri,
       params,
       checks
     );
@@ -119,7 +123,7 @@ const exchangeCode = async (code, state, nonce, codeVerifier, iss = null) => {
       console.warn('Token response missing iss, using discovered issuer');
       // Retry with explicit issuer in checks
       const tokenSet = await client.callback(
-        process.env.OIDC_REDIRECT_URI,
+        config.redirectUri,
         params,
         { ...checks, issuer: issuer.issuer }
       );

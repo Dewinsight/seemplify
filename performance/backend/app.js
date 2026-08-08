@@ -11,6 +11,7 @@ const jwt = require('jsonwebtoken');
 
 // Import OIDC config
 const { initializeOIDC, getOIDCClient, getUserInfo, refreshTokens, generatePKCE } = require('./config/oidc');
+const { getPerformanceOidcClientConfig } = require('./config/identityProvider');
 const { generators } = require('openid-client');
 
 // Import routes
@@ -40,6 +41,11 @@ const websocketService = require('./services/websocketService');
 const app = express();
 
 const isProduction = process.env.NODE_ENV === 'production';
+const performanceRuntimeConfig = getPerformanceOidcClientConfig({
+  issuerUrlFallback: 'http://localhost:4000',
+  redirectUriFallback: 'http://localhost:5004/api/auth/oidc/callback',
+  frontendUrlFallback: 'http://localhost:5005'
+});
 
 // Trust proxy (for Azure/App Service deployments)
 app.set('trust proxy', 1);
@@ -64,8 +70,8 @@ app.use(helmet({
 // CORS configuration
 app.use(cors({
   origin: [
-    process.env.FRONTEND_URL || 'http://localhost:5005',
-    process.env.IDP_ISSUER_URL || 'http://localhost:4000',
+    performanceRuntimeConfig.frontendUrl,
+    performanceRuntimeConfig.issuerUrl,
     process.env.IDP_HUB_URL || 'http://localhost:4000',
     'http://localhost:4000'
   ],
@@ -260,8 +266,12 @@ app.get('/api/auth/oidc/start', async (req, res) => {
       });
     }
 
-    const redirectUri = process.env.OIDC_REDIRECT_URI;
-    const returnTo = req.query.returnTo || process.env.FRONTEND_URL || 'http://localhost:5005';
+    const oidcConfig = getPerformanceOidcClientConfig({
+      redirectUriFallback: 'http://localhost:5004/api/auth/oidc/callback',
+      frontendUrlFallback: 'http://localhost:5005'
+    });
+    const redirectUri = oidcConfig.redirectUri;
+    const returnTo = req.query.returnTo || oidcConfig.frontendUrl;
 
     const { codeVerifier, codeChallenge } = generatePKCE();
 
@@ -338,7 +348,7 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
   // Handle errors from IdP
   if (req.query.error) {
     console.error('OIDC error:', req.query.error, req.query.error_description);
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5005';
+    const frontendUrl = getPerformanceOidcClientConfig({ frontendUrlFallback: 'http://localhost:5005' }).frontendUrl;
     return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(req.query.error_description || req.query.error)}`);
   }
 
@@ -359,7 +369,11 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
       });
     }
 
-    const redirectUri = process.env.OIDC_REDIRECT_URI;
+    const oidcConfig = getPerformanceOidcClientConfig({
+      redirectUriFallback: 'http://localhost:5004/api/auth/oidc/callback',
+      frontendUrlFallback: 'http://localhost:5005'
+    });
+    const redirectUri = oidcConfig.redirectUri;
     const stateCookie = req.cookies.oidc_state;
 
     let returnTo = '/';
@@ -372,7 +386,7 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
         nonce = statePayload.nonce;
       } catch (err) {
         console.error('State verification error:', err);
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5005';
+        const frontendUrl = oidcConfig.frontendUrl;
         return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent('Invalid or expired state')}`);
       }
     }
@@ -472,12 +486,12 @@ app.get('/api/auth/oidc/callback', async (req, res) => {
     }
 
     // Redirect to frontend with access token
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5005';
+    const frontendUrl = oidcConfig.frontendUrl;
     const redirectPath = returnTo.startsWith('/') ? returnTo : '/';
     res.redirect(`${frontendUrl}${redirectPath}#access_token=${tokenSet.access_token}`);
   } catch (error) {
     console.error('OIDC callback error:', error);
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5005';
+    const frontendUrl = performanceRuntimeConfig.frontendUrl;
     return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent('Authentication failed')}`);
   }
 });
@@ -673,7 +687,7 @@ const PORT = process.env.PORT || 5004;
 const startServer = async () => {
   try {
     // Initialize OIDC client at startup
-    const issuerUrl = process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER;
+    const issuerUrl = getPerformanceOidcClientConfig({ issuerUrlFallback: 'http://localhost:4000' }).issuerUrl;
     if (issuerUrl) {
       await initializeOIDC();
       console.log('OIDC client initialized');

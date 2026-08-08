@@ -46,6 +46,7 @@ export const HubApp = mongoose.model('HubApp', HubAppSchema)
 
 // Seed default apps if none exist, or update existing apps with current env vars
 export async function seedDefaultApps() {
+  const isProduction = process.env.NODE_ENV === 'production'
   const frontendUrl = process.env.SMARTHR_URL || 'http://localhost:5000'
   // NOTE: Hub app URLs should always point to the FRONTEND (not API).
   // Keep backward compatibility with existing env var naming.
@@ -55,10 +56,10 @@ export async function seedDefaultApps() {
     'http://localhost:5003'
   const performanceManagementUrl =
     process.env.PERFORMANCE_MANAGEMENT_URL ||
-    'http://localhost:5005'
+    (isProduction ? 'https://performance.seemplifyai.com' : 'http://localhost:5005')
   const payrollManagementUrl =
     process.env.PAYROLL_MANAGEMENT_URL ||
-    'http://localhost:5007'
+    (isProduction ? 'https://payroll.seemplifyai.com' : 'http://localhost:5007')
 
   const defaultApps = [
     {

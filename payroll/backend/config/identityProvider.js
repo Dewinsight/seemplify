@@ -20,4 +20,9 @@ function getPayrollOidcClientConfig(options = {}) {
   };
 }
 
-module.exports = { getIdentityProviderIssuerUrl, getPayrollOidcClientConfig };
+function getPayrollFrontendUrl(fallback = 'http://localhost:5007') {
+  return process.env.FRONTEND_URL ||
+    (process.env.NODE_ENV === 'production' ? 'https://payroll.seemplifyai.com' : fallback);
+}
+
+module.exports = { getIdentityProviderIssuerUrl, getPayrollOidcClientConfig, getPayrollFrontendUrl };
