@@ -159,6 +159,7 @@ test('worker startup waits for Redis readiness and exposes startup failures as u
     configured: true,
     started: false,
     healthy: false,
+    degraded: false,
     lastError: {
       message: 'synthetic Redis readiness failure',
       at: outbox.status().lastError.at
@@ -224,7 +225,7 @@ test('queued reuse with changed payload is an identity conflict', async () => {
   await outbox.close();
 });
 
-test('terminal poison messages become bounded non-PII dead letters and make health unhealthy', async () => {
+test('terminal poison messages become bounded non-PII dead letters without taking down transport health', async () => {
   const poisoned = buildUsageEnvelope({
     eventId: 'execution-1',
     requestId: 'logical-request',
@@ -279,7 +280,8 @@ test('terminal poison messages become bounded non-PII dead letters and make heal
     totalTokens: 13
   });
   assert.equal(JSON.stringify(markerJob.data).includes('person@example.test'), false);
-  assert.equal(outbox.status().healthy, false);
+  assert.equal(outbox.status().healthy, true);
+  assert.equal(outbox.status().degraded, true);
   assert.equal(outbox.status().deadLetterCount, 1);
   await outbox.close();
 });
@@ -310,7 +312,8 @@ test('durable dead-letter health is rehydrated after a worker restart', async ()
 
   const restarted = new UsageMeteringOutbox(options);
   await restarted.start(async () => ({ persisted: true }));
-  assert.equal(restarted.status().healthy, false);
+  assert.equal(restarted.status().healthy, true);
+  assert.equal(restarted.status().degraded, true);
   assert.equal(restarted.status().deadLetterCount, 1);
   assert.equal(
     restarted.status().lastTerminalFailure.reasonCode,

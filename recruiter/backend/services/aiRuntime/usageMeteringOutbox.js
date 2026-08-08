@@ -428,7 +428,11 @@ class UsageMeteringOutbox {
     return {
       configured,
       started: this.started,
-      healthy: !this.lastError && !this.lastTerminalFailure,
+      // Transport readiness and historical poison-message state are separate.
+      // A retained dead letter must remain visible to operators, but it must not
+      // prevent the durable worker (or the whole Recruiter API) from restarting.
+      healthy: !this.lastError,
+      degraded: Boolean(this.lastTerminalFailure),
       lastError: this.lastError,
       lastTerminalFailure: this.lastTerminalFailure,
       deadLetterCount: this.deadLetterCount
