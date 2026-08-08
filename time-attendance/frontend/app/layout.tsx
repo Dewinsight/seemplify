@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import AppShell from '@/components/AppShell';
+import { themeInitScript } from '@/lib/theme-sync';
 
 export const metadata = {
     title: 'Time & Attendance - Seemplify',
@@ -13,8 +14,9 @@ export default function RootLayout({
     children: React.ReactNode;
 }) {
     return (
-        <html lang="en" className="dark">
-            <body className="bg-zinc-950 text-zinc-100 font-sans antialiased">
+        <html lang="en" suppressHydrationWarning>
+            <head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head>
+            <body className="bg-background text-foreground font-sans antialiased">
                 <AuthProvider>
                     <AppShell>{children}</AppShell>
                 </AuthProvider>

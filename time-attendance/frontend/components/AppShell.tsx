@@ -20,6 +20,7 @@ import {
     X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import ThemePreferenceMenu from '@/components/ThemePreferenceMenu';
 
 interface NavItem {
     name: string;
@@ -154,6 +155,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </div>
 
                     <div className="ml-auto flex shrink-0 items-center gap-2">
+                        <ThemePreferenceMenu />
                         <div className="relative hidden md:block">
                             <button
                                 type="button"
@@ -295,6 +297,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                             </div>
 
                             <div className="py-5">
+                                <ThemePreferenceMenu mobile />
+                            </div>
+
+                            <div className="border-t border-zinc-800 py-5">
                                 <div className="mb-2 text-xs font-medium text-zinc-500">Personal</div>
                                 <div className="grid gap-1 sm:grid-cols-2">
                                     {personalNavigation.map(item => renderNavigationLink(item, true))}

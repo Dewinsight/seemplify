@@ -1,126 +1,71 @@
-/**
- * Theme Sync Utilities
- * Enables cross-app theme sharing via cookies
- */
+export type ThemePreference = 'light' | 'dark' | 'system';
 
-const THEME_COOKIE_NAME = 'theme';
-const THEME_STORAGE_KEY = 'theme';
+export const SHARED_THEME_COOKIE = 'seemplify_theme';
+export const SHARED_THEME_STORAGE = 'seemplify-theme';
 
-/**
- * Get a cookie value by name
- */
+const isThemePreference = (value: string | null): value is ThemePreference =>
+  value === 'light' || value === 'dark' || value === 'system';
+
 export function getCookie(name: string): string | null {
-    if (typeof document === 'undefined') return null;
-
-    const nameEQ = name + '=';
-    const ca = document.cookie.split(';');
-    for (let i = 0; i < ca.length; i++) {
-        let c = ca[i];
-        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
-    }
-    return null;
+  if (typeof document === 'undefined') return null;
+  const prefix = `${name}=`;
+  const value = document.cookie.split(';').map(part => part.trim()).find(part => part.startsWith(prefix));
+  return value ? decodeURIComponent(value.slice(prefix.length)) : null;
 }
 
-/**
- * Set a cookie with optional expiry
- */
-export function setCookie(name: string, value: string, days: number = 365): void {
-    if (typeof document === 'undefined') return;
+export function readThemePreference(): ThemePreference {
+  if (typeof window === 'undefined') return 'system';
+  const sharedCookie = getCookie(SHARED_THEME_COOKIE);
+  if (isThemePreference(sharedCookie)) return sharedCookie;
 
-    const date = new Date();
-    date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000);
-    const expires = '; expires=' + date.toUTCString();
-    document.cookie = name + '=' + (value || '') + expires + '; path=/; SameSite=Lax';
+  const sharedStorage = localStorage.getItem(SHARED_THEME_STORAGE);
+  if (isThemePreference(sharedStorage)) return sharedStorage;
+
+  // One-time migration from the keys previously used by the individual apps.
+  const legacyCookie = getCookie('theme');
+  if (isThemePreference(legacyCookie)) return legacyCookie;
+  const legacyStorage = localStorage.getItem('theme') || localStorage.getItem('themeMode');
+  return isThemePreference(legacyStorage) ? legacyStorage : 'system';
 }
 
-/**
- * Get the theme from cookie, falling back to localStorage
- */
-export function getThemeFromCookie(): string | null {
-    // First check cookie (shared across apps)
-    const cookieTheme = getCookie(THEME_COOKIE_NAME);
-    if (cookieTheme && ['light', 'dark', 'system'].includes(cookieTheme)) {
-        return cookieTheme;
-    }
-
-    // Fallback to localStorage
-    if (typeof localStorage !== 'undefined') {
-        const localTheme = localStorage.getItem(THEME_STORAGE_KEY);
-        if (localTheme && ['light', 'dark', 'system'].includes(localTheme)) {
-            return localTheme;
-        }
-    }
-
-    return null;
+export function writeThemePreference(theme: ThemePreference): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(SHARED_THEME_STORAGE, theme);
+  const onSharedDomain = location.hostname === 'seemplifyai.com' || location.hostname.endsWith('.seemplifyai.com');
+  const domain = onSharedDomain ? '; Domain=.seemplifyai.com' : '';
+  const secure = location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${SHARED_THEME_COOKIE}=${theme}; Max-Age=31536000; Path=/; SameSite=Lax${domain}${secure}`;
 }
 
-/**
- * Sync theme to cookie (call this when theme changes)
- */
 export function syncThemeToCookie(theme: string): void {
-    setCookie(THEME_COOKIE_NAME, theme, 365);
+  if (isThemePreference(theme)) writeThemePreference(theme);
 }
 
-/**
- * Sync cookie theme to localStorage (for next-themes compatibility)
- */
-export function syncCookieToLocalStorage(): void {
-    const cookieTheme = getCookie(THEME_COOKIE_NAME);
-    if (cookieTheme && typeof localStorage !== 'undefined') {
-        const currentLocal = localStorage.getItem(THEME_STORAGE_KEY);
-        if (currentLocal !== cookieTheme) {
-            localStorage.setItem(THEME_STORAGE_KEY, cookieTheme);
-        }
-    }
-}
-
-/**
- * Blocking script content to inject in <head>
- * This runs before React hydration to prevent FOUC
- */
 export const themeInitScript = `
-(function() {
+(function () {
   try {
-    var COOKIE_NAME = 'theme';
-    var STORAGE_KEY = 'theme';
-    
-    function getCookie(name) {
-      var nameEQ = name + '=';
-      var ca = document.cookie.split(';');
-      for (var i = 0; i < ca.length; i++) {
-        var c = ca[i];
-        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+    var valid = function (value) { return value === 'light' || value === 'dark' || value === 'system'; };
+    var cookie = function (name) {
+      var prefix = name + '=';
+      var parts = document.cookie.split(';');
+      for (var i = 0; i < parts.length; i++) {
+        var part = parts[i].trim();
+        if (part.indexOf(prefix) === 0) return decodeURIComponent(part.slice(prefix.length));
       }
       return null;
-    }
-    
-    function getSystemTheme() {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    
-    // Get theme from cookie or localStorage
-    var theme = getCookie(COOKIE_NAME);
-    if (!theme || !['light', 'dark', 'system'].includes(theme)) {
-      theme = localStorage.getItem(STORAGE_KEY);
-    }
-    if (!theme || !['light', 'dark', 'system'].includes(theme)) {
-      theme = 'system';
-    }
-    
-    // Sync cookie to localStorage for next-themes
-    if (theme) {
-      localStorage.setItem(STORAGE_KEY, theme);
-    }
-    
-    // Resolve system theme
-    var resolved = theme === 'system' ? getSystemTheme() : theme;
-    
-    // Apply theme immediately
+    };
+    var preference = cookie('seemplify_theme');
+    if (!valid(preference)) preference = localStorage.getItem('seemplify-theme');
+    if (!valid(preference)) preference = cookie('theme');
+    if (!valid(preference)) preference = localStorage.getItem('theme') || localStorage.getItem('themeMode');
+    if (!valid(preference)) preference = 'system';
+    localStorage.setItem('seemplify-theme', preference);
+    var resolved = preference === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : preference;
     document.documentElement.classList.remove('light', 'dark');
     document.documentElement.classList.add(resolved);
+    document.documentElement.setAttribute('data-theme', resolved);
     document.documentElement.style.colorScheme = resolved;
-  } catch (e) {}
-})();
-`;
+  } catch (_) {}
+})();`;

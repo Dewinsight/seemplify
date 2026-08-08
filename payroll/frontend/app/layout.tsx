@@ -8,6 +8,8 @@ import { authApi, handleAuthCallback } from '@/lib/api';
 import { resolveIdpUrl } from '@/lib/runtimeConfig';
 import { PayrollViewModeProvider, PayrollViewMode } from '@/context/PayrollViewModeContext';
 import PageGuide from '@/components/PageGuide';
+import ThemePreferenceMenu from '@/components/ThemePreferenceMenu';
+import { themeInitScript } from '@/lib/theme-sync';
 import './globals.css';
 import {
   LayoutGrid,
@@ -160,7 +162,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   if (isLoginPage) {
     return (
-      <html lang="en">
+      <html lang="en" suppressHydrationWarning>
+        <head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head>
         <body>
           {children}
         </body>
@@ -170,7 +173,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   if (showNoOrganizations) {
     return (
-      <html lang="en">
+      <html lang="en" suppressHydrationWarning>
+        <head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head>
         <body className="bg-[rgb(var(--background-start-rgb))]">
           <div className="bg-noise" />
           <div className="min-h-screen flex items-center justify-center px-4 py-16">
@@ -256,7 +260,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head>
       <body className="bg-[rgb(var(--background-start-rgb))]">
         <div className="bg-noise" />
 
@@ -371,6 +376,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   </div>
 
                   <div className="flex items-center gap-3">
+                    <ThemePreferenceMenu />
                     {isHRAdmin && (
                       <div className="hidden md:flex items-center rounded-lg border border-zinc-800 bg-zinc-900/70 p-1">
                         <button
@@ -526,6 +532,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         <X className="h-5 w-5 text-zinc-400" />
                       </button>
                     </div>
+
+                    <ThemePreferenceMenu mobile />
 
                     {isHRAdmin && (
                       <div className="mb-5 rounded-lg border border-zinc-800 bg-zinc-900/70 p-1 flex items-center">

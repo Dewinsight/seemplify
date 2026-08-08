@@ -4,6 +4,7 @@ import "./globals.css";
 import ThemeRegistry from "./ThemeRegistry";
 import Providers from "./Providers";
 import ConditionalLayout from "@/components/ConditionalLayout";
+import { themeInitScript } from "@/lib/theme-sync";
 
 const bodyFont = Manrope({
   subsets: ["latin"],
@@ -33,6 +34,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head>
       <body className={`${bodyFont.variable} ${displayFont.variable}`} suppressHydrationWarning>
         <Providers>
           <ThemeRegistry>

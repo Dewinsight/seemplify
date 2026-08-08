@@ -4,7 +4,9 @@
  * and cross-tab synchronization.
  */
 (function () {
-    const STORAGE_KEY = 'theme'; // Matches Next.js next-themes key
+    const STORAGE_KEY = 'seemplify-theme';
+    const COOKIE_KEY = 'seemplify_theme';
+    const VALID_THEMES = ['light', 'dark', 'system'];
 
     function getCookie(name) {
         const nameEQ = name + "=";
@@ -12,7 +14,7 @@
         for (let i = 0; i < ca.length; i++) {
             let c = ca[i];
             while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-            if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+            if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length, c.length));
         }
         return null;
     }
@@ -24,21 +26,26 @@
             date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
             expires = "; expires=" + date.toUTCString();
         }
-        document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Lax";
+        const sharedDomain = location.hostname === 'seemplifyai.com' || location.hostname.endsWith('.seemplifyai.com');
+        const domain = sharedDomain ? '; Domain=.seemplifyai.com' : '';
+        const secure = location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = name + "=" + encodeURIComponent(value || "") + expires + "; path=/; SameSite=Lax" + domain + secure;
     }
 
     function getTheme() {
         // 1. Check cookie (shared preference)
-        const cookieTheme = getCookie(STORAGE_KEY);
-        if (cookieTheme && ['light', 'dark', 'system'].includes(cookieTheme)) {
+        const cookieTheme = getCookie(COOKIE_KEY);
+        if (cookieTheme && VALID_THEMES.includes(cookieTheme)) {
             return cookieTheme;
         }
         // 2. Check local storage (fallback)
         try {
             const local = localStorage.getItem(STORAGE_KEY);
-            if (local && ['light', 'dark', 'system'].includes(local)) {
+            if (local && VALID_THEMES.includes(local)) {
                 return local;
             }
+            const legacy = getCookie('theme') || localStorage.getItem('theme') || localStorage.getItem('themeMode');
+            if (legacy && VALID_THEMES.includes(legacy)) return legacy;
         } catch (e) { }
         // 3. Default to system
         return 'system';
@@ -105,7 +112,8 @@
     // Public API
     window.ThemeManager = {
         setTheme: function (theme) {
-            setCookie(STORAGE_KEY, theme, 365);
+            if (!VALID_THEMES.includes(theme)) return;
+            setCookie(COOKIE_KEY, theme, 365);
             localStorage.setItem(STORAGE_KEY, theme);
             applyTheme(theme);
             updateToggleUI(theme);
@@ -147,4 +155,14 @@
             }
         }
     }
+
+    // Re-read the parent-domain preference after returning from another product.
+    function syncSharedPreference() {
+        const sharedTheme = getTheme();
+        applyTheme(sharedTheme);
+        updateToggleUI(sharedTheme);
+    }
+    window.addEventListener('focus', syncSharedPreference);
+    document.addEventListener('visibilitychange', syncSharedPreference);
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncSharedPreference);
 })();

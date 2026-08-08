@@ -18,12 +18,11 @@ import {
   Building2,
   LayoutGrid,
   Sparkles,
-  Sun,
-  Moon,
 } from 'lucide-react';
 import { useUserContext, useCurrentTeam } from '@/lib/hooks';
 import { authApi } from '@/lib/api';
 import PageGuide from './PageGuide';
+import ThemePreferenceMenu from './ThemePreferenceMenu';
 
 type NavItem = {
   name: string;
@@ -71,6 +70,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       { name: 'Dashboard', href: '/dashboard', icon: TrendingUp, section: 'main' },
       { name: 'My OKRs', href: '/okrs', icon: Target, section: 'main' },
       { name: 'Appraisals', href: '/appraisals', icon: FileText, section: 'main' },
+      ...(isHRAdmin ? [{ name: 'Cycles', href: '/admin/appraisal-cycles', icon: Settings, section: 'main' as const }] : []),
     ];
 
     const manager: NavItem[] = isManager
@@ -128,7 +128,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const { mode, toggleColorMode } = useThemeMode();
+  const { mode } = useThemeMode();
   const isDarkMode = mode === 'dark';
   const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
   const showNoOrganizations = !authLoading && !!authUser && orgs.length === 0;
@@ -223,7 +223,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center gap-2">
               {navigation.filter(n => n.section === 'main').map((item) => {
-                const active = pathname === item.href;
+                const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`));
                 return (
                   <Link
                     key={item.href}
@@ -253,20 +253,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Right Side Actions */}
             <div className="flex items-center gap-3">
-              {/* Theme Toggle */}
-              <button
-                onClick={toggleColorMode}
-                className={cn(
-                  'p-2 rounded-lg transition-all duration-200',
-                  isDarkMode
-                    ? 'hover:bg-zinc-800/50 text-zinc-400 hover:text-yellow-400'
-                    : 'hover:bg-gray-200 text-gray-600 hover:text-yellow-500'
-                )}
-                aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-                title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-              >
-                {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-              </button>
+              <ThemePreferenceMenu />
 
               {isHRAdmin && (
                 <Link
@@ -571,27 +558,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
 
-              {/* Mobile Theme Toggle */}
-              <button
-                onClick={toggleColorMode}
-                className={cn(
-                  "w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm mb-4 transition-colors",
-                  isDarkMode
-                    ? "bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  {isDarkMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-                  <span>{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
-                </div>
-                <span className={cn(
-                  "text-xs px-2 py-1 rounded",
-                  isDarkMode ? "bg-zinc-700" : "bg-gray-200"
-                )}>
-                  {isDarkMode ? 'ON' : 'OFF'}
-                </span>
-              </button>
+              <ThemePreferenceMenu mobile />
 
               {/* Mobile Organization Switcher */}
               {showOrgSwitcher && (
@@ -658,7 +625,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   isDarkMode ? "text-zinc-500" : "text-gray-500"
                 )}>Navigation</div>
                 {navigation.map((item) => {
-                  const active = pathname === item.href;
+                  const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`));
                   return (
                     <Link
                       key={item.href}

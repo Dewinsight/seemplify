@@ -4,17 +4,22 @@ import { createContext, useContext, useState, useEffect, ReactNode, useMemo } fr
 import { ThemeProvider, createTheme, PaletteMode } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { getDesignTokens } from '@/app/theme';
+import { applyThemePreference, readThemePreference, ThemePreference, writeThemePreference } from '@/lib/theme-sync';
 
 interface ThemeContextType {
   mode: PaletteMode;
+  preference: ThemePreference;
   toggleColorMode: () => void;
   setMode: (mode: PaletteMode) => void;
+  setPreference: (preference: ThemePreference) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
   mode: 'dark',
+  preference: 'system',
   toggleColorMode: () => {},
   setMode: () => {},
+  setPreference: () => {},
 });
 
 export const useThemeMode = () => useContext(ThemeContext);
@@ -24,48 +29,57 @@ interface ThemeProviderWrapperProps {
 }
 
 export function ThemeProviderWrapper({ children }: ThemeProviderWrapperProps) {
-  const [mode, setMode] = useState<PaletteMode>('dark');
+  const [mode, setModeState] = useState<PaletteMode>('dark');
+  const [preference, setPreferenceState] = useState<ThemePreference>('system');
   const [mounted, setMounted] = useState(false);
 
   // Load saved preference on mount
   useEffect(() => {
-    setMounted(true);
-    const savedMode = localStorage.getItem('themeMode') as PaletteMode;
-    if (savedMode && (savedMode === 'light' || savedMode === 'dark')) {
-      setMode(savedMode);
-      document.documentElement.setAttribute('data-theme', savedMode);
-      document.documentElement.classList.toggle('dark', savedMode === 'dark');
-    } else {
-      // Check system preference
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const systemMode: PaletteMode = prefersDark ? 'dark' : 'light';
-      setMode(systemMode);
-      document.documentElement.setAttribute('data-theme', systemMode);
-      document.documentElement.classList.toggle('dark', systemMode === 'dark');
-    }
+    const frame = window.requestAnimationFrame(() => {
+      const savedPreference = readThemePreference();
+      setPreferenceState(savedPreference);
+      applyThemePreference(savedPreference);
+      setModeState(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+      setMounted(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
-  // Save preference when it changes
+  // Keep system changes and updates made in another Seemplify app in sync.
   useEffect(() => {
-    if (mounted) {
-      localStorage.setItem('themeMode', mode);
-      // Update document attribute for CSS
-      document.documentElement.setAttribute('data-theme', mode);
-      // Tailwind's dark variant relies on the `dark` class by default.
-      // Keep it in sync with our `data-theme` attribute.
-      document.documentElement.classList.toggle('dark', mode === 'dark');
-    }
-  }, [mode, mounted]);
+    if (!mounted) return;
+    const sync = () => {
+      const next = readThemePreference();
+      setPreferenceState(next);
+      applyThemePreference(next);
+      setModeState(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    };
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    window.addEventListener('focus', sync);
+    document.addEventListener('visibilitychange', sync);
+    media.addEventListener('change', sync);
+    return () => {
+      window.removeEventListener('focus', sync);
+      document.removeEventListener('visibilitychange', sync);
+      media.removeEventListener('change', sync);
+    };
+  }, [mounted]);
+
+  const updatePreference = (next: ThemePreference) => {
+    writeThemePreference(next);
+    setPreferenceState(next);
+    setModeState(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+  };
 
   const colorMode = useMemo(
     () => ({
       mode,
-      toggleColorMode: () => {
-        setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
-      },
-      setMode,
+      preference,
+      toggleColorMode: () => updatePreference(mode === 'light' ? 'dark' : 'light'),
+      setMode: (nextMode: PaletteMode) => updatePreference(nextMode),
+      setPreference: updatePreference,
     }),
-    [mode]
+    [mode, preference]
   );
 
   const theme = useMemo(() => createTheme(getDesignTokens(mode)), [mode]);
