@@ -9,7 +9,7 @@ import {
 import { readThemePreference, syncThemeToCookie } from "@/lib/theme-sync"
 
 function ThemeSyncWrapper({ children }: { children: React.ReactNode }) {
-  const { theme, setTheme } = useTheme();
+  const { theme, resolvedTheme, setTheme } = useTheme();
   const readyToPersist = React.useRef(false);
 
   React.useEffect(() => {
@@ -30,6 +30,16 @@ function ThemeSyncWrapper({ children }: { children: React.ReactNode }) {
       syncThemeToCookie(theme);
     }
   }, [theme]);
+
+  React.useEffect(() => {
+    if (!resolvedTheme) return;
+
+    // The server bootstrap also writes data-theme so the first paint has the
+    // correct palette. Keep that attribute aligned after next-themes changes
+    // its class; otherwise stale dark tokens can leak into light mode.
+    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.style.colorScheme = resolvedTheme;
+  }, [resolvedTheme]);
 
   React.useEffect(() => {
     const syncFromSharedPreference = () => {
