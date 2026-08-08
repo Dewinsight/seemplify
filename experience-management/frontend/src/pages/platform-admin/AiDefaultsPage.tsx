@@ -128,7 +128,7 @@ export function PlatformAdminAiDefaultsPage() {
   }
 
   async function reset() {
-    if (!canManage || working || !window.confirm('Reset the platform runtime policy and every Codex default?')) return;
+    if (!canManage || working || !window.confirm('Reset the ChatGPT runtime policy and every Codex default?')) return;
     setWorking('reset');
     try {
       const value = await platformAdminApi<{ defaults: PlatformAiDefaults }>('/api/platform-admin/ai-defaults', { method: 'DELETE' });

@@ -332,7 +332,7 @@ export default function AiAccountPage() {
                   </Label>
                   <p className="text-xs leading-5 text-muted-foreground">
                     Candidate data, job descriptions, and interview content in the tasks you run will be sent to OpenAI
-                    using this connection. Withdraw consent at any time and your AI tasks return to the platform runtime.
+                    using this connection. If you withdraw consent, ChatGPT-powered tasks pause until consent is restored.
                   </p>
                   {!account?.routable && (
                     <p className="text-xs font-medium text-amber-600">
