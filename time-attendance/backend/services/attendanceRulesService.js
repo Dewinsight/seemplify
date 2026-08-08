@@ -41,6 +41,9 @@ function evaluateClockIn(policy, { now = new Date(), hasLocation = false } = {})
 function buildPolicySummary(policy) {
     const settings = policy?.clockSettings || {};
     const breaks = policy?.breakRules || {};
+    const schedule = policy?.workSchedule || {};
+    const shift = schedule.defaultShift || {};
+    const notifications = policy?.notifications || {};
     return {
         explicitClockInRequired: true,
         autoClockOnLogin: false,
@@ -52,6 +55,13 @@ function buildPolicySummary(policy) {
         requireNote: !!settings.requireNote,
         breakRequiredAfterMinutes: Number(breaks.requiredAfterMinutes || 360),
         minimumBreakMinutes: Number(breaks.minimumBreakMinutes || 20),
+        workDays: Array.isArray(schedule.workDays) ? schedule.workDays : [1, 2, 3, 4, 5],
+        shiftStart: shift.startTime || '09:00',
+        shiftEnd: shift.endTime || '17:00',
+        clockInReminder: notifications.clockInReminder !== false,
+        clockOutReminder: notifications.clockOutReminder !== false,
+        clockInReminderMinutesAfter: Number(notifications.clockInReminderMinutesAfter ?? 15),
+        clockOutReminderMinutesAfter: Number(notifications.clockOutReminderMinutesAfter ?? 0),
         timezone: policy?.timezone || 'UTC',
     };
 }

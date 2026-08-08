@@ -200,6 +200,10 @@ const AttendancePolicySchema = new Schema({
         emailOnRejection: { type: Boolean, default: true },
         reminderBeforeDeadline: { type: Boolean, default: true },
         reminderHoursBefore: { type: Number, default: 24 },
+        clockInReminder: { type: Boolean, default: true },
+        clockInReminderMinutesAfter: { type: Number, min: 0, max: 240, default: 15 },
+        clockOutReminder: { type: Boolean, default: true },
+        clockOutReminderMinutesAfter: { type: Number, min: 0, max: 240, default: 0 },
         managerReports: {
             enabled: { type: Boolean, default: true },
             frequency: {

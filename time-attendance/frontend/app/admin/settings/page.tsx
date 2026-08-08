@@ -70,6 +70,10 @@ export default function SettingsPage() {
                     },
                     notifications: {
                         ...(data.policy.notifications || {}),
+                        clockInReminder: data.policy.notifications?.clockInReminder !== false,
+                        clockInReminderMinutesAfter: data.policy.notifications?.clockInReminderMinutesAfter ?? 15,
+                        clockOutReminder: data.policy.notifications?.clockOutReminder !== false,
+                        clockOutReminderMinutesAfter: data.policy.notifications?.clockOutReminderMinutesAfter ?? 0,
                         managerReports: {
                             enabled: data.policy.notifications?.managerReports?.enabled !== false,
                             frequency: data.policy.notifications?.managerReports?.frequency || 'weekly',
@@ -335,6 +339,36 @@ export default function SettingsPage() {
                         <label className="text-sm text-zinc-400">Maximum continuous work (minutes)
                             <input type="number" min={0} value={policy.breakRules.maximumContinuousWorkMinutes} onChange={(e) => setPolicy({ ...policy, breakRules: { ...policy.breakRules, maximumContinuousWorkMinutes: Number(e.target.value) } })} className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white" />
                         </label>
+                    </div>
+                </section>
+
+                <section className="border border-white/10 rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-5">
+                        <BellRing className="h-5 w-5 text-teal-400" />
+                        <div>
+                            <h2 className="text-lg font-semibold text-white">Clock reminders</h2>
+                            <p className="text-sm text-zinc-500">Show the reminder in the hub and send the same reminder by email.</p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="border border-zinc-800 rounded-lg p-4">
+                            <label className="flex items-center gap-3 text-sm font-medium text-white">
+                                <input type="checkbox" checked={policy.notifications.clockInReminder} onChange={(e) => setPolicy({ ...policy, notifications: { ...policy.notifications, clockInReminder: e.target.checked } })} className="h-4 w-4 accent-teal-500" />
+                                Remind employees to clock in
+                            </label>
+                            <label className="block mt-4 text-sm text-zinc-400">Minutes after shift starts
+                                <input type="number" min={0} max={240} value={policy.notifications.clockInReminderMinutesAfter} onChange={(e) => setPolicy({ ...policy, notifications: { ...policy.notifications, clockInReminderMinutesAfter: Number(e.target.value) } })} className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white" />
+                            </label>
+                        </div>
+                        <div className="border border-zinc-800 rounded-lg p-4">
+                            <label className="flex items-center gap-3 text-sm font-medium text-white">
+                                <input type="checkbox" checked={policy.notifications.clockOutReminder} onChange={(e) => setPolicy({ ...policy, notifications: { ...policy.notifications, clockOutReminder: e.target.checked } })} className="h-4 w-4 accent-teal-500" />
+                                Remind employees to clock out
+                            </label>
+                            <label className="block mt-4 text-sm text-zinc-400">Minutes after shift ends
+                                <input type="number" min={0} max={240} value={policy.notifications.clockOutReminderMinutesAfter} onChange={(e) => setPolicy({ ...policy, notifications: { ...policy.notifications, clockOutReminderMinutesAfter: Number(e.target.value) } })} className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white" />
+                            </label>
+                        </div>
                     </div>
                 </section>
 

@@ -57,10 +57,12 @@ async function sendEmail(to, subject, html, options = {}) {
             subject,
             html,
             text: html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
-            attachments
+            attachments,
+            idempotencyKey: options.idempotencyKey,
+            tag: options.tag
         }, process.env);
         console.log(`Email sent (seemplify-mail): ${subject} -> ${to}`);
-        return result;
+        return { success: true, messageId: result.messageId || null, idempotentReplay: Boolean(result.idempotentReplay) };
     } catch (error) {
         console.error(`Failed to send email (seemplify-mail): ${subject}`, error.message);
         return { success: false, error: error.message };
@@ -119,7 +121,10 @@ async function sendTimesheetReminder(timesheet, employeeEmail, hoursUntilDeadlin
         hoursRemaining: Math.round(hoursUntilDeadline),
         timesheetUrl: `${process.env.FRONTEND_URL || 'http://localhost:5011'}/timesheets/${timesheet._id}`,
     });
-    return sendEmail(employeeEmail, `Reminder: Submit Your Timesheet - Week of ${format(new Date(timesheet.startDate), 'MMM dd')}`, html);
+    return sendEmail(employeeEmail, `Reminder: Submit Your Timesheet - Week of ${format(new Date(timesheet.startDate), 'MMM dd')}`, html, {
+        idempotencyKey: `timesheet-reminder:${timesheet._id}:${format(new Date(), 'yyyy-MM-dd')}`,
+        tag: 'timesheet_reminder',
+    });
 }
 
 async function sendAutoClockOutWarning({ userName, deadlineAt, warningMinutes, thresholdHours }, userEmail) {
@@ -146,6 +151,23 @@ async function sendAutoClockedOutNotification({ userName, autoClockOutTime, thre
         <p><a href="${dashboardUrl}">Review your time entries</a></p>
     </body></html>`;
     return sendEmail(userEmail, 'Auto clock-out completed', html);
+}
+
+async function sendClockReminder({ type, userName, shiftTime, localDate, organizationId, userId }, userEmail) {
+    const isClockIn = type === 'clock_in';
+    const dashboardUrl = `${process.env.FRONTEND_URL || 'http://localhost:5011'}/dashboard`;
+    const action = isClockIn ? 'clock in' : 'clock out';
+    const html = `<html><body style="font-family: Arial, sans-serif; line-height: 1.5;">
+        <h2>Time to ${action}</h2>
+        <p>Hello ${userName || 'there'},</p>
+        <p>${isClockIn ? `Your scheduled workday started at <strong>${shiftTime}</strong>.` : `Your scheduled workday ended at <strong>${shiftTime}</strong>.`}</p>
+        <p>Please ${action} when you are ready so your timesheet remains accurate.</p>
+        <p><a href="${dashboardUrl}">Open Time &amp; Attendance</a></p>
+    </body></html>`;
+    return sendEmail(userEmail, `Reminder: ${isClockIn ? 'clock in for your workday' : 'clock out when you finish'}`, html, {
+        idempotencyKey: `attendance:${organizationId}:${userId}:${localDate}:${type}`,
+        tag: `attendance_${type}_reminder`,
+    });
 }
 
 async function sendManagerTeamReport({
@@ -193,5 +215,6 @@ module.exports = {
     sendTimesheetReminder,
     sendAutoClockOutWarning,
     sendAutoClockedOutNotification,
+    sendClockReminder,
     sendManagerTeamReport,
 };

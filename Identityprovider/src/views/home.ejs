@@ -1600,6 +1600,7 @@
       border: 1px solid var(--border);
       border-left: 3px solid #14b8a6;
       border-radius: 10px;
+      transition: padding 160ms ease, gap 160ms ease;
     }
     .attendance-strip[hidden] { display: none; }
     .attendance-strip__state { display: flex; align-items: center; gap: 11px; min-width: 0; }
@@ -1610,6 +1611,16 @@
     .attendance-strip__hint { margin-top: 2px; color: var(--muted); font-size: 12px; }
     .attendance-strip__time { font: 650 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); letter-spacing: .02em; }
     .attendance-strip__actions { display: flex; align-items: center; gap: 7px; }
+    .attendance-strip__toggle { width: 34px; height: 34px; display: inline-grid; place-items: center; flex: none; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+    .attendance-strip__toggle:hover { color: var(--text); background: var(--hover-bg); }
+    .attendance-strip__toggle svg { width: 16px; height: 16px; transition: transform 160ms ease; }
+    .attendance-strip[data-collapsed="true"] { grid-template-columns: minmax(130px, 1fr) auto auto; max-width: 620px; margin-left: auto; padding: 9px 10px 9px 12px; }
+    .attendance-strip[data-collapsed="true"] .attendance-strip__hint,
+    .attendance-strip[data-collapsed="true"] .attendance-detail { display: none; }
+    .attendance-strip[data-collapsed="true"] .attendance-strip__actions { flex-wrap: nowrap; }
+    .attendance-strip[data-collapsed="true"] .attendance-strip__toggle svg { transform: rotate(180deg); }
+    .attendance-strip[data-reminder="true"] { border-left-color: #d97706; }
+    .attendance-strip[data-reminder="true"] .attendance-strip__hint { color: #d97706; }
     .attendance-action {
       min-height: 34px;
       padding: 0 12px;
@@ -1629,6 +1640,12 @@
     .attendance-detail { color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 650; white-space: nowrap; }
     .attendance-detail:hover { color: var(--text); }
     [data-theme="light"] .attendance-strip { background: #f8f6f1; border-color: #d2cec6; border-left-color: #0f766e; }
+    [data-theme="light"] .attendance-strip[data-reminder="true"] { border-left-color: #b45309; }
+    .app-card-shell { position: relative; min-width: 0; }
+    .app-card-shell > .app-card { height: 100%; }
+    .attendance-card-toggle { position: absolute; right: 18px; bottom: 15px; z-index: 2; padding: 0; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 11px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+    .attendance-card-toggle:hover { color: var(--text); }
+    .attendance-card-toggle[hidden] { display: none; }
 
     @media (max-width: 980px) {
       .app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1664,6 +1681,8 @@
       .attendance-strip { grid-template-columns: 1fr auto; gap: 12px; }
       .attendance-strip__time { text-align: right; }
       .attendance-strip__actions { grid-column: 1 / -1; flex-wrap: wrap; }
+      .attendance-strip[data-collapsed="true"] { grid-template-columns: 1fr auto; max-width: none; }
+      .attendance-strip[data-collapsed="true"] .attendance-strip__actions { grid-column: 1 / -1; }
     }
     @media (max-width: 480px) {
       .hub-page-header { display: block; }
@@ -1998,6 +2017,9 @@
           <button id="attendanceBreak" class="attendance-action" type="button" hidden>Take break</button>
           <button id="attendanceClockOut" class="attendance-action attendance-action--danger" type="button" hidden>Clock out</button>
           <a class="attendance-detail" href="/launch/time-attendance">View details →</a>
+          <button id="attendanceToggle" class="attendance-strip__toggle" type="button" aria-expanded="true" aria-label="Collapse attendance controls" title="Collapse attendance controls">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 12 5-5 5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
         </div>
       </section>
     <% } %>
@@ -2058,6 +2080,7 @@
                 </div>
               </div>
             <% } else { %>
+              <% if (app.appId === 'time-attendance' && attendanceHubEnabled) { %><div class="app-card-shell"><% } %>
               <a href="/launch/<%= app.appId %>" class="card app-card" style="--app-color: <%= app.color || '#6366f1' %>">
                 <div class="app-card__icon"><%- app.iconSvg %></div>
                 <div class="app-card__body">
@@ -2076,6 +2099,9 @@
                   </svg>
                 </div>
               </a>
+              <% if (app.appId === 'time-attendance' && attendanceHubEnabled) { %>
+                <button id="attendanceCardToggle" class="attendance-card-toggle" type="button" hidden>Show attendance controls</button>
+              </div><% } %>
             <% } %>
           <% }) %>
           </div>
@@ -2491,13 +2517,52 @@
       const clockIn = document.getElementById('attendanceClockIn');
       const breakButton = document.getElementById('attendanceBreak');
       const clockOut = document.getElementById('attendanceClockOut');
+      const toggle = document.getElementById('attendanceToggle');
+      const cardToggle = document.getElementById('attendanceCardToggle');
       if (!strip) return;
 
+      const COLLAPSE_KEY = 'seemplify:attendance-widget:collapsed';
       let credentials = null;
       let currentStatus = null;
       let statusReceivedAt = Date.now();
       let streamController = null;
       let reconnectTimer = null;
+
+      function setCollapsed(collapsed, persist = true) {
+        strip.dataset.collapsed = String(Boolean(collapsed));
+        toggle?.setAttribute('aria-expanded', String(!collapsed));
+        if (toggle) {
+          const instruction = collapsed ? 'Expand attendance controls' : 'Collapse attendance controls';
+          toggle.setAttribute('aria-label', instruction);
+          toggle.title = instruction;
+        }
+        if (cardToggle) cardToggle.hidden = !collapsed;
+        if (persist) localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0');
+      }
+
+      function timeParts(timeZone) {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: timeZone || 'UTC', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+        }).formatToParts(new Date());
+        return Object.fromEntries(parts.map(part => [part.type, part.value]));
+      }
+
+      function scheduledReminder() {
+        const policy = currentStatus?.policy;
+        if (!policy?.shiftStart || !policy?.shiftEnd) return null;
+        const now = timeParts(policy.timezone);
+        const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+        if (!policy.workDays?.includes(dayMap[now.weekday])) return null;
+        const minute = Number(now.hour) * 60 + Number(now.minute);
+        const parse = value => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+        if (policy.clockInReminder !== false && !currentStatus.isClockedIn && minute >= parse(policy.shiftStart) + Number(policy.clockInReminderMinutesAfter ?? 15) && minute < parse(policy.shiftEnd)) {
+          return `Your workday started at ${policy.shiftStart}. Remember to clock in.`;
+        }
+        if (policy.clockOutReminder !== false && currentStatus.isClockedIn && !currentStatus.isOnBreak && minute >= parse(policy.shiftEnd) + Number(policy.clockOutReminderMinutesAfter ?? 0)) {
+          return `Your scheduled day ended at ${policy.shiftEnd}. Clock out when you finish.`;
+        }
+        return null;
+      }
 
       const formatSeconds = (total) => {
         const safe = Math.max(0, Math.floor(total));
@@ -2512,11 +2577,13 @@
         const working = currentStatus.isClockedIn && !currentStatus.isOnBreak;
         strip.dataset.state = currentStatus.isOnBreak ? 'break' : working ? 'working' : 'idle';
         label.textContent = currentStatus.isOnBreak ? 'On break' : working ? 'Clocked in' : 'Not clocked in';
-        hint.textContent = currentStatus.isOnBreak
+        const reminder = scheduledReminder();
+        strip.dataset.reminder = String(Boolean(reminder));
+        hint.textContent = reminder || (currentStatus.isOnBreak
           ? 'Resume when you are ready.'
           : working
             ? 'Live from Time & Attendance.'
-            : 'Clock-in is explicit; signing in does not start time.';
+            : 'Clock-in is explicit; signing in does not start time.');
         clockIn.hidden = currentStatus.isClockedIn;
         breakButton.hidden = !currentStatus.isClockedIn;
         clockOut.hidden = !currentStatus.isClockedIn;
@@ -2619,6 +2686,13 @@
       clockIn.addEventListener('click', () => act('/clock/in', true));
       breakButton.addEventListener('click', () => act(currentStatus?.isOnBreak ? '/clock/break/end' : '/clock/break/start'));
       clockOut.addEventListener('click', () => act('/clock/out', true));
+      toggle?.addEventListener('click', () => setCollapsed(strip.dataset.collapsed !== 'true'));
+      cardToggle?.addEventListener('click', () => {
+        setCollapsed(false);
+        strip.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        toggle?.focus({ preventScroll: true });
+      });
+      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1', false);
       setInterval(tick, 1000);
       setInterval(async () => { credentials = null; await connectStream(); }, 90000);
       refreshStatus().then(connectStream).catch(error => {

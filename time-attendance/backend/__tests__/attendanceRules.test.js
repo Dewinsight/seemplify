@@ -2,10 +2,11 @@ const { evaluateClockIn, buildPolicySummary } = require('../services/attendanceR
 
 const policy = {
     timezone: 'Europe/London',
-    workSchedule: { workDays: [1, 2, 3, 4, 5], defaultShift: { startTime: '09:00' } },
+    workSchedule: { workDays: [1, 2, 3, 4, 5], defaultShift: { startTime: '09:00', endTime: '17:00' } },
     clockSettings: { enforceClockInWindow: true, earliestClockInMinutes: 30, latestClockInMinutes: 60, nonWorkingDayClockIn: 'block' },
     geofencing: { enabled: true, enforced: true },
     breakRules: { requiredAfterMinutes: 360, minimumBreakMinutes: 20 },
+    notifications: { clockInReminder: true, clockInReminderMinutesAfter: 20, clockOutReminder: true, clockOutReminderMinutesAfter: 10 },
 };
 
 test('clock-in rules evaluate the organization timezone and location requirement', () => {
@@ -15,5 +16,15 @@ test('clock-in rules evaluate the organization timezone and location requirement
 });
 
 test('policy summary makes explicit clock-in behavior clear', () => {
-    expect(buildPolicySummary(policy)).toMatchObject({ explicitClockInRequired: true, autoClockOnLogin: false, locationRequired: true, timezone: 'Europe/London' });
+    expect(buildPolicySummary(policy)).toMatchObject({
+        explicitClockInRequired: true,
+        autoClockOnLogin: false,
+        locationRequired: true,
+        timezone: 'Europe/London',
+        workDays: [1, 2, 3, 4, 5],
+        shiftStart: '09:00',
+        shiftEnd: '17:00',
+        clockInReminderMinutesAfter: 20,
+        clockOutReminderMinutesAfter: 10,
+    });
 });

@@ -14,6 +14,7 @@ const { startAutoClockOutScheduler } = require('./services/autoClockOutService')
 const { initializeEmailService } = require('./services/emailService');
 const { startReminderScheduler } = require('./services/reminderService');
 const { startManagerReportScheduler } = require('./services/managerReportService');
+const { startClockReminderScheduler } = require('./services/clockReminderService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -121,6 +122,8 @@ const startServer = async () => {
             
             // Start reminder scheduler
             startReminderScheduler();
+
+            startClockReminderScheduler();
 
             // Start manager report scheduler
             startManagerReportScheduler();
