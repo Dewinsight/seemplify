@@ -47,6 +47,17 @@ export const HubApp = mongoose.model('HubApp', HubAppSchema)
 // Seed default apps if none exist, or update existing apps with current env vars
 export async function seedDefaultApps() {
   const isProduction = process.env.NODE_ENV === 'production'
+  const productionSafeUrl = (value, fallback) => {
+    const configured = String(value || '').trim()
+    if (!configured) return fallback
+    try {
+      const hostname = new URL(configured).hostname.toLowerCase()
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return fallback
+    } catch {
+      return fallback
+    }
+    return configured
+  }
   const frontendUrl = process.env.SMARTHR_URL || 'http://localhost:5000'
   // NOTE: Hub app URLs should always point to the FRONTEND (not API).
   // Keep backward compatibility with existing env var naming.
@@ -55,11 +66,13 @@ export async function seedDefaultApps() {
     process.env.LEAVE_MANAGEMENT_FRONTEND_URL ||
     'http://localhost:5003'
   const performanceManagementUrl =
-    process.env.PERFORMANCE_MANAGEMENT_URL ||
-    (isProduction ? 'https://performance.seemplifyai.com' : 'http://localhost:5005')
+    isProduction
+      ? productionSafeUrl(process.env.PERFORMANCE_MANAGEMENT_URL, 'https://performance.seemplifyai.com')
+      : process.env.PERFORMANCE_MANAGEMENT_URL || 'http://localhost:5005'
   const payrollManagementUrl =
-    process.env.PAYROLL_MANAGEMENT_URL ||
-    (isProduction ? 'https://payroll.seemplifyai.com' : 'http://localhost:5007')
+    isProduction
+      ? productionSafeUrl(process.env.PAYROLL_MANAGEMENT_URL, 'https://payroll.seemplifyai.com')
+      : process.env.PAYROLL_MANAGEMENT_URL || 'http://localhost:5007'
 
   const defaultApps = [
     {

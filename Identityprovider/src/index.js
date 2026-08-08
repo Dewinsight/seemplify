@@ -657,6 +657,17 @@ function getIdpBrand(req) {
 
 // Production environment detection
 const isProduction = process.env.NODE_ENV === 'production'
+const getProductionSafeUrl = (value, fallback) => {
+  const configured = String(value || '').trim()
+  if (!configured) return fallback
+  try {
+    const hostname = new URL(configured).hostname.toLowerCase()
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return fallback
+  } catch {
+    return fallback
+  }
+  return configured
+}
 
 // Load clients configuration
 const clientsConfigPath = process.env.CLIENTS_CONFIG || join(__dirname, '../clients.json')
@@ -4312,12 +4323,14 @@ app.get('/launch/:appId', async (req, res) => {
         apiUrl = process.env.LEAVE_MANAGEMENT_API_URL || 'http://localhost:5002'
         break
       case 'performance-management':
-        apiUrl = process.env.PERFORMANCE_MANAGEMENT_API_URL ||
-          (isProduction ? 'https://api-performance.seemplifyai.com' : 'http://localhost:5004')
+        apiUrl = isProduction
+          ? getProductionSafeUrl(process.env.PERFORMANCE_MANAGEMENT_API_URL, 'https://api-performance.seemplifyai.com')
+          : process.env.PERFORMANCE_MANAGEMENT_API_URL || 'http://localhost:5004'
         break
       case 'payroll-management':
-        apiUrl = process.env.PAYROLL_MANAGEMENT_API_URL ||
-          (isProduction ? 'https://api-payroll.seemplifyai.com' : 'http://localhost:5006')
+        apiUrl = isProduction
+          ? getProductionSafeUrl(process.env.PAYROLL_MANAGEMENT_API_URL, 'https://api-payroll.seemplifyai.com')
+          : process.env.PAYROLL_MANAGEMENT_API_URL || 'http://localhost:5006'
         break
       case 'time-attendance':
         apiUrl = process.env.TIME_ATTENDANCE_API_URL || 'https://api-time.seemplifyai.com'

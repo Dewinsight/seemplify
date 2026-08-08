@@ -6,6 +6,18 @@
 // Determine environment from NODE_ENV
 const isProduction = process.env.NODE_ENV === 'production'
 
+function productionSafeUrl(value, fallback) {
+  const configured = String(value || '').trim()
+  if (!configured) return fallback
+  try {
+    const hostname = new URL(configured).hostname.toLowerCase()
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') return fallback
+  } catch {
+    return fallback
+  }
+  return configured
+}
+
 // Development apps configuration
 const developmentApps = [
   {
@@ -204,8 +216,8 @@ const productionApps = [
     description: 'AI-powered OKRs, reviews, and continuous feedback',
     icon: 'chart-bar',
     color: '#8b5cf6',
-    url: process.env.PERFORMANCE_MANAGEMENT_URL || 'https://performance.seemplifyai.com',
-    apiUrl: process.env.PERFORMANCE_MANAGEMENT_API_URL || 'https://api-performance.seemplifyai.com',
+    url: productionSafeUrl(process.env.PERFORMANCE_MANAGEMENT_URL, 'https://performance.seemplifyai.com'),
+    apiUrl: productionSafeUrl(process.env.PERFORMANCE_MANAGEMENT_API_URL, 'https://api-performance.seemplifyai.com'),
     clientId: 'performance-management',
     isActive: true,
     isPublic: true,
@@ -220,8 +232,8 @@ const productionApps = [
     description: 'Salary processing, bonuses, and compensation management',
     icon: 'currency-dollar',
     color: '#f59e0b',
-    url: process.env.PAYROLL_MANAGEMENT_URL || 'https://payroll.seemplifyai.com',
-    apiUrl: process.env.PAYROLL_MANAGEMENT_API_URL || 'https://api-payroll.seemplifyai.com',
+    url: productionSafeUrl(process.env.PAYROLL_MANAGEMENT_URL, 'https://payroll.seemplifyai.com'),
+    apiUrl: productionSafeUrl(process.env.PAYROLL_MANAGEMENT_API_URL, 'https://api-payroll.seemplifyai.com'),
     clientId: 'payroll-management',
     isActive: true,
     isPublic: true,
