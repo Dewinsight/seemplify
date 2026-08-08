@@ -8,7 +8,7 @@ import { useAdmin } from "@/context/AdminContext";
 import { apiRequest } from "@/services/apiConfig";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
@@ -128,21 +128,38 @@ export default function AiRuntimePage() {
   const chatgptHealthy = gateway?.chatgpt?.reachable === true;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
-      <AdminSidebar />
-      <div className="lg:pl-64">
-        <AdminHeader />
-        <main className="mx-auto max-w-7xl px-5 py-6 sm:px-7">
+    <div className="flex h-screen overflow-hidden bg-gray-950 text-gray-100">
+      <div className="hidden lg:flex">
+        <AdminSidebar />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <AdminHeader>
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-gray-300 hover:bg-gray-700 hover:text-white lg:hidden"
+                aria-label="Open admin navigation"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-64 border-gray-700 bg-gray-800 p-0 sm:max-w-64">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Admin navigation</SheetTitle>
+                <SheetDescription>Navigate the admin portal</SheetDescription>
+              </SheetHeader>
+              <AdminSidebar />
+            </SheetContent>
+          </Sheet>
+        </AdminHeader>
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-7xl px-5 py-6 sm:px-7">
           <div className="mb-6 flex items-start justify-between gap-4 border-b border-gray-800 pb-5">
-            <div className="flex items-start gap-3">
-              <Sheet>
-                <SheetTrigger asChild><Button variant="outline" size="icon" className="lg:hidden"><Menu className="h-4 w-4" /></Button></SheetTrigger>
-                <SheetContent side="left" className="w-64 border-gray-800 bg-gray-950 p-0"><AdminSidebar /></SheetContent>
-              </Sheet>
-              <div>
-                <h1 className="text-xl font-semibold text-white">AI runtimes</h1>
-                <p className="mt-1 text-sm text-gray-400">Control platform availability, the workspace default, and per-user choice.</p>
-              </div>
+            <div>
+              <h1 className="text-xl font-semibold text-white">AI runtimes</h1>
+              <p className="mt-1 text-sm text-gray-400">Control platform availability, the workspace default, and per-user choice.</p>
             </div>
             <Button variant="outline" onClick={() => void load()} disabled={loading} className="border-gray-700 bg-transparent">
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />Refresh
@@ -232,6 +249,7 @@ export default function AiRuntimePage() {
               </Table>
             </div>
           </section>
+          </div>
         </main>
       </div>
     </div>
