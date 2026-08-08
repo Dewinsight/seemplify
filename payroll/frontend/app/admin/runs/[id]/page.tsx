@@ -62,6 +62,13 @@ type PayrollRun = {
     payslipId?: string;
     errorMessage?: string;
   }>;
+  workInputs?: Array<{
+    userId: string;
+    employeeName?: string;
+    regularHours?: number;
+    daysWorked?: number;
+    notes?: string;
+  }>;
   errors?: Array<{
     userId?: string;
     employeeName?: string;
@@ -83,6 +90,7 @@ type Payslip = {
   userId: string;
   currency: string;
   employeeSnapshot?: { name?: string; department?: string; designation?: string };
+  calculationBasis?: { payBasis?: string; rate?: number; units?: number; unitLabel?: string };
   earningsSummary?: { grossPay?: Money };
   deductionsSummary?: { totalDeductions?: Money };
   taxBreakdown?: { taxAmount?: Money };
@@ -120,6 +128,7 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
   const [run, setRun] = useState<PayrollRun | null>(null);
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [currentOrgRole, setCurrentOrgRole] = useState('');
+  const [workInputDrafts, setWorkInputDrafts] = useState<PayrollRun['workInputs']>([]);
 
   const refresh = async () => {
     setError(null);
@@ -127,6 +136,7 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
       const res = await api.get(`/payroll/runs/${runId}/payslips`);
       setRun(res.data?.run);
       setPayslips(Array.isArray(res.data?.payslips) ? res.data.payslips : []);
+      setWorkInputDrafts(Array.isArray(res.data?.run?.workInputs) ? res.data.run.workInputs : []);
     } catch (err: any) {
       setError(err?.response?.data?.error || err?.message || 'Failed to load payroll run');
     }
@@ -220,6 +230,21 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
       await refresh();
     } catch (err: any) {
       alert(err?.response?.data?.error || err?.message || 'Failed to recalculate run');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveWorkInputs = async () => {
+    setBusy('work-inputs');
+    try {
+      await api.put(`/payroll/runs/${runId}/work-inputs`, {
+        workInputs: workInputDrafts,
+        comments: 'Period work records updated during payroll review',
+      });
+      await refresh();
+    } catch (err: any) {
+      alert(err?.response?.data?.error || err?.message || 'Failed to update period work records');
     } finally {
       setBusy(null);
     }
@@ -543,6 +568,21 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
         )}
 
         {/* Exceptions */}
+        {(workInputDrafts?.length || 0) > 0 && (
+          <section className="border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between gap-4">
+              <div><h2 className="font-semibold text-zinc-100">Period work records</h2><p className="text-sm text-zinc-500 mt-0.5">Hours and days used to calculate variable-paid workers.</p></div>
+              {canRecalculate && <button onClick={saveWorkInputs} disabled={busy === 'work-inputs'} className="px-3 py-2 rounded-md bg-zinc-100 text-zinc-950 text-sm font-medium disabled:opacity-50">{busy === 'work-inputs' ? 'Recalculating…' : 'Save & recalculate'}</button>}
+            </div>
+            <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-zinc-500"><tr><th className="px-5 py-3 font-medium">Worker</th><th className="px-4 py-3 font-medium">Pay basis</th><th className="px-4 py-3 font-medium">Period units</th><th className="px-5 py-3 font-medium">Review note</th></tr></thead>
+              <tbody className="divide-y divide-zinc-800">{workInputDrafts?.map((input, index) => {
+                const slip = payslips.find(item => item.userId === input.userId);
+                const basis = slip?.calculationBasis?.payBasis || (input.regularHours ? 'hourly' : input.daysWorked ? 'daily' : 'fixed_contract');
+                return <tr key={input.userId}><td className="px-5 py-3 text-zinc-200">{input.employeeName || slip?.employeeSnapshot?.name || 'Worker'}</td><td className="px-4 py-3 text-zinc-400 capitalize">{basis.replace('_', ' ')}</td><td className="px-4 py-3">{basis === 'fixed_contract' ? <span className="text-zinc-500">From contract terms</span> : <input type="number" min="0" step={basis === 'hourly' ? '0.25' : '0.5'} disabled={!canRecalculate} value={basis === 'hourly' ? input.regularHours || '' : input.daysWorked || ''} onChange={(e) => setWorkInputDrafts(current => (current || []).map((item, itemIndex) => itemIndex === index ? { ...item, [basis === 'hourly' ? 'regularHours' : 'daysWorked']: Number(e.target.value) } : item))} className="w-28 bg-zinc-950 border border-zinc-700 rounded-md px-2.5 py-2 text-zinc-200 disabled:opacity-60" />}</td><td className="px-5 py-3"><input type="text" disabled={!canRecalculate} value={input.notes || ''} onChange={(e) => setWorkInputDrafts(current => (current || []).map((item, itemIndex) => itemIndex === index ? { ...item, notes: e.target.value } : item))} className="w-full min-w-52 bg-zinc-950 border border-zinc-700 rounded-md px-2.5 py-2 text-zinc-200 disabled:opacity-60" /></td></tr>;
+              })}</tbody></table></div>
+          </section>
+        )}
+
         {exceptionEmployees.length > 0 && (
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6">
             <h2 className="text-lg font-semibold text-zinc-100 mb-4">Exceptions</h2>

@@ -9,6 +9,7 @@ const PayrollEngineService = require('../services/PayrollEngineService');
 const taxService = require('../services/TaxCalculationService');
 const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
 const { createPayslipPdf } = require('../services/payslipPdfService');
+const { hasPayConfiguration } = require('../services/contractPayService');
 const payrollEngineService = new PayrollEngineService();
 
 // Import RBAC middleware
@@ -372,13 +373,13 @@ function normalizeTaxValidationPayload(input = {}) {
   };
 }
 
-function normalizePayrollFlagsPayload(input, basicSalary, existingFlags = {}) {
+function normalizePayrollFlagsPayload(input, basicSalary, existingFlags = {}, workTerms = {}) {
   const merged = {
     ...(existingFlags || {}),
     ...(input || {}),
   };
 
-  if (!(Number(basicSalary || 0) > 0)) {
+  if (!hasPayConfiguration({ basicSalary, workTerms })) {
     merged.includeInNextRun = false;
     merged.requiresReview = true;
     if (!String(merged.reviewReason || '').trim()) {
@@ -467,6 +468,7 @@ router.get('/profile/me', requireAuth, async (req, res) => {
       id: profile._id,
       employeeInfo: profile.employeeInfo,
       basicSalary: profile.basicSalary,
+      workTerms: profile.workTerms,
       currency: profile.currency,
       salaryGrade: profile.salaryGrade,
       allowances: profile.allowances,
@@ -545,7 +547,7 @@ router.get('/dashboard-stats', requireAuth, async (req, res) => {
       nextPayday: nextPayday?.toISOString().split('T')[0] || null,
       currency: profile?.currency || 'USD',
       profileStatus: profile?.status || 'pending_setup',
-      hasProfile: !!profile && profile.basicSalary > 0
+      hasProfile: !!profile && hasPayConfiguration(profile)
     });
   } catch (err) {
     console.error('Get Dashboard Stats Error:', err);
@@ -568,14 +570,14 @@ router.get('/admin/overview', requireHRAdmin, async (req, res) => {
       pendingRuns,
       latestRun
     ] = await Promise.all([
-      PayrollProfile.find({ organizationId, isActive: true }, { userId: 1, basicSalary: 1 }).lean(),
+      PayrollProfile.find({ organizationId, isActive: true }, { userId: 1, basicSalary: 1, workTerms: 1 }).lean(),
       CompensationRequest.countDocuments({ organizationId, status: { $in: ['pending', 'approved_l1'] } }),
       PayrollRun.countDocuments({ organizationId, status: { $in: ['pending_review', 'pending_approval'] } }),
       PayrollRun.getLatestByOrganization(organizationId).lean()
     ]);
 
     let activeEmployees = activeProfiles.length;
-    let profilesNeedingSetup = activeProfiles.filter((p) => Number(p.basicSalary || 0) <= 0).length;
+    let profilesNeedingSetup = activeProfiles.filter((p) => !hasPayConfiguration(p)).length;
 
     const idpSync = {
       source: 'payroll_profiles',
@@ -609,7 +611,7 @@ router.get('/admin/overview', requireHRAdmin, async (req, res) => {
               missingProfiles += 1;
               continue;
             }
-            if (Number(profile.basicSalary || 0) <= 0) {
+            if (!hasPayConfiguration(profile)) {
               incompleteProfiles += 1;
             }
           }
@@ -1063,6 +1065,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       basicSalary,
       currency,
       payFrequency,
+      workTerms,
       employeeInfo,
       allowances,
       recurringDeductions,
@@ -1120,6 +1123,10 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     // Update other fields
     if (currency !== undefined) profile.currency = currency;
     if (payFrequency !== undefined) profile.payFrequency = payFrequency;
+    if (workTerms !== undefined) {
+      const existingWorkTerms = profile.workTerms?.toObject?.() || profile.workTerms || {};
+      profile.workTerms = { ...existingWorkTerms, ...(workTerms || {}) };
+    }
     if (employeeInfo !== undefined) {
       profile.employeeInfo = { ...(profile.employeeInfo || {}), ...(employeeInfo || {}) };
     }
@@ -1140,7 +1147,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (syncedMember) {
       applyPayrollSyncFromMember(profile, syncedMember);
     }
-    profile.payrollFlags = normalizePayrollFlagsPayload(payrollFlags, profile.basicSalary, profile.payrollFlags);
+    profile.payrollFlags = normalizePayrollFlagsPayload(payrollFlags, profile.basicSalary, profile.payrollFlags, profile.workTerms);
 
     profile.lastModifiedBy = adminId;
     await profile.save();
@@ -1170,6 +1177,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       basicSalary,
       currency,
       payFrequency,
+      workTerms,
       employeeInfo,
       allowances,
       recurringDeductions,
@@ -1197,6 +1205,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       basicSalary: normalizedBasicSalary,
       currency: currency || 'USD',
       payFrequency: payFrequency || 'monthly',
+      workTerms: workTerms || {},
       employeeInfo: employeeInfo || {},
       allowances: allowances || [],
       recurringDeductions: recurringDeductions || [],
@@ -1204,7 +1213,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       taxConfig: normalizedTaxConfig || {},
       statutoryContributions: statutoryContributions || {},
       bankAccounts: bankAccounts || [],
-      payrollFlags: normalizePayrollFlagsPayload(payrollFlags, normalizedBasicSalary, {}),
+      payrollFlags: normalizePayrollFlagsPayload(payrollFlags, normalizedBasicSalary, {}, workTerms || {}),
       status: status || 'active',
       isActive: isActive !== undefined ? !!isActive : true,
       notes,
@@ -1275,7 +1284,7 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
     if (existing) {
       existing.userId = resolvedUserId;
       applyPayrollSyncFromMember(existing, member);
-      existing.payrollFlags = normalizePayrollFlagsPayload(undefined, existing.basicSalary, existing.payrollFlags);
+      existing.payrollFlags = normalizePayrollFlagsPayload(undefined, existing.basicSalary, existing.payrollFlags, existing.workTerms);
       await existing.save();
       return res.json({ success: true, profile: existing, existed: true });
     }
@@ -1522,7 +1531,7 @@ router.get('/runs/:id', requireHRAdmin, async (req, res) => {
 router.post('/runs', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
-    const { month, year, settings = {}, paymentDate } = req.body;
+    const { month, year, settings = {}, paymentDate, workInputs = [] } = req.body;
 
     // Validate month/year
     if (!month || !year) {
@@ -1565,6 +1574,15 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
         prorate: settings.prorate !== false,
         ...settings
       },
+      workInputs: (Array.isArray(workInputs) ? workInputs : []).map(input => ({
+        userId: String(input?.userId || '').trim(),
+        employeeName: String(input?.employeeName || '').trim(),
+        regularHours: Math.max(0, toNumber(input?.regularHours)),
+        daysWorked: Math.max(0, toNumber(input?.daysWorked)),
+        notes: String(input?.notes || '').trim(),
+        enteredBy: adminId,
+        enteredAt: new Date(),
+      })).filter(input => input.userId),
       createdBy: adminId,
       createdByName: adminName
     });
@@ -1646,6 +1664,40 @@ router.post('/runs/:id/recalculate', requireHRAdmin, async (req, res) => {
   } catch (err) {
     console.error('Recalculate Run Error:', err);
     res.status(500).json({ error: 'Failed to recalculate payroll run', details: err.message });
+  }
+});
+
+/**
+ * PUT /api/payroll/runs/:id/work-inputs
+ * Revise period work records and immediately recalculate draft payroll.
+ */
+router.put('/runs/:id/work-inputs', requireHRAdmin, async (req, res) => {
+  try {
+    const { organizationId, userId: adminId, name: adminName, role } = getUserInfo(req);
+    const run = await PayrollRun.findOne({ _id: req.params.id, organizationId });
+    if (!run) return res.status(404).json({ error: 'Payroll run not found' });
+    if (!['calculated', 'pending_review'].includes(run.status)) {
+      return res.status(400).json({ error: `Work inputs cannot be changed while run is ${run.status}` });
+    }
+
+    const workInputs = Array.isArray(req.body?.workInputs) ? req.body.workInputs : [];
+    run.workInputs = workInputs.map(input => ({
+      userId: String(input?.userId || '').trim(),
+      employeeName: String(input?.employeeName || '').trim(),
+      regularHours: Math.max(0, toNumber(input?.regularHours)),
+      daysWorked: Math.max(0, toNumber(input?.daysWorked)),
+      notes: String(input?.notes || '').trim(),
+      enteredBy: adminId,
+      enteredAt: new Date(),
+    })).filter(input => input.userId);
+    run.addApproval('revised', adminId, adminName, role, req.body?.comments || 'Period work records revised');
+    await run.save();
+
+    const result = await payrollEngineService.calculateRun(run._id, organizationId);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('Update Work Inputs Error:', err);
+    res.status(500).json({ error: 'Failed to update period work records', details: err.message });
   }
 });
 

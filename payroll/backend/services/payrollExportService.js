@@ -15,6 +15,7 @@ const BONUS_AND_COMMISSION_TYPES = new Set([
 ]);
 
 const REIMBURSEMENT_TYPES = new Set(['reimbursement']);
+const ExcelJS = require('exceljs');
 
 const OTHER_EARNING_EXCLUDED_TYPES = new Set([
   'basic',
@@ -68,6 +69,13 @@ const COLUMN_DEFINITIONS = [
   { key: 'team', header: 'Team' },
   { key: 'designation', header: 'Designation' },
   { key: 'employmentType', header: 'Employment Type' },
+  { key: 'payBasis', header: 'Pay Basis' },
+  { key: 'payRate', header: 'Pay Rate' },
+  { key: 'workUnits', header: 'Work Units' },
+  { key: 'workUnitLabel', header: 'Work Unit' },
+  { key: 'contractReference', header: 'Contract Reference' },
+  { key: 'contractStartDate', header: 'Contract Start' },
+  { key: 'contractEndDate', header: 'Contract End' },
   { key: 'costCenter', header: 'Cost Center' },
   { key: 'workLocation', header: 'Work Location' },
   { key: 'managerName', header: 'Manager Name' },
@@ -122,6 +130,8 @@ const COLUMN_DEFINITIONS = [
 ];
 
 const NUMERIC_COLUMNS = [
+  'payRate',
+  'workUnits',
   'basicSalary',
   'allowances',
   'overtime',
@@ -361,6 +371,13 @@ function buildDetailRow(payslip, run, profile) {
     team: employeeSnapshot.teamName || employeeInfo.teamName || '',
     designation: employeeSnapshot.designation || employeeInfo.designation || '',
     employmentType: employeeSnapshot.employmentType || employeeInfo.employmentType || '',
+    payBasis: payslip?.calculationBasis?.payBasis || profile?.workTerms?.payBasis || 'salary',
+    payRate: roundMoney(payslip?.calculationBasis?.rate),
+    workUnits: roundMoney(payslip?.calculationBasis?.units),
+    workUnitLabel: payslip?.calculationBasis?.unitLabel || '',
+    contractReference: payslip?.calculationBasis?.contractReference || profile?.workTerms?.contractReference || '',
+    contractStartDate: formatDateOnly(payslip?.calculationBasis?.contractStartDate || profile?.workTerms?.contractStartDate),
+    contractEndDate: formatDateOnly(payslip?.calculationBasis?.contractEndDate || profile?.workTerms?.contractEndDate),
     costCenter: employeeSnapshot.costCenter || employeeInfo.costCenter || '',
     workLocation: employeeSnapshot.location || employeeInfo.workLocation || '',
     managerName: employeeSnapshot.managerName || employeeInfo.managerName || '',
@@ -437,6 +454,11 @@ function buildControlRow(currency, totals) {
     team: '',
     designation: '',
     employmentType: '',
+    payBasis: '',
+    workUnitLabel: '',
+    contractReference: '',
+    contractStartDate: '',
+    contractEndDate: '',
     costCenter: '',
     workLocation: '',
     managerName: '',
@@ -522,6 +544,61 @@ function buildPayrollRegisterCsv({ payslips = [], runById = new Map(), profileBy
   };
 }
 
+async function buildPayrollRegisterWorkbook({ payslips = [], runById = new Map(), profileByUserId = new Map() }) {
+  const detailRows = payslips.map((payslip) => buildDetailRow(
+    payslip,
+    runById.get(mapKey(payslip?.payrollRunId)) || null,
+    profileByUserId.get(mapKey(payslip?.userId)) || null
+  ));
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Seemplify Payroll';
+  workbook.created = new Date();
+  const registerRows = detailRows.map(row => Object.fromEntries(
+    COLUMN_DEFINITIONS.map(({ key, header }) => [header, row[key] ?? ''])
+  ));
+  const registerSheet = workbook.addWorksheet('Payroll register', { views: [{ state: 'frozen', ySplit: 1 }] });
+  registerSheet.columns = COLUMN_DEFINITIONS.map(({ header }) => ({ header, key: header, width: Math.min(34, Math.max(12, header.length + 2)) }));
+  registerSheet.addRows(registerRows);
+  registerSheet.autoFilter = { from: 'A1', to: { row: 1, column: COLUMN_DEFINITIONS.length } };
+  registerSheet.getRow(1).font = { bold: true };
+
+  const summaries = new Map();
+  detailRows.forEach(row => {
+    const key = `${row.periodLabel}|${row.currency}`;
+    const current = summaries.get(key) || {
+      Period: row.periodLabel,
+      Currency: row.currency,
+      Employees: 0,
+      'Gross pay': 0,
+      Deductions: 0,
+      'Net pay': 0,
+      Tax: 0,
+      'Employer contributions': 0,
+    };
+    current.Employees += 1;
+    current['Gross pay'] = roundMoney(current['Gross pay'] + row.grossPay);
+    current.Deductions = roundMoney(current.Deductions + row.totalDeductions);
+    current['Net pay'] = roundMoney(current['Net pay'] + row.netPay);
+    current.Tax = roundMoney(current.Tax + row.incomeTax);
+    current['Employer contributions'] = roundMoney(current['Employer contributions'] + row.totalEmployerContributions);
+    summaries.set(key, current);
+  });
+  const summaryRows = Array.from(summaries.values());
+  const summarySheet = workbook.addWorksheet('Period summary', { views: [{ state: 'frozen', ySplit: 1 }] });
+  const summaryHeaders = ['Period', 'Currency', 'Employees', 'Gross pay', 'Deductions', 'Net pay', 'Tax', 'Employer contributions'];
+  summarySheet.columns = summaryHeaders.map(header => ({ header, key: header, width: Math.max(14, header.length + 2) }));
+  summarySheet.addRows(summaryRows);
+  summarySheet.getRow(1).font = { bold: true };
+
+  const contractRows = registerRows.filter(row => row['Employment Type'] === 'contract' || row['Pay Basis'] !== 'salary');
+  const contractSheet = workbook.addWorksheet('Contract work', { views: [{ state: 'frozen', ySplit: 1 }] });
+  contractSheet.columns = COLUMN_DEFINITIONS.map(({ header }) => ({ header, key: header, width: Math.min(34, Math.max(12, header.length + 2)) }));
+  contractSheet.addRows(contractRows);
+  contractSheet.getRow(1).font = { bold: true };
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 module.exports = {
   buildPayrollRegisterCsv,
+  buildPayrollRegisterWorkbook,
 };

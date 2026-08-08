@@ -4,7 +4,7 @@ const router = express.Router();
 const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
-const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
+const { buildPayrollRegisterCsv, buildPayrollRegisterWorkbook } = require('../services/payrollExportService');
 
 // RBAC
 const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
@@ -34,14 +34,16 @@ const sumByType = (items, type) => (items || [])
 router.get('/summary', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    const { year = new Date().getFullYear() } = req.query;
+    const { year = new Date().getFullYear(), month } = req.query;
     const y = parseInt(year);
 
-    const payslips = await Payslip.find({
+    const payslipQuery = {
       organizationId,
       'payPeriod.year': y,
       status: { $in: APPROVED_PAYSLIP_STATUSES },
-    }).lean();
+    };
+    if (month) payslipQuery['payPeriod.month'] = parseInt(month);
+    const payslips = await Payslip.find(payslipQuery).lean();
 
     const profiles = await PayrollProfile.find({
       organizationId,
@@ -60,14 +62,15 @@ router.get('/summary', requireHRAdmin, async (req, res) => {
     const deptMap = new Map();
     payslips.forEach(p => {
       const dept = p.employeeSnapshot?.department || 'Unassigned';
-      const current = deptMap.get(dept) || { total: 0, count: 0 };
+      const currency = p.currency || 'USD';
+      const key = `${dept}|${currency}`;
+      const current = deptMap.get(key) || { department: dept, currency, total: 0, count: 0 };
       current.total += Number(p.netPay) || 0;
       current.count += 1;
-      deptMap.set(dept, current);
+      deptMap.set(key, current);
     });
 
-    const byDepartment = Array.from(deptMap.entries())
-      .map(([department, data]) => ({ department, ...data }))
+    const byDepartment = Array.from(deptMap.values())
       .sort((a, b) => b.total - a.total);
 
     // Group by month
@@ -76,28 +79,63 @@ router.get('/summary', requireHRAdmin, async (req, res) => {
       const monthNum = p.payPeriod?.month;
       if (!monthNum) return;
       const monthName = new Date(y, monthNum - 1, 1).toLocaleString('default', { month: 'short' });
-      const current = monthMap.get(monthNum) || { month: monthName, gross: 0, net: 0, deductions: 0 };
+      const currency = p.currency || 'USD';
+      const key = `${monthNum}|${currency}`;
+      const current = monthMap.get(key) || { monthNum, month: monthName, currency, gross: 0, net: 0, deductions: 0 };
       current.gross += Number(p.earningsSummary?.grossPay) || 0;
       current.net += Number(p.netPay) || 0;
       current.deductions += Number(p.deductionsSummary?.totalDeductions) || 0;
-      monthMap.set(monthNum, current);
+      monthMap.set(key, current);
     });
 
-    const byMonth = Array.from(monthMap.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([, v]) => v);
+    const byMonth = Array.from(monthMap.values()).sort((a, b) => a.monthNum - b.monthNum || a.currency.localeCompare(b.currency));
 
+    const employmentMap = new Map();
+    payslips.forEach(p => {
+      const employmentType = p.employeeSnapshot?.employmentType || 'unassigned';
+      const currency = p.currency || 'USD';
+      const key = `${employmentType}|${currency}`;
+      const current = employmentMap.get(key) || { employmentType, currency, people: new Set(), gross: 0, net: 0 };
+      current.people.add(String(p.userId));
+      current.gross += Number(p.earningsSummary?.grossPay) || 0;
+      current.net += Number(p.netPay) || 0;
+      employmentMap.set(key, current);
+    });
+    const byEmploymentType = Array.from(employmentMap.values()).map(item => ({
+      employmentType: item.employmentType,
+      currency: item.currency,
+      count: item.people.size,
+      gross: item.gross,
+      net: item.net,
+    })).sort((a, b) => b.gross - a.gross);
+
+    const currencyMap = new Map();
+    payslips.forEach(p => {
+      const currency = p.currency || 'USD';
+      const current = currencyMap.get(currency) || { currency, gross: 0, deductions: 0, net: 0, payslips: 0 };
+      current.gross += Number(p.earningsSummary?.grossPay) || 0;
+      current.deductions += Number(p.deductionsSummary?.totalDeductions) || 0;
+      current.net += Number(p.netPay) || 0;
+      current.payslips += 1;
+      currencyMap.set(currency, current);
+    });
+    const currencyBreakdown = Array.from(currencyMap.values()).sort((a, b) => a.currency.localeCompare(b.currency));
+
+    const paidEmployeeCount = new Set(payslips.map(p => String(p.userId))).size;
     res.json({
       totalPayroll: totals.totalPayroll,
       totalGross: totals.totalGross,
       totalDeductions: totals.totalDeductions,
       totalTax: totals.totalTax,
-      totalEmployees: profiles.length,
-      avgSalary: profiles.length > 0 ? Math.round(totals.totalPayroll / profiles.length) : 0,
-      currency: 'USD', // Mixed currency orgs should rely on per-employee currency in exports
+      totalEmployees: paidEmployeeCount || profiles.length,
+      avgSalary: payslips.length > 0 ? Math.round(totals.totalPayroll / payslips.length) : 0,
+      currency: currencyBreakdown.length === 1 ? currencyBreakdown[0].currency : 'MIXED',
+      currencyBreakdown,
       byDepartment,
       byMonth,
+      byEmploymentType,
       year: y,
+      month: month ? parseInt(month) : null,
     });
   } catch (err) {
     console.error('Report Summary Error:', err);
@@ -230,8 +268,8 @@ router.get('/export', requireHRAdmin, async (req, res) => {
 
     const payslips = await Payslip.find(query).sort({ 'payPeriod.month': 1, 'employeeSnapshot.name': 1 }).lean();
 
-    if (format !== 'csv') {
-      return res.status(400).json({ error: 'Only csv export is supported' });
+    if (!['csv', 'xlsx'].includes(format)) {
+      return res.status(400).json({ error: 'Supported export formats are csv and xlsx' });
     }
 
     const runIds = Array.from(new Set(
@@ -251,13 +289,20 @@ router.get('/export', requireHRAdmin, async (req, res) => {
         : Promise.resolve([]),
       userIds.length > 0
         ? PayrollProfile.find({ organizationId, userId: { $in: userIds } })
-          .select('userId currency employeeInfo bankAccounts')
+          .select('userId currency employeeInfo bankAccounts workTerms')
           .lean()
         : Promise.resolve([]),
     ]);
 
     const runById = new Map(runs.map((run) => [String(run._id), run]));
     const profileByUserId = new Map(profiles.map((profile) => [String(profile.userId), profile]));
+    if (format === 'xlsx') {
+      const workbook = await buildPayrollRegisterWorkbook({ payslips, runById, profileByUserId });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="payroll-workbook-${y}${month ? `-${month}` : ''}.xlsx"`);
+      return res.send(workbook);
+    }
+
     const { csv } = buildPayrollRegisterCsv({ payslips, runById, profileByUserId });
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');

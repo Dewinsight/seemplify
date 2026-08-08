@@ -244,6 +244,27 @@ const PayrollProfileSchema = new Schema({
     default: 'monthly'
   },
 
+  // How regular pay is earned. Salary remains the default for existing profiles.
+  workTerms: {
+    payBasis: {
+      type: String,
+      enum: ['salary', 'hourly', 'daily', 'fixed_contract'],
+      default: 'salary'
+    },
+    rate: { type: Number, min: 0, default: 0 },
+    standardHoursPerWeek: { type: Number, min: 0, max: 168, default: 40 },
+    standardHoursPerDay: { type: Number, min: 0, max: 24, default: 8 },
+    contractStartDate: Date,
+    contractEndDate: Date,
+    contractReference: { type: String, trim: true },
+    contractAmount: { type: Number, min: 0, default: 0 },
+    contractAmountFrequency: {
+      type: String,
+      enum: ['contract_total', 'pay_period'],
+      default: 'contract_total'
+    }
+  },
+
   // Salary Grade (optional - for organizations using grade structures)
   salaryGrade: {
     gradeId: { type: Schema.Types.ObjectId, ref: 'SalaryGrade' },

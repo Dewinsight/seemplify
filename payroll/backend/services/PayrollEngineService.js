@@ -5,6 +5,7 @@ const CompensationRequest = require('../models/CompensationRequest');
 const taxService = require('./TaxCalculationService');
 const LeaveIntegrationService = require('./LeaveIntegrationService');
 const currencyService = require('./CurrencyService');
+const { calculateContractBasePay } = require('./contractPayService');
 
 // Instantiate integration services
 const leaveService = new LeaveIntegrationService();
@@ -337,8 +338,12 @@ class PayrollEngineService {
     const profileQuery = {
       organizationId,
       isActive: true,
-      basicSalary: { $gt: 0 },
       'payrollFlags.includeInNextRun': true,
+      $or: [
+        { basicSalary: { $gt: 0 } },
+        { 'workTerms.payBasis': { $in: ['hourly', 'daily'] }, 'workTerms.rate': { $gt: 0 } },
+        { 'workTerms.payBasis': 'fixed_contract', 'workTerms.contractAmount': { $gt: 0 } },
+      ],
     };
 
     if (Array.isArray(settings.departments) && settings.departments.length > 0) {
@@ -399,7 +404,22 @@ class PayrollEngineService {
         );
         nextPayslipSequence += 1;
 
-        const payslip = await this.calculateEmployeePay(profile, run, { payslipNumber });
+        const workInput = (run.workInputs || []).find(input => String(input.userId) === String(profile.userId));
+        const payslip = await this.calculateEmployeePay(profile, run, { payslipNumber, workInput });
+        if (!payslip) {
+          skippedCount += 1;
+          run.employees.push({
+            userId: profile.userId,
+            employeeName,
+            currency: employeeCurrency,
+            grossPay: 0,
+            deductions: 0,
+            netPay: 0,
+            status: 'skipped',
+            errorMessage: 'Contract is outside this pay period',
+          });
+          continue;
+        }
         payslips.push(payslip);
 
         run.employees.push({
@@ -485,6 +505,9 @@ class PayrollEngineService {
     const payEnd = new Date(endDate);
     const payslipCurrency = normalizeCurrencyCode(profile.currency);
     const payslipNumber = options.payslipNumber || await Payslip.generatePayslipNumber(run.organizationId, year, month);
+    const workInput = options.workInput || {};
+    const basePay = calculateContractBasePay(profile, run.payPeriod, workInput);
+    if (!basePay.eligible) return null;
 
     // Bank snapshot (masked)
     const bank = (profile.bankAccounts || []).find(b => b.isPrimary) || profile.bankAccounts?.[0];
@@ -523,6 +546,16 @@ class PayrollEngineService {
         } : undefined,
       },
       salaryGrade: profile.salaryGrade,
+      calculationBasis: {
+        payBasis: basePay.payBasis,
+        rate: basePay.rate,
+        units: basePay.units,
+        unitLabel: basePay.unitLabel,
+        contractReference: profile.workTerms?.contractReference,
+        contractStartDate: profile.workTerms?.contractStartDate,
+        contractEndDate: profile.workTerms?.contractEndDate,
+        workInputNotes: workInput.notes,
+      },
       currency: payslipCurrency,
       status: 'draft',
       createdBy: run.createdBy,
@@ -534,13 +567,17 @@ class PayrollEngineService {
     // =====================================================
 
     // Base salary (optionally prorated)
-    let basicSalary = Number(profile.basicSalary || 0);
+    let basicSalary = Number(basePay.amount || 0);
     let prorationFactor = 1;
 
-    if (settings.prorate !== false) {
+    if (basePay.payBasis === 'salary' && settings.prorate !== false) {
       const periodDays = daysBetweenInclusive(payStart, payEnd) || 30;
-      const joinDate = profile.employeeInfo?.dateOfJoining ? new Date(profile.employeeInfo.dateOfJoining) : null;
-      const termDate = profile.terminationDate ? new Date(profile.terminationDate) : null;
+      const joining = profile.employeeInfo?.dateOfJoining ? new Date(profile.employeeInfo.dateOfJoining) : null;
+      const contractStart = profile.workTerms?.contractStartDate ? new Date(profile.workTerms.contractStartDate) : null;
+      const termination = profile.terminationDate ? new Date(profile.terminationDate) : null;
+      const contractEnd = profile.workTerms?.contractEndDate ? new Date(profile.workTerms.contractEndDate) : null;
+      const joinDate = [joining, contractStart].filter(Boolean).sort((a, b) => b - a)[0] || null;
+      const termDate = [termination, contractEnd].filter(Boolean).sort((a, b) => a - b)[0] || null;
 
       const employedStart = joinDate && joinDate > payStart ? joinDate : payStart;
       const employedEnd = termDate && termDate < payEnd ? termDate : payEnd;
@@ -554,7 +591,9 @@ class PayrollEngineService {
     const proratedBasic = roundMoney(basicSalary * prorationFactor);
     payslip.addEarning(
       'basic',
-      prorationFactor < 1 ? `Basic Salary (Prorated ${(prorationFactor * 100).toFixed(1)}%)` : 'Basic Salary',
+      basePay.payBasis === 'salary'
+        ? (prorationFactor < 1 ? `Basic Salary (Prorated ${(prorationFactor * 100).toFixed(1)}%)` : 'Basic Salary')
+        : `${basePay.payBasis === 'fixed_contract' ? 'Contract fee' : 'Regular pay'} (${basePay.units} ${basePay.unitLabel}${basePay.payBasis === 'fixed_contract' ? '' : ` @ ${basePay.rate}`})`,
       proratedBasic,
       { taxable: true, isRecurring: true }
     );
@@ -589,7 +628,9 @@ class PayrollEngineService {
         const linkedRequestId = req._id.toString();
 
         if (req.type === 'overtime' && settings.includeOvertime !== false) {
-          const hourlyRate = basicSalary > 0 ? (basicSalary / 176) : 0; // default working hours/month
+          const hourlyRate = basePay.payBasis === 'hourly'
+            ? Number(profile.workTerms?.rate || 0)
+            : (basicSalary > 0 ? (basicSalary / 176) : 0); // default working hours/month for salaried staff
           const hours = Number(req.overtimeHours || 0);
           const multiplier = Number(req.overtimeMultiplier || 1.5);
           const requestCurrency = normalizeCurrencyCode(req.currency, payslipCurrency);
@@ -718,7 +759,7 @@ class PayrollEngineService {
     // =====================================================
     // 3) Unpaid leave deduction (post-tax by default)
     // =====================================================
-    if (settings.processUnpaidLeave !== false) {
+    if (basePay.payBasis === 'salary' && settings.processUnpaidLeave !== false) {
       try {
         const unpaidLeave = await leaveService.calculateUnpaidLeaveDeduction(
           profile.userId,

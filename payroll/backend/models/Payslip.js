@@ -216,6 +216,17 @@ const PayslipSchema = new Schema({
     gradeName: String,
     gradeLevel: String
   },
+
+  calculationBasis: {
+    payBasis: { type: String, enum: ['salary', 'hourly', 'daily', 'fixed_contract'], default: 'salary' },
+    rate: { type: Number, default: 0 },
+    units: { type: Number, default: 0 },
+    unitLabel: String,
+    contractReference: String,
+    contractStartDate: Date,
+    contractEndDate: Date,
+    workInputNotes: String
+  },
   
   // ===== EARNINGS =====
   earnings: [EarningItemSchema],

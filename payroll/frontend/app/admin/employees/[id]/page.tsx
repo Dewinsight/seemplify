@@ -558,6 +558,17 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
     const [formData, setFormData] = useState<any>({
         basicSalary: 0,
         currency: 'USD',
+        workTerms: {
+            payBasis: 'salary',
+            rate: 0,
+            standardHoursPerWeek: 40,
+            standardHoursPerDay: 8,
+            contractStartDate: '',
+            contractEndDate: '',
+            contractReference: '',
+            contractAmount: 0,
+            contractAmountFrequency: 'contract_total'
+        },
         isActive: true,
         allowances: [] as any[],
         payrollFlags: {
@@ -704,6 +715,17 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 setFormData({
                     basicSalary: res.data.basicSalary || 0,
                     currency: res.data.currency || 'USD',
+                    workTerms: {
+                        payBasis: res.data.workTerms?.payBasis || 'salary',
+                        rate: res.data.workTerms?.rate || 0,
+                        standardHoursPerWeek: res.data.workTerms?.standardHoursPerWeek || 40,
+                        standardHoursPerDay: res.data.workTerms?.standardHoursPerDay || 8,
+                        contractStartDate: toDateInputValue(res.data.workTerms?.contractStartDate),
+                        contractEndDate: toDateInputValue(res.data.workTerms?.contractEndDate),
+                        contractReference: res.data.workTerms?.contractReference || '',
+                        contractAmount: res.data.workTerms?.contractAmount || 0,
+                        contractAmountFrequency: res.data.workTerms?.contractAmountFrequency || 'contract_total'
+                    },
                     isActive: res.data.isActive !== false,
                     allowances: res.data.allowances || [],
                     payrollFlags: {
@@ -921,6 +943,15 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             await api.put(`/payroll/profiles/${params.id}`, {
                 basicSalary: Number(formData.basicSalary),
                 currency: formData.currency,
+                workTerms: {
+                    ...formData.workTerms,
+                    rate: Number(formData.workTerms?.rate || 0),
+                    standardHoursPerWeek: Number(formData.workTerms?.standardHoursPerWeek || 0),
+                    standardHoursPerDay: Number(formData.workTerms?.standardHoursPerDay || 0),
+                    contractAmount: Number(formData.workTerms?.contractAmount || 0),
+                    contractStartDate: formData.workTerms?.contractStartDate || null,
+                    contractEndDate: formData.workTerms?.contractEndDate || null
+                },
                 isActive: formData.isActive,
                 allowances: formData.allowances,
                 payrollFlags: formData.payrollFlags,
@@ -1647,11 +1678,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 </div>
                                 <div>
                                     <h3 className="text-lg font-semibold text-zinc-200">Compensation</h3>
-                                    <p className="text-sm text-zinc-500">Set base salary and currency</p>
+                                    <p className="text-sm text-zinc-500">Define how regular pay is earned and audited</p>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-zinc-400 mb-1.5">Currency</label>
                                     <select
@@ -1667,15 +1698,68 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Basic Monthly Salary</label>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Pay basis</label>
+                                    <select
+                                        value={formData.workTerms?.payBasis || 'salary'}
+                                        onChange={(e) => setFormData({ ...formData, workTerms: { ...formData.workTerms, payBasis: e.target.value } })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                    >
+                                        <option value="salary">Monthly salary</option>
+                                        <option value="hourly">Hourly rate</option>
+                                        <option value="daily">Daily rate</option>
+                                        <option value="fixed_contract">Fixed contract</option>
+                                    </select>
+                                </div>
+                                {formData.workTerms?.payBasis === 'salary' ? <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Basic monthly salary</label>
                                     <input
                                         type="number"
+                                        min="0"
                                         value={formData.basicSalary}
                                         onChange={(e) => setFormData({ ...formData, basicSalary: Number(e.target.value) })}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                     />
-                                </div>
+                                </div> : formData.workTerms?.payBasis === 'fixed_contract' ? <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Contract amount</label>
+                                    <input type="number" min="0" value={formData.workTerms?.contractAmount || 0}
+                                        onChange={(e) => setFormData({ ...formData, workTerms: { ...formData.workTerms, contractAmount: Number(e.target.value) } })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none" />
+                                </div> : <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">{formData.workTerms?.payBasis === 'hourly' ? 'Hourly' : 'Daily'} rate</label>
+                                    <input type="number" min="0" value={formData.workTerms?.rate || 0}
+                                        onChange={(e) => setFormData({ ...formData, workTerms: { ...formData.workTerms, rate: Number(e.target.value) } })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none" />
+                                </div>}
                             </div>
+                            {(profile?.employeeInfo?.employmentType === 'contract' || formData.workTerms?.payBasis === 'fixed_contract') && (
+                                <div className="mt-5 pt-5 border-t border-zinc-800">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <h4 className="text-sm font-medium text-zinc-200">Contract period</h4>
+                                            <p className="text-xs text-zinc-500 mt-0.5">Staff are included only in payroll periods that overlap these dates.</p>
+                                        </div>
+                                        <span className="text-xs text-amber-400">{profile?.employeeInfo?.employmentType === 'contract' ? 'Contract staff' : 'Fixed-term pay'}</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <input type="text" placeholder="Contract reference" value={formData.workTerms?.contractReference || ''}
+                                            onChange={(e) => setFormData({ ...formData, workTerms: { ...formData.workTerms, contractReference: e.target.value } })}
+                                            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 outline-none focus:border-amber-500" />
+                                        <input type="date" value={formData.workTerms?.contractStartDate || ''}
+                                            onChange={(e) => setFormData({ ...formData, workTerms: { ...formData.workTerms, contractStartDate: e.target.value } })}
+                                            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 outline-none focus:border-amber-500" />
+                                        <input type="date" value={formData.workTerms?.contractEndDate || ''}
+                                            onChange={(e) => setFormData({ ...formData, workTerms: { ...formData.workTerms, contractEndDate: e.target.value } })}
+                                            className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 outline-none focus:border-amber-500" />
+                                    </div>
+                                    {formData.workTerms?.payBasis === 'fixed_contract' && (
+                                        <label className="flex items-center gap-2 mt-3 text-sm text-zinc-400">
+                                            <input type="checkbox" checked={formData.workTerms?.contractAmountFrequency === 'pay_period'}
+                                                onChange={(e) => setFormData({ ...formData, workTerms: { ...formData.workTerms, contractAmountFrequency: e.target.checked ? 'pay_period' : 'contract_total' } })} />
+                                            Pay this amount every payroll period (otherwise spread the total across the contract dates)
+                                        </label>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Allowances */}

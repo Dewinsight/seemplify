@@ -117,6 +117,16 @@ const ProcessingSettingsSchema = new Schema({
   employmentTypes: [String]
 }, { _id: false });
 
+const WorkInputSchema = new Schema({
+  userId: { type: String, required: true },
+  employeeName: String,
+  regularHours: { type: Number, min: 0, default: 0 },
+  daysWorked: { type: Number, min: 0, default: 0 },
+  notes: String,
+  enteredBy: String,
+  enteredAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 // Main PayrollRun Schema
 const PayrollRunSchema = new Schema({
   // Identification
@@ -169,6 +179,9 @@ const PayrollRunSchema = new Schema({
   
   // Processing Settings
   settings: ProcessingSettingsSchema,
+
+  // Period-specific work records used by hourly and daily-paid staff.
+  workInputs: [WorkInputSchema],
   
   // Approval Workflow
   approvals: [ApprovalEntrySchema],

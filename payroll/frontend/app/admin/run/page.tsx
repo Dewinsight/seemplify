@@ -4,9 +4,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
-import { ArrowLeft, Calendar, CheckCircle, Loader2, Settings2 } from 'lucide-react';
+import { ArrowLeft, Calendar, CheckCircle, ClipboardList, Loader2, Settings2 } from 'lucide-react';
 
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+type VariablePayProfile = {
+  userId: string;
+  employeeInfo?: { name?: string; employmentType?: string };
+  currency?: string;
+  workTerms?: { payBasis?: 'hourly' | 'daily' | 'fixed_contract'; rate?: number; contractAmount?: number };
+};
 
 export default function AdminPayrollRunPage() {
   const router = useRouter();
@@ -30,6 +37,8 @@ export default function AdminPayrollRunPage() {
     reportingCurrency: '',
   });
   const [availableCurrencies, setAvailableCurrencies] = useState<Array<{ code: string; name: string }>>([]);
+  const [variablePayProfiles, setVariablePayProfiles] = useState<VariablePayProfile[]>([]);
+  const [workInputs, setWorkInputs] = useState<Record<string, { regularHours: number; daysWorked: number; notes: string }>>({});
 
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -62,6 +71,13 @@ export default function AdminPayrollRunPage() {
         } catch (currencyError) {
           console.error('Failed to load payroll currencies:', currencyError);
         }
+        try {
+          const profilesRes = await api.get('/payroll/profiles', { params: { status: 'active', limit: 500 } });
+          const profiles = Array.isArray(profilesRes.data?.profiles) ? profilesRes.data.profiles : [];
+          setVariablePayProfiles(profiles.filter((profile: VariablePayProfile) => ['hourly', 'daily', 'fixed_contract'].includes(profile.workTerms?.payBasis || '')));
+        } catch (profileError) {
+          console.error('Failed to load contract work inputs:', profileError);
+        }
       } catch (e) {
         router.push('/login');
       } finally {
@@ -74,6 +90,15 @@ export default function AdminPayrollRunPage() {
 
   const handleRun = async () => {
     setError(null);
+    const missingInput = variablePayProfiles.find(profile => {
+      const basis = profile.workTerms?.payBasis;
+      const input = workInputs[profile.userId];
+      return (basis === 'hourly' && !(input?.regularHours > 0)) || (basis === 'daily' && !(input?.daysWorked > 0));
+    });
+    if (missingInput) {
+      setError(`Enter ${missingInput.workTerms?.payBasis === 'hourly' ? 'regular hours' : 'days worked'} for ${missingInput.employeeInfo?.name || 'each variable-paid worker'} before calculating payroll.`);
+      return;
+    }
     if (!confirm(`Calculate payroll for ${runLabel}?\n\nThis will generate draft payslips for review and approval.`)) {
       return;
     }
@@ -88,6 +113,13 @@ export default function AdminPayrollRunPage() {
           ...settings,
           reportingCurrency: settings.reportingCurrency || undefined,
         },
+        workInputs: variablePayProfiles.map(profile => ({
+          userId: profile.userId,
+          employeeName: profile.employeeInfo?.name,
+          regularHours: workInputs[profile.userId]?.regularHours || 0,
+          daysWorked: workInputs[profile.userId]?.daysWorked || 0,
+          notes: workInputs[profile.userId]?.notes || '',
+        })),
       });
 
       const runId = res.data?.run?._id;
@@ -245,6 +277,46 @@ export default function AdminPayrollRunPage() {
             </div>
           </div>
         </div>
+
+        {variablePayProfiles.length > 0 && (
+          <section className="mt-6 border border-zinc-800 bg-zinc-900/60 rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-zinc-800 flex items-start gap-3">
+              <ClipboardList className="w-5 h-5 text-amber-400 mt-0.5" />
+              <div>
+                <h2 className="font-semibold text-zinc-100">Contract and variable-paid work</h2>
+                <p className="text-sm text-zinc-500 mt-0.5">Record approved units for this period. Fixed contracts are calculated from their saved contract terms.</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-900 text-zinc-500 text-left">
+                  <tr><th className="px-5 py-3 font-medium">Worker</th><th className="px-4 py-3 font-medium">Basis</th><th className="px-4 py-3 font-medium">Rate / amount</th><th className="px-4 py-3 font-medium">Period input</th><th className="px-4 py-3 font-medium">Note</th></tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800">
+                  {variablePayProfiles.map(profile => {
+                    const basis = profile.workTerms?.payBasis;
+                    const input = workInputs[profile.userId] || { regularHours: 0, daysWorked: 0, notes: '' };
+                    return <tr key={profile.userId}>
+                      <td className="px-5 py-3 text-zinc-200">{profile.employeeInfo?.name || 'Unnamed worker'}<div className="text-xs text-zinc-500">{profile.employeeInfo?.employmentType?.replace('_', ' ')}</div></td>
+                      <td className="px-4 py-3 text-zinc-400 capitalize">{basis?.replace('_', ' ')}</td>
+                      <td className="px-4 py-3 text-zinc-300">{profile.currency || 'USD'} {basis === 'fixed_contract' ? profile.workTerms?.contractAmount || 0 : profile.workTerms?.rate || 0}</td>
+                      <td className="px-4 py-3">
+                        {basis === 'fixed_contract' ? <span className="text-zinc-500">Automatic</span> : <input type="number" min="0" step={basis === 'hourly' ? '0.25' : '0.5'}
+                          aria-label={basis === 'hourly' ? 'Regular hours' : 'Days worked'}
+                          placeholder={basis === 'hourly' ? 'Hours' : 'Days'} value={basis === 'hourly' ? input.regularHours || '' : input.daysWorked || ''}
+                          onChange={(e) => setWorkInputs(current => ({ ...current, [profile.userId]: { ...input, [basis === 'hourly' ? 'regularHours' : 'daysWorked']: Number(e.target.value) } }))}
+                          className="w-28 bg-zinc-950 border border-zinc-700 rounded-md px-2.5 py-2 text-zinc-200 outline-none focus:border-amber-500" />}
+                      </td>
+                      <td className="px-4 py-3"><input type="text" placeholder="Optional approval note" value={input.notes}
+                        onChange={(e) => setWorkInputs(current => ({ ...current, [profile.userId]: { ...input, notes: e.target.value } }))}
+                        className="w-full min-w-48 bg-zinc-950 border border-zinc-700 rounded-md px-2.5 py-2 text-zinc-200 outline-none focus:border-amber-500" /></td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         <div className="mt-6 flex items-center justify-end">
           <button
