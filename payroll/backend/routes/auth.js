@@ -265,6 +265,7 @@ router.get('/oidc/callback', async (req, res) => {
 
       if (!subscriptionCheck.allowed) {
         console.log('❌ Subscription access denied for payroll-management:', subscriptionCheck.reason);
+        const deniedOrganizationId = req.session.currentOrganizationId;
         // Clear session since we're not allowing access
         req.session.destroy((err) => {
           if (err) console.error('Session destroy error:', err);
@@ -272,7 +273,7 @@ router.get('/oidc/callback', async (req, res) => {
         // Redirect to IDP subscription required page
         const subscriptionUrl = getSubscriptionRequiredUrl(
           'payroll-management',
-          req.session.currentOrganizationId,
+          deniedOrganizationId,
           subscriptionCheck.reason
         );
         return res.redirect(subscriptionUrl);
@@ -403,7 +404,7 @@ router.post('/switch-organization', requireAuth, async (req, res) => {
         error: 'This organization does not have access to Payroll Management',
         code: 'SUBSCRIPTION_REQUIRED',
         reason: subscriptionCheck.reason,
-        subscribeUrl: subscriptionCheck.subscribeUrl || `${process.env.IDP_ISSUER_URL || 'http://localhost:4000'}/plans`
+        subscribeUrl: subscriptionCheck.subscribeUrl || `${getPayrollOidcClientConfig().issuerUrl}/plans`
       });
     }
     console.log('✅ Subscription access verified for payroll-management');

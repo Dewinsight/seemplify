@@ -5,7 +5,9 @@
  * Used to check if an organization has access to Payroll Management
  */
 
-const IDP_URL = process.env.IDP_URL || process.env.OIDC_ISSUER || process.env.IDP_ISSUER_URL || 'http://localhost:4000'
+const { getIdentityProviderIssuerUrl } = require('../config/identityProvider')
+
+const IDP_URL = getIdentityProviderIssuerUrl('http://localhost:4000')
 const FEATURE_KEY = 'payrollManagement'
 
 /**
