@@ -38,3 +38,26 @@ jobs:
             cat /tmp/response.txt 2>/dev/null || true
             exit 1
           fi
+
+      - name: Verify deployed health
+        run: |
+          for attempt in $(seq 1 45); do
+            status=$(curl -sS -o /tmp/recruiter-health.txt -w "%{http_code}" \
+              "https://api.seemplifyai.com/api/health" || true)
+            if [ "$status" = "200" ]; then
+              echo "Recruiter backend is healthy."
+              cat /tmp/recruiter-health.txt
+              exit 0
+            fi
+            echo "Health attempt ${attempt}/45 returned HTTP ${status}."
+            sleep 6
+          done
+
+          echo "Recruiter did not become healthy. Safe Dokploy application state:"
+          curl -sS \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "accept: application/json" \
+            "${{ secrets.DOKPLOY_URL }}/api/application.one?applicationId=${{ secrets.RECRUITER_BACKEND_APP_ID }}" \
+            | jq '{name, status, applicationStatus, buildType, sourceType, createdAt, updatedAt,
+              deployments: ((.deployments // []) | map({status, createdAt, updatedAt, errorMessage}) | .[0:5])}'
+          exit 1
