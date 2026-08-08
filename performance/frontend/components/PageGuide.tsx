@@ -640,8 +640,9 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
         <Paper
           elevation={0}
           sx={{
-            mb: 3,
-            p: 2,
+            display: { xs: 'none', sm: 'block' },
+            mb: 2,
+            p: 1.5,
             borderRadius: 3,
             border: '1px solid',
             borderColor: 'divider',
@@ -679,6 +680,7 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
         startIcon={<HelpOutline />}
         onClick={() => setDrawerOpen(true)}
         sx={{
+          display: { xs: 'inline-flex', sm: showBanner && bannerVisible ? 'none' : 'inline-flex' },
           position: 'fixed',
           right: 24,
           bottom: 24,

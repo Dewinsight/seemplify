@@ -196,7 +196,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ? "border-[#312d39] bg-[#0f0e13]"
           : "border-[#cbc6bc] bg-[#f1efe9]"
       )}>
-        <div className="mx-auto px-4 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 lg:px-8">
           <div className="flex h-[4.25rem] items-center justify-between">
             {/* Logo */}
             <Link href="https://seemplifyai.com" className="flex items-center gap-3 group">

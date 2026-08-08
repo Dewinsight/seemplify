@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -44,11 +44,12 @@ export default function DashboardPage() {
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [switchingTeam, setSwitchingTeam] = useState(false);
   const teamButtonRef = useRef<HTMLButtonElement>(null);
+  const teamMenuRef = useRef<HTMLDivElement>(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [mounted, setMounted] = useState(false);
   const [selectedTeamView, setSelectedTeamView] = useState<string>('current');
   const [managerNotifications, setManagerNotifications] = useState<ManagerPortalNotification[]>([]);
-  const [managerNotificationLoading, setManagerNotificationLoading] = useState(false);
+  const [managerNotificationLoading, setManagerNotificationLoading] = useState(true);
 
   const organizationId = currentOrganization?.id || currentOrganization?._id?.toString() || currentOrganization;
   const orgTeams = (teams as TeamOption[]).filter((team) => team.organizationId === organizationId);
@@ -63,8 +64,24 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!teamDropdownOpen || !teamButtonRef.current) return;
-    const rect = teamButtonRef.current.getBoundingClientRect();
-    setDropdownPosition({ top: rect.bottom + 8, left: Math.min(rect.left, window.innerWidth - 336) });
+
+    const updatePosition = () => {
+      const rect = teamButtonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const menuWidth = Math.min(320, Math.max(0, window.innerWidth - 24));
+      setDropdownPosition({
+        top: rect.bottom + 8,
+        left: Math.max(12, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 12)),
+      });
+    };
+    updatePosition();
+    requestAnimationFrame(() => teamMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitemradio"]')?.focus());
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
   }, [teamDropdownOpen]);
 
   useEffect(() => {
@@ -89,10 +106,34 @@ export default function DashboardPage() {
     return orgTeams.find((team) => team.id === selectedTeamView)?.name || 'Select team';
   };
 
+  const closeTeamMenu = () => {
+    setTeamDropdownOpen(false);
+    requestAnimationFrame(() => teamButtonRef.current?.focus());
+  };
+
+  const handleTeamMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(teamMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]:not(:disabled)') || []);
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number | null = null;
+
+    if (event.key === 'ArrowDown') nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
+    if (event.key === 'ArrowUp') nextIndex = currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = items.length - 1;
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      event.preventDefault();
+      closeTeamMenu();
+      return;
+    }
+    if (nextIndex === null || !items[nextIndex]) return;
+    event.preventDefault();
+    items[nextIndex].focus();
+  };
+
   const handleSwitchTeamView = async (teamId: string) => {
     if (switchingTeam) return;
     setSwitchingTeam(true);
-    setTeamDropdownOpen(false);
+    closeTeamMenu();
     try {
       if (teamId === 'all') {
         setSelectedTeamView('all');
@@ -132,17 +173,27 @@ export default function DashboardPage() {
     return <div className="suite-notice"><div className="flex items-start gap-3"><AlertCircle className="mt-0.5 h-5 w-5" style={{ color: 'var(--suite-warning)' }} /><p className="text-sm">Unable to load dashboard data. Some features may be limited.</p></div></div>;
   }
 
-  const data = dashboard || { okrProgress: 0, totalOkrs: 0, completedOkrs: 0, upcomingDeadlines: 0 };
+  const data = dashboard || { okrProgress: 0, totalOkrs: 0, completedOkrs: 0, upcomingDeadlines: 0, pendingReviews: 0, recentFeedback: 0 };
   const user = authUser || contextUser;
   const firstName = user?.name?.split(' ')?.[0] || 'there';
   const organizationName = organization?.name || currentOrganization?.name || 'your organization';
   const showTeamSwitcher = orgTeams.length > 0;
+  const showManagementRail = isManager || isHRAdmin;
   const actions = [
     { name: 'Set and update OKRs', href: '/okrs', icon: Target, copy: 'Create objectives, update progress, and keep outcomes connected to the work.', meta: `${data.totalOkrs || 0} active` },
     { name: 'My appraisals', href: '/appraisals', icon: FileText, copy: 'Continue self-assessments, discussions, and reviews already assigned to you.', meta: `${data.upcomingDeadlines || 0} due soon` },
     ...(isManager ? [{ name: 'My team', href: '/team', icon: Users, copy: 'Review direct reports, manager actions, goals, and development activity.', meta: `${managerData?.directReportCount || 0} reports` }] : []),
     ...(isHRAdmin ? [{ name: 'Create appraisal cycle', href: '/admin/appraisal-cycles/new', icon: Flag, copy: 'Choose participants, set the timeline, and launch the next review cycle.', meta: 'HR administration' }] : []),
   ];
+  const primaryActions = actions.slice(0, 2);
+  const roleActions = actions.slice(2);
+  const renderActionCard = ({ name, href, icon: Icon, copy, meta }: (typeof actions)[number], compact = false) => (
+    <Link key={name} href={href} className={`suite-card${compact ? ' suite-role-card' : ''}`}>
+      <div className="suite-card-top"><div className="suite-icon"><Icon className="h-5 w-5" /></div><ArrowRight className="h-4 w-4" style={{ color: 'var(--suite-subtle)' }} /></div>
+      <h3 className="suite-card-title mt-4">{name}</h3><p className="suite-card-copy">{copy}</p>
+      <div className="suite-card-footer"><div className="min-w-0"><p className="suite-label">Current state</p><p className="mt-1 truncate text-sm font-semibold">{meta}</p></div><span className="suite-button">Open <ArrowRight className="h-4 w-4" /></span></div>
+    </Link>
+  );
 
   return (
     <div className="suite-dashboard">
@@ -165,7 +216,17 @@ export default function DashboardPage() {
           <div className="mt-4 flex items-end justify-between gap-4 border-t pt-3" style={{ borderColor: 'var(--suite-line)' }}>
             <div><p className="suite-label">Your role</p><p className="text-sm font-semibold">{roleDisplay || (isHRAdmin ? 'HR administrator' : isManager ? 'Manager' : 'Team member')}</p></div>
             {showTeamSwitcher && (
-              <button ref={teamButtonRef} onClick={() => setTeamDropdownOpen((open) => !open)} disabled={switchingTeam} className="suite-button-secondary">
+              <button
+                ref={teamButtonRef}
+                id="performance-team-trigger"
+                type="button"
+                aria-expanded={teamDropdownOpen}
+                aria-haspopup="menu"
+                aria-controls="performance-team-menu"
+                onClick={() => setTeamDropdownOpen((open) => !open)}
+                disabled={switchingTeam}
+                className="suite-button-secondary"
+              >
                 <Eye className="h-4 w-4" /> {getTeamViewDisplay()} <ChevronDown className="h-4 w-4" />
               </button>
             )}
@@ -175,13 +236,13 @@ export default function DashboardPage() {
 
       {teamDropdownOpen && mounted && createPortal(
         <>
-          <button aria-label="Close team menu" className="fixed inset-0 z-[9998] cursor-default" onClick={() => setTeamDropdownOpen(false)} />
-          <div className="fixed z-[9999] w-80 overflow-hidden rounded-xl border bg-[var(--suite-surface)] shadow-[0_2px_8px_rgba(0,0,0,.12)]" style={{ top: dropdownPosition.top, left: dropdownPosition.left, borderColor: 'var(--suite-line)' }}>
+          <button type="button" tabIndex={-1} aria-hidden="true" className="fixed inset-0 z-[9998] cursor-default" onClick={closeTeamMenu} />
+          <div ref={teamMenuRef} id="performance-team-menu" role="menu" aria-labelledby="performance-team-trigger" onKeyDown={handleTeamMenuKeyDown} className="fixed z-[9999] w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border bg-[var(--suite-surface)] shadow-[0_2px_8px_rgba(0,0,0,.12)]" style={{ top: dropdownPosition.top, left: dropdownPosition.left, borderColor: 'var(--suite-line)' }}>
             <div className="border-b px-4 py-3" style={{ borderColor: 'var(--suite-line)' }}><p className="text-sm font-semibold">View performance by team</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>{orgTeams.length} teams in this organization</p></div>
-            <button onClick={() => handleSwitchTeamView('all')} disabled={switchingTeam} className="suite-list-row w-full text-left hover:bg-[var(--suite-surface-muted)]"><div><p className="text-sm font-semibold">All teams</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Aggregated organization view</p></div>{selectedTeamView === 'all' && <span className="suite-status">Viewing</span>}</button>
+            <button role="menuitemradio" aria-checked={selectedTeamView === 'all'} onClick={() => selectedTeamView === 'all' ? closeTeamMenu() : handleSwitchTeamView('all')} disabled={switchingTeam} className="suite-list-row w-full text-left hover:bg-[var(--suite-surface-muted)]"><div><p className="text-sm font-semibold">All teams</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Aggregated organization view</p></div>{selectedTeamView === 'all' && <span className="suite-status">Viewing</span>}</button>
             {orgTeams.map((team) => {
               const active = (selectedTeamView === 'current' && team.id === activeCurrentTeam?.id) || selectedTeamView === team.id;
-              return <button key={team.id} onClick={() => !active && handleSwitchTeamView(team.id)} disabled={switchingTeam || active} className="suite-list-row w-full text-left hover:bg-[var(--suite-surface-muted)]"><div className="min-w-0"><p className="truncate text-sm font-semibold">{team.name}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>{team.roleDisplay || team.role || 'Team access'}</p></div>{active && <span className="suite-status">Active</span>}</button>;
+              return <button role="menuitemradio" aria-checked={active} key={team.id} onClick={() => active ? closeTeamMenu() : handleSwitchTeamView(team.id)} disabled={switchingTeam} className="suite-list-row w-full text-left hover:bg-[var(--suite-surface-muted)]"><div className="min-w-0"><p className="truncate text-sm font-semibold">{team.name}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>{team.roleDisplay || team.role || 'Team access'}</p></div>{active && <span className="suite-status">Active</span>}</button>;
             })}
           </div>
         </>, document.body
@@ -194,46 +255,46 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <section className="suite-section">
+      <section className="suite-section suite-metrics-section">
         <div className="suite-metrics">
           <Link href="/okrs" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">OKR progress</p><p className="suite-metric-value">{data.okrProgress || 0}%</p><div className="suite-progress mt-3"><span style={{ width: `${Math.min(100, Number(data.okrProgress || 0))}%` }} /></div></Link>
           <Link href="/okrs" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Active OKRs</p><p className="suite-metric-value">{data.totalOkrs || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>{data.completedOkrs || 0} completed</p></Link>
           <Link href="/appraisals" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Upcoming deadlines</p><p className="suite-metric-value">{data.upcomingDeadlines || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Next 7 days</p></Link>
-          <Link href={isManager ? '/team' : '/dashboard'} className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Direct reports</p><p className="suite-metric-value">{managerData?.directReportCount || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>{isManager ? 'In your team' : 'Manager view only'}</p></Link>
+          {isManager ? (
+            <Link href="/team/reviews" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Pending reviews</p><p className="suite-metric-value">{managerData?.pendingReviews || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Needs your attention</p></Link>
+          ) : (
+            <Link href="/feedback" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Recent feedback</p><p className="suite-metric-value">{data.recentFeedback || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Shared with you</p></Link>
+          )}
         </div>
       </section>
 
-      <section className="suite-section">
-        <div className="suite-section-heading"><div><h2 className="suite-section-title">Performance workspace</h2><p className="suite-section-copy">Start with the action that needs to move today.</p></div>{isHRAdmin && <Link href="/admin" className="suite-button-secondary">Admin panel <ArrowRight className="h-4 w-4" /></Link>}</div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {actions.map(({ name, href, icon: Icon, copy, meta }) => (
-            <Link key={name} href={href} className="suite-card">
-              <div className="suite-card-top"><div className="suite-icon"><Icon className="h-5 w-5" /></div><ArrowRight className="h-4 w-4" style={{ color: 'var(--suite-subtle)' }} /></div>
-              <h3 className="suite-card-title mt-4">{name}</h3><p className="suite-card-copy">{copy}</p>
-              <div className="suite-card-footer"><div className="min-w-0"><p className="suite-label">Current state</p><p className="mt-1 truncate text-sm font-semibold">{meta}</p></div><span className="suite-button">Open <ArrowRight className="h-4 w-4" /></span></div>
-            </Link>
-          ))}
-        </div>
-      </section>
+      <section className="suite-section suite-workspace-section" aria-labelledby="performance-workspace-title">
+        <div className="suite-section-heading"><div><h2 id="performance-workspace-title" className="suite-section-title">Performance workspace</h2><p className="suite-section-copy">Start with the action that needs to move today.</p></div></div>
+        <div className={`suite-workspace-layout${showManagementRail ? '' : ' suite-workspace-layout--single'}`}>
+          <div className="suite-workspace-main">
+            <div className="suite-primary-actions">
+              {primaryActions.map((action) => renderActionCard(action))}
+            </div>
 
-      <section className="suite-section suite-split">
-        <div>
-          <div className="suite-section-heading"><div><h2 className="suite-section-title">Manager actions</h2><p className="suite-section-copy">Reviews and follow-ups routed directly to you.</p></div></div>
-          <div className="suite-panel overflow-hidden">
-            {managerNotificationLoading ? <p className="px-5 py-10 text-sm" style={{ color: 'var(--suite-muted)' }}>Loading manager actions…</p> : managerNotifications.length === 0 ? <p className="px-5 py-10 text-sm" style={{ color: 'var(--suite-muted)' }}>No new manager actions.</p> : managerNotifications.map((notification) => (
-              <button key={`${notification.appraisalId}-${notification.sentAt || 'now'}`} onClick={() => handleOpenManagerNotification(notification)} className="suite-list-row w-full text-left hover:bg-[var(--suite-surface-muted)]">
-                <div className="min-w-0"><p className="text-sm font-semibold">{notification.employee?.name || 'Employee'}</p><p className="mt-1 truncate text-sm" style={{ color: 'var(--suite-muted)' }}>{notification.message}</p></div><div className="flex shrink-0 items-center gap-3"><span className="text-xs" style={{ color: 'var(--suite-muted)' }}>{notification.sentAt ? new Date(notification.sentAt).toLocaleDateString() : 'Now'}</span><ArrowRight className="h-4 w-4" /></div>
-              </button>
-            ))}
+            {isManager && (
+              <section className="suite-manager-block" aria-labelledby="manager-actions-title">
+                <div className="suite-section-heading"><div><h2 id="manager-actions-title" className="suite-section-title">Manager actions</h2><p className="suite-section-copy">Reviews and follow-ups routed directly to you.</p></div></div>
+                <div className="suite-panel overflow-hidden">
+                  {managerNotificationLoading ? <p className="suite-empty-state">Loading manager actions…</p> : managerNotifications.length === 0 ? <div className="suite-empty-state"><p className="text-sm font-semibold" style={{ color: 'var(--suite-ink)' }}>You are all caught up</p><p className="mt-1 text-sm">No reviews or follow-ups need your attention.</p></div> : managerNotifications.map((notification) => (
+                    <button key={`${notification.appraisalId}-${notification.sentAt || 'now'}`} onClick={() => handleOpenManagerNotification(notification)} className="suite-list-row w-full text-left hover:bg-[var(--suite-surface-muted)]">
+                      <div className="min-w-0"><p className="text-sm font-semibold">{notification.employee?.name || 'Employee'}</p><p className="mt-1 truncate text-sm" style={{ color: 'var(--suite-muted)' }}>{notification.message}</p></div><div className="flex shrink-0 items-center gap-3"><span className="text-xs" style={{ color: 'var(--suite-muted)' }}>{notification.sentAt ? new Date(notification.sentAt).toLocaleDateString() : 'Now'}</span><ArrowRight className="h-4 w-4" /></div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
-        </div>
-        <div>
-          <div className="suite-section-heading"><div><h2 className="suite-section-title">Your management scope</h2><p className="suite-section-copy">The people and reviews currently assigned to you.</p></div></div>
-          <div className="suite-panel overflow-hidden">
-            <div className="suite-list-row"><div><p className="suite-label">Direct reports</p><p className="suite-value">{managerData?.directReportCount || 0}</p></div><Users className="h-5 w-5" style={{ color: 'var(--suite-accent)' }} /></div>
-            <div className="suite-list-row"><div><p className="suite-label">Pending reviews</p><p className="suite-value">{managerData?.pendingReviews || 0}</p></div><FileText className="h-5 w-5" style={{ color: 'var(--suite-warning)' }} /></div>
-            {isHRAdmin && <div className="p-5"><p className="text-sm font-semibold">Review-cycle administration</p><p className="mt-2 text-sm leading-6" style={{ color: 'var(--suite-muted)' }}>Create, launch, and manage appraisal cycles from the HR workspace.</p><div className="mt-4 flex flex-wrap gap-2"><Link href="/admin/appraisal-cycles/new" className="suite-button">Create cycle</Link><Link href="/admin/appraisal-cycles" className="suite-button-secondary">Manage cycles</Link></div></div>}
-          </div>
+
+          {showManagementRail && (
+            <aside className="suite-workspace-rail" aria-label="Role-specific performance tools">
+              {roleActions.map((action) => renderActionCard(action, true))}
+            </aside>
+          )}
         </div>
       </section>
     </div>
