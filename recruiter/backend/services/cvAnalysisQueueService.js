@@ -2370,11 +2370,18 @@ async function beginProcessingAttempt(processingJob) {
   const updated = await CVProcessingJob.findOneAndUpdate(
     {
       _id: processingJob._id,
-      state: { $in: ['queued', 'waiting_for_local_runtime', 'processing'] }
+      // This state transition is the durable worker lease. BullMQ normally
+      // delivers a job once, but a stalled-job recovery or a deployment can
+      // briefly present the same delivery to two workers. Only one of them may
+      // cross from a runnable state into processing.
+      state: { $in: ['queued', 'waiting_for_local_runtime'] }
     },
     {
       $inc: { processingAttempts: 1 },
-      $set: { 'retry.requestedStage': requestedStage },
+      $set: {
+        state: 'processing',
+        'retry.requestedStage': requestedStage
+      },
       $unset: { 'retry.pendingTrigger': 1, 'retry.nextAttemptAt': 1 }
     },
     { new: true }
@@ -2473,14 +2480,51 @@ async function retainFailedAssetsForRetry(processingJob, failedAt = new Date()) 
   return availableUntil;
 }
 
+async function recoverCommittedCandidate(processingJob) {
+  const candidate = processingJob.candidate
+    ? await Candidate.findById(processingJob.candidate)
+    : await Candidate.findOne({ 'processingMetadata.cvProcessingJobId': processingJob.publicId });
+  if (!candidate) return null;
+
+  await CVProcessingJob.updateOne(
+    { _id: processingJob._id },
+    {
+      $set: {
+        state: 'completed',
+        stage: 'completed',
+        progress: 100,
+        candidate: candidate._id,
+        completedAt: processingJob.completedAt || new Date()
+      },
+      $unset: {
+        lastError: 1,
+        failedAt: 1,
+        expiresAt: 1,
+        'retry.pendingTrigger': 1,
+        'retry.nextAttemptAt': 1
+      }
+    }
+  );
+  processingJob.state = 'completed';
+  processingJob.stage = 'completed';
+  processingJob.progress = 100;
+  processingJob.candidate = candidate._id;
+  await syncHistorySafely(processingJob._id);
+  await deliverCompletionEffects(processingJob._id).catch((error) => {
+    console.error('CV completion effect recovery failed:', error.message);
+  });
+  return candidate;
+}
+
 async function processJob(bullJob, workerToken) {
   const processingJob = await CVProcessingJob.findById(bullJob.data.processingJobId).select('+resumeText +statusTokenHash');
   if (!processingJob) return { skipped: true };
-  if (processingJob.state === 'completed' && processingJob.candidate) {
-    await deliverCompletionEffects(processingJob._id).catch((error) => {
-      console.error('CV completion effect recovery failed:', error.message);
-    });
-    return { candidateId: String(processingJob.candidate), duplicate: true };
+  // Candidate creation and job completion are separate durable writes. Repair
+  // either a crash between them or an older duplicate delivery that regressed
+  // the state after the candidate had already been committed.
+  const committedCandidate = await recoverCommittedCandidate(processingJob);
+  if (committedCandidate) {
+    return { candidateId: String(committedCandidate._id), duplicate: true };
   }
   if (processingJob.billing?.required && processingJob.billing.state !== 'charged') {
     const error = new Error('CV upload is waiting for its credit charge to complete');
@@ -2666,6 +2710,26 @@ async function processJob(bullJob, workerToken) {
     });
     return { candidateId: String(candidate._id), jobId: processingJob.publicId };
   } catch (error) {
+    // A duplicate delivery may have started before the atomic lease above was
+    // deployed, or while an older process was draining during a rollout. Once
+    // any delivery has committed a candidate, a later failure must never
+    // regress the durable job back to queued/failed and strand the UI.
+    const completedElsewhere = await CVProcessingJob.findOne({
+      _id: processingJob._id,
+      state: 'completed',
+      candidate: { $ne: null }
+    }).select('candidate').lean();
+    if (completedElsewhere?.candidate) {
+      await finishProcessingAttempt(processingJob, processingAttempt, {
+        status: 'completed',
+        stage: 'completed'
+      });
+      return {
+        candidateId: String(completedElsewhere.candidate),
+        jobId: processingJob.publicId,
+        duplicate: true
+      };
+    }
     if (error instanceof DelayedError || String(error?.code || '').startsWith('CV_GLOBAL_DISPATCH_')) {
       const nextAttemptAt = new Date(Date.now() + cvBackoffDelay(Number(bullJob.attemptsMade || 0) + 1, error));
       await CVProcessingJob.updateOne(
@@ -3140,13 +3204,44 @@ async function recoverStaleJobs() {
   for (const job of stale) {
     const existing = await q.getJob(job.publicId);
     if (!existing) {
-      await addQueueJob(job);
+      if (job.state === 'processing') {
+        const reset = await CVProcessingJob.findOneAndUpdate(
+          { _id: job._id, state: 'processing', updatedAt: job.updatedAt },
+          {
+            $set: {
+              state: 'queued',
+              'retry.pendingTrigger': 'automatic',
+              'retry.requestedStage': 'failed'
+            }
+          },
+          { new: true }
+        );
+        if (!reset) continue;
+        await addQueueJob(reset);
+      } else {
+        await addQueueJob(job);
+      }
       recovered += 1;
       continue;
     }
     const queueState = await existing.getState();
     if (['completed', 'failed'].includes(queueState)) {
-      await addQueueJob(job, { replaceTerminal: true });
+      let runnableJob = job;
+      if (job.state === 'processing') {
+        runnableJob = await CVProcessingJob.findOneAndUpdate(
+          { _id: job._id, state: 'processing', updatedAt: job.updatedAt },
+          {
+            $set: {
+              state: 'queued',
+              'retry.pendingTrigger': 'automatic',
+              'retry.requestedStage': 'failed'
+            }
+          },
+          { new: true }
+        );
+        if (!runnableJob) continue;
+      }
+      await addQueueJob(runnableJob, { replaceTerminal: true });
       recovered += 1;
     }
   }

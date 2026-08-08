@@ -870,21 +870,84 @@ test('concurrent duplicate deliveries atomically create one candidate for one pr
     },
     formData: {}
   });
+  let analysisCalls = 0;
   cvQueue._setDependenciesForTests({
     cvParser: {
       async analyzeText() {
+        analysisCalls += 1;
         await new Promise((resolve) => setTimeout(resolve, 50));
         return successfulAnalysis();
       }
     }
   });
 
-  await Promise.all([
+  const deliveries = await Promise.all([
     cvQueue._processJobForTests(bullJob(processingJob, 0)),
     cvQueue._processJobForTests(bullJob(processingJob, 0))
   ]);
 
+  assert.equal(analysisCalls, 1);
+  assert.equal(deliveries.filter((delivery) => delivery?.skipped === true).length, 1);
   assert.equal(await Candidate.countDocuments({
     'processingMetadata.cvProcessingJobId': processingJob.publicId
   }), 1);
+  const completed = await CVProcessingJob.findById(processingJob._id).lean();
+  assert.equal(completed.state, 'completed');
+  assert.ok(completed.candidate);
+});
+
+test('a regressed queue state repairs from its committed candidate without another AI call', async () => {
+  const publicId = `cv_committed_${new mongoose.Types.ObjectId()}`;
+  const candidate = await Candidate.create({
+    firstName: 'Already',
+    lastName: 'Committed',
+    email: `committed-${Date.now()}@example.com`,
+    phone: '+44 20 7946 0958',
+    position: 'Product Manager',
+    experience: '10+',
+    education: 'bachelors',
+    organization: organizationId,
+    processingMetadata: { cvProcessingJobId: publicId }
+  });
+  const processingJob = await CVProcessingJob.create({
+    publicId,
+    statusTokenHash: cvQueue.tokenHash('committed-token'),
+    state: 'queued',
+    stage: 'analyzing',
+    progress: 50,
+    organization: organizationId,
+    source: 'bulk',
+    originalName: 'committed.pdf',
+    fileType: 'application/pdf',
+    fileSize: 1_024,
+    resumeText: extractedText,
+    candidate: candidate._id,
+    lastError: {
+      code: 'AI_RUNTIME_ACCOUNT_REQUIRED',
+      message: 'A duplicate delivery failed after completion',
+      stage: 'analyzing',
+      at: new Date()
+    },
+    formData: {}
+  });
+  let analysisCalls = 0;
+  cvQueue._setDependenciesForTests({
+    cvParser: {
+      async analyzeText() {
+        analysisCalls += 1;
+        return successfulAnalysis();
+      }
+    }
+  });
+
+  const result = await cvQueue._processJobForTests(bullJob(processingJob, 0));
+
+  assert.equal(result.duplicate, true);
+  assert.equal(result.candidateId, String(candidate._id));
+  assert.equal(analysisCalls, 0);
+  const repaired = await CVProcessingJob.findById(processingJob._id).lean();
+  assert.equal(repaired.state, 'completed');
+  assert.equal(repaired.stage, 'completed');
+  assert.equal(repaired.progress, 100);
+  assert.equal(repaired.lastError, undefined);
 });
