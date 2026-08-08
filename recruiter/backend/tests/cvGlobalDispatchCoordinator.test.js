@@ -810,7 +810,7 @@ test('queue source acquires only around model inference, after preprocessing and
       inference: 'runInferenceWithGlobalPermit(',
       model: 'cvParser.analyzeText(',
       finalization: 'createCandidateOnce(',
-      usageIdentity: 'usageExecutionId: `cv-queue:${processingJob.publicId}`',
+      usageIdentity: 'usageExecutionId: cvUsageExecutionId(processingJob)',
       worker: /new Worker\(queueName,\s*processJob,/
     },
     {

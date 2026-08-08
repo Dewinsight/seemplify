@@ -374,6 +374,12 @@ function retrySummary(job = {}, { includeActor = false, includeCapabilities = fa
   };
 }
 
+function cvUsageExecutionId(job = {}) {
+  const publicId = String(job.publicId || '').trim();
+  const manualRevision = Math.max(0, Math.floor(Number(job.retry?.manualRequests || 0)));
+  return `cv-queue:${publicId}${manualRevision > 0 ? `:manual-retry:${manualRevision}` : ''}`;
+}
+
 function lifecyclePhase(job) {
   if (['completed', 'failed'].includes(job.state)) return job.state;
   if (processingAttemptCount(job) > 1) return 'retrying';
@@ -2585,7 +2591,11 @@ async function processJob(bullJob, workerToken) {
           actorEmail: effectiveActor?.email || processingJob.formData?.email,
           jobId: processingJob.publicId,
           requestId: `cv-queue:${processingJob.publicId}`,
-          usageExecutionId: `cv-queue:${processingJob.publicId}`,
+          // Transport retries within one processing generation replay the same
+          // durable gateway receipt. A human-requested retry advances the
+          // generation so an old receipt whose request fingerprint predates a
+          // runtime/configuration change cannot strand this CV forever.
+          usageExecutionId: cvUsageExecutionId(processingJob),
           promptVersion: 'candidate-cv-local-v1'
         }, () => cvParser.analyzeText(
           processingJob.resumeText,
@@ -3976,6 +3986,7 @@ module.exports = {
   _loadAdminAuditsForTests: loadAdminAudits,
   _loadRecentExternalAuditsForTests: loadRecentExternalAudits,
   _sharedDispatchWorkerState: sharedDispatchWorkerState,
+  _cvUsageExecutionIdForTests: cvUsageExecutionId,
   adminTelemetry,
   closeForTests,
   enqueueExistingJob,
