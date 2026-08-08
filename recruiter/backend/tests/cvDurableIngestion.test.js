@@ -12,6 +12,7 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const Candidate = require('../models/Candidate');
 const CVProcessingAudit = require('../models/CVProcessingAudit');
+const CVProcessingBatch = require('../models/CVProcessingBatch');
 const CVProcessingJob = require('../models/CVProcessingJob');
 const CVStorageCleanupTask = require('../models/CVStorageCleanupTask');
 const durableCvFileStore = require('../services/durableCvFileStore');
@@ -939,6 +940,18 @@ test('a regressed queue state repairs from its committed candidate without anoth
       }
     }
   });
+
+  const batch = await CVProcessingBatch.create({
+    publicId: `batch_committed_${new mongoose.Types.ObjectId()}`,
+    organization: organizationId,
+    jobs: [processingJob._id],
+    totalFiles: 1,
+    rejected: []
+  });
+  const batchStatus = await cvQueue.getBatchStatus(batch.publicId, organizationId);
+  assert.equal(batchStatus.successful, 1);
+  assert.equal(batchStatus.processing, 0);
+  assert.equal(batchStatus.queued, 0);
 
   const result = await cvQueue._processJobForTests(bullJob(processingJob, 0));
 

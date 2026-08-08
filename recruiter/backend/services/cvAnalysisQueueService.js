@@ -3979,10 +3979,50 @@ async function submitBatch(req) {
   return getBatchStatus(batch.publicId, organizationId);
 }
 
+async function repairCommittedBatchJobs(jobs) {
+  const repairable = jobs.filter((job) => job.state !== 'completed' && job.candidate);
+  if (!repairable.length) return 0;
+
+  const candidateIds = repairable.map((job) => job.candidate);
+  const existingIds = new Set((await Candidate.find({ _id: { $in: candidateIds } })
+    .select('_id')
+    .lean()).map((candidate) => String(candidate._id)));
+  const committed = repairable.filter((job) => existingIds.has(String(job.candidate)));
+  if (!committed.length) return 0;
+
+  const completedAt = new Date();
+  await CVProcessingJob.updateMany(
+    { _id: { $in: committed.map((job) => job._id) }, state: { $ne: 'completed' } },
+    {
+      $set: { state: 'completed', stage: 'completed', progress: 100, completedAt },
+      $unset: {
+        lastError: 1,
+        failedAt: 1,
+        expiresAt: 1,
+        'retry.pendingTrigger': 1,
+        'retry.nextAttemptAt': 1
+      }
+    }
+  );
+  for (const job of committed) {
+    job.state = 'completed';
+    job.stage = 'completed';
+    job.progress = 100;
+    job.completedAt = completedAt;
+    job.lastError = undefined;
+  }
+  await Promise.all(committed.map((job) => syncHistorySafely(job._id)));
+  return committed.length;
+}
+
 async function getBatchStatus(publicId, organizationId) {
   const batch = await CVProcessingBatch.findOne({ publicId, organization: organizationId }).populate('jobs');
   if (!batch) return null;
   const jobs = batch.jobs || [];
+  // Status polling is also a safe reconciliation point: if a worker already
+  // committed a candidate, never leave the user watching a regressed queue
+  // state while a duplicate BullMQ delivery sits delayed.
+  await repairCommittedBatchJobs(jobs);
   const completedJobs = jobs.filter((job) => job.state === 'completed');
   const failedJobs = jobs.filter((job) => job.state === 'failed');
   const waitingJobs = jobs.filter((job) => ['queued', 'waiting_for_local_runtime'].includes(job.state));
