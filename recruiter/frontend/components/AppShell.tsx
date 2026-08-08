@@ -10,6 +10,7 @@ import { FeatureUnavailable } from '@/components/FeatureUnavailable';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { getFeatureForPath } from '@/lib/platformFeatures';
 import { Loader2 } from 'lucide-react';
+import './authenticated-shell.css';
 // Organization setup modal replaced by page-based flow
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -82,9 +83,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <>
       <ProtectedRoute>
         {isAuthenticated ? (
-          <div className="relative flex min-h-screen flex-col">
+          <div className="recruiter-auth-shell relative flex min-h-screen flex-col">
             <TopNavbar />
-            <main className="flex-1  lg:pt-0">
+            <main className="recruiter-auth-shell__main flex-1 lg:pt-0">
               {routeFeature && featuresLoading ? (
                 <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

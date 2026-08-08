@@ -38,7 +38,7 @@ export function DashboardSettings({ trigger }: DashboardSettingsProps) {
   const sectionConfig = [
     { id: 'keyMetrics', label: 'Key Metrics', description: 'Primary KPIs and statistics' },
     { id: 'analytics', label: 'Analytics & Charts', description: 'Detailed analytics tabs' },
-    { id: 'quickActions', label: 'Quick Actions', description: 'Metro-style action tiles' },
+    { id: 'quickActions', label: 'Recruitment Workspace', description: 'Primary workflows and shortcuts' },
     { id: 'activityFeed', label: 'Activity Feed', description: 'Recent activity timeline' },
     { id: 'topJobs', label: 'Top Jobs', description: 'Best performing positions' },
   ];
@@ -53,7 +53,7 @@ export function DashboardSettings({ trigger }: DashboardSettingsProps) {
           </Button>
         )}
       </SheetTrigger>
-      <SheetContent className="w-[400px] sm:w-[540px]">
+      <SheetContent className="w-[calc(100vw-2rem)] max-w-[400px] overflow-y-auto sm:w-[540px] sm:max-w-[540px]">
         <SheetHeader>
           <SheetTitle>Dashboard Settings</SheetTitle>
           <SheetDescription>

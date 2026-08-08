@@ -1,36 +1,31 @@
 "use client";
 
 import React from "react";
-import { useUser } from "@/context/UserContext";
-import interviewService from "@/services/interviewService";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
 import {
-	Users,
+	ArrowRight,
 	Briefcase,
 	Calendar,
 	Settings,
 	Upload,
 	UserPlus,
-	Clock,
-	TrendingUp,
+	Users,
 } from "lucide-react";
-import "@/styles/metro-layout.css";
+import { useUser } from "@/context/UserContext";
 import { useFeatureFlags } from "@/context/FeatureFlagsContext";
+import interviewService from "@/services/interviewService";
+import { cn } from "@/lib/utils";
+import "@/styles/metro-layout.css";
 
-interface MetroAction {
+interface RecruiterAction {
 	id: string;
 	title: string;
-	subtitle?: string;
+	subtitle: string;
 	href: string;
-	icon: React.ReactNode;
-	color: string;
-	bgPattern?: string;
-	size?: "small" | "medium" | "large" | "wide" | "tall";
+	icon: React.ElementType;
 	stats?: {
 		value: string;
 		label: string;
-		trend?: "up" | "down";
 	};
 }
 
@@ -39,24 +34,6 @@ interface MetroQuickActionsProps {
 	compact?: boolean;
 }
 
-// Metro tile size mapping
-const getSizeClass = (size: string) => {
-	switch (size) {
-		case "small":
-			return "metro-tile-small";
-		case "medium":
-			return "metro-tile-medium";
-		case "large":
-			return "metro-tile-large";
-		case "wide":
-			return "metro-tile-wide";
-		case "tall":
-			return "metro-tile-tall";
-		default:
-			return "metro-tile-small";
-	}
-};
-
 export function MetroQuickActions({ className, compact = false }: MetroQuickActionsProps) {
 	const { state } = useUser();
 	const { isFeatureEnabled } = useFeatureFlags();
@@ -64,177 +41,140 @@ export function MetroQuickActions({ className, compact = false }: MetroQuickActi
 	const [todayInterviews, setTodayInterviews] = React.useState<number>(0);
 
 	React.useEffect(() => {
-		// Fetch today's interviews count
 		const start = new Date();
 		start.setHours(0, 0, 0, 0);
 		const end = new Date();
 		end.setHours(23, 59, 59, 999);
+
 		interviewService
 			.getInterviews({ startDate: start.toISOString(), endDate: end.toISOString() })
 			.then((list) => setTodayInterviews(list.length))
 			.catch(() => setTodayInterviews(0));
 	}, []);
 
-	const allActions: MetroAction[] = [
+	const primaryActions: RecruiterAction[] = [
 		{
 			id: "candidates",
 			title: "Candidates",
 			subtitle: "Manage talent pipeline",
 			href: "/candidates",
-			icon: <Users />,
-			color: "metro-tile-indigo",
-			bgPattern: "dots",
-			size: "large",
+			icon: Users,
 			stats: {
 				value: String(analytics?.overview?.totalCandidates?.value ?? 0),
-				label: "Total",
-				trend: "up"
-			}
+				label: "Total candidates",
+			},
 		},
 		{
 			id: "jobs",
 			title: "Jobs",
 			subtitle: "Open positions",
 			href: "/jobs",
-			icon: <Briefcase />,
-			color: "metro-tile-teal",
-			size: "wide",
+			icon: Briefcase,
 			stats: {
 				value: String(analytics?.overview?.activeJobs?.value ?? 0),
-				label: "Active"
-			}
+				label: "Active jobs",
+			},
 		},
+	];
+
+	const supportingActions: RecruiterAction[] = [
 		{
 			id: "interviews",
 			title: "Interviews",
 			subtitle: "Today's schedule",
 			href: "/calendar",
-			icon: <Calendar />,
-			color: "metro-tile-slate",
-			bgPattern: "grid",
-			size: "wide",
+			icon: Calendar,
 			stats: {
 				value: String(todayInterviews),
-				label: "Today"
-			}
+				label: "Today",
+			},
 		},
 		{
 			id: "new-job",
-			title: "Post Job",
+			title: "Post job",
 			subtitle: "Create new position",
 			href: "/jobs/new",
-			icon: <UserPlus />,
-			color: "metro-tile-indigo",
-			size: "small",
+			icon: UserPlus,
 		},
 		{
 			id: "uploads",
-			title: "Bulk Upload",
+			title: "Bulk upload",
 			subtitle: "Import CVs",
 			href: "/bulk-upload",
-			icon: <Upload />,
-			color: "metro-tile-teal",
-			size: "small",
+			icon: Upload,
 		},
 		{
 			id: "settings",
 			title: "Settings",
-			subtitle: "Configure",
+			subtitle: "Configure workspace",
 			href: "/settings",
-			icon: <Settings />,
-			color: "metro-tile-slate",
-			bgPattern: "lines",
-			size: "wide",
+			icon: Settings,
 		},
-	];
-	const actions = allActions.filter(
-		(action) => action.id !== "uploads" || isFeatureEnabled('bulkCvUpload')
-	);
-
-	// Background pattern class mapping
-	const getBackgroundPatternClass = (pattern?: string) => {
-		switch (pattern) {
-			case "dots":
-				return "metro-tile-pattern-dots";
-			case "grid":
-				return "metro-tile-pattern-grid";
-			case "lines":
-				return "metro-tile-pattern-lines";
-			default:
-				return "";
-		}
-	};
+	].filter((action) => action.id !== "uploads" || isFeatureEnabled("bulkCvUpload"));
 
 	return (
-		<div className={cn("metro-container", className)} data-tutorial="dashboard-quick-actions-inner">
-			{actions.map((action, index) => (
-				<Link
-					key={action.id}
-					href={action.href}
-					className={cn(
-						"metro-tile",
-						getSizeClass(action.size || "small"),
-						action.color,
-						"metro-tile-animate"
-					)}
-					style={{
-						animationDelay: `${index * 50}ms`
-					}}
-				>
-					{/* Background pattern */}
-					{action.bgPattern && (
-						<div className={cn("metro-tile-pattern", getBackgroundPatternClass(action.bgPattern))} />
-					)}
+		<div
+			className={cn(
+				"recruiter-action-workspace",
+				compact && "recruiter-action-workspace--compact",
+				className
+			)}
+			role="group"
+			aria-label="Recruitment workspace actions"
+			data-tutorial="dashboard-quick-actions-inner"
+		>
+			<div className="recruiter-action-primary" aria-label="Primary recruitment areas">
+				{primaryActions.map((action) => {
+					const Icon = action.icon;
 
-					{/* Gradient overlay */}
-					<div className="metro-tile-overlay" />
-
-					{/* Content */}
-					<div className="metro-tile-content">
-						{/* Header with icon and stats */}
-						<div className="metro-tile-header">
-							<div className="metro-tile-icon">
-								<div className={action.size === "large" ? "h-8 w-8" : "h-6 w-6"}>
-									{action.icon}
-								</div>
+					return (
+						<Link key={action.id} href={action.href} className="recruiter-action-card">
+							<div className="recruiter-action-card-top">
+								<span className="recruiter-action-icon" aria-hidden="true">
+									<Icon />
+								</span>
+								<ArrowRight className="recruiter-action-arrow" aria-hidden="true" />
 							</div>
-							
+
+							<div className="recruiter-action-card-copy">
+								<h3>{action.title}</h3>
+								<p>{action.subtitle}</p>
+							</div>
+
 							{action.stats && (
-								<div className="metro-tile-stats">
-									<div className="metro-tile-stats-value">
-										<span>{action.stats.value}</span>
-										{action.stats.trend && (
-											<TrendingUp 
-												className={cn(
-													"h-4 w-4",
-													action.stats.trend === "up" ? "metro-trend-up" : "metro-trend-down"
-												)} 
-											/>
-										)}
-									</div>
-									<div className="metro-tile-stats-label">{action.stats.label}</div>
+								<div className="recruiter-action-card-footer">
+									<span className="recruiter-action-stat-value">{action.stats.value}</span>
+									<span className="recruiter-action-stat-label">{action.stats.label}</span>
 								</div>
 							)}
-						</div>
+						</Link>
+					);
+				})}
+			</div>
 
-						{/* Footer with title and subtitle */}
-						<div className="metro-tile-footer">
-							<div className="metro-tile-title">
-								{action.title}
-							</div>
-							{action.subtitle && (
-								<div className="metro-tile-subtitle">
-									{action.subtitle}
-								</div>
+			<nav className="recruiter-action-support" aria-label="Recruitment shortcuts">
+				{supportingActions.map((action) => {
+					const Icon = action.icon;
+
+					return (
+						<Link key={action.id} href={action.href} className="recruiter-action-row">
+							<Icon className="recruiter-action-row-icon" aria-hidden="true" />
+							<span className="recruiter-action-row-copy">
+								<span className="recruiter-action-row-title">{action.title}</span>
+								<span className="recruiter-action-row-subtitle">{action.subtitle}</span>
+							</span>
+							{action.stats ? (
+								<span className="recruiter-action-row-stat" aria-label={`${action.stats.value} ${action.stats.label}`}>
+									<strong>{action.stats.value}</strong>
+									<span>{action.stats.label}</span>
+								</span>
+							) : (
+								<ArrowRight className="recruiter-action-row-arrow" aria-hidden="true" />
 							)}
-						</div>
-					</div>
-
-					{/* Hover effects */}
-					<div className="metro-tile-shine" />
-					<div className="metro-tile-glow" />
-				</Link>
-			))}
+						</Link>
+					);
+				})}
+			</nav>
 		</div>
 	);
 }

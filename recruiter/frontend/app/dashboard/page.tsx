@@ -23,6 +23,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import Link from "next/link"
 import { useUser } from "@/context/UserContext"
+import { useOrganization } from "@/context/OrganizationContext"
 import { ProfileCompletionModal } from "@/components/profile-completion-modal"
 import { useDashboardState } from "@/app/dashboard/hooks/useDashboardState"
 import { EnhancedMetricCard } from "@/components/dashboard/EnhancedMetricCard"
@@ -30,10 +31,7 @@ import { AnalyticsTabs } from "@/components/dashboard/AnalyticsTabs"
 import { DashboardSettings } from "@/components/dashboard/DashboardSettings"
 import { MetricDetailModal } from "@/components/dashboard/MetricDetailModal"
 import { MetroQuickActions } from "@/components/ui/metro-quick-actions"
-import { DashboardProfileCard } from "@/components/ui/dashboard-profile-card"
-import { ProgressiveDisclosure } from "@/components/ui/progressive-disclosure"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getIdpBaseUrl } from "@/utils/env"
 import { getMySigningDocuments, getOnboardingRecords, type CandidateOnboarding, type MySigningDocuments } from "@/services/onboardingService"
 import aiInterviewService, { type AIInterview } from "@/services/aiInterviewService"
@@ -99,6 +97,7 @@ function summarizeAIInterviews(interviews: AIInterview[]) {
 export default function Dashboard() {
   const { state, loadAnalytics, getUserDisplayName, isProfileComplete } = useUser()
   const { user, analytics, suggestions, isLoading } = state
+  const { currentOrganization } = useOrganization()
   const { viewMode, setViewMode, sections } = useDashboardState()
   const { isFeatureEnabled } = useFeatureFlags()
   const aiInterviewsEnabled = isFeatureEnabled('aiInterviews')
@@ -289,91 +288,105 @@ export default function Dashboard() {
   const currentAnalytics = analytics || fallbackAnalytics
   const displayName = getUserDisplayName()
   const profileComplete = isProfileComplete()
+  const organizationName = currentOrganization?.name || user?.company?.name || 'Your organization'
+  const organizationRole = (currentOrganization?.userRole || user?.role || 'Member')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
 
   if (isLoading) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-[1400px] mx-auto">
-        <div className="space-y-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-3">
-              <Skeleton className="h-8 w-64" />
-              <Skeleton className="h-4 w-96" />
-            </div>
-            <div className="flex gap-2">
-              <Skeleton className="h-10 w-32" />
-              <Skeleton className="h-10 w-32" />
-            </div>
+      <div className="recruiter-dashboard recruiter-dashboard--loading" aria-busy="true" aria-label="Loading recruitment dashboard">
+        <div className="recruiter-dashboard__hero recruiter-dashboard__hero--loading">
+          <div className="space-y-4">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-12 w-full max-w-xl" />
+            <Skeleton className="h-5 w-full max-w-lg" />
           </div>
-          
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-32" />
-            ))}
-          </div>
+          <Skeleton className="h-48 w-full rounded-2xl" />
+        </div>
+        <div className="recruiter-metrics-strip">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-28 w-full rounded-none" />
+          ))}
         </div>
       </div>
     )
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 pt-4 lg:pt-6 max-w-[1400px] mx-auto dashboard-container bg-background">
+    <div className="recruiter-dashboard">
       <ProfileCompletionModal 
         open={showProfileModal} 
         onOpenChange={handleProfileModalClose} 
       />
-      
-      <div className="space-y-8">
-        {/* Simplified Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight">
-              Welcome back, {displayName}
-            </h1>
-            <p className="text-muted-foreground">
-              Here's your recruitment overview
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            {/* Identity Hub Link */}
-            <Button
-              size="sm"
-              asChild
-              className="bg-gradient-to-r from-slate-900 to-slate-700 text-white shadow-sm hover:from-slate-800 hover:to-slate-600"
-            >
-              <a
-                href={getIdpBaseUrl()}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <LayoutGrid className="h-4 w-4 mr-2" />
+
+      <section className="recruiter-dashboard__hero" aria-labelledby="recruiter-dashboard-title">
+        <div className="recruiter-dashboard__hero-copy">
+          <p className="recruiter-dashboard__eyebrow">Recruitment workspace</p>
+          <h1 id="recruiter-dashboard-title">Hiring work, clearly organized.</h1>
+          <p>
+            Welcome back, {displayName}. Move candidates, roles, interviews, and hiring actions forward for {organizationName}.
+          </p>
+        </div>
+
+        <aside className="recruiter-context-card" aria-label="Current recruitment workspace">
+          <div className="recruiter-context-card__topline">
+            <div className="recruiter-context-card__identity">
+              <span className="recruiter-context-card__mark" aria-hidden="true">
+                {organizationName.slice(0, 2).toUpperCase()}
+              </span>
+              <div>
+                <span className="recruiter-context-card__label">Working in</span>
+                <strong>{organizationName}</strong>
+                <span>{organizationRole}</span>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" asChild className="recruiter-context-card__hub-link">
+              <a href={getIdpBaseUrl()} target="_blank" rel="noopener noreferrer">
+                <LayoutGrid className="h-4 w-4" />
                 App Hub
               </a>
             </Button>
+          </div>
 
-            {/* View Mode Toggle */}
+          <div className="recruiter-context-card__facts">
+            <div>
+              <span>Candidates</span>
+              <strong>{currentAnalytics.overview.totalCandidates.value}</strong>
+            </div>
+            <div>
+              <span>Active roles</span>
+              <strong>{currentAnalytics.overview.activeJobs.value}</strong>
+            </div>
+            <div>
+              <span>Profile</span>
+              <strong>{user?.profileCompletion.percentage || 0}%</strong>
+            </div>
+          </div>
+
+          <div className="recruiter-dashboard__actions" aria-label="Dashboard controls">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => setViewMode(viewMode === 'simple' ? 'detailed' : 'simple')}
             >
-              {viewMode === 'simple' ? <Maximize2 className="h-4 w-4 mr-2" /> : <Minimize2 className="h-4 w-4 mr-2" />}
-              {viewMode === 'simple' ? 'Detailed View' : 'Simple View'}
+              {viewMode === 'simple' ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
+              {viewMode === 'simple' ? 'Detailed view' : 'Simple view'}
             </Button>
-            
-            {/* Settings */}
             <DashboardSettings />
           </div>
-        </div>
+        </aside>
+      </section>
 
-        {/* Profile Completion Alert */}
+      <div className="recruiter-notice-stack" aria-label="Items requiring attention">
         {!profileComplete && suggestions.length > 0 && (
-          <Alert className="border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50">
-            <AlertCircle className="h-4 w-4 text-amber-600" />
-            <AlertDescription className="flex items-center justify-between">
+          <Alert className="recruiter-notice recruiter-notice--attention">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="recruiter-notice__content">
               <div>
-                <strong>Complete your profile</strong> to get the most out of SmartHR
-                <Badge variant="secondary" className="ml-2">
+                <strong>Complete your profile</strong>
+                <span>Finish your details to improve recruiting recommendations.</span>
+                <Badge variant="secondary">
                   {user?.profileCompletion.percentage}% complete
                 </Badge>
               </div>
@@ -388,12 +401,12 @@ export default function Dashboard() {
         )}
 
         {peopleTransitionsEnabled && workQueues.myDocuments.pending.length > 0 && (
-          <Alert className="rounded-md border-border bg-muted/40">
-            <FileSignature className="h-4 w-4 text-muted-foreground" />
-            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Alert className="recruiter-notice">
+            <FileSignature className="h-4 w-4" />
+            <AlertDescription className="recruiter-notice__content">
               <div>
                 <strong>Documents waiting for your signature</strong>
-                <span className="ml-1 text-muted-foreground">
+                <span>
                   {workQueues.myDocuments.pending.length === 1
                     ? `${workQueues.myDocuments.pending[0].title} needs your review.`
                     : `${workQueues.myDocuments.pending.length} packets need your review.`}
@@ -408,27 +421,18 @@ export default function Dashboard() {
             </AlertDescription>
           </Alert>
         )}
+      </div>
 
-        {/* Profile and Quick Actions */}
-        {sections.quickActions?.visible && (
-          <div className="grid gap-6 grid-cols-1 lg:grid-cols-12">
-            <div className="lg:col-span-5 xl:col-span-4">
-              <DashboardProfileCard />
+      {sections.keyMetrics?.visible && (
+        <section className="recruiter-dashboard__section recruiter-dashboard__section--metrics" aria-labelledby="recruiter-metrics-title">
+          <div className="recruiter-section-heading recruiter-section-heading--compact">
+            <div>
+              <h2 id="recruiter-metrics-title">Pipeline at a glance</h2>
+              <p>Select a metric to inspect its underlying activity.</p>
             </div>
-            <div className="lg:col-span-7 xl:col-span-8">
-              <MetroQuickActions />
-            </div>
+            <Badge variant="secondary">{viewMode} mode</Badge>
           </div>
-        )}
-
-        {/* Key Metrics Section */}
-        {sections.keyMetrics?.visible && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Key Metrics</h2>
-              <Badge variant="secondary">{viewMode} mode</Badge>
-            </div>
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="recruiter-metrics-strip">
               <EnhancedMetricCard
                 id="totalCandidates"
                 title="Total Candidates"
@@ -501,45 +505,61 @@ export default function Dashboard() {
                   currentAnalytics.overview.totalJobs.value
                 )}
               />
+          </div>
+        </section>
+      )}
+
+      {sections.quickActions?.visible && (
+        <section className="recruiter-dashboard__section" aria-labelledby="recruiter-workspace-title">
+          <div className="recruiter-section-heading">
+            <div>
+              <h2 id="recruiter-workspace-title">Recruitment workspace</h2>
+              <p>Open the workflow that needs to move today.</p>
             </div>
           </div>
-        )}
+          <MetroQuickActions />
+        </section>
+      )}
 
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Work queues</h2>
-            {workQueuesLoading && <Badge variant="secondary">Loading</Badge>}
+      {(peopleTransitionsEnabled || aiInterviewsEnabled) && (
+        <section className="recruiter-dashboard__section" aria-labelledby="recruiter-queues-title">
+          <div className="recruiter-section-heading">
+            <div>
+              <h2 id="recruiter-queues-title">Operational queues</h2>
+              <p>Follow up on the recruiting work already in motion.</p>
+            </div>
+            {workQueuesLoading && <Badge variant="secondary">Refreshing</Badge>}
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-3">
-            {peopleTransitionsEnabled && <Card className="rounded-md">
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+          <div className="recruiter-queue-grid">
+            {peopleTransitionsEnabled && <article className="recruiter-queue-card">
+              <header className="recruiter-queue-card__header">
                 <div>
-                  <CardTitle className="text-base">People Transitions</CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">Onboarding, exit, retirement packets, and signing progress</p>
+                  <h3>People transitions</h3>
+                  <p>Onboarding, exits, retirement packets, and signing progress.</p>
                 </div>
-                <GraduationCap className="h-5 w-5 text-muted-foreground" />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <span className="recruiter-queue-card__icon"><GraduationCap className="h-5 w-5" /></span>
+              </header>
+              <div className="recruiter-queue-card__body">
+                <div className="recruiter-queue-card__stats">
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.onboarding.total}</div>
-                    <div className="text-xs text-muted-foreground">Total</div>
+                    <strong>{workQueues.onboarding.total}</strong>
+                    <span>Total</span>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.onboarding.active}</div>
-                    <div className="text-xs text-muted-foreground">Active</div>
+                    <strong>{workQueues.onboarding.active}</strong>
+                    <span>Active</span>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.onboarding.sentPackets}</div>
-                    <div className="text-xs text-muted-foreground">Sent</div>
+                    <strong>{workQueues.onboarding.sentPackets}</strong>
+                    <span>Sent</span>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.onboarding.completed}</div>
-                    <div className="text-xs text-muted-foreground">Complete</div>
+                    <strong>{workQueues.onboarding.completed}</strong>
+                    <span>Complete</span>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="recruiter-queue-card__actions">
                   <Button asChild size="sm" variant="outline">
                     <Link href="/people-transitions">
                       Open transitions
@@ -553,37 +573,37 @@ export default function Dashboard() {
                     </Link>
                   </Button>
                 </div>
-              </CardContent>
-            </Card>}
+              </div>
+            </article>}
 
-            {aiInterviewsEnabled && <Card className="rounded-md">
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+            {aiInterviewsEnabled && <article className="recruiter-queue-card">
+              <header className="recruiter-queue-card__header">
                 <div>
-                  <CardTitle className="text-base">AI interviews</CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">Automated interview packets and completed sessions</p>
+                  <h3>AI interviews</h3>
+                  <p>Automated interview packets and completed sessions.</p>
                 </div>
-                <Bot className="h-5 w-5 text-muted-foreground" />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <span className="recruiter-queue-card__icon"><Bot className="h-5 w-5" /></span>
+              </header>
+              <div className="recruiter-queue-card__body">
+                <div className="recruiter-queue-card__stats">
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.total}</div>
-                    <div className="text-xs text-muted-foreground">Total</div>
+                    <strong>{workQueues.aiInterviews.total}</strong>
+                    <span>Total</span>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.open}</div>
-                    <div className="text-xs text-muted-foreground">Open</div>
+                    <strong>{workQueues.aiInterviews.open}</strong>
+                    <span>Open</span>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.candidates}</div>
-                    <div className="text-xs text-muted-foreground">Candidates</div>
+                    <strong>{workQueues.aiInterviews.candidates}</strong>
+                    <span>Candidates</span>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.aiInterviews.completedSessions}</div>
-                    <div className="text-xs text-muted-foreground">Complete</div>
+                    <strong>{workQueues.aiInterviews.completedSessions}</strong>
+                    <span>Complete</span>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="recruiter-queue-card__actions">
                   <Button asChild size="sm" variant="outline">
                     <Link href="/ai-interviews">
                       Open AI interviews
@@ -597,75 +617,75 @@ export default function Dashboard() {
                     </Link>
                   </Button>
                 </div>
-              </CardContent>
-            </Card>}
+              </div>
+            </article>}
 
-            {peopleTransitionsEnabled && <Card className="rounded-md">
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+            {peopleTransitionsEnabled && <article className="recruiter-queue-card recruiter-queue-card--documents">
+              <header className="recruiter-queue-card__header">
                 <div>
-                  <CardTitle className="text-base">My Documents</CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">Packets waiting for you and documents you have signed</p>
+                  <h3>My documents</h3>
+                  <p>Packets waiting for you and documents you have signed.</p>
                 </div>
-                <FileSignature className="h-5 w-5 text-muted-foreground" />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <span className="recruiter-queue-card__icon"><FileSignature className="h-5 w-5" /></span>
+              </header>
+              <div className="recruiter-queue-card__body">
+                <div className="recruiter-queue-card__stats recruiter-queue-card__stats--two">
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.myDocuments.pending.length}</div>
-                    <div className="text-xs text-muted-foreground">To sign</div>
+                    <strong>{workQueues.myDocuments.pending.length}</strong>
+                    <span>To sign</span>
                   </div>
                   <div>
-                    <div className="text-2xl font-semibold">{workQueues.myDocuments.signed.length}</div>
-                    <div className="text-xs text-muted-foreground">Signed</div>
+                    <strong>{workQueues.myDocuments.signed.length}</strong>
+                    <span>Signed</span>
                   </div>
                 </div>
 
                 {workQueues.myDocuments.pending.length > 0 ? (
-                  <div className="overflow-hidden rounded-md border">
+                  <div className="recruiter-document-list">
                     {workQueues.myDocuments.pending.slice(0, 3).map((item) => {
                       const signerQuery = item.signer.key ? `?signer=${encodeURIComponent(item.signer.key)}` : "";
                       return (
                         <Link
                           key={`pending-${item._id}-${item.signer.key || item.signer._id}`}
                           href={`/my-documents/${item._id}${signerQuery}`}
-                          className="flex items-center justify-between gap-3 border-b px-3 py-3 text-sm last:border-b-0 hover:bg-muted/50"
+                          className="recruiter-document-list__item"
                         >
                           <div className="min-w-0">
-                            <div className="truncate font-medium text-foreground">{item.title}</div>
-                            <div className="mt-1 truncate text-xs text-muted-foreground">
+                            <strong>{item.title}</strong>
+                            <span>
                               {item.documentCount} document{item.documentCount === 1 ? "" : "s"}
                               {item.assignedFieldCount ? ` - ${item.assignedFieldCount} assigned field${item.assignedFieldCount === 1 ? "" : "s"}` : ""}
-                            </div>
+                            </span>
                           </div>
-                          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <ArrowRight className="h-4 w-4 shrink-0" />
                         </Link>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                  <div className="recruiter-queue-card__empty">
                     No documents are waiting for your signature.
                   </div>
                 )}
 
-                <Button asChild size="sm" variant="outline">
+                <Button asChild size="sm" variant="outline" className="w-fit">
                   <Link href="/my-documents">
                     Open My Documents
                     <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>}
+                    </Link>
+                  </Button>
+              </div>
+            </article>}
           </div>
-        </div>
+        </section>
+      )}
 
-        {/* Analytics Section with Tabs */}
-        {sections.analytics?.visible && (
+      {sections.analytics?.visible && (
+        <section className="recruiter-dashboard__section recruiter-dashboard__analytics" aria-label="Recruitment analytics">
           <AnalyticsTabs analytics={currentAnalytics} />
-        )}
-      </div>
+        </section>
+      )}
 
-      {/* Metric Detail Modal */}
       {selectedMetric && (
         <MetricDetailModal
           metricId={selectedMetric.id}

@@ -130,16 +130,12 @@ const NavLink = ({ item, isMobile = false, onClick, pathname }: NavLinkProps) =>
     href={item.href}
     onClick={onClick}
     className={cn(
-      "flex items-center gap-2 transition-colors duration-200 ease-in-out",
-      isMobile
-        ? "text-lg font-medium p-3 rounded-lg"
-        : "text-sm font-medium px-3 py-2 rounded-md",
-      isLinkActive(pathname, item.href)
-        ? "bg-primary/10 text-primary"
-        : "text-foreground/70 hover:text-foreground hover:bg-accent"
+      "recruiter-nav-item",
+      isMobile ? "recruiter-nav-item--mobile" : "recruiter-nav-item--desktop",
+      isLinkActive(pathname, item.href) && "is-active"
     )}
   >
-    <item.icon className="h-5 w-5" />
+    <item.icon className="recruiter-nav-item__icon h-5 w-5" />
     <span>{item.title}</span>
   </Link>
 );
@@ -161,16 +157,14 @@ const NavDropdown = ({ item, pathname, isMobile = false, onItemClick }: NavDropd
           type="button"
           variant="ghost"
           className={cn(
-            "flex items-center justify-start gap-2 rounded-md transition-colors duration-200 ease-in-out",
-            isMobile ? "h-auto p-3 text-lg font-medium" : "h-auto px-3 py-2 text-sm font-medium",
-            active
-              ? "bg-primary/10 text-primary"
-              : "text-foreground/70 hover:bg-accent hover:text-foreground"
+            "recruiter-nav-item btn-sm",
+            isMobile ? "recruiter-nav-item--mobile" : "recruiter-nav-item--desktop",
+            active && "is-active"
           )}
         >
-          <item.icon className="h-5 w-5" />
+          <item.icon className="recruiter-nav-item__icon h-5 w-5" />
           <span>{item.title}</span>
-          <ChevronDown className="ml-auto h-4 w-4" />
+          <ChevronDown className="recruiter-nav-item__chevron ml-auto h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align={isMobile ? "start" : "center"} className="w-52">
@@ -189,7 +183,7 @@ const NavDropdown = ({ item, pathname, isMobile = false, onItemClick }: NavDropd
 
 const TopNavbar = () => {
   const pathname = usePathname();
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
   const { state, getUserDisplayName, getUserAvatar } = useUser();
   const { user } = state;
   const { currentOrganization } = useOrganization();
@@ -220,15 +214,15 @@ const TopNavbar = () => {
   const availableThemes = getAvailableThemeOptions();
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60" data-tutorial="app-navbar">
-      <div className="container flex h-20 items-center justify-between max-w-screen-2xl">
+    <header className="recruiter-topbar" data-tutorial="app-navbar">
+      <div className="recruiter-topbar__inner">
         {/* Left Section - Logo and Mobile Menu */}
-        <div className="flex items-center gap-4">
-          <div className="md:hidden">
+        <div className="recruiter-topbar__brand">
+          <div className="xl:hidden">
             <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Menu className="h-6 w-6" />
+                <Button variant="ghost" size="icon" className="recruiter-topbar__menu-trigger btn-sm">
+                  <Menu className="h-5 w-5" />
                   <span className="sr-only">Open menu</span>
                 </Button>
               </SheetTrigger>
@@ -262,13 +256,13 @@ const TopNavbar = () => {
               </SheetContent>
             </Sheet>
           </div>
-          <div className="hidden md:block">
-            <Logo size="sm" />
+          <div className="recruiter-topbar__logo-wrap">
+            <Logo size="sm" className="recruiter-topbar__logo" />
           </div>
         </div>
 
         {/* Center Section - Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-2">
+        <nav className="recruiter-topbar__desktop-nav">
           {visibleNavigationItems.map((item) => (
             isNavigationGroup(item) ? (
               <NavDropdown key={item.title} item={item} pathname={pathname} />
@@ -279,9 +273,14 @@ const TopNavbar = () => {
         </nav>
 
         {/* Right Section - Actions */}
-        <div className="flex items-center gap-4">
-          <div className="w-full flex-1 md:w-auto md:flex-none">
-            {currentOrganization && <OrganizationSwitcher showCreateOption={true} />}
+        <div className="recruiter-topbar__actions">
+          <div className="recruiter-topbar__organization">
+            {currentOrganization && (
+              <OrganizationSwitcher
+                className="recruiter-nav__org-trigger btn-sm"
+                showCreateOption={true}
+              />
+            )}
           </div>
           {/* Direct route to the ChatGPT connection: the AI runs on the
               signed-in person's own account, so it needs a standing entry
@@ -290,7 +289,7 @@ const TopNavbar = () => {
             asChild
             variant="outline"
             size="sm"
-            className="hidden gap-2 sm:inline-flex"
+            className="recruiter-nav__chatgpt btn-sm"
             data-testid="nav-connect-chatgpt"
           >
             <Link href="/settings/ai-account">
@@ -298,14 +297,27 @@ const TopNavbar = () => {
               <span>ChatGPT</span>
             </Link>
           </Button>
-          <NotificationDropdown />
+          <div className="recruiter-topbar__notifications">
+            <NotificationDropdown />
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                <Avatar className="h-10 w-10 border-2 border-transparent group-hover:border-primary transition-colors">
+              <Button
+                variant="ghost"
+                className="recruiter-nav__profile-trigger btn-sm group"
+                aria-label={`Open profile menu for ${getUserDisplayName()}`}
+              >
+                <Avatar className="recruiter-nav__profile-avatar">
                   <AvatarImage src={getUserAvatar() || undefined} alt={getUserDisplayName()} />
                   <AvatarFallback>{user?.profile?.firstName?.[0] || 'U'}</AvatarFallback>
                 </Avatar>
+                <span className="recruiter-nav__profile-copy">
+                  <span className="recruiter-nav__profile-name">{getUserDisplayName()}</span>
+                  <span className="recruiter-nav__profile-context">
+                    {currentOrganization?.name || user?.email || 'Account'}
+                  </span>
+                </span>
+                <ChevronDown className="recruiter-nav__profile-chevron h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end" forceMount>

@@ -93,16 +93,16 @@ export const AnalyticsTabs = React.memo(function AnalyticsTabs({ analytics, clas
         onValueChange={(value) => setActiveTab(value as any)}
         className="w-full"
       >
-        <TabsList className="grid w-full grid-cols-4 h-auto p-1">
+        <TabsList className="grid h-auto w-full grid-cols-2 p-1 sm:grid-cols-4">
           {tabConfig.map((tab) => (
             <TabsTrigger
               key={tab.id}
               value={tab.id}
-              className="flex flex-col gap-1 py-3 data-[state=active]:bg-background"
+              className="min-w-0 flex-col gap-1 py-3 data-[state=active]:bg-background"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center justify-center gap-2">
                 {tab.icon}
-                <span className="font-medium">{tab.label}</span>
+                <span className="truncate font-medium">{tab.label}</span>
               </div>
               <span className="text-xs text-muted-foreground hidden sm:block">
                 {tab.description}

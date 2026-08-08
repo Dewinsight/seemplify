@@ -257,11 +257,11 @@ const NotificationDropdown = () => {
           background: transparent;
         }
         .notification-scroll::-webkit-scrollbar-thumb {
-          background: #cbd5e1;
+          background: var(--suite-line-strong);
           border-radius: 10px;
         }
         .notification-scroll::-webkit-scrollbar-thumb:hover {
-          background: #94a3b8;
+          background: var(--suite-muted);
         }
       `}</style>
       <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
@@ -283,21 +283,17 @@ const NotificationDropdown = () => {
         </Button>
       </DropdownMenuTrigger>
       
-      <DropdownMenuContent align="end" className="w-[420px] p-0 shadow-2xl border-0 rounded-2xl overflow-hidden">
-        {/* Modern Header */}
-        <div className="relative bg-white border-b border-gray-100 px-5 py-4">
+      <DropdownMenuContent align="end" className="recruiter-notification-menu overflow-hidden p-0">
+        <div className="recruiter-notification-menu__header relative border-b px-5 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="relative">
-                <div className="absolute inset-0 bg-blue-500 rounded-lg blur-md opacity-20"></div>
-                <div className="relative bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-lg">
-                  <Bell className="h-4 w-4 text-white" />
-                </div>
+              <div className="recruiter-notification-menu__heading-icon">
+                <Bell className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-900">Notifications</h3>
+                <h3 className="recruiter-notification-menu__title text-base font-semibold">Notifications</h3>
                 {unreadCount > 0 && (
-                  <p className="text-xs text-gray-500">{unreadCount} unread message{unreadCount !== 1 ? 's' : ''}</p>
+                  <p className="recruiter-notification-menu__subtitle text-xs">{unreadCount} unread message{unreadCount !== 1 ? 's' : ''}</p>
                 )}
               </div>
             </div>
@@ -305,7 +301,7 @@ const NotificationDropdown = () => {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 text-xs font-medium text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                className="recruiter-notification-menu__quiet-action h-8 rounded-md text-xs font-medium"
                 onClick={async () => {
                   try {
                     await notificationService.markAllAsRead();
@@ -326,22 +322,22 @@ const NotificationDropdown = () => {
         
         {/* Notifications List */}
         <div 
-          className="notification-scroll max-h-[480px] overflow-y-auto bg-gray-50/30"
+          className="notification-scroll recruiter-notification-menu__list overflow-y-auto"
           style={{
             scrollbarWidth: 'thin',
-            scrollbarColor: '#cbd5e1 #f8fafc'
+            scrollbarColor: 'var(--suite-line-strong) var(--suite-surface-muted)'
           }}
         >
           {isLoading ? (
             <div className="py-8 text-center">
               <div className="animate-pulse space-y-3 px-4">
                 {[...Array(3)].map((_, i) => (
-                  <div key={i} className="p-3 bg-gray-100 rounded-lg">
+                  <div key={i} className="recruiter-notification-menu__skeleton rounded-lg p-3">
                     <div className="flex space-x-3">
-                      <div className="w-10 h-10 bg-gray-200 rounded-full" />
+                      <div className="recruiter-notification-menu__skeleton-line h-10 w-10 rounded-full" />
                       <div className="flex-1 space-y-2">
-                        <div className="w-3/4 h-3 bg-gray-200 rounded" />
-                        <div className="w-1/2 h-2 bg-gray-200 rounded" />
+                        <div className="recruiter-notification-menu__skeleton-line h-3 w-3/4 rounded" />
+                        <div className="recruiter-notification-menu__skeleton-line h-2 w-1/2 rounded" />
                       </div>
                     </div>
                   </div>
@@ -351,76 +347,65 @@ const NotificationDropdown = () => {
           ) : notifications.length === 0 ? (
             <div className="py-16 px-8 text-center">
               <div className="relative inline-block mb-4">
-                <div className="absolute inset-0 bg-blue-100 rounded-full blur-xl opacity-50"></div>
-                <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 rounded-full w-16 h-16 flex items-center justify-center">
-                  <Bell className="w-8 h-8 text-gray-400" />
+                <div className="recruiter-notification-menu__empty-icon relative flex h-16 w-16 items-center justify-center rounded-full">
+                  <Bell className="h-8 w-8 text-muted-foreground" />
                 </div>
               </div>
-              <p className="text-sm font-medium text-gray-900 mb-1">All caught up!</p>
-              <p className="text-xs text-gray-500">You have no new notifications</p>
+              <p className="recruiter-notification-menu__empty-title mb-1 text-sm font-medium">All caught up!</p>
+              <p className="recruiter-notification-menu__empty-copy text-xs">You have no new notifications</p>
             </div>
           ) : (
             notifications.map((notification) => (
               <div key={notification._id} className="px-3 py-2 first:pt-3 last:pb-3">
                 <div
-                  className={`group relative p-4 rounded-xl cursor-pointer transition-all duration-200 ${
-                    !notification.read 
-                      ? 'bg-white hover:bg-blue-50/50 shadow-sm hover:shadow-md border border-blue-100/50' 
-                      : 'bg-white/60 hover:bg-white border border-transparent hover:border-gray-200'
-                  }`}
+                  className={`recruiter-notification-menu__item group ${!notification.read ? 'is-unread' : ''}`}
                   onClick={() => handleNotificationClick(notification)}
                 >
                   {/* Priority Indicator */}
                   {notification.priority === 'high' && (
-                    <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-red-500 to-orange-500 rounded-l-xl" />
+                    <div className="recruiter-notification-menu__priority absolute left-0 top-0 h-full w-1 rounded-l-lg" />
                   )}
                   
                   <div className="flex items-start gap-3">
                     {/* Icon */}
                     <div className="flex-shrink-0 relative">
-                      <div className={`p-2.5 rounded-xl transition-all ${
-                        !notification.read 
-                          ? 'bg-gradient-to-br from-blue-50 to-indigo-50 group-hover:from-blue-100 group-hover:to-indigo-100' 
-                          : 'bg-gray-50 group-hover:bg-gray-100'
-                      }`}>
+                      <div className="recruiter-notification-menu__item-icon rounded-lg p-2.5">
                         {getNotificationIcon(notification.type)}
                       </div>
                       {!notification.read && (
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-600 rounded-full border-2 border-white" />
+                        <div className="recruiter-notification-menu__unread-dot absolute -right-1 -top-1 h-3 w-3 rounded-full border-2" />
                       )}
                     </div>
                     
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 mb-1">
-                        <h4 className={`text-sm leading-snug ${
-                          !notification.read ? 'font-semibold text-gray-900' : 'font-medium text-gray-700'
-                        }`}>
+                        <h4 className="recruiter-notification-menu__item-title text-sm font-medium leading-snug">
                           {notification.title}
                         </h4>
-                        <ChevronRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5" />
+                        <ChevronRight className="recruiter-notification-menu__meta mt-0.5 h-4 w-4 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
                       </div>
                       
-                      <p className="text-xs text-gray-600 leading-relaxed line-clamp-2 mb-2">
+                      <p className="recruiter-notification-menu__message mb-2 line-clamp-2 text-xs leading-relaxed">
                         {notification.message}
                       </p>
                       
                       {/* Meta Info */}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+                        <span className="recruiter-notification-menu__meta inline-flex items-center gap-1 text-xs">
                           <Calendar className="w-3 h-3" />
                           {formatTimeAgo(notification.createdAt)}
                         </span>
                         
                         {notification.organization?.id && (
-                          <Badge variant="secondary" className="text-[10px] h-5 px-1.5 bg-gray-100 text-gray-600 border-0 font-medium">
+                          <Badge variant="secondary" className="recruiter-notification-menu__organization-badge h-5 px-1.5 text-[10px] font-medium">
                             <Building2 className="h-2.5 w-2.5 mr-1" />
                             {notification.organization?.name || 'Organization'}
                           </Badge>
                         )}
                         
                         {!notification.read && (
-                          <Badge className="text-[10px] h-5 px-1.5 bg-blue-600 hover:bg-blue-600 text-white border-0 font-medium">
+                          <Badge className="recruiter-notification-menu__new-badge h-5 px-1.5 text-[10px] font-medium">
                             <Sparkles className="h-2.5 w-2.5 mr-0.5" />
                             New
                           </Badge>
@@ -435,10 +420,10 @@ const NotificationDropdown = () => {
         </div>
         
         {/* Footer */}
-        <div className="border-t border-gray-100 bg-white px-4 py-3">
+        <div className="recruiter-notification-menu__footer border-t px-4 py-3">
           <Button
             variant="ghost"
-            className="w-full h-10 justify-center text-sm font-medium text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all group"
+            className="recruiter-notification-menu__footer-action group h-10 w-full justify-center rounded-md text-sm font-medium"
             onClick={() => {
               setIsOpen(false);
               router.push('/settings/notifications');

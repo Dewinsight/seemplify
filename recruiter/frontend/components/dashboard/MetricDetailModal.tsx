@@ -67,16 +67,16 @@ export function MetricDetailModal({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="text-xl">{metricData.title} Analysis</DialogTitle>
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-4xl overflow-x-hidden overflow-y-auto p-4 sm:p-6">
+        <DialogHeader className="text-left">
+          <div className="flex flex-col gap-4 pr-8 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <DialogTitle className="text-lg sm:text-xl">{metricData.title} Analysis</DialogTitle>
               <DialogDescription>
                 Detailed insights and historical trends
               </DialogDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
               <Badge variant={trend > 0 ? 'default' : 'secondary'}>
                 {trend > 0 ? '+' : ''}{trend.toFixed(1)}% trend
               </Badge>
@@ -101,8 +101,11 @@ export function MetricDetailModal({
 
           {/* Tabs for different views */}
           <Tabs defaultValue="trend" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="trend">Historical Trend</TabsTrigger>
+            <TabsList className="grid h-auto w-full grid-cols-3">
+              <TabsTrigger value="trend" className="min-w-0 px-2 sm:px-3">
+                <span className="sm:hidden">Trend</span>
+                <span className="hidden sm:inline">Historical Trend</span>
+              </TabsTrigger>
               <TabsTrigger value="breakdown">Breakdown</TabsTrigger>
               <TabsTrigger value="insights">Insights</TabsTrigger>
             </TabsList>
@@ -110,14 +113,14 @@ export function MetricDetailModal({
             <TabsContent value="trend" className="space-y-4">
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <CardTitle className="text-base">30-Day Trend</CardTitle>
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm">
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                      <Button variant="outline" size="sm" className="w-full sm:w-auto">
                         <Calendar className="h-4 w-4 mr-2" />
                         Date Range
                       </Button>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" className="w-full sm:w-auto">
                         <Filter className="h-4 w-4 mr-2" />
                         Filter
                       </Button>

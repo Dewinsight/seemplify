@@ -26,11 +26,11 @@ export interface ThemeSettings {
 export const THEME_CONFIG: ThemeSettings = {
   // Theme Availability
   lightEnabled: true,
-  darkEnabled: false,
-  systemEnabled: false,
+  darkEnabled: true,
+  systemEnabled: true,
   
   // Default Theme (must be enabled above)
-  defaultTheme: 'light'
+  defaultTheme: 'system'
 };
 
 /**
