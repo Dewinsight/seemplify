@@ -485,6 +485,22 @@ const PAGE_GUIDES: GuideDefinition[] = [
     ]
   },
   {
+    key: 'admin-cycle-create',
+    matcher: /^\/admin\/appraisal-cycles\/new$/,
+    title: 'Create Review Cycle',
+    summary: 'Set the review period, choose employees, and confirm the launch in three steps.',
+    purpose: 'This flow starts a review without exposing internal workflow configuration. Targets are maintained before the review; employees then complete an AI-guided reflection before the line-manager review and discussion.',
+    steps: [
+      'Name the cycle and choose the performance period it covers.',
+      'Choose employees who have an assigned line manager.',
+      'Review the people and settings, then launch the cycle.'
+    ],
+    success: [
+      'Every selected employee receives a self-assessment work item.',
+      'Line managers join after their employees submit.'
+    ]
+  },
+  {
     key: 'admin-cycle-detail',
     matcher: /^\/admin\/appraisal-cycles\/[^/]+$/,
     title: 'Cycle Detail',
@@ -506,7 +522,7 @@ const PAGE_GUIDES: GuideDefinition[] = [
     summary: 'Use this page to define a cycle and, for new cycles, launch it immediately with selected participants.',
     purpose: 'This page is where the new end-to-end cycle flow lives. For new cycles, define the setup, choose eligible participants, and create the cycle once so it becomes active immediately.',
     steps: [
-      'Set the basic cycle details and phase dates first.',
+      'Review the basic cycle details and phase dates.',
       'If this is a new cycle, choose the participants who should be included right here.',
       'Create and launch once; editing an existing cycle should only be used for configuration updates.'
     ],
