@@ -251,9 +251,9 @@ export default function PunchLogPage() {
                                                             </a>
                                                             {entry.location.verified !== undefined && (
                                                                 entry.location.verified ? (
-                                                                    <CheckCircle2 className="h-3.5 w-3.5 text-green-400" title="Location verified within geofence" />
+                                                                    <CheckCircle2 className="h-3.5 w-3.5 text-green-400" aria-label="Location verified within geofence" />
                                                                 ) : (
-                                                                    <XCircle className="h-3.5 w-3.5 text-amber-400" title="Location outside geofence" />
+                                                                    <XCircle className="h-3.5 w-3.5 text-amber-400" aria-label="Location outside geofence" />
                                                                 )
                                                             )}
                                                             {entry.location.accuracy && (

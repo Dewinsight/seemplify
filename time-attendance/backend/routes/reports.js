@@ -1,13 +1,81 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, requireHRAdmin } = require('../middleware/auth');
-const { Timesheet, TimeEntry } = require('../models');
+const { Timesheet, TimeEntry, AttendancePolicy } = require('../models');
 const { startOfMonth, endOfMonth, parseISO, subMonths, format } = require('date-fns');
+const ExcelJS = require('exceljs');
+const { buildAttendanceExceptions } = require('../services/attendanceExceptionService');
 
 // Apply auth middleware
 router.use(requireAuth);
 router.use(requireOrganization);
 router.use(requireHRAdmin);
+
+// Consolidated exception register generated directly from clock events.
+router.get('/exceptions', async (req, res) => {
+    try {
+        const end = req.query.endDate ? new Date(`${req.query.endDate}T23:59:59.999Z`) : endOfMonth(new Date());
+        const start = req.query.startDate ? new Date(`${req.query.startDate}T00:00:00.000Z`) : startOfMonth(new Date());
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+            return res.status(400).json({ error: 'Invalid report date range' });
+        }
+        if ((end - start) / 86400000 > 92) {
+            return res.status(400).json({ error: 'Exception reports are limited to 92 days' });
+        }
+
+        const [entries, policy] = await Promise.all([
+            TimeEntry.find({ organizationId: req.organizationId, timestamp: { $gte: start, $lte: end } }).sort({ timestamp: 1 }).lean(),
+            AttendancePolicy.getOrCreateDefault(req.organizationId, req.organizationName, req.user.id),
+        ]);
+        const report = buildAttendanceExceptions(entries, policy);
+
+        if (req.query.format === 'xlsx') {
+            const workbook = new ExcelJS.Workbook();
+            const sheet = workbook.addWorksheet('Attendance exceptions', { views: [{ state: 'frozen', ySplit: 1 }] });
+            sheet.columns = [
+                ['Date', 'date', 14], ['Employee', 'employee', 24], ['Email', 'email', 28], ['Team', 'team', 20],
+                ['Worked minutes', 'worked', 16], ['Break minutes', 'breaks', 15], ['Exceptions', 'exceptions', 42], ['Sources', 'sources', 20],
+            ].map(([header, key, width]) => ({ header, key, width }));
+            sheet.getRow(1).font = { bold: true };
+            report.rows.forEach(row => sheet.addRow({
+                date: row.date, employee: row.userName, email: row.userEmail, team: row.teamName,
+                worked: row.workMinutes, breaks: row.breakMinutes,
+                exceptions: row.exceptions.map(item => item.type.replaceAll('_', ' ')).join(', '),
+                sources: row.sources.join(', '),
+            }));
+            const sourceSheet = workbook.addWorksheet('Clock sources');
+            sourceSheet.columns = [{ header: 'Source', key: 'source', width: 22 }, { header: 'Events', key: 'events', width: 14 }];
+            sourceSheet.getRow(1).font = { bold: true };
+            Object.entries(report.summary.sourceCounts).forEach(([source, events]) => sourceSheet.addRow({ source, events }));
+            const buffer = await workbook.xlsx.writeBuffer();
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename="attendance-exceptions-${format(start, 'yyyy-MM-dd')}-${format(end, 'yyyy-MM-dd')}.xlsx"`);
+            return res.send(Buffer.from(buffer));
+        }
+
+        res.json({ period: { start, end }, ...report });
+    } catch (error) {
+        console.error('Attendance exceptions report error:', error);
+        res.status(500).json({ error: 'Failed to generate attendance exceptions report' });
+    }
+});
+
+// Backward-compatible route used by the reporting UI.
+router.get('/attendance', async (req, res) => {
+    try {
+        const start = req.query.start ? new Date(req.query.start) : startOfMonth(new Date());
+        const end = req.query.end ? new Date(req.query.end) : endOfMonth(new Date());
+        const report = await Timesheet.aggregate([
+            { $match: { organizationId: req.organizationId, startDate: { $gte: start }, endDate: { $lte: end } } },
+            { $group: { _id: '$userId', userName: { $first: '$userName' }, userEmail: { $first: '$userEmail' }, teamName: { $first: '$teamName' }, totalHours: { $sum: '$summary.totalHours' }, daysWorked: { $sum: '$summary.daysWorked' }, lateDays: { $sum: '$summary.lateDays' } } },
+            { $sort: { teamName: 1, userName: 1 } },
+        ]);
+        res.json({ period: { start, end }, report });
+    } catch (error) {
+        console.error('Attendance report error:', error);
+        res.status(500).json({ error: 'Failed to generate attendance report' });
+    }
+});
 
 // Get monthly attendance report
 router.get('/monthly', async (req, res) => {
@@ -60,7 +128,8 @@ router.get('/monthly', async (req, res) => {
 router.get('/overtime', async (req, res) => {
     try {
         const organizationId = req.organizationId;
-        const { startDate, endDate } = req.query; // YYYY-MM-DD
+        const startDate = req.query.startDate || req.query.start;
+        const endDate = req.query.endDate || req.query.end;
 
         let start = startDate ? parseISO(startDate) : startOfMonth(new Date());
         let end = endDate ? parseISO(endDate) : endOfMonth(new Date());
@@ -81,6 +150,7 @@ router.get('/overtime', async (req, res) => {
                     userName: { $first: '$userName' },
                     teamName: { $first: '$teamName' },
                     totalOvertimeHours: { $sum: '$summary.overtimeHours' },
+                    maxOvertimeHours: { $max: '$summary.overtimeHours' },
                     occurrences: { $sum: 1 },
                 },
             },

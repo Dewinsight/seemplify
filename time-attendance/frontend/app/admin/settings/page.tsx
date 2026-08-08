@@ -41,6 +41,33 @@ export default function SettingsPage() {
             if (data?.policy) {
                 const normalizedPolicy = {
                     ...data.policy,
+                    timezone: data.policy.timezone || 'UTC',
+                    workSchedule: {
+                        ...(data.policy.workSchedule || {}),
+                        defaultShift: {
+                            name: 'Standard Shift',
+                            startTime: data.policy.workSchedule?.defaultShift?.startTime || data.policy.workSchedule?.startTime || '09:00',
+                            endTime: data.policy.workSchedule?.defaultShift?.endTime || data.policy.workSchedule?.endTime || '17:00',
+                            breakDuration: data.policy.workSchedule?.defaultShift?.breakDuration ?? 60,
+                        },
+                    },
+                    overtime: {
+                        ...(data.policy.overtime || {}),
+                        dailyThreshold: data.policy.overtime?.dailyThreshold ?? 8,
+                        weeklyThreshold: data.policy.overtime?.weeklyThreshold ?? 40,
+                    },
+                    clockSettings: {
+                        ...(data.policy.clockSettings || {}),
+                        enforceClockInWindow: data.policy.clockSettings?.enforceClockInWindow ?? false,
+                        earliestClockInMinutes: data.policy.clockSettings?.earliestClockInMinutes ?? 60,
+                        latestClockInMinutes: data.policy.clockSettings?.latestClockInMinutes ?? 240,
+                        nonWorkingDayClockIn: data.policy.clockSettings?.nonWorkingDayClockIn || 'warn',
+                    },
+                    breakRules: {
+                        requiredAfterMinutes: data.policy.breakRules?.requiredAfterMinutes ?? 360,
+                        minimumBreakMinutes: data.policy.breakRules?.minimumBreakMinutes ?? 20,
+                        maximumContinuousWorkMinutes: data.policy.breakRules?.maximumContinuousWorkMinutes ?? 360,
+                    },
                     notifications: {
                         ...(data.policy.notifications || {}),
                         managerReports: {
@@ -183,8 +210,8 @@ export default function SettingsPage() {
                                 <label className="block text-sm font-medium text-zinc-400 mb-2">Default Start Time</label>
                                 <input
                                     type="time"
-                                    value={policy.workSchedule.startTime}
-                                    onChange={(e) => setPolicy({ ...policy, workSchedule: { ...policy.workSchedule, startTime: e.target.value } })}
+                                    value={policy.workSchedule.defaultShift.startTime}
+                                    onChange={(e) => setPolicy({ ...policy, workSchedule: { ...policy.workSchedule, defaultShift: { ...policy.workSchedule.defaultShift, startTime: e.target.value } } })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                                 />
                             </div>
@@ -192,8 +219,8 @@ export default function SettingsPage() {
                                 <label className="block text-sm font-medium text-zinc-400 mb-2">Default End Time</label>
                                 <input
                                     type="time"
-                                    value={policy.workSchedule.endTime}
-                                    onChange={(e) => setPolicy({ ...policy, workSchedule: { ...policy.workSchedule, endTime: e.target.value } })}
+                                    value={policy.workSchedule.defaultShift.endTime}
+                                    onChange={(e) => setPolicy({ ...policy, workSchedule: { ...policy.workSchedule, defaultShift: { ...policy.workSchedule.defaultShift, endTime: e.target.value } } })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                                 />
                             </div>
@@ -250,27 +277,65 @@ export default function SettingsPage() {
                     {policy.overtime.enabled && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-top-4">
                             <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-2">Threshold (Minutes)</label>
+                                <label className="block text-sm font-medium text-zinc-400 mb-2">Daily threshold (hours)</label>
                                 <input
                                     type="number"
-                                    value={policy.overtime.thresholdMinutes}
-                                    onChange={(e) => setPolicy({ ...policy, overtime: { ...policy.overtime, thresholdMinutes: parseInt(e.target.value) } })}
+                                    value={policy.overtime.dailyThreshold}
+                                    onChange={(e) => setPolicy({ ...policy, overtime: { ...policy.overtime, dailyThreshold: Number(e.target.value) } })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                                 />
-                                <p className="text-xs text-zinc-500 mt-1">Minimum extra time to count as OT</p>
+                                <p className="text-xs text-zinc-500 mt-1">Hours worked before daily overtime begins</p>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-2">Daily Limit (Minutes)</label>
+                                <label className="block text-sm font-medium text-zinc-400 mb-2">Weekly threshold (hours)</label>
                                 <input
                                     type="number"
-                                    value={policy.overtime.dailyLimitMinutes}
-                                    onChange={(e) => setPolicy({ ...policy, overtime: { ...policy.overtime, dailyLimitMinutes: parseInt(e.target.value) } })}
+                                    value={policy.overtime.weeklyThreshold}
+                                    onChange={(e) => setPolicy({ ...policy, overtime: { ...policy.overtime, weeklyThreshold: Number(e.target.value) } })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                                 />
-                                <p className="text-xs text-zinc-500 mt-1">Maximum allowed OT per day</p>
+                                <p className="text-xs text-zinc-500 mt-1">Hours worked before weekly overtime begins</p>
                             </div>
                         </div>
                     )}
+                </section>
+
+                <section className="bg-zinc-900/50 border border-white/5 rounded-xl p-6">
+                    <div className="mb-6">
+                        <h2 className="text-lg font-semibold text-white">Clock-in and break rules</h2>
+                        <p className="text-sm text-zinc-500">Login never starts a shift. Employees must use an attendance clock action.</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        <label className="text-sm text-zinc-400">Timezone
+                            <input value={policy.timezone} onChange={(e) => setPolicy({ ...policy, timezone: e.target.value })} placeholder="Europe/London" className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white" />
+                        </label>
+                        <label className="text-sm text-zinc-400">Non-working day clock-in
+                            <select value={policy.clockSettings.nonWorkingDayClockIn} onChange={(e) => setPolicy({ ...policy, clockSettings: { ...policy.clockSettings, nonWorkingDayClockIn: e.target.value } })} className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white">
+                                <option value="allow">Allow</option><option value="warn">Allow with warning</option><option value="block">Block</option>
+                            </select>
+                        </label>
+                        <label className="flex items-center gap-3 self-end min-h-10 text-sm text-zinc-300">
+                            <input type="checkbox" checked={policy.clockSettings.enforceClockInWindow} onChange={(e) => setPolicy({ ...policy, clockSettings: { ...policy.clockSettings, enforceClockInWindow: e.target.checked } })} className="h-4 w-4 accent-teal-500" /> Enforce clock-in window
+                        </label>
+                        <label className="text-sm text-zinc-400">Earliest clock-in (minutes before shift)
+                            <input type="number" min={0} value={policy.clockSettings.earliestClockInMinutes} onChange={(e) => setPolicy({ ...policy, clockSettings: { ...policy.clockSettings, earliestClockInMinutes: Number(e.target.value) } })} className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white" />
+                        </label>
+                        <label className="text-sm text-zinc-400">Latest clock-in (minutes after shift)
+                            <input type="number" min={0} value={policy.clockSettings.latestClockInMinutes} onChange={(e) => setPolicy({ ...policy, clockSettings: { ...policy.clockSettings, latestClockInMinutes: Number(e.target.value) } })} className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white" />
+                        </label>
+                        <label className="flex items-center gap-3 self-end min-h-10 text-sm text-zinc-300">
+                            <input type="checkbox" checked={!!policy.clockSettings.requireNote} onChange={(e) => setPolicy({ ...policy, clockSettings: { ...policy.clockSettings, requireNote: e.target.checked } })} className="h-4 w-4 accent-teal-500" /> Require a clock-in note
+                        </label>
+                        <label className="text-sm text-zinc-400">Break required after (minutes)
+                            <input type="number" min={0} value={policy.breakRules.requiredAfterMinutes} onChange={(e) => setPolicy({ ...policy, breakRules: { ...policy.breakRules, requiredAfterMinutes: Number(e.target.value) } })} className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white" />
+                        </label>
+                        <label className="text-sm text-zinc-400">Minimum break (minutes)
+                            <input type="number" min={0} value={policy.breakRules.minimumBreakMinutes} onChange={(e) => setPolicy({ ...policy, breakRules: { ...policy.breakRules, minimumBreakMinutes: Number(e.target.value) } })} className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white" />
+                        </label>
+                        <label className="text-sm text-zinc-400">Maximum continuous work (minutes)
+                            <input type="number" min={0} value={policy.breakRules.maximumContinuousWorkMinutes} onChange={(e) => setPolicy({ ...policy, breakRules: { ...policy.breakRules, maximumContinuousWorkMinutes: Number(e.target.value) } })} className="mt-2 w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white" />
+                        </label>
+                    </div>
                 </section>
 
                 {/* Manager Reports */}

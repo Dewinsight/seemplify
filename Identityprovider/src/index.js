@@ -25,6 +25,7 @@ import { dirname, join } from 'path'
 import crypto from 'crypto'
 import { SignJWT, jwtVerify } from 'jose'
 import { emailService } from './services/emailService.js'
+import { issueAttendanceHubToken } from './services/attendanceHubService.js'
 import { otpService } from './services/otpService.js'
 import MarketingVisit from './models/MarketingVisit.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
@@ -3573,6 +3574,44 @@ app.get('/request-plan/:planId', async (req, res) => {
   }
 })
 
+// Short-lived, self-service token for the hub's embedded attendance controls.
+// It grants no administrative access and is intentionally separate from the user's OIDC token.
+app.get('/api/hub/attendance-token', async (req, res) => {
+  try {
+    const sessionAccount = await getSessionFromCookies(req)
+    if (!sessionAccount) return res.status(401).json({ error: 'Authentication required' })
+
+    const account = await Account.findOne({ sub: sessionAccount.sub })
+      .populate('organizations.organization', 'name')
+      .populate('currentOrganization', 'name')
+    if (!account?.currentOrganization) return res.status(409).json({ error: 'Select an organization first' })
+
+    const currentId = account.currentOrganization._id.toString()
+    const membership = account.organizations.find(item =>
+      item.isActive !== false && (item.organization?._id || item.organization)?.toString() === currentId
+    )
+    if (!membership) return res.status(403).json({ error: 'Organization membership is not active' })
+    if (membership.appAccess?.mode === APP_ACCESS_MODE_SELECTED && !membership.appAccess.appIds?.includes('time-attendance')) {
+      return res.status(403).json({ error: 'Time & Attendance is not assigned to this account' })
+    }
+
+    const access = await getCurrentOrganizationSubscriptionAccessState(account)
+    if (access?.isLocked) return res.status(403).json({ error: 'Organization subscription is not active' })
+
+    const token = await issueAttendanceHubToken({
+      account,
+      organization: account.currentOrganization,
+      role: membership.role,
+      teams: account.teams.filter(team => team.isActive !== false && team.organization?.toString() === currentId)
+    })
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ token, expiresIn: 120, apiUrl: getAppApiUrl('time-attendance') })
+  } catch (err) {
+    console.error('Attendance hub token error:', err.message)
+    res.status(err.message.includes('not configured') ? 503 : 500).json({ error: 'Attendance controls are temporarily unavailable' })
+  }
+})
+
 // Hub Homepage - Main app launcher (root route)
 app.get('/', async (req, res) => {
   try {
@@ -3703,6 +3742,7 @@ app.get('/', async (req, res) => {
       user: account,
       apps,
       comingSoonCards,
+      attendanceHubEnabled: apps.some(app => app.appId === 'time-attendance'),
       organizations,
       hasOrganizations,
       currentSubscriptionAccess,

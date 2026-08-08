@@ -92,6 +92,34 @@ export const clockApi = {
         const response = await api.post('/clock/manual', data);
         return response.data;
     },
+    subscribe: (onAttendance: () => void) => {
+        const controller = new AbortController();
+        const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+        (async () => {
+            try {
+                const response = await fetch(`${API_URL}/clock/events`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {},
+                    credentials: 'include',
+                    signal: controller.signal,
+                });
+                if (!response.ok || !response.body) return;
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const result = await reader.read();
+                    if (result.done) break;
+                    buffer += decoder.decode(result.value, { stream: true });
+                    const messages = buffer.split('\n\n');
+                    buffer = messages.pop() || '';
+                    messages.forEach(message => { if (message.includes('event: attendance')) onAttendance(); });
+                }
+            } catch (error: any) {
+                if (error?.name !== 'AbortError') console.warn('Attendance live updates disconnected');
+            }
+        })();
+        return () => controller.abort();
+    },
 };
 
 // Timesheet API helpers
@@ -177,6 +205,16 @@ export const attendanceApi = {
 
 // Report API helpers
 export const reportsApi = {
+    getExceptions: async (startDate: string, endDate: string) => {
+        const response = await api.get('/reports/exceptions', { params: { startDate, endDate } });
+        return response.data;
+    },
+    exportExceptions: async (startDate: string, endDate: string) => {
+        const response = await api.get('/reports/exceptions', { params: { startDate, endDate, format: 'xlsx' }, responseType: 'blob' });
+        const disposition = response.headers['content-disposition'] || '';
+        const match = disposition.match(/filename="?([^";]+)"?/i);
+        return { blob: response.data, filename: match?.[1] || 'attendance-exceptions.xlsx' };
+    },
     getMonthlyAttendance: async (start: string, end: string) => {
         const response = await api.get('/reports/attendance', { params: { start, end } });
         return response.data;

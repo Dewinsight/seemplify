@@ -5,10 +5,27 @@ const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
 const geofenceService = require('../services/geofenceService');
 const { enrichLocationWithAddress } = require('../services/geocodingService');
 const { startOfWeek, endOfWeek, getISOWeek, getYear } = require('date-fns');
+const { evaluateClockIn, buildPolicySummary } = require('../services/attendanceRulesService');
+const attendanceEvents = require('../services/attendanceEventService');
 
 // Apply auth middleware to all clock routes
 router.use(requireAuth);
 router.use(requireOrganization);
+
+// Authenticated event stream used by the hub for near-instant cross-app updates.
+router.get('/events', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    res.write(`event: ready\ndata: ${JSON.stringify({ connected: true })}\n\n`);
+    const unsubscribe = attendanceEvents.subscribe(req.user.id, req.organizationId, res);
+    const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 20000);
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+    });
+});
 
 // Get current clock status
 router.get('/status', async (req, res) => {
@@ -20,8 +37,8 @@ router.get('/status', async (req, res) => {
         const clockStatus = await TimeEntry.getCurrentStatus(userId, organizationId);
         const breakStatus = await TimeEntry.isOnBreak(userId, organizationId);
 
-        // Get today's entries
-        const todayEntries = await TimeEntry.getTodayEntries(userId, organizationId);
+        const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+        const todayEntries = await TimeEntry.getTodayEntries(userId, organizationId, policy.timezone || 'UTC');
 
         // Calculate time worked today
         let timeWorkedMinutes = 0;
@@ -61,6 +78,7 @@ router.get('/status', async (req, res) => {
             todayEntries,
             timeWorked: {
                 minutes: Math.round(timeWorkedMinutes),
+                seconds: Math.max(0, Math.round(timeWorkedMinutes * 60)),
                 hours: parseFloat((timeWorkedMinutes / 60).toFixed(2)),
                 formatted: formatDuration(timeWorkedMinutes),
             },
@@ -68,6 +86,7 @@ router.get('/status', async (req, res) => {
                 minutes: Math.round(breakMinutes),
                 formatted: formatDuration(breakMinutes),
             },
+            policy: buildPolicySummary(policy),
         });
     } catch (error) {
         console.error('Get clock status error:', error);
@@ -81,6 +100,23 @@ router.post('/in', async (req, res) => {
         const userId = req.user.id;
         const organizationId = req.organizationId;
         const { note, location } = req.body;
+        const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+        if (policy.clockSettings?.requireNote && !String(note || '').trim()) {
+            return res.status(400).json({ error: 'A note is required to clock in', code: 'NOTE_REQUIRED' });
+        }
+        const ruleResult = evaluateClockIn(policy, {
+            now: new Date(),
+            hasLocation: location?.latitude != null && location?.longitude != null,
+        });
+        if (!ruleResult.allowed) {
+            const messages = {
+                NON_WORKING_DAY: 'Clock-in is not allowed on a non-working day',
+                CLOCK_IN_TOO_EARLY: 'Clock-in is not open yet',
+                CLOCK_IN_WINDOW_CLOSED: 'The clock-in window has closed',
+                LOCATION_REQUIRED: 'Your location is required by the attendance policy',
+            };
+            return res.status(403).json({ error: messages[ruleResult.code] || 'Clock-in is not allowed', code: ruleResult.code });
+        }
 
         console.log('🕐 Clock in attempt:', { userId, organizationId, email: req.user.email });
 
@@ -97,7 +133,7 @@ router.post('/in', async (req, res) => {
 
         // Validate geofencing if location provided
         let locationVerified = false;
-        if (location?.latitude && location?.longitude) {
+        if (location?.latitude != null && location?.longitude != null) {
             const validation = await geofenceService.validateLocation(
                 location.latitude,
                 location.longitude,
@@ -105,7 +141,6 @@ router.post('/in', async (req, res) => {
             );
 
             // Check if geofencing is enforced
-            const policy = await AttendancePolicy.findOne({ organizationId });
             const isEnforced = policy?.geofencing?.enabled && policy?.geofencing?.enforced;
 
             if (!validation.isValid) {
@@ -133,7 +168,7 @@ router.post('/in', async (req, res) => {
 
         // Enrich location with address (reverse geocoding)
         let enrichedLocation = null;
-        if (location?.latitude && location?.longitude) {
+        if (location?.latitude != null && location?.longitude != null) {
             enrichedLocation = await enrichLocationWithAddress({
                 ...location,
                 verified: locationVerified,
@@ -153,12 +188,13 @@ router.post('/in', async (req, res) => {
             entryType: 'clock_in',
             timestamp: new Date(),
             timezone: req.body.timezone || 'UTC',
-            source: 'web',
+            source: req.user.authSurface === 'hub' ? 'hub' : 'web',
             note,
             location: enrichedLocation,
         });
 
         await entry.save();
+        attendanceEvents.publish(userId, organizationId, { type: 'clock_in', entryId: entry._id, at: entry.timestamp });
 
         // Update or create today's timesheet
         const timesheet = await Timesheet.findOrCreateCurrentWeek(userId, organizationId, {
@@ -173,6 +209,7 @@ router.post('/in', async (req, res) => {
             success: true,
             entry,
             message: 'Clocked in successfully',
+            warnings: ruleResult.warnings,
         });
     } catch (error) {
         console.error('Clock in error:', error);
@@ -211,11 +248,12 @@ router.post('/out', async (req, res) => {
                 note: 'Auto-ended break on clock out',
             });
             await breakEndEntry.save();
+            attendanceEvents.publish(userId, organizationId, { type: 'break_end', entryId: breakEndEntry._id, at: breakEndEntry.timestamp });
         }
 
         // Validate geofencing if location provided (optional for clock-out)
         let locationVerified = false;
-        if (location?.latitude && location?.longitude) {
+        if (location?.latitude != null && location?.longitude != null) {
             const validation = await geofenceService.validateLocation(
                 location.latitude,
                 location.longitude,
@@ -230,7 +268,7 @@ router.post('/out', async (req, res) => {
 
         // Enrich location with address (reverse geocoding)
         let enrichedLocation = null;
-        if (location?.latitude && location?.longitude) {
+        if (location?.latitude != null && location?.longitude != null) {
             enrichedLocation = await enrichLocationWithAddress({
                 ...location,
                 verified: locationVerified,
@@ -248,12 +286,13 @@ router.post('/out', async (req, res) => {
             entryType: 'clock_out',
             timestamp: new Date(),
             timezone: req.body.timezone || 'UTC',
-            source: 'web',
+            source: req.user.authSurface === 'hub' ? 'hub' : 'web',
             note,
             location: enrichedLocation,
         });
 
         await entry.save();
+        attendanceEvents.publish(userId, organizationId, { type: 'clock_out', entryId: entry._id, at: entry.timestamp });
 
         // Calculate hours worked for this session
         const clockInEntry = currentStatus.lastEntry;
@@ -304,11 +343,12 @@ router.post('/break/start', async (req, res) => {
             organizationName: req.organizationName,
             entryType: 'break_start',
             timestamp: new Date(),
-            source: 'web',
+            source: req.user.authSurface === 'hub' ? 'hub' : 'web',
             note,
         });
 
         await entry.save();
+        attendanceEvents.publish(userId, organizationId, { type: 'break_start', entryId: entry._id, at: entry.timestamp });
 
         res.json({
             success: true,
@@ -345,11 +385,12 @@ router.post('/break/end', async (req, res) => {
             organizationName: req.organizationName,
             entryType: 'break_end',
             timestamp: new Date(),
-            source: 'web',
+            source: req.user.authSurface === 'hub' ? 'hub' : 'web',
             note,
         });
 
         await entry.save();
+        attendanceEvents.publish(userId, organizationId, { type: 'break_end', entryId: entry._id, at: entry.timestamp });
 
         // Calculate break duration
         const breakStart = breakStatus.lastBreakEntry.timestamp;

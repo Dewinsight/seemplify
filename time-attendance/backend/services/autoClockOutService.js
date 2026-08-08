@@ -1,5 +1,6 @@
 const { TimeEntry, AttendancePolicy } = require('../models');
 const emailService = require('./emailService');
+const attendanceEvents = require('./attendanceEventService');
 
 /**
  * Auto Clock-Out Service
@@ -81,6 +82,12 @@ async function autoClockOutEntry(clockInEntry, thresholdHours) {
     });
 
     await autoClockOutEntry.save();
+    attendanceEvents.publish(clockInEntry.userId, clockInEntry.organizationId, {
+        type: 'clock_out',
+        source: 'auto',
+        entryId: autoClockOutEntry._id,
+        at: autoClockOutEntry.timestamp,
+    });
 
     clockInEntry.autoClockOut = {
         ...(clockInEntry.autoClockOut || {}),

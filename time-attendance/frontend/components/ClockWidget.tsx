@@ -86,15 +86,13 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     useEffect(() => {
         let interval: NodeJS.Timeout;
 
-        const lastClockEntry = (status as any).lastClockEntry || status.lastEntry;
-
-        if (status.isClockedIn && !status.isOnBreak && lastClockEntry) {
-            const startTime = new Date(lastClockEntry.timestamp).getTime();
+        if (status.isClockedIn && !status.isOnBreak) {
+            const statusReceivedAt = (status as any)._receivedAt || Date.now();
 
             const updateTimer = () => {
                 const now = Date.now();
-                const currentSessionMs = now - startTime;
-                const totalMs = (status.timeWorked?.minutes || 0) * 60 * 1000 + currentSessionMs;
+                const currentSessionMs = now - statusReceivedAt;
+                const totalMs = ((status.timeWorked as any)?.seconds ?? (status.timeWorked?.minutes || 0) * 60) * 1000 + currentSessionMs;
 
                 const h = Math.floor(totalMs / (1000 * 60 * 60));
                 const m = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -120,7 +118,7 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     const refreshStatus = async () => {
         try {
             const newStatus = await clockApi.getStatus();
-            setStatus(newStatus);
+            setStatus({ ...newStatus, _receivedAt: Date.now() } as any);
         } catch (error) {
             console.error('Failed to refresh status', error);
         }
@@ -128,6 +126,7 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
 
     useEffect(() => {
         refreshStatus();
+        return clockApi.subscribe(refreshStatus);
     }, []);
 
     const getCurrentLocation = (): Promise<{ latitude: number; longitude: number; accuracy: number } | null> => {

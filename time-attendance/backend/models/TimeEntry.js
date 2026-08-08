@@ -82,7 +82,7 @@ const TimeEntrySchema = new Schema({
     // Source of the entry
     source: {
         type: String,
-        enum: ['web', 'mobile', 'kiosk', 'manual', 'import', 'auto'],
+        enum: ['web', 'hub', 'mobile', 'kiosk', 'manual', 'import', 'auto'],
         default: 'web',
     },
 
@@ -163,11 +163,12 @@ TimeEntrySchema.methods.getPairedEntryType = function () {
 // Static method to get today's entries for a user
 TimeEntrySchema.statics.getTodayEntries = async function (userId, organizationId, timezone = 'UTC') {
     const { startOfDay, endOfDay } = require('date-fns');
-    const { zonedTimeToUtc } = require('date-fns-tz');
+    const { zonedTimeToUtc, utcToZonedTime } = require('date-fns-tz');
 
     const now = new Date();
-    const todayStart = zonedTimeToUtc(startOfDay(now), timezone);
-    const todayEnd = zonedTimeToUtc(endOfDay(now), timezone);
+    const localNow = utcToZonedTime(now, timezone);
+    const todayStart = zonedTimeToUtc(startOfDay(localNow), timezone);
+    const todayEnd = zonedTimeToUtc(endOfDay(localNow), timezone);
 
     return this.find({
         userId,

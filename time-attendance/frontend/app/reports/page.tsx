@@ -16,7 +16,7 @@ import {
 import { format } from 'date-fns';
 
 export default function ReportsPage() {
-    const [activeTab, setActiveTab] = useState<'attendance' | 'overtime' | 'lateness' | 'geofence-violations' | 'location-accuracy' | 'location-history'>('attendance');
+    const [activeTab, setActiveTab] = useState<'exceptions' | 'attendance' | 'overtime' | 'lateness' | 'geofence-violations' | 'location-accuracy' | 'location-history'>('exceptions');
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [month, setMonth] = useState(new Date());
@@ -34,6 +34,9 @@ export default function ReportsPage() {
 
             let response;
             switch (activeTab) {
+                case 'exceptions':
+                    response = await reportsApi.getExceptions(start.slice(0, 10), end.slice(0, 10));
+                    break;
                 case 'attendance':
                     response = await reportsApi.getMonthlyAttendance(start, end);
                     break;
@@ -65,9 +68,15 @@ export default function ReportsPage() {
         }
     };
 
-    const handleExport = () => {
-        // In a real app, this would trigger a CSV/PDF download
-        alert('Report export started...');
+    const handleExport = async () => {
+        if (activeTab !== 'exceptions') return alert('Excel export is currently available from the exception register.');
+        const start = new Date(month.getFullYear(), month.getMonth(), 1).toISOString().slice(0, 10);
+        const end = new Date(month.getFullYear(), month.getMonth() + 1, 0).toISOString().slice(0, 10);
+        const { blob, filename } = await reportsApi.exportExceptions(start, end);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = filename; link.click();
+        URL.revokeObjectURL(url);
     };
 
     return (
@@ -82,7 +91,7 @@ export default function ReportsPage() {
                     className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-colors border border-zinc-700"
                 >
                     <Download className="h-4 w-4" />
-                    Export CSV
+                    Export Excel
                 </button>
             </div>
 
@@ -90,9 +99,10 @@ export default function ReportsPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-zinc-900/50 border border-white/5 p-2 rounded-xl">
                 <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800 w-full sm:w-auto overflow-x-auto">
                     {([
-                        { key: 'attendance', label: 'Attendance' },
-                        { key: 'overtime', label: 'Overtime' },
-                        { key: 'lateness', label: 'Lateness' },
+                        { key: 'exceptions', label: 'Exceptions', icon: AlertTriangle },
+                        { key: 'attendance', label: 'Attendance', icon: undefined },
+                        { key: 'overtime', label: 'Overtime', icon: undefined },
+                        { key: 'lateness', label: 'Lateness', icon: undefined },
                         { key: 'geofence-violations', label: 'Geofence Violations', icon: Shield },
                         { key: 'location-accuracy', label: 'Location Accuracy', icon: TrendingUp },
                         { key: 'location-history', label: 'Location History', icon: MapPin },
@@ -139,7 +149,7 @@ export default function ReportsPage() {
                     <div className="flex items-center justify-center h-full min-h-[300px]">
                         <div className="animate-spin h-8 w-8 border-2 border-teal-500 rounded-full border-t-transparent"></div>
                     </div>
-                ) : !data || (Array.isArray(data) && data.length === 0) || (data.report && data.report.length === 0) || (data.violations && data.violations.length === 0) ? (
+                ) : !data || (Array.isArray(data) && data.length === 0) || (data.rows && data.rows.length === 0) || (data.report && data.report.length === 0) || (data.violations && data.violations.length === 0) ? (
                     <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-zinc-500 gap-4">
                         <div className="p-4 rounded-full bg-zinc-800/50">
                             <BarChart3 className="h-8 w-8 text-zinc-600" />
@@ -150,6 +160,42 @@ export default function ReportsPage() {
                     <div className="space-y-6">
 
                         {/* Conditional Rendering based on Report Type */}
+                        {activeTab === 'exceptions' && (
+                            <div className="space-y-5">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-px overflow-hidden rounded-lg border border-zinc-800 bg-zinc-800">
+                                    {[
+                                        ['Exceptions', data.summary?.totalExceptions || 0],
+                                        ['People affected', data.summary?.affectedPeople || 0],
+                                        ['Days requiring review', data.summary?.affectedDays || 0],
+                                    ].map(([name, value]) => (
+                                        <div key={String(name)} className="bg-zinc-950 px-4 py-3">
+                                            <div className="text-xs text-zinc-500">{name}</div>
+                                            <div className="mt-1 text-xl font-semibold text-white">{value}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="overflow-x-auto border border-zinc-800 rounded-lg">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="text-xs text-zinc-500 bg-zinc-950 border-b border-zinc-800">
+                                            <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Employee</th><th className="px-4 py-3">Team</th><th className="px-4 py-3">Time</th><th className="px-4 py-3">Review needed</th><th className="px-4 py-3">Source</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-800">
+                                            {(data.rows || []).map((row: any, index: number) => (
+                                                <tr key={`${row.userId}-${row.date}-${index}`} className="bg-zinc-900/30 hover:bg-zinc-800/40">
+                                                    <td className="px-4 py-3 text-zinc-300 whitespace-nowrap">{row.date}</td>
+                                                    <td className="px-4 py-3"><div className="font-medium text-white">{row.userName}</div><div className="text-xs text-zinc-500">{row.userEmail}</div></td>
+                                                    <td className="px-4 py-3 text-zinc-400">{row.teamName}</td>
+                                                    <td className="px-4 py-3 text-zinc-300 whitespace-nowrap">{Math.floor(row.workMinutes / 60)}h {row.workMinutes % 60}m</td>
+                                                    <td className="px-4 py-3 text-zinc-300">{row.exceptions.map((item: any) => item.type.replaceAll('_', ' ')).join(', ')}</td>
+                                                    <td className="px-4 py-3 text-zinc-400">{row.sources.join(', ')}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
                         {activeTab === 'attendance' && (
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-left">
@@ -166,12 +212,12 @@ export default function ReportsPage() {
                                     <tbody className="divide-y divide-zinc-800/50">
                                         {(data.report || data || []).map((row: any, i: number) => (
                                             <tr key={i} className="hover:bg-zinc-800/30">
-                                                <td className="px-4 py-3 font-medium text-white">{row.user?.name || 'Unknown'}</td>
-                                                <td className="px-4 py-3 text-zinc-400">{row.user?.department || 'N/A'}</td>
-                                                <td className="px-4 py-3 text-right text-emerald-400">{row.presentDays}</td>
+                                                <td className="px-4 py-3 font-medium text-white">{row.user?.name || row.userName || 'Unknown'}</td>
+                                                <td className="px-4 py-3 text-zinc-400">{row.user?.department || row.teamName || 'N/A'}</td>
+                                                <td className="px-4 py-3 text-right text-emerald-400">{row.presentDays ?? row.daysWorked ?? 0}</td>
                                                 <td className="px-4 py-3 text-right text-zinc-300">{row.avgStartTime || '--:--'}</td>
                                                 <td className="px-4 py-3 text-right text-zinc-300">{row.avgEndTime || '--:--'}</td>
-                                                <td className="px-4 py-3 text-right font-mono text-white">{Math.round(row.totalMinutes / 60)}h</td>
+                                                <td className="px-4 py-3 text-right font-mono text-white">{Math.round(row.totalMinutes != null ? row.totalMinutes / 60 : row.totalHours || 0)}h</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -193,10 +239,10 @@ export default function ReportsPage() {
                                     <tbody className="divide-y divide-zinc-800/50">
                                         {(data.report || data || []).map((row: any, i: number) => (
                                             <tr key={i} className="hover:bg-zinc-800/30">
-                                                <td className="px-4 py-3 font-medium text-white">{row.user?.name}</td>
-                                                <td className="px-4 py-3 text-right text-amber-400 font-bold">{Math.round(row.totalOvertimeMinutes / 60)}h</td>
-                                                <td className="px-4 py-3 text-right text-zinc-300">{row.overtimeDays}</td>
-                                                <td className="px-4 py-3 text-right text-zinc-300">{Math.round(row.maxOvertimeMinutes / 60)}h</td>
+                                                <td className="px-4 py-3 font-medium text-white">{row.user?.name || row.userName}</td>
+                                                <td className="px-4 py-3 text-right text-amber-400 font-bold">{row.totalOvertimeMinutes != null ? Math.round(row.totalOvertimeMinutes / 60) : Number(row.totalOvertimeHours || 0).toFixed(1)}h</td>
+                                                <td className="px-4 py-3 text-right text-zinc-300">{row.overtimeDays ?? row.occurrences ?? 0}</td>
+                                                <td className="px-4 py-3 text-right text-zinc-300">{row.maxOvertimeMinutes != null ? Math.round(row.maxOvertimeMinutes / 60) : Number(row.maxOvertimeHours || 0).toFixed(1)}h</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -213,13 +259,13 @@ export default function ReportsPage() {
                                                 <Clock className="h-5 w-5" />
                                             </div>
                                             <div>
-                                                <div className="font-medium text-white">{row.user?.name}</div>
+                                                <div className="font-medium text-white">{row.user?.name || row.userName}</div>
                                                 <div className="text-xs text-zinc-500">{row.lateDays} Late Arrivals</div>
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <div className="text-lg font-bold text-red-400">{row.totalLateMinutes}m</div>
-                                            <div className="text-xs text-zinc-500">Total Delay</div>
+                                            <div className="text-lg font-bold text-red-400">{row.totalLateMinutes != null ? `${row.totalLateMinutes}m` : `${row.earlyDepartures || 0} / ${row.incompleteEntries || 0}`}</div>
+                                            <div className="text-xs text-zinc-500">Early / incomplete</div>
                                         </div>
                                     </div>
                                 ))}

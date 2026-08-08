@@ -90,6 +90,7 @@ const AttendancePolicySchema = new Schema({
     organizationName: {
         type: String
     },
+    timezone: { type: String, default: 'UTC' },
 
     // Work Schedule
     workSchedule: {
@@ -158,11 +159,25 @@ const AttendancePolicySchema = new Schema({
             type: Boolean,
             default: true
         },
+        enforceClockInWindow: { type: Boolean, default: false },
+        earliestClockInMinutes: { type: Number, min: 0, max: 720, default: 60 },
+        latestClockInMinutes: { type: Number, min: 0, max: 720, default: 240 },
+        nonWorkingDayClockIn: {
+            type: String,
+            enum: ['allow', 'warn', 'block'],
+            default: 'warn'
+        },
         autoClockOut: {
             enabled: { type: Boolean, default: false },
             afterHours: { type: Number, default: 10 },  // Auto clock out after 10 hours
             warningMinutesBefore: { type: Number, default: 30 }, // Warning email before auto clock-out
         },
+    },
+
+    breakRules: {
+        requiredAfterMinutes: { type: Number, min: 0, max: 1440, default: 360 },
+        minimumBreakMinutes: { type: Number, min: 0, max: 480, default: 20 },
+        maximumContinuousWorkMinutes: { type: Number, min: 0, max: 1440, default: 360 },
     },
 
     // Geofencing (future feature)

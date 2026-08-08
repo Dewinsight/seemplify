@@ -1589,6 +1589,47 @@
       box-shadow: 0 2px 8px rgba(43, 39, 33, 0.06);
     }
 
+    .attendance-strip {
+      display: grid;
+      grid-template-columns: minmax(210px, 1fr) auto auto;
+      align-items: center;
+      gap: 18px;
+      margin: -4px 0 26px;
+      padding: 13px 15px;
+      background: var(--panel, #111114);
+      border: 1px solid var(--border);
+      border-left: 3px solid #14b8a6;
+      border-radius: 10px;
+    }
+    .attendance-strip[hidden] { display: none; }
+    .attendance-strip__state { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .attendance-strip__dot { width: 9px; height: 9px; border-radius: 50%; background: #71717a; flex: none; }
+    .attendance-strip[data-state="working"] .attendance-strip__dot { background: #14b8a6; }
+    .attendance-strip[data-state="break"] .attendance-strip__dot { background: #f59e0b; }
+    .attendance-strip__label { color: var(--text); font-size: 14px; font-weight: 700; }
+    .attendance-strip__hint { margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .attendance-strip__time { font: 650 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); letter-spacing: .02em; }
+    .attendance-strip__actions { display: flex; align-items: center; gap: 7px; }
+    .attendance-action {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .attendance-action:hover { background: var(--hover-bg); border-color: var(--muted); }
+    .attendance-action--primary { background: #0f766e; border-color: #0f766e; color: white; }
+    .attendance-action--danger { color: #fca5a5; }
+    .attendance-action:disabled { opacity: .5; cursor: wait; }
+    .attendance-detail { color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 650; white-space: nowrap; }
+    .attendance-detail:hover { color: var(--text); }
+    [data-theme="light"] .attendance-strip { background: #f8f6f1; border-color: #d2cec6; border-left-color: #0f766e; }
+
     @media (max-width: 980px) {
       .app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -1620,6 +1661,9 @@
       }
       .app-card__meta { display: flex; }
       .app-card__arrow { display: block; }
+      .attendance-strip { grid-template-columns: 1fr auto; gap: 12px; }
+      .attendance-strip__time { text-align: right; }
+      .attendance-strip__actions { grid-column: 1 / -1; flex-wrap: wrap; }
     }
     @media (max-width: 480px) {
       .hub-page-header { display: block; }
@@ -1938,6 +1982,25 @@
         <% } %>
       </div>
     </header>
+
+    <% if (attendanceHubEnabled) { %>
+      <section id="attendanceStrip" class="attendance-strip" data-state="idle" aria-label="Today's attendance" aria-live="polite">
+        <div class="attendance-strip__state">
+          <span class="attendance-strip__dot" aria-hidden="true"></span>
+          <div>
+            <div id="attendanceLabel" class="attendance-strip__label">Attendance</div>
+            <div id="attendanceHint" class="attendance-strip__hint">Checking your status…</div>
+          </div>
+        </div>
+        <div id="attendanceTime" class="attendance-strip__time">00:00:00</div>
+        <div class="attendance-strip__actions">
+          <button id="attendanceClockIn" class="attendance-action attendance-action--primary" type="button" hidden>Clock in</button>
+          <button id="attendanceBreak" class="attendance-action" type="button" hidden>Take break</button>
+          <button id="attendanceClockOut" class="attendance-action attendance-action--danger" type="button" hidden>Clock out</button>
+          <a class="attendance-detail" href="/launch/time-attendance">View details →</a>
+        </div>
+      </section>
+    <% } %>
 
     <div class="workspace-layout">
       <div class="workspace-primary">
@@ -2418,6 +2481,154 @@
       }
     }
   </script>
+  <% if (attendanceHubEnabled) { %>
+  <script>
+    (() => {
+      const strip = document.getElementById('attendanceStrip');
+      const label = document.getElementById('attendanceLabel');
+      const hint = document.getElementById('attendanceHint');
+      const time = document.getElementById('attendanceTime');
+      const clockIn = document.getElementById('attendanceClockIn');
+      const breakButton = document.getElementById('attendanceBreak');
+      const clockOut = document.getElementById('attendanceClockOut');
+      if (!strip) return;
+
+      let credentials = null;
+      let currentStatus = null;
+      let statusReceivedAt = Date.now();
+      let streamController = null;
+      let reconnectTimer = null;
+
+      const formatSeconds = (total) => {
+        const safe = Math.max(0, Math.floor(total));
+        const hours = Math.floor(safe / 3600);
+        const minutes = Math.floor((safe % 3600) / 60);
+        const seconds = safe % 60;
+        return [hours, minutes, seconds].map(value => String(value).padStart(2, '0')).join(':');
+      };
+
+      function render() {
+        if (!currentStatus) return;
+        const working = currentStatus.isClockedIn && !currentStatus.isOnBreak;
+        strip.dataset.state = currentStatus.isOnBreak ? 'break' : working ? 'working' : 'idle';
+        label.textContent = currentStatus.isOnBreak ? 'On break' : working ? 'Clocked in' : 'Not clocked in';
+        hint.textContent = currentStatus.isOnBreak
+          ? 'Resume when you are ready.'
+          : working
+            ? 'Live from Time & Attendance.'
+            : 'Clock-in is explicit; signing in does not start time.';
+        clockIn.hidden = currentStatus.isClockedIn;
+        breakButton.hidden = !currentStatus.isClockedIn;
+        clockOut.hidden = !currentStatus.isClockedIn;
+        breakButton.textContent = currentStatus.isOnBreak ? 'Resume' : 'Take break';
+      }
+
+      function tick() {
+        if (!currentStatus) return;
+        let seconds = Number(currentStatus.timeWorked?.seconds ?? (Number(currentStatus.timeWorked?.minutes || 0) * 60));
+        if (currentStatus.isClockedIn && !currentStatus.isOnBreak) {
+          seconds += Math.floor((Date.now() - statusReceivedAt) / 1000);
+        }
+        time.textContent = formatSeconds(seconds);
+      }
+
+      async function getCredentials(force = false) {
+        if (credentials && !force) return credentials;
+        const response = await fetch('/api/hub/attendance-token', { credentials: 'same-origin', cache: 'no-store' });
+        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Attendance unavailable');
+        credentials = await response.json();
+        return credentials;
+      }
+
+      async function attendanceFetch(path, options = {}, canRetry = true) {
+        const access = await getCredentials();
+        const response = await fetch(`${access.apiUrl}/api${path}`, {
+          ...options,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access.token}`, ...(options.headers || {}) }
+        });
+        if (response.status === 401 && canRetry) {
+          credentials = null;
+          return attendanceFetch(path, options, false);
+        }
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Attendance action failed');
+        return payload;
+      }
+
+      async function refreshStatus() {
+        currentStatus = await attendanceFetch('/clock/status');
+        statusReceivedAt = Date.now();
+        render();
+        tick();
+      }
+
+      function getLocation() {
+        if (!navigator.geolocation) return Promise.resolve(null);
+        return new Promise(resolve => navigator.geolocation.getCurrentPosition(
+          position => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+        ));
+      }
+
+      async function act(path, needsLocation = false) {
+        [clockIn, breakButton, clockOut].forEach(button => { button.disabled = true; });
+        try {
+          const location = needsLocation ? await getLocation() : null;
+          if (needsLocation && currentStatus?.policy?.locationRequired && !location) {
+            throw new Error('Location is required by your attendance policy. Allow location access and try again.');
+          }
+          await attendanceFetch(path, { method: 'POST', body: JSON.stringify({ location, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }) });
+          await refreshStatus();
+        } catch (error) {
+          hint.textContent = error.message;
+        } finally {
+          [clockIn, breakButton, clockOut].forEach(button => { button.disabled = false; });
+        }
+      }
+
+      async function connectStream() {
+        clearTimeout(reconnectTimer);
+        streamController?.abort();
+        streamController = new AbortController();
+        try {
+          const access = await getCredentials();
+          const response = await fetch(`${access.apiUrl}/api/clock/events`, {
+            headers: { Authorization: `Bearer ${access.token}` },
+            signal: streamController.signal
+          });
+          if (!response.ok || !response.body) throw new Error('Live attendance connection failed');
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          while (true) {
+            const result = await reader.read();
+            if (result.done) break;
+            buffer += decoder.decode(result.value, { stream: true });
+            const messages = buffer.split('\n\n');
+            buffer = messages.pop() || '';
+            for (const message of messages) {
+              if (message.includes('event: attendance')) await refreshStatus();
+            }
+          }
+        } catch (error) {
+          if (error.name !== 'AbortError') reconnectTimer = setTimeout(connectStream, 4000);
+        }
+      }
+
+      clockIn.addEventListener('click', () => act('/clock/in', true));
+      breakButton.addEventListener('click', () => act(currentStatus?.isOnBreak ? '/clock/break/end' : '/clock/break/start'));
+      clockOut.addEventListener('click', () => act('/clock/out', true));
+      setInterval(tick, 1000);
+      setInterval(async () => { credentials = null; await connectStream(); }, 90000);
+      refreshStatus().then(connectStream).catch(error => {
+        label.textContent = 'Attendance unavailable';
+        hint.textContent = error.message;
+        time.textContent = '—';
+      });
+    })();
+  </script>
+  <% } %>
 </body>
 
 </html>

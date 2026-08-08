@@ -1,4 +1,5 @@
 const { getUserInfo } = require('../config/oidc');
+const { verifyHubToken } = require('../services/hubTokenService');
 
 // Middleware to require authentication
 const requireAuth = async (req, res, next) => {
@@ -15,6 +16,15 @@ const requireAuth = async (req, res, next) => {
             const accessToken = authHeader.substring(7);
 
             try {
+                const hubUser = verifyHubToken(accessToken);
+                if (hubUser) {
+                    const allowedHubPath = /^\/api\/clock\/(status|events|in|out|break\/(start|end))\/?(?:\?.*)?$/.test(req.originalUrl || '');
+                    if (!allowedHubPath) {
+                        return res.status(403).json({ error: 'Attendance hub token cannot access this resource', code: 'HUB_SCOPE_DENIED' });
+                    }
+                    req.user = hubUser;
+                    return next();
+                }
                 // Verify token with Identity Provider
                 const userinfo = await getUserInfo(accessToken);
 
