@@ -212,35 +212,37 @@
     .members-section .stats { margin-top: 0; }
     .members-section__heading {
       display: flex;
-      align-items: baseline;
+      align-items: flex-start;
       justify-content: space-between;
       gap: 16px;
-      margin-bottom: 18px;
+      margin-bottom: 12px;
     }
-    .members-section__heading h2 { margin: 0; font-size: 18px; }
-    .members-section__heading p { margin: 0; font-size: 13px; }
+    .members-section__heading h2 { margin: 0; font-size: 20px; }
+    .members-section__heading p { max-width: 640px; margin: 5px 0 0; font-size: 13px; }
     .members-overview {
       display: flex;
       align-items: center;
-      gap: 0;
-      margin-bottom: 18px;
-      padding: 11px 0;
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-    }
-    .members-overview__item {
-      padding: 0 18px;
+      flex-wrap: wrap;
+      gap: 6px 18px;
+      margin-bottom: 16px;
       color: var(--muted);
       font-size: 12px;
     }
-    .members-overview__item:first-child { padding-left: 0; }
-    .members-overview__item + .members-overview__item { border-left: 1px solid var(--border); }
-    .members-overview__item strong { margin-right: 5px; color: var(--text); font-size: 13px; }
+    .members-overview__item strong { margin-right: 4px; color: var(--text); font-size: 12px; }
+    .role-management-note {
+      margin-bottom: 18px;
+      padding: 10px 12px;
+      border-left: 2px solid var(--brand-2);
+      background: var(--panel-solid);
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+    .role-management-note strong { color: var(--text); }
     .member-directory-toolbar {
       display: grid;
-      grid-template-columns: minmax(240px, 1.35fr) repeat(3, minmax(170px, .75fr));
+      grid-template-columns: minmax(230px, 1.45fr) repeat(4, minmax(140px, .7fr));
       gap: 10px;
-      margin-bottom: 18px;
+      margin-bottom: 14px;
     }
     .member-filter-field { min-width: 0; }
     .member-filter-field label {
@@ -266,6 +268,14 @@
       border-radius: 10px;
       color: var(--muted);
       text-align: center;
+    }
+    .member-list-header {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.2fr) minmax(150px, .7fr) minmax(190px, 1fr) minmax(130px, .65fr) 76px;
+      gap: 18px;
+      padding: 0 18px 8px;
+      color: var(--muted);
+      font-size: 11px;
     }
     .locations-header {
       display: flex;
@@ -333,11 +343,11 @@
     }
     .member-record__summary {
       display: grid;
-      grid-template-columns: minmax(200px, 1.15fr) minmax(135px, .7fr) minmax(160px, .9fr) minmax(130px, .65fr) auto auto;
+      grid-template-columns: minmax(220px, 1.2fr) minmax(150px, .7fr) minmax(190px, 1fr) minmax(130px, .65fr) 76px;
       gap: 18px;
       align-items: center;
-      min-height: 76px;
-      padding: 14px 18px;
+      min-height: 70px;
+      padding: 12px 18px;
       cursor: pointer;
       list-style: none;
     }
@@ -346,7 +356,6 @@
     .member-record__identity { min-width: 0; }
     .member-record__identity .member-name { margin: 0; font-size: 14px; }
     .member-record__identity .member-email { margin-top: 2px; font-size: 12px; }
-    .member-record__summary-label { color: var(--muted); font-size: 10px; }
     .member-record__summary-value {
       overflow: hidden;
       margin-top: 2px;
@@ -354,6 +363,33 @@
       font-size: 12px;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .member-record__structure strong {
+      display: block;
+      overflow: hidden;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .member-record__structure span {
+      display: block;
+      overflow: hidden;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .member-record__role-select { width: 100%; min-width: 0; height: 36px; font-size: 12px; }
+    .member-record__manage {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      color: var(--text-secondary);
+      font-size: 12px;
     }
     .member-record__chevron {
       width: 18px;
@@ -363,9 +399,20 @@
     }
     .member-record[open] .member-record__chevron { transform: rotate(90deg); }
     .member-record__body {
-      padding: 0 18px 18px;
+      padding: 16px 18px 18px;
       border-top: 1px solid var(--border);
+      background: color-mix(in srgb, var(--panel-solid) 75%, var(--bg));
     }
+    .member-record__body-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .member-record__body-header strong { font-size: 13px; }
+    .member-record__body-header .member-meta { margin: 0; }
+    .member-record__body .member-fields { grid-template-columns: repeat(3, minmax(180px, 1fr)); margin-top: 0; }
 
     /* Solid, scalable management dialogs. This selector intentionally outranks main.css. */
     body.idp-workspace-page .modal .modal-content {
@@ -560,6 +607,11 @@
       .team-row { grid-template-columns: 1fr; gap: 10px; }
       .team-row__actions { justify-content: flex-start; }
       .member-directory-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .member-list-header,
+      .member-record__summary { grid-template-columns: minmax(200px, 1.2fr) minmax(140px, .7fr) minmax(170px, 1fr) 76px; }
+      .member-list-header__location,
+      .member-record__location { display: none; }
+      .member-record__body .member-fields { grid-template-columns: repeat(2, minmax(170px, 1fr)); }
     }
     @media (max-width: 680px) {
       .structure-layout { display: block; }
@@ -570,9 +622,16 @@
       .department-detail__header { display: block; }
       .department-detail__actions { margin-top: 16px; }
       .team-row__leaders { grid-template-columns: 1fr; gap: 8px; }
-      .member-record__summary { grid-template-columns: 1fr auto; }
-      .member-record__summary > :not(.member-record__identity):not(.member-record__chevron) { display: none; }
+      .member-list-header { display: none; }
+      .member-record__summary { grid-template-columns: minmax(0, 1fr) 124px 68px; gap: 10px; }
+      .member-record__structure { display: none; }
+      .member-record__manage { font-size: 0; }
+      .member-record__manage .member-record__chevron { width: 18px; }
+      .member-record__body-header { display: block; }
+      .member-record__body-header .member-meta { margin-top: 8px; }
+      .member-record__body .member-fields { grid-template-columns: 1fr; }
       .member-directory-toolbar { grid-template-columns: 1fr; }
+      .member-directory-status span:last-child { display: none; }
       .locations-header { display: block; }
       .locations-header .btn { margin-top: 14px; }
       .branch-form-grid { grid-template-columns: 1fr; }
@@ -604,7 +663,7 @@
     <div class="header">
       <div>
         <h1>People & Structure</h1>
-        <div class="header-subtitle"><%= organization.name %></div>
+        <div class="header-subtitle"><%= organization.name %> · Departments, teams, members, and role access</div>
       </div>
       <div class="header-actions">
         <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
@@ -799,15 +858,21 @@
 
     <section class="members-section" data-organization-panel="members" <%= activeView === 'members' ? '' : 'hidden' %>>
       <div class="members-section__heading">
-        <h2>Members</h2>
-        <p>Search people and manage their organization-level details.</p>
+        <div>
+          <h2>Members & roles</h2>
+          <p>Find people, manage organization roles, and control the profile and application access attached to each member.</p>
+        </div>
       </div>
 
     <div class="members-overview" aria-label="Member directory summary">
-      <div class="members-overview__item"><strong><%= members.length %></strong> members</div>
-      <div class="members-overview__item"><strong><%= departments.length %></strong> departments</div>
-      <div class="members-overview__item"><strong><%= branches.length %></strong> locations</div>
-      <div class="members-overview__item">Your role: <strong><%= yourRole %></strong></div>
+      <span class="members-overview__item"><strong><%= members.length %></strong> people</span>
+      <span class="members-overview__item"><strong><%= departments.length %></strong> departments</span>
+      <span class="members-overview__item"><strong><%= branches.length %></strong> locations</span>
+      <span class="members-overview__item">Your organization role: <strong><%= yourRole.replace('_', ' ') %></strong></span>
+    </div>
+
+    <div class="role-management-note">
+      <strong>Organization roles control administrative access.</strong> Department placement comes from team membership; team leadership is managed inside Structure.
     </div>
 
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
@@ -854,11 +919,31 @@
           <% }) %>
         </select>
       </div>
+      <div class="member-filter-field">
+        <label for="roleFilter">Organization role</label>
+        <select id="roleFilter" class="role-select">
+          <option value="all">All roles</option>
+          <option value="owner">Owner</option>
+          <option value="admin">Admin</option>
+          <option value="hr_manager">HR Manager</option>
+          <option value="recruiter">Recruiter</option>
+          <option value="interviewer">Interviewer</option>
+          <option value="staff">Staff</option>
+        </select>
+      </div>
     </div>
 
     <div class="member-directory-status" aria-live="polite">
       <span id="memberDirectoryCount"><%= members.length %> member<%= members.length === 1 ? '' : 's' %></span>
       <span>Teams are grouped by department</span>
+    </div>
+
+    <div class="member-list-header" aria-hidden="true">
+      <span>Member</span>
+      <span>Organization role</span>
+      <span>Department / team</span>
+      <span class="member-list-header__location">Location</span>
+      <span></span>
     </div>
 
     <div class="member-grid">
@@ -873,6 +958,7 @@
           data-member-department-id="<%= member.departmentId || 'unassigned' %>"
           data-member-team-ids="<%= (member.teamIds || []).join('||') %>"
           data-member-branch-id="<%= member.branchId || 'unassigned' %>"
+          data-member-role="<%= member.role %>"
         >
           <summary class="member-record__summary">
             <div class="member-record__identity">
@@ -883,34 +969,44 @@
               </div>
               <div class="member-email"><%= member.email %></div>
             </div>
-            <div>
-              <div class="member-record__summary-label">Department</div>
-              <div class="member-record__summary-value"><%= member.departmentName || 'Unassigned' %></div>
+            <div class="member-record__role" onclick="event.stopPropagation()">
+              <% if (canManageMemberRoles && member.id.toString() !== user._id.toString()) { %>
+                <select
+                  class="role-select member-record__role-select"
+                  data-previous-role="<%= member.role %>"
+                  aria-label="Organization role for <%= member.name || member.email %>"
+                  onchange="updateRole('<%= member.id %>', this)"
+                  <%= member.role === 'owner' && yourRole !== 'owner' ? 'disabled' : '' %>
+                >
+                  <option value="owner" <%= member.role === 'owner' ? 'selected' : '' %> <%= yourRole !== 'owner' ? 'disabled' : '' %>>Owner</option>
+                  <option value="admin" <%= member.role === 'admin' ? 'selected' : '' %>>Admin</option>
+                  <option value="hr_manager" <%= member.role === 'hr_manager' ? 'selected' : '' %>>HR Manager</option>
+                  <option value="recruiter" <%= member.role === 'recruiter' ? 'selected' : '' %>>Recruiter</option>
+                  <option value="interviewer" <%= member.role === 'interviewer' ? 'selected' : '' %>>Interviewer</option>
+                  <option value="staff" <%= member.role === 'staff' ? 'selected' : '' %>>Staff</option>
+                </select>
+              <% } else { %>
+                <span class="role-badge role-<%= member.role %>"><%= member.role.replace('_', ' ') %></span>
+              <% } %>
             </div>
-            <div>
-              <div class="member-record__summary-label">Teams</div>
-              <div class="member-record__summary-value" id="member-teams-<%= member.id %>"><%= member.teamNames?.length ? member.teamNames.join(', ') : 'No team' %></div>
+            <div class="member-record__structure">
+              <strong id="member-department-<%= member.id %>"><%= member.departmentName || 'Unassigned' %></strong>
+              <span id="member-teams-<%= member.id %>"><%= member.teamNames?.length ? member.teamNames.join(', ') : 'No team' %></span>
             </div>
-            <div>
-              <div class="member-record__summary-label">Location</div>
-              <div class="member-record__summary-value" id="member-branch-<%= member.id %>"><%= member.branchName || 'Unassigned' %></div>
-            </div>
-            <span class="role-badge role-<%= member.role %>"><%= member.role %></span>
-            <svg class="member-record__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+            <div class="member-record__summary-value member-record__location" id="member-branch-<%= member.id %>"><%= member.branchName || 'Unassigned' %></div>
+            <span class="member-record__manage">Manage <svg class="member-record__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span>
           </summary>
 
           <div class="member-record__body">
-            <div class="member-meta" style="margin-top: 14px;">
-              <span class="role-badge onboarding-badge onboarding-<%= member.onboardingStatus %>">Onboarding: <%= member.onboardingStatus.replace('_', ' ') %></span>
-              <span>Joined <%= new Date(member.joinedAt).toLocaleDateString() %></span>
+            <div class="member-record__body-header">
+              <strong>Member details & application access</strong>
+              <div class="member-meta">
+                <span>Onboarding: <%= member.onboardingStatus.replace('_', ' ') %></span>
+                <span>Joined <%= new Date(member.joinedAt).toLocaleDateString() %></span>
+              </div>
             </div>
 
           <div class="member-fields">
-            <div>
-              <label>Department</label>
-              <div><strong id="member-department-<%= member.id %>"><%= member.departmentName || 'Unassigned' %></strong></div>
-              <div style="margin-top: 6px; font-size: 12px; color: var(--muted);">Derived from active team assignments.</div>
-            </div>
             <div>
               <label>Designation</label>
               <% if (canManageMemberMetadata) { %>
@@ -950,21 +1046,6 @@
                 </select>
               <% } else { %>
                 <div><strong><%= member.branchName || 'Unassigned' %></strong></div>
-              <% } %>
-            </div>
-            <div>
-              <label>Role</label>
-              <% if (canManageMemberRoles && member.id.toString() !== user._id.toString()) { %>
-                <select class="role-select" onchange="updateRole('<%= member.id %>', this.value)" <%= member.role === 'owner' && yourRole !== 'owner' ? 'disabled' : '' %>>
-                  <option value="owner" <%= member.role === 'owner' ? 'selected' : '' %> <%= yourRole !== 'owner' ? 'disabled' : '' %>>Owner</option>
-                  <option value="admin" <%= member.role === 'admin' ? 'selected' : '' %>>Admin</option>
-                  <option value="hr_manager" <%= member.role === 'hr_manager' ? 'selected' : '' %>>HR Manager</option>
-                  <option value="recruiter" <%= member.role === 'recruiter' ? 'selected' : '' %>>Recruiter</option>
-                  <option value="interviewer" <%= member.role === 'interviewer' ? 'selected' : '' %>>Interviewer</option>
-                  <option value="staff" <%= member.role === 'staff' ? 'selected' : '' %>>Staff</option>
-                </select>
-              <% } else { %>
-                <div><strong><%= member.role %></strong></div>
               <% } %>
             </div>
           </div>
@@ -1548,7 +1629,7 @@
           const data = await response.json();
           alert(data.error || errorMessage);
           window.location.reload();
-          return;
+          return false;
         }
 
         const data = await response.json().catch(() => ({}));
@@ -1559,6 +1640,11 @@
           }
           if (Object.prototype.hasOwnProperty.call(payload, 'employeeId')) {
             member.employeeId = String(data.employeeId ?? payload.employeeId ?? '').trim();
+          }
+          if (Object.prototype.hasOwnProperty.call(payload, 'role')) {
+            member.role = String(data.newRole ?? payload.role ?? member.role);
+            const memberCard = memberCards.find((card) => normalizeId(card.dataset.memberId) === normalizeId(memberId));
+            if (memberCard) memberCard.dataset.memberRole = member.role;
           }
           if (Object.prototype.hasOwnProperty.call(payload, 'branch')) {
             const branchId = normalizeId(data.branch ?? payload.branch ?? '');
@@ -1571,18 +1657,24 @@
         }
 
         syncMemberState(memberId);
+        return true;
       } catch (error) {
         alert(errorMessage);
         window.location.reload();
+        return false;
       }
     }
 
-    async function updateRole(memberId, newRole) {
-      if (!confirm(`Change role to ${newRole}?`)) {
-        window.location.reload();
+    async function updateRole(memberId, select) {
+      const newRole = select.value;
+      const previousRole = select.dataset.previousRole || '';
+      const roleLabel = select.options[select.selectedIndex]?.textContent || newRole;
+      if (!confirm(`Change this member’s organization role to ${roleLabel}?`)) {
+        select.value = previousRole;
         return;
       }
-      await updateMember(memberId, { role: newRole }, 'Failed to update role');
+      const updated = await updateMember(memberId, { role: newRole }, 'Failed to update role');
+      if (updated) select.dataset.previousRole = newRole;
     }
 
     async function updateDesignation(memberId, designation) {
@@ -1723,6 +1815,7 @@
       const departmentValue = String(document.getElementById('departmentFilter').value || 'all');
       const teamValue = String(document.getElementById('teamFilter').value || 'all');
       const branchValue = String(document.getElementById('branchFilter').value || 'all');
+      const roleValue = String(document.getElementById('roleFilter').value || 'all');
 
       let visibleCount = 0;
       memberCards.forEach((card) => {
@@ -1736,6 +1829,7 @@
         const departmentId = card.dataset.memberDepartmentId || 'unassigned';
         const teamIds = (card.dataset.memberTeamIds || '').split('||').filter(Boolean);
         const branchId = card.dataset.memberBranchId || 'unassigned';
+        const memberRole = card.dataset.memberRole || '';
 
         const matchesSearch = !searchValue || haystack.includes(searchValue);
         const matchesDepartment = departmentValue === 'all' ||
@@ -1743,8 +1837,9 @@
         const matchesTeam = teamValue === 'all' || teamIds.includes(teamValue);
         const matchesBranch = branchValue === 'all' ||
           (branchValue === 'unassigned' ? branchId === 'unassigned' : branchId === branchValue);
+        const matchesRole = roleValue === 'all' || memberRole === roleValue;
 
-        const isVisible = matchesSearch && matchesDepartment && matchesTeam && matchesBranch;
+        const isVisible = matchesSearch && matchesDepartment && matchesTeam && matchesBranch && matchesRole;
         card.style.display = isVisible ? '' : 'none';
         if (isVisible) visibleCount += 1;
       });
@@ -1781,6 +1876,7 @@
     document.getElementById('departmentFilter').addEventListener('change', syncTeamFilterOptions);
     document.getElementById('teamFilter').addEventListener('change', applyMemberFilters);
     document.getElementById('branchFilter').addEventListener('change', applyMemberFilters);
+    document.getElementById('roleFilter').addEventListener('change', applyMemberFilters);
 
     function setOptions(selectId, options, placeholder, selectedValue = '') {
       const select = document.getElementById(selectId);
