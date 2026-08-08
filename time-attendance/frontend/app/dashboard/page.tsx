@@ -126,7 +126,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Right Column - Weekly Overview & Timesheets */}
-                <div className="lg:col-span-2 space-y-6">
+                <div className="min-w-0 space-y-6">
 
                     {/* Weekly Stats Grid */}
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-[1.15fr_0.9fr_0.9fr_1fr]">
