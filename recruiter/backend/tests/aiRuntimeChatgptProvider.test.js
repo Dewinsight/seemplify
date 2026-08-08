@@ -82,10 +82,50 @@ test('a connected subject is bound to the ChatGPT gateway request', async () => 
     assert.equal(captured.url, 'https://gateway.example.test/v1/complete');
     assert.equal(captured.body.codexSubjectId, 'user-42');
     assert.equal(captured.body.codexSourceApp, 'recruiter');
+    assert.equal(captured.body.requestSource, 'recruiter');
+    assert.equal(captured.body.metering.sourceApp, 'recruiter');
     assert.equal(captured.body.requiredEngine, 'codex');
     assert.match(captured.body.metering.eventId, /^usage_[a-f0-9]{48}$/);
     assert.match(captured.body.metering.gatewayExecutionId, /^chatgptexec_[a-f0-9]{48}$/);
     assert.ok(captured.init.headers['x-seemplify-signature']);
+  } finally {
+    if (priorUrl === undefined) delete process.env.CHATGPT_GATEWAY_BASE_URL;
+    else process.env.CHATGPT_GATEWAY_BASE_URL = priorUrl;
+    if (priorSecret === undefined) delete process.env.CHATGPT_GATEWAY_SHARED_SECRET;
+    else process.env.CHATGPT_GATEWAY_SHARED_SECRET = priorSecret;
+  }
+});
+
+test('worker and route labels remain diagnostic while metering uses the registered Recruiter identity', async () => {
+  const priorUrl = process.env.CHATGPT_GATEWAY_BASE_URL;
+  const priorSecret = process.env.CHATGPT_GATEWAY_SHARED_SECRET;
+  process.env.CHATGPT_GATEWAY_BASE_URL = 'https://gateway.example.test';
+  process.env.CHATGPT_GATEWAY_SHARED_SECRET = 'test-shared-secret';
+  const captured = [];
+  const runtime = new AIRuntimeService({
+    resolveSubject: async () => ({ subjectId: 'user-42', sourceApp: 'recruiter' }),
+    fetchImpl: async (_url, init) => {
+      captured.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({
+        content: 'Done', model: 'gpt-5.6-sol', usage: { input_tokens: 2, output_tokens: 1 }
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+  });
+  const settings = createDefaultRuntimeSettings();
+  settings.runtimePolicy = normalizeRuntimePolicy({ localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' });
+  runtime.getSettings = async () => settings;
+  try {
+    for (const sourceApp of ['recruiter-cv-worker', 'recruiter-worker', 'recruiter-ai-interview', 'ai-interview', 'admin']) {
+      await runtime.complete('job.description', {
+        messages: [{ role: 'user', content: 'Write it' }],
+        context: { actorId: 'user-42', sourceApp, requestId: `source-${sourceApp}` }
+      });
+    }
+    assert.deepEqual(captured.map((body) => body.requestSource), [
+      'recruiter-cv-worker', 'recruiter-worker', 'recruiter-ai-interview', 'ai-interview', 'admin'
+    ]);
+    assert.ok(captured.every((body) => body.codexSourceApp === 'recruiter'));
+    assert.ok(captured.every((body) => body.metering.sourceApp === 'recruiter'));
   } finally {
     if (priorUrl === undefined) delete process.env.CHATGPT_GATEWAY_BASE_URL;
     else process.env.CHATGPT_GATEWAY_BASE_URL = priorUrl;

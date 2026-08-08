@@ -17,6 +17,10 @@ const { normalizeUsage, sanitizeMessage } = require('./usageService');
 const { validateJsonSchema } = require('./jsonSchemaValidator');
 
 const SETTINGS_CACHE_MS = 15_000;
+// This service belongs to the registered Recruiter product. Worker, admin and
+// interview labels remain useful as requestSource diagnostics, but platform
+// metering and authorization must always use the product identity.
+const PLATFORM_SOURCE_APP = 'recruiter';
 const STRUCTURED_ACTIVITIES = new Set([
   'candidate.cv_parse', 'candidate.insights', 'job.description', 'job.requirements', 'job.normalize',
   'matching.analysis', 'assistant.tool_selection', 'assistant.memory', 'assistant.job_extract',
@@ -254,7 +258,7 @@ class AIRuntimeService {
       activity: route.activity,
       executionMode: 'local-only',
       ...(!local ? {
-        codexSourceApp: 'recruiter',
+        codexSourceApp: PLATFORM_SOURCE_APP,
         codexSubjectId: route.chatgptSubjectId,
         requiredEngine: 'codex',
         codexModelCandidates: [
@@ -271,7 +275,7 @@ class AIRuntimeService {
         eventId,
         requestId,
         gatewayExecutionId: deriveGatewayExecutionId(eventId, route.provider),
-        sourceApp: String(context.sourceApp || 'recruiter').slice(0, 64)
+        sourceApp: PLATFORM_SOURCE_APP
       }
     });
     const endpoint = ['candidate.cv_parse', 'ai_interview.cv_parse'].includes(route.activity)

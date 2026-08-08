@@ -12,6 +12,7 @@ const { ActivityQueueScheduler } = require('./request-queue.cjs');
 const { ChatGptExecutionReceiptStore, canonicalRequestFingerprint } = require('./execution-receipt-store.cjs');
 const { ChatGptUsageMeteringOutbox } = require('./usage-metering-outbox.cjs');
 const { PlatformUsageLedger } = require('./usage-ledger.cjs');
+const { canonicalConsumerId } = require('./consumer-registry.cjs');
 
 const dataDir = path.resolve(process.env.CHATGPT_GATEWAY_DATA_DIR || path.join(__dirname, '.data'));
 const host = process.env.CHATGPT_GATEWAY_HOST || '127.0.0.1';
@@ -235,18 +236,20 @@ function usageRecord({ input, metering, result, status, latencyMs, error }) {
 
 async function persistUsage(record) {
   if (!record) return;
-  await usageLedger.record(record);
-  if (usageOutbox) await usageOutbox.enqueue(record);
+  const canonicalRecord = await usageLedger.record(record);
+  if (usageOutbox) await usageOutbox.enqueue(canonicalRecord);
 }
 
 async function handleTelemetry(request, response, requestPath, raw, operation) {
   if (!requestLimiter.consume(remoteKey(request))) return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
   const verified = await verifySignature(request.headers, 'POST', requestPath, raw);
   if (!verified.ok) return sendJson(response, 401, { code: verified.code, message: 'Request authentication failed' });
-  const input = parseJson(raw);
-  if (input.sourceApp && !sessions.allowedSourceApps().has(String(input.sourceApp).trim().toLowerCase())) {
+  let input = parseJson(raw);
+  const requestedSourceApp = input.sourceApp ? canonicalConsumerId(input.sourceApp) : null;
+  if (input.sourceApp && (!requestedSourceApp || !sessions.allowedSourceApps().has(requestedSourceApp))) {
     return sendJson(response, 403, { code: 'CODEX_SOURCE_APP_NOT_ALLOWED' });
   }
+  if (requestedSourceApp) input = { ...input, sourceApp: requestedSourceApp };
   if (operation === 'events') return sendJson(response, 200, { events: await usageLedger.query(input) });
   if (operation === 'summary') return sendJson(response, 200, await usageLedger.summary(input));
   return sendJson(response, 404, { code: 'NOT_FOUND' });

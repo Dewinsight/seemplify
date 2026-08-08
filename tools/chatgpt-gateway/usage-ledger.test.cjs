@@ -40,6 +40,21 @@ test('platform ledger stores queryable metadata for registered apps without prom
   assert.equal(stored.join('').includes('messages'), false);
 });
 
+test('platform ledger recovers established worker identities as their registered product', async (context) => {
+  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'seemplify-ai-ledger-'));
+  context.after(() => fs.promises.rm(directory, { recursive: true, force: true }));
+  const ledger = new PlatformUsageLedger({ directory });
+  const recorded = await ledger.record(usage('recruiter-cv-worker', 'legacy-cv-worker'));
+  await ledger.record(usage('recruiter', 'legacy-cv-worker'));
+  await ledger.record(usage('recruiter-worker', 'legacy-enrichment-worker'));
+  await ledger.record(usage('recruiter-ai-interview', 'legacy-interview'));
+  await ledger.record(usage('admin', 'legacy-admin'));
+  assert.equal(recorded.sourceApp, 'recruiter');
+  assert.equal((await ledger.query({ sourceApp: 'recruiter' })).length, 4);
+  assert.equal((await ledger.query({ sourceApp: 'recruiter-cv-worker' })).length, 4);
+  assert.deepEqual((await ledger.summary()).bySourceApp, { recruiter: 4 });
+});
+
 test('platform ledger rejects Experience Management until it is intentionally onboarded', async (context) => {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'seemplify-ai-ledger-'));
   context.after(() => fs.promises.rm(directory, { recursive: true, force: true }));

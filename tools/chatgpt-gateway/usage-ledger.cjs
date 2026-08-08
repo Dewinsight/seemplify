@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { sanitizeUsageEvent } = require('./usage-metering-outbox.cjs');
-const { isSharedConsumer } = require('./consumer-registry.cjs');
+const { canonicalConsumerId, normalizeSourceApp } = require('./consumer-registry.cjs');
 
 class PlatformUsageLedger {
   constructor({ directory, log = () => {} }) {
@@ -22,12 +22,14 @@ class PlatformUsageLedger {
   }
 
   async record(input) {
-    const event = sanitizeUsageEvent(input);
-    if (!isSharedConsumer(event.sourceApp)) {
-      throw Object.assign(new Error(`AI source application is not registered: ${event.sourceApp}`), {
+    const sanitized = sanitizeUsageEvent(input);
+    const sourceApp = canonicalConsumerId(sanitized.sourceApp);
+    if (!sourceApp) {
+      throw Object.assign(new Error(`AI source application is not registered: ${sanitized.sourceApp}`), {
         code: 'AI_SOURCE_APP_NOT_ALLOWED'
       });
     }
+    const event = { ...sanitized, sourceApp };
     const serialized = JSON.stringify(event);
     const file = this.eventFile(event.eventId);
     this.writeChain = this.writeChain.then(async () => {
@@ -60,7 +62,9 @@ class PlatformUsageLedger {
         return null;
       }
     }));
-    const normalizedSource = String(sourceApp || '').trim().toLowerCase();
+    const normalizedSource = sourceApp
+      ? canonicalConsumerId(sourceApp) || normalizeSourceApp(sourceApp)
+      : '';
     return records.filter(Boolean).sort((left, right) => right.modifiedAt - left.modifiedAt).map(({ event }) => event).filter((event) => event
       && (!normalizedSource || event.sourceApp === normalizedSource)
       && (!status || event.status === status)
