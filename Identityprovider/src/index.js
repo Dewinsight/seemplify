@@ -1297,7 +1297,7 @@ app.get('/interaction/:uid', async (req, res) => {
         <title>${brand.name} - Sign in</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-        <link rel="stylesheet" href="/css/login.css?v=7">
+        <link rel="stylesheet" href="/css/login.css?v=8">
         <script src="/js/theme.js?v=5"></script>
         <style>
           body { visibility: hidden; }
@@ -1639,7 +1639,7 @@ app.get('/signup/:uid', async (req, res) => {
       <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-      <link rel="stylesheet" href="/css/login.css?v=7">
+      <link rel="stylesheet" href="/css/login.css?v=8">
       <script src="/js/theme.js?v=5"></script>
       <style>
         body { visibility: hidden; }
@@ -2181,7 +2181,7 @@ app.get('/verify-email/:accountId', async (req, res) => {
           to { transform: rotate(360deg); }
         }
       </style>
-      <link rel="stylesheet" href="/css/login.css?v=7">
+      <link rel="stylesheet" href="/css/login.css?v=8">
     </head>
     <body class="auth-standalone auth-verify">
       <div class="container">
@@ -2440,7 +2440,7 @@ app.get('/forgot-password', async (req, res) => {
       <title>Forgot Password - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-      <link rel="stylesheet" href="/css/login.css?v=7">
+      <link rel="stylesheet" href="/css/login.css?v=8">
       <script src="/js/theme.js?v=5"></script>
       <style>
         body { 
@@ -2800,7 +2800,7 @@ app.get('/reset-password/:token/success', async (req, res) => {
           box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
         }
       </style>
-      <link rel="stylesheet" href="/css/login.css?v=7">
+      <link rel="stylesheet" href="/css/login.css?v=8">
     </head>
     <body class="auth-standalone auth-reset-success">
       <div class="container">
@@ -2998,7 +2998,7 @@ app.get('/reset-password/:token', async (req, res) => {
           to { transform: rotate(360deg); }
         }
       </style>
-      <link rel="stylesheet" href="/css/login.css?v=7">
+      <link rel="stylesheet" href="/css/login.css?v=8">
     </head>
     <body class="auth-standalone auth-reset">
       <div class="container">
@@ -9154,7 +9154,7 @@ function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = nu
       <title>${brand.name} - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-      <link rel="stylesheet" href="/css/login.css?v=7">
+      <link rel="stylesheet" href="/css/login.css?v=8">
       <script src="/js/theme.js?v=5"></script>
       <style>
         ${brand.cssVars}
@@ -9406,7 +9406,7 @@ function renderHubSignupPage(req, errorMsg, attributionValues = {}) {
       <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-      <link rel="stylesheet" href="/css/login.css?v=7">
+      <link rel="stylesheet" href="/css/login.css?v=8">
       <script src="/js/theme.js?v=5"></script>
       <style>
         ${brand.cssVars}

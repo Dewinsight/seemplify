@@ -71,16 +71,27 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
+  height: auto;
   z-index: 0;
   pointer-events: none;
-  background-image: radial-gradient(circle, color-mix(in srgb, var(--auth-ink) 12%, transparent) 0.7px, transparent 0.8px);
+  background: radial-gradient(circle, color-mix(in srgb, var(--auth-ink) 12%, transparent) 0.7px, transparent 0.8px);
   background-size: 4px 4px;
+  filter: none;
   mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.78) 62%, transparent 100%);
   opacity: 0.24;
 }
 
+[data-theme='light'] body {
+  background: var(--auth-canvas);
+}
+
 [data-theme='light'] body::before {
   display: block;
+  height: auto;
+  background: radial-gradient(circle, color-mix(in srgb, var(--auth-ink) 12%, transparent) 0.7px, transparent 0.8px);
+  background-size: 4px 4px;
+  filter: none;
+  opacity: 0.24;
 }
 
 body::after {
