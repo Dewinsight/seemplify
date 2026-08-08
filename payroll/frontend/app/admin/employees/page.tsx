@@ -910,9 +910,9 @@ export default function EmployeesPage() {
             )}
 
             {resolutionRow && resolutionIssue && (
-                <div className="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="w-full max-w-2xl rounded-3xl border border-amber-500/20 bg-zinc-900/95 shadow-2xl shadow-black/40">
-                        <div className="flex items-start justify-between gap-4 border-b border-zinc-800/80 px-6 py-5">
+                <div className="payroll-dialog-shell" role="presentation">
+                    <div className="payroll-dialog max-w-2xl" role="dialog" aria-modal="true" aria-labelledby="employee-resolution-title">
+                        <div className="payroll-dialog-header flex items-start justify-between gap-4 px-6 py-5">
                             <div>
                                 <div className="flex flex-wrap items-center gap-2 mb-2">
                                     <span className="inline-flex items-center rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300">
@@ -926,8 +926,8 @@ export default function EmployeesPage() {
                                         {formatOnboardingStatus(resolveOnboardingStatus(resolutionRow))}
                                     </span>
                                 </div>
-                                <h2 className="text-xl font-semibold text-white">{getEmployeeName(resolutionRow)}</h2>
-                                <p className="mt-1 text-sm text-zinc-400">
+                                <h2 id="employee-resolution-title" className="payroll-dialog-title text-xl font-semibold">{getEmployeeName(resolutionRow)}</h2>
+                                <p className="payroll-dialog-copy mt-1 text-sm">
                                     {resolveEmployeeId(resolutionRow) ? `${resolveEmployeeId(resolutionRow)} • ` : ''}
                                     {getEmployeeEmail(resolutionRow) || 'No email available'}
                                 </p>
@@ -935,18 +935,18 @@ export default function EmployeesPage() {
                             <button
                                 type="button"
                                 onClick={() => setResolutionUserId('')}
-                                className="rounded-full border border-zinc-700 p-2 text-zinc-400 transition hover:border-zinc-500 hover:text-white"
+                                className="payroll-dialog-close"
                                 aria-label="Close resolution prompt"
                             >
                                 <X className="h-4 w-4" />
                             </button>
                         </div>
                         <div className="px-6 py-5 space-y-4">
-                            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+                            <div className="payroll-dialog-section p-4">
                                 {resolutionIssue === 'onboarding' && (
                                     <>
-                                        <p className="mb-2 text-sm font-medium text-zinc-200">This user is not fully onboarded.</p>
-                                        <p className="text-sm text-zinc-300">
+                                        <p className="payroll-dialog-title mb-2 text-sm font-medium">This user is not fully onboarded.</p>
+                                        <p className="payroll-dialog-copy text-sm">
                                             {resolveOnboardingStatus(resolutionRow) === 'pending'
                                                 ? 'Their onboarding flow is already in progress, but it is still pending. You can send a reminder, or mark them as onboarded if HR completed the process outside the workflow.'
                                                 : 'They have not started onboarding yet. Create onboarding for them now, or mark them as onboarded if HR completed it manually.'}
@@ -955,16 +955,16 @@ export default function EmployeesPage() {
                                 )}
                                 {resolutionIssue === 'profile' && (
                                     <>
-                                        <p className="mb-2 text-sm font-medium text-zinc-200">Payroll profile not created yet.</p>
-                                        <p className="text-sm text-zinc-300">
+                                        <p className="payroll-dialog-title mb-2 text-sm font-medium">Payroll profile not created yet.</p>
+                                        <p className="payroll-dialog-copy text-sm">
                                             Onboarding is complete, but this employee does not have a payroll profile yet. Create the payroll profile before they can be included in a payroll run.
                                         </p>
                                     </>
                                 )}
                                 {resolutionIssue === 'setup' && (
                                     <>
-                                        <p className="mb-2 text-sm font-medium text-zinc-200">Payroll setup is incomplete.</p>
-                                        <p className="text-sm text-zinc-300">
+                                        <p className="payroll-dialog-title mb-2 text-sm font-medium">Payroll setup is incomplete.</p>
+                                        <p className="payroll-dialog-copy text-sm">
                                             This employee has a payroll profile, but the required setup is incomplete. Finish salary and payroll configuration before including them in payroll.
                                         </p>
                                     </>
@@ -978,7 +978,7 @@ export default function EmployeesPage() {
                                             type="button"
                                             onClick={() => handleSendOnboarding(resolutionRow)}
                                             disabled={onboardingActionBusy}
-                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-300 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                            className="payroll-button-primary"
                                         >
                                             {onboardingActionBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
                                             {resolveOnboardingStatus(resolutionRow) === 'pending' ? 'Send Reminder' : 'Create Onboarding'}
@@ -987,7 +987,7 @@ export default function EmployeesPage() {
                                             type="button"
                                             onClick={() => handleMarkOnboarded(resolutionRow)}
                                             disabled={onboardingActionBusy}
-                                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-3 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                            className="payroll-button-secondary"
                                         >
                                             {onboardingActionBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                                             Mark As Onboarded
@@ -998,7 +998,7 @@ export default function EmployeesPage() {
                                 {resolutionIssue === 'profile' && (
                                     <Link
                                         href={`/admin/employees/onboard/${resolutionRow.userId}`}
-                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-300 transition hover:bg-amber-500/20"
+                                        className="payroll-button-primary"
                                     >
                                         <UserPlus className="h-4 w-4" />
                                         Create Payroll Profile
@@ -1008,7 +1008,7 @@ export default function EmployeesPage() {
                                 {resolutionIssue === 'setup' && (
                                     <Link
                                         href={`/admin/employees/${resolutionRow.userId}`}
-                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-300 transition hover:bg-amber-500/20"
+                                        className="payroll-button-primary"
                                     >
                                         <ChevronRight className="h-4 w-4" />
                                         Open Payroll Setup
@@ -1019,7 +1019,7 @@ export default function EmployeesPage() {
                                     href={`${onboardingWorkspaceUrl}?workflow=onboarding`}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:border-zinc-500 hover:bg-zinc-900"
+                                    className="payroll-button-secondary"
                                 >
                                     <FolderOpen className="h-4 w-4" />
                                     Open Document Workspace
@@ -1028,7 +1028,7 @@ export default function EmployeesPage() {
                                 <button
                                     type="button"
                                     onClick={() => setResolutionUserId('')}
-                                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm font-medium text-zinc-300 transition hover:border-zinc-500 hover:text-white"
+                                    className="payroll-button-secondary"
                                 >
                                     Close
                                 </button>

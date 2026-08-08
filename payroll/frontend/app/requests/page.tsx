@@ -214,27 +214,28 @@ export default function MyRequestsPage() {
 
             {/* New Request Modal */}
             {showNewModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+                <div className="payroll-dialog-shell" role="presentation">
+                    <div className="payroll-dialog max-w-md p-6" role="dialog" aria-modal="true" aria-labelledby="new-request-title">
                         <button
                             onClick={() => setShowNewModal(false)}
-                            className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300"
+                            className="payroll-dialog-close absolute right-4 top-4"
+                            aria-label="Close new request"
                         >
-                            <XCircle className="w-6 h-6" />
+                            <XCircle className="h-5 w-5" />
                         </button>
 
-                        <h2 className="text-xl font-bold text-zinc-100 mb-6 flex items-center gap-2">
-                            <Plus className="w-5 h-5 text-amber-500" />
+                        <h2 id="new-request-title" className="payroll-dialog-title mb-6 flex items-center gap-2 pr-10 text-xl font-semibold">
+                            <Plus className="h-5 w-5" style={{ color: 'var(--payroll-popup-accent)' }} />
                             New Request
                         </h2>
 
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Request Type</label>
+                                <label className="payroll-field-label">Request Type</label>
                                 <select
                                     value={formData.type}
                                     onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                                    className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                    className="payroll-field"
                                 >
                                     <option value="overtime">Overtime</option>
                                     <option value="reimbursement">Reimbursement / Expense</option>
@@ -242,7 +243,7 @@ export default function MyRequestsPage() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                                <label className="payroll-field-label">
                                     {formData.type === 'overtime' ? 'Amount (Optional)' : 'Amount'}
                                 </label>
                                 <div className="grid grid-cols-3 gap-3">
@@ -253,13 +254,13 @@ export default function MyRequestsPage() {
                                         step="0.01"
                                         value={formData.amount}
                                         onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                                        className="col-span-2 w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                        className="payroll-field col-span-2"
                                         placeholder="0.00"
                                     />
                                     <select
                                         value={formData.currency}
                                         onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                                        className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                        className="payroll-field"
                                     >
                                         {currencies.map((currency) => (
                                             <option key={currency.code} value={currency.code}>
@@ -269,7 +270,7 @@ export default function MyRequestsPage() {
                                     </select>
                                 </div>
                                 {formData.type === 'overtime' && (
-                                    <p className="text-xs text-zinc-500 mt-1.5">
+                                    <p className="payroll-field-help mt-1.5 text-xs">
                                         Recommended: fill hours below and leave amount blank. Payroll will calculate from salary rate.
                                     </p>
                                 )}
@@ -278,7 +279,7 @@ export default function MyRequestsPage() {
                             {formData.type === 'overtime' && (
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Hours</label>
+                                        <label className="payroll-field-label">Hours</label>
                                         <input
                                             type="number"
                                             required
@@ -286,16 +287,16 @@ export default function MyRequestsPage() {
                                             step="0.5"
                                             value={formData.overtimeHours}
                                             onChange={(e) => setFormData({ ...formData, overtimeHours: e.target.value })}
-                                            className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                            className="payroll-field"
                                             placeholder="e.g. 6"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Multiplier</label>
+                                        <label className="payroll-field-label">Multiplier</label>
                                         <select
                                             value={formData.overtimeMultiplier}
                                             onChange={(e) => setFormData({ ...formData, overtimeMultiplier: e.target.value })}
-                                            className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                            className="payroll-field"
                                         >
                                             <option value="1">1.0x</option>
                                             <option value="1.5">1.5x</option>
@@ -306,24 +307,24 @@ export default function MyRequestsPage() {
                             )}
 
                             <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Date</label>
+                                <label className="payroll-field-label">Date</label>
                                 <input
                                     type="date"
                                     required
                                     value={formData.effectiveDate}
                                     onChange={(e) => setFormData({ ...formData, effectiveDate: e.target.value })}
-                                    className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                                    className="payroll-field"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-1.5">Reason / Description</label>
+                                <label className="payroll-field-label">Reason / Description</label>
                                 <textarea
                                     required
                                     rows={3}
                                     value={formData.reason}
                                     onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                                    className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all placeholder:text-zinc-600"
+                                    className="payroll-field"
                                     placeholder="e.g. Weekend support for deployment..."
                                 />
                             </div>
@@ -332,14 +333,14 @@ export default function MyRequestsPage() {
                                 <button
                                     type="button"
                                     onClick={() => setShowNewModal(false)}
-                                    className="flex-1 px-4 py-2.5 rounded-lg border border-zinc-700 text-zinc-300 font-medium hover:bg-zinc-800 transition-colors"
+                                    className="payroll-button-secondary flex-1"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={submitting}
-                                    className="flex-1 px-4 py-2.5 rounded-lg bg-amber-600 text-white font-medium hover:bg-amber-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    className="payroll-button-primary flex-1"
                                 >
                                     {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit Request'}
                                 </button>

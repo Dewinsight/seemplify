@@ -316,7 +316,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                                     className="fixed inset-0 z-40"
                                     onClick={() => setOpenDropdown(null)}
                                   />
-                                  <div className="absolute left-0 top-11 w-52 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
+                                  <div className="payroll-popover absolute left-0 top-11 z-50 w-52">
                                     {dropdown.items.map((item) => {
                                       const itemPath = item.href.split('?')[0];
                                       const itemActive = pathname === itemPath || (itemPath !== '/' && pathname.startsWith(itemPath));
@@ -325,12 +325,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                                           key={item.href}
                                           href={item.href}
                                           onClick={() => setOpenDropdown(null)}
-                                          className={cn(
-                                            'flex items-center gap-2 px-4 py-2.5 text-sm transition-colors',
-                                            itemActive
-                                              ? 'bg-zinc-800/80 text-white'
-                                              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                                          )}
+                                          className={cn('payroll-popover-item', itemActive && 'is-active')}
                                         >
                                           <item.icon className="h-4 w-4" />
                                           {item.name}
@@ -413,19 +408,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                               className="fixed inset-0 z-40"
                               onClick={() => setOrgMenuOpen(false)}
                             />
-                            <div className="absolute right-0 top-12 w-64 rounded-xl border border-white/[0.08] bg-[#0a0a0c] shadow-2xl overflow-hidden z-50">
+                            <div className="payroll-popover absolute right-0 top-12 z-50 w-64">
                               {organizations.map((org: any) => (
                                 <button
                                   key={org.id}
                                   onClick={() => !org.isCurrent && handleSwitchOrganization(org.id)}
                                   disabled={org.isCurrent || switchingOrg}
-                                  className={cn(
-                                    'w-full text-left px-4 py-3 text-sm hover:bg-zinc-800/70 transition-colors',
-                                    org.isCurrent && 'bg-zinc-800/70 cursor-default'
-                                  )}
+                                  className={cn('payroll-popover-item px-4 py-3', org.isCurrent && 'is-active cursor-default')}
                                 >
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="text-zinc-200 truncate">{org.name}</span>
+                                    <span className="truncate">{org.name}</span>
                                     <div className="flex items-center gap-2">
                                       <span className="text-xs text-zinc-500 flex-shrink-0">{org.role}</span>
                                       {org.isCurrent && <Check className="h-4 w-4 text-green-500" />}
@@ -459,10 +451,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             className="fixed inset-0 z-40"
                             onClick={() => setUserMenuOpen(false)}
                           />
-                          <div className="absolute right-0 top-14 w-56 rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden z-50">
-                            <div className="p-3 border-b border-zinc-800/60">
-                              <div className="text-sm font-medium text-white truncate">{userName}</div>
-                              <div className="text-xs text-zinc-500 truncate">{userEmail}</div>
+                          <div className="payroll-popover absolute right-0 top-14 z-50 w-56">
+                            <div className="payroll-popover-header p-3">
+                              <div className="payroll-dialog-title truncate text-sm font-medium">{userName}</div>
+                              <div className="payroll-dialog-copy truncate text-xs">{userEmail}</div>
                               {roleDisplay && (
                                 <div className="mt-1">
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-medium">
@@ -474,7 +466,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             <div className="py-2">
                               <a
                                 href={hubUrl}
-                                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-zinc-300 transition-colors hover:bg-zinc-800/70"
+                                className="payroll-popover-item px-4 py-2"
                                 onClick={() => setUserMenuOpen(false)}
                               >
                                 <LayoutGrid className="h-4 w-4" />
@@ -501,10 +493,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {mobileOpen && (
               <>
                 <div
-                  className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 lg:hidden"
+                  className="payroll-overlay lg:hidden"
                   onClick={() => setMobileOpen(false)}
                 />
-                <div className="fixed inset-y-0 right-0 w-80 max-w-[85vw] bg-[#0a0a0c] border-l border-white/[0.08] shadow-2xl z-50 lg:hidden overflow-y-auto">
+                <div className="payroll-mobile-drawer fixed inset-y-0 right-0 z-[51] w-80 max-w-[85vw] overflow-y-auto lg:hidden">
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-2">
@@ -533,7 +525,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           className={cn(
                             'flex-1 px-3 py-2 text-xs rounded-md font-medium transition-colors',
                             effectiveViewMode === 'admin'
-                              ? 'bg-zinc-700 text-white'
+                              ? 'suite-view-active'
                               : 'text-zinc-400 hover:text-zinc-200'
                           )}
                         >
@@ -544,7 +536,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           className={cn(
                             'flex-1 px-3 py-2 text-xs rounded-md font-medium transition-colors',
                             effectiveViewMode === 'personal'
-                              ? 'bg-zinc-700 text-white'
+                              ? 'suite-view-active'
                               : 'text-zinc-400 hover:text-zinc-200'
                           )}
                         >
@@ -566,7 +558,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           <ChevronDown className="h-4 w-4 text-zinc-500" />
                         </button>
                         {orgMenuOpen && (
-                          <div className="mt-2 rounded-lg border border-white/[0.08] bg-[#0a0a0c] overflow-hidden">
+                          <div className="payroll-popover mt-2">
                             {organizations.map((org: any) => (
                               <button
                                 key={org.id}
@@ -577,13 +569,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                                   }
                                 }}
                                 disabled={org.isCurrent || switchingOrg}
-                                className={cn(
-                                  'w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800/70 transition-colors',
-                                  org.isCurrent && 'bg-zinc-800/70 cursor-default'
-                                )}
+                                className={cn('payroll-popover-item px-3 py-2.5', org.isCurrent && 'is-active cursor-default')}
                               >
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="text-zinc-200 truncate">{org.name}</span>
+                                  <span className="truncate">{org.name}</span>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs text-zinc-500">{org.role}</span>
                                     {org.isCurrent && <Check className="h-4 w-4 text-green-500" />}

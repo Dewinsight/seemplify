@@ -208,11 +208,11 @@ export default function SalaryGradesPage() {
 
             {/* Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-                    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 w-full max-w-md">
+                <div className="payroll-dialog-shell" role="presentation">
+                    <div className="payroll-dialog max-w-md p-6" role="dialog" aria-modal="true" aria-labelledby="salary-grade-title">
                         <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-lg font-semibold">{editingGrade ? 'Edit Grade' : 'New Salary Grade'}</h2>
-                            <button onClick={() => setShowModal(false)} className="text-zinc-400 hover:text-zinc-200">
+                            <h2 id="salary-grade-title" className="payroll-dialog-title text-lg font-semibold">{editingGrade ? 'Edit Grade' : 'New Salary Grade'}</h2>
+                            <button onClick={() => setShowModal(false)} className="payroll-dialog-close" aria-label="Close salary grade dialog">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -220,45 +220,45 @@ export default function SalaryGradesPage() {
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-xs text-zinc-500 block mb-1">Grade Code</label>
+                                    <label className="payroll-field-label">Grade Code</label>
                                     <input
                                         type="text"
                                         value={formData.gradeCode}
                                         onChange={(e) => setFormData({ ...formData, gradeCode: e.target.value })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
+                                        className="payroll-field text-sm"
                                         placeholder="e.g. ENG-L1"
                                         disabled={!!editingGrade}
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-xs text-zinc-500 block mb-1">Level</label>
+                                    <label className="payroll-field-label">Level</label>
                                     <input
                                         type="number"
                                         value={formData.gradeLevel}
                                         onChange={(e) => setFormData({ ...formData, gradeLevel: Number(e.target.value) })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
+                                        className="payroll-field text-sm"
                                     />
                                 </div>
                             </div>
 
                             <div>
-                                <label className="text-xs text-zinc-500 block mb-1">Grade Name</label>
+                                <label className="payroll-field-label">Grade Name</label>
                                 <input
                                     type="text"
                                     value={formData.gradeName}
                                     onChange={(e) => setFormData({ ...formData, gradeName: e.target.value })}
-                                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
+                                    className="payroll-field text-sm"
                                     placeholder="e.g. Junior Engineer"
                                 />
                             </div>
 
                             <div className="grid grid-cols-3 gap-3">
                                 <div>
-                                    <label className="text-xs text-zinc-500 block mb-1">Currency</label>
+                                    <label className="payroll-field-label">Currency</label>
                                     <select
                                         value={formData.currency}
                                         onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
+                                        className="payroll-field text-sm"
                                     >
                                         {currencies.map((currency) => (
                                             <option key={currency.code} value={currency.code}>
@@ -268,42 +268,42 @@ export default function SalaryGradesPage() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="text-xs text-zinc-500 block mb-1">Min Salary</label>
+                                    <label className="payroll-field-label">Min Salary</label>
                                     <input
                                         type="number"
                                         value={formData.minimum}
                                         onChange={(e) => setFormData({ ...formData, minimum: Number(e.target.value) })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
+                                        className="payroll-field text-sm"
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-xs text-zinc-500 block mb-1">Max Salary</label>
+                                    <label className="payroll-field-label">Max Salary</label>
                                     <input
                                         type="number"
                                         value={formData.maximum}
                                         onChange={(e) => setFormData({ ...formData, maximum: Number(e.target.value) })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
+                                        className="payroll-field text-sm"
                                     />
                                 </div>
                             </div>
 
                             <div>
-                                <label className="text-xs text-zinc-500 block mb-1">Department (Optional)</label>
+                                <label className="payroll-field-label">Department (Optional)</label>
                                 <input
                                     type="text"
                                     value={formData.department}
                                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
+                                    className="payroll-field text-sm"
                                     placeholder="e.g. Engineering"
                                 />
                             </div>
                         </div>
 
                         <div className="flex justify-end gap-3 mt-6">
-                            <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200">
+                            <button onClick={() => setShowModal(false)} className="payroll-button-secondary">
                                 Cancel
                             </button>
-                            <button onClick={handleSubmit} className="px-4 py-2 bg-amber-600 text-white text-sm rounded hover:bg-amber-500 flex items-center gap-2">
+                            <button onClick={handleSubmit} className="payroll-button-primary">
                                 <Save className="w-4 h-4" /> {editingGrade ? 'Update' : 'Create'}
                             </button>
                         </div>

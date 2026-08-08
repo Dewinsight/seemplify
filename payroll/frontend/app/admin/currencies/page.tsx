@@ -621,14 +621,14 @@ export default function CurrenciesPage() {
       </div>
 
       {showAddRate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
+        <div className="payroll-dialog-shell" role="presentation">
+          <div className="payroll-dialog max-w-md p-6" role="dialog" aria-modal="true" aria-labelledby="manual-rate-title">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-white">Add Manual Rate Override</h3>
-                <p className="text-sm text-zinc-500">This will take precedence over the daily provider sync.</p>
+                <h3 id="manual-rate-title" className="payroll-dialog-title text-lg font-semibold">Add Manual Rate Override</h3>
+                <p className="payroll-dialog-copy text-sm">This will take precedence over the daily provider sync.</p>
               </div>
-              <button onClick={() => setShowAddRate(false)} className="text-zinc-500 hover:text-zinc-200">
+              <button onClick={() => setShowAddRate(false)} className="payroll-dialog-close" aria-label="Close manual rate dialog">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -636,11 +636,11 @@ export default function CurrenciesPage() {
             <form onSubmit={handleAddRate} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-sm text-zinc-400">Base Currency</label>
+                  <label className="payroll-field-label">Base Currency</label>
                   <select
                     value={baseCurrency}
                     onChange={(e) => setBaseCurrency(e.target.value)}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-white"
+                    className="payroll-field"
                   >
                     {currencies.map((currency) => (
                       <option key={currency.code} value={currency.code}>
@@ -650,11 +650,11 @@ export default function CurrenciesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm text-zinc-400">Target Currency</label>
+                  <label className="payroll-field-label">Target Currency</label>
                   <select
                     value={targetCurrency}
                     onChange={(e) => setTargetCurrency(e.target.value)}
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-white"
+                    className="payroll-field"
                   >
                     {currencies.map((currency) => (
                       <option key={currency.code} value={currency.code}>
@@ -666,7 +666,7 @@ export default function CurrenciesPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm text-zinc-400">
+                <label className="payroll-field-label">
                   Rate (1 {baseCurrency} = X {targetCurrency})
                 </label>
                 <input
@@ -675,18 +675,18 @@ export default function CurrenciesPage() {
                   value={rateValue}
                   onChange={(e) => setRateValue(e.target.value)}
                   placeholder="e.g. 1357.264974"
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-white"
+                  className="payroll-field"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm text-zinc-400">Notes (optional)</label>
+                <label className="payroll-field-label">Notes (optional)</label>
                 <textarea
                   rows={3}
                   value={manualNotes}
                   onChange={(e) => setManualNotes(e.target.value)}
                   placeholder="Why should payroll use this override?"
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-white"
+                  className="payroll-field"
                 />
               </div>
 
@@ -694,14 +694,14 @@ export default function CurrenciesPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddRate(false)}
-                  className="flex-1 rounded-lg border border-zinc-700 px-4 py-2.5 text-zinc-300 hover:bg-zinc-800"
+                  className="payroll-button-secondary flex-1"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving || !rateValue || baseCurrency === targetCurrency}
-                  className="flex-1 rounded-lg bg-amber-500 px-4 py-2.5 font-medium text-white hover:bg-amber-400 disabled:opacity-50"
+                  className="payroll-button-primary flex-1"
                 >
                   {saving ? 'Saving...' : 'Save Override'}
                 </button>

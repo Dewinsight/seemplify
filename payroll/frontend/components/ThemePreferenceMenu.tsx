@@ -58,9 +58,9 @@ export default function ThemePreferenceMenu({ mobile = false }: { mobile?: boole
       {open && (
         <>
           <button className="fixed inset-0 z-40 cursor-default" aria-label="Close appearance menu" onClick={() => setOpen(false)} />
-          <div role="menu" className="absolute right-0 top-11 z-50 w-40 overflow-hidden rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
+          <div role="menu" className="payroll-popover absolute right-0 top-11 z-50 w-40 p-1">
             {options.map(({ value, label, icon: Icon }) => (
-              <button key={value} type="button" role="menuitemradio" aria-checked={preference === value} onClick={() => { writeThemePreference(value); setPreference(value); setOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900">
+              <button key={value} type="button" role="menuitemradio" aria-checked={preference === value} onClick={() => { writeThemePreference(value); setPreference(value); setOpen(false); }} className={`payroll-popover-item rounded-md ${preference === value ? 'is-active' : ''}`}>
                 <Icon className="h-4 w-4" /><span className="flex-1 text-left">{label}</span>{preference === value && <Check className="h-4 w-4" />}
               </button>
             ))}
