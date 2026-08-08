@@ -108,6 +108,9 @@ const AccountSchema = new mongoose.Schema({
     department: {
       type: mongoose.Schema.Types.ObjectId
     },
+    branch: {
+      type: mongoose.Schema.Types.ObjectId
+    },
     appAccess: {
       mode: {
         type: String,

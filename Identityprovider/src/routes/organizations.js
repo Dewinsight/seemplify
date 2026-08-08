@@ -22,6 +22,27 @@ const requireOrganizationDepartmentManager = (req, res, next) => {
   next()
 }
 
+const serializeBranch = (branch) => ({
+  id: branch._id,
+  name: branch.name,
+  code: branch.code || '',
+  address: branch.address || '',
+  city: branch.city || '',
+  state: branch.state || '',
+  country: branch.country || '',
+  managerAccount: branch.managerAccount || null,
+  isHeadOffice: !!branch.isHeadOffice
+})
+
+const invalidateOrganizationMemberClaims = async (organization) => {
+  const memberAccountIds = (organization.members || []).map((member) => member.account).filter(Boolean)
+  if (!memberAccountIds.length) return
+  const accounts = await Account.find({ _id: { $in: memberAccountIds } }).select('sub').lean()
+  accounts.forEach((account) => {
+    if (account?.sub) invalidateClaimsCache(account.sub)
+  })
+}
+
 // Helper: allow either session auth or API token with scopes for create
 const requireOrgCreateAuth = [
   requireAuthOrAPIToken,
@@ -298,6 +319,67 @@ router.put('/:orgId/departments/:departmentId',
     } catch (error) {
       console.error('Update department error:', error)
       res.status(400).json({ error: error.message || 'Failed to update department' })
+    }
+  }
+)
+
+router.get('/:orgId/branches',
+  requireAuth,
+  requireOrganizationMember,
+  async (req, res) => {
+    try {
+      res.json({ branches: (req.organization.branches || []).map(serializeBranch) })
+    } catch (error) {
+      console.error('Get branches error:', error)
+      res.status(500).json({ error: 'Failed to get branches' })
+    }
+  }
+)
+
+router.post('/:orgId/branches',
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationDepartmentManager,
+  async (req, res) => {
+    try {
+      const branch = await req.organization.addBranch(req.body || {})
+      await invalidateOrganizationMemberClaims(req.organization)
+      res.status(201).json(serializeBranch(branch))
+    } catch (error) {
+      console.error('Create branch error:', error)
+      res.status(400).json({ error: error.message || 'Failed to create branch' })
+    }
+  }
+)
+
+router.put('/:orgId/branches/:branchId',
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationDepartmentManager,
+  async (req, res) => {
+    try {
+      const branch = await req.organization.updateBranch(req.params.branchId, req.body || {})
+      await invalidateOrganizationMemberClaims(req.organization)
+      res.json(serializeBranch(branch))
+    } catch (error) {
+      console.error('Update branch error:', error)
+      res.status(400).json({ error: error.message || 'Failed to update branch' })
+    }
+  }
+)
+
+router.delete('/:orgId/branches/:branchId',
+  requireAuth,
+  requireOrganizationMember,
+  requireOrganizationDepartmentManager,
+  async (req, res) => {
+    try {
+      await req.organization.removeBranch(req.params.branchId)
+      await invalidateOrganizationMemberClaims(req.organization)
+      res.json({ message: 'Branch deleted successfully' })
+    } catch (error) {
+      console.error('Delete branch error:', error)
+      res.status(400).json({ error: error.message || 'Failed to delete branch' })
     }
   }
 )

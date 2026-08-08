@@ -1,6 +1,7 @@
 <nav class="org-section-tabs" aria-label="Organization sections">
   <a href="/organizations/<%= organization._id %>/members?view=structure" class="org-section-tab<%= activeSection === 'structure' ? ' active' : '' %>">Structure</a>
   <a href="/organizations/<%= organization._id %>/members?view=members" class="org-section-tab<%= activeSection === 'members' ? ' active' : '' %>">Members</a>
+  <a href="/organizations/<%= organization._id %>/members?view=branches" class="org-section-tab<%= activeSection === 'branches' ? ' active' : '' %>">Locations</a>
   <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
     <a href="/organizations/<%= organization._id %>/invitations" class="org-section-tab<%= activeSection === 'invitations' ? ' active' : '' %>">Invitations</a>
   <% } %>

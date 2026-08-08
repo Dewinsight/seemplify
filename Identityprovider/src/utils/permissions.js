@@ -253,7 +253,7 @@ export async function buildOrganizationClaims(account) {
 
   const organizationDocs = organizationIds.length > 0
     ? await Organization.find({ _id: { $in: organizationIds } })
-      .select('name departments members.account members.status members.designation members.employeeId')
+      .select('name departments branches members.account members.status members.designation members.employeeId members.branch')
       .lean()
     : []
 
@@ -267,6 +267,7 @@ export async function buildOrganizationClaims(account) {
     const orgId = orgDoc._id?.toString() || orgDoc.toString()
     const fullOrgDoc = organizationDocById.get(orgId) || orgDoc
     const departments = Array.isArray(fullOrgDoc.departments) ? fullOrgDoc.departments : []
+    const branches = Array.isArray(fullOrgDoc.branches) ? fullOrgDoc.branches : []
     const memberEntry = Array.isArray(fullOrgDoc.members)
       ? fullOrgDoc.members.find((member) =>
         member?.status === 'active' &&
@@ -285,6 +286,10 @@ export async function buildOrganizationClaims(account) {
     const memberDepartmentId = memberDepartmentIds[0] || null
     const memberDepartment = memberDepartmentId
       ? departments.find((department) => department._id?.toString() === memberDepartmentId)
+      : null
+    const memberBranchId = memberEntry?.branch?.toString() || null
+    const memberBranch = memberBranchId
+      ? branches.find((branch) => branch._id?.toString() === memberBranchId)
       : null
     const headedDepartments = departments
       .filter((department) => department.headAccount?.toString() === account._id.toString())
@@ -305,6 +310,9 @@ export async function buildOrganizationClaims(account) {
       employeeId: memberEntry?.employeeId || null,
       departmentId: memberDepartmentId,
       departmentName: memberDepartment?.name || null,
+      branchId: memberBranchId,
+      branchName: memberBranch?.name || null,
+      branchCode: memberBranch?.code || null,
       departmentHeadPermissions: headedDepartments,
       permissions: getPermissionsForRole(org.role),
       appPermissions: {

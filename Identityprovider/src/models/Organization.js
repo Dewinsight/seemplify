@@ -57,6 +57,10 @@ const OrganizationSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       default: null
     },
+    branch: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null
+    },
     appAccess: {
       mode: {
         type: String,
@@ -155,6 +159,57 @@ const OrganizationSchema = new mongoose.Schema({
       default: Date.now
     }
   }],
+  branches: [{
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      maxLength: 120
+    },
+    code: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxLength: 24
+    },
+    address: {
+      type: String,
+      trim: true,
+      maxLength: 240
+    },
+    city: {
+      type: String,
+      trim: true,
+      maxLength: 100
+    },
+    state: {
+      type: String,
+      trim: true,
+      maxLength: 100
+    },
+    country: {
+      type: String,
+      trim: true,
+      maxLength: 100
+    },
+    managerAccount: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AiinAccount',
+      default: null
+    },
+    isHeadOffice: {
+      type: Boolean,
+      default: false
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   // For linking with SmartHR organization during migration
   smarthrOrganizationId: {
     type: String,
@@ -219,11 +274,15 @@ OrganizationSchema.pre('save', function(next) {
   }
 
   const departmentLookup = buildDepartmentLookup(this.departments)
+  const branchLookup = new Set((this.branches || []).map((branch) => branch._id.toString()))
 
   if (Array.isArray(this.members)) {
     this.members.forEach((member) => {
       if (member.department && !departmentLookup.has(member.department.toString())) {
         member.department = null
+      }
+      if (member.branch && !branchLookup.has(member.branch.toString())) {
+        member.branch = null
       }
     })
   }
@@ -231,6 +290,12 @@ OrganizationSchema.pre('save', function(next) {
   if (Array.isArray(this.departments)) {
     this.departments.forEach((department) => {
       department.updatedAt = Date.now()
+    })
+  }
+
+  if (Array.isArray(this.branches)) {
+    this.branches.forEach((branch) => {
+      branch.updatedAt = Date.now()
     })
   }
 
@@ -377,6 +442,132 @@ OrganizationSchema.methods.updateDepartment = async function(departmentId, updat
   department.updatedAt = new Date()
   await this.save()
   return department
+}
+
+OrganizationSchema.methods.getBranchById = function(branchId) {
+  const targetId = branchId?.toString()
+  return (this.branches || []).find((branch) => branch._id.toString() === targetId) || null
+}
+
+OrganizationSchema.methods.addBranch = async function(data = {}) {
+  const name = String(data.name || '').trim()
+  if (!name) {
+    throw new Error('Branch name is required')
+  }
+
+  const duplicateName = (this.branches || []).some(
+    (branch) => branch.name.toLowerCase() === name.toLowerCase()
+  )
+  if (duplicateName) {
+    throw new Error('Branch with this name already exists')
+  }
+
+  const code = String(data.code || '').trim().toUpperCase()
+  const duplicateCode = code && (this.branches || []).some(
+    (branch) => String(branch.code || '').toUpperCase() === code
+  )
+  if (duplicateCode) {
+    throw new Error('Branch code is already in use')
+  }
+
+  if (data.managerAccount) {
+    const managerIsMember = (this.members || []).some((member) =>
+      member.status === 'active' && member.account?.toString() === data.managerAccount.toString()
+    )
+    if (!managerIsMember) {
+      throw new Error('Branch manager must be an active organization member')
+    }
+  }
+
+  if (data.isHeadOffice) {
+    (this.branches || []).forEach((branch) => { branch.isHeadOffice = false })
+  }
+
+  this.branches.push({
+    name,
+    code: code || undefined,
+    address: String(data.address || '').trim(),
+    city: String(data.city || '').trim(),
+    state: String(data.state || '').trim(),
+    country: String(data.country || '').trim(),
+    managerAccount: data.managerAccount || null,
+    isHeadOffice: !!data.isHeadOffice,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  })
+
+  await this.save()
+  return this.branches[this.branches.length - 1]
+}
+
+OrganizationSchema.methods.updateBranch = async function(branchId, updates = {}) {
+  const branch = this.getBranchById(branchId)
+  if (!branch) {
+    throw new Error('Branch not found')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'name')) {
+    const name = String(updates.name || '').trim()
+    if (!name) throw new Error('Branch name is required')
+    const duplicate = (this.branches || []).some((candidate) =>
+      candidate._id.toString() !== branch._id.toString() && candidate.name.toLowerCase() === name.toLowerCase()
+    )
+    if (duplicate) throw new Error('Branch with this name already exists')
+    branch.name = name
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'code')) {
+    const code = String(updates.code || '').trim().toUpperCase()
+    const duplicate = code && (this.branches || []).some((candidate) =>
+      candidate._id.toString() !== branch._id.toString() && String(candidate.code || '').toUpperCase() === code
+    )
+    if (duplicate) throw new Error('Branch code is already in use')
+    branch.code = code || undefined
+  }
+
+  for (const field of ['address', 'city', 'state', 'country']) {
+    if (Object.prototype.hasOwnProperty.call(updates, field)) {
+      branch[field] = String(updates[field] || '').trim()
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'managerAccount')) {
+    const managerAccount = updates.managerAccount || null
+    if (managerAccount) {
+      const managerIsMember = (this.members || []).some((member) =>
+        member.status === 'active' && member.account?.toString() === managerAccount.toString()
+      )
+      if (!managerIsMember) throw new Error('Branch manager must be an active organization member')
+    }
+    branch.managerAccount = managerAccount
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'isHeadOffice')) {
+    if (updates.isHeadOffice) {
+      (this.branches || []).forEach((candidate) => { candidate.isHeadOffice = false })
+    }
+    branch.isHeadOffice = !!updates.isHeadOffice
+  }
+
+  branch.updatedAt = new Date()
+  await this.save()
+  return branch
+}
+
+OrganizationSchema.methods.removeBranch = async function(branchId) {
+  const branch = this.getBranchById(branchId)
+  if (!branch) throw new Error('Branch not found')
+
+  const assignedCount = (this.members || []).filter(
+    (member) => member.status === 'active' && member.branch?.toString() === branch._id.toString()
+  ).length
+  if (assignedCount > 0) {
+    throw new Error(`Move ${assignedCount} assigned member${assignedCount === 1 ? '' : 's'} before deleting this branch`)
+  }
+
+  this.branches.pull(branch._id)
+  await this.save()
+  return branch
 }
 
 OrganizationSchema.methods.getDerivedMemberDepartmentId = async function(accountId) {
@@ -640,6 +831,20 @@ OrganizationSchema.methods.updateMemberDetails = async function(accountId, updat
 
   if (Object.prototype.hasOwnProperty.call(updates, 'department')) {
     throw new Error('Department is derived from active team assignments')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'branch')) {
+    const branchId = updates.branch || null
+    if (branchId && !this.getBranchById(branchId)) {
+      throw new Error('Branch not found')
+    }
+    member.branch = branchId
+
+    const Account = mongoose.model('AiinAccount')
+    await Account.updateOne(
+      { _id: accountId, 'organizations.organization': this._id },
+      { $set: { 'organizations.$.branch': branchId } }
+    )
   }
 
   if (Object.prototype.hasOwnProperty.call(updates, 'appAccess')) {

@@ -123,6 +123,9 @@ async function getCachedClaims(acc) {
       role: currentOrganizationClaim.role,
       departmentId: currentOrganizationClaim.departmentId || null,
       departmentName: currentOrganizationClaim.departmentName || null,
+      branchId: currentOrganizationClaim.branchId || null,
+      branchName: currentOrganizationClaim.branchName || null,
+      branchCode: currentOrganizationClaim.branchCode || null,
       designation: currentOrganizationClaim.designation || null,
       employeeId: currentOrganizationClaim.employeeId || null
     }
@@ -6149,6 +6152,7 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
         const accountId = (m.account?._id || m.account).toString()
         const structure = getMemberStructure(memberStructure, accountId, organization)
         const onboardingState = getMemberOnboardingState(accountId, onboardingStateByMember)
+        const branch = organization.getBranchById(m.branch)
         return {
           id: m.account?._id || m.account,
           name: m.account?.profile?.name || m.account?.profile?.preferred_username || m.account?.email?.split('@')[0] || 'Unknown',
@@ -6157,8 +6161,11 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
           employeeId: m.employeeId || '',
           departmentId: structure.departmentId,
           departmentName: structure.departmentName || '',
+          branchId: branch?._id?.toString() || '',
+          branchName: branch?.name || '',
           role: m.role,
           ...getInvitationAccessSummary(m, appNameById, appIdSet),
+          teamIds: structure.teamIds || [],
           teamNames: teamNamesByMemberId.get(accountId) || [],
           joinedAt: m.joinedAt,
           isOwner: m.role === 'owner',
@@ -6176,7 +6183,9 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
         id: m._id.toString(),
         email: m.email,
         name: m.profile?.name,
-        employeeId: memberEntryById.get(m._id.toString())?.employeeId || ''
+        employeeId: memberEntryById.get(m._id.toString())?.employeeId || '',
+        branchId: organization.getBranchById(memberEntryById.get(m._id.toString())?.branch)?._id?.toString() || '',
+        branchName: organization.getBranchById(memberEntryById.get(m._id.toString())?.branch)?.name || ''
       })),
       teams: teams.map((team) => ({
         id: team._id.toString(),
@@ -6208,12 +6217,25 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
         headName: orgMembers.find((orgMember) => orgMember._id.toString() === department.headAccount?.toString())?.profile?.name || '',
         parentDepartment: department.parentDepartment?.toString() || ''
       })),
+      branches: (organization.branches || []).map((branch) => ({
+        id: branch._id.toString(),
+        name: branch.name,
+        code: branch.code || '',
+        address: branch.address || '',
+        city: branch.city || '',
+        state: branch.state || '',
+        country: branch.country || '',
+        managerAccount: branch.managerAccount?.toString() || '',
+        managerName: orgMembers.find((orgMember) => orgMember._id.toString() === branch.managerAccount?.toString())?.profile?.name || '',
+        isHeadOffice: !!branch.isHeadOffice,
+        memberCount: organization.members.filter((entry) => entry.status === 'active' && entry.branch?.toString() === branch._id.toString()).length
+      })),
       canManageMemberRoles: ['owner', 'admin'].includes(member.role),
       canManageMemberMetadata: ['owner', 'admin', 'hr_manager'].includes(member.role),
       canManageTeams: ['owner', 'admin'].includes(member.role) || organization.isDepartmentHead(req.user._id),
       yourRole: member.role,
       ownerCount: organization.getOwnerCount(),
-      activeView: req.query.view === 'members' ? 'members' : 'structure',
+      activeView: ['members', 'branches'].includes(req.query.view) ? req.query.view : 'structure',
       user: req.user,
       error: req.query.error,
       success: req.query.success

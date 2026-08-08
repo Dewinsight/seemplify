@@ -785,20 +785,21 @@ router.put('/:orgId/members/:memberId',
       const hasEmployeeId = Object.prototype.hasOwnProperty.call(body, 'employeeId')
       const hasAppAccess = Object.prototype.hasOwnProperty.call(body, 'appAccess')
       const hasDepartment = Object.prototype.hasOwnProperty.call(body, 'department')
-      const { role, designation, employeeId, appAccess } = body
+      const hasBranch = Object.prototype.hasOwnProperty.call(body, 'branch')
+      const { role, designation, employeeId, appAccess, branch } = body
 
       const canManageRole = ['owner', 'admin'].includes(req.memberRole)
       const canManageMemberMetadata = ['owner', 'admin', 'hr_manager'].includes(req.memberRole)
 
-      if (!hasRole && !hasDesignation && !hasEmployeeId && !hasDepartment && !hasAppAccess) {
-        return res.status(400).json({ error: 'At least one of role, designation, employeeId, or appAccess is required' })
+      if (!hasRole && !hasDesignation && !hasEmployeeId && !hasDepartment && !hasBranch && !hasAppAccess) {
+        return res.status(400).json({ error: 'At least one member field is required' })
       }
 
       if (hasRole && !canManageRole) {
         return res.status(403).json({ error: 'Admin or owner role required to update role' })
       }
 
-      if ((hasDesignation || hasEmployeeId || hasDepartment || hasAppAccess) && !canManageMemberMetadata) {
+      if ((hasDesignation || hasEmployeeId || hasDepartment || hasBranch || hasAppAccess) && !canManageMemberMetadata) {
         return res.status(403).json({ error: 'Admin, owner, or HR manager role required to update member details' })
       }
 
@@ -849,6 +850,13 @@ router.put('/:orgId/members/:memberId',
             req.user._id
           )
         }
+        if (hasBranch) {
+          await req.organization.updateMemberDetails(
+            req.params.memberId,
+            { branch: branch || null },
+            req.user._id
+          )
+        }
         if (hasAppAccess) {
           await req.organization.updateMemberDetails(
             req.params.memberId,
@@ -872,6 +880,7 @@ router.put('/:orgId/members/:memberId',
         newRole: hasRole ? role : undefined,
         designation: hasDesignation ? String(designation || '').trim() : undefined,
         employeeId: hasEmployeeId ? normalizedEmployeeId : undefined,
+        branch: hasBranch ? (branch || null) : undefined,
         appAccess: hasAppAccess ? normalizedAppAccess : undefined
       })
     } catch (error) {

@@ -236,6 +236,96 @@
     .members-overview__item:first-child { padding-left: 0; }
     .members-overview__item + .members-overview__item { border-left: 1px solid var(--border); }
     .members-overview__item strong { margin-right: 5px; color: var(--text); font-size: 13px; }
+    .member-directory-toolbar {
+      display: grid;
+      grid-template-columns: minmax(240px, 1.35fr) repeat(3, minmax(170px, .75fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .member-filter-field { min-width: 0; }
+    .member-filter-field label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .member-filter-field input,
+    .member-filter-field select { width: 100%; }
+    .member-directory-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 32px;
+      margin: -8px 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .member-directory-empty {
+      padding: 32px 20px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .locations-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+    .locations-header h2 { margin: 0; font-size: 20px; }
+    .locations-header p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .locations-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--panel-solid);
+    }
+    .locations-table { width: 100%; min-width: 820px; border-collapse: collapse; }
+    body.idp-workspace-page .locations-table th {
+      padding: 11px 14px;
+      background: var(--panel-solid);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0;
+      text-align: left;
+      text-transform: none;
+    }
+    .locations-table td { padding: 14px; border-top: 1px solid var(--border); vertical-align: middle; }
+    .location-name { color: var(--text); font-size: 13px; font-weight: 650; }
+    .location-code { margin-top: 3px; color: var(--muted); font-size: 11px; }
+    .location-address { color: var(--text-secondary); font-size: 12px; }
+    .location-actions { display: flex; justify-content: flex-end; gap: 6px; }
+    .location-head-office {
+      display: inline-block;
+      margin-left: 7px;
+      padding: 1px 5px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 600;
+    }
+    .branch-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .branch-form-grid .form-group { margin: 0; }
+    .branch-form-wide { grid-column: 1 / -1; }
+    .branch-head-office-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+    .branch-head-office-field input { width: auto; margin: 0; }
+    .branch-head-office-field span { display: grid; gap: 2px; }
+    .branch-head-office-field small { color: var(--muted); font-size: 12px; font-weight: 400; }
     .member-record {
       display: block;
       padding: 0;
@@ -243,7 +333,7 @@
     }
     .member-record__summary {
       display: grid;
-      grid-template-columns: minmax(220px, 1.2fr) minmax(160px, .75fr) minmax(180px, 1fr) auto auto;
+      grid-template-columns: minmax(200px, 1.15fr) minmax(135px, .7fr) minmax(160px, .9fr) minmax(130px, .65fr) auto auto;
       gap: 18px;
       align-items: center;
       min-height: 76px;
@@ -469,6 +559,7 @@
       .department-fact + .department-fact { border-left: 0; border-top: 1px solid var(--border); }
       .team-row { grid-template-columns: 1fr; gap: 10px; }
       .team-row__actions { justify-content: flex-start; }
+      .member-directory-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 680px) {
       .structure-layout { display: block; }
@@ -481,6 +572,11 @@
       .team-row__leaders { grid-template-columns: 1fr; gap: 8px; }
       .member-record__summary { grid-template-columns: 1fr auto; }
       .member-record__summary > :not(.member-record__identity):not(.member-record__chevron) { display: none; }
+      .member-directory-toolbar { grid-template-columns: 1fr; }
+      .locations-header { display: block; }
+      .locations-header .btn { margin-top: 14px; }
+      .branch-form-grid { grid-template-columns: 1fr; }
+      .branch-form-wide { grid-column: auto; }
       body.idp-workspace-page #membersModal { padding: 0; }
       body.idp-workspace-page #membersModal .team-members-dialog {
         width: 100%;
@@ -642,6 +738,65 @@
       <% } %>
     </section>
 
+    <section data-organization-panel="branches" <%= activeView === 'branches' ? '' : 'hidden' %>>
+      <div class="locations-header">
+        <div>
+          <h2>Locations</h2>
+          <p>Manage the branches and offices where members of this organization work.</p>
+        </div>
+        <% if (canManageMemberMetadata) { %>
+          <button type="button" class="btn btn-primary" onclick="showBranchModal()">+ Add location</button>
+        <% } %>
+      </div>
+
+      <% if (branches.length > 0) { %>
+        <div class="locations-table-wrap">
+          <table class="locations-table">
+            <thead>
+              <tr>
+                <th scope="col">Branch</th>
+                <th scope="col">Location</th>
+                <th scope="col">Manager</th>
+                <th scope="col">Members</th>
+                <% if (canManageMemberMetadata) { %><th scope="col"><span class="sr-only">Actions</span></th><% } %>
+              </tr>
+            </thead>
+            <tbody>
+              <% branches.forEach(branch => { %>
+                <% const locationParts = [branch.address, branch.city, branch.state, branch.country].filter(Boolean); %>
+                <tr>
+                  <td>
+                    <div class="location-name">
+                      <%= branch.name %>
+                      <% if (branch.isHeadOffice) { %><span class="location-head-office">Head office</span><% } %>
+                    </div>
+                    <% if (branch.code) { %><div class="location-code"><%= branch.code %></div><% } %>
+                  </td>
+                  <td class="location-address"><%= locationParts.join(', ') || 'Location not set' %></td>
+                  <td class="location-address"><%= branch.managerName || 'Not assigned' %></td>
+                  <td class="location-address"><%= branch.memberCount %> member<%= branch.memberCount === 1 ? '' : 's' %></td>
+                  <% if (canManageMemberMetadata) { %>
+                    <td>
+                      <div class="location-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="editBranchById('<%= branch.id %>')">Edit</button>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteBranch('<%= branch.id %>')">Delete</button>
+                      </div>
+                    </td>
+                  <% } %>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } else { %>
+        <div class="card empty-state">
+          <h2>No locations yet</h2>
+          <p>Add a branch or office, then assign organization members to it from the Members tab.</p>
+          <% if (canManageMemberMetadata) { %><button type="button" class="btn btn-primary" onclick="showBranchModal()">Add first location</button><% } %>
+        </div>
+      <% } %>
+    </section>
+
     <section class="members-section" data-organization-panel="members" <%= activeView === 'members' ? '' : 'hidden' %>>
       <div class="members-section__heading">
         <h2>Members</h2>
@@ -651,27 +806,59 @@
     <div class="members-overview" aria-label="Member directory summary">
       <div class="members-overview__item"><strong><%= members.length %></strong> members</div>
       <div class="members-overview__item"><strong><%= departments.length %></strong> departments</div>
+      <div class="members-overview__item"><strong><%= branches.length %></strong> locations</div>
       <div class="members-overview__item">Your role: <strong><%= yourRole %></strong></div>
     </div>
 
     <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
     <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
 
-    <div class="toolbar">
-      <input id="memberSearch" type="text" class="role-select" placeholder="Search by name, email, employee ID, designation">
-      <select id="departmentFilter" class="role-select">
-        <option value="all">All Departments</option>
-        <option value="unassigned">Unassigned</option>
-        <% departments.forEach(department => { %>
-          <option value="<%= department.name %>"><%= department.name %></option>
-        <% }) %>
-      </select>
-      <select id="teamFilter" class="role-select">
-        <option value="all">All Teams</option>
-        <% teams.forEach(team => { %>
-          <option value="<%= team.name %>"><%= team.name %></option>
-        <% }) %>
-      </select>
+    <div class="member-directory-toolbar">
+      <div class="member-filter-field">
+        <label for="memberSearch">Search members</label>
+        <input id="memberSearch" type="search" class="role-select" placeholder="Name, email, employee ID, designation">
+      </div>
+      <div class="member-filter-field">
+        <label for="departmentFilter">Department</label>
+        <select id="departmentFilter" class="role-select">
+          <option value="all">All departments</option>
+          <option value="unassigned">Unassigned</option>
+          <% departments.forEach(department => { %>
+            <option value="<%= department.id %>"><%= department.name %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="member-filter-field">
+        <label for="teamFilter">Team</label>
+        <select id="teamFilter" class="role-select">
+          <option value="all">All teams</option>
+          <% departments.forEach(department => { %>
+            <% const departmentTeams = teams.filter(team => team.department?.id === department.id); %>
+            <% if (departmentTeams.length > 0) { %>
+              <optgroup label="<%= department.name %>">
+                <% departmentTeams.forEach(team => { %>
+                  <option value="<%= team.id %>" data-department-id="<%= department.id %>"><%= team.name %></option>
+                <% }) %>
+              </optgroup>
+            <% } %>
+          <% }) %>
+        </select>
+      </div>
+      <div class="member-filter-field">
+        <label for="branchFilter">Location</label>
+        <select id="branchFilter" class="role-select">
+          <option value="all">All locations</option>
+          <option value="unassigned">Unassigned</option>
+          <% branches.forEach(branch => { %>
+            <option value="<%= branch.id %>"><%= branch.name %></option>
+          <% }) %>
+        </select>
+      </div>
+    </div>
+
+    <div class="member-directory-status" aria-live="polite">
+      <span id="memberDirectoryCount"><%= members.length %> member<%= members.length === 1 ? '' : 's' %></span>
+      <span>Teams are grouped by department</span>
     </div>
 
     <div class="member-grid">
@@ -683,8 +870,9 @@
           data-member-email="<%= (member.email || '').toLowerCase() %>"
           data-member-employee-id="<%= (member.employeeId || '').toLowerCase() %>"
           data-member-designation="<%= (member.designation || '').toLowerCase() %>"
-          data-member-department="<%= (member.departmentName || 'Unassigned').toLowerCase() %>"
-          data-member-teams="<%= (member.teamNames || []).join('||').toLowerCase() %>"
+          data-member-department-id="<%= member.departmentId || 'unassigned' %>"
+          data-member-team-ids="<%= (member.teamIds || []).join('||') %>"
+          data-member-branch-id="<%= member.branchId || 'unassigned' %>"
         >
           <summary class="member-record__summary">
             <div class="member-record__identity">
@@ -702,6 +890,10 @@
             <div>
               <div class="member-record__summary-label">Teams</div>
               <div class="member-record__summary-value" id="member-teams-<%= member.id %>"><%= member.teamNames?.length ? member.teamNames.join(', ') : 'No team' %></div>
+            </div>
+            <div>
+              <div class="member-record__summary-label">Location</div>
+              <div class="member-record__summary-value" id="member-branch-<%= member.id %>"><%= member.branchName || 'Unassigned' %></div>
             </div>
             <span class="role-badge role-<%= member.role %>"><%= member.role %></span>
             <svg class="member-record__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
@@ -745,6 +937,19 @@
                 />
               <% } else { %>
                 <div><strong><%= member.employeeId || 'Not set' %></strong></div>
+              <% } %>
+            </div>
+            <div>
+              <label>Location</label>
+              <% if (canManageMemberMetadata) { %>
+                <select class="role-select" onchange="updateBranchAssignment('<%= member.id %>', this.value)">
+                  <option value="" <%= !member.branchId ? 'selected' : '' %>>Unassigned</option>
+                  <% branches.forEach(branch => { %>
+                    <option value="<%= branch.id %>" <%= member.branchId === branch.id ? 'selected' : '' %>><%= branch.name %></option>
+                  <% }) %>
+                </select>
+              <% } else { %>
+                <div><strong><%= member.branchName || 'Unassigned' %></strong></div>
               <% } %>
             </div>
             <div>
@@ -807,6 +1012,7 @@
         </details>
       <% }) %>
     </div>
+    <div id="memberDirectoryEmpty" class="member-directory-empty" hidden>No members match these filters.</div>
 
     <% if (yourRole === 'owner') { %>
       <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
@@ -872,6 +1078,64 @@
         <div class="form-actions">
           <button type="button" class="btn btn-secondary" onclick="hideDepartmentModal()">Cancel</button>
           <button type="submit" class="btn btn-primary">Save Department</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="branchModal">
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="branchModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="branchModalTitle">Add location</h2>
+          <p style="margin: 5px 0 0; color: var(--muted); font-size: 13px;">Create a branch, office, or operating location.</p>
+        </div>
+        <button class="modal-close" type="button" onclick="hideBranchModal()" aria-label="Close location form">&times;</button>
+      </div>
+      <form id="branchForm">
+        <input type="hidden" id="branchId">
+        <div class="branch-form-grid">
+          <div class="form-group">
+            <label for="branchName">Location name *</label>
+            <input type="text" id="branchName" required maxlength="120" placeholder="Lagos office">
+          </div>
+          <div class="form-group">
+            <label for="branchCode">Code</label>
+            <input type="text" id="branchCode" maxlength="30" placeholder="LOS">
+          </div>
+          <div class="form-group branch-form-wide">
+            <label for="branchAddress">Street address</label>
+            <input type="text" id="branchAddress" maxlength="240" autocomplete="street-address">
+          </div>
+          <div class="form-group">
+            <label for="branchCity">City</label>
+            <input type="text" id="branchCity" maxlength="100" autocomplete="address-level2">
+          </div>
+          <div class="form-group">
+            <label for="branchState">State / region</label>
+            <input type="text" id="branchState" maxlength="100" autocomplete="address-level1">
+          </div>
+          <div class="form-group">
+            <label for="branchCountry">Country</label>
+            <input type="text" id="branchCountry" maxlength="100" autocomplete="country-name">
+          </div>
+          <div class="form-group">
+            <label for="branchManager">Location manager</label>
+            <select id="branchManager">
+              <option value="">Not assigned</option>
+              <% orgMembers.forEach(member => { %>
+                <option value="<%= member.id %>"><%= member.name || member.email %></option>
+              <% }) %>
+            </select>
+          </div>
+          <label class="branch-head-office-field branch-form-wide">
+            <input type="checkbox" id="branchIsHeadOffice">
+            <span><strong>Head office</strong><small>Mark this as the organization’s primary location.</small></span>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="hideBranchModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save location</button>
         </div>
       </form>
     </div>
@@ -956,6 +1220,7 @@
     const departments = <%- JSON.stringify(departments || []) %>;
     const orgMembers = <%- JSON.stringify(orgMembers || []) %>;
     const teams = <%- JSON.stringify(teams || []) %>;
+    const branches = <%- JSON.stringify(branches || []) %>;
     let activeMembersTeamId = '';
 
     function selectDepartment(departmentId, updateHistory = false) {
@@ -1087,6 +1352,7 @@
       const primaryDepartment = memberTeams[0]?.department || null;
 
       member.teamNames = memberTeams.map((team) => team.name);
+      member.teamIds = memberTeams.map((team) => team.id);
       member.departmentId = primaryDepartment?.id || '';
       member.departmentName = primaryDepartment?.name || '';
 
@@ -1094,13 +1360,14 @@
       if (memberCard) {
         memberCard.dataset.memberEmployeeId = (member.employeeId || '').toLowerCase();
         memberCard.dataset.memberDesignation = (member.designation || '').toLowerCase();
-        memberCard.dataset.memberDepartment = (member.departmentName || 'Unassigned').toLowerCase();
-        memberCard.dataset.memberTeams = (member.teamNames || []).join('||').toLowerCase();
+        memberCard.dataset.memberDepartmentId = member.departmentId || 'unassigned';
+        memberCard.dataset.memberTeamIds = (member.teamIds || []).join('||');
+        memberCard.dataset.memberBranchId = member.branchId || 'unassigned';
       }
 
       const teamsEl = document.getElementById(`member-teams-${normalizeId(memberId)}`);
       if (teamsEl) {
-        teamsEl.textContent = `Teams: ${member.teamNames?.length ? member.teamNames.join(', ') : 'No team'}`;
+        teamsEl.textContent = member.teamNames?.length ? member.teamNames.join(', ') : 'No team';
       }
 
       const departmentEl = document.getElementById(`member-department-${normalizeId(memberId)}`);
@@ -1293,6 +1560,14 @@
           if (Object.prototype.hasOwnProperty.call(payload, 'employeeId')) {
             member.employeeId = String(data.employeeId ?? payload.employeeId ?? '').trim();
           }
+          if (Object.prototype.hasOwnProperty.call(payload, 'branch')) {
+            const branchId = normalizeId(data.branch ?? payload.branch ?? '');
+            const branch = branches.find((candidate) => normalizeId(candidate.id) === branchId);
+            member.branchId = branchId;
+            member.branchName = branch?.name || '';
+            const branchEl = document.getElementById(`member-branch-${normalizeId(memberId)}`);
+            if (branchEl) branchEl.textContent = member.branchName || 'Unassigned';
+          }
         }
 
         syncMemberState(memberId);
@@ -1316,6 +1591,10 @@
 
     async function updateEmployeeId(memberId, employeeId) {
       await updateMember(memberId, { employeeId }, 'Failed to update employee ID');
+    }
+
+    async function updateBranchAssignment(memberId, branchId) {
+      await updateMember(memberId, { branch: branchId || null }, 'Failed to update location');
     }
 
     async function updateAppAccess(memberId, appAccess) {
@@ -1441,9 +1720,11 @@
 
     function applyMemberFilters() {
       const searchValue = String(document.getElementById('memberSearch').value || '').trim().toLowerCase();
-      const departmentValue = String(document.getElementById('departmentFilter').value || 'all').toLowerCase();
-      const teamValue = String(document.getElementById('teamFilter').value || 'all').toLowerCase();
+      const departmentValue = String(document.getElementById('departmentFilter').value || 'all');
+      const teamValue = String(document.getElementById('teamFilter').value || 'all');
+      const branchValue = String(document.getElementById('branchFilter').value || 'all');
 
+      let visibleCount = 0;
       memberCards.forEach((card) => {
         const haystack = [
           card.dataset.memberName || '',
@@ -1452,21 +1733,54 @@
           card.dataset.memberDesignation || ''
         ].join(' ');
 
-        const department = card.dataset.memberDepartment || '';
-        const teams = (card.dataset.memberTeams || '').split('||').filter(Boolean);
+        const departmentId = card.dataset.memberDepartmentId || 'unassigned';
+        const teamIds = (card.dataset.memberTeamIds || '').split('||').filter(Boolean);
+        const branchId = card.dataset.memberBranchId || 'unassigned';
 
         const matchesSearch = !searchValue || haystack.includes(searchValue);
         const matchesDepartment = departmentValue === 'all' ||
-          (departmentValue === 'unassigned' ? !department || department === 'unassigned' : department === departmentValue);
-        const matchesTeam = teamValue === 'all' || teams.includes(teamValue);
+          (departmentValue === 'unassigned' ? departmentId === 'unassigned' : departmentId === departmentValue);
+        const matchesTeam = teamValue === 'all' || teamIds.includes(teamValue);
+        const matchesBranch = branchValue === 'all' ||
+          (branchValue === 'unassigned' ? branchId === 'unassigned' : branchId === branchValue);
 
-        card.style.display = matchesSearch && matchesDepartment && matchesTeam ? '' : 'none';
+        const isVisible = matchesSearch && matchesDepartment && matchesTeam && matchesBranch;
+        card.style.display = isVisible ? '' : 'none';
+        if (isVisible) visibleCount += 1;
       });
+
+      const count = document.getElementById('memberDirectoryCount');
+      const empty = document.getElementById('memberDirectoryEmpty');
+      if (count) count.textContent = `${visibleCount} member${visibleCount === 1 ? '' : 's'}`;
+      if (empty) empty.hidden = visibleCount !== 0;
+    }
+
+    function syncTeamFilterOptions() {
+      const departmentValue = String(document.getElementById('departmentFilter').value || 'all');
+      const teamFilter = document.getElementById('teamFilter');
+
+      Array.from(teamFilter.options).forEach((option) => {
+        if (option.value === 'all') return;
+        const isVisible = departmentValue === 'all' ||
+          (departmentValue === 'unassigned'
+            ? option.dataset.departmentId === 'unassigned'
+            : option.dataset.departmentId === departmentValue);
+        option.hidden = !isVisible;
+        option.disabled = !isVisible;
+      });
+
+      Array.from(teamFilter.querySelectorAll('optgroup')).forEach((group) => {
+        group.hidden = Array.from(group.querySelectorAll('option')).every((option) => option.hidden);
+      });
+
+      if (teamFilter.selectedOptions[0]?.disabled) teamFilter.value = 'all';
+      applyMemberFilters();
     }
 
     document.getElementById('memberSearch').addEventListener('input', applyMemberFilters);
-    document.getElementById('departmentFilter').addEventListener('change', applyMemberFilters);
+    document.getElementById('departmentFilter').addEventListener('change', syncTeamFilterOptions);
     document.getElementById('teamFilter').addEventListener('change', applyMemberFilters);
+    document.getElementById('branchFilter').addEventListener('change', applyMemberFilters);
 
     function setOptions(selectId, options, placeholder, selectedValue = '') {
       const select = document.getElementById(selectId);
@@ -1520,6 +1834,39 @@
 
     function hideDepartmentModal() {
       document.getElementById('departmentModal').classList.remove('active');
+    }
+
+    function showBranchModal() {
+      document.getElementById('branchModalTitle').textContent = 'Add location';
+      document.getElementById('branchForm').reset();
+      document.getElementById('branchId').value = '';
+      document.getElementById('branchModal').classList.add('active');
+      document.getElementById('branchName').focus();
+    }
+
+    function editBranch(branch) {
+      document.getElementById('branchModalTitle').textContent = 'Edit location';
+      document.getElementById('branchForm').reset();
+      document.getElementById('branchId').value = branch.id || '';
+      document.getElementById('branchName').value = branch.name || '';
+      document.getElementById('branchCode').value = branch.code || '';
+      document.getElementById('branchAddress').value = branch.address || '';
+      document.getElementById('branchCity').value = branch.city || '';
+      document.getElementById('branchState').value = branch.state || '';
+      document.getElementById('branchCountry').value = branch.country || '';
+      document.getElementById('branchManager').value = branch.managerAccount || '';
+      document.getElementById('branchIsHeadOffice').checked = !!branch.isHeadOffice;
+      document.getElementById('branchModal').classList.add('active');
+      document.getElementById('branchName').focus();
+    }
+
+    function editBranchById(branchId) {
+      const branch = branches.find((candidate) => normalizeId(candidate.id) === normalizeId(branchId));
+      if (branch) editBranch(branch);
+    }
+
+    function hideBranchModal() {
+      document.getElementById('branchModal').classList.remove('active');
     }
 
     function showCreateModal(departmentId = '') {
@@ -1634,6 +1981,49 @@
       }
     });
 
+    document.getElementById('branchForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const branchId = document.getElementById('branchId').value;
+      const payload = {
+        name: document.getElementById('branchName').value,
+        code: document.getElementById('branchCode').value,
+        address: document.getElementById('branchAddress').value,
+        city: document.getElementById('branchCity').value,
+        state: document.getElementById('branchState').value,
+        country: document.getElementById('branchCountry').value,
+        managerAccount: document.getElementById('branchManager').value || null,
+        isHeadOffice: document.getElementById('branchIsHeadOffice').checked
+      };
+      const response = await fetch(
+        branchId
+          ? `/api/organizations/${orgId}/branches/${branchId}`
+          : `/api/organizations/${orgId}/branches`,
+        {
+          method: branchId ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        window.location.href = `/organizations/${orgId}/members?view=branches`;
+      } else {
+        alert(data.error || 'Failed to save location');
+      }
+    });
+
+    async function deleteBranch(branchId) {
+      const branchName = branches.find((candidate) => normalizeId(candidate.id) === normalizeId(branchId))?.name || 'this location';
+      if (!confirm(`Delete location "${branchName}"? Members must be reassigned first.`)) return;
+      const response = await fetch(`/api/organizations/${orgId}/branches/${branchId}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        window.location.href = `/organizations/${orgId}/members?view=branches`;
+      } else {
+        alert(data.error || 'Failed to delete location');
+      }
+    }
+
     document.getElementById('createForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       const response = await fetch(`/api/organizations/${orgId}/teams`, {
@@ -1701,6 +2091,7 @@
     });
 
     hydrateDepartmentSelectors();
+    syncTeamFilterOptions();
     selectDepartmentFromLocation();
     window.addEventListener('popstate', selectDepartmentFromLocation);
     if (departments[0] && document.getElementById('teamDepartment')) {
