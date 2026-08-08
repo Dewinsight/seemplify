@@ -653,10 +653,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className={cn(
-        "pt-[4.25rem] min-h-screen transition-colors duration-300",
-        isDarkMode ? "" : "bg-[#e9e7e2]"
+        "min-h-screen bg-[var(--suite-canvas)] pt-[4.25rem] transition-colors duration-150"
       )}>
-        <div className="mx-auto px-4 py-8 lg:px-8 xl:px-10 max-w-[1440px]">
+        <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
           <PageGuide />
           {children}
         </div>

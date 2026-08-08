@@ -3648,6 +3648,7 @@ app.get('/', async (req, res) => {
         id: org._id.toString(),
         name: org.name,
         role: member?.role || 'member',
+        memberCount: org.members.filter(item => item.status === 'active').length,
         isCurrent: account.currentOrganization?._id?.toString() === org._id.toString()
       }
     })

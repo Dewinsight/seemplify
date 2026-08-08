@@ -50,6 +50,7 @@ export default function Dashboard() {
         <div className="suite-dashboard">
             <header className="suite-dashboard-header">
                 <div>
+                    <p className="suite-kicker">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
                     <h1 className="suite-dashboard-title">
                         Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {firstName}.
                     </h1>

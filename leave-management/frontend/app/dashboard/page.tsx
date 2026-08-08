@@ -85,6 +85,7 @@ export default function DashboardPage() {
       <div className="suite-dashboard">
         <header className="suite-dashboard-header">
           <div>
+            <p className="suite-kicker">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
             <h1 className="suite-dashboard-title">Time off, without the uncertainty.</h1>
             <p className="suite-dashboard-copy">
               Welcome back, {firstName}. Check your balance, request leave, and follow every approval for {organizationName}.
@@ -111,7 +112,7 @@ export default function DashboardPage() {
           <div className="suite-section-heading">
             <div><h2 className="suite-section-title">Leave workspace</h2><p className="suite-section-copy">The tasks you use most, with the current state visible before you open them.</p></div>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {actions.map(({ title, copy, href, icon: Icon, meta }) => (
               <Link key={title} href={href} className="suite-card">
                 <div className="suite-card-top"><div className="suite-icon"><Icon className="h-5 w-5" /></div><ArrowRight className="h-4 w-4" style={{ color: 'var(--suite-subtle)' }} /></div>

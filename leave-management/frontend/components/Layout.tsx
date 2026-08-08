@@ -315,7 +315,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content */}
-      <main className="pt-16 min-h-screen">
+      <main className="min-h-screen bg-[var(--suite-canvas)] pt-16 transition-colors duration-150">
         <div className="mx-auto px-4 py-8 lg:px-8 max-w-7xl">
           {children}
         </div>

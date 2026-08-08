@@ -266,8 +266,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
             </nav>
 
-            <main className="mx-auto max-w-7xl px-4 pb-10 pt-20 lg:px-8">
-                {children}
+            <main className="min-h-screen bg-[var(--suite-canvas)] transition-colors duration-150">
+                <div className="mx-auto max-w-7xl px-4 pb-10 pt-24 lg:px-8">{children}</div>
             </main>
 
             {mobileOpen && (

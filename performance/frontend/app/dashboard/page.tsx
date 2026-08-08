@@ -148,6 +148,7 @@ export default function DashboardPage() {
     <div className="suite-dashboard">
       <header className="suite-dashboard-header">
         <div>
+          <p className="suite-kicker">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
           <h1 className="suite-dashboard-title">Performance work that stays close to the team.</h1>
           <p className="suite-dashboard-copy">
             Welcome back, {firstName}. Move goals, appraisals, and manager actions forward for {organizationName} without hunting through separate workflows.
@@ -204,7 +205,7 @@ export default function DashboardPage() {
 
       <section className="suite-section">
         <div className="suite-section-heading"><div><h2 className="suite-section-title">Performance workspace</h2><p className="suite-section-copy">Start with the action that needs to move today.</p></div>{isHRAdmin && <Link href="/admin" className="suite-button-secondary">Admin panel <ArrowRight className="h-4 w-4" /></Link>}</div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {actions.map(({ name, href, icon: Icon, copy, meta }) => (
             <Link key={name} href={href} className="suite-card">
               <div className="suite-card-top"><div className="suite-icon"><Icon className="h-5 w-5" /></div><ArrowRight className="h-4 w-4" style={{ color: 'var(--suite-subtle)' }} /></div>
