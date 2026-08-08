@@ -58,6 +58,6 @@ refuses to run after the soak journal is complete.
 
 No cleanup command uses wildcards. It can remove only the six named local mail
 containers, exactly four named volumes, an explicitly named cloudflared
-connector, temporary migration material and obsolete local runtime images/env.
+connector, temporary migration material and obsolete ChatGPT gateway images/env.
 Unrelated Docker resources and all Xplorer/Digilog repositories are out of
 scope.

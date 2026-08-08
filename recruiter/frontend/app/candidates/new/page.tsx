@@ -418,7 +418,7 @@ export default function UploadCVPage() {
                             <div className="flex items-center gap-2">
                               <Loader2 className="h-4 w-4 animate-spin text-primary" />
                               <p className="text-sm">
-                                {queueStatus?.state === "waiting_for_local_runtime"
+                                {queueStatus?.state === "waiting_for_chatgpt"
                                   ? "Local CV analysis is offline. Your CV is safely queued."
                                   : queueStatus?.state === "queued"
                                     ? queueStatus.attempts && queueStatus.attempts > 1

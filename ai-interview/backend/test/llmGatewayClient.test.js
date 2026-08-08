@@ -21,7 +21,7 @@ test('standalone client signs the exact path/body and never sends a provider key
     now: () => now,
     fetchImpl: async (url, init) => {
       captured = { url, init };
-      return new Response(JSON.stringify({ content: '{"ok":true}', model: 'openai/gpt-oss-120b', requestId: 'request-1', usage: { totalTokens: 12 } }), { status: 200 });
+      return new Response(JSON.stringify({ content: '{"ok":true}', model: 'chatgpt-connected-account', requestId: 'request-1', usage: { totalTokens: 12 } }), { status: 200 });
     }
   });
   const result = await client.chatCompletion([{ role: 'user', content: 'Synthetic fixture' }], {
@@ -30,7 +30,7 @@ test('standalone client signs the exact path/body and never sends a provider key
     jsonSchema: { type: 'object', required: ['ok'], properties: { ok: { type: 'boolean' } } },
     schemaName: 'fixture'
   });
-  assert.equal(result.model, 'openai/gpt-oss-120b');
+  assert.equal(result.model, 'chatgpt-connected-account');
   assert.equal(captured.url, 'https://api.example.test/api/internal/ai/v1/complete');
   const body = JSON.parse(captured.init.body);
   assert.equal(body.activity, 'ai_interview.scoring');

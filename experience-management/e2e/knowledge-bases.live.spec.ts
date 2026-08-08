@@ -76,7 +76,7 @@ test('real local GraphRAG completes the browser knowledge workflow with provenan
     await signIn(page);
     const runtime = await json(await page.request.get('/api/runtime'));
     expect(runtime.knowledge.runtime.ready, JSON.stringify(runtime.knowledge.runtime)).toBe(true);
-    expect(runtime.terra.ready, JSON.stringify(runtime.terra)).toBe(true);
+    expect(runtime.ai.codex.account.connected, JSON.stringify(runtime.ai)).toBe(true);
 
     await page.goto('/knowledge-bases');
     await page.getByRole('button', { name: 'New knowledge base' }).first().click();

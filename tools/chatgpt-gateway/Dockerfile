@@ -9,20 +9,12 @@ RUN apt-get update \
   && mkdir -p /data/codex-subjects \
   && chown -R node:node /data
 
-COPY --chown=node:node tools/local-llm /app/tools/local-llm
-COPY --chown=node:node recruiter/backend/config /app/recruiter/backend/config
+COPY --chown=node:node tools/chatgpt-gateway /app/tools/chatgpt-gateway
 
 ENV NODE_ENV=production \
-  CHATGPT_GATEWAY_MODE=hosted \
-  LOCAL_LLM_GATEWAY_HOST=0.0.0.0 \
-  LOCAL_LLM_GATEWAY_PORT=11435 \
-  LOCAL_LLM_SECRET_FILE=/data/service-secret \
-  LOCAL_LLM_CONTROL_SECRET_FILE=/data/control-secret \
-  LOCAL_LLM_STATE_FILE=/data/state.json \
-  LOCAL_LLM_LOG_FILE=/data/gateway.log \
-  LOCAL_LLM_NONCE_DIR=/data/nonces \
-  LOCAL_LLM_USAGE_OUTBOX_DIR=/data/usage-outbox \
-  LOCAL_LLM_EXECUTION_RECEIPT_DIR=/data/execution-receipts \
+  CHATGPT_GATEWAY_HOST=0.0.0.0 \
+  CHATGPT_GATEWAY_PORT=11435 \
+  CHATGPT_GATEWAY_DATA_DIR=/data \
   CODEX_CLI_PATH=/opt/codex/node_modules/@openai/codex/bin/codex.js \
   CODEX_SUBJECTS_DIR=/data/codex-subjects \
   CODEX_PER_USER_SESSIONS=true \
@@ -34,4 +26,4 @@ USER node
 
 EXPOSE 11435
 
-CMD ["node", "tools/local-llm/gateway.cjs"]
+CMD ["node", "tools/chatgpt-gateway/server.cjs"]

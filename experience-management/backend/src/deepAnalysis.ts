@@ -11,7 +11,7 @@ import {
   getKnowledgeBase, listKnowledgeDocuments, type KnowledgeBaseRef
 } from './knowledgeRepository.js';
 import { assertCanQueueAiAction } from './subscriptionEntitlements.js';
-import { TerraError } from './terraClient.js';
+import { AiProviderError } from './aiProviderError.js';
 import type { AiJob } from './types.js';
 
 export type DeepAnalysisMode = 'deep' | 'exhaustive';
@@ -448,9 +448,9 @@ function validateGrounding(output: unknown, evidence: unknown) {
   };
   collectRefs(evidence);
   for (const citation of allCitations(output)) {
-    if (!refs.has(citation.sourceRef)) throw new TerraError(`Deep analysis cited an unknown sourceRef: ${citation.sourceRef}`, 'AI_CITATION_INVALID', 502, false);
+    if (!refs.has(citation.sourceRef)) throw new AiProviderError(`Deep analysis cited an unknown sourceRef: ${citation.sourceRef}`, 'AI_CITATION_INVALID', 502, false);
     if (!encoded.includes(JSON.stringify(citation.excerpt).slice(1, -1)) && !encoded.includes(citation.excerpt)) {
-      throw new TerraError(`Deep analysis citation excerpt is not present in its evidence: ${citation.sourceRef}`, 'AI_CITATION_INVALID', 502, false);
+      throw new AiProviderError(`Deep analysis citation excerpt is not present in its evidence: ${citation.sourceRef}`, 'AI_CITATION_INVALID', 502, false);
     }
   }
 }
@@ -623,10 +623,10 @@ export async function executeDeepAnalysisJob(job: AiJob) {
       { role: 'user', content: prompt }], maxTokens: isFinal ? 10_000 : 7_000, timeoutMs: 300_000
   });
   const parsed = (isFinal ? finalResult : analysisStepResult).safeParse(result.data);
-  if (!parsed.success) throw new TerraError(`The AI provider returned invalid deep analysis: ${parsed.error.issues.slice(0, 5).map((issue) => issue.message).join('; ')}`, 'AI_SCHEMA_INVALID', 502, false);
+  if (!parsed.success) throw new AiProviderError(`The AI provider returned invalid deep analysis: ${parsed.error.issues.slice(0, 5).map((issue) => issue.message).join('; ')}`, 'AI_SCHEMA_INVALID', 502, false);
   validateGrounding(parsed.data, evidence);
   if (isFinal && JSON.stringify(parsed.data.coverage) !== JSON.stringify(finalCoverage(run))) {
-    throw new TerraError('The final analysis changed the measured corpus coverage.', 'AI_COVERAGE_INVALID', 502, false);
+    throw new AiProviderError('The final analysis changed the measured corpus coverage.', 'AI_COVERAGE_INVALID', 502, false);
   }
   const saved = saveJobProviderResult(job.id, { activity: 'experience.deep_corpus_analysis',
     schemaName: isFinal ? 'experience_deep_analysis_final' : 'experience_deep_analysis_step', output: parsed.data, runtime: result.runtime });

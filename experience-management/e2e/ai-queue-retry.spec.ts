@@ -15,8 +15,8 @@ test('AI queue retries an eligible failed job once and explains ineligible failu
   const eligible = {
     id: eligibleId, kind: 'social.analyze', surveyId: null, responseId: null,
     state: 'failed', stage: 'failed', progress: 100, attempt: 3, input: { mentionIds: ['saved-post-1'] }, result: null,
-    runtime: { source: 'provider_result', status: 'actual', provider: 'terra', providerLabel: 'Terra test runtime',
-      model: 'gpt-5.6-terra', reasoningEffort: null, actionId: 'social.analyze' },
+    runtime: { source: 'provider_result', status: 'actual', provider: 'codex', providerLabel: 'Terra test runtime',
+      model: 'gpt-5.6-sol', reasoningEffort: null, actionId: 'social.analyze' },
     error: 'Terra returned evidence outside the saved sources.', retryAt: null, createdAt: now, startedAt: now,
     completedAt: now, updatedAt: now, retry: { eligible: true, reason: null }, knowledgeContext: null
   };
@@ -59,7 +59,7 @@ test('AI queue retries an eligible failed job once and explains ineligible failu
   });
   await page.route('**/api/runtime', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
-    body: JSON.stringify({ terra: { ready: true, providerLabel: 'Terra test runtime' }, worker: { active: 0, concurrency: 1 } })
+    body: JSON.stringify({ ai: { codex: { account: { connected: true }, selectedModel: 'gpt-test-codex' } }, worker: { active: 0, concurrency: 1 } })
   }));
 
   await page.goto('/ai-queue');
@@ -68,7 +68,7 @@ test('AI queue retries an eligible failed job once and explains ineligible failu
   const ineligibleRow = page.getByRole('row').filter({ hasText: 'Survey translation' }).first();
 
   await expect(page.getByRole('columnheader', { name: 'Model' })).toBeVisible();
-  await expect(eligibleRow).toContainText('gpt-5.6-terra');
+  await expect(eligibleRow).toContainText('gpt-5.6-sol');
   await expect(eligibleRow).toContainText('Used · Terra test runtime');
   await expect(ineligibleRow).toContainText('gpt-5.6-sol');
   await expect(ineligibleRow).toContainText('Planned · ChatGPT / Codex');

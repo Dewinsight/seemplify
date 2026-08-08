@@ -698,8 +698,8 @@ export default function AIInterviewStandalonePage() {
                     <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5">
                       <div className="flex items-center justify-between gap-3 text-xs font-semibold text-blue-950">
                         <span>
-                          {cvProcessingJob.state === "waiting_for_local_runtime"
-                            ? "Waiting for local runtime"
+                          {cvProcessingJob.state === "waiting_for_chatgpt"
+                            ? "Waiting for ChatGPT"
                             : cvProcessingJob.state === "processing"
                               ? "Analysing CV locally"
                               : "Queued for local analysis"}

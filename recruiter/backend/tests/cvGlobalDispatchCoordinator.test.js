@@ -850,7 +850,7 @@ test('queue source acquires only around model inference, after preprocessing and
     assert.doesNotMatch(processSource.slice(usageExecutionIndex, processSource.indexOf('\n', usageExecutionIndex)), /attempt/);
     assert.ok(processSource.indexOf(item.finalization) > modelIndex);
     assert.match(source, item.worker);
-    assert.match(processSource, /waiting_for_local_runtime/);
+    assert.match(processSource, /waiting_for_chatgpt/);
     assert.match(processSource, /\{ signal \}/);
   }
 });

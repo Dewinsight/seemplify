@@ -283,7 +283,7 @@ export function AiTab({ survey, hasUnsavedChanges, onApplyImprovement, refreshKe
       <Card>
         <CardHeader>
           <CardTitle>Experience AI tools</CardTitle>
-          <CardDescription>Every action is queued durably and uses the Experience default managed in Local Control Center.</CardDescription>
+          <CardDescription>Every action is queued durably and runs through the server-hosted ChatGPT Connect service.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {hasUnsavedChanges && <p className="mb-3 border px-3 py-2 text-xs leading-5 text-amber-700">Save changes before using Terra so it works from the latest survey.</p>}

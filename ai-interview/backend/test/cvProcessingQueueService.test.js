@@ -27,14 +27,14 @@ test('AI Interview CV status tokens are deterministic only for the same tenant a
   assert.equal(queueService.tokenHash(first).length, 64);
 });
 
-test('local runtime outages remain retryable and receive bounded exponential backoff', () => {
-  assert.equal(queueService.isOfflineError({ code: 'AI_LOCAL_UNAVAILABLE' }), true);
-  assert.equal(queueService.isOfflineError({ code: 'LOCAL_LLM_BUSY' }), true);
+test('ChatGPT gateway outages remain retryable and receive bounded exponential backoff', () => {
+  assert.equal(queueService.isOfflineError({ code: 'CHATGPT_GATEWAY_UNAVAILABLE' }), true);
+  assert.equal(queueService.isOfflineError({ code: 'CHATGPT_GATEWAY_BUSY' }), true);
   assert.equal(queueService.isOfflineError({ message: 'Seemplify AI gateway could not be reached before the request deadline.' }), true);
   assert.equal(queueService.isOfflineError({ message: 'The CV has no email address.' }), false);
-  assert.equal(queueService.backoffDelay(1, { code: 'AI_LOCAL_UNAVAILABLE' }), 30_000);
-  assert.equal(queueService.backoffDelay(2, { code: 'AI_LOCAL_UNAVAILABLE' }), 60_000);
-  assert.equal(queueService.backoffDelay(20, { code: 'AI_LOCAL_UNAVAILABLE' }), 300_000);
+  assert.equal(queueService.backoffDelay(1, { code: 'CHATGPT_GATEWAY_UNAVAILABLE' }), 30_000);
+  assert.equal(queueService.backoffDelay(2, { code: 'CHATGPT_GATEWAY_UNAVAILABLE' }), 60_000);
+  assert.equal(queueService.backoffDelay(20, { code: 'CHATGPT_GATEWAY_UNAVAILABLE' }), 300_000);
 });
 
 test('retryable service failures enter a deferred retry window after five attempts', () => {
@@ -70,7 +70,7 @@ test('five transient AI Interview CV failures remain durable and are parked for 
     }), /temporary upstream outage/);
   }
   const stored = (await readStore()).cvProcessingJobs.find((item) => item.publicId === submitted.job.publicId);
-  assert.equal(stored.state, 'waiting_for_local_runtime');
+  assert.equal(stored.state, 'waiting_for_chatgpt');
   assert.equal(stored.attempts, 5);
   assert.equal(stored.failureCount, 0);
   assert.equal(stored.deferredCycles, 1);
@@ -94,7 +94,7 @@ test('worker terminality uses stored real failures rather than BullMQ attemptsMa
   });
   await queueService.init({
     analyze: async () => {
-      throw Object.assign(new Error('local runtime busy'), { code: 'LOCAL_LLM_BUSY' });
+      throw Object.assign(new Error('ChatGPT gateway busy'), { code: 'CHATGPT_GATEWAY_BUSY' });
     },
     onCompleted: async () => ({ candidate: { _id: 'unused' } })
   });
@@ -104,11 +104,11 @@ test('worker terminality uses stored real failures rather than BullMQ attemptsMa
     async updateProgress() {},
     discard() { this.discarded = true; }
   };
-  await assert.rejects(() => queueService._processJobForTests(delivery), /local runtime busy/);
+  await assert.rejects(() => queueService._processJobForTests(delivery), /ChatGPT gateway busy/);
   let stored = (await readStore()).cvProcessingJobs.find((item) => (
     item.publicId === submitted.job.publicId
   ));
-  assert.equal(stored.state, 'waiting_for_local_runtime');
+  assert.equal(stored.state, 'waiting_for_chatgpt');
   assert.equal(stored.attempts, 1);
   assert.equal(stored.failureCount, 0);
   assert.equal(stored.expiresAt, undefined);
@@ -151,7 +151,7 @@ test('BullMQ retries keep one logical local usage execution identity', async () 
   await queueService.init({
     analyze: async (_text, context) => {
       contexts.push(context);
-      throw Object.assign(new Error('local runtime busy'), { code: 'LOCAL_LLM_BUSY' });
+      throw Object.assign(new Error('ChatGPT gateway busy'), { code: 'CHATGPT_GATEWAY_BUSY' });
     },
     onCompleted: async () => ({ candidate: { _id: 'unused' } })
   });
@@ -160,9 +160,9 @@ test('BullMQ retries keep one logical local usage execution identity', async () 
     attemptsMade: 0,
     async updateProgress() {}
   };
-  await assert.rejects(() => queueService._processJobForTests(delivery), /local runtime busy/);
+  await assert.rejects(() => queueService._processJobForTests(delivery), /ChatGPT gateway busy/);
   delivery.attemptsMade = 1;
-  await assert.rejects(() => queueService._processJobForTests(delivery), /local runtime busy/);
+  await assert.rejects(() => queueService._processJobForTests(delivery), /ChatGPT gateway busy/);
   assert.deepEqual(
     contexts.map((context) => context.usageExecutionId),
     [
@@ -225,7 +225,7 @@ test('full shared capacity preserves durable waiting state without counting an i
     const stored = (await readStore()).cvProcessingJobs.find((item) => (
       item.publicId === submitted.job.publicId
     ));
-    assert.equal(stored.state, 'waiting_for_local_runtime');
+    assert.equal(stored.state, 'waiting_for_chatgpt');
     assert.equal(stored.stage, 'analyzing');
     assert.equal(stored.attempts, 0);
     assert.equal(stored.failureCount, 0);
@@ -326,7 +326,7 @@ test('failed durable deletion is retained outside terminal TTL and succeeds on c
   }
 });
 
-test('standalone CV worker concurrency cannot exceed the approved local-runtime limit', async () => {
+test('standalone CV worker concurrency cannot exceed the hosted ChatGPT limit', async () => {
   assert.equal((await queueService.telemetry()).concurrency, 2);
 });
 

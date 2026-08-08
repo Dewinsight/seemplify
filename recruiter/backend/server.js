@@ -18,7 +18,6 @@ const memoryManager = require('./services/memoryManager');
 const multiCandidateRetryService = require('./services/multiCandidateRetryService');
 const interviewBotJoinService = require('./services/interviewBotJoinService');
 const aiInterviewEmailService = require('./services/aiInterviewEmailService');
-const localAIRuntimeHealthService = require('./services/localAIRuntimeHealthService');
 const { requestValidation } = require('./middleware/requestValidation');
 const { requireFeature } = require('./middleware/featureFlagMiddleware');
 const { aiRequestContextMiddleware } = require('./services/aiRuntime/requestContext');
@@ -286,7 +285,6 @@ app.use('/api/admin', require('./routes/admin')); // Admin management routes
 app.use('/api/admin/grants', require('./routes/adminGrants')); // Admin grant management routes (NEW: Nylas grant management)
 app.use('/api/admin/nylas-accounts', require('./routes/nylasAccounts')); // Multi-Nylas account management
 app.use('/api/internal/ai', require('./routes/internalAI')); // Signed service-to-service AI gateway
-app.use('/api/internal/local-cv-queue', require('./routes/internalLocalCvQueue')); // Signed local Control Center history
 
 // Serve static files from the "uploads" directory (if needed for direct access, though Cloudinary is primary)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -351,7 +349,6 @@ backgroundServiceManager.register('interviewBotJoin', interviewBotJoinService);
 backgroundServiceManager.register('grantVerification', grantVerificationScheduler);
 backgroundServiceManager.register('multiCandidateRetry', multiCandidateRetryService);
 backgroundServiceManager.register('aiInterviewScoringRetry', aiInterviewScoringRetryService);
-backgroundServiceManager.register('localAIRuntimeHealth', localAIRuntimeHealthService);
 backgroundServiceManager.register('memoryManager', memoryManager);
 
 async function startServer() {
@@ -370,7 +367,7 @@ async function startServer() {
   console.log(`📊 Background services status:`, backgroundServiceManager.getStatus());
   console.log(`🔥 Session middleware applied selectively to prevent infinite loops`);
 
-  // Drain pre-durable bulk jobs by migrating them into cv-analysis-local.
+  // Drain pre-durable bulk jobs by migrating them into cv-analysis-chatgpt.
   try {
     const bulkUploadService = require('./services/bulkUploadService');
     await bulkUploadService.initQueue();

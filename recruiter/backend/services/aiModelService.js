@@ -1,16 +1,5 @@
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
-const { GROQ_120B } = require('../config/aiRuntimeCatalog');
-const {
-  GroqTokenBudget,
-  estimateRequestTokens,
-  mergeCvExtractions,
-  splitCvText
-} = require('./aiRuntime/groqCvChunkingService');
-
-const groqCvTokenBudget = new GroqTokenBudget({
-  tokensPerMinute: Number(process.env.GROQ_CV_TPM_SAFETY_BUDGET || 7_200)
-});
-
+const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
 const FLEXIBLE_OBJECT_SCHEMA = {
   type: 'object',
   additionalProperties: true
@@ -219,11 +208,10 @@ class AIModelService {
     // - Chat Titles: 0.7 (creative but focused titles)
     // - Bias Analysis: 0.3 (conservative for consistency)
 
-    this.modelName = GROQ_120B;
-    this.deployment = GROQ_120B;
+    this.modelName = CHATGPT_MODEL;
+    this.deployment = CHATGPT_MODEL;
     this.endpoint = 'managed-by-ai-runtime';
-    this.apiVersion = 'groq-openai-v1';
-    this.groqCvTokenBudget = groqCvTokenBudget;
+    this.apiVersion = 'chatgpt-connect-v1';
   }
 
   async requestCompletion(request = {}) {
@@ -574,68 +562,9 @@ class AIModelService {
     }
   }
 
-  async analyzeCVWithGroqChunks(cvText, activity, options = {}) {
-    const chunks = splitCvText(cvText);
-    const extractions = [];
-    const maxOutputTokens = 1_800;
-    for (let index = 0; index < chunks.length; index += 1) {
-      const messages = [
-        {
-          role: 'system',
-          content: [
-            'Extract only facts explicitly present in this CV chunk.',
-            'Return the complete requested JSON shape, using empty strings, arrays, objects, or null for absent facts.',
-            'Preserve names, dates, metrics, roles, education, skills, qualifications, links, projects, and achievements exactly.',
-            'Never infer or invent facts. Do not duplicate facts caused by chunk overlap.'
-          ].join(' ')
-        },
-        {
-          role: 'user',
-          content: `CV chunk ${index + 1} of ${chunks.length}:\n\n${chunks[index]}`
-        }
-      ];
-      const estimatedTokens = estimateRequestTokens({
-        messages,
-        schema: CV_EXTRACTION_SCHEMA,
-        maxOutputTokens
-      });
-      const response = await this.requestStructuredCompletion({
-        activity,
-        promptVersion: 'candidate-cv-groq-chunk-v1',
-        messages,
-        max_completion_tokens: maxOutputTokens,
-        temperature: 0,
-        top_p: 1,
-        beforeAttempt: () => this.groqCvTokenBudget.reserve(estimatedTokens),
-        signal: options.signal
-      });
-      if (response?.error !== undefined && response.status !== '200') throw response.error;
-      const content = this.extractTextContent(response.choices?.[0]?.message?.content);
-      extractions.push(this.extractJsonObject(content));
-    }
-    const merged = mergeCvExtractions(extractions);
-    return {
-      success: true,
-      summary: merged.summary || 'N/A',
-      strengths: merged.strengths || [],
-      potentialFlags: merged.potentialFlags || [],
-      extractedFields: merged,
-      processing: {
-        provider: 'groq',
-        strategy: 'chunked-map-merge',
-        chunks: chunks.length,
-        tokenBudgetPerMinute: this.groqCvTokenBudget.tokensPerMinute
-      }
-    };
-  }
-
   async analyzeCV(cvText, activity = 'candidate.cv_parse', options = {}) {
     try {
-      console.log("Analyzing CV with the managed AI runtime.");
-      const executionRoute = await aiRuntimeService.getExecutionRoute(activity);
-      if (executionRoute.provider === 'groq' && String(cvText || '').length > 6_500) {
-        return await this.analyzeCVWithGroqChunks(cvText, activity, options);
-      }
+      console.log("Analyzing CV with ChatGPT Connect.");
 
       const messages = [
         {
@@ -846,7 +775,7 @@ ${cvText}`
         activity,
         promptVersion: 'candidate-cv-v2',
         messages: messages,
-        max_completion_tokens: executionRoute.provider === 'groq' ? 3_000 : 8_000,
+        max_completion_tokens: 8_000,
         temperature: 0,
         top_p: 1,
         frequency_penalty: 0,

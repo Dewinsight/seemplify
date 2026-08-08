@@ -45,7 +45,7 @@ test('signed gateway routes activity and context but ignores caller provider con
     return {
       requestId: 'runtime-request-1',
       content: 'Hello',
-      model: 'openai/gpt-oss-20b',
+      model: 'chatgpt-connected-account',
       usage: { totalTokens: 5 },
       finishReason: 'stop'
     };
@@ -74,7 +74,7 @@ test('signed gateway routes activity and context but ignores caller provider con
     });
     const payload = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(payload.model, 'openai/gpt-oss-20b');
+    assert.equal(payload.model, 'chatgpt-connected-account');
     assert.equal(captured.activity, 'ai_interview.chat.clarification');
     assert.equal(captured.input.promptVersion, 'clarification-v2');
     assert.equal(captured.input.context.sourceApp, 'ai-interview');

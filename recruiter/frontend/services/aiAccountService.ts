@@ -66,18 +66,14 @@ async function readJson<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export interface AiRuntimePolicy {
-  localEnabled: boolean;
   chatgptEnabled: boolean;
-  defaultRuntime: 'local' | 'chatgpt';
-  /** Recruiter AI runs only on connected ChatGPT accounts; there is no
-   * managed runtime to fall back to for this user's work. */
-  chatgptRequired?: boolean;
+  defaultRuntime: 'chatgpt';
+  chatgptRequired: true;
 }
 
 /**
  * Ported from Experience Management's requiresChatGptSetup: connecting is only
- * *required* when ChatGPT is the effective runtime and this account cannot use
- * it yet. When the local runtime is available the connection stays optional.
+ * required when ChatGPT is enabled and this account cannot use it yet.
  */
 export function requiresChatGptSetup(
   account: AiRuntimeAccount | null | undefined,
@@ -98,14 +94,13 @@ export function requiresChatGptSetup(
 export function chatGptSetupState(
   account: AiRuntimeAccount | null | undefined,
   policy: AiRuntimePolicy | null | undefined
-): 'required' | 'choice' | null {
+): 'required' | null {
   if (!account || !policy) return null;
   if (!policy.chatgptEnabled || policy.defaultRuntime !== 'chatgpt') return null;
   if (account.routable) return null;
-  // The local runtime being on does not help this user when their own AI work
+  // The ChatGPT gateway being on does not help this user when their own AI work
   // is ChatGPT-only — only an unrequired policy leaves them a real choice.
-  if (policy.chatgptRequired) return 'required';
-  return policy.localEnabled ? 'choice' : 'required';
+  return 'required';
 }
 
 export const aiAccountService = {

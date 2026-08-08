@@ -1,6 +1,6 @@
 # Seemplify Experience
 
-Seemplify Experience is a standalone experience-management application inspired by XEBO.ai. It has its own Express/PostgreSQL backend and React frontend, while using the shared Seemplify Terra gateway for every generative-AI operation and the self-hosted Seemplify mail service for survey email delivery. Local test runs retain isolated SQLite databases; the managed runtime uses the dedicated `seemplify_experience` database in the installed PostgreSQL 16 container.
+Seemplify Experience is a standalone experience-management application inspired by XEBO.ai. It has its own Express/PostgreSQL backend and React frontend, while using the shared Seemplify ChatGPT gateway for every generative-AI operation and the self-hosted Seemplify mail service for survey email delivery. Local test runs retain isolated SQLite databases; the managed runtime uses the dedicated `seemplify_experience` database in the installed PostgreSQL 16 container.
 
 ## Product coverage
 

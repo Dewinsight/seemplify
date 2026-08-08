@@ -607,7 +607,6 @@ function Start-Server {
   $env:X_SEED_BEARER_TOKEN_FILE=$XBearerTokenFile; $env:X_SEED_ACCESS_TOKEN_FILE=$XAccessTokenFile; $env:X_SEED_ACCESS_TOKEN_SECRET_FILE=$XAccessTokenSecretFile
   $env:X_SEED_CLIENT_ID_FILE=$XClientIdFile; $env:X_SEED_CLIENT_SECRET_FILE=$XClientSecretFile
   $env:UPLOAD_DIR=(Join-Path $RuntimeDir 'uploads')
-  $env:TERRA_GATEWAY_BASE_URL='http://127.0.0.1:11435'; $env:TERRA_GATEWAY_SHARED_SECRET_FILE=(Join-Path $RepositoryDir '.local-runtime\llm\service-secret')
   # The shared CRM file supplies the mail service credential only. Experience owns its
   # sender identity so an isolated deployment cannot inherit another product's branding.
   $env:MAIL_FROM_NAME='Seemplify Experience'; $env:MAIL_FROM_EMAIL='no-reply@seemplifyai.com'

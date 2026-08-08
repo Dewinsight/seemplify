@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const AIUsageEventSchema = new mongoose.Schema({
   // eventId is the idempotency boundary for a single provider outcome. A
   // request may legitimately have more than one event (for example, a local
-  // failure followed by a Groq success), so requestId alone is not unique.
+  // retries may produce more than one audited outcome, so requestId alone is not unique.
   eventId: String,
   eventFingerprint: String,
   // Monotonic sequence used as a projection watermark. ObjectIds are not a
@@ -37,7 +37,6 @@ const AIUsageEventSchema = new mongoose.Schema({
   reasoningEffort: String,
   routeVersion: Number,
   promptVersion: { type: String, default: '1' },
-  credential: { type: mongoose.Schema.Types.ObjectId, ref: 'AIProviderCredential', index: true },
   credentialLabel: String,
   quotaGroup: { type: String, index: true },
   organizationId: { type: String, index: true },

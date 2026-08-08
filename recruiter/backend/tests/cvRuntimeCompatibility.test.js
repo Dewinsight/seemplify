@@ -6,7 +6,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const AIUsageEvent = require('../models/AIUsageEvent');
 const CVProcessingJob = require('../models/CVProcessingJob');
 const Candidate = require('../models/Candidate');
-const compatibility = require('../services/cvRuntimeCompatibilityService');
+const compatibility = require('../services/cvProcessingCompatibilityService');
 
 let mongo;
 
@@ -55,8 +55,8 @@ test('compatibility migration repairs stages, token metering, candidate ids, and
   await AIUsageEvent.collection.insertMany([
     {
       requestId: 'historical-metered',
-      provider: 'local-ollama',
-      model: 'gpt-5.6-terra',
+      provider: 'chatgpt-connect',
+      model: 'chatgpt-connected-account',
       totalTokens: 105,
       inputTokens: 100,
       outputTokens: 5,
@@ -64,8 +64,8 @@ test('compatibility migration repairs stages, token metering, candidate ids, and
     },
     {
       requestId: 'historical-unmetered',
-      provider: 'local-ollama',
-      model: 'gpt-5.6-terra',
+      provider: 'chatgpt-connect',
+      model: 'chatgpt-connected-account',
       totalTokens: 0
     }
   ]);
@@ -86,7 +86,7 @@ test('compatibility migration repairs stages, token metering, candidate ids, and
     }
   ]);
 
-  const result = await compatibility.ensureCvRuntimeCompatibility();
+  const result = await compatibility.ensureCvProcessingCompatibility();
   assert.equal(result.stages, 2);
   assert.equal(result.usage.usageReported, 1);
   assert.equal(result.duplicateCandidateJobIds.groups, 1);

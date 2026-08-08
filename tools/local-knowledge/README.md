@@ -41,7 +41,7 @@ Headers are `x-seemplify-timestamp`, `x-seemplify-nonce`, and `x-seemplify-signa
 - `/v1/status` for signed operational telemetry.
 - `/v1/shutdown` for a signed Control Center-only graceful drain. The manager waits up to 35 seconds before using a force-stop fallback.
 
-Indexing calls the existing signed Terra gateway activity `experience.knowledge_graph_extract` with a strict schema. Entities, claims, and relations must contain exact grounded spans. If Terra is unavailable, indexing returns a retryable error so the hosted durable job waits; production never falls back to heuristic graph extraction.
+Indexing calls the existing signed ChatGPT gateway activity `experience.knowledge_graph_extract` with a strict schema. Entities, claims, and relations must contain exact grounded spans. If ChatGPT is unavailable, indexing returns a retryable error so the hosted durable job waits; production never falls back to heuristic graph extraction.
 
 Retrieval fuses four bounded stages: Arango vector search (ANN after training, exact cosine before or during training), language-agnostic ArangoSearch BM25, confidence-filtered one/two-hop graph evidence, and the local BGE reranker. Weighted reciprocal-rank fusion ensures a vector-only, lexical-only, or graph-only result can enter the reranker. Index version is an upper-bound watermark over active document revisions, so adding a document does not hide older active documents.
 
@@ -112,7 +112,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File experience-management\sc
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\local-knowledge\manage.ps1 -Action restart
 ```
 
-Use a new terminal after setting a persistent user variable so both managers inherit it. Restart Experience first so it stops issuing GTE-profile requests, then restart the local runtime to drain and unload its GTE worker. Confirm `embedding.configured.forceQwenRollback=true`, `activeProvider=qwen-tei`, and GTE traffic settings are zero in signed status before closing the incident. Removing the flag does not itself approve GTE: the other explicit migration settings take effect only after the next restart.
+Use a new terminal after setting a persistent user variable so both managers inherit it. Restart Experience first so it stops issuing GTE-profile requests, then restart the ChatGPT gateway to drain and unload its GTE worker. Confirm `embedding.configured.forceQwenRollback=true`, `activeProvider=qwen-tei`, and GTE traffic settings are zero in signed status before closing the incident. Removing the flag does not itself approve GTE: the other explicit migration settings take effect only after the next restart.
 
 The signed `/v1/test/cleanup` route can drop only a synthetic tenant whose ID matches the reserved `knowledge-live-benchmark-<32 hex>` namespace and whose request carries the fixed explicit confirmation. It cannot accept an arbitrary Experience space. Both live harnesses invoke it in `finally` so benchmark tenant databases do not accumulate.
 
@@ -122,13 +122,13 @@ Run the offline contract tests with:
 node --test tools\local-knowledge\*.test.cjs
 ```
 
-After all services are healthy and the Terra activity is registered, run the synthetic exact/semantic/graph-hop/injection corpus with:
+After all services are healthy and the ChatGPT activity is registered, run the synthetic exact/semantic/graph-hop/injection corpus with:
 
 ```powershell
 node tools\local-knowledge\harness.cjs --live
 ```
 
-To verify the real Arango ANN path without spending Terra inference, run:
+To verify the real Arango ANN path without spending ChatGPT inference, run:
 
 ```powershell
 npm run test:knowledge:ann:live

@@ -251,7 +251,7 @@ async function runLiveAnnBenchmark() {
     benchmark: 'local-knowledge-ann',
     generatedAt: new Date().toISOString(),
     success: false,
-    safety: { reservedSyntheticTenant: true, terraInvoked: false, publicRouteUsed: false },
+    safety: { reservedSyntheticTenant: true, chatgptInvoked: false, publicRouteUsed: false },
     tenant: { spaceId, knowledgeBaseId, databaseName: null },
     models: CONFIG.models,
     services: null,

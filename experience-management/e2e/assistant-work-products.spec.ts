@@ -83,7 +83,7 @@ function workProductRun(index: number, body: Record<string, any>) {
       revision: 1,
       updatedAt: now
     },
-    runtime: { provider: 'terra', model: 'gpt-5.6-terra', usage: { totalTokens: 720 } },
+    runtime: { provider: 'codex', model: 'gpt-5.6-sol', usage: { totalTokens: 720 } },
     advisoryOnly: true,
     externalDispatched: false,
     error: null,
@@ -118,7 +118,7 @@ test('work products cover the executive document set, promote explicit actions, 
       scopes: ['email.read_only']
     }],
     worker: { running: true, active: 0, queued: 0, concurrency: 4 },
-    terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
+    ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, runs));
   await page.route(/\/api\/assistant\/mailbox\/threads(?:\?.*)?$/, (route) =>
@@ -279,7 +279,7 @@ test('work products cover the executive document set, promote explicit actions, 
           excerpt: 'The approved operating policy requires human review.'
         }]
       },
-      runtime: { provider: 'terra', model: 'gpt-5.6-terra', usage: { totalTokens: 320 } },
+      runtime: { provider: 'codex', model: 'gpt-5.6-sol', usage: { totalTokens: 320 } },
       advisoryOnly: true,
       externalDispatched: false,
       error: null,
@@ -432,7 +432,7 @@ test('calendar evidence carries both calendar and event identifiers into a meeti
       status: 'connected'
     }],
     worker: { running: true, active: 0, queued: 0, concurrency: 4 },
-    terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
+    ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, runs));
   await page.route(/\/api\/assistant\/mailbox\/threads(?:\?.*)?$/, (route) =>
@@ -577,7 +577,7 @@ test('reminder and calendar loaders ignore late responses from superseded select
       { id: secondConnectionId, email: 'second@example.test', displayName: 'Second mailbox', provider: 'microsoft', status: 'connected' }
     ],
     worker: { running: true, active: 0, queued: 0, concurrency: 4 },
-    terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
+    ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, []));
   await page.route(/\/api\/assistant\/mailbox\/threads(?:\?.*)?$/, (route) => json(route, { items: [], nextCursor: null }));
@@ -713,7 +713,7 @@ test('work products submit mailbox and calendar account identifiers explicitly',
       { id: calendarConnectionId, email: 'calendar@example.test', displayName: 'Calendar account', provider: 'microsoft', status: 'connected' }
     ],
     worker: { running: true, active: 0, queued: 0, concurrency: 4 },
-    terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
+    ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, runs));
   await page.route(/\/api\/assistant\/mailbox\/threads(?:\?.*)?$/, (route) =>

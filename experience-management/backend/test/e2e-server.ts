@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const liveKnowledge = process.env.KNOWLEDGE_E2E_LIVE === '1';
 const repositoryRoot = path.resolve(process.cwd(), '..');
@@ -21,12 +22,7 @@ const knowledgeSecretFile = liveKnowledge
   ? path.resolve(process.env.KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE
     || path.join(repositoryRoot, '.local-runtime', 'knowledge', 'service-secret'))
   : path.join(state, 'knowledge-secret');
-const terraSecretFile = liveKnowledge
-  ? path.resolve(process.env.TERRA_GATEWAY_SHARED_SECRET_FILE
-    || path.join(repositoryRoot, '.local-runtime', 'llm', 'service-secret'))
-  : path.join(state, 'terra-secret');
 const knowledgeRuntimeBaseUrl = String(process.env.KNOWLEDGE_RUNTIME_BASE_URL || 'http://127.0.0.1:11540').replace(/\/+$/, '');
-const terraGatewayBaseUrl = String(process.env.TERRA_GATEWAY_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, '');
 const knowledgeStagingRoot = process.env.SEEMPLIFY_KNOWLEDGE_STAGING_DIR
   || path.join(path.resolve(process.env.SEEMPLIFY_KNOWLEDGE_DATA_ROOT || 'D:\\SeemplifyKnowledge'), 'staging');
 const knowledgeStorageDir = liveKnowledge ? path.join(knowledgeStagingRoot, `experience-e2e-${liveRunId}`) : path.join(state, 'knowledge');
@@ -51,33 +47,24 @@ if (e2eDatabaseProvider === 'postgres') {
 }
 fs.writeFileSync(passwordFile, 'Playwright-Test-Password-2026!'); fs.writeFileSync(sessionFile, 'playwright-session-secret-longer-than-twenty-characters'); fs.writeFileSync(xKeyFile, Buffer.alloc(32, 11).toString('base64url')); fs.writeFileSync(nylasKeyFile, Buffer.alloc(32, 13).toString('base64url')); fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 12).toString('base64url'));
 if (liveKnowledge) {
-  for (const filename of [knowledgeSecretFile, terraSecretFile]) {
+  for (const filename of [knowledgeSecretFile]) {
     if (!fs.existsSync(filename) || fs.readFileSync(filename, 'utf8').trim().length < 32) {
-      throw new Error(`KNOWLEDGE_E2E_LIVE requires the configured local runtime secret: ${filename}`);
+      throw new Error(`KNOWLEDGE_E2E_LIVE requires the configured ChatGPT gateway secret: ${filename}`);
     }
   }
 } else {
   fs.writeFileSync(knowledgeSecretFile, 'playwright-knowledge-secret-longer-than-thirty-two-characters');
-  fs.writeFileSync(terraSecretFile, 'playwright-terra-secret-longer-than-thirty-two-characters');
 }
 Object.assign(process.env, {
   HOST: '127.0.0.1', PORT: '5412', PUBLIC_URL: 'http://127.0.0.1:5412', DATABASE_PATH: path.join(state, 'e2e.sqlite'), UPLOAD_DIR: path.join(state, 'uploads'),
   CODEX_RUNTIME_DIR: path.join(state, 'codex'),
+  CODEX_CLI_PATH: fileURLToPath(new URL('./fixtures/fake-codex-app-server.js', import.meta.url)),
   DATABASE_PROVIDER: e2eDatabaseProvider,
   SUBSCRIPTION_ENFORCEMENT_ENABLED: 'true',
-  ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', AI_WORKER_CONCURRENCY: '1', LOCAL_LLM_BASE_URL: 'http://127.0.0.1:9',
+  ADMIN_EMAIL: 'qa@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', AI_WORKER_CONCURRENCY: '1',
   ESIGN_STORAGE_DIR: path.join(state, 'esign'), ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, ESIGN_WORKER_POLL_MS: '250',
   KNOWLEDGE_STORAGE_DIR: knowledgeStorageDir, KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: knowledgeSecretFile,
   KNOWLEDGE_RUNTIME_BASE_URL: liveKnowledge ? knowledgeRuntimeBaseUrl : 'http://127.0.0.1:9', KNOWLEDGE_WORKER_POLL_MS: liveKnowledge ? '1000' : '250',
-  ...(liveKnowledge ? {
-    TERRA_GATEWAY_BASE_URL: terraGatewayBaseUrl,
-    TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
-    LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile
-  } : {
-    TERRA_GATEWAY_BASE_URL: 'http://127.0.0.1:5493',
-    TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
-    LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile
-  }),
   NYLAS_CLIENT_ID: 'experience-e2e-client', NYLAS_API_KEY: 'experience-e2e-api-key-not-live', NYLAS_API_URI: 'http://127.0.0.1:5492',
   NYLAS_REDIRECT_URI: 'http://127.0.0.1:5412/api/integrations/nylas/callback', NYLAS_CREDENTIAL_ENCRYPTION_KEY_FILE: nylasKeyFile,
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, X_SEED_CONSUMER_KEY_FILE: path.join(state, 'no-x-consumer-key'), X_SEED_CONSUMER_SECRET_FILE: path.join(state, 'no-x-consumer-secret'), X_SEED_BEARER_TOKEN_FILE: path.join(state, 'no-x-bearer-token'), X_SEED_ACCESS_TOKEN_FILE: path.join(state, 'no-x-access-token'), X_SEED_ACCESS_TOKEN_SECRET_FILE: path.join(state, 'no-x-access-token-secret')
@@ -140,35 +127,9 @@ const fakeNylas = http.createServer(async (request, response) => {
   return sendJson(response, { error: 'not found' }, 404);
 });
 
-const fakeTerra = http.createServer(async (request, response) => {
-  const url = new URL(request.url || '/', 'http://127.0.0.1:5493');
-  const body = await requestJson(request);
-  if (request.method === 'POST' && url.pathname === '/v1/status') return sendJson(response, {
-    runtimeProfile: 'experience-management', health: { ok: true }, providerLabel: 'Terra (Playwright)', model: 'gpt-5.6-terra'
-  });
-  if (request.method !== 'POST' || url.pathname !== '/v1/complete') return sendJson(response, { error: 'not found' }, 404);
-  let data: unknown;
-  if (body.activity === 'experience.assistant.email_summarise') data = {
-    summary: 'Ada needs confirmation of the revised customer-risk section by Friday.',
-    keyPoints: ['The customer-risk section was revised.'],
-    actionItems: [{ action: 'Confirm the revised section.', owner: '', dueDate: 'Friday', sourceMessageId: 'playwright-message-1' }],
-    openQuestions: ['Which timezone applies to Friday?']
-  };
-  else if (body.activity === 'experience.assistant.email_draft') data = {
-    subject: 'Re: Board pack review', body: 'Hi Ada,\n\nI will review the revised section and confirm by Friday.\n\nRegards',
-    rationale: 'Uses only the supplied thread evidence.', safetyFlags: []
-  };
-  else return sendJson(response, { error: `unsupported test activity ${String(body.activity)}`, retryable: false }, 400);
-  return sendJson(response, {
-    runtimeProfile: 'experience-management', data, provider: 'terra', providerLabel: 'Terra (Playwright)',
-    engine: 'codex', model: 'gpt-5.6-terra', usage: { totalTokens: 222 }, metrics: { latencyMs: 25, queueWaitMs: 1 }
-  });
-});
-
 await listen(fakeNylas, 5492);
-if (!liveKnowledge) await listen(fakeTerra, 5493);
 const { app } = await import('../src/app.js'); const { aiJobRunner } = await import('../src/aiJobs.js');
-const { setAiProviderPreference } = await import('../src/aiProvider.js');
+const { getAiProviderState, setAiProviderPreference, startCodexDeviceLogin } = await import('../src/aiProvider.js');
 const { stopCodexClients } = await import('../src/codexAppServer.js');
 const { bootstrapAdminAccount, currentSessionUser, issueEmailVerificationToken } = await import('../src/auth.js');
 const { campaignRunner } = await import('../src/campaigns.js');
@@ -176,7 +137,6 @@ const { db } = await import('../src/database.js');
 const { esignWorker } = await import('../src/esign.js');
 const { getKnowledgeRuntimeStatus } = await import('../src/knowledgeClient.js');
 const { knowledgeJobRunner } = await import('../src/knowledgeJobs.js');
-const { getTerraStatus } = await import('../src/terraClient.js');
 const { saveTutorialProgress, tutorialKeys } = await import('../src/tutorialProgress.js');
 const { ensureConfiguredAdministratorEnterprise, ensureExistingSubscriptionsGrandfathered } =
   await import('../src/subscriptionEntitlements.js');
@@ -283,9 +243,9 @@ for (const tutorialKey of tutorialKeys) {
 if (liveKnowledge) {
   remapBootstrapSpace(bootstrapUserId);
   assertLiveSpaceInvariant(bootstrapUserId);
-  const [knowledge, terra] = await Promise.all([getKnowledgeRuntimeStatus(), getTerraStatus()]);
-  if (!knowledge.ready || !terra.ready) {
-    throw new Error(`KNOWLEDGE_E2E_LIVE preflight failed: ${JSON.stringify({ knowledge, terra })}`);
+  const knowledge = await getKnowledgeRuntimeStatus();
+  if (!knowledge.ready) {
+    throw new Error(`KNOWLEDGE_E2E_LIVE preflight failed: ${JSON.stringify({ knowledge })}`);
   }
   app.post('/__e2e__/knowledge/live-cleanup', async (request, response) => {
     if (!currentSessionUser(request)) return response.status(401).json({ error: 'Authentication required.' });
@@ -308,8 +268,14 @@ if (liveKnowledge) {
 const bootstrapSpace = db.prepare('SELECT active_space_id FROM users WHERE id=?')
   .get(bootstrapUserId) as { active_space_id: string | null } | undefined;
 if (!bootstrapSpace?.active_space_id) throw new Error('The E2E bootstrap account has no active space.');
+await startCodexDeviceLogin(bootstrapUserId);
+for (let attempt = 0; attempt < 40; attempt += 1) {
+  const state = await getAiProviderState(bootstrapUserId, bootstrapSpace.active_space_id);
+  if (state.codex.account.connected) break;
+  await new Promise((resolve) => setTimeout(resolve, 25));
+}
 setAiProviderPreference(bootstrapUserId, bootstrapSpace.active_space_id, {
-  provider: 'terra', runtimeChoice: 'local'
+  provider: 'codex', runtimeChoice: 'chatgpt', codexDataSharingAcknowledgedAt: new Date().toISOString()
 });
 app.post('/__e2e__/auth/verification-token', (request, response) => {
   const issued = issueEmailVerificationToken(String(request.body?.email || ''), {
@@ -344,8 +310,7 @@ async function shutdown() {
   if (liveKnowledge) await disposeLiveApplicationState();
   server.close(() => {
     fakeNylas.close(() => {
-      if (liveKnowledge) process.exit(0);
-      else fakeTerra.close(() => process.exit(0));
+      process.exit(0);
     });
   });
 }

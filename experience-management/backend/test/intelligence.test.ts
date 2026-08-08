@@ -10,21 +10,18 @@ import { signupVerifyAndOnboard } from './authTestHelper.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-intelligence-'));
 const passwordFile = path.join(root, 'admin-password');
 const sessionFile = path.join(root, 'session-secret');
-const terraFile = path.join(root, 'terra-secret');
 const knowledgeFile = path.join(root, 'knowledge-secret');
 const xKeyFile = path.join(root, 'x-key');
 const esignKeyFile = path.join(root, 'esign-key');
 fs.writeFileSync(passwordFile, 'Intelligence-Test-Password-2026!');
 fs.writeFileSync(sessionFile, 'intelligence-test-session-secret-that-is-long-enough');
-fs.writeFileSync(terraFile, 'intelligence-test-terra-secret-that-is-long-enough');
 fs.writeFileSync(knowledgeFile, 'intelligence-test-knowledge-secret-that-is-long-enough');
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 21).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 22).toString('base64url'));
 Object.assign(process.env, {
   DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: path.join(root, 'missing-frontend'),
   PUBLIC_URL: 'http://127.0.0.1:5414', ADMIN_EMAIL: 'intelligence@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile,
-  SESSION_SECRET_FILE: sessionFile, TERRA_GATEWAY_SHARED_SECRET_FILE: terraFile, LOCAL_LLM_SHARED_SECRET_FILE: terraFile,
-  KNOWLEDGE_RUNTIME_BASE_URL: 'http://knowledge.test', KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: knowledgeFile,
+  SESSION_SECRET_FILE: sessionFile, KNOWLEDGE_RUNTIME_BASE_URL: 'http://knowledge.test', KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: knowledgeFile,
   EMAIL_MODE: 'log', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, X_SEED_CONSUMER_KEY_FILE: path.join(root, 'missing-x-key'),
   X_SEED_CONSUMER_SECRET_FILE: path.join(root, 'missing-x-secret'), X_SEED_BEARER_TOKEN_FILE: path.join(root, 'missing-x-bearer'),
@@ -50,7 +47,7 @@ after(() => {
 
 function terraResponse(data: unknown) {
   return new Response(JSON.stringify({
-    data, runtimeProfile: 'experience-management', provider: 'local-codex', engine: 'codex', model: 'gpt-5.6-terra',
+    data, runtimeProfile: 'experience-management', provider: 'chatgpt-connect', engine: 'codex', model: 'gpt-5.6-sol',
     usage: { input_tokens: 120, output_tokens: 80, total_tokens: 200 }, metrics: { latencyMs: 25, queueWaitMs: 3 }
   }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
@@ -102,7 +99,7 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   });
   const readyDrafts = await owner.get(`/api/social/mentions/${mentionId}/reply-drafts`).expect(200);
   assert.equal(readyDrafts.body[0].state, 'ready');
-  assert.equal(readyDrafts.body[0].runtime.model, 'gpt-5.6-terra');
+  assert.equal(readyDrafts.body[0].runtime.model, 'gpt-5.6-sol');
   const completedDraftReplay = await owner.post(`/api/social/mentions/${mentionId}/reply-drafts`).set('Idempotency-Key', draftKey).send({ tone: 'empathetic', instructions: 'Acknowledge the onboarding friction.' }).expect(202);
   assert.equal(completedDraftReplay.body.jobId, queuedDraft.body.jobId);
   assert.equal(completedDraftReplay.body.deduplicated, true);
@@ -153,7 +150,7 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
       'Terra returned evidence that was not present in the saved sources.',
       JSON.stringify({
         activity: 'experience.social_listening', schemaName: 'experience_social_listening_report',
-        output: failedReportOutput, runtime: { model: 'gpt-5.6-terra', usage: { total_tokens: 200 } }
+        output: failedReportOutput, runtime: { model: 'gpt-5.6-sol', usage: { total_tokens: 200 } }
       }),
       failedAt, failedAt, failedReport.body.jobId
     );
@@ -193,7 +190,7 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
     .send({ connectionId, title: 'Stale journal recovery report', mentionIds: [mentionId] }).expect(202);
   db.prepare('UPDATE ai_jobs SET provider_result_json=? WHERE id=?').run(JSON.stringify({
     activity: 'experience.social_listening', schemaName: 'experience_social_listening_report',
-    output: { malformed: true }, runtime: { model: 'gpt-5.6-terra' }
+    output: { malformed: true }, runtime: { model: 'gpt-5.6-sol' }
   }), staleJournalReport.body.jobId);
   const staleFailedAt = new Date().toISOString();
   db.prepare(`UPDATE ai_jobs SET state='failed',stage='failed',progress=100,attempt=3,error=?,
@@ -432,7 +429,7 @@ test('saves Terra reply drafts and social intelligence without any automatic X p
   const journaledOutput = { reply: 'Thank you for describing the onboarding difficulty so clearly.', rationale: 'Acknowledges only the supplied issue.', safetyFlags: [] };
   db.prepare('UPDATE ai_jobs SET provider_result_json=? WHERE id=?').run(JSON.stringify({
     activity: 'experience.social_reply_draft', schemaName: 'experience_social_reply_draft', output: journaledOutput,
-    runtime: { model: 'gpt-5.6-terra', usage: { total_tokens: 200 } }
+    runtime: { model: 'gpt-5.6-sol', usage: { total_tokens: 200 } }
   }), journaledDraft.job.id);
   let recoveryProviderCalls = 0;
   globalThis.fetch = async () => { recoveryProviderCalls += 1; throw new Error('journal recovery must not call Terra'); };

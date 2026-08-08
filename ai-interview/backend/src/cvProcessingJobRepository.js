@@ -7,7 +7,7 @@ const {
 } = require('./store');
 
 const COLLECTION_NAME = 'cvProcessingJobs';
-const ACTIVE_STATES = Object.freeze(['queued', 'waiting_for_local_runtime', 'processing']);
+const ACTIVE_STATES = Object.freeze(['queued', 'waiting_for_chatgpt', 'processing']);
 const TERMINAL_STATES = Object.freeze(['completed', 'failed']);
 const DEFAULT_TERMINAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_FAILURES = 5;
@@ -504,7 +504,7 @@ function createCvProcessingJobRepository({
 
   async function recordFailure(publicId, error, {
     unmetered = false,
-    retryState = unmetered ? 'waiting_for_local_runtime' : 'queued',
+    retryState = unmetered ? 'waiting_for_chatgpt' : 'queued',
     deferred = false,
     nextAttemptAt = null
   } = {}) {
@@ -1040,7 +1040,7 @@ function createCvProcessingJobRepository({
       const stateCounts = {};
       for (const job of jobs) stateCounts[job.state] = Number(stateCounts[job.state] || 0) + 1;
       const oldest = jobs
-        .filter((job) => ['queued', 'waiting_for_local_runtime'].includes(job.state))
+        .filter((job) => ['queued', 'waiting_for_chatgpt'].includes(job.state))
         .sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))[0];
       return {
         stateCounts,
@@ -1061,7 +1061,7 @@ function createCvProcessingJobRepository({
             }
           }],
           oldest: [
-            { $match: { state: { $in: ['queued', 'waiting_for_local_runtime'] } } },
+            { $match: { state: { $in: ['queued', 'waiting_for_chatgpt'] } } },
             { $sort: { createdAt: 1 } },
             { $limit: 1 },
             { $project: { _id: 0, createdAt: 1 } }

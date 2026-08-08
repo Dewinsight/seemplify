@@ -13,7 +13,7 @@ const {
   resolveGlobalDispatchConfig
 } = require('./cvGlobalDispatch');
 
-const QUEUE_NAME = 'ai-interview-cv-analysis-local';
+const QUEUE_NAME = 'ai-interview-cv-analysis-chatgpt';
 const QUEUE_EVENT_PATH = '/api/internal/ai/v1/cv-queue/events';
 const redisHost = process.env.AI_INTERVIEW_REDIS_HOST
   || process.env.REDIS_HOST
@@ -156,12 +156,12 @@ function deterministicStatusToken(organizationId, idempotencyKey) {
 
 function isOfflineError(error) {
   const code = String(error?.code || '');
-  return code === 'AI_LOCAL_UNAVAILABLE'
-    || code === 'AI_LOCAL_NOT_CONFIGURED'
+  return code === 'CHATGPT_GATEWAY_UNAVAILABLE'
+    || code === 'CHATGPT_GATEWAY_NOT_CONFIGURED'
     || code === 'LLM_NOT_CONFIGURED'
     || code === 'LLM_REQUEST_FAILED'
-    || code.startsWith('LOCAL_LLM_')
-    || /local cv runtime|local[- ]llm|ollama|vllm|codex|gateway could not be reached|fetch failed|request deadline/i
+    || code.startsWith('CHATGPT_GATEWAY_')
+    || /chatgpt gateway|codex app server|gateway could not be reached|fetch failed|request deadline/i
       .test(String(error?.message || ''));
 }
 
@@ -675,7 +675,7 @@ async function processJob(bullJob, workerToken) {
         );
         const waiting = await cvProcessingJobs.recordFailure(processingJob.publicId, waitError, {
           unmetered: true,
-          retryState: 'waiting_for_local_runtime'
+          retryState: 'waiting_for_chatgpt'
         });
         if (waiting.job) Object.assign(processingJob, waiting.job);
         await retainStoredQueueEvent(processingJob.publicId);
@@ -716,7 +716,7 @@ async function processJob(bullJob, workerToken) {
       : backoffDelay(nextAttemptNumber, error)));
     const failure = await cvProcessingJobs.recordFailure(processingJob.publicId, error, {
       unmetered: runtimeWait || retryable,
-      retryState: (runtimeWait || deferred) ? 'waiting_for_local_runtime' : 'queued',
+      retryState: (runtimeWait || deferred) ? 'waiting_for_chatgpt' : 'queued',
       deferred,
       nextAttemptAt
     });
@@ -774,7 +774,7 @@ async function getStatus(publicId, statusToken, actorId) {
   if (!job || !statusToken || !hashesMatch(tokenHash(statusToken), job.statusTokenHash)) return null;
   if (actorId && job.actorId && actorId !== job.actorId) return null;
   const result = publicState(job);
-  if (['queued', 'waiting_for_local_runtime'].includes(job.state)) {
+  if (['queued', 'waiting_for_chatgpt'].includes(job.state)) {
     try {
       const queueInstance = await getQueue();
       const waiting = await queueInstance.getJobs(['prioritized', 'waiting', 'delayed'], 0, 5000, true);
@@ -827,9 +827,9 @@ async function telemetry() {
       counts: {
         prioritized: 0,
         waiting: Number(durable.stateCounts.queued || 0)
-          + Number(durable.stateCounts.waiting_for_local_runtime || 0),
+          + Number(durable.stateCounts.waiting_for_chatgpt || 0),
         waitingTotal: Number(durable.stateCounts.queued || 0)
-          + Number(durable.stateCounts.waiting_for_local_runtime || 0),
+          + Number(durable.stateCounts.waiting_for_chatgpt || 0),
         active: Number(durable.stateCounts.processing || 0),
         completed: Number(durable.stateCounts.completed || 0),
         failed: Number(durable.stateCounts.failed || 0)

@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const AIUserRuntimeAccount = require('../../models/AIUserRuntimeAccount');
-const { AIRuntimeError, signLocalRequest } = require('./aiRuntimeService');
+const { AIRuntimeError, signGatewayRequest } = require('./aiRuntimeService');
 
 /**
  * The Recruiter side of a user's own ChatGPT connection.
@@ -49,7 +49,7 @@ async function callGateway(operation, userId, { timeoutMs = 30_000, fetchImpl = 
   const secret = gatewaySecret();
   const requestPath = `/v1/codex/${operation}`;
   const body = JSON.stringify({ sourceApp: SOURCE_APP, subjectId: String(userId) });
-  const signed = signLocalRequest(secret, body, { method: 'POST', path: requestPath });
+  const signed = signGatewayRequest(secret, body, { method: 'POST', path: requestPath });
   let response;
   try {
     response = await fetchImpl(`${gatewayBaseUrl()}${requestPath}`, {
@@ -205,7 +205,7 @@ async function setConsent(user, acknowledged) {
 
 async function disconnect(user, options = {}) {
   const account = await accountForUser(user);
-  // Consent and local state are cleared first so a gateway failure cannot leave
+  // Consent and application state are cleared first so a gateway failure cannot leave
   // the account routable.
   account.dataSharingAcknowledgedAt = null;
   account.status = 'disconnected';
@@ -231,7 +231,7 @@ async function listModels(user, options = {}) {
 
 /**
  * Resolves the subject an inference should run as, or null when it must fall
- * back to the managed runtime. Returning null rather than throwing keeps the
+ * fail closed. Returning null lets the caller present the connection gate
  * decision in the caller, which owns the failover policy.
  */
 async function resolveRoutableSubject(userId, options = {}) {

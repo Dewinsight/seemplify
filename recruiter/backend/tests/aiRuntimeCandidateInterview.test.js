@@ -24,9 +24,7 @@ function runtimeWith({ candidateSubjects = new Map(), userSubjects = new Map() }
   });
   const settings = {
     ...createDefaultRuntimeSettings(),
-    runtimePolicy: normalizeRuntimePolicy({
-      localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt', chatgptRequired: true
-    })
+    runtimePolicy: normalizeRuntimePolicy({ chatgptEnabled: true })
   };
   runtime.getSettings = async () => settings;
   return { runtime, settings };
@@ -54,14 +52,13 @@ test('live interview turns run on the candidate\'s own connected account', async
   ]);
   const { runtime, settings } = runtimeWith({ candidateSubjects });
   for (const activity of CANDIDATE_INTERVIEW_ACTIVITIES) {
-    const route = await runtime.attachCodexSubject(
+    const route = await runtime.attachChatGptSubject(
       chatgptRoute(activity),
       { interviewSessionId: 'session-1' },
       settings
     );
-    assert.equal(route.codexSubjectId, 'interview:session-1', activity);
+    assert.equal(route.chatgptSubjectId, 'interview:session-1', activity);
     assert.equal(route.runtimeOwner, 'user', activity);
-    assert.equal(route.runtimeOwnerKind, 'candidate', activity);
   }
 });
 
@@ -72,7 +69,7 @@ test('an unconnected candidate is refused, never run on someone else\'s plan', a
   });
   for (const activity of CANDIDATE_INTERVIEW_ACTIVITIES) {
     await assert.rejects(
-      runtime.attachCodexSubject(
+      runtime.attachChatGptSubject(
         chatgptRoute(activity),
         { interviewSessionId: 'session-without-account', actorId: 'recruiter-1' },
         settings
@@ -92,7 +89,7 @@ test('a live turn with no session at all is refused rather than attributed elsew
     userSubjects: new Map([['recruiter-1', { subjectId: 'recruiter-1', subjectKey: 'r'.repeat(64) }]])
   });
   await assert.rejects(
-    runtime.attachCodexSubject(
+    runtime.attachChatGptSubject(
       chatgptRoute('ai_interview.chat.introduction'),
       { actorId: 'recruiter-1' },
       settings
@@ -109,13 +106,12 @@ test('interview setup work still runs on the recruiter who is doing it', async (
     ['recruiter-1', { subjectId: 'recruiter-1', subjectKey: 'r'.repeat(64), sourceApp: 'recruiter' }]
   ]);
   const { runtime, settings } = runtimeWith({ userSubjects });
-  const route = await runtime.attachCodexSubject(
+  const route = await runtime.attachChatGptSubject(
     chatgptRoute('ai_interview.question_generation'),
     { actorId: 'recruiter-1', interviewSessionId: 'session-1' },
     settings
   );
-  assert.equal(route.codexSubjectId, 'recruiter-1');
-  assert.equal(route.runtimeOwnerKind, undefined, 'this is the recruiter\'s own work');
+  assert.equal(route.chatgptSubjectId, 'recruiter-1');
 });
 
 test('a candidate subject is namespaced so it cannot collide with a user subject', () => {

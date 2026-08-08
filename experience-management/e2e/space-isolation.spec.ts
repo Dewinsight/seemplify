@@ -114,7 +114,7 @@ test('spaces isolate surveys until invitation acceptance and revoke access after
       await expect(invitationBar.getByText('Accepting adds and opens the space. Its content remains private until then.')).toBeVisible();
       await invitationBar.getByRole('button', { name: `Accept invitation to ${accountA.spaceName} and open it`, exact: true }).click();
       await expect.poll(async () => (await activeSpace(pageB)).id).toBe(ownerSpaceId);
-      const sharedSpaceRuntime = await pageB.request.patch('/api/ai-provider', { data: { provider: 'terra' } });
+      const sharedSpaceRuntime = await pageB.request.patch('/api/ai-provider', { data: { provider: 'codex' } });
       expect(sharedSpaceRuntime.status(), await sharedSpaceRuntime.text()).toBe(200);
       await pageB.reload();
       await expect(pageB.getByRole('heading', { name: 'Experience overview' })).toBeVisible();

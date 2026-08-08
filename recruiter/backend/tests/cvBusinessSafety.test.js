@@ -5,8 +5,8 @@ const path = require('path');
 const test = require('node:test');
 
 process.env.REDIS_ENABLED = 'false';
-process.env.LOCAL_LLM_SHARED_SECRET = '';
-process.env.LOCAL_LLM_BASE_URL = '';
+process.env.CHATGPT_GATEWAY_SHARED_SECRET = '';
+process.env.CHATGPT_GATEWAY_BASE_URL = '';
 
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');

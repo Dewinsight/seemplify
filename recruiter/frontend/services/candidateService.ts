@@ -45,7 +45,7 @@ interface CandidateData extends CandidateFormValues {
 
 export interface CVProcessingStatus {
   jobId: string;
-  state: 'queued' | 'waiting_for_local_runtime' | 'processing' | 'completed' | 'failed';
+  state: 'queued' | 'waiting_for_chatgpt' | 'processing' | 'completed' | 'failed';
   stage?: 'ingesting' | 'uploading' | 'extracting' | 'analyzing' | 'finalizing' | 'completed' | 'failed' | null;
   progress: number;
   position: number | null;
@@ -493,7 +493,7 @@ export interface BulkUploadStatus {
   errors: Array<{ fileName: string; error: string; success: false }>;
   startedAt: string;
   completedAt: string | null;
-  state: 'processing' | 'waiting_for_local_runtime' | 'completed';
+  state: 'processing' | 'waiting_for_chatgpt' | 'completed';
   /** Why the batch is parked, when it is — e.g. the ChatGPT plan's usage
    * limit and when it resets. Null while work is moving normally. */
   waitingReason?: string | null;

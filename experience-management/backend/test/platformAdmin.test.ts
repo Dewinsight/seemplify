@@ -22,7 +22,6 @@ Object.assign(process.env, {
   ADMIN_PASSWORD_FILE: passwordFile,
   SESSION_SECRET_FILE: sessionFile,
   SUBSCRIPTION_ENFORCEMENT_ENABLED: 'true',
-  LOCAL_LLM_SHARED_SECRET_FILE: sessionFile,
   KNOWLEDGE_RUNTIME_BASE_URL: 'http://knowledge-admin.test',
   KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: sessionFile,
   CODEX_RUNTIME_DIR: path.join(root, 'codex'),
@@ -260,10 +259,10 @@ test('AI defaults separate read and manage permissions and audit only successful
   const auditBefore = Number((db.prepare(`SELECT COUNT(*) count FROM platform_audit_events
     WHERE action='ai_defaults.updated'`).get() as any).count);
   const policyOnly = await editorAgent.put('/api/platform-admin/ai-defaults').send({
-    runtimePolicy: { localEnabled: true, chatgptEnabled: false, defaultRuntime: 'local' }
+    runtimePolicy: { chatgptEnabled: false, defaultRuntime: 'chatgpt' }
   }).expect(200);
   assert.deepEqual(policyOnly.body.defaults.runtimePolicy, {
-    localEnabled: true, chatgptEnabled: false, defaultRuntime: 'local'
+    chatgptEnabled: false, defaultRuntime: 'chatgpt'
   });
   const auditAfterPolicy = Number((db.prepare(`SELECT COUNT(*) count FROM platform_audit_events
     WHERE action='ai_defaults.updated'`).get() as any).count);
@@ -276,7 +275,7 @@ test('AI defaults separate read and manage permissions and audit only successful
   const reset = await editorAgent.delete('/api/platform-admin/ai-defaults').expect(200);
   assert.equal(reset.body.defaults.codexModel, null);
   assert.deepEqual(reset.body.defaults.runtimePolicy, {
-    localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt'
+    chatgptEnabled: true, defaultRuntime: 'chatgpt'
   });
   assert.ok(db.prepare(`SELECT 1 FROM platform_audit_events WHERE action='ai_defaults.reset'
     AND actor_user_id=?`).get(editor.id));
@@ -382,7 +381,7 @@ test('global AI jobs and product activity expose only privacy-safe operational m
 
   const malformed = createAiJobFixture('analyst.chat', { safe: true }, account.spaceId, null, null, account.id);
   db.prepare(`UPDATE ai_jobs SET input_json='{' WHERE id=?`).run(malformed.id);
-  const legacyJobs = await rootAgent.get('/api/platform-admin/jobs').query({ provider: 'terra', search: malformed.id }).expect(200);
+  const legacyJobs = await rootAgent.get('/api/platform-admin/jobs').query({ provider: 'codex', search: malformed.id }).expect(200);
   assert.ok(legacyJobs.body.jobs.some((item: any) => item.id === malformed.id));
 });
 

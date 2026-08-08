@@ -2,7 +2,7 @@ const Interview = require('../models/Interview');
 const Job = require('../models/Job');
 const Candidate = require('../models/Candidate');
 const AIModelService = require('./aiModelService');
-const { GROQ_120B } = require('../config/aiRuntimeCatalog');
+const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
 const embeddingService = require('./embeddingService');
 const transcriptSegmentationService = require('./transcriptSegmentationService');
 const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
@@ -48,7 +48,7 @@ class AIInterviewAnalysisService {
       interview.aiAnalysis = {
         analyzed: true,
         analyzedAt: new Date(),
-        modelVersion: GROQ_120B,
+        modelVersion: CHATGPT_MODEL,
         insights: analysis.insights,
         comparativeAnalysis
       };

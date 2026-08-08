@@ -189,7 +189,7 @@ export default function BulkUploadPage() {
     ? Math.ceil((status.totalFiles - status.completed) / (parseFloat(rate) / 60))
     : null
   const isParked = Boolean(status && (
-    status.state === "waiting_for_local_runtime" || status.waitingReason || status.waitingCode
+    status.state === "waiting_for_chatgpt" || status.waitingReason || status.waitingCode
   ))
   const canRetryFailed = Boolean(status && status.state === "completed" && status.failed > 0)
 

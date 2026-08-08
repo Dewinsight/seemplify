@@ -52,6 +52,27 @@ function updateMarker(patch) {
   fs.writeFileSync(marker, JSON.stringify({ ...current, ...patch }));
 }
 
+function fixtureValue(schema, name = 'value') {
+  if (!schema || typeof schema !== 'object') return null;
+  if (Array.isArray(schema.enum) && schema.enum.length) return schema.enum[0];
+  if (schema.const !== undefined) return schema.const;
+  if (schema.type === 'object' || schema.properties) {
+    const required = new Set(Array.isArray(schema.required) ? schema.required : Object.keys(schema.properties || {}));
+    return Object.fromEntries(Object.entries(schema.properties || {})
+      .filter(([key]) => required.has(key))
+      .map(([key, value]) => [key, fixtureValue(value, key)]));
+  }
+  if (schema.type === 'array') {
+    const size = Math.max(0, Number(schema.minItems || 0));
+    return Array.from({ length: size }, (_, index) => fixtureValue(schema.items, `${name}-${index + 1}`));
+  }
+  if (schema.type === 'number' || schema.type === 'integer') return Number(schema.minimum || 0);
+  if (schema.type === 'boolean') return false;
+  const minimum = Math.max(1, Number(schema.minLength || 1));
+  const value = name === 'answer' ? 'fake completion' : `test ${name}`;
+  return String(value).padEnd(minimum, 'x');
+}
+
 const input = readline.createInterface({ input: process.stdin });
 input.on('line', (line) => {
   let message;
@@ -145,9 +166,12 @@ input.on('line', (line) => {
       setTimeout(() => process.exit(24), 25);
       return;
     }
+    const structured = message.params?.outputSchema
+      ? fixtureValue(message.params.outputSchema)
+      : { answer: 'fake completion' };
     setTimeout(() => {
       send({ method: 'item/completed', params: {
-        item: { id: `fake-message-${turnSequence}`, type: 'agentMessage', phase: 'final_answer', text: '{"answer":"fake completion"}' }
+        item: { id: `fake-message-${turnSequence}`, type: 'agentMessage', phase: 'final_answer', text: JSON.stringify(structured) }
       } });
       send({ method: 'turn/completed', params: { turn: { id: turnId, status: 'completed', items: [], error: null } } });
     }, 25);

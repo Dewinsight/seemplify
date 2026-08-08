@@ -11,7 +11,6 @@ import { api, json } from '@/lib/api';
 import {
   notifyAiProviderChanged, requiresChatGptSetup, type AiProviderState, type DeviceLogin
 } from '@/lib/aiProvider';
-import { Link } from '@/lib/router';
 
 export type ChatGptConnectionGateProps = {
   state: AiProviderState | null;
@@ -35,7 +34,6 @@ export function ChatGptConnectionGate({
   const activationInFlight = useRef(false);
   const open = !exempt && !loading && (Boolean(error) || requiresChatGptSetup(state));
   const connected = state?.codex.account.connected === true;
-  const localAiEnabled = state?.runtimePolicy?.localEnabled !== false;
   const loginPending = Boolean(deviceLogin || state?.codex.account.pendingLogin);
   const displayedError = localError || error || state?.codex.account.loginError || state?.codex.error || '';
 
@@ -47,7 +45,7 @@ export function ChatGptConnectionGate({
   const enableChatGpt = useCallback(async (candidate: AiProviderState) => {
     if (!candidate.codex.account.connected || activationInFlight.current) return;
     if (!candidate.codex.models.length) {
-      setLocalError('This ChatGPT account does not currently provide a Codex model. Retry, or choose the local AI runtime in Space settings.');
+      setLocalError('This ChatGPT account does not currently provide a Codex model. Retry the connection or contact your administrator.');
       return;
     }
     activationInFlight.current = true;
@@ -61,7 +59,7 @@ export function ChatGptConnectionGate({
       publishState(next, true);
       setDeviceLogin(null);
       if (requiresChatGptSetup(next)) {
-        setLocalError('ChatGPT connected, but Experience Management could not select a usable Codex model. Retry or choose the local AI runtime.');
+        setLocalError('ChatGPT connected, but Experience Management could not select a usable Codex model. Retry the connection.');
       }
     } catch (reason) {
       setLocalError(reason instanceof Error ? reason.message : 'ChatGPT connected, but it could not be enabled for this space.');
@@ -190,7 +188,6 @@ export function ChatGptConnectionGate({
       <div className="space-y-4">
         <p className="border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground" data-testid="chatgpt-gate-disclosure">
           Continuing allows AI task prompts and authorised knowledge excerpts from this space to be processed by OpenAI using your connected account.
-          {localAiEnabled ? ' You can choose the local AI runtime in Space settings instead.' : null}
         </p>
 
         {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
@@ -241,10 +238,7 @@ export function ChatGptConnectionGate({
         {displayedError && <div className="border border-destructive/35 bg-destructive/5 p-3 text-sm text-destructive" role="alert" data-testid="chatgpt-gate-error">{displayedError}</div>}
       </div>
 
-      <DialogFooter className={localAiEnabled ? 'sm:items-center sm:justify-between' : 'sm:justify-end'}>
-        {localAiEnabled && <Button asChild variant="outline" data-testid="chatgpt-gate-settings">
-          <Link to="/settings/space#ai-runtime">Use local AI in settings</Link>
-        </Button>}
+      <DialogFooter className="sm:justify-end">
         {deviceLogin
           ? <Button type="button" variant="ghost" disabled={busy} data-testid="chatgpt-gate-retry" onClick={() => void startLogin(true)}>{working === 'restart' ? <Loader2 className="animate-spin" /> : <RefreshCw />}Restart sign-in</Button>
           : connected && displayedError

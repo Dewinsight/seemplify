@@ -63,5 +63,5 @@ test('legacy migration never imports or invokes the former direct inference pipe
   );
   assert.doesNotMatch(source, /CVParsingService|analyzeText|runWithGlobalInferencePermit|new Candidate/);
   assert.match(source, /submitUpload\(req, 'bulk'\)/);
-  assert.match(source, /inference remains in cv-analysis-local/);
+  assert.match(source, /inference remains in cv-analysis-chatgpt/);
 });

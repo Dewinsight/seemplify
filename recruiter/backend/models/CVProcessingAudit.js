@@ -24,7 +24,7 @@ const CVProcessingAuditSchema = new mongoose.Schema({
   },
   state: {
     type: String,
-    enum: ['queued', 'waiting_for_local_runtime', 'processing', 'completed', 'failed'],
+    enum: ['queued', 'waiting_for_chatgpt', 'processing', 'completed', 'failed'],
     required: true,
     index: true
   },
@@ -80,7 +80,7 @@ const CVProcessingAuditSchema = new mongoose.Schema({
     eventKey: { type: String, required: true },
     phase: {
       type: String,
-      enum: ['queued', 'waiting_for_local_runtime', 'processing', 'retrying', 'completed', 'failed'],
+      enum: ['queued', 'waiting_for_chatgpt', 'processing', 'retrying', 'completed', 'failed'],
       required: true
     },
     stage: {
@@ -89,7 +89,7 @@ const CVProcessingAuditSchema = new mongoose.Schema({
     },
     state: {
       type: String,
-      enum: ['queued', 'waiting_for_local_runtime', 'processing', 'completed', 'failed'],
+      enum: ['queued', 'waiting_for_chatgpt', 'processing', 'completed', 'failed'],
       required: true
     },
     progress: { type: Number, min: 0, max: 100 },

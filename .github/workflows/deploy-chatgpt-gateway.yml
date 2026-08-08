@@ -5,8 +5,9 @@ on:
     branches: [main]
     paths:
       - 'tools/chatgpt-gateway/**'
-      - 'tools/local-llm/**'
       - 'recruiter/backend/config/aiRuntimeCatalog.js'
+      - 'recruiter/backend/services/aiRuntime/**'
+      - 'recruiter/backend/scripts/dokployConfigureChatGpt.js'
       - '.github/workflows/deploy-chatgpt-gateway.yml'
   workflow_dispatch:
 
@@ -15,19 +16,18 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy Codex App Server gateway to Dokploy
+    name: Configure and deploy ChatGPT Connect on Dokploy
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Dokploy deployment
-        run: |
-          response=$(curl -sS -w "%{http_code}" -o /tmp/response.txt \
-            -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
-            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -H "accept: application/json" \
-            -d '{"applicationId":"${{ secrets.CHATGPT_GATEWAY_APP_ID }}"}')
-          if [ "$response" != "200" ]; then
-            cat /tmp/response.txt 2>/dev/null || true
-            exit 1
-          fi
-          echo "ChatGPT gateway deployment triggered."
+      - uses: actions/checkout@v4
+      - name: Configure hosted gateway and Recruiter
+        run: node recruiter/backend/scripts/dokployConfigureChatGpt.js
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          CHATGPT_GATEWAY_APP_ID: ${{ secrets.CHATGPT_GATEWAY_APP_ID }}
+          RECRUITER_BACKEND_APP_ID: ${{ secrets.RECRUITER_BACKEND_APP_ID }}
+          CHATGPT_GATEWAY_BASE_URL: ${{ secrets.CHATGPT_GATEWAY_BASE_URL }}
+          CHATGPT_GATEWAY_SHARED_SECRET: ${{ secrets.CHATGPT_GATEWAY_SHARED_SECRET }}
+          CV_STATUS_TOKEN_SECRET: ${{ secrets.CV_STATUS_TOKEN_SECRET }}
+          OIDC_CLIENT_SECRET: ${{ secrets.RECRUITER_OIDC_CLIENT_SECRET }}

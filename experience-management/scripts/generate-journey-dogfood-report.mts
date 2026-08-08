@@ -195,10 +195,10 @@ try {
       const after = parseJson<Record<string, unknown>>(row.after_json, {});
       return after.runtimeChoice === 'chatgpt';
     });
-    const localSelected = runtimeEvents.find((row) => {
+    const chatGptSelected = runtimeEvents.find((row) => {
       if (row.action !== 'ai_runtime.runtime_selected') return false;
       const after = parseJson<Record<string, unknown>>(row.after_json, {});
-      return after.runtimeChoice === 'local';
+      return after.runtimeChoice === 'chatgpt';
     });
     const survey = spaceId ? surveyBySpace.get(spaceId) : null;
     const journey = spaceId ? journeyBySpace.get(spaceId) : null;
@@ -233,7 +233,7 @@ try {
         chatGptLoginStartedAt: iso(loginStarted?.created_at),
         chatGptConnectedAt: iso(codexConnected?.created_at),
         chatGptSelectedAt: iso(runtimeSelected?.created_at),
-        localRuntimeSelectedAt: iso(localSelected?.created_at),
+        chatGptSelectedAt: iso(chatGptSelected?.created_at),
         surveyCreatedAt: iso(survey?.created_at),
         surveyPublishedAt: iso(survey?.published_at),
         journeyCreatedAt: iso(journey?.created_at),
@@ -293,7 +293,7 @@ const totals = {
 const caveats = [
   'Survey and journey milestones are reconciled at the owned-space level where legacy tables do not retain a direct creator user for every artifact.',
   'ChatGPT connection and runtime-selection proof depends on platform_audit_events actions emitted by current AI runtime routes; older connections made before this audit hook may be absent.',
-  'Current runtime-connected signals come from live getAiProviderState resolution and may diverge from the audited event trail when a different local runtime instance handled sign-in.',
+  'Current runtime-connected signals come from live getAiProviderState resolution and may diverge from the audited event trail when a different ChatGPT gateway instance handled sign-in.',
   'Stored runtime preferences and Codex runtime-home/auth-file presence are supportive local signals only; they are not treated as equivalent to a fresh audited ChatGPT connection event.',
   'Onboarding and explicit workspace-creation milestones prefer authoritative platform_audit_events when present and fall back to durable account/space records for older histories.',
   'This artifact is for internal Seemplify dogfood evidence only and is not customer telemetry ingestion.'
@@ -352,7 +352,7 @@ for (const record of records) {
   lines.push(`- ChatGPT login started (audited): ${record.milestones.chatGptLoginStartedAt || '—'}`);
   lines.push(`- ChatGPT connected (audited): ${record.milestones.chatGptConnectedAt || '—'}`);
   lines.push(`- ChatGPT selected (audited): ${record.milestones.chatGptSelectedAt || '—'}`);
-  lines.push(`- Local runtime selected (audited): ${record.milestones.localRuntimeSelectedAt || '—'}`);
+  lines.push(`- ChatGPT gateway selected (audited): ${record.milestones.chatGptSelectedAt || '—'}`);
   lines.push(`- Stored runtime provider: ${record.evidence.runtimePreferenceProvider || '—'}`);
   lines.push(`- Stored runtime choice: ${record.evidence.runtimePreferenceChoice || '—'}`);
   lines.push(`- Stored runtime preference updated: ${record.evidence.runtimePreferenceUpdatedAt || '—'}`);

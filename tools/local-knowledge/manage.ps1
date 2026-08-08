@@ -234,10 +234,10 @@ function Ensure-DirectoriesAndSecrets {
     $value = if (Test-Path $legacySecret) { (Get-Content -LiteralPath $legacySecret -Raw).Trim() } else { New-StrongSecret }
     [IO.File]::WriteAllText($serviceSecret, $value, [Text.UTF8Encoding]::new($false))
   }
-  $llmSource = Join-Path (Split-Path -Parent $RuntimeDir) 'llm\service-secret'
-  $llmTarget = Join-Path $SecretsDir 'llm-service'
-  if (-not (Test-Path $llmSource)) { throw 'The signed Terra gateway secret is missing. Start the Seemplify AI runtime once before starting knowledge indexing.' }
-  [IO.File]::WriteAllText($llmTarget, (Get-Content -LiteralPath $llmSource -Raw).Trim(), [Text.UTF8Encoding]::new($false))
+  $gatewaySource = Join-Path (Split-Path -Parent $RuntimeDir) 'chatgpt-gateway\service-secret'
+  $gatewayTarget = Join-Path $SecretsDir 'chatgpt-gateway'
+  if (-not (Test-Path $gatewaySource)) { throw 'The signed ChatGPT gateway secret is missing. Configure the hosted gateway before starting knowledge indexing.' }
+  [IO.File]::WriteAllText($gatewayTarget, (Get-Content -LiteralPath $gatewaySource -Raw).Trim(), [Text.UTF8Encoding]::new($false))
 }
 
 function Get-GteDependencyStatus {

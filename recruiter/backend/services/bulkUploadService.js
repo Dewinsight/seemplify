@@ -259,7 +259,7 @@ async function initQueue() {
   });
 
   console.log(
-    `Legacy bulk queue migration worker started (ingestion concurrency: ${MIGRATION_CONCURRENCY}); inference remains in cv-analysis-local`
+    `Legacy bulk queue migration worker started (ingestion concurrency: ${MIGRATION_CONCURRENCY}); inference remains in cv-analysis-chatgpt`
   );
   return { queue, worker, queueEvents };
 }

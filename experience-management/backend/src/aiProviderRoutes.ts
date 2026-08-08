@@ -9,7 +9,7 @@ import { currentSessionUser } from './auth.js';
 import { db } from './database.js';
 import { recordPlatformAuditEvent } from './platformAudit.js';
 import { resolveRequestSpace } from './spaces.js';
-import { TerraError } from './terraClient.js';
+import { AiProviderError } from './aiProviderError.js';
 
 export const aiProviderRouter = express.Router();
 
@@ -66,7 +66,7 @@ function latestRuntimeSelectionAudit(targetId: string) {
 function effectiveRuntimeChoiceFromState(state: Awaited<ReturnType<typeof getAiProviderState>>) {
   const explicitChoice = optionalString(state.preference.runtimeChoice);
   if (explicitChoice) return explicitChoice;
-  return state.preference.effectiveProvider === 'codex' ? 'chatgpt' : 'local';
+  return 'chatgpt';
 }
 
 function syncRuntimeSelectionAudit(
@@ -161,13 +161,13 @@ function syncCodexConnectionAudit(
 
 function context(request: express.Request) {
   const user = currentSessionUser(request);
-  if (!user) throw new TerraError('Authentication required.', 'AUTHENTICATION_REQUIRED', 401, false);
+  if (!user) throw new AiProviderError('Authentication required.', 'AUTHENTICATION_REQUIRED', 401, false);
   return { user, space: resolveRequestSpace(request, user.id) };
 }
 
 function sendError(response: express.Response, error: unknown) {
   if (error instanceof z.ZodError) return response.status(400).json({ error: 'Validation failed', details: error.issues });
-  if (error instanceof TerraError) return response.status(error.status).json({ error: error.message, code: error.code });
+  if (error instanceof AiProviderError) return response.status(error.status).json({ error: error.message, code: error.code });
   return response.status(500).json({ error: error instanceof Error ? error.message : 'AI provider request failed.' });
 }
 
@@ -199,7 +199,7 @@ aiProviderRouter.patch('/', async (request, response) => {
     const before = await getAiProviderState(user.id, space.id);
     const optionalCodexSetting = z.string().trim().min(1).max(200).nullable();
     const input = z.object({
-      provider: z.enum(['terra', 'codex']),
+      provider: z.literal('codex'),
       codexModel: optionalCodexSetting.optional(),
       codexReasoningEffort: optionalCodexSetting.optional(),
       codexActionOverrides: z.record(

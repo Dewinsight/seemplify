@@ -12,13 +12,12 @@ import { signupVerifyAndOnboard } from './authTestHelper.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-assistant-'));
 const files = {
   password: path.join(root, 'admin-password'), session: path.join(root, 'session-secret'),
-  terra: path.join(root, 'terra-secret'), xKey: path.join(root, 'x-key'),
+  xKey: path.join(root, 'x-key'),
   esignKey: path.join(root, 'esign-key'), nylasKey: path.join(root, 'nylas-key'),
   knowledge: path.join(root, 'knowledge-secret')
 };
 fs.writeFileSync(files.password, 'Assistant-Admin-Password-2026!');
 fs.writeFileSync(files.session, 'assistant-session-secret-longer-than-twenty-characters');
-fs.writeFileSync(files.terra, 'assistant-terra-secret-longer-than-twenty-characters');
 fs.writeFileSync(files.xKey, Buffer.alloc(32, 71).toString('base64url'));
 fs.writeFileSync(files.esignKey, Buffer.alloc(32, 72).toString('base64url'));
 fs.writeFileSync(files.nylasKey, Buffer.alloc(32, 73).toString('base64url'));
@@ -29,8 +28,7 @@ Object.assign(process.env, {
   SUBSCRIPTION_ENFORCEMENT_ENABLED: 'true',
   FRONTEND_DIST: path.join(root, 'missing-frontend'), PUBLIC_URL: 'http://127.0.0.1:5496',
   ADMIN_EMAIL: 'assistant-admin@example.test', ADMIN_PASSWORD_FILE: files.password,
-  SESSION_SECRET_FILE: files.session, TERRA_GATEWAY_SHARED_SECRET_FILE: files.terra,
-  TERRA_GATEWAY_BASE_URL: 'http://terra.test', AI_WORKER_CONCURRENCY: '1', EMAIL_MODE: 'log',
+  SESSION_SECRET_FILE: files.session, AI_WORKER_CONCURRENCY: '1', EMAIL_MODE: 'log',
   KNOWLEDGE_STORAGE_DIR: path.join(root, 'knowledge'),
   KNOWLEDGE_RUNTIME_BASE_URL: 'http://knowledge.test',
   KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: files.knowledge,
@@ -131,7 +129,7 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
     });
   }
   if (url.origin === 'http://terra.test' && url.pathname === '/v1/status') {
-    return json({ runtimeProfile: 'experience-management', health: { ok: true }, providerLabel: 'Terra', model: 'gpt-5.6-terra' });
+    return json({ runtimeProfile: 'experience-management', health: { ok: true }, providerLabel: 'Terra', model: 'gpt-5.6-sol' });
   }
   if (url.origin === 'http://terra.test' && url.pathname === '/v1/complete') {
     let data: unknown;
@@ -191,8 +189,8 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => 
       };
     } else throw new Error(`Unexpected Terra activity ${String(body?.activity)}`);
     return json({
-      runtimeProfile: 'experience-management', data, provider: 'terra', providerLabel: 'Terra',
-      engine: 'codex', model: 'gpt-5.6-terra', usage: { inputTokens: 100, outputTokens: 30 },
+      runtimeProfile: 'experience-management', data, provider: 'codex', providerLabel: 'Terra',
+      engine: 'codex', model: 'gpt-5.6-sol', usage: { inputTokens: 100, outputTokens: 30 },
       metrics: { latencyMs: 50, queueWaitMs: 2 }
     });
   }
@@ -652,7 +650,7 @@ test('Nylas assistant is durable, grounded, encrypted, isolated, and sends only 
   await finishJob(summaryCreated.body.jobId);
   const summaryRun = await owner.get(`/api/assistant/runs/${summaryCreated.body.run.id}`).expect(200);
   assert.equal(summaryRun.body.state, 'completed'); assert.equal(summaryRun.body.output.actionItems[0].sourceMessageId, 'msg-1');
-  assert.equal(summaryRun.body.runtime.model, 'gpt-5.6-terra');
+  assert.equal(summaryRun.body.runtime.model, 'gpt-5.6-sol');
   const summaryTerraCall = fetchCalls.find((call) => call.body?.activity === 'experience.assistant.email_summarise')!;
   const summaryPrompt = JSON.stringify(summaryTerraCall.body.messages);
   assert.match(summaryPrompt, new RegExp(distinctiveEmailSentence.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'));

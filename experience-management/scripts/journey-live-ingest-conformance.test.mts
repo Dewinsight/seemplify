@@ -16,7 +16,6 @@ const workspaceRoot = path.resolve(scriptDirectory, '..');
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-live-ingest-'));
 const passwordFile = path.join(temporaryRoot, 'admin-password');
 const sessionFile = path.join(temporaryRoot, 'session-secret');
-const terraSecretFile = path.join(temporaryRoot, 'terra-secret');
 const xKeyFile = path.join(temporaryRoot, 'x-key');
 const esignKeyFile = path.join(temporaryRoot, 'esign-key');
 const identityKeyFile = path.join(temporaryRoot, 'journey-identity-key');
@@ -24,7 +23,6 @@ const browserBundle = path.join(temporaryRoot, 'journey-live-browser.mjs');
 
 fs.writeFileSync(passwordFile, 'Journey-Live-Ingest-2026!');
 fs.writeFileSync(sessionFile, 'journey-live-ingest-session-secret-that-is-long-enough');
-fs.writeFileSync(terraSecretFile, 'journey-live-ingest-terra-secret-that-is-long-enough');
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 51).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 52).toString('base64url'));
 fs.writeFileSync(identityKeyFile, crypto.randomBytes(48));
@@ -36,8 +34,6 @@ Object.assign(process.env, {
   ADMIN_EMAIL: 'journey-live@seemplify.local',
   ADMIN_PASSWORD_FILE: passwordFile,
   SESSION_SECRET_FILE: sessionFile,
-  TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
-  LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile,
   EMAIL_MODE: 'log',
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile,
   ESIGN_STORAGE_DIR: path.join(temporaryRoot, 'esign'),

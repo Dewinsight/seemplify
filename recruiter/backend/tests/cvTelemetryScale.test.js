@@ -77,7 +77,7 @@ test('Admin audit snapshots use separate bounded active and recent index-shaped 
     )));
     assert.deepEqual(externalCalls.find((call) => call.filter.state).filter.state.$in, [
       'queued',
-      'waiting_for_local_runtime',
+      'waiting_for_chatgpt',
       'processing'
     ]);
     const recruiterCall = calls.find((call) => call.filter.publicId);

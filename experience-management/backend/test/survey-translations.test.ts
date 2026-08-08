@@ -29,7 +29,6 @@ Object.assign(process.env, {
   ADMIN_PASSWORD_FILE: passwordFile,
   SESSION_SECRET_FILE: sessionFile,
   EMAIL_MODE: 'log',
-  LOCAL_LLM_SHARED_SECRET_FILE: sessionFile,
   BREVO_WEBHOOK_SECRET_FILE: webhookSecretFile,
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile,
   X_API_BASE_URL: 'https://api.x.invalid',

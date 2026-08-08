@@ -25,8 +25,8 @@ const connectDB = async () => {
 
     // Repair historical CV/runtime data before Mongoose builds the guarded
     // idempotency index or any worker can dispatch queued uploads.
-    const { ensureCvRuntimeCompatibility } = require('../services/cvRuntimeCompatibilityService');
-    const compatibility = await ensureCvRuntimeCompatibility();
+    const { ensureCvProcessingCompatibility } = require('../services/cvProcessingCompatibilityService');
+    const compatibility = await ensureCvProcessingCompatibility();
     console.log('CV runtime compatibility checks complete:', compatibility);
 
     // Raw AI usage events are the authoritative ledger. Repair legacy event

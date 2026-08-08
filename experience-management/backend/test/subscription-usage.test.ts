@@ -24,8 +24,6 @@ Object.assign(process.env, {
   ADMIN_PASSWORD_FILE: passwordFile,
   SESSION_SECRET_FILE: sessionFile,
   SUBSCRIPTION_ENFORCEMENT_ENABLED: 'true',
-  LOCAL_LLM_SHARED_SECRET_FILE: sessionFile,
-  TERRA_GATEWAY_SHARED_SECRET_FILE: sessionFile,
   EMAIL_MODE: 'log',
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile,
   ESIGN_STORAGE_DIR: path.join(root, 'esign'),

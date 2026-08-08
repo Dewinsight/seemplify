@@ -61,7 +61,7 @@ const CVProcessingJobSchema = new mongoose.Schema({
   idempotencyKey: { type: String, index: true },
   state: {
     type: String,
-    enum: ['queued', 'waiting_for_local_runtime', 'processing', 'completed', 'failed'],
+    enum: ['queued', 'waiting_for_chatgpt', 'processing', 'completed', 'failed'],
     default: 'queued',
     index: true
   },
@@ -197,7 +197,7 @@ const CVProcessingJobSchema = new mongoose.Schema({
   failedAt: Date,
   // The TTL is assigned only after a job reaches a terminal state. Queued,
   // processing, and offline-waiting jobs must survive an arbitrarily long
-  // local-runtime outage.
+  // hosted ChatGPT outage.
   expiresAt: Date
 }, { timestamps: true, minimize: false });
 

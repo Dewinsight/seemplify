@@ -165,10 +165,10 @@ test('active jobs never receive TTL and terminal state is guarded with a termina
 
   const waiting = await repository.recordFailure(
     created.job.publicId,
-    Object.assign(new Error('local runtime busy'), { code: 'LOCAL_LLM_BUSY' }),
+    Object.assign(new Error('ChatGPT gateway busy'), { code: 'CHATGPT_GATEWAY_BUSY' }),
     { unmetered: true }
   );
-  assert.equal(waiting.job.state, 'waiting_for_local_runtime');
+  assert.equal(waiting.job.state, 'waiting_for_chatgpt');
   assert.equal(waiting.job.expiresAt, undefined);
 
   const completed = await repository.complete(created.job.publicId, {
@@ -241,14 +241,14 @@ test('offline and BUSY deliveries do not consume the bounded real-failure retry 
     await repository.beginAttempt(created.job.publicId);
     const failure = await repository.recordFailure(
       created.job.publicId,
-      Object.assign(new Error('local runtime remains busy'), { code: 'LOCAL_LLM_BUSY' }),
+      Object.assign(new Error('ChatGPT gateway remains busy'), { code: 'CHATGPT_GATEWAY_BUSY' }),
       { unmetered: true }
     );
     assert.equal(failure.terminal, false);
   }
 
   let current = await repository.findByPublicId(created.job.publicId);
-  assert.equal(current.state, 'waiting_for_local_runtime');
+  assert.equal(current.state, 'waiting_for_chatgpt');
   assert.equal(current.attempts, 70);
   assert.equal(current.failureCount, 0);
   assert.equal(current.expiresAt, undefined);

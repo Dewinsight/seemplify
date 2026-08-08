@@ -312,7 +312,7 @@ After CV processing:
 - Show a structured, editable preview with “From your CV” provenance.
 - Allow candidates to correct fields before final submission.
 - Do not expose internal confidence as a misleading ranking.
-- Show real states: queued, waiting for local runtime, processing, ready to review, submitted, or actionable failure.
+- Show real states: queued, waiting for ChatGPT gateway, processing, ready to review, submitted, or actionable failure.
 - Provide a private receipt/status link backed by an opaque token.
 - Allow “save and continue later”.
 - Let a signed-in candidate reuse the approved profile on a later application.
@@ -749,7 +749,7 @@ The current 60-second activity refresh is adequate for historical audit browsing
 - Signup → organisation ready → first-job activation.
 - Job template/default → autosave → preview → publish.
 - Single and bulk CV uploads both create durable jobs.
-- CV local-runtime offline waiting → resume → correctable preview → submit.
+- Hosted ChatGPT offline waiting → resume → correctable preview → submit.
 - Reload/cross-device application draft recovery.
 - Candidate withdrawal/delete/export.
 - AI Interview device check → practice → live → recoverable device failure.

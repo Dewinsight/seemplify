@@ -10,13 +10,11 @@ import { signupVerifyAndOnboard } from './authTestHelper.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-journey-governance-routes-'));
 const passwordFile = path.join(root, 'admin-password');
 const sessionFile = path.join(root, 'session-secret');
-const terraSecretFile = path.join(root, 'terra-secret');
 const xKeyFile = path.join(root, 'x-key');
 const esignKeyFile = path.join(root, 'esign-key');
 const identityKeyFile = path.join(root, 'identity-key');
 fs.writeFileSync(passwordFile, 'Journey-Governance-Test-Password-2026!');
 fs.writeFileSync(sessionFile, 'journey-governance-session-secret-that-is-long-enough');
-fs.writeFileSync(terraSecretFile, 'journey-governance-terra-secret-that-is-long-enough');
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 71).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 72).toString('base64url'));
 fs.writeFileSync(identityKeyFile, Buffer.alloc(32, 73));
@@ -28,8 +26,6 @@ Object.assign(process.env, {
   ADMIN_EMAIL: 'journey-governance@seemplify.local',
   ADMIN_PASSWORD_FILE: passwordFile,
   SESSION_SECRET_FILE: sessionFile,
-  TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
-  LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile,
   EMAIL_MODE: 'log',
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile,
   ESIGN_STORAGE_DIR: path.join(root, 'esign'),

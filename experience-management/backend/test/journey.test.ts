@@ -8,19 +8,16 @@ import request from 'supertest';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-journey-'));
 const passwordFile = path.join(root, 'admin-password');
 const sessionFile = path.join(root, 'session-secret');
-const terraSecretFile = path.join(root, 'terra-secret');
 const xKeyFile = path.join(root, 'x-key');
 const esignKeyFile = path.join(root, 'esign-key');
 fs.writeFileSync(passwordFile, 'Journey-Test-Password-2026!');
 fs.writeFileSync(sessionFile, 'journey-test-session-secret-that-is-long-enough');
-fs.writeFileSync(terraSecretFile, 'journey-test-terra-secret-that-is-long-enough');
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 11).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 12).toString('base64url'));
 Object.assign(process.env, {
   DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'), FRONTEND_DIST: path.join(root, 'missing-frontend'),
   PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'journeys@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile,
-  SESSION_SECRET_FILE: sessionFile, TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile, LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile,
-  EMAIL_MODE: 'log', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, ESIGN_STORAGE_DIR: path.join(root, 'esign'),
+  SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, X_SEED_CONSUMER_KEY_FILE: path.join(root, 'missing-x-key'),
   X_SEED_CONSUMER_SECRET_FILE: path.join(root, 'missing-x-secret'), X_SEED_BEARER_TOKEN_FILE: path.join(root, 'missing-x-bearer'),
   X_SEED_ACCESS_TOKEN_FILE: path.join(root, 'missing-x-token'), X_SEED_ACCESS_TOKEN_SECRET_FILE: path.join(root, 'missing-x-token-secret')
@@ -29,7 +26,6 @@ Object.assign(process.env, {
 const { app } = await import('../src/app.js');
 const { db, deleteJourney, getJob, getJourney, getJourneyVersion, listJourneyVersionSummaries, updateJob, updateJourney } = await import('../src/database.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
-const { TerraError } = await import('../src/terraClient.js');
 const {
   applyJourneySuggestionRun, purgeJourneySuggestionAuditForMaintenance, reviewJourneySuggestionChange
 } = await import('../src/journeySuggestions.js');
@@ -61,7 +57,7 @@ const stages = [
 
 function terraResponse(data: unknown) {
   return new Response(JSON.stringify({
-    data, runtimeProfile: 'experience-management', provider: 'local-codex', engine: 'codex', model: 'gpt-5.6-terra',
+    data, runtimeProfile: 'experience-management', provider: 'chatgpt-connect', engine: 'codex', model: 'gpt-5.6-sol',
     usage: { input_tokens: 100, output_tokens: 200, total_tokens: 300 }, metrics: { latencyMs: 20 }
   }), { status: 200, headers: { 'content-type': 'application/json' } });
 }

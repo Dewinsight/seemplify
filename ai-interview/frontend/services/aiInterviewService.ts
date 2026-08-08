@@ -296,7 +296,7 @@ export interface AIInterviewCandidate {
 
 export type CVProcessingState =
   | 'queued'
-  | 'waiting_for_local_runtime'
+  | 'waiting_for_chatgpt'
   | 'processing'
   | 'completed'
   | 'failed';

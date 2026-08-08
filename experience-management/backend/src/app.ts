@@ -33,7 +33,7 @@ import {
 } from './campaigns.js';
 import { authenticateBrevoWebhook, parseBrevoWebhookPayload, processBrevoWebhookEvents } from './brevoWebhook.js';
 import { parseSocialMentionImport } from './socialImport.js';
-import { getTerraStatus, TerraError } from './terraClient.js';
+import { AiProviderError } from './aiProviderError.js';
 import {
   createIntelligenceReport, createSocialIntelligenceReport, createSocialReplyDraft, getIntelligenceReport,
   IntelligenceError, listIntelligenceReports, listIntelligenceSources, listSocialIntelligenceReports,
@@ -226,7 +226,7 @@ function intelligenceError(response: express.Response, error: unknown) {
   if (error instanceof IntelligenceError) return response.status(error.status).json({ error: error.message });
   if (error instanceof DeepAnalysisError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof KnowledgeError) return response.status(error.status).json({ error: error.message, code: error.code });
-  if (error instanceof TerraError) return response.status(error.status).json({ error: error.message, code: error.code });
+  if (error instanceof AiProviderError) return response.status(error.status).json({ error: error.message, code: error.code });
   return response.status(500).json({ error: error instanceof Error ? error.message : 'The intelligence request could not be completed.' });
 }
 
@@ -580,14 +580,11 @@ app.get('/api/events', (request, response) => {
 app.get('/api/runtime', noStore, async (request, response) => {
   const user = authenticatedUser(request); const space = resolveRequestSpace(request, user.id);
   const preference = getAiProviderPreference(user.id, space.id);
-  const [terra, knowledgeRuntime, ai] = await Promise.all([
-    getTerraStatus(),
+  const [knowledgeRuntime, ai] = await Promise.all([
     getKnowledgeRuntimeStatus(),
-    preference.provider === 'codex'
-      ? getAiProviderState(user.id, space.id)
-      : Promise.resolve({ preference, codex: null })
+    getAiProviderState(user.id, space.id)
   ]);
-  response.json({ terra, ai, email: emailStatus(), worker: aiJobRunner.status(space.id, user.id),
+  response.json({ ai, email: emailStatus(), worker: aiJobRunner.status(space.id, user.id),
     knowledge: { runtime: knowledgeRuntime, worker: knowledgeJobRunner.status(space.id) } });
 });
 app.get('/api/bootstrap', noStore, (request, response) => {

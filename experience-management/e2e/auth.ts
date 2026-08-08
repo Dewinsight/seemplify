@@ -68,8 +68,21 @@ export async function verifyEmailAndOnboard(page: Page, values: SignupValues) {
       && new URL(response.url()).pathname === '/api/account/onboarding');
   await page.getByRole('button', { name: 'Finish setup' }).click();
   expect((await onboardingResponse).status(), 'onboarding did not complete').toBe(200);
-  const runtimeResponse = await page.request.patch('/api/ai-provider', { data: { provider: 'terra' } });
-  expect(runtimeResponse.status(), 'could not select the local AI runtime for the signup fixture').toBe(200);
+  const loginResponse = await page.request.post('/api/ai-provider/codex/device-login', { data: {} });
+  expect(loginResponse.status(), 'could not start the ChatGPT connection for the signup fixture').toBe(200);
+  let connected = false;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const stateResponse = await page.request.get('/api/ai-provider');
+    expect(stateResponse.status(), 'could not read the ChatGPT connection state').toBe(200);
+    const state = await stateResponse.json();
+    if (state?.codex?.account?.connected) { connected = true; break; }
+    await page.waitForTimeout(25);
+  }
+  expect(connected, 'the ChatGPT connection did not complete for the signup fixture').toBe(true);
+  const runtimeResponse = await page.request.patch('/api/ai-provider', {
+    data: { provider: 'codex', codexDataSharingAcknowledged: true }
+  });
+  expect(runtimeResponse.status(), 'could not activate ChatGPT Connect for the signup fixture').toBe(200);
   await page.goto('/');
   const firstVisitTutorial = page.getByRole('dialog');
   await expect(firstVisitTutorial).toBeVisible();

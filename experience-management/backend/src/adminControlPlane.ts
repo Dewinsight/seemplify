@@ -21,7 +21,7 @@ import {
   replaceControlPlaneRolePermissions, updateControlPlaneRoleMetadata,
   type PlatformPermissionId
 } from './platformRbac.js';
-import { TerraError } from './terraClient.js';
+import { AiProviderError } from './aiProviderError.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -88,7 +88,7 @@ function sendError(response: Response, error: unknown) {
   if (error instanceof z.ZodError) {
     return response.status(400).json({ error: 'Validation failed.', code: 'VALIDATION_FAILED', details: error.issues });
   }
-  if (error instanceof AdminControlError || error instanceof AccountProvisionError || error instanceof TerraError) {
+  if (error instanceof AdminControlError || error instanceof AccountProvisionError || error instanceof AiProviderError) {
     return response.status(error.status).json({ error: error.message, code: error.code });
   }
   if (isDatabaseConstraintError(error)) {
@@ -442,8 +442,8 @@ adminControlPlaneRouter.put('/ai-defaults', requirePermission('ai_defaults.manag
         model: setting.optional(), reasoningEffort: setting.optional(), reasoningEffortAuto: z.boolean().optional()
       }).strict()).refine((value) => Object.keys(value).length <= 100, 'Too many action overrides.').optional(),
       runtimePolicy: z.object({
-        localEnabled: z.boolean(), chatgptEnabled: z.boolean(),
-        defaultRuntime: z.enum(['local', 'chatgpt'])
+        chatgptEnabled: z.boolean(),
+        defaultRuntime: z.literal('chatgpt')
       }).strict().optional()
     }).strict().parse(request.body);
     const defaults = await updateAdminCodexDefaults(actor.id, input);
@@ -472,7 +472,7 @@ const jobSelect = `SELECT j.id,j.kind,j.state,j.stage,j.progress,j.attempt,j.req
 function jobFilters(query: unknown, includeState = true, includeUserIdentity = false) {
   const input = paginationSchema.extend({
     state: z.enum(['all', 'queued', 'processing', 'completed', 'failed']).default('all'),
-    provider: z.enum(['all', 'terra', 'codex']).default('all'),
+    provider: z.enum(['all', 'codex']).default('all'),
     kind: z.string().trim().max(100).default('')
   }).parse(query);
   const search = input.search.toLowerCase(); const like = `%${search}%`;
@@ -482,7 +482,7 @@ function jobFilters(query: unknown, includeState = true, includeUserIdentity = f
   const where = `${includeState ? "(?='all' OR j.state=?) AND" : ''}
     (?='' OR j.kind=?) AND
     (?='all' OR COALESCE(CASE WHEN json_valid(j.input_json)
-      THEN json_extract(j.input_json,'$._aiRuntime.provider') END,'terra')=?) AND
+      THEN json_extract(j.input_json,'$._aiRuntime.provider') END,'codex')=?) AND
     (?='' OR LOWER(j.id) LIKE ? OR LOWER(j.kind) LIKE ?${identitySearch} OR LOWER(space.name) LIKE ?)`;
   const parameters = [
     ...(includeState ? [input.state, input.state] : []), input.kind, input.kind,

@@ -8,7 +8,7 @@ import {
   assistantWorkProductResult
 } from './assistantSchemas.js';
 import { getJobProviderResult, saveJobProviderResult, updateJob } from './database.js';
-import { TerraError } from './terraClient.js';
+import { AiProviderError } from './aiProviderError.js';
 import type { AiJob } from './types.js';
 
 type JobOutput = { output: unknown; runtime: unknown };
@@ -138,7 +138,7 @@ async function structuredAssistant<T>(input: {
   });
   const parsed = input.validator.safeParse(result.data);
   if (!parsed.success) {
-    throw new TerraError(
+    throw new AiProviderError(
       `The AI provider returned invalid ${input.schemaName}: ${parsed.error.issues.slice(0, 5).map((issue) => issue.message).join('; ')}`,
       'AI_SCHEMA_INVALID', 502, false
     );

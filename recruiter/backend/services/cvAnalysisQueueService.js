@@ -20,7 +20,6 @@ const websocketService = require('./websocketService');
 const creditsService = require('./creditsService');
 const publicApplicationCapacityService = require('./publicApplicationCapacityService');
 const { runWithAIRequestContext } = require('./aiRuntime/requestContext');
-const { signLocalRequest } = require('./aiRuntime/aiRuntimeService');
 const {
   createGlobalDispatchConnection,
   createGlobalDispatchCoordinator,
@@ -29,7 +28,7 @@ const {
 } = require('./cvGlobalDispatch');
 
 const unlinkAsync = promisify(fs.unlink);
-const queueName = 'cv-analysis-local';
+const queueName = 'cv-analysis-chatgpt';
 const redisHost = process.env.REDIS_HOST || (process.env.NODE_ENV === 'production' ? 'dokploy-redis' : '127.0.0.1');
 const redisPort = Number(process.env.REDIS_PORT || 6379);
 const redisEnabled = process.env.REDIS_ENABLED
@@ -112,27 +111,10 @@ let cleanupTimer;
 let telemetryTimer;
 let dispatchControlTimer;
 let telemetryDebounceTimer;
-let telemetryPublishPromise;
 let initRetryTimer;
 let historyBackfillPromise;
 let lastHistoryBackfillAt = 0;
 let historyBackfillCursor = null;
-
-async function defaultTelemetryTransport({ url, headers, body, signal }) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body,
-    signal
-  });
-  return {
-    ok: response.ok,
-    status: response.status,
-    payload: await response.json().catch(() => ({}))
-  };
-}
-
-let telemetryTransport = defaultTelemetryTransport;
 
 function normalizedDispatchLimit(value, fallback = 1) {
   const parsed = Number(value);
@@ -144,7 +126,7 @@ const HISTORY_TRANSITION_LIMIT = 100;
 const HISTORY_REPAIR_BATCH_SIZE = 500;
 const TELEMETRY_ACTIVE_STATES = Object.freeze([
   'queued',
-  'waiting_for_local_runtime',
+  'waiting_for_chatgpt',
   'processing'
 ]);
 const TELEMETRY_RECENT_LIMIT = 24;
@@ -525,7 +507,7 @@ function auditOperationalJob(job) {
   return {
     ...operational,
     producer: job.producer || 'recruiter',
-    queue: job.producer === 'ai-interview' ? 'ai-interview-cv-analysis-local' : queueName,
+    queue: job.producer === 'ai-interview' ? 'ai-interview-cv-analysis-chatgpt' : queueName,
     transitions: operationalTransitions(job.transitions),
     retry: {
       available: false,
@@ -603,7 +585,7 @@ async function ingestExternalQueueEvent(serviceId, input = {}) {
     throw error;
   }
   const state = String(job.state || '');
-  if (!['queued', 'waiting_for_local_runtime', 'processing', 'completed', 'failed'].includes(state)) {
+  if (!['queued', 'waiting_for_chatgpt', 'processing', 'completed', 'failed'].includes(state)) {
     const error = new Error('External CV queue event has an invalid state');
     error.code = 'CV_QUEUE_EVENT_INVALID';
     error.statusCode = 400;
@@ -803,11 +785,11 @@ function historyQuery(input = {}) {
   const page = Math.max(1, Math.min(100_000, Number(input.page) || 1));
   const limit = Math.max(10, Math.min(100, Number(input.limit) || 25));
   const filter = {};
-  const allowedStates = new Set(['queued', 'waiting_for_local_runtime', 'processing', 'retrying', 'completed', 'failed']);
+  const allowedStates = new Set(['queued', 'waiting_for_chatgpt', 'processing', 'retrying', 'completed', 'failed']);
   const allowedSources = new Set(['private', 'public', 'bulk', 'ai-interview']);
   const requestedState = String(input.state || '');
   if (requestedState === 'retrying') {
-    filter.state = { $in: ['queued', 'waiting_for_local_runtime', 'processing'] };
+    filter.state = { $in: ['queued', 'waiting_for_chatgpt', 'processing'] };
     filter.attempts = { $gt: 1 };
   } else if (allowedStates.has(requestedState)) {
     filter.state = requestedState;
@@ -992,22 +974,20 @@ async function adminJobsFromAudits(audits) {
 }
 
 function isBusyError(error) {
-  return ['LOCAL_LLM_BUSY', 'AI_LOCAL_BUSY', 'GATEWAY_QUEUE_FULL'].includes(String(error?.code || ''))
+  return ['CHATGPT_CAPACITY_BUSY', 'GATEWAY_QUEUE_FULL'].includes(String(error?.code || ''))
     || /\b(?:runtime|inference|gateway|queue)?\s*(?:is\s+)?busy\b|capacity (?:is )?occupied|queue (?:is )?full/i
       .test(String(error?.message || ''));
 }
 
 function isOfflineError(error) {
   return [
-    'AI_LOCAL_UNAVAILABLE',
-    'AI_LOCAL_NOT_CONFIGURED',
-    'LOCAL_LLM_DISABLED',
-    'LOCAL_LLM_PAUSED',
-    'LOCAL_LLM_UNAVAILABLE',
-    'LOCAL_ENGINE_REQUIRED',
+    'CHATGPT_GATEWAY_UNAVAILABLE',
+    'CHATGPT_GATEWAY_NOT_CONFIGURED',
+    'CHATGPT_GATEWAY_DISABLED',
+    'CHATGPT_GATEWAY_PAUSED',
     'CODEX_NOT_INSTALLED'
   ].includes(String(error?.code || ''))
-    || /local cv runtime|local[- ]llm|ollama|vllm|fetch failed|could not be reached/i
+    || /chatgpt gateway|codex app server|fetch failed|could not be reached/i
       .test(String(error?.message || ''));
 }
 
@@ -1021,9 +1001,7 @@ function isRuntimeGateError(error) {
   return [
     'AI_RUNTIME_ACCOUNT_REQUIRED',
     'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED',
-    'AI_RUNTIME_LOCAL_DISABLED',
     'AI_RUNTIME_CHATGPT_DISABLED',
-    'AI_RUNTIMES_DISABLED',
     'CHATGPT_NOT_CONNECTED',
     'CHATGPT_SUBJECT_UNRESOLVED'
   ].includes(String(error?.code || ''))
@@ -1040,7 +1018,7 @@ function isUnboundedRuntimeDeferral(error) {
  * personal ChatGPT runtime: the recruiter who connected a routable account.
  * Attributing actorless work to that recruiter lets it run on whichever
  * runtime the administrator selected — exactly as if the recruiter had
- * uploaded the CV themselves — instead of failing when the local model is off.
+ * uploaded the CV themselves, so queued work uses the correct connected account.
  */
 const organizationRuntimeActorCache = new Map();
 const ORGANIZATION_RUNTIME_ACTOR_TTL_MS = 60_000;
@@ -2374,7 +2352,7 @@ async function beginProcessingAttempt(processingJob) {
       // delivers a job once, but a stalled-job recovery or a deployment can
       // briefly present the same delivery to two workers. Only one of them may
       // cross from a runnable state into processing.
-      state: { $in: ['queued', 'waiting_for_local_runtime'] }
+      state: { $in: ['queued', 'waiting_for_chatgpt'] }
     },
     {
       $inc: { processingAttempts: 1 },
@@ -2655,14 +2633,14 @@ async function processJob(bullJob, workerToken) {
         };
         await CVProcessingJob.updateOne({ _id: processingJob._id }, {
           $set: {
-            state: 'waiting_for_local_runtime',
+            state: 'waiting_for_chatgpt',
             stage: 'analyzing',
             progress: Math.max(50, Number(processingJob.progress || 50)),
             lastError: waitError
           },
           $unset: { expiresAt: 1 }
         });
-        processingJob.state = 'waiting_for_local_runtime';
+        processingJob.state = 'waiting_for_chatgpt';
         processingJob.stage = 'analyzing';
         processingJob.progress = Math.max(50, Number(processingJob.progress || 50));
         processingJob.lastError = waitError;
@@ -2674,8 +2652,8 @@ async function processJob(bullJob, workerToken) {
       const error = new Error(analysis.error || 'Local CV analysis failed');
       error.code = analysis.code
         || (isBusyError(error)
-          ? 'LOCAL_LLM_BUSY'
-          : isOfflineError(error) ? 'AI_LOCAL_UNAVAILABLE' : 'CV_ANALYSIS_FAILED');
+          ? 'CHATGPT_CAPACITY_BUSY'
+          : isOfflineError(error) ? 'CHATGPT_GATEWAY_UNAVAILABLE' : 'CV_ANALYSIS_FAILED');
       error.retryable = analysis.retryable === true;
       throw error;
     }
@@ -2784,7 +2762,7 @@ async function processJob(bullJob, workerToken) {
       : new Date(Date.now() + retryDelay);
     const failureUpdate = {
       $set: {
-        state: terminal ? 'failed' : (unboundedDeferral || deferred) ? 'waiting_for_local_runtime' : 'queued',
+        state: terminal ? 'failed' : (unboundedDeferral || deferred) ? 'waiting_for_chatgpt' : 'queued',
         stage: terminal ? 'failed' : (processingJob.stage || 'ingesting'),
         progress: terminal ? processingJob.progress : Math.max(5, Number(processingJob.progress || 5)),
         ...(deferred ? {
@@ -2810,7 +2788,7 @@ async function processJob(bullJob, workerToken) {
     if (!unboundedDeferral && !deferred) failureUpdate.$inc = { boundedFailureAttempts: 1 };
     await CVProcessingJob.updateOne({ _id: processingJob._id }, failureUpdate);
     processingJob.boundedFailureAttempts = deferred ? 0 : boundedFailureAttempts;
-    processingJob.state = terminal ? 'failed' : (unboundedDeferral || deferred) ? 'waiting_for_local_runtime' : 'queued';
+    processingJob.state = terminal ? 'failed' : (unboundedDeferral || deferred) ? 'waiting_for_chatgpt' : 'queued';
     processingJob.stage = terminal ? 'failed' : failedStage;
     processingJob.failedAt = failedAt || processingJob.failedAt;
     processingJob.lastError = {
@@ -2868,7 +2846,7 @@ async function addQueueJob(job, { replaceTerminal = false } = {}) {
   }
   const jobsAheadForOrganization = await CVProcessingJob.countDocuments({
     organization: job.organization,
-    state: { $in: ['queued', 'waiting_for_local_runtime', 'processing'] },
+    state: { $in: ['queued', 'waiting_for_chatgpt', 'processing'] },
     createdAt: { $lt: job.createdAt }
   });
   const queued = await q.add('analyze-cv', { processingJobId: String(job._id) }, {
@@ -2918,7 +2896,7 @@ async function retryFailedJob(publicId, {
   if (job.state !== 'failed') {
     throw manualRetryError(
       'CV_RETRY_NOT_FAILED',
-      ['queued', 'waiting_for_local_runtime', 'processing'].includes(job.state)
+      ['queued', 'waiting_for_chatgpt', 'processing'].includes(job.state)
         ? 'This CV processing job is already queued or running'
         : 'Only failed CV processing jobs can be retried'
     );
@@ -3047,11 +3025,11 @@ async function retryJobNow(publicId, { requestedBy, stage = 'failed' } = {}) {
   if (job.state === 'failed') {
     return retryFailedJob(job.publicId, {
       administrator: true,
-      requestedBy: requestedBy || { type: 'system', name: 'Local Control Center' },
+      requestedBy: requestedBy || { type: 'system', name: 'Seemplify ChatGPT Gateway' },
       stage
     });
   }
-  if (job.state !== 'waiting_for_local_runtime') {
+  if (job.state !== 'waiting_for_chatgpt') {
     throw manualRetryError(
       'CV_RETRY_NOT_WAITING',
       job.state === 'processing' ? 'This CV is already processing' : 'This CV job is not waiting for a retry'
@@ -3066,13 +3044,13 @@ async function retryJobNow(publicId, { requestedBy, stage = 'failed' } = {}) {
     await queued.promote();
   }
   await CVProcessingJob.updateOne(
-    { _id: job._id, state: 'waiting_for_local_runtime' },
+    { _id: job._id, state: 'waiting_for_chatgpt' },
     {
       $set: {
         state: 'queued',
         'retry.pendingTrigger': 'manual',
         'retry.lastRequestedAt': new Date(),
-        'retry.lastRequestedBy': retryActor(requestedBy || { type: 'system', name: 'Local Control Center' })
+        'retry.lastRequestedBy': retryActor(requestedBy || { type: 'system', name: 'Seemplify ChatGPT Gateway' })
       },
       $unset: { 'retry.nextAttemptAt': 1 },
       $inc: { 'retry.manualRequests': 1 }
@@ -3092,7 +3070,7 @@ async function retryJobNow(publicId, { requestedBy, stage = 'failed' } = {}) {
 async function promoteWaitingJobsForOrganization(organizationId, { limit = 25 } = {}) {
   const waiting = await CVProcessingJob.find({
     organization: organizationId,
-    state: 'waiting_for_local_runtime',
+    state: 'waiting_for_chatgpt',
     source: { $ne: 'ai-interview' }
   }).sort({ createdAt: 1 }).limit(Math.max(1, limit)).select('publicId').lean();
   let promoted = 0;
@@ -3193,7 +3171,7 @@ async function startStorageCleanupMaintenance() {
 async function recoverStaleJobs() {
   const q = await getQueue();
   const stale = await CVProcessingJob.find({
-    state: { $in: ['queued', 'waiting_for_local_runtime', 'processing'] },
+    state: { $in: ['queued', 'waiting_for_chatgpt', 'processing'] },
     updatedAt: { $lt: new Date(Date.now() - 60_000) },
     $or: [
       { 'billing.required': { $ne: true } },
@@ -3250,74 +3228,7 @@ async function recoverStaleJobs() {
 }
 
 async function publishTelemetry() {
-  // The workstation Control Center is an explicitly local development tool.
-  // Production queue state is already exposed by Recruiter's own admin SSE;
-  // publishing it to LOCAL_LLM_BASE_URL would recreate an external dependency
-  // and let a laptop pause or throttle the production queue.
-  if (String(process.env.LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED || '').trim().toLowerCase() !== 'true') {
-    return false;
-  }
-  if (telemetryPublishPromise) {
-    await telemetryPublishPromise;
-    return publishTelemetry();
-  }
-  telemetryPublishPromise = (async () => {
-  const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
-  const baseUrl = String(process.env.LOCAL_LLM_BASE_URL || '').replace(/\/+$/, '');
-  if (!secret || !baseUrl) return false;
-  const snapshot = await telemetry();
-  const body = JSON.stringify({
-    schemaVersion: 2,
-    waiting: Number(snapshot.counts.waiting || 0) + Number(snapshot.counts.prioritized || 0),
-    active: snapshot.counts.active,
-    delayed: snapshot.counts.delayed,
-    completed: snapshot.counts.completed,
-    failed: snapshot.counts.failed,
-    oldestWaitMs: snapshot.oldestQueuedAt ? Date.now() - new Date(snapshot.oldestQueuedAt).getTime() : 0,
-    paused: snapshot.paused,
-    workerConcurrency: workerConcurrency(),
-    available: snapshot.available,
-    queue: snapshot.queue,
-    sampledAt: snapshot.sampledAt,
-    counts: snapshot.counts,
-    durable: snapshot.durable,
-    rates: snapshot.rates,
-    history: snapshot.history,
-    retention: snapshot.retention,
-    worker: snapshot.worker,
-    queues: snapshot.queues,
-    oldestQueuedAt: snapshot.oldestQueuedAt,
-    recentJobs: snapshot.recentJobs
-  });
-  const signed = signLocalRequest(secret, body, {
-    method: 'POST',
-    path: '/v1/queue-telemetry'
-  });
-  const response = await telemetryTransport({
-    url: `${baseUrl}/v1/queue-telemetry`,
-    headers: {
-      'content-type': 'application/json',
-      'x-seemplify-timestamp': signed.timestamp,
-      'x-seemplify-nonce': signed.nonce,
-      'x-seemplify-signature': signed.signature
-    },
-    body,
-    signal: typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(8_000) : undefined
-  });
-  if (!response.ok) return false;
-  const control = response.payload || {};
-  const desiredConcurrency = Math.max(1, Math.min(128, Number(control.desiredConcurrency || concurrency)));
-  await synchronizeGlobalDispatchControl({
-    limit: Number.isFinite(desiredConcurrency) ? desiredConcurrency : concurrency,
-    ...(typeof control.desiredPaused === 'boolean' ? { paused: control.desiredPaused } : {})
-  });
   return true;
-  })();
-  try {
-    return await telemetryPublishPromise;
-  } finally {
-    telemetryPublishPromise = null;
-  }
 }
 
 async function initWorker() {
@@ -3328,7 +3239,7 @@ async function initWorker() {
   try {
     await CVProcessingJob.updateMany(
       {
-        state: { $in: ['queued', 'waiting_for_local_runtime', 'processing'] },
+        state: { $in: ['queued', 'waiting_for_chatgpt', 'processing'] },
         expiresAt: { $exists: true }
       },
       { $unset: { expiresAt: 1 } }
@@ -3423,7 +3334,7 @@ async function getStatus(publicId, statusToken) {
   if (job.state === 'completed' && job.candidate && typeof job.candidate === 'object') {
     result.candidate = job.candidate.toObject ? job.candidate.toObject() : job.candidate;
   }
-  if (['queued', 'waiting_for_local_runtime'].includes(job.state)) {
+  if (['queued', 'waiting_for_chatgpt'].includes(job.state)) {
     try {
       const q = await getQueue();
       const waiting = await q.getJobs(['prioritized', 'waiting', 'delayed'], 0, 5000, true);
@@ -3464,7 +3375,7 @@ async function loadRecentExternalAudits(limit = TELEMETRY_RECENT_LIMIT) {
 }
 
 async function loadExternalTelemetrySnapshot({ oneHourAgo, fiveMinutesAgo }) {
-  const states = ['queued', 'waiting_for_local_runtime', 'processing', 'completed', 'failed'];
+  const states = ['queued', 'waiting_for_chatgpt', 'processing', 'completed', 'failed'];
   const [
     stateCounts,
     recent,
@@ -3492,7 +3403,7 @@ async function loadExternalTelemetrySnapshot({ oneHourAgo, fiveMinutesAgo }) {
       .lean(),
     CVProcessingAudit.findOne({
       producer: 'ai-interview',
-      state: { $in: ['queued', 'waiting_for_local_runtime'] }
+      state: { $in: ['queued', 'waiting_for_chatgpt'] }
     })
       .sort({ jobCreatedAt: 1 })
       .select('jobCreatedAt')
@@ -3566,14 +3477,14 @@ async function telemetry() {
     retrying,
     historyStateRows
   ] = await Promise.all([
-    CVProcessingJob.findOne({ state: { $in: ['queued', 'waiting_for_local_runtime'] } })
+    CVProcessingJob.findOne({ state: { $in: ['queued', 'waiting_for_chatgpt'] } })
       .sort({ createdAt: 1 })
       .select('createdAt')
       .lean(),
     CVProcessingJob.aggregate([
       { $group: { _id: '$state', count: { $sum: 1 } } }
     ]),
-    CVProcessingJob.find({ state: { $in: ['queued', 'waiting_for_local_runtime', 'processing'] } })
+    CVProcessingJob.find({ state: { $in: ['queued', 'waiting_for_chatgpt', 'processing'] } })
       .sort({ updatedAt: -1 })
       .limit(12)
       .select('publicId source state stage progress attempts createdAt startedAt completedAt failedAt updatedAt lastError.code')
@@ -3592,7 +3503,7 @@ async function telemetry() {
     CVProcessingJob.countDocuments({ state: 'completed', completedAt: { $gte: oneHourAgo } }),
     CVProcessingJob.countDocuments({ state: 'failed', failedAt: { $gte: oneHourAgo } }),
     CVProcessingJob.countDocuments({
-      state: { $in: ['queued', 'waiting_for_local_runtime', 'processing'] },
+      state: { $in: ['queued', 'waiting_for_chatgpt', 'processing'] },
       attempts: { $gt: 1 }
     }),
     CVProcessingAudit.aggregate([
@@ -3632,8 +3543,8 @@ async function telemetry() {
   const externalRecentJobs = (externalSnapshot.recent || []).map(auditOperationalJob);
   const recentJobs = [...ownRecentJobs, ...externalRecentJobs]
     .sort((left, right) => {
-      const leftActive = ['queued', 'waiting_for_local_runtime', 'processing'].includes(left.state) ? 0 : 1;
-      const rightActive = ['queued', 'waiting_for_local_runtime', 'processing'].includes(right.state) ? 0 : 1;
+      const leftActive = ['queued', 'waiting_for_chatgpt', 'processing'].includes(left.state) ? 0 : 1;
+      const rightActive = ['queued', 'waiting_for_chatgpt', 'processing'].includes(right.state) ? 0 : 1;
       if (leftActive !== rightActive) return leftActive - rightActive;
       return new Date(right.updatedAt || 0) - new Date(left.updatedAt || 0);
     })
@@ -3650,7 +3561,7 @@ async function telemetry() {
     sampledAt: sampledAt.toISOString(),
     durable: {
       queued: Number(durable.queued || 0) + Number(externalDurable.queued || 0),
-      waitingForRuntime: Number(durable.waiting_for_local_runtime || 0) + Number(externalDurable.waiting_for_local_runtime || 0),
+      waitingForRuntime: Number(durable.waiting_for_chatgpt || 0) + Number(externalDurable.waiting_for_chatgpt || 0),
       processing: Number(durable.processing || 0) + Number(externalDurable.processing || 0),
       completed: Number(durable.completed || 0) + Number(externalDurable.completed || 0),
       failed: Number(durable.failed || 0) + Number(externalDurable.failed || 0),
@@ -3671,7 +3582,7 @@ async function telemetry() {
       completed: Number(historyStates.completed || 0),
       failed: Number(historyStates.failed || 0),
       active: Number(historyStates.queued || 0)
-        + Number(historyStates.waiting_for_local_runtime || 0)
+        + Number(historyStates.waiting_for_chatgpt || 0)
         + Number(historyStates.processing || 0)
     },
     retention: {
@@ -3689,7 +3600,7 @@ async function telemetry() {
         durable: Object.fromEntries(Object.entries(durable).map(([key, value]) => [key, Number(value || 0)]))
       },
       {
-        name: 'ai-interview-cv-analysis-local',
+        name: 'ai-interview-cv-analysis-chatgpt',
         producer: 'ai-interview',
         durable: externalDurable
       }
@@ -3708,7 +3619,7 @@ async function telemetry() {
     counts.waiting = Number(counts.waiting || 0) + Number(externalDurable.queued || 0);
     counts.waitingTotal = Number(counts.waiting || 0) + Number(counts.prioritized || 0);
     counts.active = Number(counts.active || 0) + Number(externalDurable.processing || 0);
-    counts.delayed = Number(counts.delayed || 0) + Number(externalDurable.waiting_for_local_runtime || 0);
+    counts.delayed = Number(counts.delayed || 0) + Number(externalDurable.waiting_for_chatgpt || 0);
     counts.completed = Number(counts.completed || 0) + Number(externalDurable.completed || 0);
     counts.failed = Number(counts.failed || 0) + Number(externalDurable.failed || 0);
     const sharedWorker = sharedDispatchWorkerState(dispatchState, { ownActive });
@@ -3786,7 +3697,7 @@ async function adminTelemetry() {
     adminJobsFromAudits(recruiterAudits.filter((audit) => !liveRecruiterIds.has(audit.publicId))),
     adminJobsFromAudits(externalAudits)
   ]);
-  const activityRank = (job) => ['queued', 'waiting_for_local_runtime', 'processing'].includes(job.state) ? 0 : 1;
+  const activityRank = (job) => ['queued', 'waiting_for_chatgpt', 'processing'].includes(job.state) ? 0 : 1;
   const mergedJobs = [...new Map([
     ...retainedRecruiterJobs,
     ...externalJobs,
@@ -3865,7 +3776,6 @@ function setDependenciesForTests(overrides = {}) {
   if (overrides.cloudinary) cloudinary = overrides.cloudinary;
   if (overrides.durableFileStore) durableFileStore = overrides.durableFileStore;
   if (overrides.enqueueJob) enqueueJob = overrides.enqueueJob;
-  if (overrides.telemetryTransport) telemetryTransport = overrides.telemetryTransport;
   if (overrides.dispatchInferenceRunner) {
     runInferenceWithGlobalPermit = overrides.dispatchInferenceRunner;
   }
@@ -3882,7 +3792,6 @@ function resetDependenciesForTests() {
   cloudinary = defaultCloudinary;
   durableFileStore = durableCvFileStore;
   enqueueJob = (...args) => addQueueJob(...args);
-  telemetryTransport = defaultTelemetryTransport;
   runInferenceWithGlobalPermit = defaultDispatchInferenceRunner;
   completionEffectHandlers = { ...defaultCompletionEffectHandlers };
 }
@@ -3899,7 +3808,6 @@ async function closeForTests() {
   dispatchControlTimer = null;
   if (telemetryDebounceTimer) clearTimeout(telemetryDebounceTimer);
   telemetryDebounceTimer = null;
-  telemetryPublishPromise = null;
   if (initRetryTimer) clearInterval(initRetryTimer);
   initRetryTimer = null;
   historyBackfillPromise = null;
@@ -4025,7 +3933,7 @@ async function getBatchStatus(publicId, organizationId) {
   await repairCommittedBatchJobs(jobs);
   const completedJobs = jobs.filter((job) => job.state === 'completed');
   const failedJobs = jobs.filter((job) => job.state === 'failed');
-  const waitingJobs = jobs.filter((job) => ['queued', 'waiting_for_local_runtime'].includes(job.state));
+  const waitingJobs = jobs.filter((job) => ['queued', 'waiting_for_chatgpt'].includes(job.state));
   const activeJobs = jobs.filter((job) => job.state === 'processing');
   const completed = completedJobs.length + failedJobs.length + batch.rejected.length;
   // A parked job looks identical to a slow one from the outside. Carrying the
@@ -4047,7 +3955,7 @@ async function getBatchStatus(publicId, organizationId) {
     queued: waitingJobs.length,
     state: completed >= batch.totalFiles
       ? 'completed'
-      : waitingJobs.some((job) => job.state === 'waiting_for_local_runtime') ? 'waiting_for_local_runtime' : 'processing',
+      : waitingJobs.some((job) => job.state === 'waiting_for_chatgpt') ? 'waiting_for_chatgpt' : 'processing',
     results: completedJobs.map((job) => ({ fileName: job.originalName, candidateId: String(job.candidate), success: true })),
     errors: [
       ...batch.rejected.map((item) => ({ fileName: item.fileName, error: item.error, success: false })),
@@ -4093,7 +4001,7 @@ async function retryBatchNow(publicId, organizationId, requestedBy) {
       }
       continue;
     }
-    if (!['waiting_for_local_runtime', 'failed'].includes(job.state)) continue;
+    if (!['waiting_for_chatgpt', 'failed'].includes(job.state)) continue;
     try {
       await retryJobNow(job.publicId, { requestedBy });
       promoted += 1;

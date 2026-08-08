@@ -12,7 +12,7 @@ const gptAnalysisService = require('../services/gptAnalysisService');
 const websocketService = require('../services/websocketService');
 const RetryHelper = require('../utils/retryHelper');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
-const { GROQ_120B } = require('../config/aiRuntimeCatalog');
+const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
 
 // Promisify fs.unlink for deleting temporary files
 const unlinkAsync = util.promisify(fs.unlink);
@@ -1324,7 +1324,7 @@ exports.getCacheStats = async (req, res) => {
 // Get AI matching system status and configuration
 exports.getGPTStatus = async (req, res) => {
   try {
-    const activeModel = GROQ_120B;
+    const activeModel = CHATGPT_MODEL;
     const activeToggle = process.env.ENABLE_LLM_MATCHING ?? process.env.ENABLE_GPT_MATCHING;
 
     res.json({

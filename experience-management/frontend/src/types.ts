@@ -246,7 +246,6 @@ export interface AssistantOverview {
   configured: boolean; callbackUrl?: string; configurationError?: string | null; connections: AssistantConnection[];
   worker?: { running: boolean; active: number; queued: number; concurrency: number };
   ai?: { ready: boolean; providerLabel?: string; model?: string; error?: string | null };
-  terra?: { ready: boolean; providerLabel?: string; model?: string; error?: string | null };
 }
 export type AssistantActionStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
 export type AssistantActionPriority = 'low' | 'normal' | 'high' | 'urgent';

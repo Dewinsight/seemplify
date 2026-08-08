@@ -19,15 +19,14 @@ async function mockAuthenticatedShell(page: Page) {
     }
   } }));
   await page.route('**/api/runtime', (route) => route.fulfill({ json: {
-    terra: { ready: true, reachable: true, providerLabel: 'Local runtime' },
-    ai: { preference: { provider: 'terra', effectiveProvider: 'terra' } }
+    ai: { preference: { provider: 'codex', effectiveProvider: 'codex' } }
   } }));
   await page.route('**/api/ai-provider', (route) => route.fulfill({ json: {
     preference: {
-      provider: 'terra', effectiveProvider: 'terra', runtimeChoice: 'local', codexModel: null,
+      provider: 'codex', effectiveProvider: 'codex', runtimeChoice: 'chatgpt', codexModel: null,
       codexReasoningEffort: null, codexActionOverrides: {}, codexDataSharingAcknowledgedAt: null, updatedAt: null
     },
-    runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt', effectiveProvider: 'terra' },
+    runtimePolicy: { chatgptEnabled: true, defaultRuntime: 'chatgpt', effectiveProvider: 'codex' },
     codex: { available: true, account: { connected: false, email: null, planType: null, pendingLogin: false,
       loginError: null }, models: [], actions: [], selectedModel: null, error: null }
   } }));

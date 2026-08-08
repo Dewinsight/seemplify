@@ -7,11 +7,10 @@ import { after, test } from 'node:test';
 import request from 'supertest';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-journey-stage-reprojection-'));
-const files = Object.fromEntries(['admin-password', 'session-secret', 'terra-secret', 'x-key', 'esign-key', 'identity-key']
+const files = Object.fromEntries(['admin-password', 'session-secret', 'x-key', 'esign-key', 'identity-key']
   .map((name) => [name, path.join(root, name)]));
 fs.writeFileSync(files['admin-password']!, 'Journey-Reprojection-Test-2026!');
 fs.writeFileSync(files['session-secret']!, 'journey-reprojection-test-session-secret-that-is-long-enough');
-fs.writeFileSync(files['terra-secret']!, 'journey-reprojection-test-terra-secret-that-is-long-enough');
 fs.writeFileSync(files['x-key']!, Buffer.alloc(32, 61).toString('base64url'));
 fs.writeFileSync(files['esign-key']!, Buffer.alloc(32, 62).toString('base64url'));
 fs.writeFileSync(files['identity-key']!, crypto.randomBytes(48));
@@ -19,8 +18,7 @@ Object.assign(process.env, {
   DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'),
   FRONTEND_DIST: path.join(root, 'missing-frontend'), PUBLIC_URL: 'http://127.0.0.1:5412',
   ADMIN_EMAIL: 'journey-reprojection@seemplify.local', ADMIN_PASSWORD_FILE: files['admin-password'],
-  SESSION_SECRET_FILE: files['session-secret'], TERRA_GATEWAY_SHARED_SECRET_FILE: files['terra-secret'],
-  LOCAL_LLM_SHARED_SECRET_FILE: files['terra-secret'], EMAIL_MODE: 'log',
+  SESSION_SECRET_FILE: files['session-secret'], EMAIL_MODE: 'log',
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: files['x-key'], ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: files['esign-key'], JOURNEY_IDENTITY_HASH_KEY_FILE: files['identity-key'],
   X_SEED_CONSUMER_KEY_FILE: path.join(root, 'missing-x-key'),

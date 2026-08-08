@@ -133,7 +133,7 @@ test('multi-account X listening shows billing waits and keeps reply drafts human
   replyDrafts = replyDrafts.map((draft) => ({ ...draft, state: 'ready',
     generatedContent: 'Sorry about the setup trouble. We can help you get unblocked.',
     content: 'Sorry about the setup trouble. We can help you get unblocked.',
-    rationale: 'Acknowledges the issue and offers help.', runtime: { provider: 'terra' }, completedAt: now, updatedAt: now }));
+    rationale: 'Acknowledges the issue and offers help.', runtime: { provider: 'codex' }, completedAt: now, updatedAt: now }));
 
   const editor = page.getByLabel('Editable draft');
   await expect(editor).toHaveValue('Sorry about the setup trouble. We can help you get unblocked.', { timeout: 8_000 });
@@ -470,7 +470,7 @@ test('Intelligence combines immutable survey and social report snapshots into sa
       opportunities: [{ title: 'Guided checklist', detail: 'Show a role-aware setup checklist.', confidence: 0.84, evidence: [] }],
       recommendations: [{ action: 'Ship a role-aware setup checklist', rationale: 'Addresses the strongest shared signal.', priority: 'high', evidence: [] }],
       limitations: ['The social report covers a seven-day recent-search window.']
-    }, runtime: { provider: 'terra', usage: { totalTokens: 1840 }, latencyMs: 12100 }, aiJobId: 'combined-job', error: null,
+    }, runtime: { provider: 'codex', usage: { totalTokens: 1840 }, latencyMs: 12100 }, aiJobId: 'combined-job', error: null,
     createdAt: now, completedAt: now, updatedAt: now
   }];
   let createPayload: any = null;

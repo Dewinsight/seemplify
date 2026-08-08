@@ -35,7 +35,6 @@ import {
 import { nylasSecretEncryptionConfigured } from './nylasSecrets.js';
 import { getSpaceForUser, resolveRequestSpace, SpaceError } from './spaces.js';
 import { assertCanQueueAiAction, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
-import { getTerraStatus } from './terraClient.js';
 import { normalizeEmailDraftHtml } from './emailDraftHtml.js';
 
 const providerInput = z.object({ provider: z.enum(['google', 'microsoft']) }).strict();
@@ -422,21 +421,13 @@ assistantRouter.get('/overview', async (request, response) => {
     const { user, space } = identity(request);
     const credentialsConfigured = nylasConfigured(); const encryptionConfigured = nylasSecretEncryptionConfigured();
     const preference = getAiProviderPreference(user.id, space.id);
-    const [terraStatus, providerState] = await Promise.all([
-      getTerraStatus() as Promise<any>,
-      preference.provider === 'codex' ? getAiProviderState(user.id, space.id) : Promise.resolve(null)
-    ]);
-    const aiStatus = preference.provider === 'codex' ? {
+    const providerState = await getAiProviderState(user.id, space.id);
+    const aiStatus = {
       ready: providerState?.codex.account.connected === true,
       providerLabel: 'ChatGPT / Codex',
       model: providerState?.codex.selectedModel || preference.codexModel,
       error: providerState?.codex.error || providerState?.codex.account.loginError
         || (providerState?.codex.account.connected ? null : 'ChatGPT is not connected.')
-    } : {
-      ready: terraStatus.ready === true,
-      providerLabel: terraStatus.providerLabel || terraStatus.provider?.label || null,
-      model: terraStatus.model || terraStatus.health?.model || null,
-      error: terraStatus.error || (terraStatus.ready === true ? null : 'The local AI runtime is not ready.')
     };
     return response.json({
       configured: credentialsConfigured && encryptionConfigured,
@@ -445,13 +436,7 @@ assistantRouter.get('/overview', async (request, response) => {
         : !encryptionConfigured ? 'Nylas credential encryption is not configured.' : null,
       connections: listNylasConnections(user.id, space.id),
       worker: assistantWorkerStatus(user.id, space.id),
-      ai: aiStatus,
-      terra: {
-        ready: terraStatus.ready === true,
-        providerLabel: terraStatus.providerLabel || terraStatus.provider?.label || null,
-        model: terraStatus.model || terraStatus.health?.model || null,
-        error: terraStatus.error || (terraStatus.ready === true ? null : 'Terra is not ready.')
-      }
+      ai: aiStatus
     });
   } catch (error) { return assistantError(response, error); }
 });

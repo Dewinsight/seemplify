@@ -58,7 +58,7 @@ type Defaults = {
   codexModel: string | null;
   codexReasoningEffort: string | null;
   codexActionOverrides: Record<string, { model: string | null; reasoningEffort: string | null }>;
-  runtimePolicy: { localEnabled: boolean; chatgptEnabled: boolean; defaultRuntime: 'local' | 'chatgpt' };
+  runtimePolicy: { chatgptEnabled: boolean; chatgptEnabled: boolean; defaultRuntime: 'chatgpt' | 'chatgpt' };
   updatedAt: string | null;
 };
 
@@ -87,7 +87,7 @@ async function installControlPlaneMocks(page: Page) {
     codexModel: null,
     codexReasoningEffort: null,
     codexActionOverrides: {},
-    runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt' },
+    runtimePolicy: { chatgptEnabled: true, defaultRuntime: 'chatgpt' },
     updatedAt: null
   };
   const writes: Defaults[] = [];
@@ -194,7 +194,7 @@ async function installControlPlaneMocks(page: Page) {
     }
     if (path === '/api/platform-admin/ai-defaults' && method === 'DELETE') {
       defaults = { codexModel: null, codexReasoningEffort: null, codexActionOverrides: {},
-        runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt' }, updatedAt: '2026-08-04T01:20:00.000Z' };
+        runtimePolicy: { chatgptEnabled: true, defaultRuntime: 'chatgpt' }, updatedAt: '2026-08-04T01:20:00.000Z' };
       return json(route, { defaults });
     }
     unhandled.push(`${method} ${path}`);
@@ -284,7 +284,7 @@ test.describe('platform administrator control plane', () => {
     await page.getByLabel('Default reasoning effort').selectOption('max');
     await page.getByLabel('Model for Analyst chat').selectOption('gpt-5.6-luna');
     await page.getByLabel('Effort for Analyst chat').selectOption('xhigh');
-    await page.getByRole('checkbox', { name: /Local AI runtime/ }).uncheck();
+    await page.getByRole('checkbox', { name: /Connected ChatGPT/ }).uncheck();
     await page.getByRole('button', { name: 'Save policy' }).click();
     await expect(page.getByText('Platform Codex defaults saved.')).toBeVisible();
     expect(mock.writes).toHaveLength(1);
@@ -294,7 +294,7 @@ test.describe('platform administrator control plane', () => {
       codexActionOverrides: {
         'analyst.chat': { model: 'gpt-5.6-luna', reasoningEffort: 'xhigh' }
       },
-      runtimePolicy: { localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+      runtimePolicy: { chatgptEnabled: true, defaultRuntime: 'chatgpt' }
     });
 
     page.once('dialog', (dialog) => dialog.accept());

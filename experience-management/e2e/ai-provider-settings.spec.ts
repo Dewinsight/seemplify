@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('settings connects ChatGPT, records consent, selects a Codex model, and returns to local AI', async ({ page }, testInfo) => {
+test('settings connects ChatGPT, records consent, and configures the connected Codex model', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop browser covers the AI provider settings flow.');
   test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'This test uses a deterministic fake ChatGPT device flow.');
 
@@ -10,8 +10,8 @@ test('settings connects ChatGPT, records consent, selects a Codex model, and ret
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
 
-  let provider: 'terra' | 'codex' = 'terra';
-  let runtimeChoice: 'local' | 'chatgpt' | null = 'local';
+  let provider: 'codex' = 'codex';
+  let runtimeChoice: 'chatgpt' = 'chatgpt';
   let connected = false;
   let pendingLogin = false;
   let finishLogin = false;
@@ -57,6 +57,9 @@ test('settings connects ChatGPT, records consent, selects a Codex model, and ret
       codexActionOverrides: userDefaultsCleared ? {} : actionOverrides,
       codexDataSharingAcknowledgedAt: acknowledgedAt, updatedAt: acknowledgedAt
     },
+    runtimePolicy: {
+      chatgptEnabled: true, defaultRuntime: 'chatgpt', effectiveProvider: 'codex'
+    },
     codex: {
       available: true,
       account: {
@@ -100,8 +103,8 @@ test('settings connects ChatGPT, records consent, selects a Codex model, and ret
     } else if (method === 'PATCH') {
       const body = route.request().postDataJSON();
       patches.push(body);
-      provider = body.provider;
-      runtimeChoice = body.provider === 'codex' ? 'chatgpt' : 'local';
+      provider = 'codex';
+      runtimeChoice = 'chatgpt';
       if (body.codexModel) selectedModel = body.codexModel;
       if ('codexModel' in body || 'codexReasoningEffort' in body || 'codexActionOverrides' in body) userDefaultsCleared = false;
       if ('codexReasoningEffort' in body) defaultEffort = body.codexReasoningEffort;
@@ -122,21 +125,20 @@ test('settings connects ChatGPT, records consent, selects a Codex model, and ret
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cancelled: true }) });
   });
   await page.route('**/api/ai-provider/codex/disconnect', async (route) => {
-    provider = 'terra'; runtimeChoice = 'local'; connected = false; pendingLogin = false; acknowledgedAt = null;
+    provider = 'codex'; runtimeChoice = 'chatgpt'; connected = false; pendingLogin = false; acknowledgedAt = null;
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state()) });
   });
   await page.route('**/api/runtime', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
-    body: JSON.stringify({ terra: { ready: true, providerLabel: 'Terra test runtime' }, ai: { preference: { provider: 'terra' }, codex: null } })
+    body: JSON.stringify({ ai: { preference: { provider: 'codex' }, codex: { account: { connected }, selectedModel } } })
   }));
 
   await page.goto('/settings/space');
   const settings = page.getByTestId('ai-provider-settings');
   await expect(settings.getByRole('heading', { name: 'AI runtime' })).toBeVisible();
-  const localChoice = settings.getByRole('button', { name: /Local AI runtime/ });
   const codexChoice = settings.getByRole('button', { name: /ChatGPT \/ Codex/ });
   await expect(settings.getByTestId('chatgpt-runtime-attribution').first()).toContainText('Powered by ChatGPT');
-  await expect(localChoice).toHaveAttribute('aria-pressed', 'true');
+  await expect(codexChoice).toHaveAttribute('aria-pressed', 'false');
   await expect(codexChoice).toBeDisabled();
 
   await settings.getByRole('button', { name: 'Connect ChatGPT' }).click();
@@ -191,16 +193,13 @@ test('settings connects ChatGPT, records consent, selects a Codex model, and ret
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.setViewportSize({ width: 1440, height: 1000 });
 
-  await localChoice.click();
-  await expect(localChoice).toHaveAttribute('aria-pressed', 'true');
   await settings.getByLabel('Default Codex model').selectOption('gpt-test-codex-fast');
-  await expect(localChoice).toHaveAttribute('aria-pressed', 'true');
-  await expectPatch({
-    provider: 'terra', codexModel: 'gpt-test-codex-fast', codexReasoningEffort: 'max',
-    codexActionOverrides: { 'analyst.chat': { model: 'gpt-test-codex-fast', reasoningEffort: 'max' } }
-  });
-  await codexChoice.click();
   await expect(codexChoice).toHaveAttribute('aria-pressed', 'true');
+  await expectPatch({
+    provider: 'codex', codexModel: 'gpt-test-codex-fast', codexReasoningEffort: 'max',
+    codexActionOverrides: { 'analyst.chat': { model: 'gpt-test-codex-fast', reasoningEffort: 'max' } },
+    codexDataSharingAcknowledged: true
+  });
 
   models.splice(models.findIndex((model) => model.id === 'gpt-test-codex-fast'), 1);
   await page.reload();
@@ -249,11 +248,11 @@ test('settings connects ChatGPT, records consent, selects a Codex model, and ret
   await expect(settings.getByRole('button', { name: 'Using platform defaults' })).toBeDisabled();
 
   await settings.getByRole('checkbox', { name: /Allow OpenAI processing for this space/ }).uncheck();
-  await expect(localChoice).toHaveAttribute('aria-pressed', 'true');
-  await expectPatch({ provider: 'terra', codexDataSharingAcknowledged: false });
+  await expect(codexChoice).toHaveAttribute('aria-pressed', 'false');
+  await expectPatch({ provider: 'codex', codexDataSharingAcknowledged: false });
 
   page.once('dialog', (dialog) => dialog.accept());
   await settings.getByRole('button', { name: 'Disconnect' }).click();
-  await expect(localChoice).toHaveAttribute('aria-pressed', 'true');
+  await expect(codexChoice).toHaveAttribute('aria-pressed', 'false');
   await expect(settings.getByRole('button', { name: 'Connect ChatGPT' })).toBeVisible();
 });

@@ -16,7 +16,7 @@ const {
   return { ...runtime, tenantDatabaseName: require('./auth.cjs').tenantDatabaseName };
 })();
 
-const SECRETS = { 'arango-app': 'a', 'arango-provisioner': 'p', 'llm-service': 'l', 'tei-api': 't', 'docling-api': 'd' };
+const SECRETS = { 'arango-app': 'a', 'arango-provisioner': 'p', 'chatgpt-gateway': 'l', 'tei-api': 't', 'docling-api': 'd' };
 
 function publicProfile(profile) {
   return Object.fromEntries(['provider', 'model', 'revision', 'dtype', 'dimensions', 'vectorIndexVersion']

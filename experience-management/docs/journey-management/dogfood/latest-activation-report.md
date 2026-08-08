@@ -24,7 +24,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 
 - Survey and journey milestones are reconciled at the owned-space level where legacy tables do not retain a direct creator user for every artifact.
 - ChatGPT connection and runtime-selection proof depends on platform_audit_events actions emitted by current AI runtime routes; older connections made before this audit hook may be absent.
-- Current runtime-connected signals come from live getAiProviderState resolution and may diverge from the audited event trail when a different local runtime instance handled sign-in.
+- Current runtime-connected signals come from live getAiProviderState resolution and may diverge from the audited event trail when a different ChatGPT gateway instance handled sign-in.
 - Stored runtime preferences and Codex runtime-home/auth-file presence are supportive local signals only; they are not treated as equivalent to a fresh audited ChatGPT connection event.
 - Onboarding and explicit workspace-creation milestones prefer authoritative platform_audit_events when present and fall back to durable account/space records for older histories.
 - This artifact is for internal Seemplify dogfood evidence only and is not customer telemetry ingestion.
@@ -42,7 +42,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -68,7 +68,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -94,7 +94,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): 2026-08-06T19:19:08.333Z
 - ChatGPT connected (audited): 2026-08-06T21:33:49.416Z
 - ChatGPT selected (audited): 2026-08-06T21:49:12.139Z
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -120,8 +120,8 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): 2026-08-06T20:58:09.344Z
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): 2026-08-06T20:58:02.248Z
-- Stored runtime provider: terra
+- ChatGPT gateway selected (audited): 2026-08-06T20:58:02.248Z
+- Stored runtime provider: codex
 - Stored runtime choice: local
 - Stored runtime preference updated: 2026-08-06T20:58:02.242Z
 - Codex runtime home present: yes
@@ -146,7 +146,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -172,7 +172,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -198,7 +198,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -224,7 +224,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -250,7 +250,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -276,7 +276,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -302,7 +302,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -328,7 +328,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -354,7 +354,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -380,7 +380,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -406,7 +406,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -432,7 +432,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -458,7 +458,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -484,7 +484,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -510,7 +510,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -536,7 +536,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -562,7 +562,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -588,7 +588,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -614,7 +614,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -640,7 +640,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -666,7 +666,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -692,7 +692,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -718,7 +718,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -744,7 +744,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -770,7 +770,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -796,7 +796,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -822,7 +822,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -848,7 +848,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -874,7 +874,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -900,7 +900,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -926,7 +926,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -952,7 +952,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -978,7 +978,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1004,7 +1004,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1030,7 +1030,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1056,7 +1056,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1082,7 +1082,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1108,7 +1108,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1134,7 +1134,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1160,7 +1160,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1186,7 +1186,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1212,7 +1212,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1238,7 +1238,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1264,7 +1264,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1290,7 +1290,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1316,7 +1316,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1342,7 +1342,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1368,7 +1368,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1394,7 +1394,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1420,7 +1420,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1446,7 +1446,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1472,7 +1472,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1498,7 +1498,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1524,7 +1524,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1550,7 +1550,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1576,7 +1576,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1602,7 +1602,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1628,7 +1628,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1654,7 +1654,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1680,7 +1680,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1706,7 +1706,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1732,7 +1732,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1758,7 +1758,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1784,7 +1784,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1810,7 +1810,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1836,7 +1836,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1862,7 +1862,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1888,7 +1888,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1914,7 +1914,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1940,7 +1940,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1966,7 +1966,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -1992,7 +1992,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2018,7 +2018,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2044,7 +2044,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2070,7 +2070,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2096,7 +2096,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2122,7 +2122,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2148,7 +2148,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2174,7 +2174,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2200,7 +2200,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2226,7 +2226,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2252,7 +2252,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2278,7 +2278,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2304,7 +2304,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2330,7 +2330,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2356,7 +2356,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —
@@ -2382,7 +2382,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - ChatGPT login started (audited): —
 - ChatGPT connected (audited): —
 - ChatGPT selected (audited): —
-- Local runtime selected (audited): —
+- ChatGPT gateway selected (audited): —
 - Stored runtime provider: —
 - Stored runtime choice: —
 - Stored runtime preference updated: —

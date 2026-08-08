@@ -77,7 +77,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
     callbackUrl: 'http://127.0.0.1:5412/api/integrations/nylas/callback',
     connections: [{ id: connectionId, email: 'michael@example.com', displayName: 'Michael Egbo', provider: 'google', status: 'connected', scopes: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send'], lastHealthAt: now }],
     worker: { running: true, active: 0, queued: 0, concurrency: 4 },
-    terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
+    ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   };
   const thread = {
     id: 'thread-board-review', subject: 'Board pack review', snippet: 'Please confirm the revised customer-risk section by Friday.',
@@ -103,7 +103,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
       id: summaryRunId, jobId: summaryJobId, kind: 'assistant.email_summary', state: 'completed', stage: 'completed', progress: 100,
       connectionId, subjectRef: thread.id,
       output: { summary: request.instructions ? 'The revised customer-risk section needs a reply by Friday.' : 'Ada needs confirmation of the revised customer-risk section by Friday.', keyPoints: ['The board pack is awaiting review.'], actionItems: [{ action: 'Confirm the revised section.', owner: 'Michael', dueDate: 'Friday', sourceMessageId: 'message-3' }], openQuestions: ['Which timezone applies to Friday?'] },
-      runtime: { provider: 'terra', model: 'gpt-5.6-terra', usage: { totalTokens: 412 }, latencyMs: 920 }, error: null,
+      runtime: { provider: 'codex', model: 'gpt-5.6-sol', usage: { totalTokens: 412 }, latencyMs: 920 }, error: null,
       createdAt: now, completedAt: now, updatedAt: now
     };
     runs = [run, ...runs];
@@ -117,7 +117,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
       connectionId, subjectRef: thread.id,
       output: { subject: 'Re: Board pack review', body: 'Hi Ada,\n\nI will review the revised section and confirm by Friday.\n\nRegards,\nMichael', rationale: 'Answers the request without adding an unsupported commitment.', safetyFlags: [] },
       draft: { subject: 'Re: Board pack review', body: 'Hi Ada,\n\nI will review the revised section and confirm by Friday.\n\nRegards,\nMichael', revision: 1, updatedAt: now },
-      runtime: { provider: 'terra', model: 'gpt-5.6-terra', usage: { totalTokens: 355 }, latencyMs: 810 }, error: null,
+      runtime: { provider: 'codex', model: 'gpt-5.6-sol', usage: { totalTokens: 355 }, latencyMs: 810 }, error: null,
       createdAt: now, completedAt: now, updatedAt: now
     };
     runs = [run, ...runs];
@@ -132,7 +132,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
       kind: 'assistant.email_draft', state: 'completed', stage: 'completed', progress: 100,
       connectionId, subjectRef: null,
       draft: { subject: 'Customer account review', body: '<p>Hello,</p><p>Your account review is ready.</p>', revision: 1, updatedAt: now },
-      runtime: { provider: 'terra', model: 'gpt-5.6-terra' }, error: null,
+      runtime: { provider: 'codex', model: 'gpt-5.6-sol' }, error: null,
       createdAt: now, completedAt: now, updatedAt: now
     };
     runs = [run, ...runs];
@@ -174,7 +174,7 @@ test('personal assistant summarises mail, preserves an editable draft, and cites
     const run = {
       id: knowledgeRunId, jobId: knowledgeJobId, kind: 'assistant.knowledge_answer', state: 'completed', stage: 'completed', progress: 100,
       sourceRefs: request.sourceRefs, output: { answer: 'Delayed issue resolution is the strongest supported risk.', citations: [{ sourceRef: sources[0].ref, excerpt: 'Customers report delayed issue resolution.' }] },
-      runtime: { provider: 'terra', model: 'gpt-5.6-terra', usage: { totalTokens: 288 }, latencyMs: 730 }, error: null,
+      runtime: { provider: 'codex', model: 'gpt-5.6-sol', usage: { totalTokens: 288 }, latencyMs: 730 }, error: null,
       createdAt: now, completedAt: now, updatedAt: now
     };
     runs = [run, ...runs];
@@ -264,7 +264,7 @@ test('mailbox switching rejects late thread data and retries with the same idemp
       { id: connectionId, email: 'first@example.com', displayName: 'First mailbox', provider: 'google', status: 'connected' },
       { id: secondConnectionId, email: 'second@example.com', displayName: 'Second mailbox', provider: 'microsoft', status: 'connected' }
     ],
-    worker: { running: true, active: 0, queued: 0, concurrency: 1 }, terra: { ready: true, providerLabel: 'Terra' }
+    worker: { running: true, active: 0, queued: 0, concurrency: 1 }, ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, []));
   await page.route(/\/api\/intelligence\/sources(?:\?.*)?$/, (route) => json(route, []));
@@ -320,7 +320,7 @@ test('revoked mailbox history cannot remain selected or retain actionable thread
       status: revoked ? 'revoked' : 'connected'
     }],
     worker: { running: true, active: 0, queued: 0, concurrency: 1 },
-    terra: { ready: true, providerLabel: 'Terra' }
+    ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, []));
   await page.route(/\/api\/intelligence\/sources(?:\?.*)?$/, (route) => json(route, []));
@@ -354,7 +354,7 @@ test('personal assistant explains missing Nylas setup without exposing a doomed 
     callbackUrl: 'https://experience.aiinnigeria.com/api/integrations/nylas/callback',
     configurationError: 'Nylas application credentials are unavailable.',
     connections: [], worker: { running: true, active: 0, queued: 0, concurrency: 4 },
-    terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
+    ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, []));
   await page.route(/\/api\/intelligence\/sources(?:\?.*)?$/, (route) => json(route, []));
@@ -383,7 +383,7 @@ test('calendar explains an older mailbox grant and offers reconnection', async (
     callbackUrl: 'http://127.0.0.1:5412/api/integrations/nylas/callback',
     connections: [mailbox],
     worker: { running: true, active: 0, queued: 0, concurrency: 4 },
-    terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
+    ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   }));
   await page.route(/\/api\/assistant\/mailbox\/threads(?:\?.*)?$/, (route) => json(route, { items: [], nextCursor: null }));
   await page.route(/\/api\/assistant\/runs(?:\?.*)?$/, (route) => json(route, []));

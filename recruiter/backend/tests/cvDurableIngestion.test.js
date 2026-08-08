@@ -5,8 +5,8 @@ const path = require('path');
 const test = require('node:test');
 
 process.env.REDIS_ENABLED = 'false';
-process.env.LOCAL_LLM_SHARED_SECRET = '';
-process.env.LOCAL_LLM_BASE_URL = '';
+process.env.CHATGPT_GATEWAY_SHARED_SECRET = '';
+process.env.CHATGPT_GATEWAY_BASE_URL = '';
 
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
@@ -392,7 +392,7 @@ test('full shared capacity preserves preprocessed durable state without counting
       && error.code === 'CV_GLOBAL_DISPATCH_DEFERRED'
   );
   const stored = await CVProcessingJob.findById(result.job._id).select('+resumeText').lean();
-  assert.equal(stored.state, 'waiting_for_local_runtime');
+  assert.equal(stored.state, 'waiting_for_chatgpt');
   assert.equal(stored.stage, 'analyzing');
   assert.equal(stored.attempts, 0);
   assert.equal(stored.boundedFailureAttempts, 0);
@@ -404,10 +404,10 @@ test('full shared capacity preserves preprocessed durable state without counting
 test('offline and BUSY deliveries do not consume the five bounded failure attempts', async () => {
   const result = await cvQueue.submitUpload(requestFor(await fixtureFile()), 'private');
   const deferredErrors = [
-    Object.assign(new Error('Local CV runtime could not be reached'), { code: 'AI_LOCAL_UNAVAILABLE' }),
-    Object.assign(new Error('Local CV runtime could not be reached'), { code: 'LOCAL_LLM_UNAVAILABLE' }),
-    Object.assign(new Error('Inference capacity is occupied'), { code: 'LOCAL_LLM_BUSY' }),
-    Object.assign(new Error('Inference capacity is occupied'), { code: 'LOCAL_LLM_BUSY' })
+    Object.assign(new Error('ChatGPT gateway could not be reached'), { code: 'CHATGPT_GATEWAY_UNAVAILABLE' }),
+    Object.assign(new Error('ChatGPT gateway could not be reached'), { code: 'CHATGPT_GATEWAY_UNAVAILABLE' }),
+    Object.assign(new Error('Inference capacity is occupied'), { code: 'CHATGPT_GATEWAY_BUSY' }),
+    Object.assign(new Error('Inference capacity is occupied'), { code: 'CHATGPT_GATEWAY_BUSY' })
   ];
   cvQueue._setDependenciesForTests({
     cloudinary: {
@@ -444,7 +444,7 @@ test('offline and BUSY deliveries do not consume the five bounded failure attemp
       /could not be reached|capacity is occupied/i
     );
     const stored = await CVProcessingJob.findById(result.job._id);
-    assert.equal(stored.state, 'waiting_for_local_runtime');
+    assert.equal(stored.state, 'waiting_for_chatgpt');
     assert.equal(stored.boundedFailureAttempts, 0);
     assert.notEqual(delivery.discarded, true);
   }
@@ -559,7 +559,7 @@ test('five retryable service failures park the recruiter CV for a later durable 
     const delivery = bullJob(result.job, failure - 1);
     await assert.rejects(() => cvQueue._processJobForTests(delivery), /Temporary inference service failure/);
     const stored = await CVProcessingJob.findById(result.job._id);
-    assert.equal(stored.state, failure === 5 ? 'waiting_for_local_runtime' : 'queued');
+    assert.equal(stored.state, failure === 5 ? 'waiting_for_chatgpt' : 'queued');
     assert.equal(stored.boundedFailureAttempts, failure === 5 ? 0 : failure);
     assert.notEqual(delivery.discarded, true);
   }

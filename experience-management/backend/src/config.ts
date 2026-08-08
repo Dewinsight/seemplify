@@ -352,14 +352,6 @@ export const config = {
   esignWorkerPollMs: boundedNumber(process.env.ESIGN_WORKER_POLL_MS, 1000, 250, 60_000),
   esignSigningSessionHours: boundedNumber(process.env.ESIGN_SIGNING_SESSION_HOURS, 12, 1, 72),
   frontendDist: resolveFromBackend(process.env.FRONTEND_DIST || '../frontend/dist'),
-  terraGatewayBaseUrl: String(
-    process.env.TERRA_GATEWAY_BASE_URL || process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435'
-  ).replace(/\/+$/, ''),
-  terraGatewaySecretFile: resolveFromBackend(
-    process.env.TERRA_GATEWAY_SHARED_SECRET_FILE
-      || process.env.LOCAL_LLM_SHARED_SECRET_FILE
-      || '../../.local-runtime/llm/service-secret'
-  ),
   aiWorkerConcurrency: Math.max(1, Math.min(16, Number(process.env.AI_WORKER_CONCURRENCY || 4))),
   nylasClientId: String(process.env.NYLAS_CLIENT_ID || '').trim(),
   nylasApiKey: String(process.env.NYLAS_API_KEY || '').trim(),

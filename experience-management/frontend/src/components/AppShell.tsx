@@ -6,7 +6,6 @@ import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@
 import { cn } from '@/lib/utils';
 import { AuthSessionProvider } from '@/lib/authSessionContext';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { SectionTutorial } from '@/components/tutorials/SectionTutorial';
 import { OpenAiAttribution } from '@/components/brand/OpenAiAttribution';
 import { ChatGptConnectionGate } from '@/components/settings/ChatGptConnectionGate';
@@ -96,10 +95,6 @@ function PendingInvitationBar({ invitations, acceptingId, error, onAccept }: {
 }
 
 type RuntimeState = 'checking' | 'ready' | 'unavailable';
-
-function runtimeName(label: string) {
-  return label.replace(/\s*\([^)]*\)\s*$/, '').trim() || label;
-}
 
 function runtimeSummary(label: string) {
   const match = label.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
@@ -207,7 +202,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [mobileOpen]);
   const loadRuntime = useCallback(async () => {
     try { setRuntime(await api<any>('/api/runtime')); }
-    catch { setRuntime({ terra: { reachable: false } }); }
+    catch { setRuntime({ ai: { codex: { account: { connected: false } } } }); }
   }, []);
   const loadProviderState = useCallback(async () => {
     setProviderStateLoading(true);
@@ -310,14 +305,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
   const editorMode = /^\/agreements\/[^/]+\/prepare$/.test(routePath);
   const title = routePath === '/' ? 'Overview' : routePath === '/settings/profile' ? 'Your profile' : routePath.startsWith('/surveys/') ? 'Survey workspace' : routePath.startsWith('/campaigns/') ? 'Campaign workspace' : routePath.startsWith('/agreements/') ? 'Agreement workspace' : routePath.startsWith('/knowledge-bases/') ? 'Knowledge base workspace' : navigation.find((item) => item.to === routePath)?.label || 'Seemplify Experience';
-  const codexSelected = (runtime?.ai?.preference?.effectiveProvider || runtime?.ai?.preference?.provider) === 'codex';
-  const runtimeReady = codexSelected
-    ? runtime?.ai?.codex?.account?.connected === true
-    : runtime?.terra?.ready === true;
+  const runtimeReady = runtime?.ai?.codex?.account?.connected === true;
   const runtimeState: RuntimeState = runtime === null ? 'checking' : runtimeReady ? 'ready' : 'unavailable';
-  const runtimeLabel = codexSelected
-    ? `ChatGPT / Codex${runtime?.ai?.codex?.selectedModel ? ` · ${runtime.ai.codex.selectedModel}` : ''}`
-    : runtime?.terra?.providerLabel || 'Experience AI';
+  const runtimeLabel = `ChatGPT Connect${runtime?.ai?.codex?.selectedModel ? ` · ${runtime.ai.codex.selectedModel}` : ''}`;
   const creationAction = routePath.startsWith('/agreements') && featureEnabled(session, 'agreements')
     ? { to: '/agreements/new', label: 'New agreement' }
     : (routePath === '/' || routePath.startsWith('/surveys')) && featureEnabled(session, 'surveys')
@@ -361,12 +351,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3"><Button className="shrink-0 md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</div></div>
         <div className="flex shrink-0 items-center gap-2">
           {providerExperienceReady && <SectionTutorial tutorial={tutorial} />}
-          {codexSelected
-            ? <div className="hidden min-w-0 items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 sm:flex" title={runtimeLabel}>
-              <OpenAiAttribution compact showModel model={runtime?.ai?.codex?.selectedModel || undefined} />
-              <span className={cn('shrink-0 text-[11px] font-medium capitalize', runtimeState === 'ready' ? 'text-emerald-700' : runtimeState === 'checking' ? 'text-muted-foreground' : 'text-amber-700')}>{runtimeState}</span>
-            </div>
-            : <Badge variant={runtimeState === 'ready' ? 'success' : runtimeState === 'checking' ? 'outline' : 'warning'} className="hidden sm:inline-flex" title={runtimeLabel}>{runtimeName(runtimeLabel)} {runtimeState}</Badge>}
+          <div className="hidden min-w-0 items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 sm:flex" title={runtimeLabel}>
+            <OpenAiAttribution compact showModel model={runtime?.ai?.codex?.selectedModel || undefined} />
+            <span className={cn('shrink-0 text-[11px] font-medium capitalize', runtimeState === 'ready' ? 'text-emerald-700' : runtimeState === 'checking' ? 'text-muted-foreground' : 'text-amber-700')}>{runtimeState}</span>
+          </div>
           {creationAction && <Button asChild size="sm" className="max-[439px]:w-8 max-[439px]:px-0"><Link to={creationAction.to} aria-label={creationAction.label} title={creationAction.label}><Plus /><span className="max-[439px]:sr-only">{creationAction.label}</span></Link></Button>}
         </div>
       </header>

@@ -71,12 +71,10 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
 
   const initial = await agent.get('/api/ai-provider').expect(200);
   assert.equal(initial.body.preference.provider, 'codex');
-  assert.equal(initial.body.preference.runtimeChoice, null);
+  assert.equal(initial.body.preference.runtimeChoice, 'chatgpt');
   assert.equal(initial.body.codex.account.connected, false);
-  assert.equal(aiProviderSnapshot(null, spaceId).provider, 'terra');
-  const explicitlyLocal = await agent.patch('/api/ai-provider')
-    .send({ provider: 'terra', codexModel: null }).expect(200);
-  assert.equal(explicitlyLocal.body.preference.runtimeChoice, 'local');
+  assert.throws(() => aiProviderSnapshot(null, spaceId), (error: unknown) =>
+    (error as { code?: string }).code === 'AI_RUNTIME_ACCOUNT_REQUIRED');
 
   const login = await agent.post('/api/ai-provider/codex/device-login').send({}).expect(200);
   assert.equal(login.body.userCode, 'TEST-CODE');
@@ -178,75 +176,73 @@ test('device login, consent, model choice, job snapshots, and disconnect are iso
   assert.equal(routed.runtime.model, 'gpt-test-codex-fast');
   assert.equal(routed.runtime.reasoningEffort, 'focused');
   assert.equal(routed.runtime.action, 'analyst.chat');
-  await agent.patch('/api/ai-provider').send({ provider: 'terra' }).expect(200);
-  const configuredWhileLocal = await agent.patch('/api/ai-provider').send({
-    provider: 'terra',
+  await agent.patch('/api/ai-provider').send({ provider: 'codex' }).expect(200);
+  const configuredConnected = await agent.patch('/api/ai-provider').send({
+    provider: 'codex',
     codexModel: 'gpt-test-codex',
     codexReasoningEffort: 'high',
     codexActionOverrides: {
       'report.generate': { model: 'gpt-test-codex', reasoningEffort: 'max' }
     }
   }).expect(200);
-  assert.equal(configuredWhileLocal.body.preference.provider, 'terra');
-  assert.equal(configuredWhileLocal.body.preference.runtimeChoice, 'local');
-  assert.equal(configuredWhileLocal.body.preference.codexReasoningEffort, 'high');
-  assert.deepEqual(configuredWhileLocal.body.preference.codexActionOverrides['report.generate'], {
+  assert.equal(configuredConnected.body.preference.provider, 'codex');
+  assert.equal(configuredConnected.body.preference.runtimeChoice, 'chatgpt');
+  assert.equal(configuredConnected.body.preference.codexReasoningEffort, 'high');
+  assert.deepEqual(configuredConnected.body.preference.codexActionOverrides['report.generate'], {
     model: 'gpt-test-codex', reasoningEffort: 'max'
   });
   assert.equal(effectiveAiProviderSnapshot(userId, spaceId, (queued.input as any)._aiRuntime).provider, 'codex');
   await agent.patch('/api/ai-provider').send({
-    provider: 'terra', codexModel: 'no-longer-available', codexReasoningEffort: 'invalid',
+    provider: 'codex', codexModel: 'no-longer-available', codexReasoningEffort: 'invalid',
     codexActionOverrides: { 'analyst.chat': { model: 'also-invalid', reasoningEffort: 'invalid' } },
     codexDataSharingAcknowledged: false
   }).expect(200);
   assert.equal(getAiProviderPreference(userId, spaceId).codexDataSharingAcknowledgedAt, null);
-  assert.equal(effectiveAiProviderSnapshot(userId, spaceId, (queued.input as any)._aiRuntime).provider, 'terra');
-  await updateAdminCodexDefaults(userId, {
-    runtimePolicy: { localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
-  });
   assert.throws(
     () => effectiveAiProviderSnapshot(userId, spaceId, (queued.input as any)._aiRuntime),
     (error: unknown) => (error as { code?: string }).code
       === 'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED'
   );
   await updateAdminCodexDefaults(userId, {
-    runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+    runtimePolicy: { chatgptEnabled: true, defaultRuntime: 'chatgpt' }
   });
   assert.equal((queued.input as any)._aiRuntime.provider, 'codex');
   assert.equal((queued.input as any)._aiRuntime.codexModel, 'gpt-test-codex-fast');
 
-  const automatic = createAiJobFixture('response.analyze', {}, spaceId, null, null, null);
-  assert.equal((automatic.input as any)._aiRuntime.provider, 'terra');
+  assert.throws(
+    () => createAiJobFixture('response.analyze', {}, spaceId, null, null, null),
+    (error: unknown) => (error as { code?: string }).code === 'AI_RUNTIME_ACCOUNT_REQUIRED'
+  );
 
   setAiProviderPreference(userId, 'another-space', {
     provider: 'codex', codexModel: 'gpt-test-codex', codexDataSharingAcknowledgedAt: new Date().toISOString()
   });
   assert.equal(getAiProviderPreference(userId, 'another-space').runtimeChoice, 'chatgpt');
   assert.equal(aiProviderSnapshot(userId, 'another-space', 'report.generate').codexReasoningEffort, 'high');
-  setAiProviderPreference(userId, 'legacy-local-space', { provider: 'terra' });
+  setAiProviderPreference(userId, 'legacy-space', { provider: 'codex' });
   setAiProviderPreference(userId, 'legacy-chatgpt-space', {
     provider: 'codex', codexDataSharingAcknowledgedAt: new Date().toISOString()
   });
   const legacyFile = JSON.parse(fs.readFileSync(preferenceFile, 'utf8'));
-  delete legacyFile.preferences[`${userId}:legacy-local-space`].runtimeChoice;
+  delete legacyFile.preferences[`${userId}:legacy-space`].runtimeChoice;
   delete legacyFile.preferences[`${userId}:legacy-chatgpt-space`].runtimeChoice;
   fs.writeFileSync(preferenceFile, `${JSON.stringify(legacyFile, null, 2)}\n`);
   resetAiProviderPreferenceCacheForTests();
-  assert.equal(getAiProviderPreference(userId, 'legacy-local-space').runtimeChoice, 'local');
+  assert.equal(getAiProviderPreference(userId, 'legacy-space').runtimeChoice, 'chatgpt');
   assert.equal(getAiProviderPreference(userId, 'legacy-chatgpt-space').runtimeChoice, 'chatgpt');
-  assert.equal(getAiProviderPreference(userId, 'never-configured-space').runtimeChoice, null);
+  assert.equal(getAiProviderPreference(userId, 'never-configured-space').runtimeChoice, 'chatgpt');
   assert.equal(getAiProviderPreference(userId, 'never-configured-space').provider, 'codex');
   await agent.post('/api/ai-provider/codex/disconnect').send({}).expect(200);
-  assert.equal(getAiProviderPreference(userId, spaceId).provider, 'terra');
-  assert.equal(getAiProviderPreference(userId, spaceId).runtimeChoice, 'local');
+  assert.equal(getAiProviderPreference(userId, spaceId).provider, 'codex');
+  assert.equal(getAiProviderPreference(userId, spaceId).runtimeChoice, 'chatgpt');
   assert.equal(getAiProviderPreference(userId, 'another-space').provider, 'codex');
-  assert.equal(getAiProviderPreference(userId, 'another-space').runtimeChoice, null);
-  assert.equal(getAiProviderPreference(userId, 'legacy-local-space').provider, 'terra');
-  assert.equal(getAiProviderPreference(userId, 'legacy-local-space').runtimeChoice, 'local');
+  assert.equal(getAiProviderPreference(userId, 'another-space').runtimeChoice, 'chatgpt');
+  assert.equal(getAiProviderPreference(userId, 'legacy-space').provider, 'codex');
+  assert.equal(getAiProviderPreference(userId, 'legacy-space').runtimeChoice, 'chatgpt');
   assert.equal(getAiProviderPreference(userId, 'legacy-chatgpt-space').provider, 'codex');
-  assert.equal(getAiProviderPreference(userId, 'legacy-chatgpt-space').runtimeChoice, null);
+  assert.equal(getAiProviderPreference(userId, 'legacy-chatgpt-space').runtimeChoice, 'chatgpt');
   assert.equal(getAiProviderPreference(userId, 'never-configured-space').provider, 'codex');
-  assert.equal(getAiProviderPreference(userId, 'never-configured-space').runtimeChoice, null);
+  assert.equal(getAiProviderPreference(userId, 'never-configured-space').runtimeChoice, 'chatgpt');
   assert.equal(getAiProviderPreference(userId, spaceId).codexDataSharingAcknowledgedAt, null);
   assert.equal(getAiProviderPreference(userId, 'another-space').codexDataSharingAcknowledgedAt, null);
   assert.equal(auditActionsFor(userId).at(-1), 'ai_runtime.codex_disconnected');
@@ -400,33 +396,34 @@ test('admin defaults inherit field-by-field, user reset is narrow, and queued ca
 
   resetAiProviderPreferenceCacheForTests();
   assert.equal(getAdminCodexDefaults().codexModel, 'gpt-test-codex-minimal');
-  await agent.patch('/api/ai-provider').send({ provider: 'terra' }).expect(200);
-  assert.equal(aiProviderSnapshot(userId, spaceId, 'analyst.chat').provider, 'terra');
+  await agent.patch('/api/ai-provider').send({ provider: 'codex' }).expect(200);
+  assert.equal(aiProviderSnapshot(userId, spaceId, 'analyst.chat').provider, 'codex');
 
   await updateAdminCodexDefaults(userId, {
-    runtimePolicy: { localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+    runtimePolicy: { chatgptEnabled: false, defaultRuntime: 'chatgpt' }
   });
-  assert.equal(getAiProviderPreference(userId, spaceId).provider, 'terra', 'the user selection remains durable');
-  assert.equal(aiProviderSnapshot(userId, spaceId, 'analyst.chat').provider, 'codex', 'disabled selections fall back');
-  await agent.patch('/api/ai-provider').send({ provider: 'terra' }).expect(403)
+  assert.equal(getAiProviderPreference(userId, spaceId).provider, 'codex', 'the user selection remains durable');
+  assert.throws(() => aiProviderSnapshot(userId, spaceId, 'analyst.chat'), (error: unknown) =>
+    (error as { code?: string }).code === 'AI_RUNTIME_CHATGPT_DISABLED');
+  await agent.patch('/api/ai-provider').send({ provider: 'codex' }).expect(403)
     .expect(({ body }) => assert.equal(body.code, 'AI_RUNTIME_DISABLED'));
 
   await updateAdminCodexDefaults(userId, {
-    runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'local' }
+    runtimePolicy: { chatgptEnabled: true, defaultRuntime: 'chatgpt' }
   });
-  assert.equal(aiProviderSnapshot(userId, 'runtime-policy-unconfigured', 'analyst.chat').provider, 'terra',
-    'the administrator default applies only when a user has no explicit runtime choice');
+  assert.equal(aiProviderSnapshot(userId, 'runtime-policy-unconfigured', 'analyst.chat').provider, 'codex',
+    'the mandatory connected runtime applies to every workspace');
 
   await updateAdminCodexDefaults(userId, {
-    runtimePolicy: { localEnabled: false, chatgptEnabled: false, defaultRuntime: 'local' }
+    runtimePolicy: { chatgptEnabled: false, defaultRuntime: 'chatgpt' }
   });
   assert.throws(() => aiProviderSnapshot(userId, spaceId, 'analyst.chat'), (error: unknown) =>
-    error instanceof Error && 'code' in error && error.code === 'AI_RUNTIMES_DISABLED');
+    error instanceof Error && 'code' in error && error.code === 'AI_RUNTIME_CHATGPT_DISABLED');
   const resetPolicy = await updateAdminCodexDefaults(userId, {
-    runtimePolicy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt' }
+    runtimePolicy: { chatgptEnabled: true, defaultRuntime: 'chatgpt' }
   });
   assert.deepEqual(resetPolicy.runtimePolicy, {
-    localEnabled: true, chatgptEnabled: true, defaultRuntime: 'chatgpt'
+    chatgptEnabled: true, defaultRuntime: 'chatgpt'
   });
 });
 

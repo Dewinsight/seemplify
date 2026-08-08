@@ -10,13 +10,11 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-spaces-'));
 const files = {
   password: path.join(root, 'admin-password'),
   session: path.join(root, 'session-secret'),
-  terra: path.join(root, 'terra-secret'),
   xKey: path.join(root, 'x-key'),
   esignKey: path.join(root, 'esign-key')
 };
 fs.writeFileSync(files.password, 'Spaces-Admin-Password-2026!');
 fs.writeFileSync(files.session, 'spaces-test-session-secret-that-is-long-enough');
-fs.writeFileSync(files.terra, 'spaces-test-terra-secret-that-is-long-enough');
 fs.writeFileSync(files.xKey, Buffer.alloc(32, 41).toString('base64url'));
 fs.writeFileSync(files.esignKey, Buffer.alloc(32, 42).toString('base64url'));
 Object.assign(process.env, {
@@ -27,8 +25,6 @@ Object.assign(process.env, {
   ADMIN_EMAIL: 'owner-a@example.test',
   ADMIN_PASSWORD_FILE: files.password,
   SESSION_SECRET_FILE: files.session,
-  TERRA_GATEWAY_SHARED_SECRET_FILE: files.terra,
-  LOCAL_LLM_SHARED_SECRET_FILE: files.terra,
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: files.xKey,
   ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: files.esignKey,

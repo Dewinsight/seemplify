@@ -12,14 +12,12 @@ const databasePath = path.join(root, 'legacy.sqlite');
 const files = {
   password: path.join(root, 'admin-password'),
   session: path.join(root, 'session-secret'),
-  terra: path.join(root, 'terra-secret'),
   xKey: path.join(root, 'x-key'),
   esignKey: path.join(root, 'esign-key'),
   nylasKey: path.join(root, 'nylas-key')
 };
 fs.writeFileSync(files.password, 'Assistant-Migration-Password-2026!');
 fs.writeFileSync(files.session, 'assistant-migration-session-secret-longer-than-twenty-characters');
-fs.writeFileSync(files.terra, 'assistant-migration-terra-secret-longer-than-twenty-characters');
 fs.writeFileSync(files.xKey, Buffer.alloc(32, 81).toString('base64url'));
 fs.writeFileSync(files.esignKey, Buffer.alloc(32, 82).toString('base64url'));
 fs.writeFileSync(files.nylasKey, Buffer.alloc(32, 83).toString('base64url'));
@@ -33,7 +31,6 @@ const environment = {
   ADMIN_EMAIL: 'assistant-migration-admin@example.test',
   ADMIN_PASSWORD_FILE: files.password,
   SESSION_SECRET_FILE: files.session,
-  TERRA_GATEWAY_SHARED_SECRET_FILE: files.terra,
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: files.xKey,
   ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: files.esignKey,

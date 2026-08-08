@@ -32,7 +32,6 @@ const ownerPasswordFile = path.join(temporaryDirectory, 'owner-password');
 const appPasswordFile = path.join(temporaryDirectory, 'app-password');
 const adminPasswordFile = path.join(temporaryDirectory, 'admin-password');
 const sessionSecretFile = path.join(temporaryDirectory, 'session-secret');
-const terraSecretFile = path.join(temporaryDirectory, 'terra-secret');
 const xKeyFile = path.join(temporaryDirectory, 'x-key');
 const esignKeyFile = path.join(temporaryDirectory, 'esign-key');
 const identityKeyFile = path.join(temporaryDirectory, 'journey-identity-key');
@@ -41,7 +40,6 @@ const appPassword = crypto.randomBytes(24).toString('base64url');
 const containerAdminPassword = crypto.randomBytes(24).toString('base64url');
 const adminPassword = 'Journey-PG-Gate-2026!';
 const sessionSecret = crypto.randomBytes(48).toString('base64url');
-const terraSecret = crypto.randomBytes(48).toString('base64url');
 const xEncryptionKey = crypto.randomBytes(32).toString('base64url');
 const esignEncryptionKey = crypto.randomBytes(32).toString('base64url');
 const identityHashKey = crypto.randomBytes(48);
@@ -87,7 +85,7 @@ function redactOperationalText(value) {
   let redacted = String(value || '').replaceAll(temporaryDirectory, '<temporary-directory>');
   for (const secret of [
     ownerPassword, appPassword, containerAdminPassword, adminPassword, sessionSecret,
-    terraSecret, xEncryptionKey, esignEncryptionKey, identityHashKey.toString('base64url'),
+    xEncryptionKey, esignEncryptionKey, identityHashKey.toString('base64url'),
     payloadSentinel, piiSentinel, urlSentinel
   ]) {
     if (secret) redacted = redacted.replaceAll(secret, '<redacted>');
@@ -198,8 +196,6 @@ function runtimeEnvironment(sourceSha256, port, stageWorkerEnabled = false) {
     ADMIN_EMAIL: adminEmail,
     ADMIN_PASSWORD_FILE: adminPasswordFile,
     SESSION_SECRET_FILE: sessionSecretFile,
-    TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
-    LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile,
     JOURNEY_IDENTITY_HASH_KEY_FILE: identityKeyFile,
     JOURNEY_POSTGRES_GATE_STAGE_PROCESSING: stageWorkerEnabled ? 'true' : 'false',
     JOURNEY_STAGE_WORKER_POLL_MS: '100',
@@ -546,7 +542,6 @@ async function runGate() {
   fs.writeFileSync(appPasswordFile, `${appPassword}\n`, { mode: 0o600 });
   fs.writeFileSync(adminPasswordFile, `${adminPassword}\n`, { mode: 0o600 });
   fs.writeFileSync(sessionSecretFile, `${sessionSecret}\n`, { mode: 0o600 });
-  fs.writeFileSync(terraSecretFile, `${terraSecret}\n`, { mode: 0o600 });
   fs.writeFileSync(xKeyFile, `${xEncryptionKey}\n`, { mode: 0o600 });
   fs.writeFileSync(esignKeyFile, `${esignEncryptionKey}\n`, { mode: 0o600 });
   fs.writeFileSync(identityKeyFile, identityHashKey, { mode: 0o600 });
@@ -626,7 +621,6 @@ async function runGate() {
     ['container database password', containerAdminPassword],
     ['bootstrap administrator password', adminPassword],
     ['session secret', sessionSecret],
-    ['Terra shared secret', terraSecret],
     ['X encryption key', xEncryptionKey],
     ['e-sign encryption key', esignEncryptionKey],
     ['identity hash key', identityHashKey.toString('base64url')],

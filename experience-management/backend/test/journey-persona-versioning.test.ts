@@ -9,20 +9,17 @@ import { signupVerifyAndOnboard } from './authTestHelper.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-persona-versioning-'));
 const passwordFile = path.join(root, 'admin-password');
 const sessionFile = path.join(root, 'session-secret');
-const terraSecretFile = path.join(root, 'terra-secret');
 const xKeyFile = path.join(root, 'x-key');
 const esignKeyFile = path.join(root, 'esign-key');
 fs.writeFileSync(passwordFile, 'Persona-Version-Test-Password-2026!');
 fs.writeFileSync(sessionFile, 'persona-version-test-session-secret-that-is-long-enough');
-fs.writeFileSync(terraSecretFile, 'persona-version-test-terra-secret-that-is-long-enough');
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 31).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 32).toString('base64url'));
 Object.assign(process.env, {
   DATABASE_PATH: path.join(root, 'test.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'),
   FRONTEND_DIST: path.join(root, 'missing-frontend'), PUBLIC_URL: 'http://127.0.0.1:5412',
   ADMIN_EMAIL: 'persona-versions@seemplify.local', ADMIN_PASSWORD_FILE: passwordFile,
-  SESSION_SECRET_FILE: sessionFile, TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
-  LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile, EMAIL_MODE: 'log', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile,
+  SESSION_SECRET_FILE: sessionFile, EMAIL_MODE: 'log', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile,
   ESIGN_STORAGE_DIR: path.join(root, 'esign'), ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile,
   X_SEED_CONSUMER_KEY_FILE: path.join(root, 'missing-x-key'),
   X_SEED_CONSUMER_SECRET_FILE: path.join(root, 'missing-x-secret'),

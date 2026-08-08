@@ -15,7 +15,7 @@ function publicProfile(profile) {
 }
 
 function readSecrets(directory) {
-  const names = ['arango-app', 'arango-provisioner', 'llm-service', 'tei-api', 'docling-api'];
+  const names = ['arango-app', 'arango-provisioner', 'chatgpt-gateway', 'tei-api', 'docling-api'];
   return Object.fromEntries(names.map((name) => [name, fs.readFileSync(path.join(directory, name), 'utf8').trim()]));
 }
 

@@ -408,7 +408,7 @@ test('creates, prepares and completes a protected three-signer agreement with or
   });
   expect(onboarding.status()).toBe(200);
   const recipientRuntime = await adaSigner.page.request.patch('/api/ai-provider', {
-    data: { provider: 'terra' }
+    data: { provider: 'codex' }
   });
   expect(recipientRuntime.status(), await recipientRuntime.text()).toBe(200);
   const tutorialProgress = await adaSigner.page.request.put('/api/tutorials/progress/agreements', {

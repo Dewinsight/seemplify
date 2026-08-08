@@ -435,9 +435,8 @@ export interface PlatformAiDefaults {
   codexReasoningEffort: string | null;
   codexActionOverrides: Record<string, PlatformCodexActionOverride>;
   runtimePolicy: {
-    localEnabled: boolean;
     chatgptEnabled: boolean;
-    defaultRuntime: 'local' | 'chatgpt';
+    defaultRuntime: 'chatgpt';
   };
   updatedAt: string | null;
 }

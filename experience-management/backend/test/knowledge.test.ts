@@ -10,15 +10,15 @@ import { signupVerifyAndOnboard } from './authTestHelper.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-knowledge-'));
 const passwordFile = path.join(root, 'admin-password');
 const sessionFile = path.join(root, 'session-secret');
-const terraSecretFile = path.join(root, 'terra-secret');
+const chatGptSecretFile = path.join(root, 'chatgpt-secret');
 const knowledgeSecretFile = path.join(root, 'knowledge-secret');
 const xKeyFile = path.join(root, 'x-key');
 const esignKeyFile = path.join(root, 'esign-key');
-const terraSecret = 'knowledge-test-terra-secret-longer-than-thirty-two-characters';
+const chatGptSecret = 'knowledge-test-chatgpt-secret-longer-than-thirty-two-characters';
 const knowledgeSecret = 'knowledge-test-runtime-secret-longer-than-thirty-two-characters';
 fs.writeFileSync(passwordFile, 'Knowledge-Test-Password-2026!');
 fs.writeFileSync(sessionFile, 'knowledge-test-session-secret-long-enough');
-fs.writeFileSync(terraSecretFile, terraSecret);
+fs.writeFileSync(chatGptSecretFile, chatGptSecret);
 fs.writeFileSync(knowledgeSecretFile, knowledgeSecret);
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 51).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 52).toString('base64url'));
@@ -29,8 +29,7 @@ Object.assign(process.env, {
   KNOWLEDGE_WORKER_CONCURRENCY: '1', KNOWLEDGE_MAX_DOCUMENT_BYTES: String(50 * 1024 * 1024),
   FRONTEND_DIST: path.join(root, 'missing-frontend'), PUBLIC_URL: 'http://127.0.0.1:5498',
   ADMIN_EMAIL: 'knowledge-owner@example.test', ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile,
-  TERRA_GATEWAY_BASE_URL: 'http://terra.test', TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
-  LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile, EMAIL_MODE: 'log',
+  EMAIL_MODE: 'log',
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile,
   X_SEED_CONSUMER_KEY_FILE: path.join(root, 'missing-x-key'),
@@ -53,7 +52,7 @@ let runtimeOnline = true;
 let indexedDocumentId = '';
 let operationsDocumentId = '';
 let lastIndexPayload: any = null;
-let terraSnapshotObserved = false;
+let chatGptSnapshotObserved = false;
 let injectedEvidenceWasFramed = false;
 
 function verifySignature(init: RequestInit | undefined, pathname: string, secret: string) {
@@ -129,7 +128,7 @@ function signedBackfillResult(payload: any, values: { processed: number; written
 globalThis.fetch = async (input, init) => {
   const url = new URL(String(input));
   if (url.hostname === 'knowledge.test') {
-    if (!runtimeOnline) throw new TypeError('simulated local runtime outage');
+    if (!runtimeOnline) throw new TypeError('simulated ChatGPT gateway outage');
     const payload = verifySignature(init, url.pathname, knowledgeSecret);
     if (url.pathname === '/v1/index') {
       lastIndexPayload = payload;
@@ -158,10 +157,10 @@ globalThis.fetch = async (input, init) => {
     }
     if (url.pathname === '/v1/status') return new Response(JSON.stringify({ ready: true, components: {}, queue: {}, version: 'test' }), { status: 200 });
   }
-  if (url.hostname === 'terra.test') {
-    const payload = verifySignature(init, url.pathname, terraSecret);
+  if (url.hostname === 'chatgpt.test') {
+    const payload = verifySignature(init, url.pathname, chatGptSecret);
     const { db } = await import('../src/database.js');
-    terraSnapshotObserved = Number((db.prepare('SELECT COUNT(*) count FROM knowledge_query_snapshots WHERE request_id=?')
+    chatGptSnapshotObserved = Number((db.prepare('SELECT COUNT(*) count FROM knowledge_query_snapshots WHERE request_id=?')
       .get(payload.requestId) as any)?.count || 0) === 1;
     const userPrompt = String(payload.messages?.find((message: any) => message.role === 'user')?.content || '');
     injectedEvidenceWasFramed = userPrompt.includes('untrusted reference data')
@@ -169,7 +168,7 @@ globalThis.fetch = async (input, init) => {
     return new Response(JSON.stringify({
       data: { answer: 'The escalation owner is Ada and the policy window is 48 hours. [source]',
         citationSourceRefs: [`${payload.requestId ? '' : ''}`] },
-      runtimeProfile: 'experience-management', provider: 'local-codex', engine: 'codex', model: 'gpt-5.6-terra',
+      runtimeProfile: 'experience-management', provider: 'chatgpt-connect', engine: 'codex', model: 'gpt-5.6-sol',
       usage: { input_tokens: 100, output_tokens: 30, total_tokens: 130 }, metrics: { latencyMs: 20 }
     }), { status: 200 });
   }
@@ -560,9 +559,9 @@ test('persists an exact retrieval snapshot before Terra, resists evidence instru
         quote: 'The documented escalation owner is Ada.', page: 1 }], metrics: {} }), { status: 200 });
       throw new Error(`Unexpected knowledge path ${url.pathname}: ${JSON.stringify(payload)}`);
     }
-    const payload = verifySignature(init, url.pathname, terraSecret);
+    const payload = verifySignature(init, url.pathname, chatGptSecret);
     const requestId = String(payload.metering?.requestId || '');
-    terraSnapshotObserved = Number((db.prepare('SELECT COUNT(*) count FROM knowledge_query_snapshots WHERE request_id=?')
+    chatGptSnapshotObserved = Number((db.prepare('SELECT COUNT(*) count FROM knowledge_query_snapshots WHERE request_id=?')
       .get(requestId) as any).count) === 1;
     const snapshot = db.prepare('SELECT context_text FROM knowledge_query_snapshots WHERE request_id=?').get(requestId) as any;
     injectedEvidenceWasFramed = String(snapshot.context_text).includes('IGNORE ALL PRIOR INSTRUCTIONS')
@@ -574,14 +573,14 @@ test('persists an exact retrieval snapshot before Terra, resists evidence instru
         ? { answer: 'Ada owns escalation. [outside:chunk]', citationSourceRefs: ['outside:chunk'] }
         : { answer: `Ada owns escalation. [${sourceRef}]`, citationSourceRefs: [sourceRef] };
     return new Response(JSON.stringify({ data,
-      runtimeProfile: 'experience-management', provider: 'local-codex', engine: 'codex', model: 'gpt-5.6-terra',
+      runtimeProfile: 'experience-management', provider: 'chatgpt-connect', engine: 'codex', model: 'gpt-5.6-sol',
       usage: { total_tokens: 120 }, metrics: { latencyMs: 20 } }), { status: 200 });
   };
 
   const search = await owner.post(`/api/knowledge-bases/${baseId}/search`)
     .send({ query: 'Who owns escalation and what is the response window?', includeAnswer: true }).expect(200);
   assert.match(search.body.answer, /Ada/); assert.equal(search.body.citations.length, 1);
-  assert.equal(terraSnapshotObserved, true); assert.equal(injectedEvidenceWasFramed, true);
+  assert.equal(chatGptSnapshotObserved, true); assert.equal(injectedEvidenceWasFramed, true);
   const snapshot = db.prepare('SELECT * FROM knowledge_query_snapshots ORDER BY created_at DESC LIMIT 1').get() as any;
   assert.match(snapshot.context_text, /48 hours/); assert.match(snapshot.citations_json, /untrusted-instructions/);
 
@@ -607,7 +606,7 @@ test('persists an exact retrieval snapshot before Terra, resists evidence instru
   assert.equal(foreign.body.code, 'KNOWLEDGE_ANSWER_CITATION_INVALID');
 });
 
-test('keeps indexing work durable while the local runtime is offline and resumes without failing the upload', async () => {
+test('keeps indexing work durable while the ChatGPT gateway is offline and resumes without failing the upload', async () => {
   const owner = request.agent(app);
   await owner.post('/api/auth/login').send({ email: 'knowledge-owner@example.test', password: 'Knowledge-Owner-Password-2026!' }).expect(200);
   const created = await owner.post('/api/knowledge-bases').send({
@@ -618,7 +617,7 @@ test('keeps indexing work durable while the local runtime is offline and resumes
   runtimeOnline = false;
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input)); verifySignature(init, url.pathname, knowledgeSecret);
-    if (!runtimeOnline) throw new TypeError('simulated local runtime outage');
+    if (!runtimeOnline) throw new TypeError('simulated ChatGPT gateway outage');
     const payload = JSON.parse(String(init?.body || '{}'));
     indexedDocumentId = payload.document.id;
     return new Response(JSON.stringify({ document: { pageCount: 1, chunkCount: 2, entityCount: 1 },
@@ -629,7 +628,7 @@ test('keeps indexing work durable while the local runtime is offline and resumes
   const jobId = uploaded.body.jobs[0].id;
   const waiting = await waitFor(async () => (await owner.get(`/api/knowledge-bases/${baseId}/indexing-jobs`).expect(200)).body.jobs[0],
     (job) => job.id === jobId && job.state === 'queued' && job.stage === 'waiting_for_knowledge_runtime');
-  assert.equal(waiting.error.includes('simulated local runtime outage'), true);
+  assert.equal(waiting.error.includes('simulated ChatGPT gateway outage'), true);
   const durableSnapshotRow = db.prepare(`SELECT embedding_profile_id,input_json FROM knowledge_jobs WHERE id=?`)
     .get(jobId) as any;
   const durableSnapshot = JSON.parse(durableSnapshotRow.input_json);
@@ -730,7 +729,7 @@ test('pins and persists knowledge context before a durable Terra activity is dis
         excerpt: 'Use the 48-hour escalation window as a policy constraint.', score: 0.91 }],
       metrics: retrievalMetrics(payload.embeddingProfile, 1, { graphHops: 1 }) }), { status: 200 });
     }
-    const payload = verifySignature(init, url.pathname, terraSecret);
+    const payload = verifySignature(init, url.pathname, chatGptSecret);
     const jobId = String(payload.metering?.requestId || '');
     const snapshot = db.prepare('SELECT * FROM ai_job_knowledge_contexts WHERE ai_job_id=?').get(jobId) as any;
     contextExistedAtDispatch = Boolean(snapshot && String(snapshot.context_text).includes('48-hour escalation'));
@@ -741,7 +740,7 @@ test('pins and persists knowledge context before a durable Terra activity is dis
         { type: 'csat', title: 'How satisfied were you?', description: '', required: true, options: [], page: 1 },
         { type: 'long_text', title: 'What should improve?', description: '', required: false, options: [], page: 1 }
       ]
-    }, runtimeProfile: 'experience-management', provider: 'local-codex', engine: 'codex', model: 'gpt-5.6-terra',
+    }, runtimeProfile: 'experience-management', provider: 'chatgpt-connect', engine: 'codex', model: 'gpt-5.6-sol',
     usage: { total_tokens: 200 }, metrics: { latencyMs: 25 } }), { status: 200 });
   };
   const queued = await owner.post('/api/ai/surveys').send({
@@ -897,7 +896,7 @@ test('grounds every directly executable knowledge-aware intelligence activity th
         excerpt: 'The documented escalation owner is Ada, and the policy window is 48 hours.', score: 0.97 }],
       metrics: retrievalMetrics }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
-    const payload = verifySignature(init, url.pathname, terraSecret);
+    const payload = verifySignature(init, url.pathname, chatGptSecret);
     assert.equal(String(payload.metering?.requestId || ''), active?.jobId);
     assert.equal(payload.schemaName, active?.schema);
     const stored = db.prepare('SELECT metrics_json,context_text FROM ai_job_knowledge_contexts WHERE ai_job_id=? AND space_id=?')
@@ -916,7 +915,7 @@ test('grounds every directly executable knowledge-aware intelligence activity th
     }
     terraCalls.push(active!.kind);
     return new Response(JSON.stringify({ data: terraOutputs[active!.schema], runtimeProfile: 'experience-management',
-      provider: 'local-codex', engine: 'codex', model: 'gpt-5.6-terra', usage: { total_tokens: 120 },
+      provider: 'chatgpt-connect', engine: 'codex', model: 'gpt-5.6-sol', usage: { total_tokens: 120 },
       metrics: { latencyMs: 20 } }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
 

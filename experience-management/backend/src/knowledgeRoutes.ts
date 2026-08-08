@@ -21,7 +21,7 @@ import {
 } from './knowledgeRepository.js';
 import { resolveRequestSpace, SpaceError } from './spaces.js';
 import { assertSubscriptionFeature, consumeDirectAiAction, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
-import { TerraError } from './terraClient.js';
+import { AiProviderError } from './aiProviderError.js';
 
 const router = express.Router();
 
@@ -70,7 +70,7 @@ function sendKnowledgeError(response: express.Response, error: unknown) {
   if (error instanceof SubscriptionEntitlementError) {
     return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
   }
-  if (error instanceof TerraError) return response.status(error.status).json({ error: error.message, code: error.code });
+  if (error instanceof AiProviderError) return response.status(error.status).json({ error: error.message, code: error.code });
   if (error instanceof multer.MulterError) {
     const message = error.code === 'LIMIT_FILE_SIZE'
       ? `Each document must be ${Math.floor(config.knowledgeMaxDocumentBytes / 1024 / 1024)} MB or smaller.`

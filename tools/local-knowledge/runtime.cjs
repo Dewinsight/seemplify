@@ -766,12 +766,12 @@ function groundedMentions(items, source, windowOffset) {
       start = source.indexOf(quote);
       end = start < 0 ? -1 : start + quote.length;
     }
-    if (start < 0) throw runtimeError('Terra returned an ungrounded graph span.', { code: 'UNGROUNDED_GRAPH', status: 422 });
+    if (start < 0) throw runtimeError('ChatGPT returned an ungrounded graph span.', { code: 'UNGROUNDED_GRAPH', status: 422 });
     return { quote, start: start + windowOffset, end: end + windowOffset };
   });
 }
 
-async function terraGraphWindow(source, { jobId, windowIndex, windowOffset, fetchImpl = fetch, gatewaySecret, config = CONFIG }) {
+async function chatgptGraphWindow(source, { jobId, windowIndex, windowOffset, fetchImpl = fetch, gatewaySecret, config = CONFIG }) {
   const requestPath = '/v1/complete';
   const eventId = `usage_${stableKey('knowledge-graph', jobId, windowIndex).slice(0, 48)}`;
   const body = JSON.stringify({
@@ -791,13 +791,13 @@ async function terraGraphWindow(source, { jobId, windowIndex, windowOffset, fetc
       body, signal: AbortSignal.timeout(6 * 60_000),
     });
   } catch (error) {
-    throw runtimeError(`Terra graph extraction is unavailable: ${error.message}`, { code: 'TERRA_UNAVAILABLE', status: 503, retryable: true });
+    throw runtimeError(`ChatGPT graph extraction is unavailable: ${error.message}`, { code: 'CHATGPT_UNAVAILABLE', status: 503, retryable: true });
   }
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw upstreamResponseError('terra_graph', response, payload.message || `Terra returned HTTP ${response.status}.`);
+  if (!response.ok) throw upstreamResponseError('chatgpt_graph', response, payload.message || `ChatGPT returned HTTP ${response.status}.`);
   const result = payload.data;
   if (!result || !Array.isArray(result.entities) || !Array.isArray(result.claims) || !Array.isArray(result.relations)) {
-    throw runtimeError('Terra returned an invalid graph payload.', { code: 'INVALID_TERRA_GRAPH', status: 422 });
+    throw runtimeError('ChatGPT returned an invalid graph payload.', { code: 'INVALID_CHATGPT_GRAPH', status: 422 });
   }
   const entities = result.entities.slice(0, 160).map((entity) => ({
     localId: assertId(entity.localId, 'entity.localId'), type: boundedText(entity.type, 80, 'entity.type'), name: boundedText(entity.name, 300, 'entity.name'),
@@ -821,7 +821,7 @@ async function extractGraph(text, context) {
   const limit = context.config.limits.graphWindowCharacters;
   for (let offset = 0, index = 0; offset < text.length; offset += limit, index += 1) {
     const source = text.slice(offset, offset + limit);
-    const graph = await terraGraphWindow(source, { ...context, windowIndex: index, windowOffset: offset });
+    const graph = await chatgptGraphWindow(source, { ...context, windowIndex: index, windowOffset: offset });
     aggregate.entities.push(...graph.entities.map((entity) => ({ ...entity, windowIndex: index })));
     aggregate.claims.push(...graph.claims.map((claim) => ({ ...claim, windowIndex: index })));
     aggregate.relations.push(...graph.relations.map((relation) => ({ ...relation, windowIndex: index })));
@@ -981,7 +981,7 @@ function createKnowledgeRuntime(options = {}) {
   const secret = (name) => options.secrets?.[name] || readSecret(path.join(config.paths.secrets, name));
   const appPassword = secret('arango-app');
   const provisionerPassword = secret('arango-provisioner');
-  const gatewaySecret = secret('llm-service');
+  const gatewaySecret = secret('chatgpt-gateway');
   const embeddingApiKey = secret('tei-api');
   const doclingApiKey = secret('docling-api');
   const baseUrl = `http://${config.host}:${config.ports.arango}`;
@@ -1636,7 +1636,7 @@ function createKnowledgeRuntime(options = {}) {
       ['arango', `${baseUrl}/_api/version`, { authorization: provisioner.authorization }],
       ['reranker', `http://${config.host}:${config.ports.reranker}/health`, { authorization: `Bearer ${embeddingApiKey}` }],
       ['docling', `http://${config.host}:${config.ports.docling}/health`, { authorization: `Bearer ${doclingApiKey}`, 'x-api-key': doclingApiKey }],
-      ['terra', `http://${config.host}:11435/health`, {}],
+      ['chatgpt', `http://${config.host}:11435/health`, {}],
     ];
     if (migrationConfig.qwenRollbackRetained !== false || migrationConfig.provider === 'qwen-tei' || migrationConfig.dualWrite === true) {
       checks.push(['embedding', `http://${config.host}:${config.ports.embedding}/health`, { authorization: `Bearer ${embeddingApiKey}` }]);

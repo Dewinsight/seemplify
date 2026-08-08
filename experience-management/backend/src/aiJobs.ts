@@ -22,7 +22,7 @@ import {
   appliedIntelligenceArtifact, completeIntelligenceReport, completeSocialIntelligenceReport, completeSocialReplyDraft, failIntelligenceArtifact,
   IntelligenceError, intelligenceExecutionInput, replyDraftExecutionInput, socialReportExecutionInput, validateSocialListeningEvidence
 } from './intelligence.js';
-import { TerraError } from './terraClient.js';
+import { AiProviderError } from './aiProviderError.js';
 import { knowledgePromptContext, pinnedKnowledgeRefs, supportsKnowledgeContext } from './knowledgeContext.js';
 import { KnowledgeError, replaceSurveyKnowledgeBases } from './knowledgeRepository.js';
 import { runLegacyJourneyWrite } from './journeyRollout.js';
@@ -146,7 +146,7 @@ function validateStructuredSemantics<T>(job: AiJob, output: T, semanticValidator
   } catch (error) {
     if (error instanceof IntelligenceError && terraSemanticCorrectionCount(job) < 1) {
       scheduleSemanticCorrection(job);
-      throw new TerraError(
+      throw new AiProviderError(
         'Terra returned invalid source evidence. The durable job will make one corrective attempt.',
         'TERRA_EVIDENCE_RETRY',
         502,
@@ -213,15 +213,14 @@ async function structured<T>(
     timeoutMs: 300_000
   });
   const parsed = validator.safeParse(result.data);
-  if (!parsed.success) throw new TerraError(`The AI provider returned invalid ${schemaName}: ${parsed.error.issues.slice(0, 5).map((issue) => issue.message).join('; ')}`, 'AI_SCHEMA_INVALID', 502, false);
+  if (!parsed.success) throw new AiProviderError(`The AI provider returned invalid ${schemaName}: ${parsed.error.issues.slice(0, 5).map((issue) => issue.message).join('; ')}`, 'AI_SCHEMA_INVALID', 502, false);
   validateStructuredSemantics(job, parsed.data, semanticValidator);
   const saved = saveJobProviderResult(job.id, { activity, schemaName, output: parsed.data, runtime: result.runtime });
   return { output: saved?.output ?? parsed.data, runtime: saved?.runtime ?? result.runtime };
 }
 
-function aiRuntimeActor(runtime: unknown): 'terra' | 'codex' {
-  const provider = runtime && typeof runtime === 'object' ? String((runtime as Record<string, unknown>).provider || '') : '';
-  return provider === 'openai-codex' ? 'codex' : 'terra';
+function aiRuntimeActor(_runtime: unknown): 'codex' {
+  return 'codex';
 }
 
 function createRecoveryTicket(surveyId: string, responseId: string, analysis: z.infer<typeof responseAnalysisResult>, actor: 'terra' | 'codex') {
@@ -249,7 +248,7 @@ function generatedSurveyApplication(job: AiJob): JobOutput | null {
   if (!row) return null;
   const survey = getSurvey(row.survey_id, job.spaceId); const collector = getCollector(row.collector_id);
   if (!survey || !collector || collector.surveyId !== survey.id) {
-    throw new TerraError('The generated survey application record is inconsistent.', 'SURVEY_APPLICATION_INVALID', 500, false);
+    throw new AiProviderError('The generated survey application record is inconsistent.', 'SURVEY_APPLICATION_INVALID', 500, false);
   }
   let runtime: unknown = {};
   try { runtime = JSON.parse(row.runtime_json || '{}'); } catch { /* retain a safe empty runtime */ }
@@ -311,7 +310,7 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
       ? listSocialMentionsByIdsForSpace(requestedIds, job.spaceId)
       : listSocialMentionsForSpace(job.spaceId, socialAnalysisLimit);
     if (requestedIds && (!requestedIds.length || candidates.length !== requestedIds.length)) {
-      throw new TerraError(
+      throw new AiProviderError(
         'One or more source posts for this social analysis no longer exist in this space.',
         'MENTION_SNAPSHOT_UNAVAILABLE',
         409,
@@ -319,7 +318,7 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
       );
     }
     const mentions = candidates.slice(0, socialAnalysisLimit);
-    if (!mentions.length) throw new TerraError('No social mentions are available for analysis.', 'MENTIONS_REQUIRED', 400, false);
+    if (!mentions.length) throw new AiProviderError('No social mentions are available for analysis.', 'MENTIONS_REQUIRED', 400, false);
     const sourceRefs = mentions.map((mention) => mention.id);
     const socialKnowledgeQuery = `Relevant product, policy, terminology, reputation risk, and customer-experience context for these social posts: ${mentions.map((mention) => mention.content).join(' ').slice(0, 2600)}`;
     const result = await structured(job, 'experience.social_listening', 'experience_social_listening',
@@ -341,7 +340,7 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
   }
   if (job.kind === 'social.report') {
     const report = socialReportExecutionInput(String(job.input.reportId || ''), job.spaceId);
-    if (!report.mentions.length) throw new TerraError('No X posts remain in this report snapshot.', 'MENTIONS_REQUIRED', 400, false);
+    if (!report.mentions.length) throw new AiProviderError('No X posts remain in this report snapshot.', 'MENTIONS_REQUIRED', 400, false);
     const sourceRefs = report.mentions.map((mention) => mention.sourceRef);
     const result = await structured(job, 'experience.social_listening', 'experience_social_listening_report',
       socialListeningJsonSchemaFor(sourceRefs), socialListeningResultFor(sourceRefs),
@@ -356,7 +355,7 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
   if (job.kind === 'intelligence.synthesize') {
     const report = intelligenceExecutionInput(String(job.input.reportId || ''), job.spaceId);
     if (report.sources.length + report.knowledgeBaseIds.length < 2) {
-      throw new TerraError('At least two saved evidence sources are required.', 'INTELLIGENCE_SOURCES_REQUIRED', 400, false);
+      throw new AiProviderError('At least two saved evidence sources are required.', 'INTELLIGENCE_SOURCES_REQUIRED', 400, false);
     }
     const researchEvidence = report.sources.map((source) => JSON.stringify({
       sourceRef: source.ref,
@@ -372,7 +371,7 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
           ...citations.map((citation) => `knowledge-base:${citation.knowledgeBaseId}`)
         ]);
         if (evidenceGroups.size < 2) {
-          throw new TerraError('At least two selected sources must return usable evidence for synthesis.',
+          throw new AiProviderError('At least two selected sources must return usable evidence for synthesis.',
             'INTELLIGENCE_EVIDENCE_REQUIRED', 422, false);
         }
         return crossSourceIntelligenceJsonSchemaFor([
@@ -450,7 +449,7 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
     }
   }
   const survey = job.surveyId ? getSurvey(job.surveyId, job.spaceId) : null;
-  if (!survey) throw new TerraError('Survey not found for AI job.', 'SURVEY_NOT_FOUND', 404, false);
+  if (!survey) throw new AiProviderError('Survey not found for AI job.', 'SURVEY_NOT_FOUND', 404, false);
   if (job.kind === 'survey.improve') {
     return structured(job, 'experience.survey_generation', 'experience_survey_improvement', aiJsonSchemas.improvement, improvementResult,
       `Audit this survey for bias, ambiguity, duplication, respondent effort, metric fit, and actionability. Return a fully revised version but preserve its purpose.\n${JSON.stringify(compactSurvey(survey))}`,
@@ -458,17 +457,17 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
   }
   if (job.kind === 'survey.translate') {
     const language = String(job.input.language || '').trim();
-    if (!language) throw new TerraError('A target language is required.', 'LANGUAGE_REQUIRED', 400, false);
+    if (!language) throw new AiProviderError('A target language is required.', 'LANGUAGE_REQUIRED', 400, false);
     const result = await structured(job, 'experience.translation', 'experience_translation', aiJsonSchemas.translation, translationResult,
       `Translate every respondent-facing string in this survey into ${language}. Preserve IDs, measurement meaning, numeric scales, and brand names.\n${JSON.stringify(compactSurvey(survey))}`);
     const translation = result.output as z.infer<typeof translationResult>;
     const application = applySurveyTranslation({ aiJobId: job.id, surveyId: survey.id, spaceId: job.spaceId, language, translation });
-    if (!application) throw new TerraError('Survey was deleted while Terra was translating it.', 'SURVEY_NOT_FOUND', 404, false);
+    if (!application) throw new AiProviderError('Survey was deleted while Terra was translating it.', 'SURVEY_NOT_FOUND', 404, false);
     return result;
   }
   if (job.kind === 'response.analyze') {
     const response = job.responseId ? getResponse(job.responseId) : null;
-    if (!response) throw new TerraError('Response not found for AI job.', 'RESPONSE_NOT_FOUND', 404, false);
+    if (!response) throw new AiProviderError('Response not found for AI job.', 'RESPONSE_NOT_FOUND', 404, false);
     const result = await structured(job, 'experience.response_analysis', 'experience_response_analysis', aiJsonSchemas.responseAnalysis, responseAnalysisResult,
       `Analyze this single response. Separate topic-level sentiment when feedback is mixed. Quote only exact evidence present in the response.\nSurvey: ${JSON.stringify(compactSurvey(survey))}\nResponse: ${JSON.stringify(compactResponses(survey, [response]))}`,
       `Relevant policy, product, service, and escalation context for this response to "${survey.title}": ${JSON.stringify(response.answers).slice(0, 2600)}`);
@@ -504,7 +503,7 @@ export async function executeAiJob(job: AiJob): Promise<JobOutput> {
     insertInsight(survey.id, 'executive_report', result.output, job.id);
     return result;
   }
-  throw new TerraError(`Unsupported job kind ${job.kind}`, 'UNSUPPORTED_JOB', 400, false);
+  throw new AiProviderError(`Unsupported job kind ${job.kind}`, 'UNSUPPORTED_JOB', 400, false);
 }
 
 export class AiJobRunner {
@@ -552,10 +551,10 @@ export class AiJobRunner {
       if (!job.kind.startsWith('assistant.')) publishEvent('data-changed', { surveyId: job.surveyId, reason: job.kind }, job.spaceId);
     } catch (error) {
       let message = error instanceof Error ? error.message : String(error);
-      const retryable = error instanceof TerraError || error instanceof KnowledgeError
+      const retryable = error instanceof AiProviderError || error instanceof KnowledgeError
         ? error.retryable : !(error instanceof IntelligenceError || error instanceof AssistantError);
       const attempts = getJob(job.id)?.attempt || 1;
-      const terminalTerraError = error instanceof TerraError && !error.retryable;
+      const terminalAiProviderError = error instanceof AiProviderError && !error.retryable;
       const terminalIntelligenceError = error instanceof IntelligenceError && [400, 404, 409, 413].includes(error.status);
       const terminalKnowledgeError = error instanceof KnowledgeError && !error.retryable;
       const terminalAssistantError = error instanceof AssistantError && [400, 404, 409, 413].includes(error.status);
@@ -563,7 +562,7 @@ export class AiJobRunner {
       const terminalJourneySuggestionError = error instanceof JourneySuggestionError
         && [400, 403, 404, 409, 413, 422].includes(error.status);
       const runId = assistantRunId(job);
-      if (!terminalTerraError && !terminalIntelligenceError && !terminalKnowledgeError && !terminalAssistantError
+      if (!terminalAiProviderError && !terminalIntelligenceError && !terminalKnowledgeError && !terminalAssistantError
         && !terminalDeepAnalysisError && !terminalJourneySuggestionError && (retryable || attempts < 3)) {
         try {
           const delayMs = retryable ? Math.min(300_000, 15_000 * Math.max(1, attempts)) : Math.min(60_000, 2 ** attempts * 1000);

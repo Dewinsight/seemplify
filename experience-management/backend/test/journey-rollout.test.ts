@@ -9,12 +9,10 @@ import { signupVerifyAndOnboard } from './authTestHelper.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-journey-rollout-'));
 const passwordFile = path.join(root, 'admin-password');
 const sessionFile = path.join(root, 'session-secret');
-const terraSecretFile = path.join(root, 'terra-secret');
 const xKeyFile = path.join(root, 'x-key');
 const esignKeyFile = path.join(root, 'esign-key');
 fs.writeFileSync(passwordFile, 'Journey-Rollout-Test-Password-2026!');
 fs.writeFileSync(sessionFile, 'journey-rollout-session-secret-that-is-long-enough');
-fs.writeFileSync(terraSecretFile, 'journey-rollout-terra-secret-that-is-long-enough');
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 41).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 42).toString('base64url'));
 Object.assign(process.env, {
@@ -25,8 +23,6 @@ Object.assign(process.env, {
   ADMIN_EMAIL: 'journey-rollout@seemplify.local',
   ADMIN_PASSWORD_FILE: passwordFile,
   SESSION_SECRET_FILE: sessionFile,
-  TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile,
-  LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile,
   EMAIL_MODE: 'log',
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile,
   ESIGN_STORAGE_DIR: path.join(root, 'esign'),

@@ -54,8 +54,7 @@ export function aiJobRuntime(input: {
       source: journalRuntime ? 'provider_result' : 'job_result',
       status: 'actual',
       provider,
-      providerLabel: optionalString(actual.providerLabel)
-        || (provider === 'codex' ? 'ChatGPT / Codex' : provider === 'terra' ? 'Local AI runtime' : null),
+      providerLabel: optionalString(actual.providerLabel) || 'ChatGPT / Codex',
       model: optionalString(actual.model),
       reasoningEffort: optionalString(actual.reasoningEffort),
       actionId: optionalString(actual.action) || optionalString(actual.actionId)
@@ -64,18 +63,14 @@ export function aiJobRuntime(input: {
   }
 
   if (Object.keys(snapshot).length) {
-    const provider = normalizedProvider(snapshot.provider) || 'terra';
+    const provider = normalizedProvider(snapshot.provider) || 'codex';
     return {
       source: 'job_snapshot',
       status: 'planned',
       provider,
-      providerLabel: provider === 'codex' ? 'ChatGPT / Codex' : 'Local AI runtime',
-      model: provider === 'codex'
-        ? optionalString(snapshot.codexModel) || firstCandidate(snapshot.codexModelCandidates)
-        : null,
-      reasoningEffort: provider === 'codex'
-        ? optionalString(snapshot.codexReasoningEffort) || firstCandidate(snapshot.codexReasoningEffortCandidates)
-        : null,
+      providerLabel: 'ChatGPT / Codex',
+      model: optionalString(snapshot.codexModel) || firstCandidate(snapshot.codexModelCandidates),
+      reasoningEffort: optionalString(snapshot.codexReasoningEffort) || firstCandidate(snapshot.codexReasoningEffortCandidates),
       actionId: optionalString(snapshot.codexActionId) || input.actionId
     };
   }
@@ -83,8 +78,8 @@ export function aiJobRuntime(input: {
   return {
     source: 'legacy_default',
     status: 'unknown',
-    provider: 'terra',
-    providerLabel: 'Local AI runtime',
+    provider: 'codex',
+    providerLabel: 'ChatGPT / Codex',
     model: null,
     reasoningEffort: null,
     actionId: input.actionId

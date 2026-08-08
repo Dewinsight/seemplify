@@ -10,12 +10,12 @@ const codexModel = {
   supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }]
 };
 
-type RuntimeChoice = 'local' | 'chatgpt' | null;
+type RuntimeChoice = 'chatgpt';
 
-async function installProviderMocks(page: Page, options: { localEnabled?: boolean } = {}) {
-  const localEnabled = options.localEnabled ?? true;
-  let provider: 'terra' | 'codex' = 'codex';
-  let runtimeChoice: RuntimeChoice = null;
+async function installProviderMocks(page: Page, options: { chatgptEnabled?: boolean } = {}) {
+  const chatgptEnabled = options.chatgptEnabled ?? true;
+  let provider: 'codex' = 'codex';
+  let runtimeChoice: RuntimeChoice = 'chatgpt';
   let connected = false;
   let pendingLogin = false;
   let finishLogin = false;
@@ -33,10 +33,9 @@ async function installProviderMocks(page: Page, options: { localEnabled?: boolea
       updatedAt: acknowledgedAt
     },
     runtimePolicy: {
-      localEnabled,
-      chatgptEnabled: true,
+      chatgptEnabled,
       defaultRuntime: 'chatgpt',
-      effectiveProvider: provider
+      effectiveProvider: chatgptEnabled ? provider : null
     },
     codex: {
       available: true,
@@ -86,15 +85,10 @@ async function installProviderMocks(page: Page, options: { localEnabled?: boolea
     } else if (method === 'PATCH') {
       const body = route.request().postDataJSON() as Record<string, unknown>;
       patches.push(body);
-      if (body.provider === 'terra') {
-        provider = 'terra';
-        runtimeChoice = 'local';
-        acknowledgedAt = null;
-      } else if (body.provider === 'codex') {
-        provider = 'codex';
-        runtimeChoice = 'chatgpt';
-        if (body.codexDataSharingAcknowledged === true) acknowledgedAt = '2026-08-04T12:00:00.000Z';
-      }
+      provider = 'codex';
+      runtimeChoice = 'chatgpt';
+      if (body.codexDataSharingAcknowledged === true) acknowledgedAt = '2026-08-04T12:00:00.000Z';
+      if (body.codexDataSharingAcknowledged === false) acknowledgedAt = null;
     } else {
       await route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ error: 'Unexpected method' }) });
       return;
@@ -130,7 +124,6 @@ async function installProviderMocks(page: Page, options: { localEnabled?: boolea
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        terra: { ready: true, reachable: true, providerLabel: 'Terra test runtime' },
         ai: state(),
         worker: { active: 0, concurrency: 1 }
       })
@@ -154,7 +147,7 @@ test.beforeEach(async () => {
   test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'The ChatGPT gate uses deterministic local route mocks.');
 });
 
-test('an unresolved ChatGPT choice blocks protected content until settings explicitly selects local AI', async ({ page }) => {
+test('an unconnected ChatGPT account blocks protected content and links to connection settings', async ({ page }) => {
   const mocks = await installProviderMocks(page);
   await login(page);
 
@@ -175,23 +168,15 @@ test('an unresolved ChatGPT choice blocks protected content until settings expli
 
   const settings = page.getByTestId('ai-provider-settings');
   await expect(settings.getByRole('heading', { name: 'AI runtime' })).toBeVisible();
-  await settings.getByRole('button', { name: /Local AI runtime/ }).click();
-  await expect.poll(() => mocks.patches).toContainEqual({ provider: 'terra' });
-
-  await page.goto('/');
-  await expect(page.getByTestId('chatgpt-connection-gate')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Experience overview' })).toBeVisible();
+  await expect(settings.getByRole('button', { name: 'Connect ChatGPT' })).toBeVisible();
+  await expect(mocks.patches).toEqual([]);
 });
 
-test('the ChatGPT gate does not offer local AI when the platform disables it', async ({ page }) => {
-  await installProviderMocks(page, { localEnabled: false });
+test('a platform-disabled ChatGPT runtime never exposes an alternate AI provider', async ({ page }) => {
+  await installProviderMocks(page, { chatgptEnabled: false });
   await login(page);
 
-  const gate = page.getByTestId('chatgpt-connection-gate');
-  await expect(gate).toBeVisible();
-  await expect(gate.getByTestId('chatgpt-gate-settings')).toHaveCount(0);
-  await expect(gate.getByText('You can choose the local AI runtime in Space settings instead.')).toHaveCount(0);
-  await expect(gate.getByTestId('chatgpt-gate-connect')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Use another provider/i })).toHaveCount(0);
 });
 
 test('device sign-in activates ChatGPT, records acknowledgement, and reveals branded protected content', async ({ page }, testInfo) => {

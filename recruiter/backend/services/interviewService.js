@@ -1,7 +1,7 @@
 const InterviewQuestion = require('../models/InterviewQuestion');
 const Job = require('../models/Job');
 const AIModelService = require('./aiModelService');
-const { GROQ_120B } = require('../config/aiRuntimeCatalog');
+const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 const {
   assessQuestionSet,
@@ -610,7 +610,7 @@ ADDITIONAL CONTEXT:
           isAIGenerated: true,
           aiGenerationMetadata: {
             generatedAt: new Date(),
-            model: GROQ_120B,
+            model: CHATGPT_MODEL,
             confidence: 0.9,
             questionType: type,
             promptVersion: 'interview-questions-v4'

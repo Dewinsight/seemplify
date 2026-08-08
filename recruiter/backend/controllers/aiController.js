@@ -2,7 +2,7 @@ const Job = require('../models/Job');
 const Candidate = require('../models/Candidate');
 const AIModelService = require('../services/aiModelService');
 const gptAnalysisService = require('../services/gptAnalysisService');
-const { GROQ_120B } = require('../config/aiRuntimeCatalog');
+const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
 const memoryService = require('../services/memoryService');
 const chatMessageService = require('../services/chatMessageService');
 const AIToolExecutor = require('../services/aiToolExecutor');
@@ -1498,8 +1498,8 @@ exports.testConnection = async (req, res) => {
       res.json({
         msg: 'AI model connection successful',
         model: aiModelService.modelName,
-        provider: 'groq',
-        defaultDeployment: GROQ_120B,
+        provider: 'chatgpt-connect',
+        defaultDeployment: CHATGPT_MODEL,
         matchingAnalysis: {
           enabled: gptAnalysisService.isEnabled,
           model: gptAnalysisService.modelName,
@@ -1511,8 +1511,8 @@ exports.testConnection = async (req, res) => {
         msg: 'AI model connection failed',
         code: result.code,
         model: aiModelService.modelName,
-        provider: 'groq',
-        defaultDeployment: GROQ_120B,
+        provider: 'chatgpt-connect',
+        defaultDeployment: CHATGPT_MODEL,
         matchingAnalysis: {
           enabled: gptAnalysisService.isEnabled,
           model: gptAnalysisService.modelName,

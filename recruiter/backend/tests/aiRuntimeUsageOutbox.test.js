@@ -66,7 +66,7 @@ function envelope(fingerprint = 'fingerprint-1') {
     event: {
       eventId: 'execution-1',
       requestId: 'logical-request',
-      provider: 'local-codex',
+      provider: 'chatgpt-connect',
       model: 'gpt-5.6-terra',
       status: 'success'
     },
@@ -230,7 +230,7 @@ test('terminal poison messages become bounded non-PII dead letters and make heal
     requestId: 'logical-request',
     sourceApp: 'recruiter',
     activity: 'candidate.cv_parse',
-    provider: 'local-codex',
+    provider: 'chatgpt-connect',
     model: 'gpt-5.6-terra',
     status: 'success',
     actorEmail: 'person@example.test',

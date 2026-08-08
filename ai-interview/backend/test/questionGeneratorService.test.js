@@ -33,7 +33,7 @@ test('standalone generator returns grounded questions after semantic validation'
   const service = new QuestionGeneratorService({
     completion: async () => ({
       content: JSON.stringify({ questions: [strongQuestion('A Kubernetes API is failing under a tenfold production traffic spike. How would you diagnose the failure, choose a scaling response, and explain the reliability trade-offs?')] }),
-      model: 'openai/gpt-oss-120b',
+      model: 'chatgpt-connected-account',
       requestId: 'request-1'
     })
   });
@@ -50,7 +50,7 @@ test('standalone generator retries once and rejects repeated generic output', as
     completion: async (messages) => {
       calls += 1;
       if (calls === 2) assert.match(messages.at(-1).content, /failed the semantic quality gate/i);
-      return { content: JSON.stringify({ questions: [generic] }), model: 'openai/gpt-oss-120b' };
+      return { content: JSON.stringify({ questions: [generic] }), model: 'chatgpt-connected-account' };
     }
   });
   await assert.rejects(

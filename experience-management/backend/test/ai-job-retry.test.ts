@@ -10,12 +10,11 @@ import { signupVerifyAndOnboard } from './authTestHelper.js';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-ai-retry-'));
 const files = {
   password: path.join(root, 'admin-password'), session: path.join(root, 'session-secret'),
-  terra: path.join(root, 'terra-secret'), knowledge: path.join(root, 'knowledge-secret'),
+  knowledge: path.join(root, 'knowledge-secret'),
   xKey: path.join(root, 'x-key'), esignKey: path.join(root, 'esign-key')
 };
 fs.writeFileSync(files.password, 'AI-Retry-Test-Password-2026!');
 fs.writeFileSync(files.session, 'ai-retry-test-session-secret-that-is-long-enough');
-fs.writeFileSync(files.terra, 'ai-retry-test-terra-secret-that-is-long-enough');
 fs.writeFileSync(files.knowledge, 'ai-retry-test-knowledge-secret-that-is-long-enough');
 fs.writeFileSync(files.xKey, Buffer.alloc(32, 91).toString('base64url'));
 fs.writeFileSync(files.esignKey, Buffer.alloc(32, 92).toString('base64url'));
@@ -24,8 +23,7 @@ Object.assign(process.env, {
   DATABASE_PATH: path.join(root, 'retry.sqlite'), UPLOAD_DIR: path.join(root, 'uploads'),
   FRONTEND_DIST: path.join(root, 'missing-frontend'), PUBLIC_URL: 'http://127.0.0.1:5581',
   ADMIN_EMAIL: 'ai-retry@example.test', ADMIN_PASSWORD_FILE: files.password,
-  SESSION_SECRET_FILE: files.session, TERRA_GATEWAY_SHARED_SECRET_FILE: files.terra,
-  KNOWLEDGE_RUNTIME_BASE_URL: 'http://knowledge.test', KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: files.knowledge,
+  SESSION_SECRET_FILE: files.session, KNOWLEDGE_RUNTIME_BASE_URL: 'http://knowledge.test', KNOWLEDGE_RUNTIME_SHARED_SECRET_FILE: files.knowledge,
   EMAIL_MODE: 'log', SUBSCRIPTION_ENFORCEMENT_ENABLED: 'false',
   X_CREDENTIAL_ENCRYPTION_KEY_FILE: files.xKey, ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: files.esignKey,
@@ -42,7 +40,7 @@ const { app } = await import('../src/app.js');
 const { db, getJob } = await import('../src/database.js');
 const { createAiJobFixture } = await import('./aiJobFixtures.js');
 const { executeAiJob } = await import('../src/aiJobs.js');
-const { TerraError } = await import('../src/terraClient.js');
+const { AiProviderError } = await import('../src/aiProviderError.js');
 
 after(() => {
   db.close();
@@ -93,7 +91,7 @@ test('retries only failed same-space social analysis jobs with bounded, auditabl
   const output = socialOutput(mentionIds);
   db.prepare('UPDATE ai_jobs SET provider_result_json=? WHERE id=?').run(JSON.stringify({
     activity: 'experience.social_listening', schemaName: 'experience_social_listening', output,
-    runtime: { model: 'gpt-5.6-terra' }
+    runtime: { model: 'gpt-5.6-sol' }
   }), job.id);
   failJob(job.id, 'Initial structured result could not be applied.');
 
@@ -101,9 +99,9 @@ test('retries only failed same-space social analysis jobs with bounded, auditabl
   assert.deepEqual(detail.body.retry, { eligible: true, reason: null });
   assert.equal(detail.body.runtime.source, 'provider_result');
   assert.equal(detail.body.runtime.status, 'actual');
-  assert.equal(detail.body.runtime.model, 'gpt-5.6-terra');
+  assert.equal(detail.body.runtime.model, 'gpt-5.6-sol');
   const listed = await owner.get('/api/ai/jobs').expect(200);
-  assert.equal(listed.body.find((item: any) => item.id === job.id)?.runtime.model, 'gpt-5.6-terra');
+  assert.equal(listed.body.find((item: any) => item.id === job.id)?.runtime.model, 'gpt-5.6-sol');
   await owner.post(`/api/ai/jobs/${job.id}/retry`).send({ force: true }).expect(400);
   const retries = await Promise.all([
     owner.post(`/api/ai/jobs/${job.id}/retry`).send({}),
@@ -177,7 +175,7 @@ test('advertises missing sources as ineligible and execution never analyzes a su
   db.prepare('DELETE FROM social_mentions WHERE id=? AND space_id=?').run(second, user.active_space_id);
   await assert.rejects(
     () => executeAiJob(getJob(racedJob.id)!),
-    (error: unknown) => error instanceof TerraError
+    (error: unknown) => error instanceof AiProviderError
       && error.code === 'MENTION_SNAPSHOT_UNAVAILABLE'
       && error.retryable === false
   );

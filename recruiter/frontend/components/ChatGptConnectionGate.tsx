@@ -25,9 +25,6 @@ import { setAiRuntimeSetupGateOpen } from "@/utils/aiRuntimeGateHandler"
 import { useAuth } from "@/context/AuthContext"
 
 const POLL_INTERVAL_MS = 2000
-// A "continue with local" decision holds for the browser session; the gate
-// re-asks on the next sign-in rather than on every navigation.
-const LOCAL_CHOICE_KEY = "seemplify_ai_runtime_gate_choice"
 // Routes a signed-out person can be on. A stale token can briefly read as
 // authenticated, so the path is checked too: the gate is for people using the
 // workspace, never for someone looking at a sign-in screen.
@@ -60,7 +57,6 @@ export function ChatGptConnectionGate() {
   const [working, setWorking] = useState("")
   const [error, setError] = useState("")
   const [copied, setCopied] = useState(false)
-  const [localChoice, setLocalChoice] = useState(false)
   // When the gateway throttles sign-in attempts it says how long the wait is;
   // the gate counts it down instead of leaving a button that only fails again.
   const [cooldownUntil, setCooldownUntil] = useState(0)
@@ -100,7 +96,6 @@ export function ChatGptConnectionGate() {
     // Nothing is fetched for a signed-out visitor: the sign-in screen must not
     // fire an authenticated request, let alone show a blocking dialog.
     if (!isAuthenticated || signedOutRoute) return
-    setLocalChoice(sessionStorage.getItem(LOCAL_CHOICE_KEY) === "local")
     void refresh()
     const onFocus = () => { void refresh() }
     window.addEventListener("focus", onFocus)
@@ -109,7 +104,7 @@ export function ChatGptConnectionGate() {
 
   const setup = chatGptSetupState(account, policy)
   const exempt = Boolean(pathname?.startsWith("/settings/ai-account")) || signedOutRoute
-  const open = isAuthenticated && loaded && !exempt && setup !== null && !(setup === "choice" && localChoice)
+  const open = isAuthenticated && loaded && !exempt && setup !== null
   const connected = account?.status === "connected"
   const needsConsent = connected && !account?.dataSharingAcknowledgedAt
   const busy = Boolean(working)
@@ -227,11 +222,6 @@ export function ChatGptConnectionGate() {
     logout()
   }
 
-  function continueWithLocal() {
-    sessionStorage.setItem(LOCAL_CHOICE_KEY, "local")
-    setLocalChoice(true)
-  }
-
   if (!open) return null
 
   const accountName = account?.connectedEmail || "your ChatGPT account"
@@ -260,9 +250,7 @@ export function ChatGptConnectionGate() {
           <DialogDescription className="mx-auto mt-2 max-w-[19rem] text-center text-[14.5px] leading-relaxed">
             {needsConsent
               ? "Confirm this account as the AI runtime for your work."
-              : setup === "required"
-                ? "This workspace runs AI on your own ChatGPT account. Sign in with OpenAI to use AI features."
-                : "This workspace runs AI on your own ChatGPT account by default. Connect it, or continue on the local model."}
+              : "This workspace runs AI on your own ChatGPT account. Sign in with OpenAI to use AI features."}
           </DialogDescription>
         </DialogHeader>
 
@@ -293,7 +281,6 @@ export function ChatGptConnectionGate() {
             <span>
               Candidate data, job descriptions, and interview content in the AI tasks you run are
               processed by OpenAI on your connected account.
-              {setup === "choice" ? " You can continue with the local AI runtime instead." : null}
             </span>
           </p>
 
@@ -387,18 +374,6 @@ export function ChatGptConnectionGate() {
                 ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 : <OpenAILogo className="mr-2 h-4 w-4" />}
               {cooling ? `Try again in ${countdown}` : "Sign in with OpenAI"}
-            </Button>
-          )}
-
-          {setup === "choice" && (
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 w-full rounded-xl border-black/10 text-[15px] font-medium dark:border-white/10"
-              data-testid="chatgpt-gate-use-local"
-              onClick={continueWithLocal}
-            >
-              Continue with local AI
             </Button>
           )}
 

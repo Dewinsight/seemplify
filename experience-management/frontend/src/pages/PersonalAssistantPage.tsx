@@ -965,7 +965,7 @@ export function PersonalAssistantPage() {
     setSelectedRunId(id);
   }
 
-  const assistantRuntime = overview?.ai || overview?.terra;
+  const assistantRuntime = overview?.ai;
   const runtimeReady = assistantRuntime?.ready === true;
   const workerBusy = (overview?.worker?.active || 0) + (overview?.worker?.queued || 0);
   const connectedCount = overview?.connections.filter((connection) => connection.status === 'connected').length || 0;

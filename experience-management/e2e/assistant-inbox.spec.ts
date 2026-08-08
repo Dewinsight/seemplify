@@ -95,7 +95,7 @@ function overview(connections = [{
     callbackUrl: 'http://127.0.0.1:5412/api/integrations/nylas/callback',
     connections,
     worker: { running: true, active: 0, queued: 0, concurrency: 4 },
-    terra: { ready: true, providerLabel: 'Terra (Experience managed)' }
+    ai: { ready: true, providerLabel: 'ChatGPT Connect' }
   };
 }
 
@@ -182,7 +182,7 @@ test('desktop inbox searches, paginates, scrolls independently, reads full messa
         actionItems: [],
         openQuestions: ['Who is the final approver?']
       },
-      runtime: { provider: 'terra', model: 'gpt-5.6-terra', usage: { totalTokens: 260 } },
+      runtime: { provider: 'codex', model: 'gpt-5.6-sol', usage: { totalTokens: 260 } },
       advisoryOnly: true,
       externalDispatched: false,
       error: null,
@@ -222,7 +222,7 @@ test('desktop inbox searches, paginates, scrolls independently, reads full messa
         revision: 1,
         updatedAt: now
       },
-      runtime: { provider: 'terra', model: 'gpt-5.6-terra', usage: { totalTokens: 240 } },
+      runtime: { provider: 'codex', model: 'gpt-5.6-sol', usage: { totalTokens: 240 } },
       advisoryOnly: true,
       externalDispatched: false,
       error: null,

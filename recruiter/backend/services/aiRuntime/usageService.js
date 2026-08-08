@@ -120,7 +120,6 @@ function calculateEstimatedCost(usage, pricing = {}) {
 
 function sanitizeMessage(value) {
   return String(value || '')
-    .replace(/gsk_[A-Za-z0-9_-]+/g, '[REDACTED_GROQ_KEY]')
     .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [REDACTED]')
     .slice(0, 600);
 }

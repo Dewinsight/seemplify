@@ -9,13 +9,11 @@ import request from 'supertest';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-journey-metrics-'));
 const passwordFile = path.join(root, 'admin-password');
 const sessionFile = path.join(root, 'session-secret');
-const terraSecretFile = path.join(root, 'terra-secret');
 const xKeyFile = path.join(root, 'x-key');
 const esignKeyFile = path.join(root, 'esign-key');
 const identityKeyFile = path.join(root, 'identity-key');
 fs.writeFileSync(passwordFile, 'Journey-Metrics-Test-2026!');
 fs.writeFileSync(sessionFile, 'journey-metrics-session-secret-that-is-long-enough');
-fs.writeFileSync(terraSecretFile, 'journey-metrics-terra-secret-that-is-long-enough');
 fs.writeFileSync(xKeyFile, Buffer.alloc(32, 71).toString('base64url'));
 fs.writeFileSync(esignKeyFile, Buffer.alloc(32, 72).toString('base64url'));
 fs.writeFileSync(identityKeyFile, Buffer.alloc(32, 73));
@@ -24,7 +22,6 @@ Object.assign(process.env, {
   KNOWLEDGE_STORAGE_DIR: path.join(root, 'knowledge'), FRONTEND_DIST: path.join(root, 'missing-frontend'),
   PUBLIC_URL: 'http://127.0.0.1:5412', ADMIN_EMAIL: 'journey-metrics@seemplify.local',
   ADMIN_PASSWORD_FILE: passwordFile, SESSION_SECRET_FILE: sessionFile,
-  TERRA_GATEWAY_SHARED_SECRET_FILE: terraSecretFile, LOCAL_LLM_SHARED_SECRET_FILE: terraSecretFile,
   EMAIL_MODE: 'log', X_CREDENTIAL_ENCRYPTION_KEY_FILE: xKeyFile, ESIGN_STORAGE_DIR: path.join(root, 'esign'),
   ESIGN_ENCRYPTION_KEY_FILE: esignKeyFile, JOURNEY_IDENTITY_HASH_KEY_FILE: identityKeyFile,
   X_SEED_CONSUMER_KEY_FILE: path.join(root, 'missing-x-key'),

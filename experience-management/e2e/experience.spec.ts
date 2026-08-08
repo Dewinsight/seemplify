@@ -100,13 +100,13 @@ test('authenticated live refresh stream connects and emits its handshake', async
 });
 
 test('sidebar runtime identity stays readable and opens the AI queue', async ({ page }, testInfo) => {
-  const providerLabel = 'Terra (Codex local-cloud through managed Local Control Center)';
+  const providerLabel = 'ChatGPT Connect (hosted Codex gateway)';
   const mobile = testInfo.project.name === 'mobile-chromium';
   if (!mobile) await page.setViewportSize({ width: 768, height: 800 });
   await page.route('**/api/runtime', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify({ terra: { ready: true, reachable: true, providerLabel }, worker: { active: 0, concurrency: 1 } })
+    body: JSON.stringify({ ai: { codex: { account: { connected: true }, selectedModel: providerLabel } }, worker: { active: 0, concurrency: 1 } })
   }));
   await page.goto('/login');
   await page.getByLabel('Email').fill('qa@seemplify.local');

@@ -235,7 +235,7 @@ export default function AiAccountPage() {
           className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
           role="alert"
         >
-          ChatGPT is the platform&apos;s AI runtime and the local runtime is disabled. Connect your account and accept
+          ChatGPT is the platform&apos;s only AI runtime. Connect your account and accept
           the data-sharing notice to use AI features.
         </div>
       )}

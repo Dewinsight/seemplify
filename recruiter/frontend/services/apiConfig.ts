@@ -421,7 +421,7 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   }
 
   // AI runtime gate: a failed AI call carrying a runtime-availability code
-  // (local model off/unreachable, or the user's ChatGPT account needed) opens
+  // (the ChatGPT gateway is unavailable or the user's account is needed) opens
   // the global runtime dialog — same interception pattern as the 402 credits
   // toast above. The response still flows back to the caller untouched.
   if (isBrowser && !response.ok && response.status !== 401 && response.status !== 402) {

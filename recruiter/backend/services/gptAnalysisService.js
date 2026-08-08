@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
-const { GROQ_120B } = require('../config/aiRuntimeCatalog');
+const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
 
 const MATCH_ANALYSIS_SCHEMA = {
   type: 'object',
@@ -188,9 +188,9 @@ class GPTAnalysisCache {
 
 class GPTAnalysisService {
   constructor() {
-    this.modelName = GROQ_120B;
+    this.modelName = CHATGPT_MODEL;
     
-    this.cache = new GPTAnalysisCache(`groq:${GROQ_120B}:route-v1:prompt-v3`);
+    this.cache = new GPTAnalysisCache(`chatgpt-connect:${CHATGPT_MODEL}:route-v2:prompt-v3`);
     const matchingToggle = process.env.ENABLE_LLM_MATCHING ?? process.env.ENABLE_GPT_MATCHING ?? 'false';
     this.isEnabled = matchingToggle === 'true';
     

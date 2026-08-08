@@ -1,7 +1,7 @@
 require('dotenv').config(); // Load .env from current directory (backend/)
 const { ChatOpenAI } = require('@langchain/openai');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
-const { GROQ_120B } = require('../config/aiRuntimeCatalog');
+const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
 const { AgentExecutor, createToolCallingAgent } = require('langchain/agents');
 const { ChatPromptTemplate, MessagesPlaceholder } = require('@langchain/core/prompts');
 const allTools = require('./langchainTools');
@@ -32,7 +32,7 @@ const ASSISTANT_ROUTING_SCHEMA = {
  */
 function getOpenAIModel(activity = 'assistant.chat') {
   return new ChatOpenAI({
-    model: GROQ_120B,
+    model: CHATGPT_MODEL,
     apiKey: 'managed-by-seemplify-ai-runtime',
     streaming: true,
     streamUsage: true,

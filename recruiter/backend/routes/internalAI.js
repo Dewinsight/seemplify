@@ -3,9 +3,9 @@ const { ACTIVITY_DEFINITIONS } = require('../config/aiRuntimeCatalog');
 const { createInternalServiceAuth } = require('../middleware/internalServiceAuth');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const {
-  ingestLocalUsageEnvelope,
-  verifyLocalUsageSignature
-} = require('../services/aiRuntime/localUsageIngestionService');
+  ingestChatGptUsageEnvelope,
+  verifyChatGptUsageSignature
+} = require('../services/aiRuntime/chatGptUsageIngestionService');
 const { runWithAIRequestContext } = require('../services/aiRuntime/requestContext');
 
 const router = express.Router();
@@ -26,11 +26,11 @@ function validateMessages(messages) {
   });
 }
 
-router.post('/v1/local-usage/events', async (req, res) => {
+router.post('/v1/chatgpt-usage/events', async (req, res) => {
   const rawBody = Buffer.isBuffer(req.rawBody)
     ? req.rawBody.toString('utf8')
     : JSON.stringify(req.body || {});
-  const verified = verifyLocalUsageSignature({
+  const verified = verifyChatGptUsageSignature({
     headers: req.headers,
     method: req.method,
     requestPath: req.originalUrl.split('?')[0],
@@ -43,7 +43,7 @@ router.post('/v1/local-usage/events', async (req, res) => {
     });
   }
   try {
-    const result = await ingestLocalUsageEnvelope(req.body);
+    const result = await ingestChatGptUsageEnvelope(req.body);
     return res.status(202).json(result);
   } catch (error) {
     const status = error.code === 'AI_USAGE_IDENTITY_CONFLICT'
@@ -52,8 +52,8 @@ router.post('/v1/local-usage/events', async (req, res) => {
         ? 400
         : error.statusCode || 503;
     return res.status(status).json({
-      code: error.code || 'LOCAL_USAGE_INGESTION_FAILED',
-      message: error.message || 'Local usage event could not be recorded'
+      code: error.code || 'CHATGPT_USAGE_INGESTION_FAILED',
+      message: error.message || 'ChatGPT usage event could not be recorded'
     });
   }
 });

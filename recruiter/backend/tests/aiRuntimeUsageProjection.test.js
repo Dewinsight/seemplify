@@ -41,9 +41,9 @@ function usageInput(overrides = {}) {
     requestId: 'request-1',
     sourceApp: 'recruiter',
     activity: 'candidate.insights',
-    provider: 'groq',
-    model: 'openai/gpt-oss-120b',
-    quotaGroup: 'groq-primary',
+    provider: 'chatgpt',
+    model: 'chatgpt-connected-account',
+    quotaGroup: 'chatgpt-primary',
     organizationId: 'org-1',
     organizationName: 'Example Ltd',
     actorId: 'actor-1',
@@ -75,10 +75,10 @@ function localMeteringPair(seed = 'default') {
     eventId,
     gatewayExecutionId,
     requestId: `terra-request-${seed}`,
-    providerRequestId: `terra-provider-${seed}`,
+    providerRequestId: `chatgpt-provider-${seed}`,
     sourceApp: 'recruiter',
     activity: 'candidate.cv_parse',
-    provider: 'local-codex',
+    provider: 'chatgpt-connect',
     model: 'gpt-5.6-terra',
     status: 'success',
     usageReported: true,
@@ -103,7 +103,7 @@ function localMeteringPair(seed = 'default') {
       ...common,
       meteringOrigin: 'backend-response',
       atSourceOnly: false,
-      quotaGroup: 'local-runtime',
+      quotaGroup: 'chatgpt-connect',
       organizationId: 'org-terra',
       organizationName: 'Terra Ltd',
       actorId: 'actor-terra',
@@ -451,7 +451,7 @@ test('logical request projection is replay-safe and success-dominates concurrent
   const failed = usageInput({
     eventId: 'logical-failed-attempt',
     requestId,
-    provider: 'local-codex',
+    provider: 'chatgpt-connect',
     model: 'gpt-5.6-terra',
     quotaGroup: '',
     status: 'failed',
@@ -462,7 +462,7 @@ test('logical request projection is replay-safe and success-dominates concurrent
   const succeeded = usageInput({
     eventId: 'logical-success-attempt',
     requestId,
-    provider: 'groq',
+    provider: 'chatgpt',
     status: 'success',
     failovers: 1,
     latencyMs: 120,
@@ -487,7 +487,7 @@ test('logical request projection is replay-safe and success-dominates concurrent
 test('Terra-shaped usage reaches the raw ledger and projection', async () => {
   await recordUsage(usageInput({
     eventId: 'terra-execution-1',
-    provider: 'local-codex',
+    provider: 'chatgpt-connect',
     model: 'gpt-5.6-terra',
     usageSource: 'local-gateway',
     usageReported: true,
@@ -502,7 +502,7 @@ test('Terra-shaped usage reaches the raw ledger and projection', async () => {
 
   const event = await AIUsageEvent.findOne({ eventId: 'terra-execution-1' }).lean();
   const rollup = await AIUsageDailyRollup.findOne({
-    provider: 'local-codex',
+    provider: 'chatgpt-connect',
     model: 'gpt-5.6-terra'
   }).lean();
   assert.equal(event.inputTokens, 12_858);
@@ -522,7 +522,7 @@ test('legacy metering backfill preserves unknown zeroes and rebuilds exact perma
   const base = {
     sourceApp: 'recruiter',
     activity: 'historical.metering',
-    provider: 'local-codex',
+    provider: 'chatgpt-connect',
     model: 'gpt-5.6-terra',
     quotaGroup: '',
     organizationId: '',
@@ -660,7 +660,7 @@ test('background repair preserves the partially retained 90th-day rollup', async
     requestId: 'partial-boundary-request',
     sourceApp: 'recruiter',
     activity: 'historical.partial',
-    provider: 'groq',
+    provider: 'chatgpt',
     model: 'historical-model',
     quotaGroup: '',
     organizationId: '',
@@ -677,7 +677,7 @@ test('background repair preserves the partially retained 90th-day rollup', async
     day: partialDay,
     sourceApp: 'recruiter',
     activity: 'historical.partial',
-    provider: 'groq',
+    provider: 'chatgpt',
     model: 'historical-model',
     quotaGroup: '',
     organizationId: '',
@@ -871,11 +871,11 @@ test('repair and rebuild restore corrupted projections and remove recent ghosts'
     day: utcDay('2026-07-24T00:00:00.000Z'),
     sourceApp: 'recruiter',
     activity: 'ghost.activity',
-    provider: 'groq',
+    provider: 'chatgpt',
     model: 'ghost-model'
   });
   await AIQuotaSnapshot.create({
-    provider: 'groq',
+    provider: 'chatgpt',
     quotaGroup: 'ghost-quota',
     model: 'ghost-model',
     localDay: utcDay('2026-07-24T00:00:00.000Z'),
@@ -952,9 +952,9 @@ test('legacy duplicate events are retained for audit but excluded from exact pro
     requestId: 'legacy-request',
     sourceApp: 'recruiter',
     activity: 'candidate.insights',
-    provider: 'groq',
-    model: 'openai/gpt-oss-120b',
-    quotaGroup: 'groq-primary',
+    provider: 'chatgpt',
+    model: 'chatgpt-connected-account',
+    quotaGroup: 'chatgpt-primary',
     organizationId: 'org-1',
     actorId: 'actor-1',
     status: 'success',

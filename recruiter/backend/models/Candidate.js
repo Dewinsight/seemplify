@@ -324,7 +324,7 @@ CandidateSchema.index(
   }
 );
 
-// Index creation is deliberately sequenced by cvRuntimeCompatibilityService so
+// Index creation is deliberately sequenced by cvProcessingCompatibilityService so
 // historical blanks and duplicates are repaired before the unique index build.
 CandidateSchema.set('autoIndex', false);
 

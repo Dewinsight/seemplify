@@ -86,7 +86,7 @@ test('structure-aware chunking preserves headings, pages, tables, overlap, and d
   assert.ok(chunks.some((chunk) => chunk.text.includes('| Metric | Value |')));
 });
 
-test('grounding rejects a fabricated Terra span', () => {
+test('grounding rejects a fabricated ChatGPT span', () => {
   assert.throws(() => groundedMentions([{ quote: 'not present', start: 0, end: 11 }], 'source evidence', 0), (error) => {
     assert.equal(error.code, 'UNGROUNDED_GRAPH');
     assert.equal(error.status, 422);
@@ -100,7 +100,7 @@ test('only transport, 429, and upstream 5xx failures are retryable', () => {
   assert.deepEqual({ code: rejected.code, status: rejected.status, retryable: rejected.retryable }, { code: 'DOCLING_REQUEST_REJECTED', status: 422, retryable: false });
   const limited = upstreamResponseError('docling', { status: 429 }, 'busy');
   assert.deepEqual({ code: limited.code, status: limited.status, retryable: limited.retryable }, { code: 'DOCLING_UNAVAILABLE', status: 503, retryable: true });
-  assert.equal(upstreamResponseError('terra_graph', { status: 500 }, 'offline').retryable, true);
+  assert.equal(upstreamResponseError('chatgpt_graph', { status: 500 }, 'offline').retryable, true);
 });
 
 test('Arango ingesting is treated as an in-progress vector training state', async () => {
@@ -233,7 +233,7 @@ test('test tenant cleanup cannot target an arbitrary production space', () => {
 
 test('status exposes a consistent ready and healthy contract', async () => {
   const runtime = createKnowledgeRuntime({
-    secrets: { 'arango-app': 'a', 'arango-provisioner': 'p', 'llm-service': 'l', 'tei-api': 't', 'docling-api': 'd' },
+    secrets: { 'arango-app': 'a', 'arango-provisioner': 'p', 'chatgpt-gateway': 'l', 'tei-api': 't', 'docling-api': 'd' },
     appClient: {},
     provisionerClient: { authorization: 'Basic test', request: async () => ({ result: [] }) },
     fetchImpl: async () => ({ ok: true, status: 200 }),
@@ -241,7 +241,7 @@ test('status exposes a consistent ready and healthy contract', async () => {
   const status = await runtime.status();
   assert.equal(status.ready, true);
   assert.equal(status.healthy, true);
-  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'docling', 'embedding', 'gteEmbedding', 'reranker', 'terra']);
+  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'docling', 'embedding', 'gteEmbedding', 'reranker', 'chatgpt']);
 });
 
 test('index response exposes canonical relationshipCount and scoped receipt metadata', async () => {
@@ -274,7 +274,7 @@ test('index response exposes canonical relationshipCount and scoped receipt meta
   try {
     const runtime = createKnowledgeRuntime({
       config, appClient: app, provisionerClient: provisioner,
-      secrets: { 'arango-app': 'a', 'arango-provisioner': 'p', 'llm-service': 'l', 'tei-api': 't', 'docling-api': 'd' },
+      secrets: { 'arango-app': 'a', 'arango-provisioner': 'p', 'chatgpt-gateway': 'l', 'tei-api': 't', 'docling-api': 'd' },
       extractDocument: async () => ({ text: 'Acme works with Beta', pageCount: 1 }),
       embedTexts: async (texts) => texts.map(() => [1, 0]),
       extractGraph: async () => ({ windows: 1, claims: [], entities: [

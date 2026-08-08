@@ -29,7 +29,7 @@ This implementation is an original Seemplify product with feature parity goals, 
 
 ## AI invariants
 
-All eight experience-management AI activities use the dedicated Experience runtime profile through the shared Seemplify gateway. Local Control Center owns and displays that profile; its initial default is Codex `gpt-5.6-terra`. A deliberate Control Center change can select another managed engine/model for new Experience jobs. Jobs remain durable and retry while the selected profile is unavailable, and the backend signs every request, supplies a durable metering identity, and persists the job before dispatch.
+All eight experience-management AI activities use ChatGPT Connect through the deployed Seemplify service. ChatGPT Connect is the only AI provider. Each user connects a ChatGPT account and selects from the Codex models that account exposes. Jobs remain durable and retry while ChatGPT Connect is unavailable, and the backend persists the job before dispatch.
 
 The AI prompt always treats respondent data as untrusted content and requires evidence from supplied responses. Structured outputs are schema validated before being stored.
 

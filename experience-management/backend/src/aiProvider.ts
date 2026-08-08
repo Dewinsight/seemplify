@@ -3,18 +3,16 @@ import path from 'node:path';
 import { config } from './config.js';
 import { codexActionCatalog, codexActionIds, type CodexActionId } from './codexActionCatalog.js';
 import { codexClientForUser, codexRuntimeError, type CodexModel } from './codexAppServer.js';
-import { completeWithTerra, TerraError, type TerraCompletionInput } from './terraClient.js';
+import { AiProviderError, type AiCompletionRequest } from './aiProviderError.js';
 
-export type AiProvider = 'terra' | 'codex';
-export type AiRuntimeChoice = 'local' | 'chatgpt' | null;
+export type AiProvider = 'codex';
+export type AiRuntimeChoice = 'chatgpt';
 export type AiRuntimePolicy = {
-  localEnabled: boolean;
   chatgptEnabled: boolean;
   defaultRuntime: Exclude<AiRuntimeChoice, null>;
 };
 
 const defaultAiRuntimePolicy: AiRuntimePolicy = {
-  localEnabled: true,
   chatgptEnabled: true,
   defaultRuntime: 'chatgpt'
 };
@@ -73,7 +71,7 @@ export type AiProviderPreference = {
 };
 
 type StoredAiProviderPreference = Omit<AiProviderPreference, 'runtimeChoice'> & {
-  /** Missing on preferences written before the ChatGPT-first runtime gate. */
+  /** Missing on preferences written before ChatGPT Connect became mandatory. */
   runtimeChoice?: AiRuntimeChoice;
 };
 
@@ -111,23 +109,17 @@ function normaliseRuntimePolicy(value: unknown): AiRuntimePolicy {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { ...defaultAiRuntimePolicy };
   const candidate = value as Partial<AiRuntimePolicy>;
   return {
-    localEnabled: typeof candidate.localEnabled === 'boolean' ? candidate.localEnabled : defaultAiRuntimePolicy.localEnabled,
     chatgptEnabled: typeof candidate.chatgptEnabled === 'boolean' ? candidate.chatgptEnabled : defaultAiRuntimePolicy.chatgptEnabled,
-    defaultRuntime: candidate.defaultRuntime === 'local' || candidate.defaultRuntime === 'chatgpt'
-      ? candidate.defaultRuntime : defaultAiRuntimePolicy.defaultRuntime
+    defaultRuntime: 'chatgpt'
   };
 }
 
-function choiceForProvider(provider: AiProvider): Exclude<AiRuntimeChoice, null> {
-  return provider === 'codex' ? 'chatgpt' : 'local';
+function choiceForProvider(_provider: AiProvider): Exclude<AiRuntimeChoice, null> {
+  return 'chatgpt';
 }
 
-function storedRuntimeChoice(stored: StoredAiProviderPreference | undefined): AiRuntimeChoice {
-  if (!stored) return null;
-  if (stored.runtimeChoice === 'local' || stored.runtimeChoice === 'chatgpt' || stored.runtimeChoice === null) {
-    return stored.runtimeChoice;
-  }
-  return choiceForProvider(stored.provider === 'codex' ? 'codex' : 'terra');
+function storedRuntimeChoice(_stored: StoredAiProviderPreference | undefined): AiRuntimeChoice {
+  return 'chatgpt';
 }
 
 function normaliseActionOverrides(value: unknown): CodexActionOverrides {
@@ -151,7 +143,7 @@ function normaliseActionOverrides(value: unknown): CodexActionOverrides {
 function assertKnownActionOverrides(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const unknown = Object.keys(value).find((actionId) => !codexActionIds.has(actionId as CodexActionId));
-  if (unknown) throw new TerraError(`Unknown Codex AI action: ${unknown}.`, 'CODEX_ACTION_UNKNOWN', 400, false);
+  if (unknown) throw new AiProviderError(`Unknown Codex AI action: ${unknown}.`, 'CODEX_ACTION_UNKNOWN', 400, false);
 }
 
 function readPreferences(): PreferenceFile {
@@ -190,31 +182,30 @@ export function getAiRuntimePolicy() {
   return getAdminCodexDefaults().runtimePolicy;
 }
 
-function providerEnabled(provider: AiProvider, policy: AiRuntimePolicy) {
-  return provider === 'terra' ? policy.localEnabled : policy.chatgptEnabled;
+function providerEnabled(_provider: AiProvider, policy: AiRuntimePolicy) {
+  return policy.chatgptEnabled;
 }
 
-function providerForChoice(choice: Exclude<AiRuntimeChoice, null>): AiProvider {
-  return choice === 'local' ? 'terra' : 'codex';
+function providerForChoice(_choice: Exclude<AiRuntimeChoice, null>): AiProvider {
+  return 'codex';
 }
 
 export function effectiveAiProvider(preference: Pick<AiProviderPreference, 'provider' | 'runtimeChoice'>) {
   const policy = getAiRuntimePolicy();
-  if (!policy.localEnabled && !policy.chatgptEnabled) {
-    throw new TerraError('AI runtimes are currently disabled by a platform administrator.',
-      'AI_RUNTIMES_DISABLED', 503, false);
+  if (!policy.chatgptEnabled) {
+    throw new AiProviderError('ChatGPT is disabled by a platform administrator.',
+      'AI_RUNTIME_CHATGPT_DISABLED', 503, false);
   }
-  const selected = preference.runtimeChoice
-    ? providerForChoice(preference.runtimeChoice)
-    : providerForChoice(policy.defaultRuntime);
+  const selected = providerForChoice(preference.runtimeChoice || policy.defaultRuntime);
   if (providerEnabled(selected, policy)) return selected;
-  return policy.localEnabled ? 'terra' : 'codex';
+  throw new AiProviderError('ChatGPT is disabled by a platform administrator.',
+    'AI_RUNTIME_CHATGPT_DISABLED', 503, false);
 }
 
 export function getAiProviderPreference(userId: string, spaceId: string): AiProviderPreference {
   const stored = readPreferences().preferences[preferenceKey(userId, spaceId)];
   return {
-    provider: stored?.provider === 'terra' ? 'terra' : 'codex',
+    provider: 'codex',
     runtimeChoice: storedRuntimeChoice(stored),
     codexModel: typeof stored?.codexModel === 'string' ? stored.codexModel : null,
     codexReasoningEffort: optionalString(stored?.codexReasoningEffort),
@@ -304,13 +295,9 @@ export function aiProviderSnapshot(
   actionId?: CodexActionId | null
 ): AiProviderSnapshot {
   if (!userId) {
-    const policy = getAiRuntimePolicy();
-    if (policy.localEnabled) return { provider: 'terra', codexModel: null, codexDataSharingAcknowledgedAt: null };
-    throw new TerraError(
-      policy.chatgptEnabled
-        ? 'This automated AI action has no connected ChatGPT account and the local runtime is disabled.'
-        : 'AI runtimes are currently disabled by a platform administrator.',
-      policy.chatgptEnabled ? 'AI_RUNTIME_ACCOUNT_REQUIRED' : 'AI_RUNTIMES_DISABLED', 503, false
+    throw new AiProviderError(
+      'This AI action requires a connected ChatGPT account.',
+      'AI_RUNTIME_ACCOUNT_REQUIRED', 409, false
     );
   }
   const preference = getAiProviderPreference(userId, spaceId);
@@ -434,7 +421,7 @@ function validateCodexConfiguration(input: {
   const models = visibleModels(input.models);
   const modelById = new Map(models.map((model) => [model.id, model]));
   if (!models.length) {
-    throw new TerraError('This ChatGPT account does not advertise an available Codex model.',
+    throw new AiProviderError('This ChatGPT account does not advertise an available Codex model.',
       'CODEX_MODEL_UNAVAILABLE', 409, false);
   }
   const targetDefaults = input.target === 'user' ? input.preference : input.adminDefaults;
@@ -444,7 +431,7 @@ function validateCodexConfiguration(input: {
   ].map(optionalString).filter((model): model is string => Boolean(model));
   const unavailableModel = configuredModels.find((model) => !modelById.has(model));
   if (unavailableModel) {
-    throw new TerraError(
+    throw new AiProviderError(
       `The selected Codex model (${unavailableModel}) is not available to this ChatGPT account.`,
       'CODEX_MODEL_UNAVAILABLE', 409, false
     );
@@ -452,13 +439,13 @@ function validateCodexConfiguration(input: {
   const assertEffort = (model: CodexModel, effort: string, label: string) => {
     const supported = supportedEfforts(model);
     if (!supported.length) {
-      throw new TerraError(
+      throw new AiProviderError(
         `${label} does not advertise a usable reasoning effort.`,
         'CODEX_REASONING_EFFORT_UNAVAILABLE', 409, false
       );
     }
     if (!supported.includes(effort)) {
-      throw new TerraError(
+      throw new AiProviderError(
         `${label} does not support the ${effort} reasoning effort.`,
         'CODEX_REASONING_EFFORT_UNAVAILABLE', 409, false
       );
@@ -489,7 +476,7 @@ function validateCodexConfiguration(input: {
     const requestedEffort = resolved.reasoningEffortCandidates[0];
     if (!requestedEffort || !targetSources.has(requestedEffort.source)) continue;
     if (!resolved.modelDefinition) {
-      throw new TerraError('Select a Codex model available to this ChatGPT account.',
+      throw new AiProviderError('Select a Codex model available to this ChatGPT account.',
         'CODEX_MODEL_UNAVAILABLE', 409, false);
     }
     assertEffort(resolved.modelDefinition, requestedEffort.value,
@@ -521,16 +508,16 @@ export async function updateAdminCodexDefaults(validatingUserId: string, input: 
   }
   const client = codexClientForUser(validatingUserId);
   const account = await client.accountStatus().catch((error) => {
-    throw new TerraError(`Codex is unavailable: ${codexRuntimeError(error)}`, 'CODEX_UNAVAILABLE', 503, true);
+    throw new AiProviderError(`Codex is unavailable: ${codexRuntimeError(error)}`, 'CODEX_UNAVAILABLE', 503, true);
   });
   if (!account.connected) {
-    throw new TerraError('Connect a ChatGPT account before managing administrator Codex defaults.',
+    throw new AiProviderError('Connect a ChatGPT account before managing administrator Codex defaults.',
       'CODEX_NOT_CONNECTED', 409, false);
   }
   let models: CodexModel[];
   try { models = visibleModels(await client.models()); }
   catch (error) {
-    throw new TerraError(`Codex models could not be loaded: ${codexRuntimeError(error)}`,
+    throw new AiProviderError(`Codex models could not be loaded: ${codexRuntimeError(error)}`,
       'CODEX_MODELS_UNAVAILABLE', 503, true);
   }
   const draft: AdminCodexDefaults = {
@@ -644,14 +631,14 @@ export async function getAiProviderState(userId: string, spaceId: string) {
 export async function startCodexDeviceLogin(userId: string) {
   try { return await codexClientForUser(userId).startDeviceLogin(); }
   catch (error) {
-    throw new TerraError(`Codex sign-in could not start: ${codexRuntimeError(error)}`, 'CODEX_LOGIN_FAILED', 502, false);
+    throw new AiProviderError(`Codex sign-in could not start: ${codexRuntimeError(error)}`, 'CODEX_LOGIN_FAILED', 502, false);
   }
 }
 
 export async function cancelCodexDeviceLogin(userId: string) {
   try { return await codexClientForUser(userId).cancelDeviceLogin(); }
   catch (error) {
-    throw new TerraError(`Codex sign-in could not be cancelled: ${codexRuntimeError(error)}`,
+    throw new AiProviderError(`Codex sign-in could not be cancelled: ${codexRuntimeError(error)}`,
       'CODEX_LOGIN_CANCEL_FAILED', 502, false);
   }
 }
@@ -659,18 +646,15 @@ export async function cancelCodexDeviceLogin(userId: string) {
 export async function disconnectCodex(userId: string) {
   try { await codexClientForUser(userId).logout(); }
   catch (error) {
-    throw new TerraError(`Codex sign-out failed: ${codexRuntimeError(error)}`, 'CODEX_LOGOUT_FAILED', 502, false);
+    throw new AiProviderError(`Codex sign-out failed: ${codexRuntimeError(error)}`, 'CODEX_LOGOUT_FAILED', 502, false);
   }
   const file = readPreferences();
   const prefix = `${userId}:`;
   const preferences = Object.fromEntries(Object.entries(file.preferences).map(([key, value]) => {
     if (!key.startsWith(prefix)) return [key, value];
     const updatedAt = new Date().toISOString();
-    return storedRuntimeChoice(value) === 'local'
-      ? [key, { ...value, provider: 'terra' as const, runtimeChoice: 'local' as const,
-        codexDataSharingAcknowledgedAt: null, updatedAt }]
-      : [key, { ...value, provider: 'codex' as const, runtimeChoice: null,
-        codexDataSharingAcknowledgedAt: null, updatedAt }];
+    return [key, { ...value, provider: 'codex' as const, runtimeChoice: 'chatgpt' as const,
+      codexDataSharingAcknowledgedAt: null, updatedAt }];
   }));
   writePreferences({ ...file, preferences });
 }
@@ -684,15 +668,15 @@ export async function chooseAiProvider(userId: string, spaceId: string, input: {
 }) {
   // Revocation is an immediate privacy boundary. Never make it depend on the
   // connected account, live model catalog, or any optional full-form fields.
-  if (input.provider === 'terra' && input.codexDataSharingAcknowledged === false) {
+  if (input.provider === 'codex' && input.codexDataSharingAcknowledged === false) {
     return setAiProviderPreference(userId, spaceId, {
-      provider: 'terra', runtimeChoice: 'local', codexDataSharingAcknowledgedAt: null
+      provider: 'codex', runtimeChoice: 'chatgpt', codexDataSharingAcknowledgedAt: null
     });
   }
   const policy = getAiRuntimePolicy();
   if (!providerEnabled(input.provider, policy)) {
-    throw new TerraError(
-      `${input.provider === 'codex' ? 'ChatGPT / Codex' : 'The local AI runtime'} is disabled by a platform administrator.`,
+    throw new AiProviderError(
+      'ChatGPT / Codex is disabled by a platform administrator.',
       'AI_RUNTIME_DISABLED', 403, false
     );
   }
@@ -705,15 +689,15 @@ export async function chooseAiProvider(userId: string, spaceId: string, input: {
   if (input.provider === 'codex' || changesCodexConfiguration) {
     const client = codexClientForUser(userId);
     const account = await client.accountStatus().catch((error) => {
-      throw new TerraError(`Codex is unavailable: ${codexRuntimeError(error)}`, 'CODEX_UNAVAILABLE', 503, true);
+      throw new AiProviderError(`Codex is unavailable: ${codexRuntimeError(error)}`, 'CODEX_UNAVAILABLE', 503, true);
     });
     if (!account.connected) {
-      throw new TerraError('Connect a ChatGPT account before selecting Codex.', 'CODEX_NOT_CONNECTED', 409, false);
+      throw new AiProviderError('Connect a ChatGPT account before selecting Codex.', 'CODEX_NOT_CONNECTED', 409, false);
     }
     let models: CodexModel[];
     try { models = visibleModels(await client.models()); }
     catch (error) {
-      throw new TerraError(`Codex models could not be loaded: ${codexRuntimeError(error)}`,
+      throw new AiProviderError(`Codex models could not be loaded: ${codexRuntimeError(error)}`,
         'CODEX_MODELS_UNAVAILABLE', 503, true);
     }
     const current = getAiProviderPreference(userId, spaceId);
@@ -721,7 +705,7 @@ export async function chooseAiProvider(userId: string, spaceId: string, input: {
       ? new Date().toISOString() : current.codexDataSharingAcknowledgedAt;
     if (input.provider === 'codex'
       && (input.codexDataSharingAcknowledged === false || !acknowledgedAt)) {
-      throw new TerraError(
+      throw new AiProviderError(
         'Acknowledge that AI task content may be sent to OpenAI before selecting Codex.',
         'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED', 409, false
       );
@@ -756,7 +740,7 @@ export async function chooseAiProvider(userId: string, spaceId: string, input: {
     });
     return setAiProviderPreference(userId, spaceId, {
       provider: input.provider,
-      runtimeChoice: input.provider === 'codex' ? 'chatgpt' : 'local',
+      runtimeChoice: 'chatgpt',
       codexModel: model,
       codexReasoningEffort: reasoningEffort,
       codexActionOverrides: actionOverrides,
@@ -764,8 +748,8 @@ export async function chooseAiProvider(userId: string, spaceId: string, input: {
     });
   }
   return setAiProviderPreference(userId, spaceId, {
-    provider: 'terra',
-    runtimeChoice: 'local',
+    provider: 'codex',
+    runtimeChoice: 'chatgpt',
     codexModel: input.codexModel,
     codexReasoningEffort: input.codexReasoningEffort,
     codexActionOverrides: normalisedRequestedOverrides,
@@ -773,7 +757,7 @@ export async function chooseAiProvider(userId: string, spaceId: string, input: {
   });
 }
 
-export interface AiCompletionInput extends TerraCompletionInput {
+export interface AiCompletionInput extends AiCompletionRequest {
   spaceId: string;
   userId: string | null;
   actionId?: CodexActionId;
@@ -788,18 +772,16 @@ export function effectiveAiProviderSnapshot(
 ): AiProviderSnapshot {
   if (!userId) return aiProviderSnapshot(userId, spaceId, actionId);
   const policy = getAiRuntimePolicy();
-  if (!policy.localEnabled && !policy.chatgptEnabled) {
-    throw new TerraError('AI runtimes are currently disabled by a platform administrator.',
-      'AI_RUNTIMES_DISABLED', 503, false);
+  if (!policy.chatgptEnabled) {
+    throw new AiProviderError('ChatGPT is disabled by a platform administrator.',
+      'AI_RUNTIME_CHATGPT_DISABLED', 503, false);
   }
   let snapshot = recorded || aiProviderSnapshot(userId, spaceId, actionId);
   if (!providerEnabled(snapshot.provider, policy)) snapshot = aiProviderSnapshot(userId, spaceId, actionId);
-  // Provider/model are durable job inputs, but privacy revocation is an immediate
-  // override: queued or retried work must return to Terra once consent is removed.
+  // Privacy revocation is immediate even for queued or retried work.
   if (snapshot.provider === 'codex' && !getAiProviderPreference(userId, spaceId).codexDataSharingAcknowledgedAt) {
-    if (policy.localEnabled) return { provider: 'terra', codexModel: null, codexDataSharingAcknowledgedAt: null };
-    throw new TerraError(
-      'ChatGPT data sharing is no longer acknowledged and the local AI runtime is disabled.',
+    throw new AiProviderError(
+      'ChatGPT data sharing is no longer acknowledged.',
       'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED', 409, false
     );
   }
@@ -831,12 +813,13 @@ function recordedCandidates(
 }
 
 export async function completeWithAi(input: AiCompletionInput) {
-  const snapshot = effectiveAiProviderSnapshot(input.userId, input.spaceId, input.providerSnapshot, input.actionId);
-  if (!input.userId || snapshot.provider === 'terra') {
-    return completeWithTerra(input);
+  if (!input.userId) {
+    throw new AiProviderError('This AI action requires a connected ChatGPT account.',
+      'AI_RUNTIME_ACCOUNT_REQUIRED', 409, false);
   }
+  const snapshot = effectiveAiProviderSnapshot(input.userId, input.spaceId, input.providerSnapshot, input.actionId);
   if (!snapshot.codexDataSharingAcknowledgedAt) {
-    throw new TerraError('This Codex task does not have a recorded data-sharing acknowledgement.',
+    throw new AiProviderError('This Codex task does not have a recorded data-sharing acknowledgement.',
       'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED', 409, false);
   }
   const client = codexClientForUser(input.userId);
@@ -844,7 +827,7 @@ export async function completeWithAi(input: AiCompletionInput) {
   try {
     models = visibleModels(await client.models());
   } catch (error) {
-    throw new TerraError(`Codex models could not be loaded: ${codexRuntimeError(error)}`,
+    throw new AiProviderError(`Codex models could not be loaded: ${codexRuntimeError(error)}`,
       'CODEX_MODELS_UNAVAILABLE', 503, true);
   }
   const modelCandidates = recordedCandidates(
@@ -857,7 +840,7 @@ export async function completeWithAi(input: AiCompletionInput) {
     .find((candidate): candidate is CodexModel => Boolean(candidate))
     || safeConnectedModel(models);
   if (!modelDefinition) {
-    throw new TerraError(
+    throw new AiProviderError(
       'This ChatGPT account does not advertise an available Codex model.',
       'CODEX_MODEL_UNAVAILABLE', 409, false
     );
@@ -865,7 +848,7 @@ export async function completeWithAi(input: AiCompletionInput) {
   const model = modelDefinition.id;
   const efforts = supportedEfforts(modelDefinition);
   if (!efforts.length) {
-    throw new TerraError(
+    throw new AiProviderError(
       `${modelDefinition.displayName} does not advertise a usable reasoning effort.`,
       'CODEX_REASONING_EFFORT_UNAVAILABLE', 409, false
     );
@@ -892,7 +875,7 @@ export async function completeWithAi(input: AiCompletionInput) {
       timeoutMs: input.timeoutMs || 300_000
     });
   } catch (error) {
-    throw new TerraError(`Codex could not complete ${input.activity}: ${codexRuntimeError(error)}`,
+    throw new AiProviderError(`Codex could not complete ${input.activity}: ${codexRuntimeError(error)}`,
       'CODEX_REQUEST_FAILED', 502, true);
   }
 }
