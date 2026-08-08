@@ -330,10 +330,8 @@ app.get('/api/auth/oidc/start', async (req, res) => {
     res.redirect(authorizationUrl);
   } catch (error) {
     console.error('OIDC start error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to initiate OIDC authorization'
-    });
+    const issuerUrl = process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER || 'https://auth.seemplifyai.com';
+    return res.redirect(`${issuerUrl}/sso/recovery?app=performance-management&error=server_error&reason=${encodeURIComponent('The app could not contact the identity service')}`);
   }
 });
 

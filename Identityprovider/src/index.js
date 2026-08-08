@@ -26,6 +26,7 @@ import crypto from 'crypto'
 import { SignJWT, jwtVerify } from 'jose'
 import { emailService } from './services/emailService.js'
 import { issueAttendanceHubToken } from './services/attendanceHubService.js'
+import { renderOidcRecoveryPage } from './services/oidcRecoveryPage.js'
 import { otpService } from './services/otpService.js'
 import MarketingVisit from './models/MarketingVisit.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
@@ -304,7 +305,7 @@ async function buildSubscriptionClaims(acc) {
 }
 
 async function getCurrentOrganizationSubscriptionAccessState(user, options = {}) {
-  const { includePendingRequest = false } = options
+  const { includePendingRequest = false, includeFeatures = false } = options
   const organizationId =
     user?.currentOrganization?._id?.toString() ||
     user?.currentOrganization?.toString() ||
@@ -354,6 +355,10 @@ async function getCurrentOrganizationSubscriptionAccessState(user, options = {})
       (subscription?.isInGracePeriod ? 'grace_period' : 'none')
     )
 
+  const features = includeFeatures && hasActiveAccess
+    ? await subscription.getEffectiveFeatures()
+    : null
+
   return {
     organizationId,
     organizationName: organization.name || 'Organization',
@@ -365,6 +370,7 @@ async function getCurrentOrganizationSubscriptionAccessState(user, options = {})
     gracePeriodEnd: subscription?.gracePeriodEnd || null,
     daysUntilExpiry,
     showExpiryReminder: Boolean(hasActiveAccess && daysUntilExpiry !== null && daysUntilExpiry <= 7),
+    features,
     pendingRequest: pendingRequest
       ? {
         id: pendingRequest._id?.toString?.() || '',
@@ -889,6 +895,24 @@ const config = {
     url(ctx, interaction) {
       return `/interaction/${interaction.uid}`;
     }
+  },
+  async renderError(ctx, out, error) {
+    const clientId = ctx.oidc?.params?.client_id || ctx.query?.client_id || ''
+    const recoveryApp = getHubApps().find(app => app.clientId === clientId || app.appId === clientId)
+    const requestId = ctx.get?.('x-request-id') || crypto.randomUUID()
+    const page = renderOidcRecoveryPage({
+      error: out?.error || error?.error || error?.name,
+      description: out?.error_description || error?.error_description || error?.message,
+      appId: recoveryApp?.appId,
+      appName: recoveryApp?.name,
+      requestId,
+      statusCode: error?.statusCode || ctx.status || 400
+    })
+    ctx.set('Cache-Control', 'no-store')
+    ctx.set('X-SSO-Request-ID', requestId)
+    ctx.type = 'html'
+    ctx.status = page.statusCode
+    ctx.body = page.html
   },
   // Load existing grant or return undefined to force consent interaction
   async loadExistingGrant(ctx) {
@@ -1566,68 +1590,30 @@ app.get('/interaction/:uid', async (req, res) => {
   } catch (err) {
     console.error('Interaction error:', err)
 
-    // Handle expired or invalid interaction sessions
+    // Handle expired or invalid interaction sessions with the provider-level recovery UI.
     if (err.name === 'SessionNotFound' || err.error === 'invalid_request') {
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Session Expired - Seemplify Identity</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-          <script src="/js/theme.js?v=5"></script>
-          <style>
-            body { 
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 20px;
-            }
-            .container { 
-              background: var(--panel);
-              backdrop-filter: blur(16px);
-              padding: 48px;
-              border-radius: 24px;
-              border: 1px solid var(--border);
-              box-shadow: var(--card-shadow);
-              max-width: 440px;
-              width: 100%;
-              text-align: center;
-            }
-            .icon { font-size: 64px; margin-bottom: 24px; }
-            h1 { font-size: 24px; color: var(--text); margin-bottom: 16px; font-family: "Space Grotesk", system-ui, sans-serif; }
-            p { color: var(--muted); margin-bottom: 32px; line-height: 1.6; }
-            button { 
-              padding: 14px 32px;
-              background: #18181b;
-              color: #ffffff;
-              border: none;
-              border-radius: 999px;
-              font-size: 16px;
-              font-weight: 600;
-              cursor: pointer;
-              transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-              box-shadow: 0 0 30px rgba(15, 23, 42, 0.2);
-            }
-            button:hover { 
-              transform: translateY(-2px);
-              box-shadow: 0 0 40px rgba(15, 23, 42, 0.35);
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="icon">⏱️</div>
-            <h1>Session Expired</h1>
-            <p>Your login session has expired. This can happen if you waited too long or used an old link. Please start the login process again.</p>
-            <button onclick="window.close()">Close Window</button>
-          </div>
-        </body>
-        </html>
-      `)
+      const requestId = crypto.randomUUID()
+      const page = renderOidcRecoveryPage({
+        error: err.error || err.name,
+        description: err.error_description || err.message || 'authorization request has expired',
+        requestId,
+        statusCode: err.statusCode || 400
+      })
+      res.setHeader('Cache-Control', 'no-store')
+      res.setHeader('X-SSO-Request-ID', requestId)
+      return res.status(page.statusCode).send(page.html)
     }
 
-    res.status(500).send('Internal server error')
+    const requestId = crypto.randomUUID()
+    const page = renderOidcRecoveryPage({
+      error: err.error || err.name || 'server_error',
+      description: err.error_description || err.message || 'The sign-in request could not be completed.',
+      requestId,
+      statusCode: 500
+    })
+    res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('X-SSO-Request-ID', requestId)
+    return res.status(page.statusCode).send(page.html)
   }
 })
 
@@ -3574,6 +3560,24 @@ app.get('/request-plan/:planId', async (req, res) => {
   }
 })
 
+// Shared recovery destination for app backends that cannot start an OIDC request.
+app.get('/sso/recovery', (req, res) => {
+  const requestedAppId = String(req.query.app || '')
+  const recoveryApp = getAppById(requestedAppId)
+  const requestId = crypto.randomUUID()
+  const page = renderOidcRecoveryPage({
+    error: String(req.query.error || 'server_error'),
+    description: String(req.query.reason || 'Sign-in is temporarily unavailable'),
+    appId: recoveryApp?.appId,
+    appName: recoveryApp?.name,
+    requestId,
+    statusCode: 503
+  })
+  res.setHeader('Cache-Control', 'no-store')
+  res.setHeader('X-SSO-Request-ID', requestId)
+  res.status(page.statusCode).send(page.html)
+})
+
 // Short-lived, self-service token for the hub's embedded attendance controls.
 // It grants no administrative access and is intentionally separate from the user's OIDC token.
 app.get('/api/hub/attendance-token', async (req, res) => {
@@ -4067,7 +4071,7 @@ app.get('/launch/:appId', async (req, res) => {
     console.log(`Hub session lookup took ${Date.now() - sessionStart}ms`)
 
     if (!account) {
-      await logAppLaunchActivity({
+      void logAppLaunchActivity({
         req,
         appId,
         status: 'no_session'
@@ -4100,7 +4104,13 @@ app.get('/launch/:appId', async (req, res) => {
       return res.redirect('/')
     }
 
-    const currentSubscriptionAccess = await getCurrentOrganizationSubscriptionAccessState(account)
+    // Membership and subscription are independent reads; run them together to keep launches responsive.
+    const [currentSubscriptionAccess, currentOrganization] = await Promise.all([
+      getCurrentOrganizationSubscriptionAccessState(account, { includeFeatures: true }),
+      Organization.findById(currentOrgId)
+        .select('members.account members.status members.appAccess')
+        .lean()
+    ])
     if (!currentSubscriptionAccess || currentSubscriptionAccess.isLocked) {
       await logAppLaunchActivity({
         req,
@@ -4116,9 +4126,6 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     const { appIdSet } = getHubAppMetadata()
-    const currentOrganization = await Organization.findById(currentOrgId)
-      .select('members.account members.status members.appAccess')
-      .lean()
 
     const currentMember = currentOrganization?.members?.find(
       m => m?.status === 'active' && m?.account?.toString() === account._id.toString()
@@ -4176,7 +4183,8 @@ app.get('/launch/:appId', async (req, res) => {
     }
 
     if (featureKey && currentOrgId) {
-      const canAccess = await subscriptionService.canAccessApp(currentOrgId, featureKey)
+      // Reuse the subscription loaded above instead of repeating the same database query.
+      const canAccess = currentSubscriptionAccess.features?.[featureKey] === true
 
       if (!canAccess) {
         console.log(`Subscription check failed for ${account.email} - ${appId} (feature: ${featureKey})`)
@@ -4208,7 +4216,7 @@ app.get('/launch/:appId', async (req, res) => {
     // Check if app uses SAML authentication
     if (app.authType === 'saml') {
       const samlSsoUrl = `/saml/sso?sp=${app.appId}`
-      await logAppLaunchActivity({
+      void logAppLaunchActivity({
         req,
         account,
         app,
@@ -4224,7 +4232,7 @@ app.get('/launch/:appId', async (req, res) => {
 
     // Check if app uses direct link (no SSO)
     if (app.authType === 'direct') {
-      await logAppLaunchActivity({
+      void logAppLaunchActivity({
         req,
         account,
         app,
@@ -4241,7 +4249,7 @@ app.get('/launch/:appId', async (req, res) => {
     // Special handling for Outline - it uses direct OIDC, not backend-initiated
     if (app.appId === 'outline') {
       const outlineAuthUrl = `${app.url}/auth/oidc`
-      await logAppLaunchActivity({
+      void logAppLaunchActivity({
         req,
         account,
         app,
@@ -4258,7 +4266,7 @@ app.get('/launch/:appId', async (req, res) => {
     // Special handling for Open WebUI - it uses direct OIDC, not backend-initiated
     if (app.appId === 'openwebui') {
       const openwebuiAuthUrl = `${app.url}/oauth/oidc/login`
-      await logAppLaunchActivity({
+      void logAppLaunchActivity({
         req,
         account,
         app,
@@ -4275,7 +4283,7 @@ app.get('/launch/:appId', async (req, res) => {
     // Zulip uses a single realm instance with multi-org support via OIDC claims
     if (app.appId === 'zulip') {
       const zulipUrl = 'https://chat.seemplifyai.com/login/oidc/?next=/'
-      await logAppLaunchActivity({
+      void logAppLaunchActivity({
         req,
         account,
         app,
@@ -4323,7 +4331,7 @@ app.get('/launch/:appId', async (req, res) => {
 
       const lmsAuthUrl = `${process.env.ISSUER_BASE_URL || 'https://auth.seemplifyai.com'}/auth?${authParams.toString()}`
 
-      await logAppLaunchActivity({
+      void logAppLaunchActivity({
         req,
         account,
         app,
@@ -4390,7 +4398,7 @@ app.get('/launch/:appId', async (req, res) => {
       returnTo: frontendUrl
     }).toString()
 
-    await logAppLaunchActivity({
+    void logAppLaunchActivity({
       req,
       account,
       app,
@@ -4416,7 +4424,18 @@ app.get('/launch/:appId', async (req, res) => {
         launchDurationMs: Date.now() - launchStartTime
       }
     })
-    res.status(500).send('Failed to launch app')
+    const requestId = crypto.randomUUID()
+    const page = renderOidcRecoveryPage({
+      error: 'server_error',
+      description: err.message,
+      appId: app?.appId || req.params?.appId,
+      appName: app?.name,
+      requestId,
+      statusCode: 500
+    })
+    res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('X-SSO-Request-ID', requestId)
+    res.status(page.statusCode).send(page.html)
   }
 })
 // API: Get all apps (for potential SPA usage)

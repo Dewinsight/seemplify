@@ -161,7 +161,8 @@ router.get('/oidc/start', async (req, res) => {
     res.redirect(url);
   } catch (e) {
     console.error('OIDC start error:', e);
-    res.status(500).json({ msg: 'OIDC start failed', error: e.message });
+    const issuerUrl = process.env.IDP_ISSUER_URL || 'https://auth.seemplifyai.com';
+    return res.redirect(`${issuerUrl}/sso/recovery?app=leave-management&error=server_error&reason=${encodeURIComponent('The app could not contact the identity service')}`);
   }
 });
 

@@ -60,7 +60,8 @@ router.get('/oidc/start', (req, res) => {
         res.redirect(url);
     } catch (error) {
         console.error('OIDC Start error:', error);
-        res.status(500).json({ error: 'Failed to initiate OIDC login' });
+        const issuerUrl = process.env.IDP_ISSUER_URL || 'https://auth.seemplifyai.com';
+        return res.redirect(`${issuerUrl}/sso/recovery?app=time-attendance&error=server_error&reason=${encodeURIComponent('The app could not contact the identity service')}`);
     }
 });
 

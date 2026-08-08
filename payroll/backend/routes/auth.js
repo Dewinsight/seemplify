@@ -153,7 +153,8 @@ router.get('/oidc/start', async (req, res) => {
     res.redirect(url);
   } catch (e) {
     console.error('Payroll OIDC start error:', e);
-    res.status(500).json({ error: 'OIDC start failed', message: e.message });
+    const issuerUrl = process.env.IDP_ISSUER_URL || process.env.OIDC_ISSUER || 'https://auth.seemplifyai.com';
+    return res.redirect(`${issuerUrl}/sso/recovery?app=payroll-management&error=server_error&reason=${encodeURIComponent('The app could not contact the identity service')}`);
   }
 });
 
