@@ -234,7 +234,7 @@ async function listModels(user, options = {}) {
  * back to the managed runtime. Returning null rather than throwing keeps the
  * decision in the caller, which owns the failover policy.
  */
-async function resolveRoutableSubject(userId) {
+async function resolveRoutableSubject(userId, options = {}) {
   const subjectId = String(userId || '').trim();
   if (!subjectId) return null;
   // An actor id that is not a real user reference is simply "no connected
@@ -247,7 +247,18 @@ async function resolveRoutableSubject(userId) {
     console.warn('ChatGPT subject lookup failed:', error.message);
     return null;
   }
-  if (!account || !account.isRoutable()) return null;
+  if (!account?.isRoutable()) {
+    // Background jobs may outlive a rolling deployment or a transient gateway
+    // outage that left their durable snapshot stale. Verify the hosted account
+    // on demand so queues recover by themselves instead of requiring the user
+    // to open Settings and press Refresh before every retry.
+    try {
+      account = await readAccount({ id: subjectId }, options);
+    } catch (error) {
+      console.warn('ChatGPT subject refresh failed:', error.message);
+    }
+  }
+  if (!account?.isRoutable()) return null;
   return { subjectId, subjectKey: account.subjectKey, sourceApp: SOURCE_APP };
 }
 
