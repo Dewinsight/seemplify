@@ -86,10 +86,10 @@ const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([
 })));
 
 const DEFAULT_RUNTIME_POLICY = Object.freeze({
-  localEnabled: false,
+  localEnabled: true,
   chatgptEnabled: true,
-  chatgptRequired: true,
-  defaultRuntime: 'chatgpt'
+  chatgptRequired: false,
+  defaultRuntime: 'local'
 });
 
 const DEFAULT_ALERT_SETTINGS = Object.freeze({
@@ -102,7 +102,7 @@ const DEFAULT_ALERT_SETTINGS = Object.freeze({
 
 function normalizeRuntimePolicy(value) {
   const candidate = value && typeof value === 'object' ? value : {};
-  const localEnabled = candidate.localEnabled === true;
+  const localEnabled = candidate.localEnabled !== false;
   const chatgptEnabled = candidate.chatgptEnabled !== false;
   const requested = ['local', 'chatgpt'].includes(candidate.defaultRuntime)
     ? candidate.defaultRuntime : DEFAULT_RUNTIME_POLICY.defaultRuntime;

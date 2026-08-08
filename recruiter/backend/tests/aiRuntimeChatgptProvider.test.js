@@ -18,10 +18,10 @@ const { AIRuntimeService } = require('../services/aiRuntime/aiRuntimeService');
 test('the catalog exposes ChatGPT and the Control Center selected local runtime', () => {
   const settings = createDefaultRuntimeSettings();
   assert.deepEqual(settings.runtimePolicy, {
-    localEnabled: false,
+    localEnabled: true,
     chatgptEnabled: true,
-    chatgptRequired: true,
-    defaultRuntime: 'chatgpt'
+    chatgptRequired: false,
+    defaultRuntime: 'local'
   });
   assert.deepEqual(normalizeRuntimePolicy({ defaultRuntime: 'anything', chatgptRequired: false }), settings.runtimePolicy);
   assert.equal(settings.models.length, 2);
@@ -42,7 +42,9 @@ test('a request without a connected subject fails instead of falling back', asyn
     resolveSubject: async () => null,
     resolveInterviewSubject: async () => null
   });
-  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  const settings = createDefaultRuntimeSettings();
+  settings.runtimePolicy = normalizeRuntimePolicy({ localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' });
+  runtime.getSettings = async () => settings;
   await assert.rejects(
     runtime.complete('job.description', {
       messages: [{ role: 'user', content: 'Write a role description' }],
@@ -67,7 +69,9 @@ test('a connected subject is bound to the ChatGPT gateway request', async () => 
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
   });
-  runtime.getSettings = async () => createDefaultRuntimeSettings();
+  const settings = createDefaultRuntimeSettings();
+  settings.runtimePolicy = normalizeRuntimePolicy({ localEnabled: false, chatgptEnabled: true, defaultRuntime: 'chatgpt' });
+  runtime.getSettings = async () => settings;
   try {
     const result = await runtime.complete('job.description', {
       messages: [{ role: 'user', content: 'Write it' }],
