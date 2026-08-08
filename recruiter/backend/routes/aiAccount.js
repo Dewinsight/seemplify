@@ -51,6 +51,13 @@ router.post('/login/cancel', auth, async (request, response) => {
   } catch (error) { return sendError(response, error); }
 });
 
+router.post('/login/reset', auth, async (request, response) => {
+  try {
+    const { result, account } = await codexAccountService.resetLogin(request.user);
+    return response.json({ ...result, account: account.toPublicJSON() });
+  } catch (error) { return sendError(response, error); }
+});
+
 router.post('/consent', auth, async (request, response) => {
   try {
     const acknowledged = request.body?.acknowledged === true;

@@ -31,3 +31,21 @@ test('the wait never goes negative once the window has lapsed', () => {
   assert.equal(limiter.retryAfterMs('subject', 60_000), 0);
   assert.equal(limiter.consume('subject', 60_000), true, 'a lapsed window admits again');
 });
+
+test('a failed protected operation can refund its attempt', () => {
+  const limiter = new BoundedFixedWindowRateLimiter({ windowMs: 10_000, requests: 1 });
+  const start = 1_000;
+  assert.equal(limiter.consume('subject', start), true);
+  assert.equal(limiter.refund('subject'), true);
+  assert.equal(limiter.consume('subject', start + 1), true,
+    'the failed admitted attempt no longer consumes the subject allowance');
+});
+
+test('an explicit reset clears one subject without affecting another', () => {
+  const limiter = new BoundedFixedWindowRateLimiter({ windowMs: 10_000, requests: 1 });
+  limiter.consume('subject-a', 1_000);
+  limiter.consume('subject-b', 1_000);
+  assert.equal(limiter.reset('subject-a'), true);
+  assert.equal(limiter.consume('subject-a', 1_001), true);
+  assert.equal(limiter.consume('subject-b', 1_001), false);
+});

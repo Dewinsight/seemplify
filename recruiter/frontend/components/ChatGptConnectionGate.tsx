@@ -203,6 +203,23 @@ export function ChatGptConnectionGate() {
     }
   }
 
+  async function resetLogin() {
+    if (busy) return
+    setWorking("reset")
+    try {
+      const { account: next } = await aiAccountService.resetLogin()
+      setAccount(next)
+      setDeviceLogin(null)
+      setCooldownUntil(0)
+      setCooldownLeft(0)
+      setError("")
+    } catch (reason: any) {
+      setError(reason?.message || "The ChatGPT sign-in could not be reset.")
+    } finally {
+      setWorking("")
+    }
+  }
+
   /** The gate blocks the whole workspace, so signing out has to stay
    * reachable — otherwise someone without a ChatGPT plan is stuck. */
   function signOut() {
@@ -395,18 +412,18 @@ export function ChatGptConnectionGate() {
             >
               <LogOut className="mr-1.5 h-3.5 w-3.5" />Sign out
             </Button>
-            {(deviceLogin || account?.status === "pending") && (
+            {(error || deviceLogin || account?.status === "pending") && (
               <>
                 <span aria-hidden className="text-muted-foreground/40">·</span>
                 <Button
-                  type="button" variant="ghost" size="sm" disabled={busy || cooling}
+                  type="button" variant="ghost" size="sm" disabled={busy}
                   className="h-8 px-2.5 text-xs font-normal text-muted-foreground hover:text-foreground"
-                  data-testid="chatgpt-gate-start-over" onClick={() => void connect(true)}
+                  data-testid="chatgpt-gate-reset" onClick={() => void resetLogin()}
                 >
-                  {working === "restart"
+                  {working === "reset"
                     ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                     : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
-                  Start over
+                  Reset sign-in
                 </Button>
               </>
             )}

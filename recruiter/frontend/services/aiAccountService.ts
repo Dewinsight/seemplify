@@ -119,6 +119,10 @@ export const aiAccountService = {
     '/api/ai-account/login/cancel', { method: 'POST' }
   ),
 
+  resetLogin: () => readJson<{ reset: boolean; cancelled?: boolean; account: AiRuntimeAccount }>(
+    '/api/ai-account/login/reset', { method: 'POST' }
+  ),
+
   setConsent: (acknowledged: boolean) => readJson<{ account: AiRuntimeAccount }>(
     '/api/ai-account/consent',
     { method: 'POST', body: JSON.stringify({ acknowledged }) }

@@ -33,7 +33,10 @@ async function waitForHealth(url) {
   for (let attempt = 0; attempt < 600; attempt += 1) {
     try {
       const response = await fetch(url);
-      if (response.ok) return;
+      // This fixture deliberately selects an unavailable managed engine. A
+      // 503 health response still proves the HTTP server is ready for the
+      // per-user Codex control plane exercised below.
+      if (response.status > 0) return;
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -86,13 +89,17 @@ test('a per-user Codex turn runs even when the managed engine selection is not c
       LOCAL_LLM_EXECUTION_RECEIPT_DIR: path.join(runtimeDir, 'execution-receipts'),
       LOCAL_LLM_USAGE_INITIAL_DELAY_MS: '600000',
       CODEX_PER_USER_SESSIONS: 'true',
+      CODEX_LOGIN_REQUESTS: '1',
       CODEX_CLI_PATH: fakeCodexScript,
       CODEX_SUBJECTS_DIR: subjectsDir,
       RECRUITER_BACKEND_URL: 'http://127.0.0.1:9'
     },
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   });
+  let gatewayDiagnostics = '';
+  gateway.stdout.on('data', (chunk) => { gatewayDiagnostics += String(chunk); });
+  gateway.stderr.on('data', (chunk) => { gatewayDiagnostics += String(chunk); });
   t.after(async () => {
     // The gateway's codex child holds its workspace directory as cwd; it exits
     // on stdin EOF once the gateway dies, so removal is awaited with retries.
@@ -101,7 +108,36 @@ test('a per-user Codex turn runs even when the managed engine selection is not c
     await exited;
     fs.rmSync(runtimeDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   });
-  await waitForHealth(`http://127.0.0.1:${port}/health`);
+  try {
+    await waitForHealth(`http://127.0.0.1:${port}/health`);
+  } catch (error) {
+    error.message += `\nGateway diagnostics:\n${gatewayDiagnostics.slice(-4_000)}`;
+    throw error;
+  }
+
+  const loginBody = JSON.stringify({ sourceApp: 'recruiter', subjectId: 'login-recovery-e2e' });
+  const postCodex = async (operation) => {
+    const pathName = `/v1/codex/${operation}`;
+    const response = await fetch(`http://127.0.0.1:${port}${pathName}`, {
+      method: 'POST', headers: signRequest(secret, loginBody, pathName), body: loginBody
+    });
+    return { response, payload: await response.json() };
+  };
+  const firstLogin = await postCodex('login/start');
+  assert.equal(firstLogin.response.status, 200);
+  assert.ok(firstLogin.payload.userCode);
+  const resumedLogin = await postCodex('login/start');
+  assert.equal(resumedLogin.response.status, 200,
+    'a pending code resumes even after the one-attempt allowance is used');
+  assert.equal(resumedLogin.payload.resumed, true);
+  assert.equal(resumedLogin.payload.userCode, firstLogin.payload.userCode);
+  const resetLogin = await postCodex('login/reset');
+  assert.equal(resetLogin.response.status, 200);
+  assert.equal(resetLogin.payload.reset, true);
+  const loginAfterReset = await postCodex('login/start');
+  assert.equal(loginAfterReset.response.status, 200,
+    'an explicit recovery clears the old attempt window');
+  assert.ok(loginAfterReset.payload.userCode);
 
   const requestPath = '/v1/complete';
   const subjectBody = JSON.stringify({

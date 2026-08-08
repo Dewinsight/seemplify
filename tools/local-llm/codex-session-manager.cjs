@@ -319,6 +319,7 @@ class CodexSubjectSession {
     this.recent = [];
     this.stderr = [];
     this.loginState = null;
+    this.loginStartPromise = null;
     // What the account's plan currently allows, as last reported by Codex, and
     // the last refusal for hitting it. Both are for showing the person whose
     // plan is paying: a limit you cannot see is one you cannot plan around.
@@ -510,6 +511,23 @@ class CodexSubjectSession {
   }
 
   async startDeviceLogin() {
+    // Browser refreshes or double-clicks can reach the gateway together. They
+    // must share one OpenAI device-code request rather than creating competing
+    // logins and exhausting the attempt budget.
+    if (this.loginStartPromise) {
+      const result = await this.loginStartPromise;
+      return result.connected ? result : { ...result, resumed: true };
+    }
+    this.loginStartPromise = this.startDeviceLoginOnce();
+    try { return await this.loginStartPromise; }
+    finally { this.loginStartPromise = null; }
+  }
+
+  hasPendingDeviceLogin() {
+    return this.loginState?.pending === true || this.loginStartPromise !== null;
+  }
+
+  async startDeviceLoginOnce() {
     const status = await this.accountStatus();
     if (status.connected) return { connected: true };
     // A pending sign-in is resumable: the person still has to type this code on
@@ -552,6 +570,23 @@ class CodexSubjectSession {
     await this.request('account/login/cancel', { loginId }, 30_000);
     this.loginState = null;
     return { cancelled: true };
+  }
+
+  /** Hard-reset only the transient app-server process and pending login. The
+   * subject home is intentionally preserved, so this cannot delete a valid
+   * connected account; it merely clears a wedged login/start state. */
+  async resetDeviceLogin() {
+    let cancelled = false;
+    if (this.loginState?.pending) {
+      try {
+        await this.request('account/login/cancel', { loginId: this.loginState.loginId }, 30_000);
+        cancelled = true;
+      } catch { /* Recycling the process below clears an unresponsive login. */ }
+    }
+    await this.stop();
+    this.loginState = null;
+    this.loginStartPromise = null;
+    return { reset: true, cancelled };
   }
 
   async logout() {
@@ -774,8 +809,10 @@ async function forgetSubject(subjectKey) {
 }
 
 const accountStatusForSubject = (subjectKey) => sessionForSubject(subjectKey).accountStatus();
+const hasPendingDeviceLogin = (subjectKey) => sessionForSubject(subjectKey).hasPendingDeviceLogin();
 const startDeviceLogin = (subjectKey) => sessionForSubject(subjectKey).startDeviceLogin();
 const cancelDeviceLogin = (subjectKey) => sessionForSubject(subjectKey).cancelDeviceLogin();
+const resetDeviceLogin = (subjectKey) => sessionForSubject(subjectKey).resetDeviceLogin();
 const modelsForSubject = (subjectKey) => sessionForSubject(subjectKey).models();
 const runSubjectTurn = (subjectKey, input) => sessionForSubject(subjectKey).turn(input);
 
@@ -791,9 +828,11 @@ module.exports = {
   cancelDeviceLogin,
   codexError,
   forgetSubject,
+  hasPendingDeviceLogin,
   modelsForSubject,
   perUserSessionsEnabled,
   resolveCodexConfiguration,
+  resetDeviceLogin,
   runSubjectTurn,
   safeConnectedModel,
   supportedEfforts,

@@ -164,7 +164,17 @@ async function startLogin(user, options = {}) {
 async function cancelLogin(user, options = {}) {
   const account = await accountForUser(user);
   const result = await callGateway('login/cancel', account.user, options);
-  account.status = account.status === 'pending' ? 'disconnected' : account.status;
+  account.status = account.status === 'connected' ? account.status : 'disconnected';
+  account.lastError = '';
+  await account.save();
+  return { result, account };
+}
+
+async function resetLogin(user, options = {}) {
+  const account = await accountForUser(user);
+  const result = await callGateway('login/reset', account.user, options);
+  account.status = account.status === 'connected' ? account.status : 'disconnected';
+  account.lastError = '';
   await account.save();
   return { result, account };
 }
@@ -237,6 +247,7 @@ module.exports = {
   disconnect,
   listModels,
   readAccount,
+  resetLogin,
   resolveRoutableSubject,
   setConsent,
   startLogin,

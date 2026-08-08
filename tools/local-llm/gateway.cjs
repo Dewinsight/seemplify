@@ -1064,6 +1064,11 @@ const codexLoginLimiter = new BoundedFixedWindowRateLimiter({
   requests: Number(process.env.CODEX_LOGIN_REQUESTS || 5),
   maxKeys: 5_000
 });
+const codexLoginResetLimiter = new BoundedFixedWindowRateLimiter({
+  windowMs: Number(process.env.CODEX_LOGIN_RESET_WINDOW_MS || 10 * 60_000),
+  requests: Number(process.env.CODEX_LOGIN_RESET_REQUESTS || 3),
+  maxKeys: 5_000
+});
 
 /** "4 minutes" reads better than "247 seconds" in a message a person sees. */
 function formatWait(seconds) {
@@ -1094,9 +1099,16 @@ async function handleCodexControl(request, response, rawBody, operation, request
   const resolved = codexSubjectFromBody(rawBody);
   if (resolved.error) return sendJson(response, resolved.error.status, { code: resolved.error.code });
   const { subjectKey } = resolved;
-  // Device logins are the expensive, abusable operation: one pending login per
-  // subject already blocks a second, but a caller could otherwise churn them.
-  if (operation === 'login/start' && !codexLoginLimiter.consume(subjectKey)) {
+  // Device logins are the expensive, abusable operation. Reserve an attempt
+  // before starting, then refund it when OpenAI/Codex itself fails or when the
+  // request merely resumes an existing code. A provider failure must never use
+  // up every recovery attempt for a real person.
+  const resumingLogin = operation === 'login/start'
+    && codexSessions.hasPendingDeviceLogin(subjectKey);
+  const reservedLoginAttempt = operation === 'login/start' && !resumingLogin
+    ? codexLoginLimiter.consume(subjectKey)
+    : false;
+  if (operation === 'login/start' && !resumingLogin && !reservedLoginAttempt) {
     // Being turned away with no idea when to try again is a dead end, so the
     // wait is part of the answer rather than something the caller must guess.
     const retryAfterSeconds = Math.max(1, Math.ceil(codexLoginLimiter.retryAfterMs(subjectKey) / 1000));
@@ -1107,9 +1119,26 @@ async function handleCodexControl(request, response, rawBody, operation, request
       retryable: true
     }, { 'retry-after': String(retryAfterSeconds) });
   }
+  if (operation === 'login/reset' && !codexLoginResetLimiter.consume(subjectKey)) {
+    return sendJson(response, 429, {
+      code: 'CODEX_LOGIN_RESET_RATE_LIMITED',
+      message: 'The ChatGPT sign-in was reset too many times. Please wait before resetting it again.',
+      retryAfterSeconds: Math.max(1, Math.ceil(codexLoginResetLimiter.retryAfterMs(subjectKey) / 1000)),
+      retryable: true
+    });
+  }
   try {
-    if (operation === 'login/start') return sendJson(response, 200, await codexSessions.startDeviceLogin(subjectKey));
+    if (operation === 'login/start') {
+      const login = await codexSessions.startDeviceLogin(subjectKey);
+      if (login.connected || login.resumed) codexLoginLimiter.refund(subjectKey);
+      return sendJson(response, 200, login);
+    }
     if (operation === 'login/cancel') return sendJson(response, 200, await codexSessions.cancelDeviceLogin(subjectKey));
+    if (operation === 'login/reset') {
+      const reset = await codexSessions.resetDeviceLogin(subjectKey);
+      codexLoginLimiter.reset(subjectKey);
+      return sendJson(response, 200, reset);
+    }
     if (operation === 'account') return sendJson(response, 200, await codexSessions.accountStatusForSubject(subjectKey));
     if (operation === 'models') {
       return sendJson(response, 200, { models: await codexSessions.modelsForSubject(subjectKey) });
@@ -1117,6 +1146,7 @@ async function handleCodexControl(request, response, rawBody, operation, request
     if (operation === 'logout') return sendJson(response, 200, await codexSessions.forgetSubject(subjectKey));
     return sendJson(response, 404, { code: 'CODEX_OPERATION_UNKNOWN' });
   } catch (error) {
+    if (reservedLoginAttempt) codexLoginLimiter.refund(subjectKey);
     const code = error.code || 'CODEX_CONTROL_FAILED';
     const status = code === 'CODEX_NOT_INSTALLED' ? 503
       : code === 'CODEX_LOGIN_PENDING' ? 409

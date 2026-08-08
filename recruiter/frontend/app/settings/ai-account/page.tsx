@@ -157,6 +157,24 @@ export default function AiAccountPage() {
     } finally { setWorking("") }
   }
 
+  async function resetLogin() {
+    setWorking("reset")
+    stopPolling()
+    try {
+      const { account: next } = await aiAccountService.resetLogin()
+      setAccount(next)
+      setDeviceLogin(null)
+      setCooldownUntil(0)
+      setCooldownLeft(0)
+      setError("")
+      toast.success("ChatGPT sign-in was reset. You can start again now.")
+    } catch (reason: any) {
+      const message = reason?.message || "The ChatGPT sign-in could not be reset."
+      setError(message)
+      toast.error(message)
+    } finally { setWorking("") }
+  }
+
   async function setConsent(acknowledged: boolean) {
     setWorking("consent")
     try {
@@ -268,6 +286,19 @@ export default function AiAccountPage() {
               <Button variant="outline" onClick={() => void refresh()} disabled={Boolean(working)}>
                 <RefreshCw className="mr-2 h-4 w-4" />Refresh
               </Button>
+              {!connected && error && (
+                <Button
+                  variant="outline"
+                  onClick={() => void resetLogin()}
+                  disabled={Boolean(working)}
+                  data-testid="ai-account-reset"
+                >
+                  {working === "reset"
+                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    : <RefreshCw className="mr-2 h-4 w-4" />}
+                  Reset sign-in
+                </Button>
+              )}
               {connected && (
                 <Button variant="outline" onClick={disconnect} disabled={Boolean(working)} data-testid="ai-account-disconnect">
                   {working === "disconnect" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unplug className="mr-2 h-4 w-4" />}

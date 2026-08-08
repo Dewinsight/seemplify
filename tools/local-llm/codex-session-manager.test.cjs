@@ -303,6 +303,28 @@ test('a pending device sign-in is resumable rather than a dead end', async () =>
   assert.equal(status.pendingLogin, false, 'cancelling clears the pending sign-in');
 });
 
+test('concurrent device sign-in starts share one resumable request', async () => {
+  const subjectKey = sessions.subjectKeyFor('recruiter', 'user-concurrent-login');
+  const [first, second] = await Promise.all([
+    sessions.startDeviceLogin(subjectKey),
+    sessions.startDeviceLogin(subjectKey)
+  ]);
+  if (first.connected) return;
+  assert.equal(first.userCode, second.userCode);
+  assert.equal(second.resumed, true, 'the follower is marked as a resume, not a new login');
+  await sessions.cancelDeviceLogin(subjectKey);
+});
+
+test('a device sign-in reset recycles transient state without deleting the subject', async () => {
+  const subjectKey = sessions.subjectKeyFor('recruiter', 'user-reset-login');
+  const login = await sessions.startDeviceLogin(subjectKey);
+  if (login.connected) return;
+  const result = await sessions.resetDeviceLogin(subjectKey);
+  assert.equal(result.reset, true);
+  const status = await sessions.accountStatusForSubject(subjectKey);
+  assert.equal(status.pendingLogin, false);
+});
+
 test('a turn on a subject with no connected account fails closed', async () => {
   const subjectKey = sessions.subjectKeyFor('recruiter', 'never-connected');
   await assert.rejects(runCodexSubjectTurn({
