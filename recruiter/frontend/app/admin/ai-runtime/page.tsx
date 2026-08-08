@@ -26,6 +26,20 @@ interface RuntimeSettings {
   routes: RuntimeRoute[];
 }
 
+interface RuntimeModel {
+  id: string;
+  displayName: string;
+  isDefault: boolean;
+  defaultReasoningEffort: string | null;
+  supportedReasoningEfforts: Array<{ reasoningEffort: string }>;
+}
+
+interface RuntimeModelCatalog {
+  available: boolean;
+  models: RuntimeModel[];
+  message: string | null;
+}
+
 interface GatewayStatus {
   configured?: boolean;
   reachable?: boolean;
@@ -60,12 +74,30 @@ export default function AiRuntimePage() {
   const { toast } = useToast();
   const [settings, setSettings] = useState<RuntimeSettings | null>(null);
   const [gateway, setGateway] = useState<GatewayPair | null>(null);
+  const [modelCatalog, setModelCatalog] = useState<RuntimeModelCatalog | null>(null);
   const [loading, setLoading] = useState(true);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const canManage = checkPermission("systemSettings");
 
+  const loadModelCatalog = useCallback(async () => {
+    setModelsLoading(true);
+    try {
+      setModelCatalog(await adminJson<RuntimeModelCatalog>("/api/admin/ai-runtime/models"));
+    } catch (error) {
+      setModelCatalog({
+        available: false,
+        models: [],
+        message: error instanceof Error ? error.message : "The ChatGPT model catalogue is currently unavailable."
+      });
+    } finally {
+      setModelsLoading(false);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
+    void loadModelCatalog();
     try {
       const [nextSettings, nextGateway] = await Promise.all([
         adminJson<RuntimeSettings>("/api/admin/ai-runtime/settings"),
@@ -78,7 +110,7 @@ export default function AiRuntimePage() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [loadModelCatalog, toast]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -207,6 +239,7 @@ export default function AiRuntimePage() {
             <div className="border-b border-gray-800 px-5 py-4">
               <h2 className="font-medium text-white">Activity routing</h2>
               <p className="mt-1 text-sm text-gray-400">Tune the connected-account model preference and reasoning level. Local inference follows Control Center.</p>
+              {modelCatalog?.message ? <p className="mt-2 text-sm text-amber-300" role="status">{modelCatalog.message}</p> : null}
             </div>
             <div className="overflow-x-auto">
               <Table>
@@ -224,12 +257,28 @@ export default function AiRuntimePage() {
                     <TableRow key={route.activity} className="border-gray-800 hover:bg-gray-800/40">
                       <TableCell className="font-medium text-gray-200">{route.activity}</TableCell>
                       <TableCell>
-                        <input
+                        <Select
                           value={route.codexModel}
-                          disabled={!canManage}
-                          onChange={(event) => updateRoute(route.activity, { codexModel: event.target.value })}
-                          className="h-9 w-full min-w-44 rounded-md border border-gray-700 bg-gray-950 px-3 text-sm outline-none focus:border-gray-500"
-                        />
+                          disabled={!canManage || modelsLoading}
+                          onValueChange={(value) => updateRoute(route.activity, { codexModel: value })}
+                        >
+                          <SelectTrigger
+                            className="h-9 min-w-56 border-gray-700 bg-gray-950"
+                            aria-label={`Model for ${route.activity}`}
+                          >
+                            <SelectValue placeholder="Choose a model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {!modelCatalog?.models.some((model) => model.id === route.codexModel) && route.codexModel ? (
+                              <SelectItem value={route.codexModel}>{route.codexModel} (saved; unavailable)</SelectItem>
+                            ) : null}
+                            {(modelCatalog?.models || []).map((model) => (
+                              <SelectItem key={model.id} value={model.id}>
+                                {model.displayName}{model.isDefault ? " (account default)" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell>
                         <Select value={route.reasoningEffort} disabled={!canManage} onValueChange={(value) => updateRoute(route.activity, { reasoningEffort: value as RuntimeRoute["reasoningEffort"] })}>

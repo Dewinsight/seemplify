@@ -5,6 +5,7 @@ const { adminAuth, requirePermission } = require('../middleware/adminAuth');
 const AIRuntimeSettings = require('../models/AIRuntimeSettings');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
+const { adminModelCatalog } = require('../services/aiRuntime/adminModelCatalogService');
 const { ACTIVITY_DEFINITIONS, normalizeRuntimePolicy } = require('../config/aiRuntimeCatalog');
 
 const router = express.Router();
@@ -27,6 +28,11 @@ router.get('/settings', ...canView, async (_request, response) => {
 router.get('/gateway/status', ...canView, async (_request, response) => {
   try { return response.json(await aiRuntimeService.getGatewayStatus()); }
   catch (error) { return fail(response, error, 'Failed to load ChatGPT gateway status'); }
+});
+
+router.get('/models', ...canView, async (request, response) => {
+  try { return response.json(await adminModelCatalog(request.admin)); }
+  catch (error) { return fail(response, error, 'Failed to load the ChatGPT model catalogue'); }
 });
 
 router.get('/overview', ...canView, async (_request, response) => {
