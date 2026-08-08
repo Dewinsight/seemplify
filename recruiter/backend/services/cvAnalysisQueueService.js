@@ -3132,6 +3132,12 @@ async function recoverStaleJobs() {
     if (!existing) {
       await addQueueJob(job);
       recovered += 1;
+      continue;
+    }
+    const queueState = await existing.getState();
+    if (['completed', 'failed'].includes(queueState)) {
+      await addQueueJob(job, { replaceTerminal: true });
+      recovered += 1;
     }
   }
   if (recovered) publishTelemetrySoon();
@@ -3880,7 +3886,10 @@ async function getBatchStatus(publicId, organizationId) {
   // A parked job looks identical to a slow one from the outside. Carrying the
   // reason it is waiting is the difference between "still processing" and
   // "your ChatGPT plan is out of quota until the 13th".
-  const parked = waitingJobs.find((job) => job.state === 'waiting_for_local_runtime' && job.lastError?.message);
+  const parked = waitingJobs.find((job) => (
+    job.lastError?.message
+    && (job.state === 'waiting_for_local_runtime' || isRuntimeGateError(job.lastError))
+  ));
   return {
     batchId: batch.publicId,
     waitingReason: parked?.lastError?.message || null,
@@ -3921,6 +3930,24 @@ async function retryBatchNow(publicId, organizationId, requestedBy) {
   if (!batch) return null;
   let promoted = 0;
   for (const job of batch.jobs || []) {
+    if (job.state === 'queued') {
+      const q = await getQueue();
+      const queued = await q.getJob(job.publicId);
+      if (!queued) {
+        await addQueueJob(job);
+        promoted += 1;
+      } else {
+        const queueState = await queued.getState();
+        if (queueState === 'delayed') {
+          await queued.promote();
+          promoted += 1;
+        } else if (['completed', 'failed'].includes(queueState)) {
+          await addQueueJob(job, { replaceTerminal: true });
+          promoted += 1;
+        }
+      }
+      continue;
+    }
     if (!['waiting_for_local_runtime', 'failed'].includes(job.state)) continue;
     try {
       await retryJobNow(job.publicId, { requestedBy });
