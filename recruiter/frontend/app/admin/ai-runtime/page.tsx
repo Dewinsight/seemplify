@@ -39,7 +39,17 @@ interface GatewayStatus {
 interface GatewayPair { local: GatewayStatus; chatgpt: GatewayStatus }
 
 async function adminJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await apiRequest(path, init);
+  const token = localStorage.getItem("adminToken");
+  if (!token) throw new Error("Your admin session is unavailable. Please sign in again.");
+
+  const response = await apiRequest(path, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers as Record<string, string> | undefined),
+      "x-admin-auth-token": token
+    }
+  });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.msg || payload.message || "Request failed");
   return payload as T;
