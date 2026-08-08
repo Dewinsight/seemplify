@@ -58,7 +58,7 @@ test('subject keys are namespaced per source application and never collide', () 
 });
 
 test('a subject claim is validated against a closed source-app allowlist', () => {
-  assert.deepEqual([...sessions.allowedSourceApps({})], ['recruiter']);
+  assert.deepEqual([...sessions.allowedSourceApps({})], ['recruiter', 'performance-management']);
   assert.deepEqual(
     [...sessions.allowedSourceApps({ CODEX_SUBJECT_SOURCE_APPS: 'recruiter, Experience ,,crm' })],
     ['recruiter', 'experience', 'crm']

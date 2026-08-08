@@ -66,6 +66,27 @@ router.post('/consent', auth, async (request, response) => {
   } catch (error) { return sendError(response, error); }
 });
 
+router.put('/runtime-preference', auth, async (request, response) => {
+  try {
+    const preference = String(request.body?.runtimePreference || 'default');
+    if (!['default', 'local', 'chatgpt'].includes(preference)) {
+      return response.status(400).json({ code: 'AI_RUNTIME_PREFERENCE_INVALID', msg: 'Choose default, local, or ChatGPT.' });
+    }
+    const settings = await aiRuntimeService.getSettings();
+    const policy = normalizeRuntimePolicy(settings.runtimePolicy);
+    if (preference === 'local' && !policy.localEnabled) {
+      return response.status(409).json({ code: 'AI_RUNTIME_LOCAL_DISABLED', msg: 'Local inference is not enabled.' });
+    }
+    if (preference === 'chatgpt' && !policy.chatgptEnabled) {
+      return response.status(409).json({ code: 'AI_RUNTIME_CHATGPT_DISABLED', msg: 'ChatGPT is not enabled.' });
+    }
+    const account = await codexAccountService.readAccount(request.user);
+    account.runtimePreference = preference;
+    await account.save();
+    return response.json({ account: account.toPublicJSON(), runtimePolicy: policy });
+  } catch (error) { return sendError(response, error); }
+});
+
 router.get('/models', auth, async (request, response) => {
   try {
     return response.json({ models: await codexAccountService.listModels(request.user) });

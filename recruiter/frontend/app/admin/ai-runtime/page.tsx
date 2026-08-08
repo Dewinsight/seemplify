@@ -22,7 +22,7 @@ interface RuntimeRoute {
 
 interface RuntimeSettings {
   providerEnabled: boolean;
-  runtimePolicy: { chatgptEnabled: boolean; chatgptRequired: true; defaultRuntime: "chatgpt" };
+  runtimePolicy: { localEnabled: boolean; chatgptEnabled: boolean; chatgptRequired: boolean; defaultRuntime: "local" | "chatgpt" };
   routes: RuntimeRoute[];
 }
 
@@ -36,6 +36,8 @@ interface GatewayStatus {
   error?: string;
 }
 
+interface GatewayPair { local: GatewayStatus; chatgpt: GatewayStatus }
+
 async function adminJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await apiRequest(path, init);
   const payload = await response.json().catch(() => ({}));
@@ -47,7 +49,7 @@ export default function AiRuntimePage() {
   const { checkPermission } = useAdmin();
   const { toast } = useToast();
   const [settings, setSettings] = useState<RuntimeSettings | null>(null);
-  const [gateway, setGateway] = useState<GatewayStatus | null>(null);
+  const [gateway, setGateway] = useState<GatewayPair | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const canManage = checkPermission("systemSettings");
@@ -57,32 +59,18 @@ export default function AiRuntimePage() {
     try {
       const [nextSettings, nextGateway] = await Promise.all([
         adminJson<RuntimeSettings>("/api/admin/ai-runtime/settings"),
-        adminJson<GatewayStatus>("/api/admin/ai-runtime/gateway/status")
+        adminJson<GatewayPair>("/api/admin/ai-runtime/gateway/status")
       ]);
       setSettings(nextSettings);
       setGateway(nextGateway);
     } catch (error) {
-      toast({ title: "Could not load ChatGPT runtime", description: error instanceof Error ? error.message : "Try again." });
+      toast({ title: "Could not load AI runtimes", description: error instanceof Error ? error.message : "Try again." });
     } finally {
       setLoading(false);
     }
   }, [toast]);
 
   useEffect(() => { void load(); }, [load]);
-
-  async function setAvailability(enabled: boolean) {
-    if (!settings) return;
-    setSaving("availability");
-    try {
-      const next = await adminJson<RuntimeSettings>("/api/admin/ai-runtime/provider", {
-        method: "PUT", body: JSON.stringify({ providerEnabled: enabled })
-      });
-      setSettings(next);
-      toast({ title: enabled ? "ChatGPT enabled" : "ChatGPT disabled" });
-    } catch (error) {
-      toast({ title: "Update failed", description: error instanceof Error ? error.message : "Try again." });
-    } finally { setSaving(null); }
-  }
 
   async function saveRoute(route: RuntimeRoute) {
     setSaving(route.activity);
@@ -98,6 +86,27 @@ export default function AiRuntimePage() {
     } finally { setSaving(null); }
   }
 
+  async function saveRuntimePolicy(patch: Partial<RuntimeSettings["runtimePolicy"]>) {
+    if (!settings) return;
+    const nextPolicy = { ...settings.runtimePolicy, ...patch };
+    if (!nextPolicy.localEnabled && !nextPolicy.chatgptEnabled) {
+      toast({ title: "Keep one runtime enabled", description: "Seemplify needs at least one AI runtime." });
+      return;
+    }
+    if (nextPolicy.defaultRuntime === "local" && !nextPolicy.localEnabled) nextPolicy.defaultRuntime = "chatgpt";
+    if (nextPolicy.defaultRuntime === "chatgpt" && !nextPolicy.chatgptEnabled) nextPolicy.defaultRuntime = "local";
+    setSaving("policy");
+    try {
+      const next = await adminJson<RuntimeSettings>("/api/admin/ai-runtime/runtime-policy", {
+        method: "PUT", body: JSON.stringify(nextPolicy)
+      });
+      setSettings(next);
+      toast({ title: "Runtime policy saved" });
+    } catch (error) {
+      toast({ title: "Update failed", description: error instanceof Error ? error.message : "Try again." });
+    } finally { setSaving(null); }
+  }
+
   function updateRoute(activity: string, patch: Partial<RuntimeRoute>) {
     setSettings((current) => current ? {
       ...current,
@@ -105,7 +114,8 @@ export default function AiRuntimePage() {
     } : current);
   }
 
-  const healthy = gateway?.ok === true && gateway?.reachable !== false;
+  const localHealthy = gateway?.local?.reachable === true;
+  const chatgptHealthy = gateway?.chatgpt?.reachable === true;
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -120,8 +130,8 @@ export default function AiRuntimePage() {
                 <SheetContent side="left" className="w-64 border-gray-800 bg-gray-950 p-0"><AdminSidebar /></SheetContent>
               </Sheet>
               <div>
-                <h1 className="text-xl font-semibold text-white">ChatGPT runtime</h1>
-                <p className="mt-1 text-sm text-gray-400">All Seemplify AI activity runs through each user&apos;s connected ChatGPT account.</p>
+                <h1 className="text-xl font-semibold text-white">AI runtimes</h1>
+                <p className="mt-1 text-sm text-gray-400">Control platform availability, the workspace default, and per-user choice.</p>
               </div>
             </div>
             <Button variant="outline" onClick={() => void load()} disabled={loading} className="border-gray-700 bg-transparent">
@@ -129,40 +139,47 @@ export default function AiRuntimePage() {
             </Button>
           </div>
 
-          <section className="mb-6 grid gap-0 overflow-hidden rounded-lg border border-gray-800 bg-gray-900 md:grid-cols-[1fr_1fr]">
+          <section className="mb-6 overflow-hidden rounded-lg border border-gray-800 bg-gray-900">
+            <div className="grid md:grid-cols-2">
             <div className="border-b border-gray-800 p-5 md:border-b-0 md:border-r">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="font-medium text-white">Gateway</h2>
-                  <p className="mt-1 text-sm text-gray-400">Azure VM · Codex app server · persistent server volume</p>
+                  <h2 className="font-medium text-white">Local inference</h2>
+                  <p className="mt-1 text-sm text-gray-400">Uses the active Control Center engine and model.</p>
                 </div>
-                <div className={`flex items-center gap-2 text-sm font-medium ${healthy ? "text-emerald-400" : "text-red-400"}`}>
-                  {healthy ? <Check className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}
-                  {loading ? "Checking" : healthy ? "Available" : "Unavailable"}
+                <div className={`flex items-center gap-2 text-sm font-medium ${localHealthy ? "text-emerald-400" : "text-red-400"}`}>
+                  {localHealthy ? <Check className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}
+                  {loading ? "Checking" : localHealthy ? "Available" : "Unavailable"}
                 </div>
               </div>
-              {!healthy && gateway?.error ? <p className="mt-3 text-sm text-red-300">{gateway.error}</p> : null}
+              <div className="mt-4 flex items-center justify-between"><span className="text-sm text-gray-300">Enabled for users</span><Switch checked={settings?.runtimePolicy.localEnabled === true} disabled={!canManage || saving === "policy" || !settings} onCheckedChange={(checked) => void saveRuntimePolicy({ localEnabled: checked })} /></div>
+              {!localHealthy && gateway?.local?.error ? <p className="mt-3 text-sm text-red-300">{gateway.local.error}</p> : null}
             </div>
             <div className="p-5">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="font-medium text-white">AI availability</h2>
-                  <p className="mt-1 text-sm text-gray-400">Disabling this stops AI actions; there is no alternate provider.</p>
+                  <h2 className="font-medium text-white">ChatGPT Connect</h2>
+                  <p className="mt-1 text-sm text-gray-400">Uses each person&apos;s connected ChatGPT account.</p>
                 </div>
-                <Switch
-                  aria-label="Enable ChatGPT runtime"
-                  checked={settings?.providerEnabled !== false}
-                  disabled={!canManage || saving === "availability" || !settings}
-                  onCheckedChange={(checked) => void setAvailability(checked)}
-                />
+                <div className={`flex items-center gap-2 text-sm font-medium ${chatgptHealthy ? "text-emerald-400" : "text-red-400"}`}>{chatgptHealthy ? <Check className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}{loading ? "Checking" : chatgptHealthy ? "Available" : "Unavailable"}</div>
               </div>
+              <div className="mt-4 flex items-center justify-between"><span className="text-sm text-gray-300">Enabled for users</span><Switch checked={settings?.runtimePolicy.chatgptEnabled === true} disabled={!canManage || saving === "policy" || !settings} onCheckedChange={(checked) => void saveRuntimePolicy({ chatgptEnabled: checked })} /></div>
+              {!chatgptHealthy && gateway?.chatgpt?.error ? <p className="mt-3 text-sm text-red-300">{gateway.chatgpt.error}</p> : null}
+            </div>
+            </div>
+            <div className="flex flex-col gap-3 border-t border-gray-800 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div><p className="text-sm font-medium text-white">Workspace default</p><p className="mt-0.5 text-sm text-gray-400">Used until a person makes their own choice. A single enabled runtime is automatic.</p></div>
+              <Select value={settings?.runtimePolicy.defaultRuntime || "chatgpt"} disabled={!canManage || saving === "policy" || !settings} onValueChange={(value) => void saveRuntimePolicy({ defaultRuntime: value as "local" | "chatgpt" })}>
+                <SelectTrigger className="w-52 border-gray-700 bg-gray-950"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="local" disabled={!settings?.runtimePolicy.localEnabled}>Local inference</SelectItem><SelectItem value="chatgpt" disabled={!settings?.runtimePolicy.chatgptEnabled}>ChatGPT Connect</SelectItem></SelectContent>
+              </Select>
             </div>
           </section>
 
           <section className="overflow-hidden rounded-lg border border-gray-800 bg-gray-900">
             <div className="border-b border-gray-800 px-5 py-4">
               <h2 className="font-medium text-white">Activity routing</h2>
-              <p className="mt-1 text-sm text-gray-400">Choose the connected-account model preference and reasoning level for each activity.</p>
+              <p className="mt-1 text-sm text-gray-400">Tune the connected-account model preference and reasoning level. Local inference follows Control Center.</p>
             </div>
             <div className="overflow-x-auto">
               <Table>

@@ -5,13 +5,13 @@ const { adminAuth, requirePermission } = require('../middleware/adminAuth');
 const AIRuntimeSettings = require('../models/AIRuntimeSettings');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
-const { ACTIVITY_DEFINITIONS } = require('../config/aiRuntimeCatalog');
+const { ACTIVITY_DEFINITIONS, normalizeRuntimePolicy } = require('../config/aiRuntimeCatalog');
 
 const router = express.Router();
 const canView = [adminAuth, requirePermission('viewAnalytics')];
 const canManage = [adminAuth, requirePermission('systemSettings')];
 
-function fail(response, error, fallback = 'The ChatGPT runtime request failed') {
+function fail(response, error, fallback = 'The AI runtime request failed') {
   console.error(fallback, error);
   return response.status(error.statusCode || 500).json({
     code: error.code || 'CHATGPT_RUNTIME_ADMIN_ERROR',
@@ -63,18 +63,18 @@ router.put('/provider', ...canManage, async (request, response) => {
 
 router.put('/runtime-policy', ...canManage, async (request, response) => {
   try {
+    const runtimePolicy = normalizeRuntimePolicy(request.body);
+    if (!runtimePolicy.localEnabled && !runtimePolicy.chatgptEnabled) {
+      return response.status(400).json({ code: 'AI_RUNTIME_REQUIRED', msg: 'Enable at least one AI runtime.' });
+    }
     await AIRuntimeSettings.updateOne(
       { key: 'global' },
-      { $set: { runtimePolicy: {
-        chatgptEnabled: request.body?.chatgptEnabled !== false,
-        chatgptRequired: true,
-        defaultRuntime: 'chatgpt'
-      } }, $inc: { version: 1 } },
+      { $set: { runtimePolicy }, $inc: { version: 1 } },
       { upsert: true }
     );
     aiRuntimeService.invalidateSettingsCache();
     return response.json(await aiRuntimeService.getSettings({ force: true }));
-  } catch (error) { return fail(response, error, 'Failed to update ChatGPT policy'); }
+  } catch (error) { return fail(response, error, 'Failed to update AI runtime policy'); }
 });
 
 router.put('/routes/:activity', ...canManage, async (request, response) => {

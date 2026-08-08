@@ -8,6 +8,7 @@ test('the service owns its activity catalogue without importing a client applica
   const source = fs.readFileSync(path.join(__dirname, 'gateway.cjs'), 'utf8');
   assert.equal(ACTIVITY_DEFINITIONS['candidate.cv_parse'].reasoningEffort, 'medium');
   assert.equal(ACTIVITY_DEFINITIONS['job.description'].reasoningEffort, 'high');
+  assert.equal(ACTIVITY_DEFINITIONS['performance.appraisal'].reasoningEffort, 'high');
   assert.equal(localProviderLabel('local-claude', 'sonnet'), 'Claude Code: sonnet');
   assert.doesNotMatch(source, /recruiter[\\/]backend[\\/]config[\\/]aiRuntimeCatalog/);
 });

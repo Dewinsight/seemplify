@@ -30,10 +30,12 @@ const bulkRoutes = require('./routes/bulk');
 const reportsRoutes = require('./routes/reports');
 const appraisalRoutes = require('./routes/appraisals');
 const webhooksRouter = require('./routes/webhooks');
+const aiRuntimeRoutes = require('./routes/aiRuntime');
 
 // Import RBAC middleware
 const { getUserRole, getDirectReports, getManagedTeams, getCurrentOrganization, requireAuth } = require('./middleware/rbac');
 const { claimsRefreshMiddleware } = require('./middleware/claimsRefresh');
+const { aiRequestContext } = require('./services/aiRequestContext');
 
 // Import services
 const websocketService = require('./services/websocketService');
@@ -110,6 +112,7 @@ app.use(session({
 
 // Claims refresh middleware (handles stale claims from webhooks)
 app.use('/api', claimsRefreshMiddleware);
+app.use('/api', aiRequestContext);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -221,6 +224,7 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/ai-runtime', aiRuntimeRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/hub', hubRoutes);

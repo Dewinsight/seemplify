@@ -78,15 +78,21 @@ async function main() {
   const sharedSecret = process.env.CHATGPT_GATEWAY_SHARED_SECRET;
   const gatewayId = String(process.env.CHATGPT_GATEWAY_APP_ID || '').trim();
   const recruiterId = String(process.env.RECRUITER_BACKEND_APP_ID || '').trim();
+  const performanceId = String(process.env.PERFORMANCE_BACKEND_APP_ID || '').trim();
+  const gatewayBaseUrl = process.env.CHATGPT_GATEWAY_BASE_URL;
+  const localBaseUrl = process.env.LOCAL_LLM_BASE_URL || gatewayBaseUrl;
+  const localSecret = process.env.LOCAL_LLM_SHARED_SECRET || sharedSecret;
   await configureApplication(gatewayId, {
     CHATGPT_GATEWAY_SHARED_SECRET: sharedSecret,
     RECRUITER_BACKEND_URL: process.env.RECRUITER_BACKEND_URL || 'https://api.seemplifyai.com',
     CODEX_PER_USER_SESSIONS: 'true',
-    CODEX_SUBJECT_SOURCE_APPS: 'recruiter'
+    CODEX_SUBJECT_SOURCE_APPS: 'recruiter,performance-management'
   }, ['LOCAL_LLM_BASE_URL', 'LOCAL_LLM_SHARED_SECRET', 'LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED']);
   await configureApplication(recruiterId, {
-    CHATGPT_GATEWAY_BASE_URL: process.env.CHATGPT_GATEWAY_BASE_URL,
+    CHATGPT_GATEWAY_BASE_URL: gatewayBaseUrl,
     CHATGPT_GATEWAY_SHARED_SECRET: sharedSecret,
+    LOCAL_LLM_BASE_URL: localBaseUrl,
+    LOCAL_LLM_SHARED_SECRET: localSecret,
     CV_STATUS_TOKEN_SECRET: process.env.CV_STATUS_TOKEN_SECRET,
     CV_ANALYSIS_QUEUE_CONCURRENCY: process.env.CV_ANALYSIS_QUEUE_CONCURRENCY || '4',
     AI_USAGE_OUTBOX_ENABLED: 'true',
@@ -95,9 +101,20 @@ async function main() {
     OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID || 'smarthr-backend',
     OIDC_CLIENT_SECRET: process.env.OIDC_CLIENT_SECRET
   }, [
-    'LOCAL_LLM_BASE_URL', 'LOCAL_LLM_SHARED_SECRET', 'LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED',
+    'LOCAL_CONTROL_CENTER_TELEMETRY_ENABLED',
     'RECRUITER_DISABLE_LOCAL_RUNTIME', 'AI_PROVIDER_ENCRYPTION_KEY', 'AI_PROVIDER_ENCRYPTION_KEY_VERSION'
   ]);
+  if (performanceId) {
+    await configureApplication(performanceId, {
+      CHATGPT_GATEWAY_BASE_URL: gatewayBaseUrl,
+      CHATGPT_GATEWAY_SHARED_SECRET: sharedSecret,
+      LOCAL_LLM_BASE_URL: localBaseUrl,
+      LOCAL_LLM_SHARED_SECRET: localSecret,
+      PERFORMANCE_AI_LOCAL_ENABLED: process.env.PERFORMANCE_AI_LOCAL_ENABLED || 'true',
+      PERFORMANCE_AI_CHATGPT_ENABLED: process.env.PERFORMANCE_AI_CHATGPT_ENABLED || 'false',
+      PERFORMANCE_AI_DEFAULT_RUNTIME: process.env.PERFORMANCE_AI_DEFAULT_RUNTIME || 'local'
+    }, ['AZURE_OPENAI_API_KEY', 'OPENAI_API_KEY']);
+  }
 }
 
 if (require.main === module) {

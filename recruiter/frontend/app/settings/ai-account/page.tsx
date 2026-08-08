@@ -203,6 +203,20 @@ export default function AiAccountPage() {
     } finally { setWorking("") }
   }
 
+  async function chooseRuntime(runtimePreference: "default" | "local" | "chatgpt") {
+    setWorking("runtime"); setError("")
+    try {
+      const { account: next } = await aiAccountService.setRuntimePreference(runtimePreference)
+      setAccount(next)
+      toast.success(runtimePreference === "default"
+        ? "Workspace default selected."
+        : `${runtimePreference === "local" ? "Local inference" : "ChatGPT"} selected.`)
+    } catch (reason: any) {
+      const message = reason?.message || "Your AI runtime preference could not be saved."
+      setError(message); toast.error(message)
+    } finally { setWorking("") }
+  }
+
   async function copyCode() {
     if (!deviceLogin?.userCode) return
     try {
@@ -228,6 +242,33 @@ export default function AiAccountPage() {
         </p>
       </div>
       <Separator />
+
+      {policy?.localEnabled && policy?.chatgptEnabled && account && (
+        <Card data-testid="ai-runtime-choice">
+          <CardHeader>
+            <CardTitle className="text-base">AI runtime</CardTitle>
+            <CardDescription>
+              Both runtimes are available. Local inference uses the model selected in Control Center.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {(["default", "local", "chatgpt"] as const).map((runtime) => (
+              <Button
+                key={runtime}
+                type="button"
+                variant={account.runtimePreference === runtime ? "default" : "outline"}
+                disabled={working === "runtime"}
+                onClick={() => void chooseRuntime(runtime)}
+                data-testid={`ai-runtime-${runtime}`}
+              >
+                {runtime === "default"
+                  ? `Workspace default (${policy.defaultRuntime === "local" ? "Local" : "ChatGPT"})`
+                  : runtime === "local" ? "Local inference" : "ChatGPT"}
+              </Button>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {setupRequired && (
         <div

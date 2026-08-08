@@ -69,7 +69,7 @@ function subjectKeyFor(sourceApp, subjectId) {
  * already holds the secret. The allowlist keeps the namespace closed.
  */
 function allowedSourceApps(source = process.env) {
-  return new Set(String(source.CODEX_SUBJECT_SOURCE_APPS || 'recruiter')
+  return new Set(String(source.CODEX_SUBJECT_SOURCE_APPS || 'recruiter,performance-management')
     .split(',')
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean));

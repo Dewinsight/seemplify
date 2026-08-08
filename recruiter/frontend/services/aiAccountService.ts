@@ -14,6 +14,7 @@ export interface AiRuntimeAccount {
   rateLimits: AiPlanRateLimits | null;
   usageLimit: AiPlanUsageLimit | null;
   lastError: string | null;
+  runtimePreference: 'default' | 'local' | 'chatgpt';
 }
 
 /** One of the plan's usage windows, as Codex last reported it. */
@@ -66,9 +67,10 @@ async function readJson<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export interface AiRuntimePolicy {
+  localEnabled: boolean;
   chatgptEnabled: boolean;
-  defaultRuntime: 'chatgpt';
-  chatgptRequired: true;
+  defaultRuntime: 'local' | 'chatgpt';
+  chatgptRequired: boolean;
 }
 
 /**
@@ -98,6 +100,7 @@ export function chatGptSetupState(
   if (!account || !policy) return null;
   if (!policy.chatgptEnabled || policy.defaultRuntime !== 'chatgpt') return null;
   if (account.routable) return null;
+  if (policy.localEnabled && account.runtimePreference !== 'chatgpt') return null;
   // The ChatGPT gateway being on does not help this user when their own AI work
   // is ChatGPT-only — only an unrequired policy leaves them a real choice.
   return 'required';
@@ -122,6 +125,12 @@ export const aiAccountService = {
     '/api/ai-account/consent',
     { method: 'POST', body: JSON.stringify({ acknowledged }) }
   ),
+
+  setRuntimePreference: (runtimePreference: 'default' | 'local' | 'chatgpt') => readJson<{
+    account: AiRuntimeAccount; runtimePolicy: AiRuntimePolicy
+  }>('/api/ai-account/runtime-preference', {
+    method: 'PUT', body: JSON.stringify({ runtimePreference })
+  }),
 
   listModels: () => readJson<{ models: AiAccountModel[] }>('/api/ai-account/models'),
 

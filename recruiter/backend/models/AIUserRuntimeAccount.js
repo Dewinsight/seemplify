@@ -38,7 +38,12 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
   rateLimits: { type: mongoose.Schema.Types.Mixed, default: null },
   /** The last "you've hit your limit" refusal, which names when it lifts. */
   usageLimit: { type: mongoose.Schema.Types.Mixed, default: null },
-  lastError: { type: String, default: '' }
+  lastError: { type: String, default: '' },
+  runtimePreference: {
+    type: String,
+    enum: ['default', 'local', 'chatgpt'],
+    default: 'default'
+  }
 }, { timestamps: true });
 
 AIUserRuntimeAccountSchema.methods.isRoutable = function isRoutable() {
@@ -56,7 +61,8 @@ AIUserRuntimeAccountSchema.methods.toPublicJSON = function toPublicJSON() {
     routable: this.isRoutable(),
     rateLimits: this.rateLimits || null,
     usageLimit: this.usageLimit || null,
-    lastError: this.lastError || null
+    lastError: this.lastError || null,
+    runtimePreference: this.runtimePreference || 'default'
   };
 };
 

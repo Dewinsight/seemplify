@@ -6,6 +6,8 @@ const {
   ACTIVITY_DEFINITIONS,
   CHATGPT_MODEL,
   CHATGPT_PROVIDER,
+  LOCAL_MODEL,
+  LOCAL_PROVIDER,
   createDefaultRuntimeSettings,
   isCandidateInterviewActivity,
   normalizeRuntimePolicy
@@ -62,7 +64,7 @@ function deriveRuntimeUsageEventId({ context = {}, route = {} } = {}) {
 }
 
 function deriveGatewayExecutionId(eventId) {
-  return `chatgptexec_${stableHash(eventId).slice(0, 48)}`;
+  return `localexec_${stableHash(eventId).slice(0, 48)}`;
 }
 
 function requiredCapabilitiesForActivity(activity) {
@@ -81,25 +83,35 @@ function combinedSignal(timeoutMs, external) {
   return external ? AbortSignal.any([timeout, external]) : timeout;
 }
 
-function gatewayConfiguration() {
-  const baseUrl = String(process.env.CHATGPT_GATEWAY_BASE_URL || '').replace(/\/+$/, '');
-  const secret = String(process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
+function gatewayConfiguration(provider) {
+  const local = provider === LOCAL_PROVIDER;
+  const baseUrl = String(local
+    ? process.env.LOCAL_LLM_BASE_URL || ''
+    : process.env.CHATGPT_GATEWAY_BASE_URL || '').replace(/\/+$/, '');
+  const secret = String(local
+    ? process.env.LOCAL_LLM_SHARED_SECRET || ''
+    : process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
   if (!baseUrl || !secret) {
-    throw new AIRuntimeError('The ChatGPT gateway is not configured', {
-      code: 'CHATGPT_GATEWAY_NOT_CONFIGURED', statusCode: 503, retryable: true
+    throw new AIRuntimeError(`${local ? 'Local inference' : 'The ChatGPT gateway'} is not configured`, {
+      code: local ? 'AI_LOCAL_NOT_CONFIGURED' : 'CHATGPT_GATEWAY_NOT_CONFIGURED', statusCode: 503, retryable: true
     });
   }
   return { baseUrl, secret };
 }
 
 class AIRuntimeService {
-  constructor({ fetchImpl = global.fetch, settingsModel = AIRuntimeSettings, resolveSubject, resolveInterviewSubject } = {}) {
+  constructor({ fetchImpl = global.fetch, settingsModel = AIRuntimeSettings, resolveSubject, resolveInterviewSubject, resolveRuntimePreference } = {}) {
     this.fetch = fetchImpl;
     this.Settings = settingsModel;
     this.resolveSubject = resolveSubject || ((actorId) => require('./codexAccountService').resolveRoutableSubject(actorId));
     this.resolveInterviewSubject = resolveInterviewSubject || ((sessionId) => (
       require('./interviewCodexAccountService').resolveRoutableSubject(sessionId)
     ));
+    this.resolveRuntimePreference = resolveRuntimePreference || (async (actorId) => {
+      if (!actorId) return 'default';
+      const account = await require('../../models/AIUserRuntimeAccount').findOne({ user: actorId }).lean();
+      return account?.runtimePreference || 'default';
+    });
     this.settingsCache = null;
     this.settingsCacheExpiresAt = 0;
   }
@@ -141,22 +153,40 @@ class AIRuntimeService {
     return settings;
   }
 
-  resolveRoute(activity, settings) {
+  resolveRoute(activity, settings, selectedRuntime) {
     const definition = ACTIVITY_DEFINITIONS[activity];
     if (!definition) throw new AIRuntimeError(`Unknown AI activity ${activity}`, { code: 'AI_ACTIVITY_UNKNOWN', statusCode: 400 });
     const route = settings.routes.find((item) => item.activity === activity);
     if (!route || route.enabled === false || settings.providerEnabled === false) {
       throw new AIRuntimeError(`AI activity ${activity} is disabled`, { code: 'AI_ACTIVITY_DISABLED', statusCode: 503 });
     }
-    if (!normalizeRuntimePolicy(settings.runtimePolicy).chatgptEnabled) {
-      throw new AIRuntimeError('ChatGPT is disabled by a platform administrator', {
-        code: 'AI_RUNTIME_CHATGPT_DISABLED', statusCode: 503
+    const policy = normalizeRuntimePolicy(settings.runtimePolicy);
+    if (!policy.localEnabled && !policy.chatgptEnabled) {
+      throw new AIRuntimeError('AI is disabled by a platform administrator', {
+        code: 'AI_RUNTIME_DISABLED', statusCode: 503
       });
     }
+    const runtime = selectedRuntime || policy.defaultRuntime;
+    const local = runtime === 'local';
+    if (local && !policy.localEnabled) throw new AIRuntimeError('Local inference is disabled', { code: 'AI_RUNTIME_LOCAL_DISABLED', statusCode: 503 });
+    if (!local && !policy.chatgptEnabled) throw new AIRuntimeError('ChatGPT is disabled', { code: 'AI_RUNTIME_CHATGPT_DISABLED', statusCode: 503 });
     return {
-      ...route, activity, provider: CHATGPT_PROVIDER, model: CHATGPT_MODEL,
-      modelConfig: settings.models[0], failoverPolicy: 'chatgpt_required'
+      ...route,
+      activity,
+      provider: local ? LOCAL_PROVIDER : CHATGPT_PROVIDER,
+      model: local ? LOCAL_MODEL : CHATGPT_MODEL,
+      modelConfig: settings.models.find((item) => item.provider === (local ? LOCAL_PROVIDER : CHATGPT_PROVIDER)),
+      failoverPolicy: local ? 'local_required' : 'chatgpt_required'
     };
+  }
+
+  async selectRuntime(settings, context = {}) {
+    const policy = normalizeRuntimePolicy(settings.runtimePolicy);
+    if (policy.localEnabled && !policy.chatgptEnabled) return 'local';
+    if (policy.chatgptEnabled && !policy.localEnabled) return 'chatgpt';
+    if (!policy.localEnabled && !policy.chatgptEnabled) return policy.defaultRuntime;
+    const preference = await this.resolveRuntimePreference(String(context.actorId || '').trim());
+    return ['local', 'chatgpt'].includes(preference) ? preference : policy.defaultRuntime;
   }
 
   async attachChatGptSubject(route, context) {
@@ -195,17 +225,22 @@ class AIRuntimeService {
   }
 
   async gatewayRequest({ route, input, context, requestId, timeoutMs, signal }) {
-    const { baseUrl, secret } = gatewayConfiguration();
+    const local = route.provider === LOCAL_PROVIDER;
+    const { baseUrl, secret } = gatewayConfiguration(route.provider);
     const eventId = deriveRuntimeUsageEventId({ context, route });
     const body = JSON.stringify({
       activity: route.activity,
-      chatgptSourceApp: 'recruiter',
-      chatgptSubjectId: route.chatgptSubjectId,
-      codexModelCandidates: [
-        ...(route.codexModel ? [{ value: route.codexModel, source: 'activity' }] : []),
-        { value: 'gpt-5.6-sol', source: 'application_default' }
-      ],
-      codexEffortCandidates: [{ value: route.reasoningEffort || 'medium', source: 'activity' }],
+      executionMode: 'local-only',
+      ...(!local ? {
+        codexSourceApp: 'recruiter',
+        codexSubjectId: route.chatgptSubjectId,
+        requiredEngine: 'codex',
+        codexModelCandidates: [
+          ...(route.codexModel ? [{ value: route.codexModel, source: 'activity' }] : []),
+          { value: 'gpt-5.6-sol', source: 'application_default' }
+        ],
+        codexEffortCandidates: [{ value: route.reasoningEffort || 'medium', source: 'activity' }]
+      } : {}),
       ...this.normalizePayload(input, route),
       requestSource: String(context.sourceApp || 'recruiter').slice(0, 64),
       timeoutMs,
@@ -236,14 +271,14 @@ class AIRuntimeService {
     } catch (error) {
       const aborted = activeAbortReason(signal, error);
       if (aborted) throw aborted;
-      throw new AIRuntimeError(`The ChatGPT gateway could not be reached: ${sanitizeMessage(error.message)}`, {
-        code: 'CHATGPT_GATEWAY_UNAVAILABLE', statusCode: 503, retryable: true
+      throw new AIRuntimeError(`${local ? 'Local inference' : 'The ChatGPT gateway'} could not be reached: ${sanitizeMessage(error.message)}`, {
+        code: local ? 'AI_LOCAL_UNAVAILABLE' : 'CHATGPT_GATEWAY_UNAVAILABLE', statusCode: 503, retryable: true
       });
     }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new AIRuntimeError(data.message || 'ChatGPT could not complete the request', {
-        code: data.code || 'CHATGPT_REQUEST_FAILED',
+      throw new AIRuntimeError(data.message || `${local ? 'Local inference' : 'ChatGPT'} could not complete the request`, {
+        code: data.code || (local ? 'AI_LOCAL_REQUEST_FAILED' : 'CHATGPT_REQUEST_FAILED'),
         statusCode: response.status >= 500 ? 503 : response.status,
         retryable: data.retryable === true,
         details: data
@@ -259,7 +294,9 @@ class AIRuntimeService {
     const baseContext = getAIRequestContext({ ...(input.context || {}), ...(options.context || {}) });
     const context = withUsageExecutionContext(baseContext);
     const requestId = String(context.requestId || crypto.randomUUID());
-    const route = await this.attachChatGptSubject(this.resolveRoute(activity, settings), context);
+    const selectedRuntime = await this.selectRuntime(settings, context);
+    let route = this.resolveRoute(activity, settings, selectedRuntime);
+    if (route.provider === CHATGPT_PROVIDER) route = await this.attachChatGptSubject(route, context);
     const data = await this.gatewayRequest({
       route, input, context, requestId,
       timeoutMs: Number(options.timeoutMs || input.timeoutMs || 240_000),
@@ -268,7 +305,7 @@ class AIRuntimeService {
     const usage = normalizeUsage(data.usage || {});
     const raw = {
       id: data.id,
-      provider: CHATGPT_PROVIDER,
+      provider: route.provider,
       model: data.model,
       choices: [{
         message: { content: data.content, ...(data.toolCalls?.length ? { tool_calls: data.toolCalls } : {}) },
@@ -283,9 +320,9 @@ class AIRuntimeService {
       toolCalls: data.toolCalls || [],
       finishReason: raw.choices[0].finish_reason,
       model: data.model || CHATGPT_MODEL,
-      provider: CHATGPT_PROVIDER,
-      providerLabel: data.providerLabel || 'ChatGPT Connect',
-      engine: 'codex-app-server',
+      provider: route.provider,
+      providerLabel: data.providerLabel || (route.provider === LOCAL_PROVIDER ? 'Local inference' : 'ChatGPT Connect'),
+      engine: data.engine || (route.provider === LOCAL_PROVIDER ? 'control-center-selected' : 'codex-app-server'),
       usage,
       raw
     };
@@ -328,13 +365,17 @@ class AIRuntimeService {
   }
 
   async getGatewayStatus() {
-    try {
-      const { baseUrl } = gatewayConfiguration();
-      const response = await this.fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(8_000) });
-      return { configured: true, reachable: response.ok, ...(await response.json().catch(() => ({}))) };
-    } catch (error) {
-      return { configured: false, reachable: false, error: sanitizeMessage(error.message) };
-    }
+    const check = async (provider) => {
+      try {
+        const { baseUrl } = gatewayConfiguration(provider);
+        const response = await this.fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(8_000) });
+        return { configured: true, reachable: response.ok, ...(await response.json().catch(() => ({}))) };
+      } catch (error) {
+        return { configured: false, reachable: false, error: sanitizeMessage(error.message) };
+      }
+    };
+    const [local, chatgpt] = await Promise.all([check(LOCAL_PROVIDER), check(CHATGPT_PROVIDER)]);
+    return { local, chatgpt };
   }
 
   requiredCapabilitiesForActivity(activity) { return requiredCapabilitiesForActivity(activity); }

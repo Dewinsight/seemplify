@@ -1,4 +1,4 @@
-const { AzureOpenAI, OpenAI } = require('openai');
+const aiGatewayService = require('./aiGatewayService');
 
 // Conversation phases in order
 const CONVERSATION_PHASES = [
@@ -36,26 +36,9 @@ class AppraisalAIService {
   async initialize() {
     if (this.initialized) return;
 
-    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    const apiKey = process.env.AZURE_OPENAI_API_KEY;
-    const openAIKey = process.env.OPENAI_API_KEY;
-
     try {
-      if (endpoint && apiKey) {
-        this.client = new AzureOpenAI({
-          endpoint,
-          apiKey,
-          apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview'
-        });
-        this.provider = 'azure';
-      } else if (openAIKey) {
-        this.client = new OpenAI({ apiKey: openAIKey });
-        this.provider = 'openai';
-      } else {
-        console.warn('No Azure or OpenAI credentials configured. AI features will be limited.');
-        return;
-      }
-
+      this.client = aiGatewayService.openAICompatibleClient('performance.appraisal');
+      this.provider = 'seemplify-ai-gateway';
       this.initialized = true;
       console.log(`Appraisal AI Service initialized (${this.provider})`);
     } catch (error) {

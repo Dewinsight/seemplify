@@ -33,7 +33,10 @@ async function waitForHealth(url) {
   for (let attempt = 0; attempt < 600; attempt += 1) {
     try {
       const response = await fetch(url);
-      if (response.ok) return;
+      // This regression intentionally selects a managed engine that may be
+      // unhealthy. Any HTTP response proves the gateway is listening; the
+      // per-user Codex path under test does not use that managed engine.
+      if (response.status > 0) return;
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -90,9 +93,12 @@ test('a per-user Codex turn runs even when the managed engine selection is not c
       CODEX_SUBJECTS_DIR: subjectsDir,
       RECRUITER_BACKEND_URL: 'http://127.0.0.1:9'
     },
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   });
+  let gatewayOutput = '';
+  gateway.stdout.on('data', (chunk) => { gatewayOutput += chunk.toString(); });
+  gateway.stderr.on('data', (chunk) => { gatewayOutput += chunk.toString(); });
   t.after(async () => {
     // The gateway's codex child holds its workspace directory as cwd; it exits
     // on stdin EOF once the gateway dies, so removal is awaited with retries.
@@ -101,7 +107,11 @@ test('a per-user Codex turn runs even when the managed engine selection is not c
     await exited;
     fs.rmSync(runtimeDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   });
-  await waitForHealth(`http://127.0.0.1:${port}/health`);
+  try {
+    await waitForHealth(`http://127.0.0.1:${port}/health`);
+  } catch (error) {
+    throw new Error(`${error.message}; gateway output: ${gatewayOutput.slice(-1200)}`);
+  }
 
   const requestPath = '/v1/complete';
   const subjectBody = JSON.stringify({

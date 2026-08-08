@@ -7,11 +7,14 @@ const activityNames = Object.freeze([
   'analytics.candidates', 'analytics.jobs', 'analytics.hiring', 'report.analysis',
   'interview.questions', 'interview.bias', 'interview.analysis', 'interview.summary', 'interview.team_feedback',
   'ai_interview.chat.introduction', 'ai_interview.chat.clarification', 'ai_interview.chat.acknowledgement',
-  'ai_interview.question_generation', 'ai_interview.cv_parse', 'ai_interview.scoring'
+  'ai_interview.question_generation', 'ai_interview.cv_parse', 'ai_interview.scoring',
+  'performance.general', 'performance.okr', 'performance.review', 'performance.appraisal',
+  'performance.meeting', 'performance.calibration', 'performance.development'
 ]);
 
 const highReasoning = new Set([
-  'job.description', 'matching.analysis', 'interview.analysis', 'ai_interview.scoring'
+  'job.description', 'matching.analysis', 'interview.analysis', 'ai_interview.scoring',
+  'performance.review', 'performance.appraisal', 'performance.calibration'
 ]);
 const lowReasoning = new Set([
   'assistant.title', 'ai_interview.chat.introduction',

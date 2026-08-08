@@ -3,6 +3,8 @@
 const CHATGPT_PROVIDER = 'chatgpt-connect';
 const CHATGPT_MODEL = 'chatgpt-connected-account';
 const CHATGPT_DEFAULT_CODEX_MODEL = 'gpt-5.6-sol';
+const LOCAL_PROVIDER = 'local-inference';
+const LOCAL_MODEL = 'control-center-selected-model';
 
 const activities = {
   'recruiter.general': ['Recruiter AI - general', 'Recruiter', 'medium'],
@@ -59,6 +61,17 @@ const DEFAULT_MODELS = Object.freeze([{
   available: true,
   enabled: true,
   userOwned: true
+}, {
+  id: LOCAL_MODEL,
+  provider: LOCAL_PROVIDER,
+  label: 'Local inference (Control Center selection)',
+  capabilities: ['text', 'reasoning', 'json_object', 'json_schema', 'tools', 'streaming'],
+  pricing: { inputPerMillionUsd: 0, cachedInputPerMillionUsd: 0, outputPerMillionUsd: 0 },
+  contextWindow: 131072,
+  maxOutputTokens: 65536,
+  available: true,
+  enabled: true,
+  managed: true
 }]);
 
 const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([activity, definition]) => ({
@@ -73,6 +86,7 @@ const DEFAULT_ROUTES = Object.freeze(Object.entries(ACTIVITY_DEFINITIONS).map(([
 })));
 
 const DEFAULT_RUNTIME_POLICY = Object.freeze({
+  localEnabled: false,
   chatgptEnabled: true,
   chatgptRequired: true,
   defaultRuntime: 'chatgpt'
@@ -88,10 +102,20 @@ const DEFAULT_ALERT_SETTINGS = Object.freeze({
 
 function normalizeRuntimePolicy(value) {
   const candidate = value && typeof value === 'object' ? value : {};
+  const localEnabled = candidate.localEnabled === true;
+  const chatgptEnabled = candidate.chatgptEnabled !== false;
+  const requested = ['local', 'chatgpt'].includes(candidate.defaultRuntime)
+    ? candidate.defaultRuntime : DEFAULT_RUNTIME_POLICY.defaultRuntime;
+  const defaultRuntime = requested === 'local' && !localEnabled && chatgptEnabled
+    ? 'chatgpt'
+    : requested === 'chatgpt' && !chatgptEnabled && localEnabled
+      ? 'local'
+      : requested;
   return {
-    chatgptEnabled: candidate.chatgptEnabled !== false,
-    chatgptRequired: true,
-    defaultRuntime: 'chatgpt'
+    localEnabled,
+    chatgptEnabled,
+    chatgptRequired: chatgptEnabled && !localEnabled,
+    defaultRuntime
   };
 }
 
@@ -108,11 +132,14 @@ function createDefaultRuntimeSettings() {
   };
 }
 
-function failoverPolicyForRoute() { return 'chatgpt_required'; }
+function failoverPolicyForRoute(_activity, provider) {
+  return provider === LOCAL_PROVIDER ? 'local_required' : 'chatgpt_required';
+}
 function isCandidateInterviewActivity(activity) { return CANDIDATE_INTERVIEW_ACTIVITIES.includes(String(activity || '')); }
 function isChatgptPinnedActivity(activity) { return Boolean(ACTIVITY_DEFINITIONS[activity]); }
-function isGatewayProvider(provider) { return String(provider || '') === CHATGPT_PROVIDER; }
-function isUserOwnedProvider(provider) { return isGatewayProvider(provider); }
+function isGatewayProvider(provider) { return [CHATGPT_PROVIDER, LOCAL_PROVIDER].includes(String(provider || '')); }
+function isUserOwnedProvider(provider) { return String(provider || '') === CHATGPT_PROVIDER; }
+function isLocalProvider(provider) { return String(provider || '') === LOCAL_PROVIDER; }
 
 module.exports = {
   ACTIVITY_DEFINITIONS,
@@ -120,6 +147,8 @@ module.exports = {
   CHATGPT_DEFAULT_CODEX_MODEL,
   CHATGPT_MODEL,
   CHATGPT_PROVIDER,
+  LOCAL_MODEL,
+  LOCAL_PROVIDER,
   DEFAULT_ALERT_SETTINGS,
   DEFAULT_MODELS,
   DEFAULT_ROUTES,
@@ -129,6 +158,7 @@ module.exports = {
   isCandidateInterviewActivity,
   isChatgptPinnedActivity,
   isGatewayProvider,
+  isLocalProvider,
   isUserOwnedProvider,
   normalizeRuntimePolicy
 };
