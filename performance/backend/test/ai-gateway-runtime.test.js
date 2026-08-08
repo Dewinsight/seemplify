@@ -78,6 +78,7 @@ test('Performance ChatGPT mode binds the configured subject and never silently u
     assert.equal(captured.url, 'https://chatgpt.test/v1/complete');
     assert.equal(captured.body.codexSourceApp, 'performance-management');
     assert.equal(captured.body.codexSubjectId, 'performance-user-9');
+    assert.equal(captured.body.executionMode, 'codex-only');
     assert.equal(captured.body.requiredEngine, 'codex');
   });
 });

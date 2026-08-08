@@ -21,7 +21,7 @@ function enabled(name, fallback) {
 
 function environmentPolicy() {
   const localEnabled = enabled('PERFORMANCE_AI_LOCAL_ENABLED', true);
-  const chatgptEnabled = enabled('PERFORMANCE_AI_CHATGPT_ENABLED', false);
+  const chatgptEnabled = enabled('PERFORMANCE_AI_CHATGPT_ENABLED', true);
   const requested = process.env.PERFORMANCE_AI_DEFAULT_RUNTIME === CHATGPT ? CHATGPT : LOCAL;
   const defaultRuntime = requested === LOCAL && !localEnabled && chatgptEnabled ? CHATGPT
     : requested === CHATGPT && !chatgptEnabled && localEnabled ? LOCAL : requested;
@@ -126,7 +126,7 @@ class AIGatewayService {
     const eventId = `usage_${crypto.createHash('sha256').update(`${requestId}:${activity}:${runtime}`).digest('hex').slice(0, 48)}`;
     const body = JSON.stringify({
       activity,
-      executionMode: 'local-only',
+      executionMode: local ? 'local-only' : 'codex-only',
       ...(!local ? {
         codexSourceApp: 'performance-management',
         codexSubjectId: subjectId,
