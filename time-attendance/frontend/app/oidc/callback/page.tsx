@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { resetRedirectFlag } from '@/services/authGuard';
+import { markCentralSessionEstablished } from '@/lib/centralSession';
 
 export default function OidcCallbackPage() {
     const router = useRouter();
@@ -27,6 +28,7 @@ export default function OidcCallbackPage() {
             if (token) {
                 // Store token in localStorage
                 localStorage.setItem('access_token', token);
+                markCentralSessionEstablished();
                 
                 // Reset redirect flag after successful login
                 resetRedirectFlag();

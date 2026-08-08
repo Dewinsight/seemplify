@@ -4,7 +4,11 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { User, Organization } from '@/types';
 import { authApi } from '@/lib/api';
 import { websocketService } from '@/lib/websocket';
-import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/lib/centralSession';
+import {
+  isInvalidatedByCentralLogout,
+  markCentralSessionEstablished,
+  watchForCentralLogout,
+} from '@/lib/centralSession';
 
 interface AuthContextType {
   user: User | null;
@@ -33,6 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const token = hash.split('access_token=')[1]?.split('&')[0];
           if (token) {
             localStorage.setItem('accessToken', token);
+            markCentralSessionEstablished();
             // Clear hash
             window.history.replaceState(null, '', window.location.pathname);
           }

@@ -4,7 +4,11 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { api, authApi } from '@/lib/api';
 import { redirectToLogin, isPublicRoute, resetRedirectFlag } from '@/services/authGuard';
-import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/lib/centralSession';
+import {
+    isInvalidatedByCentralLogout,
+    markCentralSessionEstablished,
+    watchForCentralLogout,
+} from '@/lib/centralSession';
 
 interface User {
     id: string;
@@ -46,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (hash.includes('access_token=')) {
                     const accessToken = hash.split('access_token=')[1].split('&')[0];
                     localStorage.setItem('access_token', accessToken);
+                    markCentralSessionEstablished();
                     window.history.replaceState(null, '', window.location.pathname);
                     resetRedirectFlag(); // Reset flag after successful login
                 }

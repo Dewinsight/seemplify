@@ -1,4 +1,5 @@
 export const CENTRAL_LOGOUT_COOKIE = 'seemplify_logout_at';
+export const CENTRAL_SESSION_STARTED_AT = 'seemplify_session_started_at';
 
 function readCentralLogoutAt(): number {
   if (typeof document === 'undefined') return 0;
@@ -21,12 +22,25 @@ function readIssuedAt(token: string): number {
   }
 }
 
+function readSessionStartedAt(): number {
+  if (typeof window === 'undefined') return 0;
+  return Number(window.localStorage.getItem(CENTRAL_SESSION_STARTED_AT) || 0);
+}
+
+export function markCentralSessionEstablished(): void {
+  if (typeof window === 'undefined') return;
+  const establishedAt = Math.max(Date.now(), readCentralLogoutAt() + 1);
+  window.localStorage.setItem(CENTRAL_SESSION_STARTED_AT, String(establishedAt));
+}
+
 export function isInvalidatedByCentralLogout(token: string | null): boolean {
   if (!token) return false;
   const logoutAt = readCentralLogoutAt();
   if (!logoutAt) return false;
   const issuedAt = readIssuedAt(token);
-  return !issuedAt || issuedAt + 1000 <= logoutAt;
+  const sessionStartedAt = issuedAt || readSessionStartedAt();
+  const jwtClockSkew = issuedAt ? 1000 : 0;
+  return !sessionStartedAt || sessionStartedAt + jwtClockSkew <= logoutAt;
 }
 
 export function watchForCentralLogout(getToken: () => string | null, onLogout: () => void): () => void {

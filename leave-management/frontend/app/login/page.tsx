@@ -27,8 +27,10 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated, isLoading, login } = useAuth();
+  const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [signInTimedOut, setSignInTimedOut] = useState(false);
 
   const error = searchParams.get('error');
 
@@ -54,7 +56,25 @@ export default function LoginPage() {
     }
   }, [error, isAuthenticated, isLoading, isProcessing, login, router]);
 
-  if (isLoading || isProcessing) {
+  const signInPending = isLoading || isProcessing;
+
+  useEffect(() => {
+    if (!signInPending || signInTimedOut) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setSignInTimedOut(true);
+    }, 15_000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [signInPending, signInTimedOut]);
+
+  const retrySignIn = () => {
+    setSignInTimedOut(false);
+    setIsProcessing(true);
+    login();
+  };
+
+  if (signInPending) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden flex items-center justify-center">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
@@ -67,46 +87,62 @@ export default function LoginPage() {
           transition={{ duration: 0.5 }}
           className="relative z-10 text-center"
         >
-          <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-2xl p-12 shadow-2xl">
-            <motion.div
-              animate={{
-                rotate: 360,
-              }}
-              transition={{
-                duration: 2,
-                repeat: Infinity,
-                ease: "linear"
-              }}
-              className="w-24 h-24 mx-auto mb-6 relative"
-            >
-              <div className="absolute inset-0 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-full opacity-20 blur-xl"></div>
-              <div className="absolute inset-2 border-4 border-transparent border-t-blue-400 border-r-purple-400 rounded-full"></div>
-            </motion.div>
+          <div className="w-[min(92vw,420px)] rounded-2xl border border-white/20 bg-slate-950/90 p-8 shadow-2xl sm:p-10">
+            {signInTimedOut ? (
+              <div role="alert">
+                <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full border border-amber-400/40 bg-amber-400/10 text-xl font-semibold text-amber-300">
+                  !
+                </div>
+                <h2 className="mb-3 text-2xl font-bold text-white">Sign-in is taking too long</h2>
+                <p className="mx-auto max-w-sm text-sm leading-6 text-slate-300">
+                  The identity handoff did not finish. You can retry safely or return to the App Hub.
+                </p>
+                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                  <Button type="button" onClick={retrySignIn} className="bg-blue-500 text-white hover:bg-blue-600">
+                    Try again
+                  </Button>
+                  <a href={hubUrl} className="inline-flex h-10 items-center justify-center rounded-md border border-white/20 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10">
+                    Back to App Hub
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <>
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                  className="relative mx-auto mb-6 h-24 w-24"
+                >
+                  <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-xl"></div>
+                  <div className="absolute inset-2 rounded-full border-4 border-transparent border-r-purple-400 border-t-blue-400"></div>
+                </motion.div>
 
-            <motion.h2
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="text-2xl font-bold text-white mb-3"
-            >
-              Completing Sign In
-            </motion.h2>
+                <motion.h2
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="mb-3 text-2xl font-bold text-white"
+                >
+                  Completing Sign In
+                </motion.h2>
 
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.4 }}
-              className="text-slate-300 text-sm"
-            >
-              Securely logging you into Leave Management...
-            </motion.p>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="text-sm text-slate-300"
+                >
+                  Securely logging you into Leave Management...
+                </motion.p>
 
-            <motion.div
-              initial={{ scaleX: 0 }}
-              animate={{ scaleX: 1 }}
-              transition={{ delay: 0.6, duration: 1.5 }}
-              className="mt-6 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full origin-left"
-            ></motion.div>
+                <motion.div
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: 1 }}
+                  transition={{ delay: 0.6, duration: 1.5 }}
+                  className="mt-6 h-1 origin-left rounded-full bg-blue-500"
+                ></motion.div>
+              </>
+            )}
           </div>
         </motion.div>
       </div>
@@ -326,7 +362,7 @@ export default function LoginPage() {
               <motion.a
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
-                href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+                href={hubUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group flex w-full items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-left text-white shadow-lg shadow-black/10 transition-all hover:border-white/30 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-blue-400/50"

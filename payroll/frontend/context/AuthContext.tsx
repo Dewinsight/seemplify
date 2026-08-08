@@ -3,7 +3,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api, { handleAuthCallback as extractToken, isAuthenticated as checkToken } from '@/lib/api';
 import { resolvePayrollBackendOrigin } from '@/lib/runtimeConfig';
-import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/lib/centralSession';
+import {
+  isInvalidatedByCentralLogout,
+  watchForCentralLogout,
+} from '@/lib/centralSession';
 
 // Types based on IdP organization roles
 export type OrganizationRole = 'owner' | 'admin' | 'hr_manager' | 'recruiter' | 'interviewer' | 'member';

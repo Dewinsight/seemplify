@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [signInTimedOut, setSignInTimedOut] = useState(false);
 
   const error = searchParams.get('error');
 
@@ -45,12 +46,25 @@ export default function LoginPage() {
   }, [error, router]);
 
   const handleLogin = () => {
+    setSignInTimedOut(false);
     setIsProcessing(true);
     authApi.login();
   };
 
+  const signInPending = isLoading || isProcessing;
+
+  useEffect(() => {
+    if (!signInPending || signInTimedOut) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setSignInTimedOut(true);
+    }, 15_000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [signInPending, signInTimedOut]);
+
   // Loading/Processing State
-  if (isLoading || isProcessing) {
+  if (signInPending) {
     return (
       <div className="min-h-screen relative overflow-hidden flex items-center justify-center" style={{ background: '#0a0a0f' }}>
         {/* Deep background layers */}
@@ -61,32 +75,53 @@ export default function LoginPage() {
         <div className="absolute inset-0 opacity-[0.015]" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noise\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noise)\'/%3E%3C/svg%3E")' }} />
 
         <div className="relative z-10 text-center">
-          <div className="bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-3xl p-14 shadow-2xl">
-            <div className="w-20 h-20 mx-auto mb-8 relative">
-              <div className="absolute inset-0 bg-gradient-to-tr from-amber-500 to-orange-400 rounded-2xl opacity-20 blur-2xl animate-pulse" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-16 h-16 rounded-full border-[3px] border-amber-500/20 border-t-amber-500 animate-spin" />
+          <div className="w-[min(92vw,420px)] rounded-2xl border border-white/[0.08] bg-[#111114] p-8 shadow-2xl sm:p-10">
+            {signInTimedOut ? (
+              <div role="alert">
+                <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full border border-amber-500/40 bg-amber-500/10 text-xl font-semibold text-amber-400">
+                  !
+                </div>
+                <h2 className="mb-3 text-2xl font-semibold tracking-tight text-white">Sign-in is taking too long</h2>
+                <p className="mx-auto max-w-sm text-sm leading-6 text-white/60">
+                  Payroll could not finish the identity handoff. Retry safely or return to the App Hub.
+                </p>
+                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                  <button type="button" onClick={handleLogin} className="rounded-lg bg-amber-500 px-5 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-amber-400">
+                    Try again
+                  </button>
+                  <a href={hubUrl} className="rounded-lg border border-white/15 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/[0.06]">
+                    Back to App Hub
+                  </a>
+                </div>
               </div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <svg className="w-8 h-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="relative mx-auto mb-8 h-20 w-20">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="h-16 w-16 animate-spin rounded-full border-[3px] border-amber-500/20 border-t-amber-500" />
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <svg className="h-8 w-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                </div>
 
-            <h2 className="text-2xl font-semibold text-white mb-3 tracking-tight">
-              {isProcessing ? 'Redirecting...' : 'Signing In'}
-            </h2>
+                <h2 className="mb-3 text-2xl font-semibold tracking-tight text-white">
+                  {isProcessing ? 'Redirecting...' : 'Signing In'}
+                </h2>
 
-            <p className="text-white/50 text-sm font-medium">
-              {isProcessing
-                ? 'Connecting to Identity Provider'
-                : 'Completing secure authentication'}
-            </p>
+                <p className="text-sm font-medium text-white/50">
+                  {isProcessing
+                    ? 'Connecting to Identity Provider'
+                    : 'Completing secure authentication'}
+                </p>
 
-            <div className="mt-8 h-1 bg-white/[0.06] rounded-full overflow-hidden w-48 mx-auto">
-              <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full animate-[shimmer_1.5s_ease-in-out_infinite]" style={{ width: '40%' }} />
-            </div>
+                <div className="mx-auto mt-8 h-1 w-48 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div className="h-full w-2/5 animate-[shimmer_1.5s_ease-in-out_infinite] rounded-full bg-amber-500" />
+                </div>
+              </>
+            )}
           </div>
         </div>
 

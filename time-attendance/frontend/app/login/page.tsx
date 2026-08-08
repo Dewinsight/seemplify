@@ -24,8 +24,10 @@ export default function LoginPage() {
     // but standard hook is fine here.
     const searchParams = useSearchParams();
     const { isLoading, user } = useAuth();
+    const hubUrl = getIdpUrl();
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
     const [isProcessing, setIsProcessing] = useState(false);
+    const [signInTimedOut, setSignInTimedOut] = useState(false);
 
     const error = searchParams.get('error');
 
@@ -56,12 +58,23 @@ export default function LoginPage() {
     }, [error, isLoading, isProcessing, user, router, searchParams]);
 
     const handleLogin = () => {
+        setSignInTimedOut(false);
         setIsProcessing(true);
         // Use centralized environment detection to prevent localhost in production
         const apiUrl = getApiUrl();
         // Redirect to backend login endpoint which handles OIDC
         window.location.href = `${apiUrl}/auth/login`;
     };
+
+    useEffect(() => {
+        if (!isProcessing || signInTimedOut) return;
+
+        const timeoutId = window.setTimeout(() => {
+            setSignInTimedOut(true);
+        }, 15_000);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [isProcessing, signInTimedOut]);
 
     if (isProcessing) {
         return (
@@ -76,46 +89,62 @@ export default function LoginPage() {
                     transition={{ duration: 0.5 }}
                     className="relative z-10 text-center"
                 >
-                    <div className="bg-zinc-900/50 backdrop-blur-2xl border border-white/10 rounded-2xl p-12 shadow-2xl">
-                        <motion.div
-                            animate={{
-                                rotate: 360,
-                            }}
-                            transition={{
-                                duration: 2,
-                                repeat: Infinity,
-                                ease: "linear"
-                            }}
-                            className="w-24 h-24 mx-auto mb-6 relative"
-                        >
-                            <div className="absolute inset-0 bg-gradient-to-tr from-teal-500 to-cyan-500 rounded-full opacity-20 blur-xl"></div>
-                            <div className="absolute inset-2 border-4 border-transparent border-t-teal-400 border-r-cyan-400 rounded-full"></div>
-                        </motion.div>
+                    <div className="w-[min(92vw,420px)] rounded-2xl border border-white/10 bg-zinc-950 p-8 shadow-2xl sm:p-10">
+                        {signInTimedOut ? (
+                            <div role="alert">
+                                <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full border border-amber-400/40 bg-amber-400/10 text-xl font-semibold text-amber-300">
+                                    !
+                                </div>
+                                <h2 className="mb-3 text-2xl font-bold text-white">Sign-in is taking too long</h2>
+                                <p className="mx-auto max-w-sm text-sm leading-6 text-zinc-400">
+                                    Time &amp; Attendance could not finish the identity handoff. Retry safely or return to the App Hub.
+                                </p>
+                                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                                    <button type="button" onClick={handleLogin} className="rounded-lg bg-teal-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 transition-colors hover:bg-teal-400">
+                                        Try again
+                                    </button>
+                                    <a href={hubUrl} className="rounded-lg border border-white/15 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/5">
+                                        Back to App Hub
+                                    </a>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <motion.div
+                                    animate={{ rotate: 360 }}
+                                    transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                                    className="relative mx-auto mb-6 h-24 w-24"
+                                >
+                                    <div className="absolute inset-0 rounded-full bg-teal-500/20 blur-xl"></div>
+                                    <div className="absolute inset-2 rounded-full border-4 border-transparent border-r-cyan-400 border-t-teal-400"></div>
+                                </motion.div>
 
-                        <motion.h2
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.2 }}
-                            className="text-2xl font-bold text-white mb-3"
-                        >
-                            Connecting to IDP
-                        </motion.h2>
+                                <motion.h2
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.2 }}
+                                    className="mb-3 text-2xl font-bold text-white"
+                                >
+                                    Connecting to IDP
+                                </motion.h2>
 
-                        <motion.p
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ delay: 0.4 }}
-                            className="text-zinc-400 text-sm"
-                        >
-                            Securely logging you into Time & Attendance...
-                        </motion.p>
+                                <motion.p
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    transition={{ delay: 0.4 }}
+                                    className="text-sm text-zinc-400"
+                                >
+                                    Securely logging you into Time &amp; Attendance...
+                                </motion.p>
 
-                        <motion.div
-                            initial={{ scaleX: 0 }}
-                            animate={{ scaleX: 1 }}
-                            transition={{ delay: 0.6, duration: 1.5 }}
-                            className="mt-6 h-1 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full origin-left"
-                        ></motion.div>
+                                <motion.div
+                                    initial={{ scaleX: 0 }}
+                                    animate={{ scaleX: 1 }}
+                                    transition={{ delay: 0.6, duration: 1.5 }}
+                                    className="mt-6 h-1 origin-left rounded-full bg-teal-500"
+                                ></motion.div>
+                            </>
+                        )}
                     </div>
                 </motion.div>
             </div>
@@ -328,7 +357,7 @@ export default function LoginPage() {
                             <motion.a
                                 whileHover={{ scale: 1.01 }}
                                 whileTap={{ scale: 0.99 }}
-                                href={getIdpUrl()}
+                                href={hubUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="group flex w-full items-center gap-3 rounded-xl border border-white/10 bg-zinc-900/50 px-4 py-3 text-left text-white shadow-lg transition-all hover:border-white/20 hover:bg-zinc-800/50 focus:outline-none focus:ring-2 focus:ring-teal-500/50"

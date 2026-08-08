@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { tokenManager } from '@/utils/tokenManager'
+import { markCentralSessionEstablished } from '@/utils/centralSession'
 
 const getCookie = (name: string) => {
   if (typeof document === 'undefined') {
@@ -31,7 +32,8 @@ export default function OidcCallbackPage() {
         const hashParams = new URLSearchParams(hash.replace('#', ''))
         const searchParams = new URLSearchParams(search)
 
-        const token = hashParams.get('token') || searchParams.get('token') || getCookie('dev_jwt') || ''
+        const callbackToken = hashParams.get('token') || searchParams.get('token') || ''
+        const token = callbackToken || getCookie('dev_jwt') || ''
         const refreshToken =
           hashParams.get('refreshToken') ||
           searchParams.get('refreshToken') ||
@@ -45,6 +47,10 @@ export default function OidcCallbackPage() {
 
         if (token) {
           console.log('Tokens found, initializing session...')
+
+          if (callbackToken) {
+            markCentralSessionEstablished()
+          }
 
           if (refreshToken) {
             tokenManager.initialize(token, refreshToken, expiresIn)

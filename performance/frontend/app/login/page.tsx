@@ -13,8 +13,10 @@ import { useAuth } from '@/context/AuthContext';
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hubUrl = process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000';
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [signInTimedOut, setSignInTimedOut] = useState(false);
   
   const { isAuthenticated, isLoading, login } = useAuth();
 
@@ -44,11 +46,24 @@ export default function LoginPage() {
   }, [error, isLoading, isAuthenticated, isProcessing, login, router]);
 
   const handleLogin = () => {
+    setSignInTimedOut(false);
     setIsProcessing(true);
     login();
   };
 
-  if (isLoading || isProcessing) {
+  const signInPending = isLoading || isProcessing;
+
+  useEffect(() => {
+    if (!signInPending || signInTimedOut) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setSignInTimedOut(true);
+    }, 15_000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [signInPending, signInTimedOut]);
+
+  if (signInPending) {
     return (
       <Box
         sx={{
@@ -102,61 +117,101 @@ export default function LoginPage() {
         <Box sx={{ position: 'relative', zIndex: 10, textAlign: 'center' }}>
           <Card
             sx={{
-              bgcolor: 'rgba(255, 255, 255, 0.1)',
-              backdropFilter: 'blur(40px)',
+              width: 'min(92vw, 420px)',
+              bgcolor: '#111116',
               border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: 4,
-              p: 6,
+              borderRadius: 3,
+              p: { xs: 4, sm: 5 },
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
             }}
           >
-            <Box sx={{ position: 'relative', mb: 3 }}>
-              <CircularProgress
-                size={96}
-                thickness={3}
-                sx={{
-                  color: 'rgba(147, 197, 253, 0.5)',
-                  position: 'absolute',
-                  top: 0,
-                  left: '50%',
-                  ml: '-48px'
-                }}
-              />
-              <CircularProgress
-                size={96}
-                thickness={3}
-                sx={{ color: '#3b82f6' }}
-              />
-            </Box>
+            {signInTimedOut ? (
+              <Box role="alert">
+                <Box
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    mx: 'auto',
+                    mb: 2.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '50%',
+                    border: '1px solid rgba(251, 191, 36, 0.4)',
+                    bgcolor: 'rgba(251, 191, 36, 0.1)',
+                    color: '#fcd34d',
+                    fontSize: 20,
+                    fontWeight: 700
+                  }}
+                >
+                  !
+                </Box>
+                <Typography variant="h5" fontWeight="bold" color="white" mb={1.5}>
+                  Sign-in is taking too long
+                </Typography>
+                <Typography variant="body2" color="rgba(226, 232, 240, 0.8)" sx={{ lineHeight: 1.7 }}>
+                  Performance Management could not finish the identity handoff. Retry safely or return to the App Hub.
+                </Typography>
+                <Box sx={{ mt: 3.5, display: 'flex', gap: 1.5, justifyContent: 'center', flexDirection: { xs: 'column', sm: 'row' } }}>
+                  <Button variant="contained" onClick={handleLogin} sx={{ bgcolor: '#3b82f6', textTransform: 'none', '&:hover': { bgcolor: '#2563eb' } }}>
+                    Try again
+                  </Button>
+                  <Button component="a" href={hubUrl} variant="outlined" sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.2)', textTransform: 'none', '&:hover': { borderColor: 'rgba(255,255,255,0.35)', bgcolor: 'rgba(255,255,255,0.05)' } }}>
+                    Back to App Hub
+                  </Button>
+                </Box>
+              </Box>
+            ) : (
+              <>
+                <Box sx={{ position: 'relative', mb: 3 }}>
+                  <CircularProgress
+                    size={96}
+                    thickness={3}
+                    sx={{
+                      color: 'rgba(147, 197, 253, 0.5)',
+                      position: 'absolute',
+                      top: 0,
+                      left: '50%',
+                      ml: '-48px'
+                    }}
+                  />
+                  <CircularProgress
+                    size={96}
+                    thickness={3}
+                    sx={{ color: '#3b82f6' }}
+                  />
+                </Box>
 
-            <Typography variant="h5" fontWeight="bold" color="white" mb={1.5}>
-              {isProcessing ? 'Redirecting to Login' : 'Completing Sign In'}
-            </Typography>
+                <Typography variant="h5" fontWeight="bold" color="white" mb={1.5}>
+                  {isProcessing ? 'Redirecting to Login' : 'Completing Sign In'}
+                </Typography>
 
-            <Typography variant="body2" color="rgba(226, 232, 240, 0.8)">
-              {isProcessing
-                ? 'Connecting to Identity Provider...'
-                : 'Securely logging you into Performance Management...'}
-            </Typography>
+                <Typography variant="body2" color="rgba(226, 232, 240, 0.8)">
+                  {isProcessing
+                    ? 'Connecting to Identity Provider...'
+                    : 'Securely logging you into Performance Management...'}
+                </Typography>
 
-            <Box
-              sx={{
-                mt: 3,
-                height: 4,
-                bgcolor: 'rgba(59, 130, 246, 0.3)',
-                borderRadius: 1,
-                overflow: 'hidden'
-              }}
-            >
-              <Box
-                sx={{
-                  height: '100%',
-                  background: 'linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)',
-                  borderRadius: 1,
-                  animation: 'loading 1.5s ease-in-out infinite'
-                }}
-              />
-            </Box>
+                <Box
+                  sx={{
+                    mt: 3,
+                    height: 4,
+                    bgcolor: 'rgba(59, 130, 246, 0.3)',
+                    borderRadius: 1,
+                    overflow: 'hidden'
+                  }}
+                >
+                  <Box
+                    sx={{
+                      height: '100%',
+                      bgcolor: '#3b82f6',
+                      borderRadius: 1,
+                      animation: 'loading 1.5s ease-in-out infinite'
+                    }}
+                  />
+                </Box>
+              </>
+            )}
           </Card>
         </Box>
 
@@ -519,7 +574,7 @@ export default function LoginPage() {
             {/* App Hub Link */}
             <Card
               component="a"
-              href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
+              href={hubUrl}
               target="_blank"
               rel="noopener noreferrer"
               sx={{

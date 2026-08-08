@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { resolvePayrollApiUrl } from '@/lib/runtimeConfig';
+import { markCentralSessionEstablished } from '@/lib/centralSession';
 
 const API_URL = resolvePayrollApiUrl();
 
@@ -103,6 +104,7 @@ export const handleAuthCallback = (): boolean => {
     if (accessToken) {
       // Store token in localStorage
       localStorage.setItem('accessToken', accessToken);
+      markCentralSessionEstablished();
 
       // Clear hash from URL without reloading
       window.history.replaceState(null, '', window.location.pathname + window.location.search);

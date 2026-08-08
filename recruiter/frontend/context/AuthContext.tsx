@@ -4,7 +4,11 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { setGlobalLogoutHandler, initializeInactivityTracking, cleanupInactivityTracking } from '@/services/apiConfig';
 import { tokenManager } from '@/utils/tokenManager';
 import { getApiBaseUrl } from '@/utils/env';
-import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/utils/centralSession';
+import {
+  isInvalidatedByCentralLogout,
+  markCentralSessionEstablished,
+  watchForCentralLogout,
+} from '@/utils/centralSession';
 // Note: This import would create a circular dependency if used immediately, so we'll import dynamically
 
 interface AuthContextType {
@@ -60,11 +64,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Bootstrap from OIDC URL/cookie tokens on any route.
         const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
         const searchParams = new URLSearchParams(window.location.search);
-        const urlToken = hashParams.get('token') || searchParams.get('token') || getCookie('dev_jwt') || '';
+        const callbackToken = hashParams.get('token') || searchParams.get('token') || '';
+        const urlToken = callbackToken || getCookie('dev_jwt') || '';
         const urlRefreshToken =
           hashParams.get('refreshToken') || searchParams.get('refreshToken') || getCookie('dev_refreshToken') || '';
         const urlExpiresIn =
           hashParams.get('expiresIn') || searchParams.get('expiresIn') || getCookie('dev_expiresIn') || '10m';
+
+        if (callbackToken) {
+          markCentralSessionEstablished();
+        }
 
         if (urlToken && !isInvalidatedByCentralLogout(urlToken)) {
           if (urlRefreshToken) {

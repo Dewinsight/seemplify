@@ -3,7 +3,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { authApi } from '@/lib/api';
 import { websocketService } from '@/lib/websocket';
-import { isInvalidatedByCentralLogout, watchForCentralLogout } from '@/lib/centralSession';
+import {
+  isInvalidatedByCentralLogout,
+  markCentralSessionEstablished,
+  watchForCentralLogout,
+} from '@/lib/centralSession';
 
 interface User {
   id: string;
@@ -138,6 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (hashToken) {
         console.log('🔑 Token found in URL hash');
+        markCentralSessionEstablished();
         await loadUser(hashToken);
       } else {
         // No hash token, check localStorage
