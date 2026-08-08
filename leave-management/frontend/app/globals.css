@@ -180,3 +180,70 @@ html {
     letter-spacing: -0.015em;
   }
 }
+
+/* Shared Seemplify product language */
+@layer base {
+  :root {
+    --foreground-rgb: 29, 28, 26;
+    --background-start-rgb: 233, 231, 226;
+    --background-end-rgb: 233, 231, 226;
+    --background: 40 13% 90%;
+    --foreground: 40 5% 11%;
+    --card: 40 27% 98%;
+    --card-foreground: 40 5% 11%;
+    --popover: 40 27% 98%;
+    --popover-foreground: 40 5% 11%;
+    --primary: 239 84% 67%;
+    --secondary: 40 12% 92%;
+    --secondary-foreground: 40 5% 16%;
+    --muted: 40 12% 92%;
+    --muted-foreground: 37 6% 42%;
+    --accent: 40 12% 92%;
+    --accent-foreground: 40 5% 16%;
+    --border: 39 12% 81%;
+    --input: 39 12% 81%;
+    --ring: 239 84% 67%;
+  }
+
+  .dark {
+    --background-start-rgb: 5, 5, 5;
+    --background-end-rgb: 5, 5, 5;
+    --background: 0 0% 2%;
+    --card: 240 21% 5%;
+    --popover: 240 21% 5%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+  }
+}
+
+.bg-noise { display: none; }
+
+.glass,
+.glass-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 1px 2px rgb(29 28 26 / 0.05), 0 8px 24px rgb(29 28 26 / 0.06);
+  backdrop-filter: none;
+}
+
+.glass-card:hover {
+  background: hsl(var(--card));
+  border-color: hsl(var(--border));
+  box-shadow: 0 1px 2px rgb(29 28 26 / 0.06), 0 10px 28px rgb(29 28 26 / 0.08);
+}
+
+.dark .glass,
+.dark .glass-card,
+.dark .glass-card:hover {
+  background: #0b0b11;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+main :where(.rounded-xl, .rounded-2xl).border {
+  box-shadow: 0 1px 2px rgb(29 28 26 / 0.04), 0 6px 18px rgb(29 28 26 / 0.04);
+}
+
+.dark main :where(.rounded-xl, .rounded-2xl).border {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+}

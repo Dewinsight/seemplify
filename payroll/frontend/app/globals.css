@@ -145,3 +145,35 @@ html {
     letter-spacing: -0.015em;
   }
 }
+
+/* Shared Seemplify product language */
+:root {
+  --background-start-rgb: 5, 5, 5;
+  --background-end-rgb: 5, 5, 5;
+  --background: 0 0% 2%;
+  --card: 240 21% 5%;
+  --popover: 240 21% 5%;
+  --border: 240 4% 16%;
+  --input: 240 4% 16%;
+  --primary: 239 84% 67%;
+  --ring: 239 84% 67%;
+}
+
+.bg-noise { display: none; }
+
+.glass,
+.glass-card,
+.glass-card:hover {
+  background: #0b0b11;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  backdrop-filter: none;
+}
+
+main :where(.rounded-xl, .rounded-2xl).border {
+  background-image: none;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+nav { backdrop-filter: none !important; }

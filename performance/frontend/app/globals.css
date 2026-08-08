@@ -4,19 +4,19 @@
 
 /* Light mode (default) */
 :root {
-  --font-body: "Manrope", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-display: "Sora", "Avenir Next", "Segoe UI", sans-serif;
-  --foreground-rgb: 30, 41, 59;
-  --background-start-rgb: 248, 250, 252;
-  --background-end-rgb: 241, 245, 249;
+  --font-body: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Inter", "Segoe UI", sans-serif;
+  --foreground-rgb: 29, 28, 26;
+  --background-start-rgb: 233, 231, 226;
+  --background-end-rgb: 233, 231, 226;
 }
 
 /* Dark mode */
 [data-theme="dark"],
 .dark {
-  --foreground-rgb: 226, 232, 240;
-  --background-start-rgb: 15, 23, 42;
-  --background-end-rgb: 2, 6, 23;
+  --foreground-rgb: 250, 250, 250;
+  --background-start-rgb: 5, 5, 5;
+  --background-end-rgb: 5, 5, 5;
 }
 
 * {
@@ -67,25 +67,13 @@ h6,
 /* Background Mesh Gradients */
 /* Dark Mode Mesh */
 [data-theme="dark"] body {
-  background-color: #0f172a;
-  background-image:
-    radial-gradient(at 0% 0%, rgba(20, 184, 166, 0.14) 0px, transparent 52%),
-    radial-gradient(at 100% 0%, rgba(14, 116, 144, 0.16) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(249, 115, 22, 0.12) 0px, transparent 48%),
-    radial-gradient(at 0% 100%, rgba(34, 197, 94, 0.12) 0px, transparent 50%);
-  background-attachment: fixed;
+  background: #050505;
 }
 
 /* Light Mode Mesh */
 [data-theme="light"] body,
 :root body {
-  background-color: #f8fafc;
-  background-image:
-    radial-gradient(at 0% 0%, rgba(20, 184, 166, 0.08) 0px, transparent 50%),
-    radial-gradient(at 100% 0%, rgba(2, 132, 199, 0.08) 0px, transparent 52%),
-    radial-gradient(at 100% 100%, rgba(249, 115, 22, 0.07) 0px, transparent 48%),
-    radial-gradient(at 0% 100%, rgba(22, 163, 74, 0.06) 0px, transparent 52%);
-  background-attachment: fixed;
+  background: #e9e7e2;
 }
 
 /* Background Noise Texture */
@@ -97,7 +85,7 @@ h6,
   height: 100%;
   pointer-events: none;
   z-index: 50;
-  opacity: 0.03;
+  display: none;
   /* Slightly increased for texture */
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
 }
@@ -149,22 +137,16 @@ h6,
 /* Light Mode Glass (Default) */
 [data-theme="light"] .glass,
 :root .glass {
-  background: rgba(255, 255, 255, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow:
-    0 4px 6px -1px rgba(0, 0, 0, 0.05),
-    0 2px 4px -1px rgba(0, 0, 0, 0.03),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.5);
+  background: #fbfaf7;
+  border: 1px solid #d4d0c8;
+  box-shadow: 0 1px 2px rgba(29, 28, 26, 0.05);
 }
 
 /* Dark Mode Glass */
 [data-theme="dark"] .glass {
-  background: rgba(15, 23, 42, 0.6);
+  background: #0b0b11;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow:
-    0 4px 6px -1px rgba(0, 0, 0, 0.2),
-    0 2px 4px -1px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
 /* Glass Card - Enhanced */
@@ -179,37 +161,31 @@ h6,
 /* Light Mode Card (Default) */
 [data-theme="light"] .glass-card,
 :root .glass-card {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.6) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow:
-    0 4px 20px -2px rgba(148, 163, 184, 0.15),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+  background: #fbfaf7;
+  border: 1px solid #d4d0c8;
+  box-shadow: 0 1px 2px rgba(29, 28, 26, 0.05), 0 8px 24px rgba(29, 28, 26, 0.06);
 }
 
 [data-theme="light"] .glass-card:hover,
 :root .glass-card:hover {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95) 0%, rgba(241, 245, 249, 0.8) 100%);
-  border-color: rgba(255, 255, 255, 0.9);
-  transform: translateY(-2px);
-  box-shadow:
-    0 8px 30px -2px rgba(148, 163, 184, 0.25),
-    inset 0 1px 0 0 rgba(255, 255, 255, 1);
+  background: #fbfaf7;
+  border-color: #cbc7be;
+  transform: none;
+  box-shadow: 0 1px 2px rgba(29, 28, 26, 0.06), 0 10px 28px rgba(29, 28, 26, 0.08);
 }
 
 /* Dark Mode Card */
 [data-theme="dark"] .glass-card {
-  background: linear-gradient(145deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.4) 100%);
+  background: #0b0b11;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
 }
 
 [data-theme="dark"] .glass-card:hover {
-  background: linear-gradient(145deg, rgba(51, 65, 85, 0.7) 0%, rgba(30, 41, 59, 0.5) 100%);
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-2px);
-  box-shadow:
-    0 8px 30px -2px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  background: #0b0b11;
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
 /* Gradient Text - Enhanced for Readability */
@@ -324,4 +300,27 @@ h6,
 :root .ai-suggestion-box {
   background: rgba(99, 102, 241, 0.08);
   border-color: rgba(99, 102, 241, 0.3);
+}
+
+/* Shared Seemplify product language */
+[data-theme="light"] nav {
+  background-color: #f7f6f2 !important;
+  border-color: #d4d0c8 !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme="dark"] nav {
+  background-color: #050505 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: none !important;
+}
+
+main :where(.rounded-xl, .rounded-2xl).border {
+  background-image: none;
+  box-shadow: 0 1px 2px rgba(29, 28, 26, 0.05), 0 6px 18px rgba(29, 28, 26, 0.04);
+}
+
+[data-theme="dark"] main :where(.rounded-xl, .rounded-2xl).border {
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
 }

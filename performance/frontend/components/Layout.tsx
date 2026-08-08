@@ -137,7 +137,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     return (
       <div className={cn(
         "min-h-screen transition-colors duration-300",
-        isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-slate-50"
+        isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-[#e9e7e2]"
       )}>
         {isDarkMode && <div className="bg-noise" />}
         <div className="relative mx-auto px-4 py-16 lg:px-8 max-w-3xl">
@@ -189,7 +189,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className={cn(
       "min-h-screen transition-colors duration-300",
-      isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-slate-50"
+      isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-[#e9e7e2]"
     )}>
       {/* Background Noise */}
       {isDarkMode && <div className="bg-noise" />}
@@ -694,7 +694,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Main Content */}
       <main className={cn(
         "pt-[4.25rem] min-h-screen transition-colors duration-300",
-        isDarkMode ? "" : "bg-slate-50"
+        isDarkMode ? "" : "bg-[#e9e7e2]"
       )}>
         <div className="mx-auto px-4 py-8 lg:px-8 xl:px-10 max-w-[1440px]">
           <PageGuide />

@@ -156,14 +156,14 @@ export const getDesignTokens = (mode: PaletteMode): ThemeOptions => {
       },
       grey: colors.grey,
       background: {
-        default: isDark ? colors.grey[950] : '#f8fafc',
-        paper: isDark ? colors.grey[900] : '#ffffff',
+        default: isDark ? '#050505' : '#e9e7e2',
+        paper: isDark ? '#0b0b11' : '#fbfaf7',
       },
       text: {
-        primary: isDark ? colors.grey[50] : colors.grey[900],
-        secondary: isDark ? colors.grey[400] : colors.grey[500],
+        primary: isDark ? '#fafafa' : '#1d1c1a',
+        secondary: isDark ? '#a1a1aa' : '#706c64',
       },
-      divider: isDark ? colors.grey[800] : colors.grey[200],
+      divider: isDark ? 'rgba(255,255,255,0.08)' : '#d4d0c8',
       action: {
         active: isDark ? colors.grey[400] : colors.grey[600],
         hover: isDark ? alpha(colors.grey[50], 0.08) : alpha(colors.grey[900], 0.04),
@@ -185,7 +185,7 @@ export const getDesignTokens = (mode: PaletteMode): ThemeOptions => {
       button: { fontWeight: 650, letterSpacing: '0.005em' },
       overline: { fontWeight: 600, letterSpacing: '0.08em' },
     },
-    shape: { borderRadius: 12 },
+    shape: { borderRadius: 8 },
     shadows: [
       'none',
       currentShadows.sm,
@@ -241,23 +241,21 @@ export const getDesignTokens = (mode: PaletteMode): ThemeOptions => {
         styleOverrides: {
           root: {
             textTransform: 'none',
-            borderRadius: 10,
+            borderRadius: 8,
             fontWeight: 600,
             padding: '8px 20px',
-            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-            '&:hover': { transform: 'translateY(-1px)' },
-            '&:active': { transform: 'translateY(0)' },
+            transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease',
           },
           contained: {
-            boxShadow: currentShadows.md,
-            '&:hover': { boxShadow: currentShadows.lg },
+            boxShadow: 'none',
+            '&:hover': { boxShadow: 'none' },
           },
           containedPrimary: {
-            background: gradients.primary,
-            boxShadow: currentShadows.primary,
+            background: colors.primary.main,
+            boxShadow: 'none',
             '&:hover': {
-              background: gradients.primary,
-              boxShadow: currentShadows.primaryHover,
+              background: colors.primary.dark,
+              boxShadow: 'none',
             },
           },
           containedSecondary: {
@@ -289,14 +287,14 @@ export const getDesignTokens = (mode: PaletteMode): ThemeOptions => {
       MuiCard: {
         styleOverrides: {
           root: {
-            borderRadius: 16,
-            boxShadow: currentShadows.card,
-            border: `1px solid ${isDark ? colors.grey[800] : colors.grey[100]}`,
-            backgroundColor: isDark ? colors.grey[900] : '#ffffff',
-            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            borderRadius: 8,
+            boxShadow: isDark ? '0 1px 2px rgba(0,0,0,.28)' : '0 1px 2px rgba(29,28,26,.05), 0 8px 24px rgba(29,28,26,.06)',
+            border: `1px solid ${isDark ? 'rgba(255,255,255,.08)' : '#d4d0c8'}`,
+            backgroundColor: isDark ? '#0b0b11' : '#fbfaf7',
+            transition: 'border-color 160ms ease, box-shadow 160ms ease',
             '&:hover': {
-              boxShadow: currentShadows.cardHover,
-              borderColor: isDark ? colors.grey[700] : colors.grey[200],
+              boxShadow: isDark ? '0 1px 2px rgba(0,0,0,.28)' : '0 1px 2px rgba(29,28,26,.06), 0 10px 28px rgba(29,28,26,.08)',
+              borderColor: isDark ? 'rgba(255,255,255,.12)' : '#cbc7be',
             },
           },
         },
@@ -312,9 +310,9 @@ export const getDesignTokens = (mode: PaletteMode): ThemeOptions => {
       MuiPaper: {
         styleOverrides: {
           root: {
-            borderRadius: 16,
-            boxShadow: currentShadows.card,
-            backgroundColor: isDark ? colors.grey[900] : '#ffffff',
+            borderRadius: 8,
+            boxShadow: 'none',
+            backgroundColor: isDark ? '#0b0b11' : '#fbfaf7',
             backgroundImage: 'none',
           },
           elevation0: { boxShadow: 'none' },
