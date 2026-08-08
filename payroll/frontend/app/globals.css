@@ -638,6 +638,7 @@ html.dark, .dark, [data-theme="dark"] {
   --suite-action-ink: #111014;
   --suite-shadow: none;
 }
+html, body { overflow-x: clip; }
 body { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; text-rendering: optimizeLegibility; }
 .min-h-screen { background-color: var(--suite-canvas) !important; }
 .suite-dashboard { position: relative; isolation: isolate; font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; }
