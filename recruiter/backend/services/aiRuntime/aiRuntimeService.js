@@ -130,6 +130,27 @@ class AIRuntimeService {
         { key: 'global' }, { $setOnInsert: defaults }, { upsert: true, new: true }
       ).lean();
     }
+    // One-time rollout migration. Existing ChatGPT-only documents predate the
+    // selectable runtime policy and must receive the requested Local+ChatGPT
+    // default once; later administrator choices are left untouched.
+    if (Number(stored.runtimePolicyVersion || 0) < 1) {
+      await this.Settings.updateOne(
+        { key: 'global', $or: [
+          { runtimePolicyVersion: { $exists: false } },
+          { runtimePolicyVersion: { $lt: 1 } }
+        ] },
+        { $set: {
+          runtimePolicy: defaults.runtimePolicy,
+          runtimePolicyVersion: 1
+        }, $inc: { version: 1 } }
+      );
+      stored = {
+        ...stored,
+        runtimePolicy: defaults.runtimePolicy,
+        runtimePolicyVersion: 1,
+        version: Number(stored.version || 0) + 1
+      };
+    }
     const priorRoutes = new Map((stored.routes || []).map((route) => [route.activity, route]));
     const settings = {
       ...defaults,

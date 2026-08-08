@@ -127,6 +127,7 @@ function createDefaultRuntimeSettings() {
     routes: DEFAULT_ROUTES.map((item) => ({ ...item })),
     quotaGroups: [],
     runtimePolicy: { ...DEFAULT_RUNTIME_POLICY },
+    runtimePolicyVersion: 1,
     alerts: { ...DEFAULT_ALERT_SETTINGS },
     version: 2
   };

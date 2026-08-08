@@ -13,6 +13,7 @@ const AIRuntimeSettingsSchema = new mongoose.Schema({
   localFailover: { type: mongoose.Schema.Types.Mixed, default: () => defaults.localFailover },
   // Which runtimes are switched on, and which one an account uses by default.
   runtimePolicy: { type: mongoose.Schema.Types.Mixed, default: () => defaults.runtimePolicy },
+  runtimePolicyVersion: { type: Number, default: 1 },
   rollout: { type: mongoose.Schema.Types.Mixed, default: () => defaults.rollout },
   version: { type: Number, default: 1 },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }
