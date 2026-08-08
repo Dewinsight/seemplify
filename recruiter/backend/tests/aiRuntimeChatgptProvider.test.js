@@ -83,6 +83,8 @@ test('a connected subject is bound to the ChatGPT gateway request', async () => 
     assert.equal(captured.body.codexSubjectId, 'user-42');
     assert.equal(captured.body.codexSourceApp, 'recruiter');
     assert.equal(captured.body.requiredEngine, 'codex');
+    assert.match(captured.body.metering.eventId, /^usage_[a-f0-9]{48}$/);
+    assert.match(captured.body.metering.gatewayExecutionId, /^chatgptexec_[a-f0-9]{48}$/);
     assert.ok(captured.init.headers['x-seemplify-signature']);
   } finally {
     if (priorUrl === undefined) delete process.env.CHATGPT_GATEWAY_BASE_URL;
@@ -121,6 +123,8 @@ test('local-only policy bypasses ChatGPT account resolution and uses local gatew
     assert.equal(captured.url, 'https://local.example.test/v1/complete');
     assert.equal(captured.body.executionMode, 'local-only');
     assert.equal(captured.body.codexSubjectId, undefined);
+    assert.match(captured.body.metering.eventId, /^usage_[a-f0-9]{48}$/);
+    assert.match(captured.body.metering.gatewayExecutionId, /^localexec_[a-f0-9]{48}$/);
   } finally {
     if (priorUrl === undefined) delete process.env.LOCAL_LLM_BASE_URL; else process.env.LOCAL_LLM_BASE_URL = priorUrl;
     if (priorSecret === undefined) delete process.env.LOCAL_LLM_SHARED_SECRET; else process.env.LOCAL_LLM_SHARED_SECRET = priorSecret;

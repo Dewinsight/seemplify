@@ -63,8 +63,9 @@ function deriveRuntimeUsageEventId({ context = {}, route = {} } = {}) {
   return `usage_${stableHash(`${context.usageExecutionId}:${route.activity}:${route.provider}`).slice(0, 48)}`;
 }
 
-function deriveGatewayExecutionId(eventId) {
-  return `localexec_${stableHash(eventId).slice(0, 48)}`;
+function deriveGatewayExecutionId(eventId, provider) {
+  const prefix = provider === CHATGPT_PROVIDER ? 'chatgptexec' : 'localexec';
+  return `${prefix}_${stableHash(eventId).slice(0, 48)}`;
 }
 
 function requiredCapabilitiesForActivity(activity) {
@@ -269,7 +270,7 @@ class AIRuntimeService {
         record: true,
         eventId,
         requestId,
-        gatewayExecutionId: deriveGatewayExecutionId(eventId),
+        gatewayExecutionId: deriveGatewayExecutionId(eventId, route.provider),
         sourceApp: String(context.sourceApp || 'recruiter').slice(0, 64)
       }
     });
