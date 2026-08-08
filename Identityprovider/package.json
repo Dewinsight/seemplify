@@ -11,6 +11,7 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test:mail": "node --test test/mail-client.test.mjs",
+    "test:auth-redirects": "node --test test/auth-redirects.test.mjs",
     "test:oidc-recovery": "node --test test/oidc-recovery-page.test.mjs",
     "seed-admin": "node src/seeds/seedAdminSimple.js",
     "seed-plans": "node src/seeds/seedPlans.js"

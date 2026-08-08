@@ -12,6 +12,10 @@ const {
   getAuthoritativeOrganizationName,
   organizationNameNeedsSync
 } = require('../utils/organizationIdentitySync');
+const {
+  getOidcCallbackTarget,
+  normalizeOidcReturnTo
+} = require('../utils/oidcReturnTo');
 
 const router = express.Router();
 
@@ -25,9 +29,9 @@ const ISSUER_CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
 
 const AKWA_IBOM_IDP = 'https://akwa.aiinnigeria.com';
 
-function resolveIssuerUrl(req) {
+function resolveIssuerUrl(req, validatedReturnTo = '') {
   const defaultIssuer = process.env.OIDC_ISSUER;
-  const returnTo = req.query.returnTo || req.headers['referer'] || req.headers['origin'] || '';
+  const returnTo = validatedReturnTo || req.query.returnTo || req.headers['referer'] || req.headers['origin'] || '';
   try {
     const origin = new URL(returnTo);
     if (origin.hostname.includes('ibom') || origin.hostname.includes('akwa') || origin.hostname.includes('jetstone')) {
@@ -486,7 +490,17 @@ router.get('/oidc/start', async (req, res) => {
       referer: req.headers['referer']
     });
 
-    const issuerUrl = resolveIssuerUrl(req);
+    const requestedReturnTo = req.query.returnTo || req.headers['referer'] || req.headers['origin'];
+    if (!requestedReturnTo) {
+      return res.status(400).json({ msg: 'returnTo parameter required' });
+    }
+
+    const returnTo = normalizeOidcReturnTo(requestedReturnTo);
+    if (!returnTo) {
+      return res.status(400).json({ msg: 'Invalid returnTo URL' });
+    }
+
+    const issuerUrl = resolveIssuerUrl(req, returnTo);
     if (!issuerUrl) {
       return res.status(500).json({ msg: 'OIDC_ISSUER not configured' });
     }
@@ -501,11 +515,6 @@ router.get('/oidc/start', async (req, res) => {
     const host = req.get('host');
     const callbackPath = '/api/auth/oidc/callback';
     const redirectUri = `${protocol}://${host}${callbackPath}`;
-
-    const returnTo = req.query.returnTo || req.headers['referer'] || req.headers['origin'];
-    if (!returnTo) {
-      return res.status(400).json({ msg: 'returnTo parameter required' });
-    }
 
     const issuer = await getCachedIssuer(issuerUrl);
     const client = new issuer.Client({
@@ -896,21 +905,10 @@ router.get('/oidc/callback', async (req, res) => {
       return res.status(400).json({ msg: 'Missing returnTo in state' });
     }
 
-    let target;
-    try {
-      const parsedReturnTo = new URL(returnTo);
-      target = `${parsedReturnTo.origin}/oidc/callback`;
-    } catch (parseError) {
-      const defaultFrontend = process.env.NODE_ENV === 'development'
-        ? 'http://localhost:5000'
-        : 'https://app.seemplifyai.com';
-      const fallbackFrontend = (process.env.FRONTEND_URL || defaultFrontend).replace(/\/$/, '');
-      target = `${fallbackFrontend}/oidc/callback`;
-      console.warn('Could not parse returnTo URL, using FRONTEND_URL fallback:', {
-        returnTo,
-        target,
-        error: parseError.message
-      });
+    const target = getOidcCallbackTarget(returnTo);
+    if (!target) {
+      console.warn('Rejected untrusted OIDC returnTo from signed state:', { returnTo });
+      return res.status(400).json({ msg: 'Invalid returnTo URL' });
     }
 
     const loc = `${target}#token=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&expiresIn=${encodeURIComponent(process.env.JWT_ACCESS_TTL || '10m')}`;

@@ -35,9 +35,9 @@ export interface BrandConfig {
 export const BRANDS: Record<string, BrandConfig> = {
   smarthr: {
     id: 'smarthr',
-    name: 'SmartHR',
-    shortName: 'HR',
-    tagline: 'AI-Powered Recruitment',
+    name: 'Recruiter',
+    shortName: 'R',
+    tagline: 'Hiring with signal',
     colors: {
       from: 'from-blue-400',
       to: 'to-purple-500',
@@ -47,11 +47,11 @@ export const BRANDS: Record<string, BrandConfig> = {
     },
     gradient: 'from-blue-400 to-purple-500',
     patterns: ['smarthr', 'localhost', '127.0.0.1', 'app.seemplifyai', 'app-dev.seemplifyai'],
-    metaTitle: 'SmartHR',
-    metaDescription: 'Intelligent HR Management System',
-    footerText: '© 2025 SmartHR. All rights reserved.',
-    loginHeading: 'SmartHR',
-    loginSubheading: 'AI-Powered Recruitment',
+    metaTitle: 'Recruiter by Seemplify',
+    metaDescription: 'AI-powered recruitment and hiring operations from Seemplify.',
+    footerText: '© 2026 Seemplify. All rights reserved.',
+    loginHeading: 'Recruiter',
+    loginSubheading: 'by Seemplify',
   },
   jetstone: {
     id: 'jetstone',

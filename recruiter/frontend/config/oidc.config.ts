@@ -10,8 +10,8 @@ const DEFAULT_IDP_URL = isProduction ? 'https://auth.seemplifyai.com' : 'http://
 
 export const oidcConfig = {
   enabled: true,
-  buttonText: 'Login with aiin',
-  providerName: 'AIIN Identity',
+  buttonText: 'Continue with Seemplify',
+  providerName: 'Seemplify Identity',
   showDivider: true,
   identityProviderUrl:
     process.env.NEXT_PUBLIC_IDP_URL ||
@@ -23,8 +23,8 @@ export function getOidcDisplayConfig(brandId?: string) {
   const isAkwaIbom = brandId === 'jetstone';
   return {
     ...oidcConfig,
-    buttonText: isAkwaIbom ? 'Login with Akwa Ibom' : 'Login with aiin',
-    providerName: isAkwaIbom ? 'Akwa Ibom State Identity' : 'AIIN Identity',
+    buttonText: isAkwaIbom ? 'Continue with Akwa Ibom' : 'Continue with Seemplify',
+    providerName: isAkwaIbom ? 'Akwa Ibom State Identity' : 'Seemplify Identity',
   };
 }
 

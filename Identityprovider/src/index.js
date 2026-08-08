@@ -27,6 +27,7 @@ import { SignJWT, jwtVerify } from 'jose'
 import { emailService } from './services/emailService.js'
 import { issueAttendanceHubToken } from './services/attendanceHubService.js'
 import { renderOidcRecoveryPage } from './services/oidcRecoveryPage.js'
+import { normalizeInternalReturnTo, renderInternalReturnToInput, serializeForInlineScript } from './utils/authRedirects.js'
 import { otpService } from './services/otpService.js'
 import MarketingVisit from './models/MarketingVisit.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
@@ -635,9 +636,9 @@ function getIdpBrand(req) {
     themeClass: '',
     cssVars: '',
     marketing: {
-      pill: 'Enterprise-ready &bull; SOC 2 Ready',
-      heading: 'Your Workforce,<br/><span class="highlight">Supercharged.</span>',
-      desc: 'Seemplify gives your organization a unified identity platform that connects HR, learning, and collaboration tools &mdash; reducing friction while improving security.',
+      pill: 'One secure identity',
+      heading: 'One account for every<br/><span class="highlight">Seemplify workspace.</span>',
+      desc: 'Sign in once to move between the App Hub, people operations, payroll, performance, time, and every workspace your organization gives you access to.',
       features: [
         {
           title: 'Single Sign-On',
@@ -1296,7 +1297,7 @@ app.get('/interaction/:uid', async (req, res) => {
         <title>${brand.name} - Sign in</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-        <link rel="stylesheet" href="/css/login.css?v=6">
+        <link rel="stylesheet" href="/css/login.css?v=7">
         <script src="/js/theme.js?v=5"></script>
         <style>
           body { visibility: hidden; }
@@ -1344,7 +1345,7 @@ app.get('/interaction/:uid', async (req, res) => {
               </div>
 
               <h1 class="login-heading">Welcome back</h1>
-              <p class="login-subheading">Sign in to access your AIIN workspace.</p>
+              <p class="login-subheading">Sign in with your Seemplify identity.</p>
 
               ${lastLoggedInEmail ? `
               <div id="quickLogin">
@@ -1638,7 +1639,7 @@ app.get('/signup/:uid', async (req, res) => {
       <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-      <link rel="stylesheet" href="/css/login.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=7">
       <script src="/js/theme.js?v=5"></script>
       <style>
         body { visibility: hidden; }
@@ -1686,7 +1687,7 @@ app.get('/signup/:uid', async (req, res) => {
             </div>
 
             <h1 class="login-heading">Create your account</h1>
-            <p class="login-subheading">One identity for the hub and all connected apps.</p>
+            <p class="login-subheading">One identity for the App Hub and every connected workspace.</p>
 
             <div class="error" id="error"></div>
 
@@ -2051,6 +2052,9 @@ app.get('/verify-email/:accountId', async (req, res) => {
   const { accountId } = req.params
   const email = req.query.email || ''
   const error = req.query.error
+  const safeEmail = escapeAttribute(email)
+  const serializedAccountId = serializeForInlineScript(accountId)
+  const serializedIssuerUrl = serializeForInlineScript(ISSUER_URL)
 
   const errorMessages = {
     invalid_code: 'Invalid verification code. Please try again.',
@@ -2177,13 +2181,14 @@ app.get('/verify-email/:accountId', async (req, res) => {
           to { transform: rotate(360deg); }
         }
       </style>
+      <link rel="stylesheet" href="/css/login.css?v=7">
     </head>
-    <body>
+    <body class="auth-standalone auth-verify">
       <div class="container">
         <div class="logo">
           <div class="logo-icon">✉️</div>
           <h1>Verify Your Email</h1>
-          <p>We sent a 6-digit code to<br><strong>${email}</strong></p>
+          <p>We sent a 6-digit code to<br><strong>${safeEmail}</strong></p>
         </div>
 
         ${errorMsg ? `<div class="error">${errorMsg}</div>` : ''}
@@ -2222,6 +2227,8 @@ app.get('/verify-email/:accountId', async (req, res) => {
         const submitBtn = document.getElementById('submitBtn');
         const btnText = document.getElementById('btnText');
         const resendLink = document.getElementById('resendLink');
+        const verificationAccountId = ${serializedAccountId};
+        const identityProviderUrl = ${serializedIssuerUrl};
 
         // Auto-submit when 6 digits entered
         codeInput.addEventListener('input', (e) => {
@@ -2245,7 +2252,7 @@ app.get('/verify-email/:accountId', async (req, res) => {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                accountId: '${accountId}',
+                accountId: verificationAccountId,
                 code: formData.get('code')
               })
             });
@@ -2261,7 +2268,7 @@ app.get('/verify-email/:accountId', async (req, res) => {
             successDiv.classList.add('show');
             
             setTimeout(() => {
-              window.location.href = '${ISSUER_URL}';
+              window.location.href = identityProviderUrl;
             }, 2000);
             
           } catch (error) {
@@ -2282,7 +2289,7 @@ app.get('/verify-email/:accountId', async (req, res) => {
             const response = await fetch('/resend-verification', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ accountId: '${accountId}' })
+              body: JSON.stringify({ accountId: verificationAccountId })
             });
 
             const result = await response.json();
@@ -2425,6 +2432,7 @@ app.post('/interaction/:uid/abort', async (req, res) => {
 
 // Forgot password page (GET - show email form)
 app.get('/forgot-password', async (req, res) => {
+  const safeIssuerUrl = escapeAttribute(ISSUER_URL)
   res.send(`
     <!DOCTYPE html>
     <html>
@@ -2432,6 +2440,7 @@ app.get('/forgot-password', async (req, res) => {
       <title>Forgot Password - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=7">
       <script src="/js/theme.js?v=5"></script>
       <style>
         body { 
@@ -2597,7 +2606,7 @@ app.get('/forgot-password', async (req, res) => {
         </form>
         
         <div class="back-link">
-          <a href="${ISSUER_URL}">← Back to login</a>
+          <a href="${safeIssuerUrl}">← Back to login</a>
         </div>
       </div>
       
@@ -2736,12 +2745,15 @@ app.post('/reset-password/:token', async (req, res) => {
 
 // Reset password success page
 app.get('/reset-password/:token/success', async (req, res) => {
+  const safeIssuerUrl = escapeAttribute(ISSUER_URL)
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
       <title>Password Reset Successful - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <script src="/js/theme.js?v=5"></script>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -2788,13 +2800,14 @@ app.get('/reset-password/:token/success', async (req, res) => {
           box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
         }
       </style>
+      <link rel="stylesheet" href="/css/login.css?v=7">
     </head>
-    <body>
+    <body class="auth-standalone auth-reset-success">
       <div class="container">
         <div class="icon">✅</div>
         <h1>Password Reset Successful!</h1>
         <p>Your password has been changed successfully. You can now sign in with your new password.</p>
-        <a href="${ISSUER_URL}" style="padding: 14px 32px; background: #18181b; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-block;">
+        <a href="${safeIssuerUrl}" style="padding: 14px 32px; background: #18181b; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-block;">
           Go to Login
         </a>
       </div>
@@ -2807,6 +2820,8 @@ app.get('/reset-password/:token/success', async (req, res) => {
 app.get('/reset-password/:token', async (req, res) => {
   const { token } = req.params
   const error = req.query.error
+  const serializedResetToken = serializeForInlineScript(token)
+  const safeIssuerUrl = escapeAttribute(ISSUER_URL)
 
   const errorMessages = {
     invalid_token: 'This password reset link is invalid or has expired. Please request a new one.',
@@ -2822,6 +2837,8 @@ app.get('/reset-password/:token', async (req, res) => {
     <head>
       <title>Reset Password - Seemplify</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <link rel="stylesheet" href="/css/idp-theme.css?v=6">
+      <script src="/js/theme.js?v=5"></script>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -2981,8 +2998,9 @@ app.get('/reset-password/:token', async (req, res) => {
           to { transform: rotate(360deg); }
         }
       </style>
+      <link rel="stylesheet" href="/css/login.css?v=7">
     </head>
-    <body>
+    <body class="auth-standalone auth-reset">
       <div class="container">
         <div class="logo">
           <div class="logo-icon">🔑</div>
@@ -3013,7 +3031,7 @@ app.get('/reset-password/:token', async (req, res) => {
         </form>
         
         <div class="back-link">
-          <a href="${ISSUER_URL}">← Back to login</a>
+          <a href="${safeIssuerUrl}">← Back to login</a>
         </div>
       </div>
       
@@ -3026,6 +3044,8 @@ app.get('/reset-password/:token', async (req, res) => {
         const confirmPasswordInput = document.getElementById('confirmPassword');
         const strengthBar = document.getElementById('strengthBar');
         const strengthText = document.getElementById('strengthText');
+        const resetToken = ${serializedResetToken};
+        const resetPath = '/reset-password/' + encodeURIComponent(resetToken);
         
         // Show error if present
         const urlParams = new URLSearchParams(window.location.search);
@@ -3087,7 +3107,7 @@ app.get('/reset-password/:token', async (req, res) => {
           const formData = new FormData(e.target);
           
           // Submit via POST
-          const response = await fetch('/reset-password/${token}', {
+          const response = await fetch(resetPath, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ password: formData.get('password') })
@@ -3104,7 +3124,7 @@ app.get('/reset-password/:token', async (req, res) => {
           }
           
           // Success - redirect to success page
-          window.location.href = '/reset-password/${token}/success';
+          window.location.href = resetPath + '/success';
         });
       </script>
     </body>
@@ -3782,7 +3802,7 @@ app.get('/login', async (req, res) => {
   const errorMsg = req.query.error ? errorMessages[req.query.error] || 'An error occurred' : ''
 
   // Check if user is coming from an invitation link
-  const returnTo = req.query.return_to || ''
+  const returnTo = normalizeInternalReturnTo(req.query.return_to)
   let pendingInviteInfo = null
 
   if (returnTo.includes('/invitations/accept')) {
@@ -3821,17 +3841,18 @@ app.get('/login', async (req, res) => {
 // Hub Login Handler
 app.post('/login', async (req, res) => {
   try {
-    const { email, password, remember, return_to } = req.body
+    const { email, password, remember } = req.body
+    const returnTo = normalizeInternalReturnTo(req.body.return_to)
 
     const account = await Account.findOne({ email })
     if (!account) {
-      const returnQuery = return_to ? `&return_to=${encodeURIComponent(return_to)}` : ''
+      const returnQuery = returnTo ? `&return_to=${encodeURIComponent(returnTo)}` : ''
       return res.redirect(`/login?error=account_not_found${returnQuery}`)
     }
 
     const validPassword = await bcrypt.compare(password, account.passwordHash)
     if (!validPassword) {
-      const returnQuery = return_to ? `&return_to=${encodeURIComponent(return_to)}` : ''
+      const returnQuery = returnTo ? `&return_to=${encodeURIComponent(returnTo)}` : ''
       return res.redirect(`/login?error=invalid_password${returnQuery}`)
     }
 
@@ -3872,9 +3893,9 @@ app.post('/login', async (req, res) => {
       : `${profileCompletion?.nextIncompleteStep?.route || '/profile/personal'}?wizard=1`
 
     // Redirect to return_to URL if provided (e.g., for invitation acceptance), otherwise profile setup or home
-    if (return_to && return_to.startsWith('/')) {
-      console.log('Redirecting to return_to:', return_to)
-      res.redirect(return_to)
+    if (returnTo) {
+      console.log('Redirecting to return_to:', returnTo)
+      res.redirect(returnTo)
     } else {
       res.redirect(profileSetupRoute)
     }
@@ -9107,36 +9128,18 @@ function renderHubPage(account, apps, organizations = []) {
 function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = null) {
   const brand = getIdpBrand(req)
   const inviteBanner = pendingInviteInfo ? `
-    <div style="
-      background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15));
-      border: 1px solid rgba(139, 92, 246, 0.4);
-      border-radius: 12px;
-      padding: 16px 20px;
-      margin-bottom: 20px;
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-    ">
-      <div style="
-        width: 40px;
-        height: 40px;
-        background: linear-gradient(135deg, #8b5cf6, #6366f1);
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-      ">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+    <div class="auth-invite-notice" role="status">
+      <div class="auth-invite-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
         </svg>
       </div>
-      <div style="flex: 1;">
-        <div style="font-weight: 700; color: #bbf7d0; font-size: 15px; margin-bottom: 4px;">
-          📧 You have a pending invitation!
+      <div>
+        <div class="auth-invite-title">
+          You have a pending invitation
         </div>
-        <div style="color: #94a3b8; font-size: 14px; line-height: 1.5;">
-          You've been invited to join <strong style="color: #e2e8f0;">${pendingInviteInfo.organizationName}</strong> as <strong style="color: #a5b4fc;">${pendingInviteInfo.role}</strong>.
+        <div class="auth-invite-copy">
+          You've been invited to join <strong>${escapeAttribute(pendingInviteInfo.organizationName)}</strong> as <strong>${escapeAttribute(pendingInviteInfo.role)}</strong>.
           <br/>Sign in to accept the invitation.
         </div>
       </div>
@@ -9151,7 +9154,7 @@ function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = nu
       <title>${brand.name} - Sign in</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-      <link rel="stylesheet" href="/css/login.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=7">
       <script src="/js/theme.js?v=5"></script>
       <style>
         ${brand.cssVars}
@@ -9197,17 +9200,17 @@ function renderHubLoginPage(req, errorMsg, returnTo = '', pendingInviteInfo = nu
             </div>
 
             <h1 class="login-heading">Welcome back</h1>
-            <p class="login-subheading">Sign in to access your AIIN workspace.</p>
+              <p class="login-subheading">Sign in with your Seemplify identity.</p>
 
             ${inviteBanner}
             ${errorMsg ? `<div id="loginError" class="error show" role="alert" aria-live="polite">${errorMsg}</div>` : ''}
 
             <form id="loginForm" action="/login" method="POST">
-              ${returnTo ? `<input type="hidden" name="return_to" value="${returnTo}" />` : ''}
+              ${renderInternalReturnToInput(returnTo)}
               
               <div class="form-group">
                 <label for="email">Email address</label>
-                <input type="email" id="email" name="email" placeholder="name@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required autofocus ${pendingInviteInfo ? `value="${pendingInviteInfo.email}"` : ''} />
+                <input type="email" id="email" name="email" placeholder="name@example.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required autofocus ${pendingInviteInfo ? `value="${escapeAttribute(pendingInviteInfo.email)}"` : ''} />
               </div>
 
               <div class="form-group">
@@ -9403,7 +9406,7 @@ function renderHubSignupPage(req, errorMsg, attributionValues = {}) {
       <title>${brand.name} - Create account</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <link rel="stylesheet" href="/css/idp-theme.css?v=6">
-      <link rel="stylesheet" href="/css/login.css?v=6">
+      <link rel="stylesheet" href="/css/login.css?v=7">
       <script src="/js/theme.js?v=5"></script>
       <style>
         ${brand.cssVars}
