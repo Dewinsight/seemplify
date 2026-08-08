@@ -357,3 +357,19 @@ main :where(.rounded-xl, .rounded-2xl).border {
   -webkit-text-fill-color: currentColor;
 }
 [data-theme="dark"] body { background: #0f0e13; }
+
+html[data-theme="dark"] body,
+html.dark body,
+html[data-theme="dark"] .min-h-screen,
+html.dark .min-h-screen {
+  background-color: #0f0e13 !important;
+  color: #f7f5fa;
+}
+
+html[data-theme="light"] body,
+html.light body,
+html[data-theme="light"] .min-h-screen,
+html.light .min-h-screen {
+  background-color: #f1efe9 !important;
+  color: #191816;
+}

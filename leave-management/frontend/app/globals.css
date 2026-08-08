@@ -312,3 +312,21 @@ html:not(.dark) .gradient-text-primary {
   background: #18161f;
   border-color: #312d39;
 }
+
+html.dark,
+html[data-theme="dark"] {
+  --background: 255 15% 6% !important;
+  --foreground: 270 20% 97% !important;
+  --card: 258 17% 10% !important;
+  --card-foreground: 270 20% 97% !important;
+  --popover: 258 17% 10% !important;
+  --popover-foreground: 270 20% 97% !important;
+  --muted-foreground: 264 9% 66% !important;
+  --border: 259 12% 20% !important;
+}
+
+html.dark body,
+html[data-theme="dark"] body {
+  background: #0f0e13 !important;
+  color: #f7f5fa !important;
+}
