@@ -527,4 +527,15 @@ export const getBulkUploadStatus = async (batchId: string): Promise<BulkUploadSt
   return response.json();
 };
 
+export const retryBulkUpload = async (batchId: string): Promise<BulkUploadStatus & { promoted: number }> => {
+  const response = await apiRequest(`/api/bulk-upload/status/${batchId}/retry`, { method: 'POST' });
+  if (!response.ok) {
+    const err: any = await response.json().catch(() => ({ msg: 'Retry failed' }));
+    const error = new Error(err.msg || 'CV analysis could not be retried');
+    (error as any).code = err.code;
+    throw error;
+  }
+  return response.json();
+};
+
 export type { CandidateData };

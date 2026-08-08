@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
+const codexAccountService = require('../services/aiRuntime/codexAccountService');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -96,6 +97,38 @@ router.get('/status/:batchId', authMiddleware, requireOrganization, async (req, 
     return res.status(404).json({ msg: 'Batch not found' });
   }
   res.json(status);
+});
+
+// Verify the user's live hosted account and wake this batch immediately. This
+// replaces the old experience of staring at a spinner until a five-minute
+// backoff happened to expire.
+router.post('/status/:batchId/retry', authMiddleware, requireOrganization, async (req, res) => {
+  try {
+    const account = await codexAccountService.readAccount(req.user);
+    if (!account.isRoutable()) {
+      return res.status(409).json({
+        msg: account.status === 'connected'
+          ? 'Allow AI task processing on your ChatGPT account before retrying.'
+          : 'Connect your ChatGPT account before retrying CV analysis.',
+        code: account.status === 'connected'
+          ? 'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED'
+          : 'AI_RUNTIME_ACCOUNT_REQUIRED'
+      });
+    }
+    const organizationId = req.user.currentOrganization?.toString();
+    const status = await cvAnalysisQueue.retryBatchNow(
+      req.params.batchId,
+      organizationId,
+      { type: 'user', id: req.user.id, name: 'Bulk upload retry' }
+    );
+    if (!status) return res.status(404).json({ msg: 'Batch not found' });
+    return res.json(status);
+  } catch (error) {
+    return res.status(Number(error?.statusCode) || 500).json({
+      msg: error?.message || 'CV analysis could not be retried',
+      code: error?.code || 'CV_BATCH_RETRY_FAILED'
+    });
+  }
 });
 
 module.exports = router;

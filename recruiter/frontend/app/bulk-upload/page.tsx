@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import {
   bulkUploadCVs,
   getBulkUploadStatus,
+  retryBulkUpload,
   type BulkUploadStatus,
 } from "@/services/candidateService"
 
@@ -32,6 +33,8 @@ export default function BulkUploadPage() {
   const [batchId, setBatchId] = useState<string | null>(null)
   const [status, setStatus] = useState<BulkUploadStatus | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [pollError, setPollError] = useState<string | null>(null)
+  const [retrying, setRetrying] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
   const progressPercent = status
@@ -89,6 +92,7 @@ export default function BulkUploadPage() {
     try {
       const s = await getBulkUploadStatus(batchId)
       setStatus(s)
+      setPollError(null)
       if (s.state === 'completed') {
         setPageState("completed")
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
@@ -97,7 +101,9 @@ export default function BulkUploadPage() {
           description: `${s.successful} candidates created, ${s.failed} failed out of ${s.totalFiles} CVs.`,
         })
       }
-    } catch { /* silently retry */ }
+    } catch (error: any) {
+      setPollError(error?.message || "Live status is temporarily unavailable. Retrying…")
+    }
   }, [batchId, toast])
 
   useEffect(() => {
@@ -148,6 +154,31 @@ export default function BulkUploadPage() {
   const eta = status && rate && parseFloat(rate) > 0
     ? Math.ceil((status.totalFiles - status.completed) / (parseFloat(rate) / 60))
     : null
+  const isParked = Boolean(status && (
+    status.state === "waiting_for_local_runtime" || status.waitingReason || status.waitingCode
+  ))
+
+  const handleRetryAnalysis = async () => {
+    if (!batchId || retrying) return
+    setRetrying(true)
+    try {
+      const next = await retryBulkUpload(batchId)
+      setStatus(next)
+      setPollError(null)
+      toast({
+        title: next.promoted > 0 ? "CV analysis restarted" : "CV analysis is already moving",
+        description: next.promoted > 0
+          ? `${next.promoted} waiting ${next.promoted === 1 ? "CV was" : "CVs were"} sent for analysis now.`
+          : "The queue no longer reports a parked CV."
+      })
+    } catch (error: any) {
+      const message = error?.message || "CV analysis could not be retried"
+      setPollError(message)
+      toast({ title: "Action needed", description: message, variant: "destructive" })
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   return (
     <div className="container mx-auto py-6 max-w-4xl">
@@ -278,7 +309,7 @@ export default function BulkUploadPage() {
             </Card>
           </div>
 
-          {status.state === "waiting_for_local_runtime" && (
+          {isParked && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               {/* Saying only "waiting" leaves someone watching a spinner with no
                   idea whether to wait a minute or a week — so the runtime's own
@@ -290,6 +321,21 @@ export default function BulkUploadPage() {
               {status.waitingReason && (
                 <p className="mt-1 text-amber-800">{status.waitingReason}</p>
               )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" onClick={handleRetryAnalysis} disabled={retrying}>
+                  {retrying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                  Verify connection and retry now
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => router.push("/settings/ai-account")}>
+                  Open ChatGPT settings
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {pollError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <AlertCircle className="mr-2 inline h-4 w-4" />{pollError}
             </div>
           )}
 
@@ -298,8 +344,10 @@ export default function BulkUploadPage() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
-                  {pageState === "processing" ? (
-                    <><Loader2 className="h-5 w-5 animate-spin text-blue-500" /> {status.state === "waiting_for_local_runtime" ? "Waiting for local CV analysis" : "Processing CVs..."}</>
+                  {pageState === "processing" ? isParked ? (
+                    <><AlertCircle className="h-5 w-5 text-amber-600" /> AI analysis needs attention</>
+                  ) : (
+                    <><Loader2 className="h-5 w-5 animate-spin text-blue-500" /> Processing CVs...</>
                   ) : (
                     <><CheckCircle className="h-5 w-5 text-green-500" /> Processing Complete</>
                   )}
@@ -339,10 +387,17 @@ export default function BulkUploadPage() {
                       <span className="text-red-500 truncate text-xs">{e.error}</span>
                     </div>
                   ))}
-                  {status.completed === 0 && (
+                  {status.completed === 0 && !isParked && (
                     <div className="py-8 text-center text-muted-foreground">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                       Starting CV processing...
+                    </div>
+                  )}
+                  {status.completed === 0 && isParked && (
+                    <div className="py-10 text-center text-amber-800">
+                      <AlertCircle className="mx-auto mb-3 h-7 w-7" />
+                      <p className="font-medium">CV saved safely; AI analysis is paused.</p>
+                      <p className="mt-1 text-sm text-amber-700">Use “Verify connection and retry now” above. You do not need to upload the file again.</p>
                     </div>
                   )}
                 </div>

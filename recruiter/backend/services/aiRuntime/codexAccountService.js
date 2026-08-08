@@ -147,7 +147,13 @@ async function readAccount(user, options = {}) {
   try {
     applyStatus(account, await callGateway('account', account.user, options));
   } catch (error) {
-    account.status = account.status === 'connected' ? 'error' : account.status;
+    // A rolling deployment or short network interruption does not mean the
+    // user's durable credential disappeared. Marking a connected row as
+    // `error` made background CV jobs unroutable forever, even after the
+    // gateway recovered, until somebody happened to reopen this page.
+    // A successful gateway response still changes the state through
+    // applyStatus (including a real logout); transport failures preserve the
+    // last verified connection and only surface diagnostic text.
     account.lastError = String(error.message || '').slice(0, 500);
   }
   await account.save();

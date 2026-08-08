@@ -3904,6 +3904,28 @@ async function getBatchStatus(publicId, organizationId) {
   };
 }
 
+async function retryBatchNow(publicId, organizationId, requestedBy) {
+  const batch = await CVProcessingBatch.findOne({
+    publicId: String(publicId || ''),
+    organization: organizationId
+  }).populate('jobs');
+  if (!batch) return null;
+  let promoted = 0;
+  for (const job of batch.jobs || []) {
+    if (job.state !== 'waiting_for_local_runtime') continue;
+    try {
+      await retryJobNow(job.publicId, { requestedBy });
+      promoted += 1;
+    } catch (error) {
+      if (!['CV_RETRY_NOT_WAITING', 'CV_RETRY_ALREADY_RUNNING'].includes(error?.code)) throw error;
+    }
+  }
+  return {
+    ...(await getBatchStatus(batch.publicId, organizationId)),
+    promoted
+  };
+}
+
 module.exports = {
   _deliverCompletionEffectsForTests: deliverCompletionEffects,
   _processJobForTests: processJob,
@@ -3922,6 +3944,7 @@ module.exports = {
   closeForTests,
   enqueueExistingJob,
   getBatchStatus,
+  retryBatchNow,
   getAdminJobDetail,
   getAdminJobSummaries,
   getStatus,
