@@ -80,8 +80,10 @@ async function main() {
   const recruiterId = String(process.env.RECRUITER_BACKEND_APP_ID || '').trim();
   const performanceId = String(process.env.PERFORMANCE_BACKEND_APP_ID || '').trim();
   const gatewayBaseUrl = process.env.CHATGPT_GATEWAY_BASE_URL;
-  const localBaseUrl = process.env.LOCAL_LLM_BASE_URL || gatewayBaseUrl;
-  const localSecret = process.env.LOCAL_LLM_SHARED_SECRET || sharedSecret;
+  const localBaseUrl = String(process.env.LOCAL_LLM_BASE_URL || '').trim();
+  const localSecret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
+  if (!localBaseUrl) throw new Error('LOCAL_LLM_BASE_URL is required; Local inference must not point at the ChatGPT gateway');
+  if (!localSecret) throw new Error('LOCAL_LLM_SHARED_SECRET is required');
   await configureApplication(gatewayId, {
     CHATGPT_GATEWAY_SHARED_SECRET: sharedSecret,
     RECRUITER_BACKEND_URL: process.env.RECRUITER_BACKEND_URL || 'https://api.seemplifyai.com',
