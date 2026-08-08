@@ -19,6 +19,7 @@ const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
+const { allowedConsumerIds } = require('./consumer-registry.cjs');
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(workspaceRoot, '.chatgpt-gateway');
@@ -74,10 +75,7 @@ function subjectKeyFor(sourceApp, subjectId) {
  * already holds the secret. The allowlist keeps the namespace closed.
  */
 function allowedSourceApps(source = process.env) {
-  return new Set(String(source.CODEX_SUBJECT_SOURCE_APPS || 'recruiter')
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean));
+  return new Set(allowedConsumerIds(source.CODEX_SUBJECT_SOURCE_APPS));
 }
 
 /** Returns `{ subjectKey }` or `{ error: { status, code } }` — never throws, so

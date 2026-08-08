@@ -11,12 +11,13 @@ const { BoundedFixedWindowRateLimiter } = require('./rate-limit.cjs');
 const { ActivityQueueScheduler } = require('./request-queue.cjs');
 const { ChatGptExecutionReceiptStore, canonicalRequestFingerprint } = require('./execution-receipt-store.cjs');
 const { ChatGptUsageMeteringOutbox } = require('./usage-metering-outbox.cjs');
+const { PlatformUsageLedger } = require('./usage-ledger.cjs');
 
 const dataDir = path.resolve(process.env.CHATGPT_GATEWAY_DATA_DIR || path.join(__dirname, '.data'));
 const host = process.env.CHATGPT_GATEWAY_HOST || '127.0.0.1';
 const port = Number(process.env.CHATGPT_GATEWAY_PORT || 11435);
 const sharedSecret = String(process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
-const backendUrl = String(process.env.RECRUITER_BACKEND_URL || 'https://api.seemplifyai.com').replace(/\/+$/, '');
+const usageSinkUrl = String(process.env.PLATFORM_AI_USAGE_SINK_URL || '').trim();
 const maxBodyBytes = Math.max(1024, Number(process.env.CHATGPT_GATEWAY_MAX_BODY_BYTES || 8 * 1024 * 1024));
 const signatureSkewMs = Number(process.env.CHATGPT_GATEWAY_SIGNATURE_SKEW_MS || 5 * 60_000);
 const nonceTtlMs = Number(process.env.CHATGPT_GATEWAY_NONCE_TTL_MS || 10 * 60_000);
@@ -59,13 +60,12 @@ const receipts = new ChatGptExecutionReceiptStore({
   retentionMs: Number(process.env.CHATGPT_GATEWAY_RECEIPT_RETENTION_MS || 30 * 24 * 60 * 60_000),
   leaseMs: Number(process.env.CHATGPT_GATEWAY_EXECUTION_LEASE_MS || 300_000), log
 });
-const usageOutbox = new ChatGptUsageMeteringOutbox({
-  directory: path.join(dataDir, 'usage-outbox'),
-  endpointUrl: `${backendUrl}/api/internal/ai/v1/chatgpt-usage/events`,
-  secret: sharedSecret,
+const usageLedger = new PlatformUsageLedger({ directory: path.join(dataDir, 'usage-ledger'), log });
+const usageOutbox = usageSinkUrl ? new ChatGptUsageMeteringOutbox({
+  directory: path.join(dataDir, 'usage-outbox'), endpointUrl: usageSinkUrl, secret: sharedSecret,
   initialDelayMs: Number(process.env.CHATGPT_GATEWAY_USAGE_INITIAL_DELAY_MS || 1_000), log
-});
-usageOutbox.start?.();
+}) : null;
+usageOutbox?.start?.();
 
 const seenNonces = new Map();
 function remoteKey(request) {
@@ -235,7 +235,21 @@ function usageRecord({ input, metering, result, status, latencyMs, error }) {
 
 async function persistUsage(record) {
   if (!record) return;
-  await usageOutbox.enqueue(record);
+  await usageLedger.record(record);
+  if (usageOutbox) await usageOutbox.enqueue(record);
+}
+
+async function handleTelemetry(request, response, requestPath, raw, operation) {
+  if (!requestLimiter.consume(remoteKey(request))) return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
+  const verified = await verifySignature(request.headers, 'POST', requestPath, raw);
+  if (!verified.ok) return sendJson(response, 401, { code: verified.code, message: 'Request authentication failed' });
+  const input = parseJson(raw);
+  if (input.sourceApp && !sessions.allowedSourceApps().has(String(input.sourceApp).trim().toLowerCase())) {
+    return sendJson(response, 403, { code: 'CODEX_SOURCE_APP_NOT_ALLOWED' });
+  }
+  if (operation === 'events') return sendJson(response, 200, { events: await usageLedger.query(input) });
+  if (operation === 'summary') return sendJson(response, 200, await usageLedger.summary(input));
+  return sendJson(response, 404, { code: 'NOT_FOUND' });
 }
 
 async function handleCompletion(request, response, requestPath, raw, cvOnly) {
@@ -324,7 +338,9 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/health') {
       const ready = sessions.perUserSessionsEnabled() && fs.existsSync(sessions.resolveCodexScript());
       return sendJson(response, ready ? 200 : 503, {
-        ok: ready, service: 'seemplify-chatgpt-gateway', runtime: 'codex-app-server', persistence: 'server-volume'
+        ok: ready, service: 'seemplify-ai-gateway', runtime: 'codex-app-server',
+        ownership: 'seemplify-platform', consumers: [...sessions.allowedSourceApps()],
+        telemetry: usageLedger.status(), telemetryMirrorConfigured: Boolean(usageOutbox), persistence: 'server-volume'
       });
     }
     if (request.method !== 'POST') return sendJson(response, 404, { code: 'NOT_FOUND' });
@@ -332,6 +348,8 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname.startsWith('/v1/codex/')) {
       return handleAccountOperation(request, response, url.pathname.slice('/v1/codex/'.length), url.pathname, raw);
     }
+    if (url.pathname === '/v1/telemetry/events') return handleTelemetry(request, response, url.pathname, raw, 'events');
+    if (url.pathname === '/v1/telemetry/summary') return handleTelemetry(request, response, url.pathname, raw, 'summary');
     if (url.pathname === '/v1/complete') return handleCompletion(request, response, url.pathname, raw, false);
     if (url.pathname === '/v1/cv/analyze') return handleCompletion(request, response, url.pathname, raw, true);
     return sendJson(response, 404, { code: 'NOT_FOUND' });
@@ -348,7 +366,7 @@ async function shutdown(signal) {
   scheduler.stop?.();
   server.close();
   await sessions.stopAllSessions();
-  await usageOutbox.flush({ force: true }).catch(() => undefined);
+  await usageOutbox?.flush({ force: true }).catch(() => undefined);
   process.exit(0);
 }
 process.once('SIGTERM', () => void shutdown('SIGTERM'));

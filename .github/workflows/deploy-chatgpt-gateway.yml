@@ -7,7 +7,6 @@ on:
       - 'tools/chatgpt-gateway/**'
       - 'recruiter/backend/config/aiRuntimeCatalog.js'
       - 'recruiter/backend/services/aiRuntime/**'
-      - 'recruiter/backend/scripts/dokployConfigureChatGpt.js'
       - '.github/workflows/deploy-chatgpt-gateway.yml'
   workflow_dispatch:
 
@@ -20,14 +19,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Configure hosted gateway and Recruiter
-        run: node recruiter/backend/scripts/dokployConfigureChatGpt.js
+      - name: Configure shared Seemplify AI gateway and consumers
+        run: node tools/chatgpt-gateway/dokploy-configure.cjs
         env:
           DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
           DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
           CHATGPT_GATEWAY_APP_ID: ${{ secrets.CHATGPT_GATEWAY_APP_ID }}
           RECRUITER_BACKEND_APP_ID: ${{ secrets.RECRUITER_BACKEND_APP_ID }}
           PERFORMANCE_BACKEND_APP_ID: ${{ secrets.PERFORMANCE_BACKEND_APP_ID }}
+          IDENTITY_PROVIDER_APP_ID: ${{ secrets.IDENTITY_PROVIDER_APP_ID }}
+          LEAVE_BACKEND_APP_ID: ${{ secrets.LEAVE_BACKEND_APP_ID }}
+          PAYROLL_BACKEND_APP_ID: ${{ secrets.PAYROLL_BACKEND_APP_ID }}
+          TIME_ATTENDANCE_BACKEND_APP_ID: ${{ secrets.TIME_ATTENDANCE_BACKEND_APP_ID }}
           CHATGPT_GATEWAY_BASE_URL: ${{ secrets.CHATGPT_GATEWAY_BASE_URL }}
           CHATGPT_GATEWAY_SHARED_SECRET: ${{ secrets.CHATGPT_GATEWAY_SHARED_SECRET }}
           LOCAL_LLM_BASE_URL: ${{ secrets.LOCAL_LLM_BASE_URL }}

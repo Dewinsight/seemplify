@@ -15,6 +15,8 @@ Platform policy is consistent across products:
 - A ChatGPT choice without a connected, consented subject fails clearly; it never sends the task to local inference without the user's knowledge.
 - Provider choice, activity, organization, actor, latency, outcome, and token counts are metered. Prompt and HR document content are not telemetry.
 
+The connected-ChatGPT/Codex gateway is a shared Seemplify platform service for Identity Provider, Leave Management, Payroll, Performance Management, Recruiter, and Time & Attendance. It owns its sessions, execution receipts, scheduling, and sanitized telemetry independently of every consumer application. Experience Management is deliberately excluded until its later migration is designed and implemented.
+
 ## Delivery status
 
 ### Implemented foundation
@@ -26,6 +28,7 @@ Platform policy is consistent across products:
 - Performance policy and preference endpoints.
 - Performance activity telemetry categories for OKRs, reviews, appraisals, meetings, calibration, and development.
 - Durable signed metering identities and strict no-silent-fallback behavior.
+- Platform-owned connected-ChatGPT gateway consumer registry and telemetry ledger, with no Recruiter availability dependency.
 
 ### Required deployment configuration
 
