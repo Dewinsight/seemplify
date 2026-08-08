@@ -504,7 +504,7 @@ const seemplifyNavLogoImg = `
     loading="eager"
     decoding="async"
     class="seemplify-wordmark seemplify-wordmark--nav"
-    style="display:block;width:auto;max-width:100%;height:34px;"
+    style="display:block;width:auto;max-width:100%;height:51px;"
   />
 `
 
@@ -533,7 +533,7 @@ function getIdpBrand(req) {
         loading="eager"
         decoding="async"
         class="seemplify-wordmark seemplify-wordmark--nav"
-        style="display:block;width:auto;max-width:100%;height:34px;"
+        style="display:block;width:auto;max-width:100%;height:51px;"
       />
     `
     return {
