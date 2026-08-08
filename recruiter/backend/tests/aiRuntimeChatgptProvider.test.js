@@ -17,7 +17,11 @@ const {
 } = require('../config/aiRuntimeCatalog');
 const { AIRuntimeService } = require('../services/aiRuntime/aiRuntimeService');
 
-const TEST_ENV = { LOCAL_LLM_BASE_URL: 'http://127.0.0.1:9', LOCAL_LLM_SHARED_SECRET: 'chatgpt-provider-test-secret' };
+const TEST_ENV = {
+  CHATGPT_GATEWAY_BASE_URL: 'http://chatgpt-gateway.test:11435',
+  LOCAL_LLM_BASE_URL: 'http://local-runtime.test:11435',
+  LOCAL_LLM_SHARED_SECRET: 'chatgpt-provider-test-secret'
+};
 
 function withEnv(run) {
   const previous = {};
@@ -336,6 +340,7 @@ test('a user-owned request sends a subject claim and never a raw subject key', a
     });
 
     assert.equal(sent.body.codexSourceApp, 'recruiter');
+    assert.equal(sent.url, 'http://chatgpt-gateway.test:11435/v1/complete');
     assert.equal(sent.body.codexSubjectId, 'recruiter-user-1');
     // The gateway derives the key; sending one would let this caller address
     // any session on the host.
@@ -371,7 +376,7 @@ test('managed-local requests keep their existing gateway contract', async () => 
   await withEnv(async () => {
     let sent;
     const runtime = runtimeWith(settingsWithChatgpt(), async (url, options) => {
-      sent = JSON.parse(options.body);
+      sent = { url, body: JSON.parse(options.body) };
       return { ok: true };
     });
     await runtime.localProviderRequest({
@@ -380,10 +385,11 @@ test('managed-local requests keep their existing gateway contract', async () => 
       context: { sourceApp: 'recruiter', usageExecutionId: 'managed-local-regression' },
       requestId: 'managed-local-regression-request'
     });
-    assert.equal(sent.requiredEngine, 'codex');
-    assert.equal(sent.requiredModel, 'gpt-5.6-terra');
-    assert.equal(sent.model, 'gpt-5.6-terra');
-    assert.equal(sent.codexSubjectId, undefined, 'the shared account carries no subject');
-    assert.equal(sent.codexSourceApp, undefined);
+    assert.equal(sent.url, 'http://local-runtime.test:11435/v1/complete');
+    assert.equal(sent.body.requiredEngine, 'codex');
+    assert.equal(sent.body.requiredModel, 'gpt-5.6-terra');
+    assert.equal(sent.body.model, 'gpt-5.6-terra');
+    assert.equal(sent.body.codexSubjectId, undefined, 'the shared account carries no subject');
+    assert.equal(sent.body.codexSourceApp, undefined);
   });
 });

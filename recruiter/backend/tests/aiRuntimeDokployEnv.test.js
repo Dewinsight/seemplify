@@ -46,11 +46,13 @@ test('Dokploy setup adds the externally supplied local CV runtime values without
   const result = ensureAIRuntimeEnv('', deterministicBytes, {
     sharedSecret: 'local-shared-secret',
     baseUrl: 'https://cv-llm.aiinnigeria.com',
+    chatgptBaseUrl: 'http://seemplify-chatgpt-gateway:11435',
     statusTokenSecret: 'opaque-status-secret',
     concurrency: 1
   });
   const parsed = parseEnv(result.env).values;
   assert.equal(parsed.get('LOCAL_LLM_BASE_URL'), 'https://cv-llm.aiinnigeria.com');
+  assert.equal(parsed.get('CHATGPT_GATEWAY_BASE_URL'), 'http://seemplify-chatgpt-gateway:11435');
   assert.equal(parsed.get('LOCAL_LLM_SHARED_SECRET'), 'local-shared-secret');
   assert.equal(parsed.get('CV_STATUS_TOKEN_SECRET'), 'opaque-status-secret');
   assert.equal(parsed.get('CV_ANALYSIS_QUEUE_CONCURRENCY'), '1');

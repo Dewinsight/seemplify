@@ -1,0 +1,33 @@
+name: Deploy ChatGPT Gateway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/chatgpt-gateway/**'
+      - 'tools/local-llm/**'
+      - 'recruiter/backend/config/aiRuntimeCatalog.js'
+      - '.github/workflows/deploy-chatgpt-gateway.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Codex App Server gateway to Dokploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Dokploy deployment
+        run: |
+          response=$(curl -sS -w "%{http_code}" -o /tmp/response.txt \
+            -X POST "${{ secrets.DOKPLOY_URL }}/api/application.deploy" \
+            -H "x-api-key: ${{ secrets.DOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "accept: application/json" \
+            -d '{"applicationId":"${{ secrets.CHATGPT_GATEWAY_APP_ID }}"}')
+          if [ "$response" != "200" ]; then
+            cat /tmp/response.txt 2>/dev/null || true
+            exit 1
+          fi
+          echo "ChatGPT gateway deployment triggered."

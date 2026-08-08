@@ -6,7 +6,7 @@ const { AIRuntimeError, signLocalRequest } = require('./aiRuntimeService');
  * The Recruiter side of a user's own ChatGPT connection.
  *
  * Device login, account status, the model catalogue, and sign-out all live on
- * the gateway host, because that is where the Codex CLI and the per-subject
+ * the hosted gateway, because that is where the Codex CLI and the per-subject
  * credential store are. This service is the authenticated proxy plus the
  * durable connection state.
  */
@@ -14,14 +14,18 @@ const { AIRuntimeError, signLocalRequest } = require('./aiRuntimeService');
 const SOURCE_APP = 'recruiter';
 
 function gatewayBaseUrl() {
-  return String(process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, '');
+  return String(
+    process.env.CHATGPT_GATEWAY_BASE_URL
+    || process.env.LOCAL_LLM_BASE_URL
+    || 'http://127.0.0.1:11435'
+  ).replace(/\/+$/, '');
 }
 
 function gatewaySecret() {
   const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
   if (!secret) {
-    throw new AIRuntimeError('The local AI gateway is not configured', {
-      code: 'AI_LOCAL_NOT_CONFIGURED', statusCode: 503, retryable: true
+    throw new AIRuntimeError('The ChatGPT gateway is not configured', {
+      code: 'CHATGPT_GATEWAY_NOT_CONFIGURED', statusCode: 503, retryable: true
     });
   }
   return secret;
@@ -58,7 +62,7 @@ async function callGateway(operation, userId, { timeoutMs = 30_000, fetchImpl = 
       signal: AbortSignal.timeout(timeoutMs)
     });
   } catch (error) {
-    throw new AIRuntimeError(`The local AI gateway is unreachable: ${error.message}`, {
+    throw new AIRuntimeError(`The ChatGPT gateway is unreachable: ${error.message}`, {
       code: 'CHATGPT_GATEWAY_UNAVAILABLE', statusCode: 503, retryable: true
     });
   }

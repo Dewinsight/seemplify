@@ -67,6 +67,7 @@ const publicHealthRateLimitWindowMs = Number(process.env.LOCAL_LLM_HEALTH_RATE_L
 const publicHealthRateLimitRequests = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_REQUESTS || 30);
 const publicHealthRateLimitMaxKeys = Number(process.env.LOCAL_LLM_HEALTH_RATE_LIMIT_MAX_KEYS || 10_000);
 const recruiterBackendUrl = String(process.env.RECRUITER_BACKEND_URL || 'https://api.seemplifyai.com').replace(/\/+$/, '');
+const hostedChatgptMode = String(process.env.CHATGPT_GATEWAY_MODE || '').trim().toLowerCase() === 'hosted';
 const recruiterActivities = new Set(Object.keys(ACTIVITY_DEFINITIONS));
 
 /**
@@ -275,7 +276,9 @@ function log(level, message, metadata = {}) {
   return logWriteChain;
 }
 
-const secret = ensureSecret(secretFile);
+// Hosted Dokploy deployments receive the same service secret as Recruiter.
+// Local workstation installs keep their existing file-backed secret.
+const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim() || ensureSecret(secretFile);
 const controlSecret = ensureSecret(controlSecretFile);
 const usageMeteringOutbox = new LocalUsageMeteringOutbox({
   directory: usageOutboxDir,
@@ -321,7 +324,9 @@ let queueTelemetry = null;
 let lastNoncePruneAt = 0;
 
 function activitySchedulerLimits(activity) {
-  const state = readState();
+  const state = hostedChatgptMode
+    ? { ...readState(), enabled: true, ingressEnabled: true, paused: false }
+    : readState();
   const executionState = stateForRuntimeProfile(
     state,
     runtimeProfileForActivity(activity)
@@ -853,7 +858,9 @@ function cvDesiredConcurrency(state = readState()) {
 }
 
 function statusPayload() {
-  const state = readState();
+  const state = hostedChatgptMode
+    ? { ...readState(), enabled: true, ingressEnabled: true, paused: false }
+    : readState();
   const selected = engineSettings(state);
   const cvLocalEligible = ENGINE_IDS.includes(selected.id);
   const scheduler = inferenceScheduler.snapshot(recruiterActivities);
@@ -1162,7 +1169,9 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   const requestPath = new URL(request.url, `http://${request.headers.host || `${host}:${port}`}`).pathname;
   const verified = await verifySignature(request.headers, request.method, requestPath, rawBody);
   if (!verified.ok) return sendJson(response, 401, { code: verified.code, message: 'Request authentication failed' });
-  const state = readState();
+  const state = hostedChatgptMode
+    ? { ...readState(), enabled: true, ingressEnabled: true, paused: false }
+    : readState();
   if (!state.ingressEnabled || !state.enabled) {
     return sendJson(response, 503, { code: 'LOCAL_LLM_DISABLED', retryable: true });
   }
@@ -1171,6 +1180,12 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   }
   let input;
   try { input = JSON.parse(rawBody); } catch { return sendJson(response, 400, { code: 'INVALID_JSON' }); }
+  if (hostedChatgptMode && !String(input.codexSubjectId || '').trim()) {
+    return sendJson(response, 403, {
+      code: 'CHATGPT_SUBJECT_REQUIRED',
+      message: 'The hosted ChatGPT gateway only accepts connected user sessions'
+    });
+  }
   if (!isAllowedActivity(input.activity)) {
     return sendJson(response, 403, { code: 'ACTIVITY_NOT_ALLOWED' });
   }
@@ -1674,6 +1689,16 @@ const server = http.createServer(async (request, response) => {
         { 'retry-after': String(Math.max(1, Math.ceil(publicHealthRateLimitWindowMs / 1000))) }
       );
     }
+    if (hostedChatgptMode) {
+      const ready = codexSessions.perUserSessionsEnabled()
+        && fs.existsSync(codexSessions.resolveCodexScript());
+      return sendJson(response, ready ? 200 : 503, {
+        ok: ready,
+        service: 'seemplify-chatgpt-gateway',
+        runtime: 'codex-app-server',
+        persistence: 'server-volume'
+      });
+    }
     const health = await engineHealth(readState());
     if (publicRequest) {
       return sendJson(response, health.ok ? 200 : 503, {
@@ -1686,6 +1711,9 @@ const server = http.createServer(async (request, response) => {
       service: 'seemplify-local-cv-llm',
       engine: health
     });
+  }
+  if (hostedChatgptMode && url.pathname.startsWith('/control/')) {
+    return sendJson(response, 404, { code: 'NOT_FOUND' });
   }
   if (request.method === 'GET' && url.pathname === '/control/status') {
     if (!isLocalControlRequest(request)) return sendJson(response, 403, { code: 'LOCAL_CONTROL_ONLY' });
@@ -1950,13 +1978,19 @@ server.listen(port, host, () => {
     log('error', 'Local execution receipt startup pruning failed', { error: error.message });
   });
   const selected = engineSettings(readState());
-  log('info', 'Local CV LLM gateway started', { host, port, engine: selected.id, model: selected.model });
+  log('info', hostedChatgptMode ? 'Hosted ChatGPT Codex gateway started' : 'Local CV LLM gateway started', {
+    host,
+    port,
+    engine: selected.id,
+    model: selected.model,
+    ...(hostedChatgptMode ? { runtime: 'codex-app-server' } : {})
+  });
 });
 
 function shutdown(signal) {
   shuttingDown = true;
   usageMeteringOutbox.stop();
-  writeState({ paused: true });
+  if (!hostedChatgptMode) writeState({ paused: true });
   inferenceScheduler.stop();
   for (const controller of activeControllers) {
     controller.abort(new Error(`Gateway shutdown requested by ${signal}`));

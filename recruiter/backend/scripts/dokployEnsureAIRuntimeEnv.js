@@ -57,6 +57,13 @@ function ensureAIRuntimeEnv(envText, randomBytes = crypto.randomBytes, localRunt
   if (String(localRuntime.sharedSecret || '').trim()) {
     ensure('LOCAL_LLM_SHARED_SECRET', () => String(localRuntime.sharedSecret).trim());
     ensure('LOCAL_LLM_BASE_URL', () => String(localRuntime.baseUrl || 'https://cv-llm.aiinnigeria.com').trim());
+    if (String(localRuntime.chatgptBaseUrl || '').trim()) {
+      const target = String(localRuntime.chatgptBaseUrl).trim();
+      if (String(parsed.values.get('CHATGPT_GATEWAY_BASE_URL') || '').trim() !== target) {
+        parsed.values.set('CHATGPT_GATEWAY_BASE_URL', target);
+        added.push('CHATGPT_GATEWAY_BASE_URL');
+      }
+    }
     ensure('CV_STATUS_TOKEN_SECRET', () => String(localRuntime.statusTokenSecret || localRuntime.sharedSecret).trim());
     ensure('CV_ANALYSIS_QUEUE_CONCURRENCY', () => String(localRuntime.concurrency || 1));
   }
@@ -104,6 +111,7 @@ async function main() {
   const result = ensureAIRuntimeEnv(app.env, crypto.randomBytes, {
     sharedSecret: localSharedSecret,
     baseUrl: process.env.LOCAL_LLM_BASE_URL || 'https://cv-llm.aiinnigeria.com',
+    chatgptBaseUrl: process.env.CHATGPT_GATEWAY_BASE_URL || '',
     statusTokenSecret: cvStatusTokenSecret,
     concurrency: process.env.CV_ANALYSIS_QUEUE_CONCURRENCY || '1',
     usageOutboxEnabled,

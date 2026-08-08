@@ -244,6 +244,8 @@ function errorDetails(payload, status, provider = 'groq') {
   const code = String(body.code || body.type || (status === 429 ? 'rate_limit_exceeded' : `${provider}_http_${status}`));
   const providerLabel = provider === 'groq'
     ? 'Groq'
+    : provider === 'chatgpt-codex'
+      ? 'ChatGPT Codex'
     : provider === 'local-codex'
       ? 'Terra'
       : provider === 'local-claude'
@@ -773,7 +775,6 @@ class AIRuntimeService {
   }
 
   async localProviderRequest({ route, input, context, requestId, timeoutMs = 240_000, signal }) {
-    const baseUrl = String(process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435').replace(/\/+$/, '');
     const secret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
     if (!secret) {
       throw new AIRuntimeError('Local CV runtime is not configured', {
@@ -791,6 +792,11 @@ class AIRuntimeService {
     const sourceApp = String(context.sourceApp || input.context?.sourceApp || 'recruiter').slice(0, 64);
     const experienceProfile = String(route.activity || '').startsWith('experience.');
     const userOwned = isUserOwnedProvider(route.provider);
+    const baseUrl = String(
+      userOwned
+        ? process.env.CHATGPT_GATEWAY_BASE_URL || process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435'
+        : process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11435'
+    ).replace(/\/+$/, '');
     const requiredEngine = userOwned || route.provider === 'local-codex'
       ? 'codex'
       : route.provider === 'local-claude'
