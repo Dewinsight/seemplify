@@ -1725,7 +1725,7 @@
       --hub-ink: #ffffff;
       --hub-ink-soft: rgba(255, 255, 255, .65);
       --hub-ink-faint: rgba(255, 255, 255, .42);
-      --hub-line: rgba(255, 255, 255, .08);
+      --hub-line: rgba(255, 255, 255, .07);
       --hub-line-strong: rgba(255, 255, 255, .15);
       --hub-card-shadow: none;
       --hub-brand: #8f71f3;
@@ -1740,7 +1740,7 @@
       --hub-ink: #171512;
       --hub-ink-soft: #524e46;
       --hub-ink-faint: #8b857a;
-      --hub-line: rgba(23, 21, 18, .08);
+      --hub-line: rgba(23, 21, 18, .07);
       --hub-line-strong: rgba(23, 21, 18, .18);
       --hub-card-shadow: 0 1px 2px rgba(23, 21, 18, .04), 0 8px 24px -12px rgba(23, 21, 18, .12);
       --hub-brand: #7048e8;
@@ -1750,6 +1750,7 @@
     }
     html, body { min-height: 100%; }
     body {
+      margin: 0;
       padding: 0 0 48px;
       background: var(--hub-canvas);
       color: var(--hub-ink);
@@ -1759,8 +1760,9 @@
     body::before, body::after { display: none; }
     body .top-nav.idp-global-nav {
       min-height: 64px;
-      padding-right: max(24px, calc((100vw - 1280px) / 2));
-      padding-left: max(24px, calc((100vw - 1280px) / 2));
+      padding-right: max(32px, calc((100% - 1216px) / 2));
+      padding-left: max(32px, calc((100% - 1216px) / 2));
+      justify-content: flex-start;
       background: color-mix(in srgb, var(--hub-canvas) 92%, transparent);
       border-color: var(--hub-line);
       color: var(--hub-ink);
@@ -1792,9 +1794,10 @@
     body .idp-global-nav .top-nav-user-email { color: var(--hub-ink-faint); }
 
     .hub-content {
-      width: min(1280px, calc(100% - 48px));
+      box-sizing: border-box;
+      width: min(1280px, 100%);
       margin: 0 auto;
-      padding: 0;
+      padding: 0 32px;
     }
     .hub-page-header {
       position: relative;
@@ -1942,12 +1945,18 @@
 
     .workspace-layout { padding-top: 56px; }
     .workspace-section + .workspace-section { margin-top: 56px; }
-    .apps-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+    .apps {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      margin-top: 0;
+    }
+    .apps-heading-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
     .section-title {
       margin: 0;
       color: var(--hub-ink);
       font-size: 22px;
-      font-weight: 650;
+      font-weight: 600;
       line-height: 1.25;
       letter-spacing: -.02em;
     }
@@ -1958,7 +1967,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 24px;
-      margin: 28px 0 26px;
+      margin: 0;
     }
     .app-filters { display: flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
     .app-filter {
@@ -1997,103 +2006,111 @@
 
     .app-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
     body .app-card,
-    body [data-theme="light"] .app-card {
+    [data-theme="light"] body .app-card {
       position: relative;
       display: flex;
-      min-height: 220px;
+      min-height: 0;
       flex-direction: column;
+      align-items: stretch;
+      gap: 0;
       padding: 20px;
       border: 1px solid var(--hub-line);
-      border-radius: 16px;
+      border-radius: 24px;
       background: var(--hub-canvas-raised);
       color: var(--hub-ink);
       box-shadow: var(--hub-card-shadow);
       overflow: hidden;
+      cursor: default;
       transition: border-color .15s ease, box-shadow .15s ease;
     }
     body .app-card:hover,
-    body [data-theme="light"] .app-card:hover {
+    [data-theme="light"] body .app-card:hover {
       border-color: var(--hub-line-strong);
       background: var(--hub-canvas-raised);
       box-shadow: 0 2px 4px rgba(23, 21, 18, .05), 0 18px 40px -16px rgba(23, 21, 18, .22);
     }
     [data-theme="dark"] body .app-card:hover { box-shadow: none; }
     .app-card[hidden] { display: none !important; }
-    .app-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-    .app-card__identity { display: flex; min-width: 0; align-items: flex-start; gap: 12px; }
+    .app-card__header { display: flex; width: 100%; align-items: flex-start; justify-content: space-between; gap: 14px; }
+    .app-card__identity { display: flex; min-width: 0; align-items: flex-start; gap: 14px; }
+    .app-card__identity > div:last-child { min-width: 0; flex: 1; }
     body .app-card__icon,
-    body [data-theme="light"] .app-card__icon {
+    [data-theme="light"] body .app-card__icon {
       display: grid;
       width: 44px;
       height: 44px;
       flex: none;
       place-items: center;
       border: 1px solid color-mix(in srgb, var(--app-color) 28%, var(--hub-line));
-      border-radius: 14px;
+      border-radius: 16px;
       background: color-mix(in srgb, var(--app-color) 10%, var(--hub-canvas-raised));
       color: var(--app-color);
     }
     .app-card__icon svg { width: 21px; height: 21px; }
     .app-card__title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .app-card__title { min-height: 0; color: var(--hub-ink); font-size: 16px; font-weight: 650; line-height: 1.3; letter-spacing: -.015em; }
-    .app-card__subtitle { margin-top: 2px; color: var(--hub-brand); font-size: 12px; line-height: 1.35; }
+    .app-card__title { min-height: 0; margin: 0; color: var(--hub-ink); font-family: inherit; font-size: 17px; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
+    .app-card__subtitle { margin: 2px 0 0; color: var(--hub-brand); font-size: 13px; font-weight: 500; line-height: 1.5; }
     body .app-card__badge {
-      padding: 2px 7px;
+      padding: 3px 8px;
       border: 1px solid color-mix(in srgb, #f59e0b 42%, transparent);
       border-radius: 999px;
       background: color-mix(in srgb, #f59e0b 10%, transparent);
       color: #fcd34d;
       font-size: 10px;
       font-weight: 600;
-      line-height: 16px;
+      letter-spacing: .08em;
+      line-height: 15px;
       text-transform: uppercase;
     }
     [data-theme="light"] body .app-card__badge { color: #b45309; }
-    .app-card__pin { width: 28px; height: 28px; display: grid; flex: none; place-items: center; border: 0; background: transparent; color: var(--hub-ink-faint); }
-    .app-card__pin svg { width: 17px; height: 17px; fill: transparent; stroke: currentColor; stroke-width: 1.35; stroke-linejoin: round; }
+    .app-card__pin { width: 32px; height: 32px; display: grid; flex: none; place-items: center; margin: -4px -4px 0 0; padding: 8px; border: 0; border-radius: 999px; background: transparent; color: var(--hub-ink-faint); cursor: pointer; }
+    .app-card__pin svg { width: 16px; height: 16px; fill: transparent; stroke: currentColor; stroke-width: 1.35; stroke-linejoin: round; }
     .app-card__pin[aria-pressed="true"] { color: var(--hub-brand); }
     .app-card__pin[aria-pressed="true"] svg { fill: currentColor; stroke: currentColor; }
-    .app-card__desc { margin: 18px 0 0; color: var(--hub-ink-soft); font-size: 13px; line-height: 1.6; }
-    .app-card__footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-top: auto; padding-top: 17px; border-top: 1px solid var(--hub-line); }
-    .app-card__metric { display: grid; gap: 2px; }
-    .app-card__metric span { color: var(--hub-ink-faint); font-size: 10px; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; }
-    .app-card__metric strong { color: var(--hub-ink); font-size: 14px; font-weight: 650; }
+    body .app-card__desc,
+    [data-theme="light"] body .app-card__desc { width: 100%; margin: 14px 0 0; color: var(--hub-ink-soft); font-size: 14px; line-height: 1.625; }
+    .app-card__footer { display: flex; width: 100%; align-items: flex-end; justify-content: space-between; gap: 16px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hub-line); }
+    .app-card__metric { display: grid; gap: 0; }
+    .app-card__metric span { color: var(--hub-ink-faint); font-size: 11px; font-weight: 400; letter-spacing: .09em; line-height: 1.5; text-transform: uppercase; }
+    .app-card__metric strong { color: var(--hub-ink); font-size: 15px; font-weight: 600; line-height: 1.5; }
     .app-card__open {
       display: inline-flex;
-      min-height: 36px;
+      min-height: 0;
       align-items: center;
       gap: 6px;
-      padding: 0 14px;
+      padding: 8px 14px;
       border: 0;
       border-radius: 999px;
       background: var(--hub-action);
       color: var(--hub-action-ink);
       font: inherit;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 500;
+      line-height: 1.5;
       text-decoration: none;
     }
     .app-card__open:hover { opacity: .88; }
-    .app-card__open svg { width: 15px; height: 15px; }
+    .app-card__open svg { width: 14px; height: 14px; }
     .attendance-card-toggle { right: auto; bottom: 24px; left: 112px; color: var(--hub-ink-faint); }
 
-    .roadmap-section { padding-bottom: 56px; }
+    .roadmap-section { margin-top: 32px; padding-bottom: 56px; }
     .roadmap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 26px; }
     .roadmap-card { display: flex; min-height: 104px; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; border: 1px dashed var(--hub-line-strong); border-radius: 16px; color: var(--hub-ink); }
     .roadmap-card__icon { display: grid; width: 40px; height: 40px; flex: none; place-items: center; border: 1px solid var(--hub-line); border-radius: 12px; color: var(--hub-ink-faint); }
     .roadmap-card__icon svg { width: 18px; height: 18px; }
-    .roadmap-card__title { color: var(--hub-ink); font-size: 14px; font-weight: 650; }
-    .roadmap-card__desc { margin-top: 3px; color: var(--hub-ink-faint); font-size: 12px; line-height: 1.45; }
+    .roadmap-card__title { margin: 0; color: var(--hub-ink); font-size: 14px; font-weight: 650; }
+    .roadmap-card__desc { margin: 3px 0 0; color: var(--hub-ink-faint); font-size: 12px; line-height: 1.45; }
     .roadmap-card__action { min-height: 34px; flex: none; padding: 0 13px; border: 1px solid var(--hub-line-strong); border-radius: 999px; background: transparent; color: var(--hub-ink-soft); font: inherit; font-size: 12px; }
 
     .hub-footer {
       display: flex;
-      width: min(1280px, calc(100% - 48px));
+      box-sizing: border-box;
+      width: min(1280px, 100%);
       align-items: center;
       justify-content: space-between;
       gap: 24px;
       margin: 0 auto;
-      padding: 30px 0 0;
+      padding: 30px 32px 0;
       border-top: 1px solid var(--hub-line);
       color: var(--hub-ink-faint);
       font-size: 12px;
@@ -2109,8 +2126,10 @@
       .apps-toolbar { align-items: flex-start; flex-direction: column; }
       .app-search { width: 100%; max-width: 420px; }
     }
+    @media (max-width: 860px) {
+      .hub-content, .hub-footer { width: 100%; padding-right: 20px; padding-left: 20px; }
+    }
     @media (max-width: 700px) {
-      .hub-content, .hub-footer { width: min(100% - 28px, 1280px); }
       .hub-page-header { padding: 42px 0; }
       .hub-page-header h1 { font-size: 42px; }
       .hub-page-header__actions { margin: 0; }
@@ -2119,7 +2138,7 @@
       .apps-heading-row { display: block; }
       .apps-result-count { margin-top: 12px; }
       .app-grid, .roadmap-grid { grid-template-columns: 1fr; }
-      .app-card { min-height: 205px; }
+      .app-card { min-height: 0; }
       .hub-footer { align-items: flex-start; flex-direction: column; }
       .hub-footer nav { gap: 18px; flex-wrap: wrap; }
     }
@@ -2469,11 +2488,11 @@
       <div class="workspace-primary">
         <section class="workspace-section apps" aria-labelledby="applications-heading">
           <% const appPresentation = {
-            smarthr: { subtitle: 'Hire with signal', category: 'talent', metricLabel: 'Workspace', metricValue: 'Recruitment' },
-            'leave-management': { subtitle: 'Time off, sorted', category: 'people-ops', metricLabel: 'Workflow', metricValue: 'Requests' },
-            'performance-management': { subtitle: 'Goals that move', category: 'insights', metricLabel: 'Workspace', metricValue: 'Reviews' },
-            'payroll-management': { subtitle: 'Pay run confidence', category: 'finance', metricLabel: 'Workspace', metricValue: 'Payroll' },
-            'time-attendance': { subtitle: 'Hours you can trust', category: 'people-ops', metricLabel: 'Status', metricValue: 'Live' }
+            smarthr: { subtitle: 'Hire with signal', category: 'talent', metricLabel: 'Workspace', metricValue: 'Recruitment', description: 'AI-powered sourcing, screening, and interview coordination for every req.' },
+            'leave-management': { subtitle: 'Time off, sorted', category: 'people-ops', metricLabel: 'Workflow', metricValue: 'Requests', description: 'Requests, balances, and approvals with policies your team can actually read.' },
+            'performance-management': { subtitle: 'Goals that move', category: 'insights', metricLabel: 'Workspace', metricValue: 'Reviews', description: 'OKRs, review cycles, and continuous feedback that stays close to the work.' },
+            'payroll-management': { subtitle: 'Pay run confidence', category: 'finance', metricLabel: 'Workspace', metricValue: 'Payroll', description: 'Salary processing, bonuses, and compensation with a clean audit trail.' },
+            'time-attendance': { subtitle: 'Hours you can trust', category: 'people-ops', metricLabel: 'Status', metricValue: 'Live', description: 'Track work hours, manage timesheets, and clear approvals in a single pass.' }
           }; %>
           <% const appOrder = ['smarthr', 'leave-management', 'performance-management', 'payroll-management', 'time-attendance']; %>
           <% const orderedHubApps = [...(apps || [])].sort((a, b) => appOrder.indexOf(a.appId) - appOrder.indexOf(b.appId)); %>
@@ -2533,7 +2552,7 @@
                   <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m10 2 2.1 4.4 4.9.7-3.5 3.4.8 4.8-4.3-2.3-4.3 2.3.8-4.8L3 7.1l4.9-.7L10 2Z"/></svg>
                 </button>
               </div>
-              <p class="app-card__desc"><%= app.description || 'Secure single sign-on' %></p>
+              <p class="app-card__desc"><%= presentation.description || app.description || 'Secure single sign-on' %></p>
               <div class="app-card__footer">
                 <div class="app-card__metric"><span><%= presentation.metricLabel %></span><strong><%= presentation.metricValue %></strong></div>
                 <% if (app.external) { %>

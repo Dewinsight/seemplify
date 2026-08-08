@@ -15,6 +15,12 @@
     || navCurrentOrganization?._id?.toString?.()
     || null;
   const navCurrentOrganizationRole = navCurrentOrganization?.role || null;
+  const navCurrentOrganizationRoleLabel = navCurrentOrganizationRole
+    ? String(navCurrentOrganizationRole).replace(/(^|[-_\s])\w/g, (character) => character.toUpperCase()).replace(/[-_]/g, ' ')
+    : 'Member';
+  const navUserContext = navCurrentOrganization
+    ? `${navCurrentOrganizationRoleLabel} · ${navCurrentOrganization.name || 'Workspace'}`
+    : user.email;
   const navUserDisplayName = user.profile?.firstName || user.profile?.name || user.email.split('@')[0];
   const navUserInitials = String(navUserDisplayName)
     .trim()
@@ -26,22 +32,27 @@
 %>
 <style>
   /* One canonical authenticated navbar across every IDP page. */
+  html, body { margin: 0; }
+
   body .top-nav.idp-global-nav {
+    box-sizing: border-box;
     width: 100%;
     max-width: none;
     min-height: 64px;
     margin: 0;
-    padding: 0 max(24px, calc((100vw - 1200px) / 2));
+    padding: 0 max(32px, calc((100% - 1216px) / 2));
     gap: 24px;
+    justify-content: flex-start;
     position: sticky;
     top: 0;
     z-index: 1000;
     border: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--hub-line, var(--border));
     border-radius: 0;
-    background: var(--bg);
+    background: color-mix(in srgb, var(--hub-canvas, var(--bg)) 92%, transparent);
+    color: var(--hub-ink, var(--text));
     box-shadow: none;
-    backdrop-filter: none;
+    backdrop-filter: blur(4px);
     transform: none;
     will-change: auto;
   }
@@ -49,12 +60,12 @@
   body .idp-global-nav .top-nav-brand img,
   body .idp-global-nav .top-nav-brand svg {
     width: auto;
-    height: 51px !important;
+    height: 28px !important;
   }
 
   body .idp-global-nav .top-nav-links {
-    align-self: stretch;
-    gap: 2px;
+    align-self: center;
+    gap: 4px;
     flex-wrap: nowrap;
   }
 
@@ -62,57 +73,51 @@
     position: relative;
     display: inline-flex;
     align-items: center;
-    min-height: 64px;
-    padding: 0 14px;
+    min-height: 37px;
+    padding: 8px 14px;
     border: 0;
-    border-radius: 0;
+    border-radius: 999px;
     background: transparent;
     box-shadow: none;
-    color: var(--muted);
-    font-size: 13px;
-    font-weight: 600;
+    color: var(--hub-ink-soft, var(--muted));
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 21px;
   }
 
   body .idp-global-nav .top-nav-link:hover {
     border: 0;
     background: transparent;
-    color: var(--text);
+    color: var(--hub-ink, var(--text));
   }
 
   body .idp-global-nav .top-nav-link.active {
     border: 0;
-    background: transparent;
+    background: color-mix(in srgb, var(--hub-ink, var(--text)) 8%, transparent);
     box-shadow: none;
-    color: var(--text);
+    color: var(--hub-ink, var(--text));
   }
 
-  body .idp-global-nav .top-nav-link.active::after {
-    content: '';
-    position: absolute;
-    right: 14px;
-    bottom: 0;
-    left: 14px;
-    height: 2px;
-    background: var(--brand);
-  }
+  body .idp-global-nav .top-nav-link.active::after { display: none; }
 
-  body .idp-global-nav .top-nav-user { gap: 8px; }
+  body .idp-global-nav .top-nav-user { gap: 8px; margin-left: auto; }
 
   body .idp-global-nav .theme-toggle,
   body .idp-global-nav .notification-icon {
     width: 34px;
     height: 34px;
-    border-radius: 8px;
+    border: 1px solid transparent;
+    border-radius: 999px;
     background: transparent;
     box-shadow: none;
   }
 
   body .idp-global-nav .user-toggle {
-    gap: 9px;
-    min-height: 42px;
-    padding: 4px 7px 4px 5px;
-    border: 1px solid transparent;
-    border-radius: 8px;
+    gap: 10px;
+    min-height: 40px;
+    padding: 4px 10px 4px 4px;
+    border: 1px solid var(--hub-line, var(--border));
+    border-radius: 999px;
     background: transparent;
     box-shadow: none;
   }
@@ -123,10 +128,10 @@
     height: 32px;
     flex: 0 0 32px;
     place-items: center;
-    border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border));
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--brand) 12%, var(--panel-solid));
-    color: var(--brand);
+    border: 0;
+    border-radius: 50%;
+    background: var(--brand);
+    color: #fff;
     font-size: 11px;
     font-weight: 750;
     letter-spacing: 0.02em;
@@ -145,19 +150,17 @@
     white-space: nowrap;
   }
 
-  [data-theme="light"] body .idp-global-nav .user-avatar {
-    background: color-mix(in srgb, var(--brand) 8%, #fbfaf7);
-  }
+  [data-theme="light"] body .idp-global-nav .user-avatar { background: var(--brand); color: #fff; }
 
   body .idp-global-nav .theme-toggle:hover,
   body .idp-global-nav .notification-icon:hover,
   body .idp-global-nav .user-toggle:hover {
-    background: var(--hover-bg);
+    background: color-mix(in srgb, var(--hub-ink, var(--text)) 6%, transparent);
   }
 
   body .idp-global-nav .user-toggle:hover,
   body .idp-global-nav .user-dropdown[open] .user-toggle {
-    border-color: var(--border);
+    border-color: var(--hub-line-strong, var(--border));
   }
 
   body .idp-global-nav .user-menu {
@@ -266,16 +269,24 @@
     color: var(--error);
   }
 
+  @media (min-width: 769px) and (max-width: 960px) {
+    body .idp-global-nav .user-toggle .top-nav-user-info { display: none; }
+    body .idp-global-nav .user-toggle { padding-right: 4px; }
+  }
+
+  @media (max-width: 860px) {
+    body .top-nav.idp-global-nav { padding-right: 20px; padding-left: 20px; }
+  }
+
   @media (max-width: 768px) {
     body .top-nav.idp-global-nav {
       min-height: 56px;
-      padding: 0 14px;
       gap: 12px;
     }
 
     body .idp-global-nav .top-nav-brand img,
     body .idp-global-nav .top-nav-brand svg {
-      height: 42px !important;
+      height: 28px !important;
     }
   }
 </style>
@@ -397,7 +408,7 @@
             <%= navUserDisplayName %>
           </div>
           <div class="top-nav-user-email">
-            <%= user.email %>
+            <%= navUserContext %>
           </div>
         </div>
         <svg class="user-toggle-caret" viewBox="0 0 20 20" fill="none">

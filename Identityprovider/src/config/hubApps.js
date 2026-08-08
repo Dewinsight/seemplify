@@ -345,7 +345,7 @@ const COMING_SOON_CARDS = [
   {
     cardId: 'messaging',
     name: 'Simplified Messaging',
-    description: 'Streamlined team messaging and collaboration',
+    description: 'Streamlined team messaging and collaboration, wired into every app above.',
     icon: 'chat-bubble-left-right',
     color: '#64748b',
     order: 1
