@@ -147,6 +147,16 @@ function isUsagePersistenceFailure(error) {
     || error?.code === 'AI_USAGE_IDENTITY_CONFLICT';
 }
 
+function preservesCompletedGatewayResult({ error, status, route } = {}) {
+  // Once a gateway has returned a successful model response, metering
+  // reconciliation is an accounting concern, not a reason to throw away the
+  // user's completed work. This also covers old replay receipts which predate
+  // gatewayExecutionId being returned in the response body.
+  return error?.code === 'AI_USAGE_IDENTITY_CONFLICT'
+    && status === 'success'
+    && isGatewayProvider(route?.provider);
+}
+
 function requiredCapabilitiesForActivity(activity) {
   const capabilities = ['text', 'reasoning'];
   if (STRUCTURED_ACTIVITIES.has(activity)) capabilities.push('json_schema');
@@ -1038,16 +1048,14 @@ class AIRuntimeService {
       // model response. If its later, richer backend reconciliation disagrees
       // with that already-stored event, accounting must remain visibly
       // unhealthy—but a completed user task must not be discarded. The
-      // gateway execution id proves this is the same metered execution; all
-      // other identity conflicts remain terminal.
-      if (
-        error?.code === 'AI_USAGE_IDENTITY_CONFLICT'
-        && status === 'success'
-        && /^localexec_[a-f0-9]{48}$/.test(String(data?.gatewayExecutionId || ''))
-      ) {
+      // A successful gateway response proves the AI work completed. Older
+      // replay receipts did not always echo gatewayExecutionId, so the route
+      // itself is the compatibility boundary; non-gateway identity conflicts
+      // remain terminal.
+      if (preservesCompletedGatewayResult({ error, status, route })) {
         console.error('AI usage reconciliation conflict after a completed gateway response:', {
           eventId: event.eventId,
-          gatewayExecutionId: data.gatewayExecutionId
+          gatewayExecutionId: data?.gatewayExecutionId || null
         });
         result = { event: null, quota: null, duplicate: true, identityConflict: true };
       } else {
@@ -1779,6 +1787,7 @@ module.exports.isLocalRuntimeUnavailable = isLocalRuntimeUnavailable;
 module.exports.quotaSnapshotIsAvailable = quotaSnapshotIsAvailable;
 module.exports.rateLimitCooldownUntil = rateLimitCooldownUntil;
 module.exports.requiredCapabilitiesForActivity = requiredCapabilitiesForActivity;
+module.exports.preservesCompletedGatewayResult = preservesCompletedGatewayResult;
 module.exports.shouldUseGroq = shouldUseGroq;
 module.exports.stripReasoning = stripReasoning;
 module.exports.signLocalRequest = signLocalRequest;

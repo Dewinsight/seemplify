@@ -114,15 +114,29 @@ export default function BulkUploadPage() {
     if (restoreAttemptedRef.current || batchId || pageState !== "idle") return
     restoreAttemptedRef.current = true
     let cancelled = false
-    void getRecentBulkUploadStatus().then((recent) => {
-      if (cancelled || !recent || (recent.state === "completed" && recent.failed === 0)) return
-      setBatchId(recent.batchId)
-      setStatus(recent)
-      setPageState(recent.state === "completed" ? "completed" : "processing")
-      if (recent.startedAt) {
-        setElapsedSeconds(Math.max(0, Math.floor((Date.now() - new Date(recent.startedAt).getTime()) / 1000)))
+    const restoreRecentBatch = async () => {
+      const retryDelays = [0, 1_000, 2_000, 4_000, 8_000]
+      for (const delay of retryDelays) {
+        if (cancelled) return
+        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+        try {
+          const recent = await getRecentBulkUploadStatus()
+          if (cancelled || !recent || (recent.state === "completed" && recent.failed === 0)) return
+          setBatchId(recent.batchId)
+          setStatus(recent)
+          setPageState(recent.state === "completed" ? "completed" : "processing")
+          if (recent.startedAt) {
+            setElapsedSeconds(Math.max(0, Math.floor((Date.now() - new Date(recent.startedAt).getTime()) / 1000)))
+          }
+          return
+        } catch {
+          // Authentication and organization context can settle just after the
+          // page mounts. Keep retrying briefly instead of losing the retained
+          // batch behind an empty uploader.
+        }
       }
-    }).catch(() => undefined)
+    }
+    void restoreRecentBatch()
     return () => { cancelled = true }
   }, [batchId, pageState])
 
@@ -185,6 +199,7 @@ export default function BulkUploadPage() {
     try {
       const next = await retryBulkUpload(batchId)
       setStatus(next)
+      setPageState(next.state === "completed" ? "completed" : "processing")
       setPollError(null)
       toast({
         title: next.promoted > 0 ? "CV analysis restarted" : "CV analysis is already moving",

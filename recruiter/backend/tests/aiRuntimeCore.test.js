@@ -6,6 +6,7 @@ const { createInternalServiceAuth } = require('../middleware/internalServiceAuth
 const { requirePermission, requireSuperAdmin } = require('../middleware/adminAuth');
 const {
   ACTIVITY_DEFINITIONS,
+  CHATGPT_PROVIDER,
   CLAUDE_PROVIDER,
   CLAUDE_SONNET_MODEL,
   createDefaultRuntimeSettings,
@@ -25,6 +26,7 @@ const {
   AIRuntimeService,
   deriveGatewayExecutionId,
   deriveRuntimeUsageEventId,
+  preservesCompletedGatewayResult,
   requiredCapabilitiesForActivity
 } = require('../services/aiRuntime/aiRuntimeService');
 const { retryDelayMinutes, scoringRequestId } = require('../services/aiInterviewScoringRetryService');
@@ -54,6 +56,27 @@ test('every seeded AI activity has one compatible explicit route', () => {
   assert.equal(health.configured, health.expected);
   assert.ok(requiredCapabilitiesForActivity('interview.questions').includes('json_schema'));
   assert.ok(requiredCapabilitiesForActivity('ai_interview.chat.clarification').includes('streaming'));
+});
+
+test('completed gateway work survives a legacy metering identity conflict', () => {
+  const identityConflict = Object.assign(new Error('identity conflict'), {
+    code: 'AI_USAGE_IDENTITY_CONFLICT'
+  });
+  assert.equal(preservesCompletedGatewayResult({
+    error: identityConflict,
+    status: 'success',
+    route: { provider: CHATGPT_PROVIDER }
+  }), true);
+  assert.equal(preservesCompletedGatewayResult({
+    error: identityConflict,
+    status: 'failed',
+    route: { provider: CHATGPT_PROVIDER }
+  }), false);
+  assert.equal(preservesCompletedGatewayResult({
+    error: identityConflict,
+    status: 'success',
+    route: { provider: 'groq' }
+  }), false);
 });
 
 test('default routing keeps CV and questions on managed local inference while Experience is pinned to Terra', () => {
