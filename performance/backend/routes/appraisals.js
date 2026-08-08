@@ -11,6 +11,10 @@ const OKR = require('../models/OKR');
 const { requireAuth, requireHRAdmin, requireManager } = require('../middleware/rbac');
 const documentExtractionService = require('../services/documentExtractionService');
 const appraisalAIService = require('../services/appraisalAIService');
+const {
+  getStatusAfterManagerReview,
+  getStatusAfterDiscussion
+} = require('../services/appraisalWorkflowService');
 const notificationService = require('../services/notificationService');
 const { findManagerForEmployee } = require('../services/idpService');
 const User = require('../models/User');
@@ -429,7 +433,7 @@ async function syncCycleProgress(cycleId) {
   );
 
   const selfStatuses = ['not_started', 'goal_setting', 'goal_approval_pending', 'self_assessment_pending', 'self_assessment_in_progress'];
-  const managerStatuses = ['self_assessment_submitted', 'manager_review_pending', 'manager_review_in_progress'];
+  const managerStatuses = ['self_assessment_submitted', 'manager_review_pending', 'manager_review_in_progress', 'manager_review_submitted', 'discussion_scheduled'];
   const calibrationStatuses = ['manager_review_submitted', 'calibration_pending', 'calibration_in_progress'];
   const finalStatuses = ['calibration_completed', 'final_review_pending', 'discussion_scheduled', 'discussion_completed', ...APPRAISAL_COMPLETED_STATUSES];
 
@@ -2561,7 +2565,7 @@ router.post('/:appraisalId/manager-review', requireAuth, requireManager, async (
     if (submit) {
       appraisal.managerReview.submittedAt = new Date();
       const calibrationRequired = isCalibrationEnabledForCycle(appraisal.cycleId);
-      appraisal.status = calibrationRequired ? 'calibration_pending' : 'final_review_pending';
+      appraisal.status = getStatusAfterManagerReview();
 
       // Flag rating gaps for follow-up/arbitration in final review
       const selfRating = appraisal.selfAssessment?.overallSelfRating;
@@ -2887,7 +2891,7 @@ router.get('/:appraisalId/documents/:documentId', requireAuth, async (req, res) 
 // Update discussion notes
 router.put('/:appraisalId/discussion', requireAuth, requireManager, async (req, res) => {
   try {
-    const appraisal = await Appraisal.findById(req.params.appraisalId);
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId');
     if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
 
     // Check permission
@@ -2904,8 +2908,13 @@ router.put('/:appraisalId/discussion', requireAuth, requireManager, async (req, 
     if (req.body.meetingLink) appraisal.discussion.meetingLink = req.body.meetingLink;
 
     if (req.body.markCompleted) {
-      appraisal.status = 'discussion_completed';
+      const calibrationRequired = isCalibrationEnabledForCycle(appraisal.cycleId);
+      appraisal.status = getStatusAfterDiscussion({ calibrationRequired });
       appraisal.discussion.completedDate = new Date();
+      appraisal.addAuditLog('discussion_completed', req.session.user, {
+        nextStatus: appraisal.status,
+        calibrationRequired
+      });
     }
 
     await appraisal.save();

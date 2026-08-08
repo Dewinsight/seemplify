@@ -315,7 +315,7 @@ export default function ManagerReviewPage() {
         submit: true
       });
       mutate();
-      setSnackbar({ open: true, message: 'Manager review submitted successfully!', severity: 'success' });
+      setSnackbar({ open: true, message: 'Review submitted. The performance discussion is next.', severity: 'success' });
       setTimeout(() => router.push(`/appraisals/${appraisalId}`), 1500);
     } catch (error) {
       console.error('Submit error:', error);
@@ -445,7 +445,7 @@ export default function ManagerReviewPage() {
           <Typography variant="subtitle1" fontWeight={600}>Review Already Submitted</Typography>
           <Typography variant="body2">
             You submitted your review on {new Date(appraisal.managerReview.submittedAt).toLocaleDateString()}.
-            The appraisal is now pending calibration or final review.
+            The employee and manager can now hold and record the performance discussion.
           </Typography>
         </Alert>
         <Button variant="outlined" startIcon={<ArrowBack />} onClick={() => router.push('/appraisals')}>
@@ -1208,7 +1208,7 @@ export default function ManagerReviewPage() {
       <Alert severity="info" sx={{ mt: 3 }}>
         <Typography variant="subtitle2" fontWeight={600}>Ready to Submit?</Typography>
         <Typography variant="body2">
-          Once submitted, this review will move to the calibration phase (if enabled) or directly to the final review stage.
+          Once submitted, the next step is the performance discussion. Calibration follows only when it is enabled for this cycle.
         </Typography>
       </Alert>
     </Box>

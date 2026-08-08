@@ -244,6 +244,16 @@ export default function AppraisalDetailPage() {
                 Finalize Appraisal
               </Button>
             )}
+
+            {isEmployee && appraisal.status === 'completed' && !appraisal.discussion?.employeeAcknowledged && (
+              <Button
+                variant="contained"
+                startIcon={<CheckCircle />}
+                onClick={() => router.push(`/appraisals/${appraisalId}/discussion`)}
+              >
+                Review &amp; Acknowledge Outcome
+              </Button>
+            )}
           </Box>
         </Box>
       </Box>

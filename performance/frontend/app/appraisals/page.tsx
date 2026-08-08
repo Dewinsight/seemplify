@@ -88,6 +88,7 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'info' | 
 const workflowSteps = [
   { key: 'selfAssessment', label: 'Self-Assessment' },
   { key: 'managerReview', label: 'Manager Review' },
+  { key: 'discussion', label: 'Discussion' },
   { key: 'calibration', label: 'Calibration' },
   { key: 'finalReview', label: 'Final Review' },
 ];
@@ -191,7 +192,7 @@ export default function AppraisalsPage() {
   };
 
   const getStepStatus = (status: string, stepKey: string): 'completed' | 'active' | 'pending' => {
-    const stepOrder = ['selfAssessment', 'managerReview', 'calibration', 'finalReview'] as const;
+    const stepOrder = ['selfAssessment', 'managerReview', 'discussion', 'calibration', 'finalReview'] as const;
 
     const activeStepIndex = (() => {
       if (!status) return -1;
@@ -202,8 +203,9 @@ export default function AppraisalsPage() {
       if (status.startsWith('self_assessment')) return 0;
       if (status.startsWith('manager_review')) return 1;
 
-      if (status.startsWith('discussion') || status.startsWith('calibration') || status === 'manager_review_submitted') return 2;
-      if (status === 'final_review_pending') return 3;
+      if (status.startsWith('discussion') || status === 'manager_review_submitted') return 2;
+      if (status.startsWith('calibration')) return 3;
+      if (status === 'final_review_pending') return 4;
 
       return -1;
     })();
@@ -446,6 +448,18 @@ export default function AppraisalsPage() {
                     sx={{ ml: 1 }}
                   >
                     {appraisal.status === 'manager_review_in_progress' ? 'Continue' : 'Start'} Review
+                  </Button>
+                )}
+
+                {(appraisal.status === 'manager_review_submitted' || appraisal.status === 'discussion_scheduled' || appraisal.status === 'discussion_completed') && (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={<Chat />}
+                    onClick={() => router.push(`/appraisals/${appraisal._id}/discussion`)}
+                    sx={{ ml: 1 }}
+                  >
+                    {appraisal.status === 'discussion_completed' ? 'View Discussion' : 'Open Discussion'}
                   </Button>
                 )}
 

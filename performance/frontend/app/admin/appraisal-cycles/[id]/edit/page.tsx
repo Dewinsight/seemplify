@@ -6,7 +6,6 @@ import { useUserContext, useDirectReports } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
     Alert,
-    AlertTitle,
     Box,
     Button,
     Card,
@@ -23,6 +22,9 @@ import {
     MenuItem,
     Select,
     Slider,
+    Step,
+    StepLabel,
+    Stepper,
     Stack,
     Switch,
     Tab,
@@ -172,7 +174,7 @@ export default function EditAppraisalCyclePage() {
     const params = useParams();
     const { isHRAdmin } = useUserContext();
     const { managedTeams } = useDirectReports();
-    const cycleId = params.id as string;
+    const cycleId = (params.id as string) || 'new';
     const isNewCycle = cycleId === 'new';
 
     const [loading, setLoading] = useState(true);
@@ -186,6 +188,7 @@ export default function EditAppraisalCyclePage() {
     const [employeeSearch, setEmployeeSearch] = useState('');
     const [participantView, setParticipantView] = useState<'byManager' | 'list'>('byManager');
     const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
+    const [setupStep, setSetupStep] = useState(0);
 
     useEffect(() => {
         const fetchCycle = async () => {
@@ -403,6 +406,43 @@ export default function EditAppraisalCyclePage() {
         }
     };
 
+    const handlePrimaryAction = () => {
+        setSaveError('');
+
+        if (!isNewCycle) {
+            handleSave();
+            return;
+        }
+
+        if (setupStep === 0) {
+            if (!formData.name.trim()) {
+                setSaveError('Give this review cycle a clear name, such as “2026 Mid-Year Review”.');
+                return;
+            }
+            if (!formData.periodStart || !formData.periodEnd) {
+                setSaveError('Choose the performance period this review covers.');
+                return;
+            }
+            if (new Date(formData.periodStart) > new Date(formData.periodEnd)) {
+                setSaveError('The performance period must end after it starts.');
+                return;
+            }
+            setSetupStep(1);
+            return;
+        }
+
+        if (setupStep === 1) {
+            if (selectedParticipants.length === 0) {
+                setSaveError('Choose at least one employee with an assigned line manager.');
+                return;
+            }
+            setSetupStep(2);
+            return;
+        }
+
+        handleSave();
+    };
+
     if (loading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -443,21 +483,31 @@ export default function EditAppraisalCyclePage() {
                         </Typography>
                     </Box>
                 </Box>
-                <Button
-                    variant="contained"
-                    startIcon={saving ? <CircularProgress size={18} color="inherit" /> : (isNewCycle ? <RocketLaunch /> : <Save />)}
-                    onClick={handleSave}
-                    disabled={saving || (isNewCycle && loadingEmployees)}
-                >
-                    {isNewCycle ? 'Create And Launch' : 'Save Changes'}
-                </Button>
+                <Stack direction="row" spacing={1}>
+                    {isNewCycle && setupStep > 0 && (
+                        <Button variant="outlined" onClick={() => setSetupStep((current) => current - 1)} disabled={saving}>
+                            Previous
+                        </Button>
+                    )}
+                    <Button
+                        variant="contained"
+                        startIcon={saving ? <CircularProgress size={18} color="inherit" /> : (isNewCycle && setupStep === 2 ? <RocketLaunch /> : (!isNewCycle ? <Save /> : undefined))}
+                        onClick={handlePrimaryAction}
+                        disabled={saving || (isNewCycle && loadingEmployees)}
+                    >
+                        {!isNewCycle ? 'Save Changes' : setupStep === 2 ? 'Launch Review Cycle' : 'Continue'}
+                    </Button>
+                </Stack>
             </Box>
 
             {isNewCycle && (
-                <Alert severity="info" sx={{ mb: 3 }}>
-                    <AlertTitle>New cycle flow</AlertTitle>
-                    Step 1: define the cycle. Step 2: choose the employees who should participate. Step 3: create it once and the cycle goes active immediately.
-                </Alert>
+                <Box sx={{ mb: 3, px: { xs: 0, md: 1 } }}>
+                    <Stepper activeStep={setupStep}>
+                        <Step><StepLabel>Review period</StepLabel></Step>
+                        <Step><StepLabel>People</StepLabel></Step>
+                        <Step><StepLabel>Confirm</StepLabel></Step>
+                    </Stepper>
+                </Box>
             )}
 
             {saveError && (
@@ -467,8 +517,8 @@ export default function EditAppraisalCyclePage() {
             )}
 
             <Grid container spacing={3}>
-                <Grid size={{ xs: 12, lg: 8 }}>
-                    <Card sx={{ mb: 3 }}>
+                <Grid size={{ xs: 12, lg: isNewCycle ? 12 : 8 }} sx={{ display: isNewCycle && setupStep === 2 ? 'none' : 'block' }}>
+                    {(!isNewCycle || setupStep === 0) && <Card sx={{ mb: 3 }}>
                         <CardContent>
                             <Typography variant="h6" gutterBottom>Cycle Details</Typography>
                             <Grid container spacing={2}>
@@ -526,9 +576,9 @@ export default function EditAppraisalCyclePage() {
                                 </Grid>
                             </Grid>
                         </CardContent>
-                    </Card>
+                    </Card>}
 
-                    <Card sx={{ mb: 3 }}>
+                    {!isNewCycle && <Card sx={{ mb: 3 }}>
                         <CardContent>
                             <Typography variant="h6" gutterBottom>Phase Timeline</Typography>
                             <Typography variant="body2" color="text.secondary" paragraph>
@@ -585,9 +635,34 @@ export default function EditAppraisalCyclePage() {
                                 ))}
                             </Grid>
                         </CardContent>
-                    </Card>
+                    </Card>}
 
-                    {isNewCycle && (
+                    {isNewCycle && setupStep === 0 && (
+                        <Card variant="outlined">
+                            <CardContent>
+                                <Typography variant="h6" gutterBottom>How the review will run</Typography>
+                                <Stack divider={<Divider flexItem />}>
+                                    {[
+                                        ['1', 'Targets and expectations', 'Employees and managers maintain measurable OKRs before the review. This cycle assesses progress and evidence from that performance period.'],
+                                        ['2', 'AI-guided employee reflection', 'The AI coach asks about target outcomes, evidence, achievements, challenges, and development goals, then drafts a self-assessment for the employee to approve.'],
+                                        ['3', 'Line-manager review', 'The manager sees the employee reflection, target evidence, and AI-generated prompts before giving an independent rating and written review.'],
+                                        ['4', 'Performance discussion', 'Employee and manager meet, record agreed strengths, improvements, support, and next steps.'],
+                                        ['5', 'Calibration and final outcome', 'Calibration is completed when enabled, then the final rating and development actions are confirmed.']
+                                    ].map(([number, title, copy]) => (
+                                        <Box key={number} sx={{ display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', gap: 1.5, py: 1.5 }}>
+                                            <Typography color="text.secondary" fontWeight={700}>{number}</Typography>
+                                            <Box>
+                                                <Typography variant="body2" fontWeight={700}>{title}</Typography>
+                                                <Typography variant="body2" color="text.secondary">{copy}</Typography>
+                                            </Box>
+                                        </Box>
+                                    ))}
+                                </Stack>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {isNewCycle && setupStep === 1 && (
                         <Card>
                             <CardContent>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap', mb: 2 }}>
@@ -788,15 +863,33 @@ export default function EditAppraisalCyclePage() {
                     )}
                 </Grid>
 
-                <Grid size={{ xs: 12, lg: 4 }}>
+                {(!isNewCycle || setupStep === 2) && <Grid size={{ xs: 12, lg: isNewCycle ? 12 : 4 }}>
                     {isNewCycle ? (
                         <Card sx={{ mb: 3 }}>
                             <CardContent>
-                                <Typography variant="h6" gutterBottom>Launch Summary</Typography>
+                                <Typography variant="h6" gutterBottom>Confirm and launch</Typography>
                                 <Stack spacing={2}>
+                                    <Grid container spacing={2}>
+                                        <Grid size={{ xs: 12, md: 4 }}>
+                                            <Typography variant="body2" color="text.secondary">Cycle</Typography>
+                                            <Typography fontWeight={700}>{formData.name}</Typography>
+                                            <Typography variant="body2" color="text.secondary">{cycleTypeLabels[formData.cycleType]}</Typography>
+                                        </Grid>
+                                        <Grid size={{ xs: 12, md: 4 }}>
+                                            <Typography variant="body2" color="text.secondary">Performance period</Typography>
+                                            <Typography fontWeight={700}>{formData.periodStart} to {formData.periodEnd}</Typography>
+                                        </Grid>
+                                        <Grid size={{ xs: 12, md: 4 }}>
+                                            <Typography variant="body2" color="text.secondary">Participants</Typography>
+                                            <Typography fontWeight={700}>{selectionSummary.selected} employee{selectionSummary.selected === 1 ? '' : 's'}</Typography>
+                                        </Grid>
+                                    </Grid>
+                                    <Divider />
                                     <Box>
-                                        <Typography variant="overline" color="text.secondary">Selected Participants</Typography>
-                                        <Typography variant="h3" fontWeight={700}>{selectionSummary.selected}</Typography>
+                                        <Typography variant="body2" fontWeight={700} gutterBottom>Selected employees</Typography>
+                                        <Typography variant="body2" color="text.secondary">
+                                            {selectedParticipants.map((employee) => employee.name).join(', ')}
+                                        </Typography>
                                     </Box>
                                     <Divider />
                                     <Stack spacing={1}>
@@ -933,7 +1026,7 @@ export default function EditAppraisalCyclePage() {
                             </Box>
                         </CardContent>
                     </Card>
-                </Grid>
+                </Grid>}
             </Grid>
         </Box>
     );

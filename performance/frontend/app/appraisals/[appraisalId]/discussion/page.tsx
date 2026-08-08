@@ -139,7 +139,7 @@ export default function DiscussionPage() {
                         </Button>
                     </Box>
                 )}
-                {!isManager && appraisal.status === 'discussion_completed' && !appraisal.discussion?.employeeAcknowledged && (
+                {!isManager && ['discussion_completed', 'completed'].includes(appraisal.status) && !appraisal.discussion?.employeeAcknowledged && (
                     <Button
                         variant="contained"
                         color="success"
@@ -147,7 +147,7 @@ export default function DiscussionPage() {
                         onClick={handleAcknowledge}
                         disabled={saving}
                     >
-                        Acknowledge & Sign Off
+                        Acknowledge Final Outcome
                     </Button>
                 )}
             </Box>
