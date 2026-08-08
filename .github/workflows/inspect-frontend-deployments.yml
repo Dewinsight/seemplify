@@ -1,0 +1,52 @@
+name: Inspect Frontend Deployments
+
+on:
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    name: Inspect ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: identity-provider
+            app_id_secret: IDENTITY_PROVIDER_APP_ID
+          - name: payroll-frontend
+            app_id_secret: PAYROLL_FRONTEND_APP_ID
+          - name: leave-frontend
+            app_id_secret: LEAVE_FRONTEND_APP_ID
+          - name: time-attendance-frontend
+            app_id_secret: TIME_ATTENDANCE_FRONTEND_APP_ID
+          - name: performance-frontend
+            app_id_secret: PERFORMANCE_FRONTEND_APP_ID
+
+    steps:
+      - name: Read safe Dokploy status
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          APP_ID: ${{ secrets[matrix.app_id_secret] }}
+        run: |
+          response=$(curl -fsS \
+            -H "x-api-key: ${DOKPLOY_TOKEN}" \
+            -H "accept: application/json" \
+            "${DOKPLOY_URL%/}/api/application.one?applicationId=${APP_ID}")
+
+          printf '%s' "$response" | jq '{
+            name,
+            status,
+            applicationStatus,
+            buildType,
+            sourceType,
+            branch,
+            buildPath,
+            updatedAt,
+            deployments: ((.deployments // []) | map({
+              status,
+              createdAt,
+              updatedAt,
+              errorMessage
+            }) | .[0:5])
+          }'
