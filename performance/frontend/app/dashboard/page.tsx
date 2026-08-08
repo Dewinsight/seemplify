@@ -284,14 +284,14 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
         )}
 
         {/* Welcome Header */}
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-rose-500/20 rounded-2xl blur-3xl opacity-50 dark:opacity-100"></div>
-          <div className="relative glass-card rounded-2xl p-0 overflow-hidden">
+        <div className="border-b border-border pb-5">
+          <div>
 
             {/* Top Section - Welcome + App Hub */}
-            <div className="flex justify-between items-center p-6 pb-4 border-b border-border">
+            <div className="flex justify-between items-center pb-4">
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-zinc-900 via-zinc-700 to-zinc-500 dark:from-white dark:via-zinc-100 dark:to-zinc-200 bg-clip-text text-transparent flex items-center gap-2">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-purple-600 dark:text-purple-400">Performance overview</div>
+                <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
                   Welcome back, {userName.split(' ')[0]}
                   <Sparkles className="h-6 w-6 text-purple-500 dark:text-purple-400" />
                 </h1>
@@ -303,7 +303,7 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
                 href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-purple-500/40"
               >
                 <LayoutGrid className="h-4 w-4" />
                 App Hub
@@ -312,16 +312,16 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
 
             {/* Bottom Section - Team Selector */}
             {showTeamSwitcher && (
-              <div className="flex items-center gap-4 px-6 py-4 bg-muted/30 border-t border-border">
+              <div className="flex items-center gap-4 pt-4 border-t border-border">
                 <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center">
+                  <div className="h-8 w-8 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center">
                     <Users className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                   </div>
                   <span className="text-sm text-muted-foreground hidden sm:inline">Viewing:</span>
                 </div>
 
                 {selectedTeamView === 'all' && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-700 dark:text-purple-200 text-sm font-medium">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-700 dark:text-purple-200 text-sm font-medium">
                     <Users className="h-3.5 w-3.5" />
                     All {orgTeams.length} Teams
                   </span>

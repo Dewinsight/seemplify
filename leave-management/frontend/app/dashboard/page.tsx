@@ -95,14 +95,14 @@ export default function DashboardPage() {
 
   return (
     <Layout>
-      <div className="space-y-8">
+      <div className="space-y-7">
         {/* Welcome header */}
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-card dark:bg-zinc-900/80 backdrop-blur-xl rounded-2xl border border-border dark:border-zinc-700/50 p-8 shadow-2xl shadow-purple-500/10">
+        <div className="border-b border-border pb-6">
+          <div>
             <div className="flex justify-between items-start flex-wrap gap-4">
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground via-foreground/80 to-muted-foreground dark:from-white dark:via-zinc-100 dark:to-zinc-200 bg-clip-text text-transparent">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-purple-600 dark:text-purple-400">Leave overview</div>
+                <h1 className="text-3xl font-semibold tracking-tight text-foreground">
                   Welcome back, {user?.name?.split(' ')[0] || 'User'} 👋
                 </h1>
                 <p className="text-muted-foreground mt-2">
@@ -113,7 +113,7 @@ export default function DashboardPage() {
                 href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-purple-500/40"
               >
                 <LayoutGrid className="h-4 w-4" />
                 App Hub
@@ -126,36 +126,33 @@ export default function DashboardPage() {
         {summary && <BalanceSummary summary={summary} />}
 
         {/* Quick actions */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-[1.15fr_0.9fr_1fr_0.95fr]">
           <Link
             href="/leave-requests/new"
-            className="group flex flex-col items-center p-6 bg-card dark:bg-zinc-900/90 rounded-xl shadow-lg border border-border dark:border-zinc-700/50 hover:border-indigo-500/50 hover:shadow-indigo-500/10 hover:scale-105 transition-all duration-200 relative overflow-hidden"
+            className="group flex flex-col items-center rounded-xl border border-border bg-card p-6 transition-colors hover:border-indigo-500/50"
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/0 to-purple-500/0 group-hover:from-indigo-500/10 group-hover:to-purple-500/10 transition-all"></div>
-            <div className="relative h-14 w-14 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center mb-3 shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform">
-              <FileText className="h-7 w-7 text-white" />
+            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-indigo-500/25 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300">
+              <FileText className="h-6 w-6" />
             </div>
             <span className="relative text-sm font-semibold text-foreground dark:text-zinc-100">Request Leave</span>
           </Link>
 
           <Link
             href="/leave-requests"
-            className="group flex flex-col items-center p-6 bg-card dark:bg-zinc-900/90 rounded-xl shadow-lg border border-border dark:border-zinc-700/50 hover:border-purple-500/50 hover:shadow-purple-500/10 hover:scale-105 transition-all duration-200 relative overflow-hidden"
+            className="group flex flex-col items-center rounded-xl border border-border bg-card p-6 transition-colors hover:border-purple-500/50"
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/0 to-pink-500/0 group-hover:from-purple-500/10 group-hover:to-pink-500/10 transition-all"></div>
-            <div className="relative h-14 w-14 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mb-3 shadow-lg shadow-purple-500/20 group-hover:scale-110 transition-transform">
-              <TrendingUp className="h-7 w-7 text-white" />
+            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-purple-500/25 bg-purple-500/10 text-purple-600 dark:text-purple-300">
+              <TrendingUp className="h-6 w-6" />
             </div>
             <span className="relative text-sm font-semibold text-foreground dark:text-zinc-100">My Requests</span>
           </Link>
 
           <Link
             href="/approvals"
-            className="group flex flex-col items-center p-6 bg-card dark:bg-zinc-900/90 rounded-xl shadow-lg border border-border dark:border-zinc-700/50 hover:border-green-500/50 hover:shadow-green-500/10 hover:scale-105 transition-all duration-200 relative overflow-hidden"
+            className="group flex flex-col items-center rounded-xl border border-border bg-card p-6 transition-colors hover:border-emerald-500/50"
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-green-500/0 to-emerald-500/0 group-hover:from-green-500/10 group-hover:to-emerald-500/10 transition-all"></div>
-            <div className="relative h-14 w-14 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mb-3 shadow-lg shadow-green-500/20 group-hover:scale-110 transition-transform">
-              <CheckSquare className="h-7 w-7 text-white" />
+            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+              <CheckSquare className="h-6 w-6" />
             </div>
             <span className="relative text-sm font-semibold text-foreground dark:text-zinc-100">Approvals</span>
             {pendingApprovals.length > 0 && (
@@ -167,11 +164,10 @@ export default function DashboardPage() {
 
           <Link
             href="/calendar"
-            className="group flex flex-col items-center p-6 bg-card dark:bg-zinc-900/90 rounded-xl shadow-lg border border-border dark:border-zinc-700/50 hover:border-pink-500/50 hover:shadow-pink-500/10 hover:scale-105 transition-all duration-200 relative overflow-hidden"
+            className="group flex flex-col items-center rounded-xl border border-border bg-card p-6 transition-colors hover:border-pink-500/50"
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-pink-500/0 to-purple-500/0 group-hover:from-pink-500/10 group-hover:to-purple-500/10 transition-all"></div>
-            <div className="relative h-14 w-14 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center mb-3 shadow-lg shadow-pink-500/20 group-hover:scale-110 transition-transform">
-              <Calendar className="h-7 w-7 text-white" />
+            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-pink-500/25 bg-pink-500/10 text-pink-600 dark:text-pink-300">
+              <Calendar className="h-6 w-6" />
             </div>
             <span className="relative text-sm font-semibold text-foreground dark:text-zinc-100">Calendar</span>
           </Link>

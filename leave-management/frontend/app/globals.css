@@ -241,9 +241,65 @@ html {
 }
 
 main :where(.rounded-xl, .rounded-2xl).border {
-  box-shadow: 0 1px 2px rgb(29 28 26 / 0.04), 0 6px 18px rgb(29 28 26 / 0.04);
+  box-shadow: 0 1px 2px rgb(29 28 26 / 0.06), 0 4px 8px rgb(29 28 26 / 0.05);
 }
 
 .dark main :where(.rounded-xl, .rounded-2xl).border {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+/* Shared Seemplify contrast contract */
+html:not(.dark) {
+  --background-start-rgb: 241, 239, 233;
+  --background-end-rgb: 241, 239, 233;
+  --background: 42 22% 93%;
+  --foreground: 40 6% 9%;
+  --card: 40 60% 99%;
+  --card-foreground: 40 6% 9%;
+  --popover: 40 60% 99%;
+  --popover-foreground: 40 6% 9%;
+  --muted: 40 24% 94%;
+  --muted-foreground: 36 6% 36%;
+  --accent: 40 24% 94%;
+  --accent-foreground: 40 6% 14%;
+  --border: 39 14% 77%;
+  --input: 39 14% 75%;
+  --primary: 256 80% 60%;
+  --ring: 256 80% 60%;
+}
+
+.dark {
+  --background-start-rgb: 15, 14, 19;
+  --background-end-rgb: 15, 14, 19;
+  --background: 255 15% 6%;
+  --card: 258 17% 10%;
+  --popover: 258 17% 10%;
+  --border: 259 12% 20%;
+  --input: 259 12% 20%;
+}
+
+html:not(.dark) body { background: #f1efe9; color: #191816; }
+html:not(.dark) nav { background: #f1efe9 !important; border-color: #cbc6bc !important; }
+html:not(.dark) .glass,
+html:not(.dark) .glass-card,
+html:not(.dark) .glass-card:hover,
+html:not(.dark) main :where(.rounded-xl, .rounded-2xl).border {
+  background: #fffdfa;
+  border-color: #cbc6bc;
+  box-shadow: 0 1px 2px rgba(29, 28, 26, 0.07), 0 4px 8px rgba(29, 28, 26, 0.05);
+}
+html:not(.dark) .gradient-text,
+html:not(.dark) .gradient-text-primary {
+  background: none;
+  color: #191816;
+  -webkit-text-fill-color: currentColor;
+}
+.dark body { background: #0f0e13; }
+.dark nav { background: #0f0e13 !important; border-color: #312d39 !important; }
+.dark .glass,
+.dark .glass-card,
+.dark .glass-card:hover,
+.dark main :where(.rounded-xl, .rounded-2xl).border {
+  background: #18161f;
+  border-color: #312d39;
 }

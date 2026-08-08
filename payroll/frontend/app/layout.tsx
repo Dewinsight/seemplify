@@ -267,12 +267,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         <PayrollViewModeProvider value={providerValue}>
           <div className="min-h-screen">
-            <nav className="fixed top-0 left-0 right-0 z-50 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">
+            <nav className="fixed top-0 left-0 right-0 z-50 border-b border-zinc-800/60 bg-zinc-950">
               <div className="mx-auto px-4 lg:px-8">
                 <div className="flex h-16 items-center justify-between">
                   <Link href="https://seemplifyai.com" className="flex items-center gap-3 group">
-                    <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-500 flex items-center justify-center shadow-lg shadow-amber-500/20 transition-transform duration-300 group-hover:scale-105">
-                      <DollarSign className="h-5 w-5 text-white" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-amber-500/25 bg-amber-500/10 text-amber-500">
+                      <DollarSign className="h-5 w-5" />
                     </div>
                     <div className="hidden sm:block">
                       <div className="text-sm font-semibold text-white">Payroll Management</div>

@@ -112,12 +112,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <div className="relative">
-        <div className="absolute inset-0 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-yellow-500/20 rounded-2xl blur-3xl"></div>
-        <div className="relative bg-gradient-to-br from-zinc-900/80 to-zinc-800/80 backdrop-blur-xl rounded-2xl border border-zinc-700/50 p-8 shadow-2xl shadow-amber-500/10">
+      <div className="border-b border-zinc-700/50 pb-6">
+        <div>
           <div className="flex justify-between items-start flex-wrap gap-4">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-zinc-100 to-zinc-200 bg-clip-text text-transparent">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-amber-600 dark:text-amber-400">Payroll overview</div>
+              <h1 className="text-3xl font-semibold tracking-tight text-zinc-100">
                 Welcome back, {greetingName}
               </h1>
               <p className="text-zinc-400 mt-2">
@@ -135,7 +135,7 @@ export default function Dashboard() {
               href={process.env.NEXT_PUBLIC_IDP_URL || 'http://localhost:4000'}
               target="_blank"
               rel="noopener noreferrer"
-              className="group inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-500/20 transition-all hover:shadow-amber-500/30 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/50 px-4 py-2.5 text-sm font-semibold text-zinc-100 transition-colors hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
             >
               <LayoutGrid className="h-4 w-4" />
               App Hub

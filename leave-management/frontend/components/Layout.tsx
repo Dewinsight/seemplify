@@ -72,13 +72,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <div className="bg-noise" />
 
       {/* Top Navbar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background">
         <div className="mx-auto px-4 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <Link href="https://seemplifyai.com" className="flex items-center gap-3 group">
-              <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20 transition-transform duration-300 group-hover:scale-105">
-                <Calendar className="h-5 w-5 text-white" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-purple-500/25 bg-purple-500/10 text-purple-600 dark:text-purple-300">
+                <Calendar className="h-5 w-5" />
               </div>
               <div className="hidden sm:block">
                 <div className="text-sm font-semibold text-foreground">Leave Management</div>
@@ -153,7 +153,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
               {/* Request Leave Button */}
               <Link href="/leave-requests/new" className="hidden md:block">
-                <Button className="rounded-lg bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shadow-lg shadow-purple-500/20 transition-all duration-300">
+                <Button className="rounded-lg bg-purple-600 text-white shadow-none hover:bg-purple-700">
                   Request Leave
                 </Button>
               </Link>

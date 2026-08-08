@@ -137,7 +137,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     return (
       <div className={cn(
         "min-h-screen transition-colors duration-300",
-        isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-[#e9e7e2]"
+        isDarkMode ? "bg-[#0f0e13]" : "bg-[#f1efe9]"
       )}>
         {isDarkMode && <div className="bg-noise" />}
         <div className="relative mx-auto px-4 py-16 lg:px-8 max-w-3xl">
@@ -189,24 +189,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className={cn(
       "min-h-screen transition-colors duration-300",
-      isDarkMode ? "bg-[rgb(var(--background-start-rgb))]" : "bg-[#e9e7e2]"
+        isDarkMode ? "bg-[#0f0e13]" : "bg-[#f1efe9]"
     )}>
       {/* Background Noise */}
       {isDarkMode && <div className="bg-noise" />}
 
       {/* Top Navbar */}
       <nav className={cn(
-        "fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl transition-colors duration-300",
+        "fixed top-0 left-0 right-0 z-50 border-b transition-colors duration-300",
         isDarkMode
-          ? "border-zinc-800/40 bg-zinc-950/80"
-          : "border-gray-200/60 bg-white/80"
+          ? "border-[#312d39] bg-[#0f0e13]"
+          : "border-[#cbc6bc] bg-[#f1efe9]"
       )}>
         <div className="mx-auto px-4 lg:px-8">
           <div className="flex h-[4.25rem] items-center justify-between">
             {/* Logo */}
             <Link href="https://seemplifyai.com" className="flex items-center gap-3 group">
-              <div className="relative h-10 w-10 rounded-xl bg-gradient-to-br from-teal-500 via-cyan-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-teal-500/20 transition-transform duration-300 group-hover:scale-105">
-                <Sparkles className="h-5 w-5 text-white" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-teal-500/25 bg-teal-500/10 text-teal-700 dark:text-teal-300">
+                <Sparkles className="h-5 w-5" />
               </div>
               <div className="hidden sm:block">
                 <div className={cn(

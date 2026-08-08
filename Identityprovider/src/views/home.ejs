@@ -806,9 +806,9 @@
       display: none;
     }
     [data-theme="light"] .top-nav {
-      background: #f8f7f4;
-      border-color: #d2cec6;
-      box-shadow: 0 2px 8px rgba(43, 39, 33, 0.08);
+      background: #f1efe9;
+      border-color: #cbc6bc;
+      box-shadow: none;
       backdrop-filter: none;
     }
     [data-theme="light"] .section-title::after {
@@ -1248,25 +1248,36 @@
     }
     [data-theme="light"] .hub-content::before { display: none; }
     .hub-page-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 24px;
-      margin-bottom: 30px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr);
+      align-items: center;
+      gap: clamp(36px, 7vw, 96px);
+      margin-bottom: 34px;
+      padding: 28px 0 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .hub-page-header__eyebrow {
+      margin-bottom: 12px;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
     }
     .hub-page-header h1 {
       margin: 0;
       color: var(--text);
-      font-size: 28px;
-      line-height: 1.2;
-      letter-spacing: -0.025em;
+      font-size: clamp(36px, 4.2vw, 52px);
+      font-weight: 600;
+      line-height: 1.05;
+      letter-spacing: -0.045em;
     }
     .hub-page-header p {
-      max-width: 620px;
-      margin: 7px 0 0;
+      max-width: 650px;
+      margin: 16px 0 0;
       color: var(--muted);
-      font-size: 14px;
-      line-height: 1.55;
+      font-size: 15px;
+      line-height: 1.65;
     }
     .hub-notification-link {
       display: inline-flex;
@@ -1306,12 +1317,13 @@
       grid-template-columns: 36px minmax(0, 1fr) auto;
       align-items: center;
       gap: 10px;
-      min-width: 260px;
-      max-width: 340px;
-      min-height: 56px;
-      padding: 8px 9px;
+      width: 100%;
+      min-width: 280px;
+      max-width: 390px;
+      min-height: 112px;
+      padding: 18px;
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 14px;
       background: var(--panel-solid);
       text-align: left;
     }
@@ -1547,37 +1559,36 @@
       background: transparent;
     }
     [data-theme="light"] .hub-page-header {
-      padding-bottom: 22px;
-      border-bottom: 1px solid #d2cec6;
+      border-bottom-color: #cbc6bc;
     }
     [data-theme="light"] .hub-organization {
-      background: #fbfaf7;
-      border-color: #cbc7bf;
-      box-shadow: 0 1px 2px rgba(43, 39, 33, 0.05);
+      background: #fffdfa;
+      border-color: #cbc6bc;
+      box-shadow: 0 1px 2px rgba(43, 39, 33, 0.06);
     }
     [data-theme="light"] .hub-notification-link {
-      background: #f8f7f4;
-      border-color: #cbc7bf;
+      background: #fffdfa;
+      border-color: #cbc6bc;
     }
     [data-theme="light"] .app-card {
-      background: #fbfaf7;
-      border-color: #d2cec6;
-      box-shadow: 0 1px 2px rgba(43, 39, 33, 0.06), 0 2px 8px rgba(43, 39, 33, 0.05);
+      background: #fffdfa;
+      border-color: #cbc6bc;
+      box-shadow: 0 1px 2px rgba(43, 39, 33, 0.07), 0 4px 8px rgba(43, 39, 33, 0.05);
     }
     [data-theme="light"] .app-card:hover {
-      background: #ffffff;
-      border-color: #aaa59c;
-      box-shadow: 0 2px 8px rgba(43, 39, 33, 0.1);
+      background: #fffdfa;
+      border-color: #aaa399;
+      box-shadow: 0 2px 6px rgba(43, 39, 33, 0.09);
     }
     [data-theme="light"] .app-card--primary,
     [data-theme="light"] .app-card--primary:hover {
-      background: #fbfaf7;
-      border-color: color-mix(in srgb, var(--app-color, var(--brand)) 56%, #d2cec6);
-      box-shadow: inset 3px 0 color-mix(in srgb, var(--app-color, var(--brand)) 78%, transparent), 0 2px 8px rgba(43, 39, 33, 0.07);
+      background: #fffdfa;
+      border-color: color-mix(in srgb, var(--app-color, var(--brand)) 48%, #cbc6bc);
+      box-shadow: inset 3px 0 color-mix(in srgb, var(--app-color, var(--brand)) 78%, transparent), 0 2px 6px rgba(43, 39, 33, 0.06);
     }
     [data-theme="light"] .app-card--coming-soon {
-      background: #e3e0da;
-      border-color: #c9c5bd;
+      background: #e9e5de;
+      border-color: #c9c3b8;
     }
     [data-theme="light"] .app-card__meta {
       border-top-color: #dedad2;
@@ -1639,7 +1650,7 @@
     .attendance-action:disabled { opacity: .5; cursor: wait; }
     .attendance-detail { color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 650; white-space: nowrap; }
     .attendance-detail:hover { color: var(--text); }
-    [data-theme="light"] .attendance-strip { background: #f8f6f1; border-color: #d2cec6; border-left-color: #0f766e; }
+    [data-theme="light"] .attendance-strip { background: #fffdfa; border-color: #cbc6bc; border-left-color: #0f766e; }
     [data-theme="light"] .attendance-strip[data-reminder="true"] { border-left-color: #b45309; }
     .app-card-shell { position: relative; min-width: 0; }
     .app-card-shell > .app-card { height: 100%; }
@@ -1663,14 +1674,17 @@
         margin-top: 24px;
       }
       .hub-page-header {
+        grid-template-columns: 1fr;
+        gap: 22px;
         align-items: stretch;
         margin-bottom: 22px;
+        padding-top: 16px;
       }
-      .hub-page-header h1 { font-size: 24px; }
+      .hub-page-header h1 { font-size: 34px; }
       .hub-page-header p { font-size: 13px; }
       .hub-notification-link { flex: 0 0 auto; }
       .hub-page-header__actions { gap: 12px; }
-      .hub-organization { min-width: 240px; }
+      .hub-organization { min-width: 0; max-width: none; }
       .app-grid { grid-template-columns: 1fr; }
       .app-card {
         min-height: 0;
@@ -1968,8 +1982,9 @@
     <% const currentOrg = organizations && organizations.find(o => o.isCurrent) %>
     <header class="hub-page-header">
       <div>
-        <h1>Your workspace</h1>
-        <p>Open an application or manage access for <%= currentOrg ? currentOrg.name : 'your organization' %>.</p>
+        <div class="hub-page-header__eyebrow"><%= new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) %></div>
+        <h1>Good <%= new Date().getHours() < 12 ? 'morning' : (new Date().getHours() < 18 ? 'afternoon' : 'evening') %>, <%= user.profile?.firstName || user.profile?.name?.split(' ')?.[0] || user.email.split('@')[0] %>.</h1>
+        <p>Everything <%= currentOrg ? currentOrg.name : 'your organization' %> runs on lives here. Open an application or manage who gets access.</p>
       </div>
       <div class="hub-page-header__actions">
         <% if (notificationSummary && notificationSummary.totalUnread > 0) { %>

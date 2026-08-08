@@ -199,12 +199,12 @@ html.light {
   --input: 39 12% 81%;
 }
 
-html.light body { background: #e9e7e2; color: #1d1c1a; }
+html.light body { background: #f1efe9; color: #191816; }
 html.light .bg-noise { display: none; }
 html.light nav,
 html.light .bg-zinc-950,
 html.light .bg-zinc-950\/80,
-html.light .bg-\[\#0a0a0c\] { background-color: #fbfaf7 !important; }
+html.light .bg-\[\#0a0a0c\] { background-color: #fffdfa !important; }
 html.light .bg-zinc-900,
 html.light .bg-zinc-900\/50,
 html.light .bg-zinc-900\/70,
@@ -217,8 +217,8 @@ html.light .text-zinc-100,
 html.light .text-zinc-200,
 html.light .text-zinc-300 { color: #2b2926 !important; }
 html.light .text-zinc-400,
-html.light .text-zinc-500 { color: #706c64 !important; }
-html.light .text-white { color: #1d1c1a !important; }
+html.light .text-zinc-500 { color: #625e57 !important; }
+html.light .text-white { color: #191816 !important; }
 html.light h1.text-white,
 html.light h2.text-white,
 html.light h3.text-white,
@@ -226,18 +226,34 @@ html.light nav :is(a, button, div, span).text-white { color: #1d1c1a !important;
 html.light .border-zinc-700,
 html.light .border-zinc-800,
 html.light .border-zinc-800\/60,
-html.light .border-white\/\[0\.08\] { border-color: #d4d0c8 !important; }
+html.light .border-white\/\[0\.08\] { border-color: #cbc6bc !important; }
 html.light main :where(.rounded-xl, .rounded-2xl).border,
 html.light .glass,
 html.light .glass-card,
 html.light .glass-card:hover {
-  background: #fbfaf7;
-  border-color: #d8d4cc;
-  box-shadow: 0 1px 2px rgba(38, 34, 28, 0.08);
+  background: #fffdfa;
+  border-color: #cbc6bc;
+  box-shadow: 0 1px 2px rgba(38, 34, 28, 0.07), 0 4px 8px rgba(38, 34, 28, 0.05);
 }
-html.light ::-webkit-scrollbar-track { background: #e9e7e2; }
+html.light ::-webkit-scrollbar-track { background: #f1efe9; }
 html.light ::-webkit-scrollbar-thumb { background: #c4c0b8; }
 html.light [class*="bg-gradient-to-"].text-white,
 html.light [class*="bg-gradient-to-"] .text-white,
 html.light :is(.bg-amber-500, .bg-orange-500, .bg-red-500, .bg-rose-500, .bg-teal-500, .bg-emerald-500, .bg-blue-500, .bg-indigo-500, .bg-purple-500).text-white,
 html.light :is(.bg-amber-500, .bg-orange-500, .bg-red-500, .bg-rose-500, .bg-teal-500, .bg-emerald-500, .bg-blue-500, .bg-indigo-500, .bg-purple-500) .text-white { color: #fff !important; }
+
+html.dark body { background: #0f0e13; }
+html.dark nav { background: #0f0e13 !important; border-color: #312d39 !important; }
+html.dark main :where(.rounded-xl, .rounded-2xl).border,
+html.dark .glass,
+html.dark .glass-card,
+html.dark .glass-card:hover {
+  background: #18161f;
+  border-color: #312d39;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+html.light main [class*="bg-gradient-to-br"][class*="from-zinc-9"],
+html.dark main [class*="bg-gradient-to-br"][class*="from-zinc-9"] {
+  background-image: none !important;
+}

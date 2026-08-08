@@ -156,14 +156,14 @@ export const getDesignTokens = (mode: PaletteMode): ThemeOptions => {
       },
       grey: colors.grey,
       background: {
-        default: isDark ? '#050505' : '#e9e7e2',
-        paper: isDark ? '#0b0b11' : '#fbfaf7',
+        default: isDark ? '#0f0e13' : '#f1efe9',
+        paper: isDark ? '#18161f' : '#fffdfa',
       },
       text: {
-        primary: isDark ? '#fafafa' : '#1d1c1a',
-        secondary: isDark ? '#a1a1aa' : '#706c64',
+        primary: isDark ? '#f7f5fa' : '#191816',
+        secondary: isDark ? '#a59eac' : '#625e57',
       },
-      divider: isDark ? 'rgba(255,255,255,0.08)' : '#d4d0c8',
+      divider: isDark ? '#312d39' : '#cbc6bc',
       action: {
         active: isDark ? colors.grey[400] : colors.grey[600],
         hover: isDark ? alpha(colors.grey[50], 0.08) : alpha(colors.grey[900], 0.04),
@@ -218,20 +218,20 @@ export const getDesignTokens = (mode: PaletteMode): ThemeOptions => {
         styleOverrides: {
           body: {
             scrollbarColor: isDark
-              ? `${colors.grey[700]} ${colors.grey[900]}`
-              : `${colors.grey[300]} ${colors.grey[100]}`,
+              ? '#4a4452 #0f0e13'
+              : '#b8b1a7 #f1efe9',
             '&::-webkit-scrollbar, & *::-webkit-scrollbar': {
               width: 8,
               height: 8,
             },
             '&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb': {
               borderRadius: 8,
-              backgroundColor: isDark ? colors.grey[700] : colors.grey[300],
+              backgroundColor: isDark ? '#4a4452' : '#b8b1a7',
               border: '2px solid transparent',
               backgroundClip: 'content-box',
             },
             '&::-webkit-scrollbar-track, & *::-webkit-scrollbar-track': {
-              backgroundColor: isDark ? colors.grey[900] : colors.grey[100],
+              backgroundColor: isDark ? '#0f0e13' : '#f1efe9',
               borderRadius: 8,
             },
           },

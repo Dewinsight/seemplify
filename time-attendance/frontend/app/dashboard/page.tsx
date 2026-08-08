@@ -54,11 +54,11 @@ export default function Dashboard() {
     }
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-500">
+        <div className="space-y-6 animate-in fade-in duration-300">
             {/* Welcome Section */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
+                    <h1 className="text-3xl font-semibold tracking-tight text-zinc-100 dark:text-zinc-100">
                         Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}, {user?.name?.split(' ')[0]} 👋
                     </h1>
                     <p className="text-zinc-400 mt-1">
@@ -68,14 +68,14 @@ export default function Dashboard() {
 
                 <a
                     href={getIdpUrl()}
-                    className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-zinc-300 transition-colors flex items-center gap-2 border border-zinc-700"
+                    className="px-4 py-2 rounded-lg bg-transparent hover:bg-zinc-800 text-sm font-medium text-zinc-300 transition-colors flex items-center gap-2 border border-zinc-700"
                 >
                     <div className="w-2 h-2 rounded-full bg-teal-500" />
                     App Hub
                 </a>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(320px,0.82fr)_minmax(0,1.68fr)]">
                 {/* Left Column - Clock Widget & Quick Stats */}
                 <div className="lg:col-span-1 space-y-6">
                     <ClockWidget
@@ -89,8 +89,8 @@ export default function Dashboard() {
                     />
 
                     {/* Today's Summary Card */}
-                    <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-6">
-                        <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">Today's Activity</h3>
+                    <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-6">
+                        <h3 className="text-sm font-semibold text-zinc-300 mb-4">Today&apos;s activity</h3>
                         <div className="space-y-4">
                             <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-900 border border-zinc-800">
                                 <div className="flex items-center gap-3">
@@ -129,7 +129,7 @@ export default function Dashboard() {
                 <div className="lg:col-span-2 space-y-6">
 
                     {/* Weekly Stats Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-[1.15fr_0.9fr_0.9fr_1fr]">
                         <div className="bg-zinc-900/50 border border-white/5 p-4 rounded-xl">
                             <div className="text-xs text-zinc-500 mb-1">Weekly Hours</div>
                             <div className="text-2xl font-bold text-white">{dashboardData?.week?.totalHours || 0}</div>
@@ -156,7 +156,7 @@ export default function Dashboard() {
                     </div>
 
                     {/* Current Timesheet Status */}
-                    <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6 relative overflow-hidden">
+                    <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-6 relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-6 opacity-10">
                             <Calendar className="h-32 w-32 -mr-8 -mt-8" />
                         </div>
@@ -168,7 +168,7 @@ export default function Dashboard() {
                             </div>
                             <Link
                                 href="/timesheets/current"
-                                className="px-4 py-2 bg-white text-zinc-950 rounded-lg text-sm font-semibold hover:bg-zinc-200 transition-colors shadow-lg shadow-white/5"
+                                className="px-4 py-2 bg-white text-zinc-950 rounded-lg text-sm font-semibold hover:bg-zinc-200 transition-colors"
                             >
                                 View Details
                             </Link>
@@ -181,7 +181,7 @@ export default function Dashboard() {
                             </div>
                             <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
                                 <div
-                                    className="h-full bg-gradient-to-r from-teal-500 to-cyan-400 rounded-full transition-all duration-1000 ease-out"
+                                    className="h-full bg-teal-500 rounded-full transition-all duration-500 ease-out"
                                     style={{ width: `${Math.min(100, ((dashboardData?.week?.totalHours || 0) / 40) * 100)}%` }}
                                 />
                             </div>

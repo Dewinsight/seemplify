@@ -260,7 +260,7 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     const GreetingIcon = greeting.icon;
 
     return (
-        <div className="relative group w-full max-w-md mx-auto">
+        <div className="relative w-full">
             {/* Celebration Confetti */}
             {showCelebration && (
                 <div className="absolute inset-0 overflow-hidden pointer-events-none z-50 rounded-2xl">
@@ -280,20 +280,9 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
                 </div>
             )}
 
-            {/* Background Glow - Enhanced */}
             <div className={cn(
-                "absolute inset-0 rounded-2xl blur-xl transition-all duration-700",
-                pulseEffect && "animate-pulse",
-                status.isClockedIn && !status.isOnBreak
-                    ? "bg-gradient-to-r from-teal-500/40 to-emerald-500/40 opacity-60"
-                    : status.isOnBreak
-                        ? "bg-gradient-to-r from-amber-500/30 to-orange-500/30 opacity-50"
-                        : "bg-gradient-to-r from-zinc-800 to-zinc-700 opacity-20"
-            )} />
-
-            <div className={cn(
-                "relative bg-zinc-900/80 backdrop-blur-xl border rounded-2xl p-8 shadow-2xl transition-all duration-500",
-                pulseEffect ? "border-teal-500/50 scale-[1.02]" : "border-white/5"
+                "relative bg-zinc-900/80 border rounded-xl p-8 shadow-sm transition-colors duration-200",
+                pulseEffect ? "border-teal-500/50" : "border-white/5"
             )}>
                 {/* Celebration Message */}
                 {showCelebration && (
@@ -346,13 +335,12 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
                 {/* Timer Display - Enhanced */}
                 <div className="text-center mb-10">
                     <div className={cn(
-                        "text-6xl font-bold font-mono tracking-wider bg-clip-text text-transparent transition-all duration-500",
-                        pulseEffect && "scale-110",
+                        "text-6xl font-bold font-mono tracking-wider transition-colors duration-200",
                         status.isClockedIn && !status.isOnBreak
-                            ? "bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400"
+                            ? "text-teal-400"
                             : status.isOnBreak
-                                ? "bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-400"
-                                : "bg-gradient-to-r from-zinc-500 to-zinc-600"
+                                ? "text-amber-400"
+                                : "text-zinc-500"
                     )}>
                         {elapsedTime}
                     </div>
@@ -404,15 +392,12 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
                             onClick={handleClockIn}
                             disabled={loading}
                             className={cn(
-                                "col-span-2 py-5 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center gap-3 relative overflow-hidden group/btn",
+                                "col-span-2 py-5 rounded-lg font-bold text-lg transition-colors duration-150 flex items-center justify-center gap-3",
                                 loading 
                                     ? "bg-zinc-800 text-zinc-400 cursor-not-allowed" 
-                                    : "bg-gradient-to-r from-teal-500 via-emerald-500 to-teal-500 bg-[length:200%_100%] hover:bg-right text-white shadow-teal-500/30 hover:shadow-teal-500/50 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
+                                    : "bg-teal-600 hover:bg-teal-700 text-white"
                             )}
                         >
-                            {!loading && (
-                                <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
-                            )}
                             {loading ? (
                                 <>
                                     <Loader2 className="h-6 w-6 animate-spin" />
@@ -432,15 +417,12 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
                                 onClick={handleClockOut}
                                 disabled={loading}
                                 className={cn(
-                                    "py-4 rounded-xl font-bold shadow-lg transition-all duration-300 flex items-center justify-center gap-2 relative overflow-hidden group/btn",
+                                    "py-4 rounded-lg font-bold transition-colors duration-150 flex items-center justify-center gap-2",
                                     loading 
                                         ? "bg-zinc-800 text-zinc-400 cursor-not-allowed" 
-                                        : "bg-gradient-to-r from-red-500 via-rose-500 to-red-500 bg-[length:200%_100%] hover:bg-right text-white shadow-red-500/30 hover:shadow-red-500/50 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
+                                        : "bg-rose-600 hover:bg-rose-700 text-white"
                                 )}
                             >
-                                {!loading && (
-                                    <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
-                                )}
                                 {loading ? (
                                     <>
                                         <Loader2 className="h-5 w-5 animate-spin" />
@@ -459,17 +441,14 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
                                 onClick={handleBreak}
                                 disabled={loading}
                                 className={cn(
-                                    "py-4 rounded-xl font-bold shadow-lg transition-all duration-300 flex items-center justify-center gap-2 relative overflow-hidden group/btn",
+                                    "py-4 rounded-lg font-bold transition-colors duration-150 flex items-center justify-center gap-2",
                                     loading 
                                         ? "bg-zinc-800 text-zinc-400 cursor-not-allowed border border-zinc-700"
                                         : status.isOnBreak
-                                            ? "bg-gradient-to-r from-zinc-700 to-zinc-800 text-white border border-zinc-600 hover:border-zinc-500 hover:scale-[1.02] active:scale-[0.98]"
-                                            : "bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 bg-[length:200%_100%] hover:bg-right text-white shadow-amber-500/30 hover:shadow-amber-500/50 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
+                                            ? "bg-zinc-700 text-white border border-zinc-600 hover:bg-zinc-600"
+                                            : "bg-amber-600 hover:bg-amber-700 text-white"
                                 )}
                             >
-                                {!loading && !status.isOnBreak && (
-                                    <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700" />
-                                )}
                                 {loading ? (
                                     <Loader2 className="h-5 w-5 animate-spin" />
                                 ) : status.isOnBreak ? (
