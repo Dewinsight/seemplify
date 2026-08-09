@@ -41,6 +41,7 @@
     "lodash": "^4.17.21",
     "mammoth": "^1.9.1",
     "mathjs": "^12.0.0",
+    "mongodb": "^6.21.0",
     "mongoose": "^8.15.1",
     "multer": "^2.0.1",
     "node-cron": "^4.1.1",
