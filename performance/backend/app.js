@@ -281,6 +281,7 @@ app.use('/api/bulk', bulkRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/appraisals', requireAuth, requireOrganization, canonicalAppraisalsEnabled, appraisalRoutes);
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/presence', require('./routes/presenceReporter'));
 
 // ============================================
 // AUTHENTICATION ROUTES

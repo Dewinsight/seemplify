@@ -82,6 +82,8 @@
     "apply:credits:force": "node scripts/applyCreditEconomics2026.js --apply",
     "apply:credits:force:full": "node scripts/applyCreditEconomics2026.js --apply --replace-packs",
     "seed:onboarding-templates": "node scripts/seedOnboardingTemplates.js",
+    "migrate:idp-people-transitions": "node scripts/migrateIdpOnboardingToPeopleTransitions.js",
+    "migrate:idp-people-transitions:apply": "node scripts/migrateIdpOnboardingToPeopleTransitions.js --apply --verify-files",
     "seed:onboarding-templates:dry-run": "node scripts/seedOnboardingTemplates.js --dry-run",
     "seed:onboarding-templates:akwa-ibom": "node scripts/seedOnboardingTemplates.js --only-akwa-ibom",
     "seed:onboarding-templates:akwa-ibom:dry-run": "node scripts/seedOnboardingTemplates.js --only-akwa-ibom --dry-run",

@@ -49,7 +49,7 @@ export default function PunchLogPage() {
             setLoading(true);
             const now = new Date();
             let startDate: string;
-            let endDate: string = now.toISOString();
+            const endDate: string = now.toISOString();
 
             switch (dateFilter) {
                 case 'today':

@@ -67,7 +67,12 @@ const DailyEntrySchema = new Schema({
     exceptions: [{
         type: {
             type: String,
-            enum: ['late_arrival', 'early_departure', 'long_break', 'no_clock_out', 'manual_entry'],
+            enum: [
+                'late_arrival', 'early_departure', 'long_break', 'no_clock_out', 'manual_entry',
+                'missed_break', 'missed_break_end', 'orphan_break_end', 'orphan_event',
+                'duplicate_session', 'overtime', 'insufficient_rest', 'geofence_failure',
+                'absence', 'leave_conflict',
+            ],
         },
         description: String,
         minutes: Number,  // Duration of exception (e.g., 15 mins late)
@@ -76,6 +81,12 @@ const DailyEntrySchema = new Schema({
     timeEntryIds: [{
         type: Schema.Types.ObjectId,
         ref: 'TimeEntry'
+    }],
+    sessions: [{
+        clockIn: Date,
+        clockOut: Date,
+        breakMinutes: { type: Number, default: 0 },
+        totalMinutes: { type: Number, default: 0 },
     }],
 }, { _id: false });
 
@@ -97,13 +108,32 @@ const TimesheetSummarySchema = new Schema({
 const AuditLogSchema = new Schema({
     action: {
         type: String,
-        enum: ['created', 'submitted', 'approved', 'rejected', 'revision_requested', 'updated', 'recalled'],
+        enum: [
+            'created', 'submitted', 'approved', 'rejected', 'revision_requested', 'updated', 'recalled',
+            'reminder_sent', 'locked', 'payroll_queued', 'payroll_exported', 'payroll_failed',
+            'adjustment_created', 'adjustment_approved', 'auto_submitted', 'auto_approved',
+            'integration_retried', 'cancelled',
+        ],
         required: true,
     },
     performedBy: String,  // userId
     performedByName: String,
     performedAt: { type: Date, default: Date.now },
     details: String,
+    comment: String,
+}, { _id: false });
+
+const ApprovalLevelSnapshotSchema = new Schema({
+    order: { type: Number, required: true },
+    name: { type: String, required: true },
+    approverType: { type: String, enum: ['line_manager', 'department_head', 'hr', 'explicit'], required: true },
+    approverId: String,
+    approverName: String,
+    approverEmail: String,
+    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+    decidedBy: String,
+    decidedByName: String,
+    decidedAt: Date,
     comment: String,
 }, { _id: false });
 
@@ -143,8 +173,12 @@ const TimesheetSchema = new Schema({
     // Period
     periodType: {
         type: String,
-        enum: ['weekly', 'bi-weekly', 'monthly'],
+        enum: ['daily', 'weekly', 'fortnightly', 'bi-weekly', 'semi-monthly', 'monthly'],
         default: 'weekly'
+    },
+    periodKey: {
+        type: String,
+        index: true,
     },
     startDate: {
         type: Date,
@@ -169,7 +203,10 @@ const TimesheetSchema = new Schema({
     // Status and Workflow
     status: {
         type: String,
-        enum: ['draft', 'submitted', 'approved', 'rejected', 'revision_requested'],
+        enum: [
+            'draft', 'submitted', 'approved', 'rejected', 'revision_requested',
+            'locked', 'payroll_pending', 'payroll_exported', 'adjusted', 'cancelled',
+        ],
         default: 'draft',
         index: true,
     },
@@ -185,6 +222,12 @@ const TimesheetSchema = new Schema({
         userEmail: String,
         teamId: String,
         assignedAt: Date,
+    },
+
+    approvalWorkflow: {
+        currentLevel: { type: Number, default: 0 },
+        levels: { type: [ApprovalLevelSnapshotSchema], default: () => [] },
+        completedAt: Date,
     },
 
     // Approval
@@ -216,11 +259,50 @@ const TimesheetSchema = new Schema({
     // Audit trail
     auditLog: [AuditLogSchema],
 
+    version: { type: Number, default: 1, min: 1 },
+    supersedesTimesheetId: { type: Schema.Types.ObjectId, ref: 'Timesheet' },
+    adjustmentReason: String,
+    correctionRunId: { type: Schema.Types.ObjectId, ref: 'CorrectionRun', index: true },
+    lockedAt: Date,
+    lockedBy: String,
+    employeeAttestation: {
+        accepted: { type: Boolean, default: false },
+        acceptedAt: Date,
+        statementVersion: String,
+    },
+    policySnapshot: {
+        rulePackId: String,
+        rulePackVersion: Number,
+        appliedRulePacks: [{
+            id: String,
+            key: String,
+            version: Number,
+            precedence: Number,
+        }],
+        timezone: { type: String, default: 'UTC' },
+        standardHoursPerDay: Number,
+        standardHoursPerWeek: Number,
+        dailyOvertimeThreshold: Number,
+        weeklyOvertimeThreshold: Number,
+        calculatedAt: Date,
+    },
+
     // Linked to payroll (future integration)
     payrollIntegration: {
         exported: { type: Boolean, default: false },
         exportedAt: Date,
         payrollRunId: String,
+        state: {
+            type: String,
+            enum: ['not_ready', 'pending', 'accepted', 'failed', 'dead', 'adjustment_pending'],
+            default: 'not_ready',
+        },
+        idempotencyKey: String,
+        attempts: { type: Number, default: 0 },
+        lastAttemptAt: Date,
+        nextAttemptAt: Date,
+        lastError: String,
+        acceptedAt: Date,
     },
 
     // Metadata
@@ -241,6 +323,7 @@ TimesheetSchema.index({ userId: 1, organizationId: 1, startDate: -1 });
 TimesheetSchema.index({ organizationId: 1, status: 1, submittedAt: -1 });
 TimesheetSchema.index({ 'assignedApprover.userId': 1, status: 1 });
 TimesheetSchema.index({ year: 1, weekNumber: 1, organizationId: 1 });
+TimesheetSchema.index({ userId: 1, organizationId: 1, periodKey: 1, version: -1 });
 
 // Pre-save middleware
 TimesheetSchema.pre('save', function (next) {
@@ -319,35 +402,38 @@ TimesheetSchema.methods.calculateSummary = function () {
 };
 
 // Static method to find or create current week timesheet
-TimesheetSchema.statics.findOrCreateCurrentWeek = async function (userId, organizationId, userInfo) {
-    const { startOfWeek, endOfWeek, getISOWeek, getYear } = require('date-fns');
-
-    const now = new Date();
-    const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
-    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
-    const weekNumber = getISOWeek(now);
-    const year = getYear(now);
+TimesheetSchema.statics.findOrCreateCurrentPeriod = async function (userId, organizationId, userInfo, policy = {}) {
+    const { getPeriodBounds, enumerateLocalDates } = require('../services/timeCalculationService');
+    const period = getPeriodBounds(
+        new Date(),
+        policy.timesheetSettings?.periodType || 'weekly',
+        policy.timezone || userInfo.timezone || 'UTC'
+    );
 
     let timesheet = await this.findOne({
         userId,
         organizationId,
-        year,
-        weekNumber,
-    });
+        periodKey: period.key,
+        status: { $ne: 'cancelled' },
+    }).sort({ version: -1 });
+
+    // Compatibility with records created before periodKey existed.
+    if (!timesheet) {
+        timesheet = await this.findOne({
+            userId,
+            organizationId,
+            startDate: period.start,
+            status: { $ne: 'cancelled' },
+        }).sort({ version: -1 });
+    }
 
     if (!timesheet) {
-        // Create new timesheet with empty daily entries
-        const dailyEntries = [];
-        const currentDate = new Date(weekStart);
-
-        while (currentDate <= weekEnd) {
-            dailyEntries.push({
-                date: new Date(currentDate),
-                dayOfWeek: currentDate.getDay(),
-                status: currentDate.getDay() === 0 || currentDate.getDay() === 6 ? 'weekend' : 'absent',
-            });
-            currentDate.setDate(currentDate.getDate() + 1);
-        }
+        const workDays = policy.workSchedule?.workDays || [1, 2, 3, 4, 5];
+        const dailyEntries = enumerateLocalDates(period.start, period.end, policy.timezone || 'UTC').map(date => ({
+            date,
+            dayOfWeek: date.getUTCDay(),
+            status: workDays.includes(date.getUTCDay()) ? 'absent' : 'weekend',
+        }));
 
         timesheet = new this({
             userId,
@@ -357,20 +443,25 @@ TimesheetSchema.statics.findOrCreateCurrentWeek = async function (userId, organi
             organizationName: userInfo.organizationName,
             teamId: userInfo.teamId,
             teamName: userInfo.teamName,
-            periodType: 'weekly',
-            startDate: weekStart,
-            endDate: weekEnd,
-            weekNumber,
-            year,
+            periodType: period.periodType,
+            periodKey: period.key,
+            startDate: period.start,
+            endDate: period.end,
+            weekNumber: period.weekNumber,
+            year: period.year,
             dailyEntries,
             summary: {},
         });
 
-        timesheet.addAuditLog('created', userId, userInfo.name, null, 'Auto-created for current week');
+        timesheet.addAuditLog('created', userId, userInfo.name, null, `Auto-created for current ${period.periodType} period`);
         await timesheet.save();
     }
 
     return timesheet;
+};
+
+TimesheetSchema.statics.findOrCreateCurrentWeek = function (userId, organizationId, userInfo, policy = {}) {
+    return this.findOrCreateCurrentPeriod(userId, organizationId, userInfo, policy);
 };
 
 // Static method to get pending approvals for a manager

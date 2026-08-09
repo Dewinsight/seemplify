@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { api, authApi } from '@/lib/api';
+import { authApi } from '@/lib/api';
 import { redirectToLogin, isPublicRoute, resetRedirectFlag } from '@/services/authGuard';
 import {
     isInvalidatedByCentralLogout,

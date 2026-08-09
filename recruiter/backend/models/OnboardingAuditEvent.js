@@ -56,5 +56,6 @@ const OnboardingAuditEventSchema = new mongoose.Schema({
 OnboardingAuditEventSchema.index({ envelope: 1, createdAt: 1 });
 OnboardingAuditEventSchema.index({ onboarding: 1, createdAt: 1 });
 OnboardingAuditEventSchema.index({ organization: 1, createdAt: -1 });
+OnboardingAuditEventSchema.index({ 'metadata.eventId': 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('OnboardingAuditEvent', OnboardingAuditEventSchema);

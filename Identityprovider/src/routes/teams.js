@@ -487,6 +487,7 @@ router.delete('/:teamId/members/:memberId',
         return res.status(404).json({ error: 'Member not found in team' })
       }
 
+      const removedRole = req.team.members.find(member => member.account.toString() === memberId)?.role
       await req.team.removeMember(memberId)
 
       console.log('✅ Member removed from team:', req.team.name, 'by', req.user.email)
@@ -496,7 +497,8 @@ router.delete('/:teamId/members/:memberId',
       webhookService.notifyTeamMemberRemoved(
         removedAccount?.sub || memberId,
         req.team._id.toString(),
-        req.team.organization.toString()
+        req.team.organization.toString(),
+        removedRole
       ).catch(err => console.error('Webhook notification failed:', err))
 
       res.json({

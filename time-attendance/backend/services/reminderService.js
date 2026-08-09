@@ -1,6 +1,6 @@
 const { Timesheet, AttendancePolicy } = require('../models');
-const emailService = require('./emailService');
 const { addHours, differenceInHours, endOfWeek } = require('date-fns');
+const { createNotification } = require('./notificationService');
 
 /**
  * Reminder Service
@@ -71,27 +71,26 @@ async function checkAndSendReminders() {
                     );
 
                     if (!reminderSent && timesheet.userEmail) {
-                        // Send reminder email
-                        const result = await emailService.sendTimesheetReminder(
-                            timesheet,
-                            timesheet.userEmail,
-                            hoursUntilDeadline
-                        );
-
-                        if (result.success) {
-                            // Log the reminder in audit trail
-                            timesheet.auditLog.push({
-                                action: 'reminder_sent',
-                                performedBy: 'system',
-                                performedByName: 'Auto Reminder',
-                                performedAt: new Date(),
-                                details: `Reminder sent (${hoursUntilDeadline}h before deadline)`,
-                            });
-                            await timesheet.save();
-
-                            totalRemindersSent++;
-                            console.log(`   ✅ Reminder sent: ${timesheet.userName} (${timesheet.userEmail})`);
-                        }
+                        await createNotification({
+                            organizationId: timesheet.organizationId,
+                            userId: timesheet.userId,
+                            userEmail: timesheet.userEmail,
+                            type: 'timesheet_deadline',
+                            title: 'Timesheet deadline approaching',
+                            message: `Your timesheet is due in about ${Math.max(1, Math.round(hoursUntilDeadline))} hour(s).`,
+                            actionUrl: `/timesheets/${timesheet._id}`,
+                            priority: hoursUntilDeadline <= 4 ? 'high' : 'normal',
+                            eventKey: `timesheet-deadline:${timesheet._id}:${deadline.toISOString()}`,
+                        });
+                        timesheet.auditLog.push({
+                            action: 'reminder_sent',
+                            performedBy: 'system',
+                            performedByName: 'Auto Reminder',
+                            performedAt: new Date(),
+                            details: `Reminder queued (${hoursUntilDeadline}h before deadline)`,
+                        });
+                        await timesheet.save();
+                        totalRemindersSent++;
                     }
                 }
             }

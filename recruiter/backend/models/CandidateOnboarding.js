@@ -10,8 +10,21 @@ const CandidateOnboardingSchema = new mongoose.Schema({
   candidate: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Candidate',
-    required: true,
     index: true
+  },
+  subject: {
+    type: {
+      type: String,
+      enum: ['candidate', 'idp_member'],
+      default: 'candidate',
+      index: true
+    },
+    candidateId: { type: mongoose.Schema.Types.ObjectId, ref: 'Candidate' },
+    idpAccountId: { type: String, index: true },
+    email: { type: String, lowercase: true, trim: true },
+    name: { type: String, trim: true },
+    employeeId: { type: String, trim: true },
+    snapshot: { type: mongoose.Schema.Types.Mixed, default: {} }
   },
   candidateAccount: {
     type: mongoose.Schema.Types.ObjectId,
@@ -24,13 +37,13 @@ const CandidateOnboardingSchema = new mongoose.Schema({
   },
   processType: {
     type: String,
-    enum: ['onboarding', 'exit', 'retirement', 'team_signing', 'compliance_documents'],
+    enum: ['onboarding', 'exit', 'retirement', 'agreement', 'policy', 'general', 'team_signing', 'compliance_documents'],
     default: 'onboarding',
     index: true
   },
   status: {
     type: String,
-    enum: ['draft', 'pending', 'in_progress', 'completed', 'cancelled'],
+    enum: ['draft', 'pending', 'in_progress', 'ready_to_provision', 'provisioned', 'completed', 'cancelled', 'failed'],
     default: 'pending',
     index: true
   },
@@ -110,11 +123,68 @@ const CandidateOnboardingSchema = new mongoose.Schema({
   handoffs: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'OnboardingHandoff'
-  }]
+  }],
+  identityAction: {
+    mode: {
+      type: String,
+      enum: ['manual', 'scheduled_at', 'on_workflow_completion'],
+      default: 'manual'
+    },
+    effectiveAt: Date,
+    status: {
+      type: String,
+      enum: ['not_ready', 'ready', 'pending', 'completed', 'failed', 'cancelled'],
+      default: 'not_ready'
+    },
+    action: { type: String, enum: ['provision', 'deactivate', 'reactivate'] },
+    idempotencyKey: String,
+    idpAccountId: String,
+    attempts: { type: Number, default: 0 },
+    lastAttemptAt: Date,
+    completedAt: Date,
+    lastError: String,
+    requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  },
+  employment: {
+    role: String,
+    managerId: String,
+    departmentId: String,
+    employeeId: String,
+    appAccess: { type: mongoose.Schema.Types.Mixed, default: { mode: 'all', appIds: [] } },
+    jurisdiction: { countryCode: String, subdivisionCode: String },
+    startAt: Date,
+    lastWorkingAt: Date
+  },
+  migration: {
+    sourceSystem: { type: String, enum: ['recruiter', 'idp'] },
+    sourceId: String,
+    sourceChecksum: String,
+    migratedAt: Date,
+    reconciliationStatus: { type: String, enum: ['pending', 'verified', 'mismatch', 'not_required'], default: 'not_required' }
+  }
 }, { timestamps: true });
 
 CandidateOnboardingSchema.index({ organization: 1, candidate: 1, createdAt: -1 });
 CandidateOnboardingSchema.index({ organization: 1, status: 1, createdAt: -1 });
 CandidateOnboardingSchema.index({ organization: 1, processType: 1, status: 1, createdAt: -1 });
+CandidateOnboardingSchema.index({ organization: 1, 'subject.idpAccountId': 1, createdAt: -1 });
+CandidateOnboardingSchema.index(
+  { organization: 1, 'migration.sourceSystem': 1, 'migration.sourceId': 1 },
+  { unique: true, partialFilterExpression: { 'migration.sourceId': { $type: 'string' } } }
+);
 
-module.exports = mongoose.model('CandidateOnboarding', CandidateOnboardingSchema);
+CandidateOnboardingSchema.pre('validate', function(next) {
+  if (!this.subject?.type) this.subject = { ...(this.subject || {}), type: this.candidate ? 'candidate' : 'idp_member' };
+  if (this.candidate && !this.subject.candidateId) this.subject.candidateId = this.candidate;
+  if (this.subject.type === 'candidate' && !this.candidate && !this.subject.candidateId) {
+    return next(new Error('Candidate transitions require a candidate subject'));
+  }
+  if (this.subject.type === 'idp_member' && !this.subject.idpAccountId) {
+    return next(new Error('IDP member transitions require an idpAccountId'));
+  }
+  next();
+});
+
+const PeopleTransition = mongoose.models.PeopleTransition || mongoose.model('PeopleTransition', CandidateOnboardingSchema, 'candidateonboardings');
+if (!mongoose.models.CandidateOnboarding) mongoose.model('CandidateOnboarding', CandidateOnboardingSchema, 'candidateonboardings');
+module.exports = PeopleTransition;

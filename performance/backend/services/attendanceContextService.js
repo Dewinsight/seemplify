@@ -17,7 +17,6 @@ async function fetchAttendanceContext(input) {
   const signature = secret
     ? crypto.createHmac('sha256', secret).update(`${timestamp}.${serialized}`).digest('hex')
     : '';
-
   try {
     const response = await axios.post(
       `${attendanceUrl()}/api/integrations/v1/performance/attendance-summary`,

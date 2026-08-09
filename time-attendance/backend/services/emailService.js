@@ -207,6 +207,20 @@ async function sendManagerTeamReport({
     );
 }
 
+function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+}
+
+async function sendNotificationEmail(notification, email) {
+    const action = notification.actionUrl
+        ? `<p><a href="${escapeHtml(new URL(notification.actionUrl, process.env.FRONTEND_URL || 'http://localhost:5011').toString())}">Open Time & Attendance</a></p>`
+        : '';
+    const html = `<html><body style="font-family:Arial,sans-serif;line-height:1.5"><h2>${escapeHtml(notification.title)}</h2><p>${escapeHtml(notification.message)}</p>${action}</body></html>`;
+    const result = await sendEmail(email, notification.title, html);
+    if (!result?.success) throw new Error(result?.error || result?.reason || 'Email delivery failed');
+    return result;
+}
+
 module.exports = {
     initializeEmailService,
     sendTimesheetSubmitted,
@@ -217,4 +231,5 @@ module.exports = {
     sendAutoClockedOutNotification,
     sendClockReminder,
     sendManagerTeamReport,
+    sendNotificationEmail,
 };

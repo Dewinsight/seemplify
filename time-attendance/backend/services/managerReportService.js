@@ -171,7 +171,7 @@ function aggregateManagerPayload({ managerGroup, periodStart, periodEnd, periodL
         member.daysWorked += summary.daysWorked || 0;
 
         if (timesheet.status === 'submitted' || timesheet.status === 'pending') member.submittedCount += 1;
-        else if (timesheet.status === 'approved') member.approvedCount += 1;
+        else if (['approved', 'locked', 'payroll_pending', 'payroll_exported'].includes(timesheet.status)) member.approvedCount += 1;
         else if (timesheet.status === 'rejected') member.rejectedCount += 1;
         else member.draftCount += 1;
 
@@ -210,9 +210,9 @@ function aggregateManagerPayload({ managerGroup, periodStart, periodEnd, periodL
         memberCount: memberRows.length,
         timesheetCount: timesheets.length,
         submittedCount: timesheetRows.filter((item) => item.status === 'submitted' || item.status === 'pending').length,
-        approvedCount: timesheetRows.filter((item) => item.status === 'approved').length,
+        approvedCount: timesheetRows.filter((item) => ['approved', 'locked', 'payroll_pending', 'payroll_exported'].includes(item.status)).length,
         rejectedCount: timesheetRows.filter((item) => item.status === 'rejected').length,
-        draftCount: timesheetRows.filter((item) => !['submitted', 'pending', 'approved', 'rejected'].includes(item.status)).length,
+        draftCount: timesheetRows.filter((item) => !['submitted', 'pending', 'approved', 'locked', 'payroll_pending', 'payroll_exported', 'rejected'].includes(item.status)).length,
         pendingCount: timesheetRows.filter((item) => item.status === 'submitted' || item.status === 'pending').length,
         totalHours: memberRows.reduce((sum, item) => sum + (item.totalHours || 0), 0),
         overtimeHours: memberRows.reduce((sum, item) => sum + (item.overtimeHours || 0), 0),

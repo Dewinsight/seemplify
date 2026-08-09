@@ -10,6 +10,7 @@ const {
   AppError,
 } = require('../middleware');
 const { logLeavePolicyUpdated } = require('../services/auditService');
+const { queueAttendanceEvent } = require('../services/attendanceIntegrationService');
 
 // Apply auth and org middleware to all routes
 router.use(requireAuth);
@@ -79,6 +80,15 @@ router.put('/',
 
     policy.updatedBy = req.user.id;
     await policy.save();
+    if (updates.holidays !== undefined || updates.holidayCalendar !== undefined) {
+      await queueAttendanceEvent('holiday.calendar.updated', {
+        organizationId: req.organizationId,
+        holidayId: 'calendar',
+        calendar: policy.holidayCalendar,
+        holidays: policy.holidays.map(holiday => ({ holidayId: holiday._id, name: holiday.name, date: holiday.date, isRecurring: holiday.isRecurring })),
+        updatedAt: policy.updatedAt,
+      });
+    }
 
     // Log audit
     await logLeavePolicyUpdated(policy, req.user, req, previousPolicy);
@@ -125,6 +135,16 @@ router.post('/holidays',
 
     policy.updatedBy = req.user.id;
     await policy.save();
+    const addedHoliday = policy.holidays[policy.holidays.length - 1];
+    await queueAttendanceEvent('holiday.updated', {
+      organizationId: req.organizationId,
+      holidayId: addedHoliday._id.toString(),
+      name: addedHoliday.name,
+      date: addedHoliday.date,
+      isRecurring: addedHoliday.isRecurring,
+      status: 'active',
+      updatedAt: policy.updatedAt,
+    });
 
     res.json({
       success: true,
@@ -151,6 +171,10 @@ router.delete('/holidays',
 
     const holidayDate = new Date(date).toISOString().split('T')[0];
 
+    const removedHoliday = policy.holidays.find(h => {
+      const existingDate = new Date(h.date).toISOString().split('T')[0];
+      return existingDate === holidayDate;
+    });
     policy.holidays = policy.holidays.filter(h => {
       const existingDate = new Date(h.date).toISOString().split('T')[0];
       return existingDate !== holidayDate;
@@ -158,6 +182,15 @@ router.delete('/holidays',
 
     policy.updatedBy = req.user.id;
     await policy.save();
+    if (removedHoliday) await queueAttendanceEvent('holiday.cancelled', {
+      organizationId: req.organizationId,
+      holidayId: removedHoliday._id.toString(),
+      name: removedHoliday.name,
+      date: removedHoliday.date,
+      isRecurring: removedHoliday.isRecurring,
+      status: 'cancelled',
+      updatedAt: policy.updatedAt,
+    });
 
     res.json({
       success: true,

@@ -2469,6 +2469,70 @@
     <% } %>
 
     <% if (hasOrganizations && !(currentSubscriptionAccess && currentSubscriptionAccess.isLocked)) { %>
+    <% if (notificationSummary && notificationSummary.totalUnread > 0) { %>
+      <div class="card action-banner">
+        <div>
+          <div class="action-banner__title">You have pending notifications</div>
+          <div class="action-banner__desc">
+            <%= notificationSummary.totalUnread %> task<%= notificationSummary.totalUnread === 1 ? '' : 's' %> need your attention.
+          </div>
+          <div class="action-banner__meta">
+            <span class="pill pill--soft">Documents: <%= notificationSummary.counts?.documents || 0 %></span>
+            <span class="pill pill--soft">Simple Evaluation: <%= notificationSummary.counts?.simplePerformance || 0 %></span>
+          </div>
+        </div>
+        <div class="action-banner__cta">
+          <a href="/notifications" class="btn btn-primary">Open Notifications</a>
+        </div>
+      </div>
+    <% } %>
+
+    <% if (pendingSignatureCount > 0) { %>
+      <div class="card action-banner action-banner--warn">
+        <div>
+          <div class="action-banner__title">Documents waiting for your signature</div>
+          <div class="action-banner__desc">
+            You have <%= pendingSignatureCount %> pending document<%= pendingSignatureCount === 1 ? '' : 's' %> to sign.
+          </div>
+          <% if (pendingSignatureDocuments.length > 0) { %>
+            <div class="action-banner__meta-row">
+              <% pendingSignatureDocuments.slice(0, 3).forEach(doc => { %>
+                <span style="display:inline-flex; align-items:center; gap:6px;">
+                  <span class="dot" style="width:8px;height:8px;box-shadow:none;background:#f59e0b;"></span>
+                  <%= doc.title %> • <%= doc.organizationName || 'Organization' %>
+                </span>
+              <% }) %>
+            </div>
+          <% } %>
+        </div>
+        <div class="action-banner__cta">
+          <a href="<%= firstDocumentNotificationActionUrl %>" class="btn btn-primary">Review &amp; Sign</a>
+        </div>
+      </div>
+    <% } else if (pendingOnboardingCount && pendingOnboardingCount > 0) { %>
+      <div class="card action-banner action-banner--warn">
+        <div>
+          <div class="action-banner__title">Documents need your attention</div>
+          <div class="action-banner__desc">
+            You have <%= pendingOnboardingCount %> pending document step<%= pendingOnboardingCount === 1 ? '' : 's' %> waiting.
+          </div>
+          <% if (pendingOnboardingAssignments && pendingOnboardingAssignments.length > 0) { %>
+            <div class="action-banner__meta-row">
+              <% pendingOnboardingAssignments.slice(0, 3).forEach(assignment => { %>
+                <span style="display:inline-flex; align-items:center; gap:6px;">
+                  <span class="dot" style="width:8px;height:8px;box-shadow:none;background:#f59e0b;"></span>
+                  <%= assignment.organization?.name || 'Organization' %>
+                </span>
+              <% }) %>
+            </div>
+          <% } %>
+        </div>
+        <div class="action-banner__cta">
+          <a href="<%= peopleTransitionDeepLink || '/documents' %>" class="btn btn-primary">Open People Transitions</a>
+        </div>
+      </div>
+    <% } %>
+
     <% if (receivedEvaluationCount && receivedEvaluationCount > 0) { %>
       <div class="card action-banner action-banner--review">
         <div>

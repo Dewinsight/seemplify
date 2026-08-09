@@ -227,6 +227,24 @@ const PayslipSchema = new Schema({
     contractEndDate: Date,
     workInputNotes: String
   },
+
+  timeAttendance: {
+    importIds: [{ type: Schema.Types.ObjectId, ref: 'TimeAttendanceImport' }],
+    sourceTimesheets: [{ sourceTimesheetId: String, sourceVersion: Number, eventType: String }],
+    payCodeLines: [{
+      payCode: String,
+      category: String,
+      unit: String,
+      quantity: Number,
+      rateMultiplier: Number,
+      activityCode: String,
+      costCentreCode: String,
+      metadata: Schema.Types.Mixed,
+    }],
+    regularHours: { type: Number, default: 0 },
+    overtimeHours: { type: Number, default: 0 },
+    disclaimer: { type: String, default: 'Imported approved attendance; payroll remains the owner of financial calculation.' },
+  },
   
   // ===== EARNINGS =====
   earnings: [EarningItemSchema],

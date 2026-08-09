@@ -4,6 +4,7 @@ import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { ThemeProvider } from '@/components/theme-provider';
 import { themeInitScript } from '@/lib/theme-sync';
+import AttendancePresenceReporter from '@/components/AttendancePresenceReporter';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -25,6 +26,7 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         <AuthProvider>
+          <AttendancePresenceReporter />
           <ThemeProvider
             attribute="class"
             defaultTheme="system"

@@ -17,9 +17,15 @@ import {
     Settings,
     Users,
     X,
+    Bell,
+    CalendarClock,
+    AlertCircle,
+    MonitorCheck,
+    Scale,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ThemePreferenceMenu from '@/components/ThemePreferenceMenu';
+import PresenceReporter from '@/components/PresenceReporter';
 
 interface NavItem {
     name: string;
@@ -32,6 +38,10 @@ const personalNavigation: NavItem[] = [
     { name: 'Dashboard', label: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
     { name: 'My Timesheets', label: 'Timesheets', href: '/timesheets', icon: Calendar },
     { name: 'Punch Log', label: 'Punches', href: '/entries', icon: Clock },
+    { name: 'Schedule', label: 'Schedule', href: '/schedule', icon: CalendarClock },
+    { name: 'Exceptions', label: 'Exceptions', href: '/exceptions', icon: AlertCircle },
+    { name: 'Presence', label: 'Presence', href: '/presence', icon: MonitorCheck },
+    { name: 'Notifications', label: 'Alerts', href: '/notifications', icon: Bell },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -75,6 +85,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         ...(isAdmin
             ? [
                 { name: 'Reports', label: 'Reports', href: '/reports', icon: BarChart3 },
+                { name: 'Rule Packs', label: 'Rules', href: '/admin/rule-packs', icon: Scale },
                 { name: 'Settings', label: 'Settings', href: '/admin/settings', icon: Settings },
             ]
             : []),
@@ -135,6 +146,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="min-h-screen bg-zinc-950 font-sans text-zinc-100 selection:bg-teal-500/30">
+            <PresenceReporter />
             <div className="bg-noise" />
 
             <nav className="fixed inset-x-0 top-0 z-[60] border-b border-white/[0.08] bg-zinc-950" aria-label="Primary navigation">

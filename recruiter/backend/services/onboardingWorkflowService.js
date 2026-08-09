@@ -11,6 +11,7 @@ const Organization = require('../models/Organization');
 const { logOnboardingEvent } = require('./onboardingAuditService');
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 const { normalizeOrganizationBrand } = require('../utils/organizationBrand');
+const { performIdentityAction } = require('./idpMembershipLifecycleService');
 const {
   encryptValue,
   isSensitiveField,
@@ -22,7 +23,7 @@ function candidateDisplayName(candidate = {}) {
   return `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || candidate.email || 'Candidate';
 }
 
-const PROCESS_TYPES = ['onboarding', 'exit', 'retirement'];
+const PROCESS_TYPES = ['onboarding', 'exit', 'retirement', 'agreement', 'policy', 'general', 'team_signing', 'compliance_documents'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_ENVELOPE_STATUSES = ['sent', 'viewed', 'partially_signed'];
 const ACTIVE_WORKFLOW_STATUSES = ['not_started', 'pending', 'in_progress', 'blocked', 'failed'];
@@ -47,6 +48,11 @@ const DEFAULT_DUE_OFFSETS = {
   onboarding: { form: 2, document: 3, approval: 5, handoff: 7, task: 7 },
   exit: { form: 1, document: 2, approval: 3, handoff: 3, task: 3 },
   retirement: { form: 2, document: 3, approval: 5, handoff: 7, task: 7 }
+  ,agreement: { form: 3, document: 5, approval: 5, handoff: 7, task: 5 }
+  ,policy: { form: 3, document: 5, approval: 5, handoff: 7, task: 5 }
+  ,general: { form: 3, document: 5, approval: 5, handoff: 7, task: 5 }
+  ,team_signing: { form: 3, document: 5, approval: 5, handoff: 7, task: 5 }
+  ,compliance_documents: { form: 3, document: 5, approval: 5, handoff: 7, task: 5 }
 };
 
 const PROCESS_COPY = {
@@ -103,6 +109,46 @@ const PROCESS_COPY = {
     candidateStatus: 'Retired',
     dateField: 'retirementDate',
     handoffAction: 'retirement_handoff_completed'
+  },
+  agreement: {
+    label: 'Agreement', defaultTitle: 'Agreement workflow', defaultDescription: 'Agreement review and signing workflow.', category: 'agreement',
+    formTitle: 'Provide agreement details', formDescription: 'Provide the information required for this agreement.',
+    documentTitle: 'Review and sign agreement', documentDescription: 'Review and complete the agreement documents.',
+    approvalTitle: 'Approve agreement', approvalDescription: 'An authorized reviewer approves the completed agreement.',
+    handoffTitle: 'Complete agreement', handoffDescription: 'Complete the agreement workflow.', handoffTarget: 'custom',
+    candidateStatus: undefined, dateField: undefined, handoffAction: 'agreement_completed'
+  },
+  policy: {
+    label: 'Policy', defaultTitle: 'Policy acknowledgement', defaultDescription: 'Policy distribution and acknowledgement workflow.', category: 'policy',
+    formTitle: 'Confirm policy details', formDescription: 'Provide any information required by the policy.',
+    documentTitle: 'Review and acknowledge policy', documentDescription: 'Review the policy and record acknowledgement.',
+    approvalTitle: 'Review policy completion', approvalDescription: 'An authorized reviewer verifies completion.',
+    handoffTitle: 'Complete policy workflow', handoffDescription: 'Complete the policy workflow.', handoffTarget: 'custom',
+    candidateStatus: undefined, dateField: undefined, handoffAction: 'policy_completed'
+  },
+  general: {
+    label: 'General workflow', defaultTitle: 'People workflow', defaultDescription: 'Configurable employee or candidate workflow.', category: 'general',
+    formTitle: 'Complete requested information', formDescription: 'Provide the information requested for this workflow.',
+    documentTitle: 'Review workflow documents', documentDescription: 'Review and complete the workflow documents.',
+    approvalTitle: 'Review completion', approvalDescription: 'An authorized reviewer verifies completion.',
+    handoffTitle: 'Complete workflow', handoffDescription: 'Complete the workflow.', handoffTarget: 'custom',
+    candidateStatus: undefined, dateField: undefined, handoffAction: 'general_workflow_completed'
+  },
+  team_signing: {
+    label: 'Team signing', defaultTitle: 'Team signing workflow', defaultDescription: 'Multi-signer document workflow.', category: 'team-signing',
+    formTitle: 'Confirm signer information', formDescription: 'Confirm the information needed for signing.',
+    documentTitle: 'Complete team signing', documentDescription: 'All required signers review and sign the documents.',
+    approvalTitle: 'Review signatures', approvalDescription: 'An authorized reviewer verifies all signatures.',
+    handoffTitle: 'Complete signing workflow', handoffDescription: 'Complete the team signing workflow.', handoffTarget: 'custom',
+    candidateStatus: undefined, dateField: undefined, handoffAction: 'team_signing_completed'
+  },
+  compliance_documents: {
+    label: 'Compliance documents', defaultTitle: 'Compliance document workflow', defaultDescription: 'Collect, validate and track compliance documents.', category: 'compliance',
+    formTitle: 'Provide compliance details', formDescription: 'Provide the required compliance information.',
+    documentTitle: 'Provide compliance documents', documentDescription: 'Upload or sign the required compliance documents.',
+    approvalTitle: 'Review compliance documents', approvalDescription: 'An authorized reviewer validates the documents.',
+    handoffTitle: 'Complete compliance workflow', handoffDescription: 'Complete the compliance document workflow.', handoffTarget: 'custom',
+    candidateStatus: undefined, dateField: undefined, handoffAction: 'compliance_documents_completed'
   }
 };
 
@@ -140,6 +186,14 @@ function workflowItemKey(item = {}, index = 0) {
 function defaultWorkflowItemDefinitions(processType = 'onboarding') {
   const normalizedProcessType = normalizeProcessType(processType);
   const copy = processCopy(normalizedProcessType);
+
+  if (['agreement', 'policy', 'general', 'team_signing', 'compliance_documents'].includes(normalizedProcessType)) {
+    return [
+      { id: `${normalizedProcessType}-form`, type: 'form', title: copy.formTitle, description: copy.formDescription, ownerType: 'candidate', dueOffsetDays: 3, order: 10 },
+      { id: `${normalizedProcessType}-documents`, type: 'document', title: copy.documentTitle, description: copy.documentDescription, ownerType: 'candidate', dueOffsetDays: 5, order: 20 },
+      { id: `${normalizedProcessType}-review`, type: 'approval', title: copy.approvalTitle, description: copy.approvalDescription, ownerType: 'user', defaultOwnerRole: 'hr', dueOffsetDays: 5, order: 30, dependencyKeys: [`${normalizedProcessType}-form`, `${normalizedProcessType}-documents`] }
+    ];
+  }
 
   if (normalizedProcessType === 'exit') {
     return [
@@ -989,14 +1043,6 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
   const copy = processCopy(normalizedProcessType);
 
   const items = await OnboardingWorkflowItem.find({ onboarding: onboardingId });
-  if (!items.length) {
-    onboarding.status = 'completed';
-    onboarding.completedAt = onboarding.completedAt || new Date();
-    await onboarding.save();
-    await Candidate.findByIdAndUpdate(onboarding.candidate._id, candidateCompletionUpdate(onboarding.candidate, copy));
-    return null;
-  }
-
   const requiredItems = items.filter((item) =>
     item.type !== 'handoff' &&
     item.required !== false &&
@@ -1009,108 +1055,99 @@ async function tryCompleteOnboarding(onboardingId, { req } = {}) {
     return null;
   }
 
-  const handoffSources = items.filter((item) => item.type === 'handoff' || item.metadata?.handoffTarget);
-  const effectiveHandoffSources = handoffSources.length ? handoffSources : [{ metadata: { handoffTarget: copy.handoffTarget } }];
-  const completedHandoffs = [];
+  const identityProcess = ['onboarding', 'exit', 'retirement'].includes(normalizedProcessType);
+  const subjectName = onboarding.subject?.name || candidateDisplayName(onboarding.candidate || { email: onboarding.subject?.email });
+  const handoffSource = items.find((item) => item.type === 'handoff');
+  let handoff = identityProcess
+    ? await OnboardingHandoff.findOne({ onboarding: onboarding._id, target: normalizedProcessType === 'onboarding' ? 'identity_provider' : copy.handoffTarget })
+    : null;
+  if (identityProcess && !handoff) {
+    handoff = await OnboardingHandoff.create({
+      organization: onboarding.organization,
+      onboarding: onboarding._id,
+      candidate: onboarding.candidate?._id,
+      workflowItem: handoffSource?._id,
+      target: normalizedProcessType === 'onboarding' ? 'identity_provider' : copy.handoffTarget,
+      status: 'pending',
+      payload: {
+        processType: normalizedProcessType,
+        candidateId: onboarding.candidate?._id,
+        subject: onboarding.subject,
+        onboardingId: onboarding._id,
+        workflowReadyAt: new Date()
+      }
+    });
+    onboarding.handoffs = Array.from(new Set([...(onboarding.handoffs || []).map(objectIdString), objectIdString(handoff._id)]));
+  }
 
   try {
-    for (const source of effectiveHandoffSources) {
-      const handoffTarget = source.metadata?.handoffTarget || source.metadata?.target || copy.handoffTarget;
-      let handoff = await OnboardingHandoff.findOne({
-        onboarding: onboarding._id,
-        target: handoffTarget
-      });
-      if (!handoff) {
-        handoff = await OnboardingHandoff.create({
-          organization: onboarding.organization,
-          onboarding: onboarding._id,
-          candidate: onboarding.candidate._id,
-          workflowItem: source._id,
-          target: handoffTarget,
-          status: 'pending',
-          payload: {
-            processType: normalizedProcessType,
-            target: handoffTarget,
-            candidateId: onboarding.candidate._id,
-            candidateEmail: onboarding.candidate.email,
-            candidateName: candidateDisplayName(onboarding.candidate),
-            onboardingId: onboarding._id,
-            completedAt: new Date()
-          }
-        });
-      }
-
-      if (handoff.status !== 'completed') {
+    if (normalizedProcessType === 'onboarding') {
+      onboarding.status = 'ready_to_provision';
+      onboarding.identityAction.action = onboarding.identityAction.action || 'provision';
+      onboarding.identityAction.status = 'ready';
+    } else if (['exit', 'retirement'].includes(normalizedProcessType)) {
+      onboarding.identityAction.action = 'deactivate';
+      if (onboarding.identityAction.mode === 'on_workflow_completion') {
+        const organization = await Organization.findById(onboarding.organization);
         handoff.status = 'running';
         handoff.attempts += 1;
         await handoff.save();
+        await performIdentityAction({ transition: onboarding, organization, action: 'deactivate', actorId: req?.user?.id, reason: `${normalizedProcessType}_workflow_completed` });
         handoff.status = 'completed';
         handoff.completedAt = new Date();
         handoff.lastError = '';
         await handoff.save();
+        onboarding.status = 'completed';
+        onboarding.completedAt = onboarding.completedAt || new Date();
+      } else if (onboarding.identityAction.mode === 'scheduled_at' && onboarding.identityAction.status === 'pending') {
+        onboarding.status = 'completed';
+        onboarding.completedAt = onboarding.completedAt || new Date();
+      } else {
+        onboarding.status = 'ready_to_provision';
+        onboarding.identityAction.status = 'ready';
       }
-
-      if (source.type === 'handoff') {
-        source.status = 'completed';
-        source.completedAt = source.completedAt || new Date();
-        await source.save();
-      }
-
-      completedHandoffs.push(handoff);
+    } else {
+      onboarding.status = 'completed';
+      onboarding.completedAt = onboarding.completedAt || new Date();
     }
-
-    await Candidate.findByIdAndUpdate(onboarding.candidate._id, candidateCompletionUpdate(onboarding.candidate, copy));
-
-    onboarding.status = 'completed';
-    onboarding.completedAt = onboarding.completedAt || new Date();
-    onboarding.handoffs = Array.from(new Set([
-      ...(onboarding.handoffs || []).map((id) => objectIdString(id)),
-      ...completedHandoffs.map((handoff) => objectIdString(handoff._id))
-    ]));
     await onboarding.save();
-
+    if (onboarding.candidate && onboarding.status === 'completed' && copy.candidateStatus) {
+      await Candidate.findByIdAndUpdate(onboarding.candidate._id, candidateCompletionUpdate(onboarding.candidate, copy));
+    }
     await updateProgress(onboardingId);
     await logOnboardingEvent({
       req,
       organization: onboarding.organization,
       onboarding: onboarding._id,
-      candidate: onboarding.candidate._id,
+      candidate: onboarding.candidate?._id,
       actorType: 'system',
-      action: copy.handoffAction,
-      metadata: {
-        handoffs: completedHandoffs.map((handoff) => handoff._id),
-        processType: normalizedProcessType,
-        candidateStatus: copy.candidateStatus
-      }
+      action: onboarding.status === 'ready_to_provision' ? 'identity_action_ready' : copy.handoffAction,
+      metadata: { processType: normalizedProcessType, identityAction: onboarding.identityAction, handoff: handoff?._id }
     });
-
     await createPeopleTransitionNotifications({
       organization: onboarding.organization,
       onboarding,
       candidate: onboarding.candidate,
-      notificationType: 'people_transition_completed',
-      title: `${copy.label} completed`,
-      message: `${candidateDisplayName(onboarding.candidate)} has completed the ${copy.label.toLowerCase()} process.`,
-      priority: 'medium'
+      notificationType: onboarding.status === 'ready_to_provision' ? 'people_transition_action' : 'people_transition_completed',
+      title: onboarding.status === 'ready_to_provision' ? `${copy.label} ready for HR action` : `${copy.label} completed`,
+      message: onboarding.status === 'ready_to_provision'
+        ? `${subjectName} has completed the required work. HR must review and confirm the identity action.`
+        : `${subjectName} has completed the ${copy.label.toLowerCase()} process.`,
+      priority: onboarding.status === 'ready_to_provision' ? 'high' : 'medium'
     });
   } catch (error) {
-    const failedSource = effectiveHandoffSources.find((source) => source.type === 'handoff');
-    if (failedSource) {
-      failedSource.status = 'failed';
-      await failedSource.save();
+    if (handoff) {
+      handoff.status = 'failed';
+      handoff.lastError = error.message;
+      await handoff.save();
     }
-    await createPeopleTransitionNotifications({
-      organization: onboarding.organization,
-      onboarding,
-      candidate: onboarding.candidate,
-      notificationType: 'people_transition_action',
-      title: `${copy.label} closeout failed`,
-      message: `${candidateDisplayName(onboarding.candidate)} could not be closed out automatically: ${error.message}`,
-      priority: 'high'
-    });
+    onboarding.identityAction.status = 'failed';
+    onboarding.identityAction.lastError = error.message;
+    await onboarding.save();
+    throw error;
   }
 
-  return completedHandoffs[0] || null;
+  return handoff;
 }
 
 function candidateCompletionUpdate(candidate, copy) {
@@ -1251,7 +1288,7 @@ function documentActionType(envelopeDocument, signer) {
   const fields = (envelopeDocument?.signatureFields || []).filter((field) => fieldBelongsToSigner(field, signer));
   const signatureFields = fields.filter((field) => field.type === 'signature');
   if (signatureFields.length) return 'document_sign';
-  if (fields.length) return 'document_fill';
+  if (fields.some((field) => ['text', 'image'].includes(field.type))) return 'document_fill';
   return null;
 }
 

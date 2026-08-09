@@ -243,6 +243,13 @@ const PayrollProfileSchema = new Schema({
     enum: ['monthly', 'bi-weekly', 'weekly', 'semi-monthly'],
     default: 'monthly'
   },
+  compensationBasis: {
+    type: String,
+    enum: ['salaried', 'hourly'],
+    default: 'salaried'
+  },
+  hourlyRate: { type: Number, min: 0 },
+  standardHoursPerMonth: { type: Number, min: 1, max: 744, default: 176 },
 
   // How regular pay is earned. Salary remains the default for existing profiles.
   workTerms: {

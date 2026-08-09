@@ -1,12 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireOrganization } = require('../middleware/auth');
-const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
+const {
+    requireAuth,
+    requireOrganization,
+    isHRAdmin,
+    isLineManager,
+    isDepartmentHead,
+    getDepartmentHeadScope,
+} = require('../middleware/auth');
+const { TimeEntry, Timesheet, AttendancePolicy, EmployeeRoster } = require('../models');
 const geofenceService = require('../services/geofenceService');
 const { enrichLocationWithAddress } = require('../services/geocodingService');
 const { startOfWeek, endOfWeek, getISOWeek, getYear } = require('date-fns');
-const { evaluateClockIn, buildPolicySummary, calculateDailyDurations, getPolicyDayBounds, inferDayStartState } = require('../services/attendanceRulesService');
+const { evaluateClockIn, buildPolicySummary } = require('../services/attendanceRulesService');
 const attendanceEvents = require('../services/attendanceEventService');
+const { buildSessions, localDayBounds } = require('../services/timeCalculationService');
 
 // Apply auth middleware to all clock routes
 router.use(requireAuth);
@@ -27,6 +35,57 @@ router.get('/events', (req, res) => {
     });
 });
 
+function hasCoordinates(location) {
+    return Number.isFinite(Number(location?.latitude)) && Number.isFinite(Number(location?.longitude));
+}
+
+async function validateClockLocation(location, organizationId, action) {
+    const policy = await AttendancePolicy.getOrCreateDefault(organizationId);
+    const enforced = Boolean(policy.geofencing?.enabled && policy.geofencing?.enforced);
+    if (!hasCoordinates(location)) {
+        return enforced
+            ? { ok: false, status: 400, error: 'Location is required by your organization attendance policy', code: 'LOCATION_REQUIRED' }
+            : { ok: true, verified: false, policy };
+    }
+    if (Number(location.accuracy || 0) > Number(policy.clockSettings?.maximumLocationAccuracyMeters || 250)) {
+        return { ok: false, status: 400, error: 'Location accuracy is not sufficient to record attendance', code: 'LOCATION_ACCURACY_TOO_LOW' };
+    }
+    const validation = await geofenceService.validateLocation(Number(location.latitude), Number(location.longitude), organizationId);
+    if (!validation.isValid && enforced) {
+        return { ok: false, status: 403, error: `${action} is not allowed from this location`, code: 'OUTSIDE_GEOFENCE', details: validation };
+    }
+    return { ok: true, verified: validation.isValid, validation, policy };
+}
+
+async function ensureAttendanceEligible(userId, organizationId) {
+    const roster = await EmployeeRoster.findOne({ organizationId, userId }).lean();
+    if (!roster) return { allowed: true, reason: 'legacy_roster_pending' };
+    if (roster.status === 'inactive') return { allowed: false, code: 'EMPLOYMENT_INACTIVE', error: 'Your organization membership is inactive' };
+    if (roster.effectiveExitAt && new Date(roster.effectiveExitAt) <= new Date()) {
+        return { allowed: false, code: 'EMPLOYMENT_ENDED', error: 'Attendance recording ended at your effective exit time' };
+    }
+    return { allowed: true, roster };
+}
+
+async function findLockedTimesheetAt(userId, organizationId, timestamp = new Date()) {
+    return Timesheet.findOne({
+        userId,
+        organizationId,
+        startDate: { $lte: timestamp },
+        endDate: { $gte: timestamp },
+        status: { $in: ['approved', 'locked', 'payroll_pending', 'payroll_exported'] },
+    }).select('_id status startDate endDate').lean();
+}
+
+function rejectLockedPeriod(res, timesheet) {
+    return res.status(409).json({
+        error: 'This attendance period is locked. Ask a manager to create a versioned adjustment.',
+        code: 'TIMESHEET_LOCKED',
+        timesheetId: timesheet._id,
+        status: timesheet.status,
+    });
+}
+
 // Get current clock status
 router.get('/status', async (req, res) => {
     try {
@@ -37,32 +96,50 @@ router.get('/status', async (req, res) => {
         const clockStatus = await TimeEntry.getCurrentStatus(userId, organizationId);
         const breakStatus = await TimeEntry.isOnBreak(userId, organizationId);
 
+        // Get today's entries
         const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
-        const now = new Date();
-        const timezone = policy.timezone || 'UTC';
-        const { start: dayStart, timezone: resolvedTimezone } = getPolicyDayBounds(now, timezone);
-        const todayEntries = await TimeEntry.getTodayEntries(userId, organizationId, resolvedTimezone, now);
+        const todayEntries = await TimeEntry.getTodayEntries(userId, organizationId, policy.timezone || 'UTC');
 
-        const { clockedInAtDayStart, onBreakAtDayStart } = inferDayStartState(todayEntries, {
-            dayStart,
-            isClockedIn: clockStatus.isClockedIn,
-            lastClockEntry: clockStatus.lastEntry,
-            isOnBreak: breakStatus.onBreak,
-            lastBreakEntry: breakStatus.lastBreakEntry,
-        });
-
-        const { timeWorkedMinutes, breakMinutes } = calculateDailyDurations(todayEntries, {
-            now,
-            dayStart,
-            clockedInAtDayStart,
-            onBreakAtDayStart,
-            isClockedIn: clockStatus.isClockedIn,
-            isOnBreak: breakStatus.onBreak,
-        });
+        // Pair every session and break exactly once. The bounded lookback lets
+        // overnight sessions be clipped to the employee's current local day.
+        const { start: todayStart, end: todayEnd } = localDayBounds(new Date(), policy.timezone || 'UTC');
+        const lookbackStart = new Date(todayStart.getTime() - (48 * 60 * 60 * 1000));
+        const calculationEntries = await TimeEntry.find({
+            userId,
+            organizationId,
+            timestamp: { $gte: lookbackStart, $lte: todayEnd },
+        }).sort({ timestamp: 1 }).lean();
+        const now = new Date(Math.min(Date.now(), todayEnd.getTime()));
+        const currentlyOnBreak = Boolean(
+            clockStatus.isClockedIn
+            && breakStatus.onBreak
+            && new Date(breakStatus.lastBreakEntry.timestamp) > new Date(clockStatus.lastEntry.timestamp)
+        );
+        if (clockStatus.isClockedIn) {
+            if (currentlyOnBreak) calculationEntries.push({ entryType: 'break_end', timestamp: now, source: 'calculation' });
+            calculationEntries.push({ entryType: 'clock_out', timestamp: now, source: 'calculation' });
+        }
+        const { sessions } = buildSessions(calculationEntries);
+        let timeWorkedMinutes = 0;
+        let breakMinutes = 0;
+        for (const session of sessions) {
+            if (!session.clockIn || !session.clockOut) continue;
+            const sessionStart = new Date(Math.max(new Date(session.clockIn.timestamp).getTime(), todayStart.getTime()));
+            const sessionEnd = new Date(Math.min(new Date(session.clockOut.timestamp).getTime(), todayEnd.getTime()));
+            if (sessionEnd <= sessionStart) continue;
+            let sessionBreakMinutes = 0;
+            for (const pairedBreak of session.breaks) {
+                const breakStart = Math.max(new Date(pairedBreak.start.timestamp).getTime(), sessionStart.getTime());
+                const breakEnd = Math.min(new Date(pairedBreak.end.timestamp).getTime(), sessionEnd.getTime());
+                if (breakEnd > breakStart) sessionBreakMinutes += (breakEnd - breakStart) / 60000;
+            }
+            breakMinutes += sessionBreakMinutes;
+            timeWorkedMinutes += ((sessionEnd - sessionStart) / 60000) - sessionBreakMinutes;
+        }
 
         res.json({
             isClockedIn: clockStatus.isClockedIn,
-            isOnBreak: breakStatus.onBreak,
+            isOnBreak: currentlyOnBreak,
             lastClockEntry: clockStatus.lastEntry,
             lastBreakEntry: breakStatus.lastBreakEntry,
             todayEntries,
@@ -89,7 +166,15 @@ router.post('/in', async (req, res) => {
     try {
         const userId = req.user.id;
         const organizationId = req.organizationId;
-        const { note, location } = req.body;
+        const { note, location, workMode = 'office', locationId, jobCode, activityCode, costCentreCode } = req.body;
+        if (!['office', 'remote', 'client_site', 'other'].includes(workMode)) return res.status(400).json({ error: 'Invalid work mode' });
+
+        const eligibility = await ensureAttendanceEligible(userId, organizationId);
+        if (!eligibility.allowed) return res.status(403).json(eligibility);
+
+        const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
+        if (lockedTimesheet) return rejectLockedPeriod(res, lockedTimesheet);
+
         const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
         if (policy.clockSettings?.requireNote && !String(note || '').trim()) {
             return res.status(400).json({ error: 'A note is required to clock in', code: 'NOTE_REQUIRED' });
@@ -121,9 +206,12 @@ router.post('/in', async (req, res) => {
             });
         }
 
+        const locationCheck = await validateClockLocation(location, organizationId, 'Clock-in');
+        if (!locationCheck.ok) return res.status(locationCheck.status).json(locationCheck);
+
         // Validate geofencing if location provided
-        let locationVerified = false;
-        if (location?.latitude != null && location?.longitude != null) {
+        let locationVerified = locationCheck.verified;
+        if (hasCoordinates(location)) {
             const validation = await geofenceService.validateLocation(
                 location.latitude,
                 location.longitude,
@@ -158,7 +246,7 @@ router.post('/in', async (req, res) => {
 
         // Enrich location with address (reverse geocoding)
         let enrichedLocation = null;
-        if (location?.latitude != null && location?.longitude != null) {
+        if (hasCoordinates(location)) {
             enrichedLocation = await enrichLocationWithAddress({
                 ...location,
                 verified: locationVerified,
@@ -181,6 +269,11 @@ router.post('/in', async (req, res) => {
             source: req.user.authSurface === 'hub' ? 'hub' : 'web',
             note,
             location: enrichedLocation,
+            workMode,
+            locationId,
+            jobCode,
+            activityCode,
+            costCentreCode,
         });
 
         await entry.save();
@@ -223,6 +316,9 @@ router.post('/out', async (req, res) => {
             });
         }
 
+        const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
+        if (lockedTimesheet) return rejectLockedPeriod(res, lockedTimesheet);
+
         // End any active break first
         const breakStatus = await TimeEntry.isOnBreak(userId, organizationId);
         if (breakStatus.onBreak) {
@@ -241,9 +337,12 @@ router.post('/out', async (req, res) => {
             attendanceEvents.publish(userId, organizationId, { type: 'break_end', entryId: breakEndEntry._id, at: breakEndEntry.timestamp });
         }
 
-        // Validate geofencing if location provided (optional for clock-out)
-        let locationVerified = false;
-        if (location?.latitude != null && location?.longitude != null) {
+        const locationCheck = await validateClockLocation(location, organizationId, 'Clock-out');
+        if (!locationCheck.ok) return res.status(locationCheck.status).json(locationCheck);
+
+        // Validate geofencing if location provided
+        let locationVerified = locationCheck.verified;
+        if (hasCoordinates(location)) {
             const validation = await geofenceService.validateLocation(
                 location.latitude,
                 location.longitude,
@@ -258,7 +357,7 @@ router.post('/out', async (req, res) => {
 
         // Enrich location with address (reverse geocoding)
         let enrichedLocation = null;
-        if (location?.latitude != null && location?.longitude != null) {
+        if (hasCoordinates(location)) {
             enrichedLocation = await enrichLocationWithAddress({
                 ...location,
                 verified: locationVerified,
@@ -279,6 +378,11 @@ router.post('/out', async (req, res) => {
             source: req.user.authSurface === 'hub' ? 'hub' : 'web',
             note,
             location: enrichedLocation,
+            workMode: currentStatus.lastEntry.workMode,
+            locationId: currentStatus.lastEntry.locationId,
+            jobCode: currentStatus.lastEntry.jobCode,
+            activityCode: currentStatus.lastEntry.activityCode,
+            costCentreCode: currentStatus.lastEntry.costCentreCode,
         });
 
         await entry.save();
@@ -315,6 +419,9 @@ router.post('/break/start', async (req, res) => {
                 code: 'NOT_CLOCKED_IN',
             });
         }
+
+        const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
+        if (lockedTimesheet) return rejectLockedPeriod(res, lockedTimesheet);
 
         // Check if already on break
         const breakStatus = await TimeEntry.isOnBreak(userId, organizationId);
@@ -366,6 +473,9 @@ router.post('/break/end', async (req, res) => {
                 code: 'NOT_ON_BREAK',
             });
         }
+
+        const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
+        if (lockedTimesheet) return rejectLockedPeriod(res, lockedTimesheet);
 
         const entry = new TimeEntry({
             userId,
@@ -468,8 +578,8 @@ router.post('/manual', async (req, res) => {
         const policy = await AttendancePolicy.findOne({ organizationId });
         
         // Check if user is HR admin or manager
-        const isAdmin = req.user.roles?.includes('hr_admin');
-        const isManager = req.user.roles?.includes('manager');
+        const isAdmin = isHRAdmin(req);
+        const isManager = isLineManager(req) || isDepartmentHead(req);
         const canManualEntry = policy?.clockSettings?.allowManualEntry || false;
 
         // Determine target user
@@ -483,6 +593,12 @@ router.post('/manual', async (req, res) => {
                 return res.status(403).json({ 
                     error: 'Only HR admins and managers can add entries for other users',
                     code: 'INSUFFICIENT_PERMISSIONS'
+                });
+            }
+            if (!isAdmin && isDepartmentHead(req) && !getDepartmentHeadScope(req).directReports.includes(String(targetUserId))) {
+                return res.status(403).json({
+                    error: 'The selected employee is outside your management scope',
+                    code: 'OUTSIDE_MANAGER_SCOPE',
                 });
             }
             
@@ -499,6 +615,22 @@ router.post('/manual', async (req, res) => {
                     code: 'MANUAL_ENTRY_DISABLED'
                 });
             }
+        }
+
+        const lockedTimesheet = await Timesheet.findOne({
+            userId: targetUser,
+            organizationId,
+            startDate: { $lte: entryTimestamp },
+            endDate: { $gte: entryTimestamp },
+            status: { $in: ['submitted', 'approved', 'locked', 'payroll_pending', 'payroll_exported'] },
+        }).select('_id status');
+        if (lockedTimesheet) {
+            return res.status(409).json({
+                error: 'This period is locked. Create a timesheet adjustment instead.',
+                code: 'TIMESHEET_LOCKED',
+                timesheetId: lockedTimesheet._id,
+                status: lockedTimesheet.status,
+            });
         }
 
         // 5. Get user's team info

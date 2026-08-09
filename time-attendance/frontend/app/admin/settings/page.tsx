@@ -13,7 +13,8 @@ import {
     Trash2,
     Edit2,
     CheckCircle2,
-    XCircle
+    XCircle,
+    Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -67,6 +68,22 @@ export default function SettingsPage() {
                         requiredAfterMinutes: data.policy.breakRules?.requiredAfterMinutes ?? 360,
                         minimumBreakMinutes: data.policy.breakRules?.minimumBreakMinutes ?? 20,
                         maximumContinuousWorkMinutes: data.policy.breakRules?.maximumContinuousWorkMinutes ?? 360,
+                    },
+                    timesheetSettings: {
+                        ...(data.policy.timesheetSettings || {}),
+                        periodType: data.policy.timesheetSettings?.periodType || 'weekly',
+                        autoSubmit: data.policy.timesheetSettings?.autoSubmit === true,
+                        autoApprove: data.policy.timesheetSettings?.autoApprove === true,
+                        submissionDeadline: data.policy.timesheetSettings?.submissionDeadline ?? 2,
+                        approvalDeadline: data.policy.timesheetSettings?.approvalDeadline ?? 3,
+                        approvalLevels: data.policy.timesheetSettings?.approvalLevels?.length
+                            ? data.policy.timesheetSettings.approvalLevels
+                            : [{ name: 'Line manager', approverType: 'line_manager' }],
+                    },
+                    presence: {
+                        enabled: data.policy.presence?.enabled !== false,
+                        rawEventRetentionDays: data.policy.presence?.rawEventRetentionDays ?? 90,
+                        dailySummaryRetentionDays: data.policy.presence?.dailySummaryRetentionDays ?? 730,
                     },
                     notifications: {
                         ...(data.policy.notifications || {}),
@@ -305,6 +322,29 @@ export default function SettingsPage() {
                 </section>
 
                 <section className="bg-zinc-900/50 border border-white/5 rounded-xl p-6">
+                    <div className="mb-5 flex items-center gap-3">
+                        <Clock className="h-5 w-5 text-teal-400" />
+                        <div>
+                            <h2 className="text-lg font-semibold text-white">Timesheet workflow</h2>
+                            <p className="text-sm text-zinc-500">Configure period boundaries and safe automation.</p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+                        <label className="text-sm text-zinc-400">Period
+                            <select value={policy.timesheetSettings.periodType} onChange={(e) => setPolicy({ ...policy, timesheetSettings: { ...policy.timesheetSettings, periodType: e.target.value } })} className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white">
+                                <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option><option value="semi-monthly">Semi-monthly</option><option value="monthly">Monthly</option>
+                            </select>
+                        </label>
+                        <label className="flex min-h-10 items-center gap-3 self-end text-sm text-zinc-300">
+                            <input type="checkbox" checked={policy.timesheetSettings.autoSubmit} onChange={(e) => setPolicy({ ...policy, timesheetSettings: { ...policy.timesheetSettings, autoSubmit: e.target.checked } })} className="h-4 w-4 accent-teal-500" /> Auto-submit completed periods
+                        </label>
+                        <label className="flex min-h-10 items-center gap-3 self-end text-sm text-zinc-300">
+                            <input type="checkbox" checked={policy.timesheetSettings.autoApprove} onChange={(e) => setPolicy({ ...policy, timesheetSettings: { ...policy.timesheetSettings, autoApprove: e.target.checked } })} className="h-4 w-4 accent-teal-500" /> Auto-approve valid submissions
+                        </label>
+                    </div>
+                </section>
+
+                <section className="bg-zinc-900/50 border border-white/5 rounded-xl p-6">
                     <div className="mb-6">
                         <h2 className="text-lg font-semibold text-white">Clock-in and break rules</h2>
                         <p className="text-sm text-zinc-500">Login never starts a shift. Employees must use an attendance clock action.</p>
@@ -492,6 +532,27 @@ export default function SettingsPage() {
                             </div>
                         </div>
                     )}
+                </section>
+
+                <section className="border border-white/10 rounded-xl p-6">
+                    <div className="mb-5 flex items-center gap-3">
+                        <Eye className="h-5 w-5 text-sky-400" />
+                        <div>
+                            <h2 className="text-lg font-semibold text-white">Application-presence evidence</h2>
+                            <p className="text-sm text-zinc-500">Visible-session evidence only; never productivity scoring.</p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+                        <label className="flex min-h-10 items-center gap-3 text-sm text-zinc-300">
+                            <input type="checkbox" checked={policy.presence.enabled} onChange={(e) => setPolicy({ ...policy, presence: { ...policy.presence, enabled: e.target.checked } })} className="h-4 w-4 accent-teal-500" /> Enable transparent presence reporting
+                        </label>
+                        <label className="text-sm text-zinc-400">Raw-event retention (days)
+                            <input type="number" min={1} max={90} value={policy.presence.rawEventRetentionDays} onChange={(e) => setPolicy({ ...policy, presence: { ...policy.presence, rawEventRetentionDays: Math.min(90, Number(e.target.value)) } })} className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white" />
+                        </label>
+                        <label className="text-sm text-zinc-400">Summary retention (days)
+                            <input type="number" min={1} value={policy.presence.dailySummaryRetentionDays} onChange={(e) => setPolicy({ ...policy, presence: { ...policy.presence, dailySummaryRetentionDays: Number(e.target.value) } })} className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white" />
+                        </label>
+                    </div>
                 </section>
 
                 {/* Geofencing */}

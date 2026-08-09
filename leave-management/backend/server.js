@@ -26,6 +26,7 @@ const { claimsRefreshMiddleware } = require('./middleware/claimsRefresh');
 // Import services
 const websocketService = require('./services/websocketService');
 const { initializeEmailService } = require('./services/emailService');
+const { startAttendanceIntegrationWorker } = require('./services/attendanceIntegrationService');
 
 const app = express();
 const PORT = process.env.PORT || 5002;
@@ -92,6 +93,8 @@ app.use('/api/leave-balances', leaveBalanceRoutes);
 app.use('/api/leave-policies', leavePolicyRoutes);
 app.use('/api/hub', hubRoutes);
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/presence', require('./routes/presenceReporter'));
+app.use('/api/internal/v1/time-attendance', require('./routes/timeAttendanceIntegration'));
 
 // Error handling middleware
 app.use(errorHandler);
@@ -117,6 +120,7 @@ const startServer = async () => {
     const server = app.listen(PORT, () => {
       console.log(`Leave Management Backend running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      startAttendanceIntegrationWorker();
     });
 
     // Initialize WebSocket server

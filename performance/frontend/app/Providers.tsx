@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import { AuthProvider } from "@/context/AuthContext";
+import AttendancePresenceReporter from "@/components/AttendancePresenceReporter";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -10,6 +11,6 @@ interface ProvidersProps {
 export default function Providers({ children }: ProvidersProps) {
   // Using custom AuthProvider for OIDC-based authentication
   // No NextAuth SessionProvider needed as we handle auth with localStorage tokens
-  return <AuthProvider>{children}</AuthProvider>;
+  return <AuthProvider><AttendancePresenceReporter />{children}</AuthProvider>;
 }
 

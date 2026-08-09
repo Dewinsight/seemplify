@@ -5,6 +5,7 @@ const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
+const TimeAttendanceImport = require('../models/TimeAttendanceImport');
 const PayrollEngineService = require('../services/PayrollEngineService');
 const taxService = require('../services/TaxCalculationService');
 const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
@@ -1951,6 +1952,10 @@ async function retractPayrollRun(runId, organizationId, adminId, adminName, comm
     payrollRunId: run._id,
     organizationId
   });
+  await TimeAttendanceImport.updateMany(
+    { organizationId, appliedPayrollRunId: run._id, status: 'applied' },
+    { $set: { status: 'accepted' }, $unset: { appliedPayrollRunId: '' } }
+  );
 
   run.status = 'cancelled';
   run.retractedAt = new Date();

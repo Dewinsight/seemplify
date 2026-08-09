@@ -65,6 +65,9 @@ function getStatusColors(status) {
     switch (status) {
         case 'present':
         case 'approved':
+        case 'locked':
+        case 'payroll_pending':
+        case 'payroll_exported':
         case 'working':
             return { bg: COLORS.successLight, fg: COLORS.success };
         case 'partial':

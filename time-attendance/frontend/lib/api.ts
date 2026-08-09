@@ -219,6 +219,12 @@ export const reportsApi = {
         const response = await api.get('/reports/attendance', { params: { start, end } });
         return response.data;
     },
+    exportAttendance: async (start: string, end: string) => {
+        const response = await api.get('/reports/attendance/export', { params: { start, end }, responseType: 'blob' });
+        return { blob: response.data, filename: `attendance-${start.slice(0, 10)}-${end.slice(0, 10)}.xlsx` };
+    },
+    getAnalytics: async (start?: string, end?: string) => (await api.get('/reports/analytics', { params: { start, end } })).data,
+    getCapacityForecast: async (start?: string, end?: string) => (await api.get('/reports/capacity-forecast', { params: { start, end } })).data,
     getOvertime: async (start: string, end: string) => {
         const response = await api.get('/reports/overtime', { params: { start, end } });
         return response.data;
@@ -297,6 +303,63 @@ export const approvalsApi = {
         const response = await api.delete(`/approvals/${id}`, { data: { reason } });
         return response.data;
     },
+};
+
+export const schedulingApi = {
+    getTemplates: async () => (await api.get('/v1/scheduling/templates')).data,
+    createTemplate: async (data: any) => (await api.post('/v1/scheduling/templates', data)).data,
+    getShifts: async (params?: any) => (await api.get('/v1/scheduling/shifts', { params })).data,
+    createShift: async (data: any) => (await api.post('/v1/scheduling/shifts', data)).data,
+    acknowledge: async (id: string, accepted = true, note = '') => (await api.post(`/v1/scheduling/shifts/${id}/acknowledge`, { accepted, note })).data,
+    publish: async (data: any) => (await api.post('/v1/scheduling/publish', data)).data,
+    getRequests: async () => (await api.get('/v1/scheduling/requests')).data,
+    createRequest: async (data: any) => (await api.post('/v1/scheduling/requests', data)).data,
+    reviewRequest: async (id: string, approved: boolean, note = '') => (await api.post(`/v1/scheduling/requests/${id}/review`, { approved, note })).data,
+    getAvailability: async () => (await api.get('/v1/scheduling/availability')).data,
+    setAvailability: async (date: string, data: any) => (await api.put(`/v1/scheduling/availability/${date}`, data)).data,
+};
+
+export const exceptionsApi = {
+    list: async (params?: any) => (await api.get('/v1/exceptions', { params })).data,
+    requestCorrection: async (id: string, data: any) => (await api.post(`/v1/exceptions/${id}/correction-requests`, data)).data,
+    review: async (id: string, accepted: boolean, note = '') => (await api.post(`/v1/exceptions/${id}/review`, { accepted, note })).data,
+};
+
+export const presenceApi = {
+    notice: async () => (await api.get('/v1/presence/notice')).data,
+    me: async (params?: any) => (await api.get('/v1/presence/me', { params })).data,
+    exportMine: async () => (await api.get('/v1/presence/me/export')).data,
+    requestPrivacyAction: async (type: string, reason: string) => (await api.post('/v1/presence/privacy-requests', { type, reason })).data,
+    privacyRequests: async () => (await api.get('/v1/presence/privacy-requests')).data,
+    team: async (params?: any) => (await api.get('/v1/presence/team', { params })).data,
+    assignments: async () => (await api.get('/v1/presence/assignments')).data,
+    saveAssignment: async (data: any) => (await api.put('/v1/presence/assignments', data)).data,
+};
+
+export const notificationsApi = {
+    list: async (unread = false) => (await api.get('/v1/notifications', { params: { unread } })).data,
+    read: async (id: string) => (await api.post(`/v1/notifications/${id}/read`)).data,
+    readAll: async () => (await api.post('/v1/notifications/read-all')).data,
+    getPreferences: async () => (await api.get('/v1/notifications/preferences/me')).data,
+    savePreferences: async (data: any) => (await api.put('/v1/notifications/preferences/me', data)).data,
+    savePushSubscription: async (subscription: PushSubscriptionJSON) => (await api.post('/v1/notifications/push-subscriptions', { subscription })).data,
+};
+
+export const rulePacksApi = {
+    list: async (params?: any) => (await api.get('/v1/rule-packs', { params })).data,
+    get: async (id: string) => (await api.get(`/v1/rule-packs/${id}`)).data,
+    create: async (data: any) => (await api.post('/v1/rule-packs', data)).data,
+    clone: async (id: string, data?: any) => (await api.post(`/v1/rule-packs/${id}/clone`, data || {})).data,
+    update: async (id: string, data: any) => (await api.patch(`/v1/rule-packs/${id}`, data)).data,
+    validate: async (id: string) => (await api.post(`/v1/rule-packs/${id}/validate`)).data,
+    publish: async (id: string, data: any) => (await api.post(`/v1/rule-packs/${id}/publish`, data)).data,
+    retire: async (id: string, data?: any) => (await api.post(`/v1/rule-packs/${id}/retire`, data || {})).data,
+    simulate: async (id: string, data: any) => (await api.post(`/v1/rule-packs/${id}/simulate`, data)).data,
+};
+
+export const correctionRunsApi = {
+    list: async () => (await api.get('/admin/correction-runs')).data,
+    create: async (data: any) => (await api.post('/admin/correction-runs', data)).data,
 };
 
 export default api;

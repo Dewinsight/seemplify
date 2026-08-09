@@ -861,6 +861,11 @@ router.get('/oidc/callback', async (req, res) => {
       console.log(`⏱️ [PERF] Total org sync: ${Date.now() - orgSyncStart}ms`);
     }
 
+    if (userinfo.sub && user.idpSubject !== userinfo.sub) {
+      user.idpSubject = userinfo.sub;
+      shouldSaveUser = true;
+    }
+
     // Store team claims on user for potential use
     if (userinfo.teams) {
       user.idpTeams = userinfo.teams;

@@ -10,11 +10,9 @@ const morgan = require('morgan');
 
 const connectDatabase = require('./config/database');
 const { initializeOIDC } = require('./config/oidc');
-const { startAutoClockOutScheduler } = require('./services/autoClockOutService');
 const { initializeEmailService } = require('./services/emailService');
-const { startReminderScheduler } = require('./services/reminderService');
-const { startManagerReportScheduler } = require('./services/managerReportService');
-const { startClockReminderScheduler } = require('./services/clockReminderService');
+const { startBackgroundWorker } = require('./services/backgroundJobService');
+const { registerCoreJobHandlers } = require('./services/registerJobHandlers');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -24,6 +22,15 @@ const attendanceRoutes = require('./routes/attendance');
 const approvalRoutes = require('./routes/approvals');
 const reportRoutes = require('./routes/reports');
 const adminRoutes = require('./routes/admin');
+const rulePackRoutes = require('./routes/rulePacks');
+const schedulingRoutes = require('./routes/scheduling');
+const presenceRoutes = require('./routes/presence');
+const webhookRoutes = require('./routes/webhooks');
+const notificationRoutes = require('./routes/notifications');
+const performanceIntegrationRoutes = require('./routes/performanceIntegration');
+const exceptionRoutes = require('./routes/exceptions');
+const presenceReporterIntegrationRoutes = require('./routes/presenceReporterIntegration');
+const correctionRunRoutes = require('./routes/correctionRuns');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -40,11 +47,17 @@ app.use(helmet({
 }));
 
 // CORS configuration
+const approvedWebOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:5011',
+    process.env.IDP_ISSUER_URL || 'http://localhost:4000',
+    process.env.PAYROLL_FRONTEND_URL || 'http://localhost:3006',
+    process.env.PERFORMANCE_FRONTEND_URL || 'http://localhost:3004',
+    process.env.LEAVE_FRONTEND_URL || 'http://localhost:3002',
+    process.env.RECRUITER_FRONTEND_URL || 'http://localhost:3000',
+    ...(process.env.PRESENCE_REPORTER_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
+];
 app.use(cors({
-    origin: [
-        process.env.FRONTEND_URL || 'http://localhost:5011',
-        process.env.IDP_ISSUER_URL || 'http://localhost:4000',
-    ],
+    origin: approvedWebOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -91,6 +104,15 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/approvals', approvalRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/v1/rule-packs', rulePackRoutes);
+app.use('/api/v1/scheduling', schedulingRoutes);
+app.use('/api/v1/presence', presenceRoutes);
+app.use('/api/internal/v1/presence', presenceReporterIntegrationRoutes);
+app.use('/api/admin/correction-runs', correctionRunRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/integrations/v1/performance', performanceIntegrationRoutes);
+app.use('/api/v1/exceptions', exceptionRoutes);
 
 // Error handling middleware
 app.use(errorHandler);
@@ -111,22 +133,14 @@ const startServer = async () => {
 
         // Initialize email service
         initializeEmailService();
+        registerCoreJobHandlers();
 
         // Start server
         app.listen(PORT, () => {
             console.log(`Time & Attendance Backend running on port ${PORT}`);
             console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
             
-            // Start auto clock-out scheduler
-            startAutoClockOutScheduler();
-            
-            // Start reminder scheduler
-            startReminderScheduler();
-
-            startClockReminderScheduler();
-
-            // Start manager report scheduler
-            startManagerReportScheduler();
+            startBackgroundWorker().catch(error => console.error('Failed to start background worker:', error));
         });
     } catch (error) {
         console.error('Failed to start server:', error);
