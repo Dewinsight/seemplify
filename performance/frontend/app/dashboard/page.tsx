@@ -38,6 +38,7 @@ export default function DashboardPage() {
     teams,
     currentTeam: contextCurrentTeam,
     managerData,
+    features,
     isLoading: contextLoading
   } = useUserContext();
   const { currentTeam, mutate: mutateCurrentTeam } = useCurrentTeam();
@@ -85,7 +86,11 @@ export default function DashboardPage() {
   }, [teamDropdownOpen]);
 
   useEffect(() => {
-    if (!isManager) return;
+    if (!isManager || features.canonicalAppraisals === false) {
+      setManagerNotifications([]);
+      setManagerNotificationLoading(false);
+      return;
+    }
     const loadManagerNotifications = async () => {
       setManagerNotificationLoading(true);
       try {
@@ -98,7 +103,7 @@ export default function DashboardPage() {
       }
     };
     loadManagerNotifications();
-  }, [isManager]);
+  }, [features.canonicalAppraisals, isManager]);
 
   const getTeamViewDisplay = () => {
     if (selectedTeamView === 'all') return 'All teams';
@@ -179,14 +184,17 @@ export default function DashboardPage() {
   const organizationName = organization?.name || currentOrganization?.name || 'your organization';
   const showTeamSwitcher = orgTeams.length > 0;
   const showManagementRail = isManager || isHRAdmin;
-  const actions = [
+  const primaryActions = [
     { name: 'Set and update OKRs', href: '/okrs', icon: Target, copy: 'Create objectives, update progress, and keep outcomes connected to the work.', meta: `${data.totalOkrs || 0} active` },
-    { name: 'My appraisals', href: '/appraisals', icon: FileText, copy: 'Continue self-assessments, discussions, and reviews already assigned to you.', meta: `${data.upcomingDeadlines || 0} due soon` },
-    ...(isManager ? [{ name: 'My team', href: '/team', icon: Users, copy: 'Review direct reports, manager actions, goals, and development activity.', meta: `${managerData?.directReportCount || 0} reports` }] : []),
-    ...(isHRAdmin ? [{ name: 'Create appraisal cycle', href: '/admin/appraisal-cycles/new', icon: Flag, copy: 'Choose participants, set the timeline, and launch the next review cycle.', meta: 'HR administration' }] : []),
+    ...(features.canonicalAppraisals === false ? [] : [
+      { name: 'My appraisals', href: '/appraisals', icon: FileText, copy: 'Continue self-assessments, discussions, and reviews already assigned to you.', meta: `${data.upcomingDeadlines || 0} due soon` },
+    ]),
   ];
-  const primaryActions = actions.slice(0, 2);
-  const roleActions = actions.slice(2);
+  const roleActions = [
+    ...(isManager ? [{ name: 'My team', href: '/team', icon: Users, copy: `Review direct reports, manager actions, goals${features.continuousPerformance === false ? '' : ', and development activity'}.`, meta: `${managerData?.directReportCount || 0} reports` }] : []),
+    ...(isHRAdmin && features.canonicalAppraisals !== false ? [{ name: 'Create appraisal cycle', href: '/admin/appraisal-cycles/new', icon: Flag, copy: 'Choose participants, set the timeline, and launch the next review cycle.', meta: 'HR administration' }] : []),
+  ];
+  const actions = [...primaryActions, ...roleActions];
   const renderActionCard = ({ name, href, icon: Icon, copy, meta }: (typeof actions)[number], compact = false) => (
     <Link key={name} href={href} className={`suite-card${compact ? ' suite-role-card' : ''}`}>
       <div className="suite-card-top"><div className="suite-icon"><Icon className="h-5 w-5" /></div><ArrowRight className="h-4 w-4" style={{ color: 'var(--suite-subtle)' }} /></div>
@@ -202,7 +210,7 @@ export default function DashboardPage() {
           <p className="suite-kicker">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
           <h1 className="suite-dashboard-title">Performance work that stays close to the team.</h1>
           <p className="suite-dashboard-copy">
-            Welcome back, {firstName}. Move goals, appraisals, and manager actions forward for {organizationName} without hunting through separate workflows.
+            Welcome back, {firstName}. Move goals{features.canonicalAppraisals === false ? '' : ', appraisals'}, and manager actions forward for {organizationName} without hunting through separate workflows.
           </p>
         </div>
         <div className="suite-context">
@@ -248,7 +256,7 @@ export default function DashboardPage() {
         </>, document.body
       )}
 
-      {isManager && managerNotifications.length > 0 && (
+      {features.canonicalAppraisals !== false && isManager && managerNotifications.length > 0 && (
         <div className="suite-notice mt-6">
           <div className="flex items-start gap-3"><AlertCircle className="mt-0.5 h-5 w-5" style={{ color: 'var(--suite-warning)' }} /><div><p className="text-sm font-semibold">Manager review ready</p><p className="mt-1 text-sm" style={{ color: 'var(--suite-muted)' }}>Review {managerNotifications[0]?.employee?.name || 'an employee'}&apos;s submitted appraisal.</p></div></div>
           <button onClick={() => handleOpenManagerNotification(managerNotifications[0])} className="suite-button">Start review <ArrowRight className="h-4 w-4" /></button>
@@ -259,12 +267,12 @@ export default function DashboardPage() {
         <div className="suite-metrics">
           <Link href="/okrs" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">OKR progress</p><p className="suite-metric-value">{data.okrProgress || 0}%</p><div className="suite-progress mt-3"><span style={{ width: `${Math.min(100, Number(data.okrProgress || 0))}%` }} /></div></Link>
           <Link href="/okrs" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Active OKRs</p><p className="suite-metric-value">{data.totalOkrs || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>{data.completedOkrs || 0} completed</p></Link>
-          <Link href="/appraisals" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Upcoming deadlines</p><p className="suite-metric-value">{data.upcomingDeadlines || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Next 7 days</p></Link>
-          {isManager ? (
+          {features.canonicalAppraisals !== false && <Link href="/appraisals" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Upcoming deadlines</p><p className="suite-metric-value">{data.upcomingDeadlines || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Next 7 days</p></Link>}
+          {features.canonicalAppraisals !== false && isManager ? (
             <Link href="/team/reviews" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Pending reviews</p><p className="suite-metric-value">{managerData?.pendingReviews || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Needs your attention</p></Link>
-          ) : (
+          ) : features.continuousPerformance !== false && !isManager ? (
             <Link href="/feedback" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Recent feedback</p><p className="suite-metric-value">{data.recentFeedback || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Shared with you</p></Link>
-          )}
+          ) : null}
         </div>
       </section>
 
@@ -276,7 +284,7 @@ export default function DashboardPage() {
               {primaryActions.map((action) => renderActionCard(action))}
             </div>
 
-            {isManager && (
+            {features.canonicalAppraisals !== false && isManager && (
               <section className="suite-manager-block" aria-labelledby="manager-actions-title">
                 <div className="suite-section-heading"><div><h2 id="manager-actions-title" className="suite-section-title">Manager actions</h2><p className="suite-section-copy">Reviews and follow-ups routed directly to you.</p></div></div>
                 <div className="suite-panel overflow-hidden">

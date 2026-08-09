@@ -86,7 +86,7 @@ const DevelopmentPlanSchema = new mongoose.Schema({
     title: { type: String, required: true },
     type: {
       type: String,
-      enum: ['training', 'course', 'certification', 'mentoring', 'stretch_assignment', 'shadowing', 'conference', 'reading', 'other']
+      enum: ['training', 'course', 'certification', 'mentoring', 'stretch_assignment', 'internal_project', 'shadowing', 'conference', 'reading', 'other']
     },
     description: String,
     dueDate: Date,
@@ -132,6 +132,16 @@ const DevelopmentPlanSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'PerformanceReview'
   },
+  linkedAppraisalId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Appraisal',
+    index: true
+  },
+  source: {
+    type: String,
+    enum: ['manual', 'appraisal', 'onboarding', 'role_change'],
+    default: 'manual'
+  },
   linkedOKRs: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'OKR'
@@ -151,6 +161,20 @@ const DevelopmentPlanSchema = new mongoose.Schema({
     blockers: String,
     addedBy: String
   }],
+  milestones: [{
+    title: { type: String, required: true },
+    description: String,
+    ownerId: String,
+    dueDate: Date,
+    status: {
+      type: String,
+      enum: ['not_started', 'in_progress', 'completed', 'cancelled'],
+      default: 'not_started'
+    },
+    evidence: [String],
+    completedAt: Date
+  }],
+  reviewDates: [Date],
   
   // AI recommendations
   aiRecommendations: {
@@ -179,6 +203,10 @@ const DevelopmentPlanSchema = new mongoose.Schema({
 // Indexes
 DevelopmentPlanSchema.index({ userId: 1, status: 1 });
 DevelopmentPlanSchema.index({ managerId: 1 });
+DevelopmentPlanSchema.index(
+  { organizationId: 1, linkedAppraisalId: 1 },
+  { unique: true, partialFilterExpression: { linkedAppraisalId: { $exists: true } } }
+);
 
 // Pre-save middleware
 DevelopmentPlanSchema.pre('save', function(next) {

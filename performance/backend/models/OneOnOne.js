@@ -69,6 +69,11 @@ const OneOnOneSchema = new mongoose.Schema({
     enum: ['video', 'audio', 'chat', 'in_person'],
     default: 'video'
   },
+  // Shared by the existing scheduling UI and calendar synchronization.
+  location: {
+    type: String,
+    maxlength: 500
+  },
 
   // Nylas Integration
   nylas: {

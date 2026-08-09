@@ -1,381 +1,260 @@
 const express = require('express');
-const router = express.Router();
 const DevelopmentPlan = require('../models/DevelopmentPlan');
-const { requireAuth, requireManager, requireHRAdmin } = require('../middleware/rbac');
+const { requireAuth, requireManager } = require('../middleware/rbac');
+const { requireOrganization, getActorId } = require('../services/tenantPolicy');
 const AIPerformanceService = require('../services/aiPerformanceService');
-const notificationService = require('../services/notificationService');
 
-/**
- * GET /api/development-plans - List development plans
- */
-router.get('/', requireAuth, async (req, res) => {
+const router = express.Router();
+router.use(requireAuth, requireOrganization);
+
+function isHr(req) {
+  return req.userRole === 'hr_admin';
+}
+
+function isPlanOwner(req, plan) {
+  return String(plan.userId) === String(getActorId(req));
+}
+
+function isPlanManager(req, plan) {
+  return String(plan.managerId) === String(getActorId(req));
+}
+
+function canAccessPlan(req, plan) {
+  return Boolean(plan && String(plan.organizationId) === req.organizationId &&
+    (isHr(req) || isPlanOwner(req, plan) || isPlanManager(req, plan)));
+}
+
+async function findPlan(req, id) {
+  return DevelopmentPlan.findOne({ _id: id, organizationId: req.organizationId });
+}
+
+function forbidden(res) {
+  return res.status(403).json({ success: false, error: 'Access denied' });
+}
+
+router.get('/', async (req, res) => {
   try {
-    const userId = req.session.user.id || req.session.user.sub;
-    const role = req.userRole;
-    const { status, userId: queryUserId } = req.query;
-    
-    let query = {};
-    
-    if (role === 'hr_admin') {
-      if (req.currentOrganization?.id) {
-        query.organizationId = req.currentOrganization.id;
-      }
-      if (queryUserId) query.userId = queryUserId;
-    } else if (role === 'line_manager') {
-      const directReports = req.directReports || [];
+    const actorId = getActorId(req);
+    const query = { organizationId: req.organizationId };
+    if (isHr(req)) {
+      if (req.query.userId) query.userId = String(req.query.userId);
+    } else if (['line_manager', 'team_lead'].includes(req.userRole)) {
+      const directReports = (req.directReports || []).map(String);
       query.$or = [
-        { userId: userId },
-        { managerId: userId },
+        { userId: actorId },
+        { managerId: actorId },
         { userId: { $in: directReports } }
       ];
     } else {
-      query.userId = userId;
+      query.userId = actorId;
     }
-    
-    if (status) query.status = status;
-    
-    const plans = await DevelopmentPlan.find(query)
-      .sort({ createdAt: -1 })
-      .limit(50);
-    
-    res.json({
-      success: true,
-      data: plans,
-      count: plans.length
-    });
+    if (req.query.status) query.status = String(req.query.status);
+
+    const plans = await DevelopmentPlan.find(query).sort({ updatedAt: -1 }).limit(100);
+    return res.json({ success: true, data: plans, count: plans.length });
   } catch (error) {
     console.error('Error fetching development plans:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch plans' });
+    return res.status(500).json({ success: false, error: 'Failed to fetch plans' });
   }
 });
 
-/**
- * GET /api/development-plans/:id - Get specific plan
- */
-router.get('/:id', requireAuth, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const plan = await DevelopmentPlan.findById(req.params.id);
-    
-    if (!plan) {
-      return res.status(404).json({ success: false, error: 'Plan not found' });
-    }
-    
-    const userId = req.session.user.id || req.session.user.sub;
-    const isOwner = plan.userId === userId;
-    const isManager = plan.managerId === userId;
-    const isHRAdmin = req.userRole === 'hr_admin';
-    
-    if (!isOwner && !isManager && !isHRAdmin) {
-      return res.status(403).json({ success: false, error: 'Access denied' });
-    }
-    
-    res.json({ success: true, data: plan });
+    const plan = await findPlan(req, req.params.id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+    if (!canAccessPlan(req, plan)) return forbidden(res);
+    return res.json({ success: true, data: plan });
   } catch (error) {
-    console.error('Error fetching plan:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch plan' });
+    console.error('Error fetching development plan:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch plan' });
   }
 });
 
-/**
- * POST /api/development-plans - Create development plan
- */
 router.post('/', requireManager, async (req, res) => {
   try {
-    const managerId = req.session.user.id || req.session.user.sub;
-    const {
-      userId, title, description, startDate, targetDate,
-      careerGoals, skillDevelopment, learningActivities, stretchAssignments, mentoring
-    } = req.body;
-    
-    if (!userId || !title || !startDate || !targetDate) {
-      return res.status(400).json({
-        success: false,
-        error: 'User, title, start date, and target date are required'
-      });
+    const managerId = getActorId(req);
+    const targetUserId = String(req.body.userId || '').trim();
+    const directReports = (req.directReports || []).map(String);
+    if (!targetUserId || (!isHr(req) && !directReports.includes(targetUserId))) {
+      return res.status(403).json({ success: false, error: 'Development plans can only be created for a direct report' });
     }
-    
-    const plan = new DevelopmentPlan({
-      userId,
+    const startDate = new Date(req.body.startDate);
+    const targetDate = new Date(req.body.targetDate);
+    if (!req.body.title || Number.isNaN(startDate.getTime()) || Number.isNaN(targetDate.getTime()) || targetDate < startDate) {
+      return res.status(400).json({ success: false, error: 'Title and a valid development date range are required' });
+    }
+
+    const plan = await DevelopmentPlan.create({
+      userId: targetUserId,
       managerId,
-      organizationId: req.currentOrganization?.id,
-      title,
-      description,
+      organizationId: req.organizationId,
+      title: String(req.body.title).trim(),
+      description: req.body.description,
       startDate,
       targetDate,
-      careerGoals: careerGoals || [],
-      skillDevelopment: skillDevelopment || [],
-      learningActivities: learningActivities || [],
-      stretchAssignments: stretchAssignments || [],
-      mentoring: mentoring || { hasMentor: false },
+      careerGoals: Array.isArray(req.body.careerGoals) ? req.body.careerGoals : [],
+      skillDevelopment: Array.isArray(req.body.skillDevelopment) ? req.body.skillDevelopment : [],
+      learningActivities: Array.isArray(req.body.learningActivities) ? req.body.learningActivities : [],
+      stretchAssignments: Array.isArray(req.body.stretchAssignments) ? req.body.stretchAssignments : [],
+      milestones: Array.isArray(req.body.milestones) ? req.body.milestones : [],
+      reviewDates: Array.isArray(req.body.reviewDates) ? req.body.reviewDates : [],
+      mentoring: req.body.mentoring || { hasMentor: false },
+      source: 'manual',
       status: 'draft'
     });
-    
-    await plan.save();
-    
-    res.status(201).json({
-      success: true,
-      data: plan,
-      message: 'Development plan created successfully'
-    });
+    return res.status(201).json({ success: true, data: plan, message: 'Development plan created successfully' });
   } catch (error) {
-    console.error('Error creating plan:', error);
-    res.status(500).json({ success: false, error: 'Failed to create plan' });
+    console.error('Error creating development plan:', error);
+    return res.status(error?.name === 'ValidationError' ? 400 : 500).json({ success: false, error: 'Failed to create plan' });
   }
 });
 
-/**
- * PUT /api/development-plans/:id - Update plan
- */
-router.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
-    const plan = await DevelopmentPlan.findById(req.params.id);
-    
-    if (!plan) {
-      return res.status(404).json({ success: false, error: 'Plan not found' });
+    const plan = await findPlan(req, req.params.id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+    if (!canAccessPlan(req, plan)) return forbidden(res);
+
+    const editableFields = [
+      'title', 'description', 'targetDate', 'careerGoals', 'skillDevelopment',
+      'learningActivities', 'stretchAssignments', 'mentoring', 'milestones', 'reviewDates'
+    ];
+    for (const field of editableFields) {
+      if (req.body[field] !== undefined) plan[field] = req.body[field];
     }
-    
-    const userId = req.session.user.id || req.session.user.sub;
-    const isOwner = plan.userId === userId;
-    const isManager = plan.managerId === userId;
-    const isHRAdmin = req.userRole === 'hr_admin';
-    
-    if (!isOwner && !isManager && !isHRAdmin) {
-      return res.status(403).json({ success: false, error: 'Access denied' });
-    }
-    
-    const updates = req.body;
-    
-    // Only manager can approve
-    if (!isManager && !isHRAdmin) {
-      delete updates.approvedByManager;
-      delete updates.status;
-    }
-    
-    Object.keys(updates).forEach(key => {
-      if (key !== '_id' && key !== 'userId' && key !== 'managerId') {
-        plan[key] = updates[key];
+    if ((isPlanManager(req, plan) || isHr(req)) && req.body.status !== undefined) {
+      if (!['draft', 'active', 'on_hold', 'completed', 'cancelled'].includes(req.body.status)) {
+        return res.status(400).json({ success: false, error: 'Invalid development plan status' });
       }
-    });
-    
+      plan.status = req.body.status;
+    }
     await plan.save();
-    
-    res.json({ success: true, data: plan });
+    return res.json({ success: true, data: plan });
   } catch (error) {
-    console.error('Error updating plan:', error);
-    res.status(500).json({ success: false, error: 'Failed to update plan' });
+    console.error('Error updating development plan:', error);
+    return res.status(error?.name === 'ValidationError' ? 400 : 500).json({ success: false, error: 'Failed to update plan' });
   }
 });
 
-/**
- * POST /api/development-plans/:id/activate - Activate plan
- */
 router.post('/:id/activate', requireManager, async (req, res) => {
   try {
-    const plan = await DevelopmentPlan.findById(req.params.id);
-    
-    if (!plan) {
-      return res.status(404).json({ success: false, error: 'Plan not found' });
-    }
-    
-    const userId = req.session.user.id || req.session.user.sub;
-    if (plan.managerId !== userId && req.userRole !== 'hr_admin') {
-      return res.status(403).json({ success: false, error: 'Only manager can activate' });
-    }
-    
+    const plan = await findPlan(req, req.params.id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+    if (!isPlanManager(req, plan) && !isHr(req)) return forbidden(res);
     plan.status = 'active';
     plan.approvedByManager = {
       approved: true,
       approvedAt: new Date(),
-      comments: req.body.comments || ''
+      comments: String(req.body.comments || '').trim()
     };
-    
     await plan.save();
-    
-    res.json({ success: true, data: plan, message: 'Plan activated' });
+    return res.json({ success: true, data: plan, message: 'Development plan activated' });
   } catch (error) {
-    console.error('Error activating plan:', error);
-    res.status(500).json({ success: false, error: 'Failed to activate plan' });
+    console.error('Error activating development plan:', error);
+    return res.status(500).json({ success: false, error: 'Failed to activate plan' });
   }
 });
 
-/**
- * POST /api/development-plans/:id/check-in - Add progress check-in
- */
-router.post('/:id/check-in', requireAuth, async (req, res) => {
+router.post('/:id/check-in', async (req, res) => {
   try {
-    const plan = await DevelopmentPlan.findById(req.params.id);
-    
-    if (!plan) {
-      return res.status(404).json({ success: false, error: 'Plan not found' });
+    const plan = await findPlan(req, req.params.id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+    if (!canAccessPlan(req, plan)) return forbidden(res);
+    const progressUpdate = req.body.progressUpdate === undefined ? undefined : Number(req.body.progressUpdate);
+    if (progressUpdate !== undefined && (!Number.isFinite(progressUpdate) || progressUpdate < 0 || progressUpdate > 100)) {
+      return res.status(400).json({ success: false, error: 'Progress must be from 0 to 100' });
     }
-    
-    const userId = req.session.user.id || req.session.user.sub;
-    const isOwner = plan.userId === userId;
-    const isManager = plan.managerId === userId;
-    
-    if (!isOwner && !isManager) {
-      return res.status(403).json({ success: false, error: 'Access denied' });
-    }
-    
-    const { notes, progressUpdate, blockers } = req.body;
-    
     plan.checkIns.push({
-      notes,
+      notes: req.body.notes,
       progressUpdate,
-      blockers,
-      addedBy: isManager ? 'manager' : 'employee'
+      blockers: req.body.blockers,
+      addedBy: isPlanManager(req, plan) || isHr(req) ? 'manager' : 'employee'
     });
-    
     await plan.save();
-    
-    res.json({ success: true, data: plan });
+    return res.json({ success: true, data: plan });
   } catch (error) {
-    console.error('Error adding check-in:', error);
-    res.status(500).json({ success: false, error: 'Failed to add check-in' });
+    console.error('Error adding development check-in:', error);
+    return res.status(500).json({ success: false, error: 'Failed to add check-in' });
   }
 });
 
-/**
- * PUT /api/development-plans/:id/skills/:skillIndex - Update skill progress
- */
-router.put('/:id/skills/:skillIndex', requireAuth, async (req, res) => {
+router.put('/:id/skills/:skillIndex', async (req, res) => {
   try {
-    const plan = await DevelopmentPlan.findById(req.params.id);
-    
-    if (!plan) {
-      return res.status(404).json({ success: false, error: 'Plan not found' });
-    }
-    
-    const userId = req.session.user.id || req.session.user.sub;
-    if (plan.userId !== userId && plan.managerId !== userId && req.userRole !== 'hr_admin') {
-      return res.status(403).json({ success: false, error: 'Access denied' });
-    }
-    
-    const skillIndex = parseInt(req.params.skillIndex);
-    if (plan.skillDevelopment[skillIndex]) {
-      const { progress, currentLevel, notes } = req.body;
-      if (progress !== undefined) plan.skillDevelopment[skillIndex].progress = progress;
-      if (currentLevel) plan.skillDevelopment[skillIndex].currentLevel = currentLevel;
-      if (notes) plan.skillDevelopment[skillIndex].notes = notes;
-      await plan.save();
-    }
-    
-    res.json({ success: true, data: plan });
+    const plan = await findPlan(req, req.params.id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+    if (!canAccessPlan(req, plan)) return forbidden(res);
+    const skill = plan.skillDevelopment[Number(req.params.skillIndex)];
+    if (!skill) return res.status(404).json({ success: false, error: 'Skill not found' });
+    if (req.body.progress !== undefined) skill.progress = Number(req.body.progress);
+    if (req.body.currentLevel) skill.currentLevel = req.body.currentLevel;
+    if (req.body.notes !== undefined) skill.notes = req.body.notes;
+    await plan.save();
+    return res.json({ success: true, data: plan });
   } catch (error) {
-    console.error('Error updating skill:', error);
-    res.status(500).json({ success: false, error: 'Failed to update skill' });
+    console.error('Error updating development skill:', error);
+    return res.status(error?.name === 'ValidationError' ? 400 : 500).json({ success: false, error: 'Failed to update skill' });
   }
 });
 
-/**
- * PUT /api/development-plans/:id/activities/:activityIndex - Update learning activity
- */
-router.put('/:id/activities/:activityIndex', requireAuth, async (req, res) => {
+router.put('/:id/activities/:activityIndex', async (req, res) => {
   try {
-    const plan = await DevelopmentPlan.findById(req.params.id);
-    
-    if (!plan) {
-      return res.status(404).json({ success: false, error: 'Plan not found' });
+    const plan = await findPlan(req, req.params.id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+    if (!canAccessPlan(req, plan)) return forbidden(res);
+    const activity = plan.learningActivities[Number(req.params.activityIndex)];
+    if (!activity) return res.status(404).json({ success: false, error: 'Activity not found' });
+    if (req.body.status) {
+      activity.status = req.body.status;
+      activity.completedAt = req.body.status === 'completed' ? new Date() : undefined;
     }
-    
-    const activityIndex = parseInt(req.params.activityIndex);
-    if (plan.learningActivities[activityIndex]) {
-      const { status, evidence, feedback } = req.body;
-      if (status) {
-        plan.learningActivities[activityIndex].status = status;
-        if (status === 'completed') {
-          plan.learningActivities[activityIndex].completedAt = new Date();
-        }
-      }
-      if (evidence) plan.learningActivities[activityIndex].evidence = evidence;
-      if (feedback) plan.learningActivities[activityIndex].feedback = feedback;
-      await plan.save();
-    }
-    
-    res.json({ success: true, data: plan });
+    if (req.body.evidence !== undefined) activity.evidence = req.body.evidence;
+    if (req.body.feedback !== undefined) activity.feedback = req.body.feedback;
+    await plan.save();
+    return res.json({ success: true, data: plan });
   } catch (error) {
-    console.error('Error updating activity:', error);
-    res.status(500).json({ success: false, error: 'Failed to update activity' });
+    console.error('Error updating development activity:', error);
+    return res.status(error?.name === 'ValidationError' ? 400 : 500).json({ success: false, error: 'Failed to update activity' });
   }
 });
 
-/**
- * POST /api/development-plans/:id/ai-recommendations - Generate AI recommendations
- */
-router.post('/:id/ai-recommendations', requireAuth, async (req, res) => {
+router.post('/:id/ai-recommendations', async (req, res) => {
   try {
-    const plan = await DevelopmentPlan.findById(req.params.id);
-    
-    if (!plan) {
-      return res.status(404).json({ success: false, error: 'Plan not found' });
+    const plan = await findPlan(req, req.params.id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+    if (!canAccessPlan(req, plan)) return forbidden(res);
+    const prompt = `Suggest internal, non-LMS development options for this plan. Career goals: ${JSON.stringify(plan.careerGoals)}. Skills: ${JSON.stringify(plan.skillDevelopment)}. Return JSON with suggestedSkills, suggestedResources, and careerPathSuggestions. Recommendations are advisory only.`;
+    const result = await AIPerformanceService.getCachedOrGenerate(`dev_plan_${plan._id}`, async () => {
+      const azureService = require('../services/azureOpenAIService');
+      const response = await azureService.getChatCompletions([
+        { role: 'system', content: 'You advise on mentoring, stretch assignments, internal projects, books, and job shadowing. Never make employment decisions. Output valid JSON.' },
+        { role: 'user', content: prompt }
+      ]);
+      return AIPerformanceService.parseAIResponse(response.choices[0].message.content);
+    });
+    if (!result.success) {
+      return res.status(503).json({ success: false, error: 'AI recommendations are temporarily unavailable; the plan remains fully editable.' });
     }
-    
-    // Generate AI recommendations based on plan data
-    const prompt = `
-Based on this development plan:
-- Career Goals: ${JSON.stringify(plan.careerGoals)}
-- Current Skills: ${JSON.stringify(plan.skillDevelopment)}
-
-Suggest:
-1. Additional skills to develop
-2. Learning resources (courses, books, certifications)
-3. Career path suggestions
-
-Output JSON with keys: suggestedSkills, suggestedResources, careerPathSuggestions
-`;
-
-    const result = await AIPerformanceService.getCachedOrGenerate(
-      `dev_plan_${plan._id}`,
-      async () => {
-        const azureService = require('../services/azureOpenAIService');
-        const response = await azureService.getChatCompletions([
-          { role: 'system', content: 'You are a career development expert. Output valid JSON.' },
-          { role: 'user', content: prompt }
-        ]);
-        return AIPerformanceService.parseAIResponse(response.choices[0].message.content);
-      }
-    );
-    
-    if (result.success) {
-      plan.aiRecommendations = {
-        ...result.data,
-        generatedAt: new Date()
-      };
-      await plan.save();
-    }
-    
-    res.json({ success: true, data: plan.aiRecommendations });
+    plan.aiRecommendations = { ...result.data, generatedAt: new Date() };
+    await plan.save();
+    return res.json({ success: true, data: plan.aiRecommendations, advisory: true });
   } catch (error) {
-    console.error('Error generating recommendations:', error);
-    res.status(500).json({ success: false, error: 'Failed to generate recommendations' });
+    console.error('Error generating development recommendations:', error);
+    return res.status(503).json({ success: false, error: 'AI recommendations are temporarily unavailable; the plan remains fully editable.' });
   }
 });
 
-/**
- * POST /api/development-plans/:id/complete - Mark plan as completed
- */
 router.post('/:id/complete', requireManager, async (req, res) => {
   try {
-    const plan = await DevelopmentPlan.findById(req.params.id);
-    
-    if (!plan) {
-      return res.status(404).json({ success: false, error: 'Plan not found' });
-    }
-    
+    const plan = await findPlan(req, req.params.id);
+    if (!plan) return res.status(404).json({ success: false, error: 'Plan not found' });
+    if (!isPlanManager(req, plan) && !isHr(req)) return forbidden(res);
     plan.status = 'completed';
     await plan.save();
-    
-    res.json({ success: true, data: plan, message: 'Plan completed' });
+    return res.json({ success: true, data: plan, message: 'Development plan completed' });
   } catch (error) {
-    console.error('Error completing plan:', error);
-    res.status(500).json({ success: false, error: 'Failed to complete plan' });
+    console.error('Error completing development plan:', error);
+    return res.status(500).json({ success: false, error: 'Failed to complete plan' });
   }
 });
 
 module.exports = router;
-
-
-
-
-
-

@@ -17,11 +17,17 @@ import {
   Building2,
   LayoutGrid,
   Sparkles,
+  MessageSquare,
+  CalendarDays,
+  Sprout,
+  ListChecks,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useUserContext, useCurrentTeam } from '@/lib/hooks';
 import { authApi } from '@/lib/api';
 import PageGuide from './PageGuide';
 import ThemePreferenceMenu from './ThemePreferenceMenu';
+import { ActionCentreBell } from './ActionCentre';
 
 type NavItem = {
   name: string;
@@ -38,12 +44,23 @@ function cn(...classes: (string | boolean | undefined)[]) {
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, isLoading: authLoading } = useAuth();
-  const { user, role, isManager, isHRAdmin, teams, currentTeam: contextCurrentTeam } = useUserContext();
+  const {
+    user,
+    role,
+    isManager,
+    isHRAdmin,
+    teams,
+    currentTeam: contextCurrentTeam,
+    features,
+    isLoading: contextLoading,
+    isError: contextError,
+  } = useUserContext();
   const { currentTeam, availableTeams, mutate: mutateCurrentTeam } = useCurrentTeam();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [growthDropdownOpen, setGrowthDropdownOpen] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
   const [switchingTeam, setSwitchingTeam] = useState(false);
 
@@ -63,13 +80,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     return t.organizationId === orgId;
   });
   const showTeamSwitcher = orgTeams.length > 1 && currentOrganization;
+  const rolloutVisibilityReady = !contextLoading && !contextError;
 
   const navigation: NavItem[] = useMemo(() => {
     const main: NavItem[] = [
       { name: 'Dashboard', href: '/dashboard', icon: TrendingUp, section: 'main' },
       { name: 'My OKRs', href: '/okrs', icon: Target, section: 'main' },
-      { name: 'Appraisals', href: '/appraisals', icon: FileText, section: 'main' },
-      ...(isHRAdmin ? [{ name: 'Cycles', href: '/admin/appraisal-cycles', icon: Settings, section: 'main' as const }] : []),
+      ...(!rolloutVisibilityReady || features.canonicalAppraisals === false
+        ? []
+        : [{ name: 'Appraisals', href: '/appraisals', icon: FileText, section: 'main' as const }]),
+      ...(!rolloutVisibilityReady || features.continuousPerformance === false
+        ? []
+        : [
+          { name: 'Feedback', href: '/feedback', icon: MessageSquare, section: 'analytics' as const },
+          { name: '1:1s', href: '/one-on-ones', icon: CalendarDays, section: 'analytics' as const },
+          { name: 'Check-ins', href: '/check-ins', icon: ClipboardCheck, section: 'analytics' as const },
+          { name: 'Development', href: '/development', icon: Sprout, section: 'analytics' as const },
+        ]),
+      ...(isHRAdmin && rolloutVisibilityReady && features.canonicalAppraisals !== false
+        ? [{ name: 'Cycles', href: '/admin/appraisal-cycles', icon: Settings, section: 'main' as const }]
+        : []),
     ];
 
     const manager: NavItem[] = isManager
@@ -85,7 +115,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       : [];
 
     return [...main, ...manager, ...admin];
-  }, [isManager, isHRAdmin]);
+  }, [features.canonicalAppraisals, features.continuousPerformance, isManager, isHRAdmin, rolloutVisibilityReady]);
 
   // Handle organization switch
   const handleSwitchOrganization = async (orgId: string) => {
@@ -244,10 +274,58 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   </Link>
                 );
               })}
+              {navigation.some((item) => item.section === 'analytics') && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setGrowthDropdownOpen((open) => !open)}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                      navigation.filter((item) => item.section === 'analytics').some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+                        ? isDarkMode ? 'bg-zinc-800/80 text-white' : 'bg-gray-100 text-gray-900'
+                        : isDarkMode ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    )}
+                    aria-expanded={growthDropdownOpen}
+                    aria-haspopup="menu"
+                  >
+                    Growth
+                    <ChevronDown className="h-4 w-4" />
+                  </button>
+                  {growthDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setGrowthDropdownOpen(false)} />
+                      <div
+                        className={cn(
+                          'absolute left-0 top-11 z-50 w-52 overflow-hidden rounded-lg border py-1 shadow-lg',
+                          isDarkMode ? 'border-zinc-800 bg-zinc-950' : 'border-gray-200 bg-white'
+                        )}
+                        role="menu"
+                      >
+                        {navigation.filter((item) => item.section === 'analytics').map((item) => (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setGrowthDropdownOpen(false)}
+                            className={cn(
+                              'flex items-center gap-2 px-3 py-2 text-sm transition-colors',
+                              isDarkMode ? 'text-zinc-300 hover:bg-zinc-800/70' : 'text-gray-700 hover:bg-gray-50'
+                            )}
+                            role="menuitem"
+                          >
+                            <item.icon className="h-4 w-4" />
+                            {item.name}
+                          </Link>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Right Side Actions */}
             <div className="flex items-center gap-3">
+              {rolloutVisibilityReady && features.notifications !== false && <ActionCentreBell />}
               <ThemePreferenceMenu />
 
               {isHRAdmin && (
@@ -453,6 +531,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         )}>{user?.email}</div>
                       </div>
                       <div className="py-2">
+                        {rolloutVisibilityReady && features.notifications !== false && (
+                          <Link
+                            href="/action-centre"
+                            className={cn(
+                              "block px-4 py-2 text-sm transition-colors",
+                              isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
+                            )}
+                            onClick={() => setUserDropdownOpen(false)}
+                          >
+                            <ListChecks className="h-4 w-4 inline mr-2" />
+                            Action centre
+                          </Link>
+                        )}
                         {isManager && (
                           <Link
                             href="/team"

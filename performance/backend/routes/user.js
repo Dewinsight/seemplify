@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const OKR = require('../models/OKR');
-const { PerformanceReview } = require('../models/PerformanceReview');
+const Appraisal = require('../models/Appraisal');
 const Feedback = require('../models/Feedback');
+const DevelopmentPlan = require('../models/DevelopmentPlan');
+const OneOnOne = require('../models/OneOnOne');
 const {
   requireAuth,
   getCurrentTeam
@@ -13,6 +15,7 @@ const {
   resolveAppraisalAccessScope,
   isAppraisalManagerRole
 } = require('../services/appraisalAccessService');
+const { getOrganizationFeatureState } = require('../services/organizationFeatureService');
 
 function normalizeEmail(value) {
   if (!value || typeof value !== 'string') return null;
@@ -88,6 +91,36 @@ function sortEmployeesForAppraisalSelection(employees = []) {
   });
 }
 
+async function getScopedEmployee(req, requestedUserId) {
+  const target = String(requestedUserId || '').trim();
+  if (!target) return null;
+  const actorId = String(req.session?.user?.id || req.session?.user?.sub || '').trim();
+  const actorEmail = normalizeEmail(req.session?.user?.email);
+  if (target === actorId || normalizeEmail(target) === actorEmail) {
+    return {
+      userId: actorId || target,
+      email: req.session?.user?.email,
+      name: req.session?.user?.name || req.session?.user?.displayName || req.session?.user?.email,
+      jobTitle: req.session?.user?.title,
+      department: req.session?.user?.department,
+      teamName: req.currentTeam?.name,
+      isSelf: true
+    };
+  }
+
+  const scope = await resolveAppraisalAccessScope(req, { includeSelf: true });
+  if (!scope.canManageAppraisals) return null;
+  return (scope.organizationUsers || scope.directReports || []).find((employee) => (
+    String(employee.userId || '') === target
+      || normalizeEmail(employee.email) === normalizeEmail(target)
+  )) || null;
+}
+
+function canonicalGoalProgress(goal) {
+  const value = goal?.scoring?.progress ?? goal?.progress;
+  return Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Number(value))) : 0;
+}
+
 /**
  * GET /api/user/context - Get comprehensive user context
  * Returns all necessary info for frontend role-based rendering
@@ -108,6 +141,11 @@ router.get('/context', requireAuth, async (req, res) => {
     const directReportIds = directReports.map(r => r.userId).filter(Boolean);
     const managedTeams = appraisalScope?.managedTeams || req.managedTeams;
     const currentOrganization = req.currentOrganization;
+    const organizationId = resolveOrganizationId(req);
+    if (!organizationId) {
+      return res.status(403).json({ success: false, error: 'Select an organization before loading performance context' });
+    }
+    const organizationFeatureState = await getOrganizationFeatureState(organizationId);
 
     // Get teams from IDP session FIRST (freshest data), then fallback to DB cache
     // Priority: session.idpTeams > session.teams > userinfo.teams > DB cache
@@ -120,11 +158,12 @@ router.get('/context', requireAuth, async (req, res) => {
 
     // Get summary counts for dashboard
     const [okrCount, reviewCount, feedbackCount] = await Promise.all([
-      OKR.countDocuments({ ownerId: userId }),
-      PerformanceReview.countDocuments({
-        $or: [{ userId: userId }, { managerId: userId }]
+      OKR.countDocuments({ organizationId: String(organizationId), ownerId: userId }),
+      Appraisal.countDocuments({
+        organizationId: String(organizationId),
+        $or: [{ 'employee.userId': userId }, { 'manager.userId': userId }]
       }),
-      Feedback.countDocuments({ receiverId: userId })
+      Feedback.countDocuments({ organizationId: String(organizationId), receiverId: userId, deletedAt: null })
     ]);
 
     // Get pending items for managers
@@ -132,15 +171,16 @@ router.get('/context', requireAuth, async (req, res) => {
     let directReportOkrsBehind = 0;
 
     if (isManagerRole) {
-      pendingReviews = await PerformanceReview.countDocuments({
-        managerId: userId,
-        'selfEvaluation.submittedAt': { $exists: true },
-        'managerEvaluation.submittedAt': { $exists: false }
+      pendingReviews = await Appraisal.countDocuments({
+        organizationId: String(organizationId),
+        'manager.userId': userId,
+        status: { $in: ['self_assessment_submitted', 'manager_review_pending', 'manager_review_in_progress'] }
       });
 
       // OKRs from direct reports that are behind
       if (directReportIds.length > 0) {
         const directReportOkrs = await OKR.find({
+          organizationId: String(organizationId),
           ownerId: { $in: directReportIds },
           status: 'active'
         });
@@ -266,6 +306,7 @@ router.get('/context', requireAuth, async (req, res) => {
 
         // Feature flags based on role
         features: {
+          ...organizationFeatureState.features,
           canCreateTeamOkr: role === 'line_manager' || role === 'hr_admin',
           canCreateOrgOkr: role === 'hr_admin',
           canConductReviews: isManagerRole,
@@ -1291,6 +1332,196 @@ router.get('/current-team', requireAuth, async (req, res) => {
       success: false,
       error: 'Failed to fetch current team'
     });
+  }
+});
+
+/**
+ * Manager-facing employee cards. These routes intentionally live after every
+ * static `/user/*` route so an employee identifier can never shadow them.
+ */
+router.get('/:userId/profile', requireAuth, async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    if (!organizationId) {
+      return res.status(403).json({ success: false, error: 'Select an organization before viewing a team member' });
+    }
+    const employee = await getScopedEmployee(req, req.params.userId);
+    if (!employee) return res.status(403).json({ success: false, error: 'You cannot view this team member' });
+    return res.json({
+      success: true,
+      data: {
+        userId: employee.userId,
+        name: employee.name,
+        email: employee.email,
+        title: employee.jobTitle || employee.title || 'Team Member',
+        department: employee.departmentName || employee.department || employee.teamName || '',
+        teamId: employee.teamId,
+        teamName: employee.teamName,
+        managerId: employee.managerId,
+        managerName: employee.managerName
+      }
+    });
+  } catch (error) {
+    console.error('Team member profile error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to load team member profile' });
+  }
+});
+
+router.get('/:userId/stats', requireAuth, async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    if (!organizationId) {
+      return res.status(403).json({ success: false, error: 'Select an organization before viewing team statistics' });
+    }
+    const employee = await getScopedEmployee(req, req.params.userId);
+    if (!employee) return res.status(403).json({ success: false, error: 'You cannot view this team member' });
+    const employeeId = String(employee.userId);
+    const actorId = String(req.session?.user?.id || req.session?.user?.sub || '');
+    const meetingScope = req.userRole === 'hr_admin'
+      ? { employeeId }
+      : { employeeId, managerId: actorId };
+    const [goals, pendingAppraisals, completedAppraisals, latestMeeting, feedbackCount, activeAppraisal] = await Promise.all([
+      OKR.find({
+        organizationId: String(organizationId),
+        ownerId: employeeId,
+        status: { $in: ['pending', 'active', 'closed'] }
+      }).select('progress scoring.progress').lean(),
+      Appraisal.countDocuments({
+        organizationId: String(organizationId),
+        'employee.userId': employeeId,
+        status: { $nin: ['employee_acknowledged', 'completed', 'cancelled'] }
+      }),
+      Appraisal.find({
+        organizationId: String(organizationId),
+        'employee.userId': employeeId,
+        status: { $in: ['employee_acknowledged', 'completed'] },
+        'finalRating.overall': { $type: 'number' }
+      }).select('finalRating.overall').sort({ updatedAt: -1 }).limit(5).lean(),
+      OneOnOne.findOne({ organizationId: String(organizationId), ...meetingScope, status: 'completed' })
+        .sort({ scheduledDate: -1 }).select('scheduledDate employeeMood.score').lean(),
+      Feedback.countDocuments({
+        organizationId: String(organizationId),
+        receiverId: employeeId,
+        deletedAt: null,
+        visibility: { $in: ['public', 'manager-only'] },
+        anonymity: { $ne: 'anonymous' }
+      }),
+      Appraisal.exists({
+        organizationId: String(organizationId),
+        'employee.userId': employeeId,
+        status: { $nin: ['employee_acknowledged', 'completed', 'cancelled'] }
+      })
+    ]);
+    const okrProgress = goals.length
+      ? Math.round(goals.reduce((total, goal) => total + canonicalGoalProgress(goal), 0) / goals.length)
+      : 0;
+    const ratings = completedAppraisals.map((item) => Number(item.finalRating?.overall)).filter(Number.isFinite);
+    return res.json({
+      success: true,
+      data: {
+        okrProgress,
+        pendingAppraisals,
+        last1on1Date: latestMeeting?.scheduledDate || null,
+        averageScore: ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null,
+        feedbackCount,
+        hasActiveAppraisal: Boolean(activeAppraisal),
+        moodTrend: 'unknown'
+      }
+    });
+  } catch (error) {
+    console.error('Team member statistics error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to load team member statistics' });
+  }
+});
+
+router.get('/:userId/performance-summary', requireAuth, async (req, res) => {
+  try {
+    const organizationId = resolveOrganizationId(req);
+    if (!organizationId) {
+      return res.status(403).json({ success: false, error: 'Select an organization before viewing performance' });
+    }
+    const employee = await getScopedEmployee(req, req.params.userId);
+    if (!employee) return res.status(403).json({ success: false, error: 'You cannot view this team member' });
+    const employeeId = String(employee.userId);
+    const actorId = String(req.session?.user?.id || req.session?.user?.sub || '');
+    const meetingScope = req.userRole === 'hr_admin'
+      ? { employeeId }
+      : { employeeId, managerId: actorId };
+    const [appraisals, goals, feedback, meetings, developmentPlan] = await Promise.all([
+      Appraisal.find({ organizationId: String(organizationId), 'employee.userId': employeeId })
+        .select('cycleId status selfAssessment.submittedAt finalRating discussion.employeeAcknowledgedAt updatedAt')
+        .populate('cycleId', 'name periodStart periodEnd')
+        .sort({ updatedAt: -1 }).limit(10).lean(),
+      OKR.find({
+        organizationId: String(organizationId),
+        ownerId: employeeId,
+        status: { $in: ['pending', 'active', 'closed'] }
+      }).select('title objectives.title status lifecycle.state progress scoring.progress updatedAt').sort({ updatedAt: -1 }).limit(20).lean(),
+      Feedback.find({
+        organizationId: String(organizationId),
+        receiverId: employeeId,
+        deletedAt: null,
+        visibility: { $in: ['public', 'manager-only'] },
+        anonymity: { $ne: 'anonymous' }
+      }).select('senderInfo type content createdAt').sort({ createdAt: -1 }).limit(20).lean(),
+      OneOnOne.find({ organizationId: String(organizationId), ...meetingScope })
+        .select('scheduledDate status sharedNotes aiScoring.employee.overallScore').sort({ scheduledDate: -1 }).limit(20).lean(),
+      DevelopmentPlan.findOne({
+        organizationId: String(organizationId),
+        userId: employeeId,
+        status: { $in: ['draft', 'active'] }
+      }).select('title status targetDate overallProgress milestones activities careerGoals').sort({ updatedAt: -1 }).lean()
+    ]);
+
+    const active = appraisals.find((item) => !['employee_acknowledged', 'completed', 'cancelled'].includes(item.status));
+    const history = appraisals
+      .filter((item) => ['employee_acknowledged', 'completed'].includes(item.status) && Number.isFinite(Number(item.finalRating?.overall)))
+      .map((item) => ({
+        period: item.cycleId?.name || 'Completed appraisal',
+        rating: Number(item.finalRating.overall),
+        label: item.finalRating?.ratingLabel || 'Final rating'
+      }));
+    return res.json({
+      success: true,
+      data: {
+        currentAppraisal: active ? {
+          _id: active._id,
+          cycleName: active.cycleId?.name,
+          status: active.status,
+          selfAssessment: active.selfAssessment
+        } : null,
+        historicalRatings: history,
+        okrs: goals.map((goal) => ({
+          id: goal._id,
+          title: goal.title || goal.objectives?.[0]?.title || 'Untitled goal',
+          progress: canonicalGoalProgress(goal),
+          status: goal.lifecycle?.state || goal.status
+        })),
+        feedbackReceived: feedback.map((item) => ({
+          from: item.senderInfo?.name || 'Colleague',
+          date: item.createdAt,
+          type: item.type,
+          summary: item.content
+        })),
+        oneOnOnes: meetings.map((meeting) => ({
+          date: meeting.scheduledDate,
+          status: meeting.status,
+          summary: meeting.sharedNotes,
+          aiScore: meeting.aiScoring?.employee?.overallScore
+        })),
+        developmentPlan,
+        achievements: goals
+          .filter((goal) => (goal.lifecycle?.state || goal.status) === 'closed')
+          .map((goal) => ({
+            title: goal.title || goal.objectives?.[0]?.title || 'Completed goal',
+            date: goal.updatedAt,
+            type: 'goal'
+          }))
+      }
+    });
+  } catch (error) {
+    console.error('Team member performance summary error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to load team member performance' });
   }
 });
 

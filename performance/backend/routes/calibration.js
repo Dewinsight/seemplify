@@ -1,21 +1,20 @@
 const express = require('express');
 const router = express.Router();
 const Calibration = require('../models/Calibration');
-const { PerformanceReview } = require('../models/PerformanceReview');
-const ReviewCycle = require('../models/ReviewCycle');
-const { requireHRAdmin } = require('../middleware/rbac');
+const Appraisal = require('../models/Appraisal');
+const AppraisalCycle = require('../models/AppraisalCycle');
+const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
 const AIPerformanceService = require('../services/aiPerformanceService');
+const { requireOrganization } = require('../services/tenantPolicy');
+
+router.use(requireAuth, requireOrganization);
 
 /**
  * GET /api/calibration - List calibration sessions
  */
 router.get('/', requireHRAdmin, async (req, res) => {
   try {
-    let query = {};
-    
-    if (req.currentOrganization?.id) {
-      query.organizationId = req.currentOrganization.id;
-    }
+    let query = { organizationId: req.organizationId };
     
     const { reviewCycleId, status } = req.query;
     if (reviewCycleId) query.reviewCycleId = reviewCycleId;
@@ -38,7 +37,7 @@ router.get('/', requireHRAdmin, async (req, res) => {
  */
 router.get('/:id', requireHRAdmin, async (req, res) => {
   try {
-    const session = await Calibration.findById(req.params.id)
+    const session = await Calibration.findOne({ _id: req.params.id, organizationId: req.organizationId })
       .populate('reviewCycleId');
     
     if (!session) {
@@ -68,7 +67,7 @@ router.post('/', requireHRAdmin, async (req, res) => {
     }
     
     // Get the review cycle
-    const cycle = await ReviewCycle.findById(reviewCycleId);
+    const cycle = await AppraisalCycle.findOne({ _id: reviewCycleId, organizationId: req.organizationId });
     if (!cycle) {
       return res.status(404).json({ success: false, error: 'Review cycle not found' });
     }
@@ -79,29 +78,30 @@ router.post('/', requireHRAdmin, async (req, res) => {
       // Would filter by team if we had team info on reviews
     }
     
-    const reviews = await PerformanceReview.find({
+    const reviews = await Appraisal.find({
+      organizationId: req.organizationId,
       cycleId: reviewCycleId,
-      status: { $in: ['submitted', 'manager-review', 'completed'] }
+      status: { $in: ['manager_review_submitted', 'calibration_pending', 'calibration_in_progress', 'calibration_completed', 'final_review_pending', 'completed', 'employee_acknowledged'] }
     }).limit(100);
     
     // Map reviews to calibration format
     const reviewsUnderCalibration = reviews.map(r => ({
       reviewId: r._id,
-      employeeId: r.userId,
-      employeeName: r.userId, // Would be populated with actual name
-      managerId: r.managerId,
-      managerName: r.managerId,
-      originalSelfRating: r.selfEvaluation?.rating,
-      originalManagerRating: r.managerEvaluation?.rating,
+      employeeId: r.employee?.userId,
+      employeeName: r.employee?.name,
+      managerId: r.manager?.userId,
+      managerName: r.manager?.name,
+      originalSelfRating: r.selfAssessment?.overallSelfRating,
+      originalManagerRating: r.managerReview?.overallManagerRating,
       calibratedRating: null,
       performanceBucket: null,
       decision: 'pending_review'
     }));
     
     const session = new Calibration({
-      title: title || `Calibration - ${cycle.title}`,
+      title: title || `Calibration - ${cycle.name}`,
       reviewCycleId,
-      organizationId: req.currentOrganization?.id,
+      organizationId: req.organizationId,
       scheduledDate,
       scope: scope || 'organization',
       teamIds: teamIds || [],
@@ -119,7 +119,8 @@ router.post('/', requireHRAdmin, async (req, res) => {
     await session.save();
     
     // Update review cycle status
-    cycle.status = 'calibration';
+    cycle.currentPhase = 'calibration';
+    cycle.status = 'active';
     await cycle.save();
     
     res.status(201).json({
@@ -138,7 +139,7 @@ router.post('/', requireHRAdmin, async (req, res) => {
  */
 router.put('/:id', requireHRAdmin, async (req, res) => {
   try {
-    const session = await Calibration.findById(req.params.id);
+    const session = await Calibration.findOne({ _id: req.params.id, organizationId: req.organizationId });
     
     if (!session) {
       return res.status(404).json({ success: false, error: 'Session not found' });
@@ -165,7 +166,7 @@ router.put('/:id', requireHRAdmin, async (req, res) => {
  */
 router.post('/:id/start', requireHRAdmin, async (req, res) => {
   try {
-    const session = await Calibration.findById(req.params.id);
+    const session = await Calibration.findOne({ _id: req.params.id, organizationId: req.organizationId });
     
     if (!session) {
       return res.status(404).json({ success: false, error: 'Session not found' });
@@ -186,7 +187,7 @@ router.post('/:id/start', requireHRAdmin, async (req, res) => {
  */
 router.put('/:id/reviews/:reviewIndex', requireHRAdmin, async (req, res) => {
   try {
-    const session = await Calibration.findById(req.params.id);
+    const session = await Calibration.findOne({ _id: req.params.id, organizationId: req.organizationId });
     
     if (!session) {
       return res.status(404).json({ success: false, error: 'Session not found' });
@@ -201,6 +202,9 @@ router.put('/:id/reviews/:reviewIndex', requireHRAdmin, async (req, res) => {
     
     const userId = req.session.user.id || req.session.user.sub;
     const { calibratedRating, performanceBucket, calibrationNotes, decision } = req.body;
+    if (calibratedRating !== undefined && Number(calibratedRating) !== Number(review.originalManagerRating) && String(calibrationNotes || '').trim().length < 10) {
+      return res.status(400).json({ success: false, error: 'A reason of at least 10 characters is required to change a rating' });
+    }
     
     // Add to audit log
     const auditEntry = {
@@ -231,10 +235,22 @@ router.put('/:id/reviews/:reviewIndex', requireHRAdmin, async (req, res) => {
     
     // If decision is 'adjusted', update the actual review
     if (decision === 'adjusted' || decision === 'approved') {
-      const actualReview = await PerformanceReview.findById(review.reviewId);
+      const actualReview = await Appraisal.findOne({ _id: review.reviewId, organizationId: req.organizationId });
       if (actualReview && calibratedRating !== undefined) {
-        actualReview.calibratedRating = calibratedRating;
-        actualReview.calibrationNotes = calibrationNotes;
+        actualReview.calibration = {
+          ...(actualReview.calibration || {}),
+          originalRating: review.originalManagerRating,
+          calibratedRating: Number(calibratedRating),
+          calibratedBy: { userId, name: req.session.user.name },
+          calibratedAt: new Date(),
+          justification: calibrationNotes
+        };
+        actualReview.addAuditLog('calibration_decision', req.session.user, {
+          originalRating: review.originalManagerRating,
+          calibratedRating: Number(calibratedRating),
+          decision,
+          reason: calibrationNotes
+        });
         await actualReview.save();
       }
     }
@@ -251,7 +267,7 @@ router.put('/:id/reviews/:reviewIndex', requireHRAdmin, async (req, res) => {
  */
 router.post('/:id/ai-insights', requireHRAdmin, async (req, res) => {
   try {
-    const session = await Calibration.findById(req.params.id);
+    const session = await Calibration.findOne({ _id: req.params.id, organizationId: req.organizationId });
     
     if (!session) {
       return res.status(404).json({ success: false, error: 'Session not found' });
@@ -310,7 +326,7 @@ Output JSON with keys: ratingDistributionAnalysis, potentialBiasFlags (array), r
  */
 router.post('/:id/discussion', requireHRAdmin, async (req, res) => {
   try {
-    const session = await Calibration.findById(req.params.id);
+    const session = await Calibration.findOne({ _id: req.params.id, organizationId: req.organizationId });
     
     if (!session) {
       return res.status(404).json({ success: false, error: 'Session not found' });
@@ -340,7 +356,7 @@ router.post('/:id/discussion', requireHRAdmin, async (req, res) => {
  */
 router.post('/:id/complete', requireHRAdmin, async (req, res) => {
   try {
-    const session = await Calibration.findById(req.params.id);
+    const session = await Calibration.findOne({ _id: req.params.id, organizationId: req.organizationId });
     
     if (!session) {
       return res.status(404).json({ success: false, error: 'Session not found' });
@@ -382,11 +398,21 @@ router.post('/:id/complete', requireHRAdmin, async (req, res) => {
     };
     
     await session.save();
+
+    const calibratedAppraisalIds = session.reviewsUnderCalibration.map((review) => review.reviewId).filter(Boolean);
+    if (calibratedAppraisalIds.length > 0) {
+      await Appraisal.updateMany(
+        { _id: { $in: calibratedAppraisalIds }, organizationId: req.organizationId },
+        { $set: { status: 'final_review_pending' } }
+      );
+    }
     
-    // Update review cycle to closed
-    const cycle = await ReviewCycle.findById(session.reviewCycleId);
+    // Calibration hands the canonical cycle to final review; it does not close
+    // the cycle before employees have acknowledged their result.
+    const cycle = await AppraisalCycle.findOne({ _id: session.reviewCycleId, organizationId: req.organizationId });
     if (cycle) {
-      cycle.status = 'closed';
+      cycle.status = 'active';
+      cycle.currentPhase = 'finalReview';
       await cycle.save();
     }
     
@@ -402,7 +428,7 @@ router.post('/:id/complete', requireHRAdmin, async (req, res) => {
  */
 router.get('/:id/export', requireHRAdmin, async (req, res) => {
   try {
-    const session = await Calibration.findById(req.params.id)
+    const session = await Calibration.findOne({ _id: req.params.id, organizationId: req.organizationId })
       .populate('reviewCycleId');
     
     if (!session) {

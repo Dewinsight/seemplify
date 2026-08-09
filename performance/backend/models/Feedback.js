@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const FeedbackSchema = new mongoose.Schema({
+  organizationId: {
+    type: String,
+    required: true,
+    index: true
+  },
   senderId: { 
     type: String, 
     required: true 
@@ -8,6 +13,14 @@ const FeedbackSchema = new mongoose.Schema({
   receiverId: { 
     type: String, 
     required: true 
+  },
+  senderInfo: {
+    name: String,
+    email: String
+  },
+  receiverInfo: {
+    name: String,
+    email: String
   },
   content: { 
     type: String, 
@@ -19,8 +32,28 @@ const FeedbackSchema = new mongoose.Schema({
   },
   visibility: { 
     type: String, 
-    enum: ['public', 'private', 'manager-only'] 
+    enum: ['public', 'private', 'manager-only'],
+    default: 'private'
   },
+  contextType: {
+    type: String,
+    enum: ['general', 'goal', 'project', 'peer', 'upward', '360'],
+    default: 'general'
+  },
+  contextLabel: String,
+  requestId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'FeedbackRequest'
+  },
+  anonymity: {
+    type: String,
+    enum: ['named', 'confidential', 'anonymous'],
+    default: 'named'
+  },
+  // Anonymous responses are withheld until the whole request cohort reaches
+  // its configured privacy threshold. The cohort ID is intentionally opaque.
+  cohortId: { type: String, trim: true, index: true },
+  minimumCohortSize: { type: Number, min: 5, default: 5 },
   relatedOkrId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'OKR' 
@@ -38,6 +71,14 @@ const FeedbackSchema = new mongoose.Schema({
     flaggedPhrases: [String],
     suggestedEdits: [String]
   },
+  appraisalEvidence: {
+    included: { type: Boolean, default: false },
+    selectedBy: String,
+    appraisalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appraisal' },
+    selectedAt: Date
+  },
+  acknowledgedAt: Date,
+  deletedAt: Date,
   
   createdAt: { 
     type: Date, 
@@ -46,7 +87,9 @@ const FeedbackSchema = new mongoose.Schema({
 });
 
 // Indexes for performance
-FeedbackSchema.index({ senderId: 1, receiverId: 1, createdAt: 1 });
+FeedbackSchema.index({ organizationId: 1, receiverId: 1, createdAt: -1 });
+FeedbackSchema.index({ organizationId: 1, senderId: 1, createdAt: -1 });
 FeedbackSchema.index({ relatedOkrId: 1 });
+FeedbackSchema.index({ organizationId: 1, cohortId: 1, anonymity: 1, deletedAt: 1 });
 
-module.exports = mongoose.model('Feedback', FeedbackSchema);
+module.exports = mongoose.models.Feedback || mongoose.model('Feedback', FeedbackSchema);

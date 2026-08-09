@@ -1022,40 +1022,87 @@ Keep it to 2-3 sentences.`;
    * @returns {Object} Score breakdown
    */
   calculateCompositeScore(appraisal, cycle) {
-    const okrWeight = (cycle?.okrWeight || 40) / 100;
-    const competencyWeight = 1 - okrWeight;
+    const minRating = Number(cycle?.ratingScale?.min ?? 1);
+    const maxRating = Number(cycle?.ratingScale?.max ?? 5);
+    const configuredOkrWeight = Math.min(100, Math.max(0, Number(cycle?.okrWeight ?? 40)));
 
-    // OKR Score Calculation
+    // Prefer immutable launch-time evidence. Older appraisals retain a
+    // compatibility fallback to their submitted OKR assessment.
+    const snapshotSummary = appraisal.goalEvidenceSummary;
+    const hasSnapshotScore = snapshotSummary?.rated === true && Number.isFinite(Number(snapshotSummary.score));
     const okrAssessment = appraisal.managerReview?.okrAssessment || appraisal.selfAssessment?.okrAssessment || [];
-    const avgOkrCompletion = okrAssessment.length > 0
-      ? okrAssessment.reduce((sum, o) => sum + (o.managerVerifiedCompletion ?? o.completionPercentage ?? 0), 0) / okrAssessment.length
-      : 0;
+    const ratedLegacyOkrs = okrAssessment
+      .map((item) => Number(item.managerVerifiedCompletion ?? item.completionPercentage))
+      .filter(Number.isFinite);
+    const avgOkrCompletion = hasSnapshotScore
+      ? Number(snapshotSummary.score)
+      : ratedLegacyOkrs.length > 0
+        ? ratedLegacyOkrs.reduce((sum, value) => sum + value, 0) / ratedLegacyOkrs.length
+        : null;
+    const okrScore = avgOkrCompletion === null
+      ? null
+      : minRating + ((Math.min(100, Math.max(0, avgOkrCompletion)) / 100) * (maxRating - minRating));
 
-    // Convert percentage to 1-5 scale
-    const okrScore = this.percentageToRating(avgOkrCompletion);
-
-    // Competency Score Calculation
-    const competencyRatings = appraisal.managerReview?.competencyRatings || [];
+    // Missing competency ratings are omitted rather than silently replaced
+    // with a neutral score. Configured competency weights are respected.
+    const competencyRatings = (appraisal.managerReview?.competencyRatings || [])
+      .map((rating) => {
+        const value = Number(rating.managerRating);
+        if (!Number.isFinite(value)) return null;
+        const definition = (cycle?.competencies || []).find((competency) =>
+          competency.id === rating.competencyId || competency.name === rating.competencyName
+        );
+        return { value, weight: Number(definition?.weight ?? 1) };
+      })
+      .filter(Boolean);
+    const competencyDenominator = competencyRatings.reduce((sum, item) => sum + (item.weight > 0 ? item.weight : 1), 0);
     const avgCompetencyScore = competencyRatings.length > 0
-      ? competencyRatings.reduce((sum, c) => sum + (c.managerRating || 3), 0) / competencyRatings.length
-      : 3;
+      ? competencyRatings.reduce((sum, item) => sum + (item.value * (item.weight > 0 ? item.weight : 1)), 0) / competencyDenominator
+      : null;
 
-    // Composite Score
-    const compositeScore = (okrScore * okrWeight) + (avgCompetencyScore * competencyWeight);
+    // Components without evidence are omitted and the available components
+    // are renormalized, making the absence explicit in the returned breakdown.
+    const components = [];
+    if (okrScore !== null) components.push({ name: 'okr', score: okrScore, weight: configuredOkrWeight });
+    if (avgCompetencyScore !== null) components.push({ name: 'competency', score: avgCompetencyScore, weight: 100 - configuredOkrWeight });
+    let totalWeight = components.reduce((sum, component) => sum + component.weight, 0);
+    if (totalWeight === 0 && components.length > 0) {
+      components.forEach((component) => { component.weight = 1; });
+      totalWeight = components.length;
+    }
+    const compositeScore = components.length > 0
+      ? components.reduce((sum, component) => sum + (component.score * component.weight), 0) / totalWeight
+      : null;
+    const okrEffectiveWeight = components.find((component) => component.name === 'okr')
+      ? (components.find((component) => component.name === 'okr').weight / totalWeight) * 100
+      : 0;
+    const competencyEffectiveWeight = components.find((component) => component.name === 'competency')
+      ? (components.find((component) => component.name === 'competency').weight / totalWeight) * 100
+      : 0;
+    const suggestedRating = compositeScore === null
+      ? null
+      : Math.min(maxRating, Math.max(minRating, Math.round(compositeScore)));
 
     return {
-      okrScore: Math.round(okrScore * 10) / 10,
-      okrCompletion: Math.round(avgOkrCompletion),
-      competencyScore: Math.round(avgCompetencyScore * 10) / 10,
-      compositeScore: Math.round(compositeScore * 10) / 10,
-      suggestedRating: Math.round(compositeScore),
+      okrScore: okrScore === null ? null : Math.round(okrScore * 10) / 10,
+      okrCompletion: avgOkrCompletion === null ? null : Math.round(avgOkrCompletion),
+      competencyScore: avgCompetencyScore === null ? null : Math.round(avgCompetencyScore * 10) / 10,
+      compositeScore: compositeScore === null ? null : Math.round(compositeScore * 10) / 10,
+      suggestedRating,
       breakdown: {
-        okrWeight: cycle?.okrWeight || 40,
-        okrContribution: Math.round(okrScore * okrWeight * 10) / 10,
-        competencyWeight: 100 - (cycle?.okrWeight || 40),
-        competencyContribution: Math.round(avgCompetencyScore * competencyWeight * 10) / 10
+        okrWeight: Math.round(okrEffectiveWeight * 10) / 10,
+        okrContribution: okrScore === null ? null : Math.round(okrScore * (okrEffectiveWeight / 100) * 10) / 10,
+        competencyWeight: Math.round(competencyEffectiveWeight * 10) / 10,
+        competencyContribution: avgCompetencyScore === null ? null : Math.round(avgCompetencyScore * (competencyEffectiveWeight / 100) * 10) / 10,
+        configuredOkrWeight,
+        unavailable: {
+          okr: okrScore === null,
+          competency: avgCompetencyScore === null
+        }
       },
-      ratingLabel: this.getRatingLabel(Math.round(compositeScore))
+      ratingLabel: suggestedRating === null
+        ? 'Not enough evidence'
+        : (cycle?.ratingScale?.labels || []).find((label) => Number(label.value) === suggestedRating)?.label || this.getRatingLabel(suggestedRating)
     };
   }
 

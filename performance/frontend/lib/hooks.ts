@@ -265,9 +265,18 @@ export function useDirectReportsReviews(cycleId?: string) {
  * Get review cycles
  */
 export function useReviewCycles() {
-  const { data, error, isLoading, mutate } = useSWR('/reviews/cycles', fetcher);
+  // Temporary compatibility name for report/calibration screens. Data comes
+  // from the canonical AppraisalCycle engine; no legacy ReviewCycle writes are
+  // performed.
+  const { data, error, isLoading, mutate } = useSWR('/appraisals/cycles', fetcher);
+  const cycles = (Array.isArray(data) ? data : data?.data || []).map((cycle: any) => ({
+    ...cycle,
+    title: cycle.title || cycle.name,
+    startDate: cycle.startDate || cycle.periodStart,
+    endDate: cycle.endDate || cycle.periodEnd,
+  }));
   return {
-    cycles: data || [],
+    cycles,
     isLoading,
     isError: error,
     mutate,

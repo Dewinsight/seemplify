@@ -1,171 +1,252 @@
 const mongoose = require('mongoose');
+const { applyGoalScore } = require('../services/goalScoringService');
+
+const actorSchema = new mongoose.Schema({
+  userId: String,
+  name: String,
+  email: String,
+  role: String
+}, { _id: false });
+
+const keyResultSchema = new mongoose.Schema({
+  title: { type: String, required: true, trim: true },
+  description: { type: String, trim: true },
+  metricType: {
+    type: String,
+    enum: ['percentage', 'number', 'currency', 'boolean', 'milestone'],
+    default: 'percentage'
+  },
+  unit: String,
+  weight: { type: Number, min: 0, default: 1 },
+  startValue: { type: Number, default: 0 },
+  targetValue: { type: Number, required: true },
+  // No default: an omitted measurement must remain unrated rather than being
+  // interpreted as zero performance.
+  currentValue: Number,
+  direction: { type: String, enum: ['auto', 'increase', 'decrease'], default: 'auto' },
+  dueDate: Date,
+  health: {
+    type: String,
+    enum: ['not_set', 'on_track', 'at_risk', 'off_track', 'complete'],
+    default: 'not_set'
+  },
+  lastUpdated: Date,
+  aiSuggestions: String
+});
+
+const objectiveSchema = new mongoose.Schema({
+  title: { type: String, required: true, trim: true },
+  description: { type: String, trim: true },
+  weight: { type: Number, min: 0, default: 1 },
+  keyResults: [keyResultSchema],
+  aiGenerated: { type: Boolean, default: false },
+  aiConfidence: { type: Number, min: 0, max: 100 }
+});
+
+const versionSchema = new mongoose.Schema({
+  version: { type: Number, required: true },
+  reason: { type: String, required: true },
+  changedBy: actorSchema,
+  changedAt: { type: Date, default: Date.now },
+  changes: mongoose.Schema.Types.Mixed,
+  snapshot: { type: mongoose.Schema.Types.Mixed, required: true }
+}, { _id: false });
 
 const OKRSchema = new mongoose.Schema({
   type: {
     type: String,
-    enum: ['individual', 'team', 'organization'],
-    required: true
+    enum: ['individual', 'team', 'department', 'organization'],
+    required: true,
+    default: 'individual'
   },
-  ownerId: {
-    type: String,
-    required: true
-  }, // UserId or TeamId from IdP
-  organizationId: {
-    type: String,
-    required: true
+  ownerId: { type: String, required: true, index: true },
+  owner: {
+    name: String,
+    email: String
   },
-  period: {
-    type: String,
-    required: true
-  }, // e.g., "Q1 2025"
-  title: String, // Optional top-level title
+  organizationId: { type: String, required: true, index: true },
+
+  // `period` remains for backwards compatibility. `periodId` is the canonical
+  // contract for fiscal/custom periods.
+  period: { type: String, required: true },
+  periodId: { type: mongoose.Schema.Types.ObjectId, ref: 'GoalPeriod', index: true },
+  title: { type: String, trim: true },
+
   status: {
     type: String,
-    enum: ['draft', 'active', 'closed'],
-    default: 'draft'
+    enum: ['draft', 'pending', 'active', 'closed', 'cancelled', 'rejected'],
+    default: 'draft',
+    index: true
   },
-
-  // Approval Workflow
   approvalStatus: {
     type: String,
-    enum: ['pending', 'approved'],
-    default: 'pending'
+    enum: ['draft', 'pending', 'approved', 'changes_requested', 'rejected', 'not_required'],
+    default: 'draft'
   },
-  approvedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
+  approvedBy: String,
   approvedAt: Date,
 
-  // AI-Enhanced Objectives
-  objectives: [{
-    title: {
+  creationSource: {
+    type: String,
+    enum: ['employee', 'manager', 'hr', 'bulk', 'cascade', 'import', 'legacy'],
+    default: 'employee'
+  },
+  createdBy: actorSchema,
+  updatedBy: actorSchema,
+  scoringEligibility: {
+    mode: {
       type: String,
-      required: true
+      enum: ['scored', 'evidence_only'],
+      default: 'scored'
     },
-    description: String,
-    weight: Number, // Percentage
-    keyResults: [{
-      title: {
-        type: String,
-        required: true
-      },
-      metricType: {
-        type: String,
-        enum: ['percentage', 'number', 'currency', 'boolean']
-      },
-      startValue: {
-        type: Number,
-        default: 0
-      },
-      targetValue: {
-        type: Number,
-        required: true
-      },
-      currentValue: {
-        type: Number,
-        default: 0
-      },
-      lastUpdated: Date,
-      aiSuggestions: String, // GPT-4.1 generated suggestions
-    }],
-    aiGenerated: {
-      type: Boolean,
-      default: false
-    }, // Flag for AI-created objectives
-    aiConfidence: {
-      type: Number,
-      min: 0,
-      max: 100
-    } // Confidence score
-  }],
-
-  // Team Integration
-  teamHierarchy: {
-    teamId: String,
-    teamPath: [String], // Derived from Team hierarchy path
-    managedTeams: [String] // For team-level OKRs
+    lateCreated: { type: Boolean, default: false },
+    reason: String,
+    decidedBy: actorSchema,
+    decidedAt: Date
   },
 
-  // OKR Alignment / Cascading
-  alignment: {
-    parentOKRId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'OKR'
+  assignment: {
+    assignedBy: actorSchema,
+    assignedAt: Date,
+    acknowledgementStatus: {
+      type: String,
+      enum: ['not_required', 'pending', 'acknowledged', 'change_requested'],
+      default: 'not_required'
     },
-    parentObjectiveIndex: Number, // Index of objective this aligns to
+    acknowledgedAt: Date,
+    acknowledgementComment: String,
+    idempotencyKey: String,
+    bulkBatchKey: String
+  },
+
+  lifecycle: {
+    state: {
+      type: String,
+      enum: [
+        'draft',
+        'pending_approval',
+        'changes_requested',
+        'pending_acknowledgement',
+        'active',
+        'rejected',
+        'closed',
+        'cancelled'
+      ],
+      default: 'draft',
+      index: true
+    },
+    submittedAt: Date,
+    submittedBy: actorSchema,
+    decidedAt: Date,
+    decidedBy: actorSchema,
+    decision: { type: String, enum: ['approve', 'request_changes', 'reject'] },
+    decisionComment: String,
+    activatedAt: Date,
+    closedAt: Date,
+    cancelledAt: Date
+  },
+
+  objectives: [objectiveSchema],
+
+  teamHierarchy: {
+    teamId: String,
+    teamName: String,
+    departmentId: String,
+    departmentName: String,
+    teamPath: [String],
+    managedTeams: [String]
+  },
+
+  alignment: {
+    parentOKRId: { type: mongoose.Schema.Types.ObjectId, ref: 'OKR' },
+    parentObjectiveIndex: Number,
     alignmentType: {
       type: String,
       enum: ['cascade', 'contribute', 'reference'],
       default: 'cascade'
     },
-    alignmentNotes: String
+    alignmentNotes: String,
+    contributionWeight: { type: Number, min: 0, max: 100 }
   },
+  childOKRIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'OKR' }],
 
-  // Children OKRs (populated dynamically)
-  childOKRIds: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'OKR'
-  }],
-
-  // Overall progress (calculated)
-  progress: {
-    type: Number,
-    default: 0,
-    min: 0,
-    max: 100
+  // Null means genuinely unrated; zero means measured and no progress.
+  progress: { type: Number, default: null, min: 0, max: 100 },
+  scoring: {
+    status: {
+      type: String,
+      enum: ['unrated', 'partially_rated', 'rated'],
+      default: 'unrated'
+    },
+    progress: { type: Number, default: null, min: 0, max: 100 },
+    ratedKeyResults: { type: Number, default: 0 },
+    unratedKeyResults: { type: Number, default: 0 },
+    totalKeyResults: { type: Number, default: 0 },
+    calculatedAt: Date
   },
-
-  createdAt: {
-    type: Date,
-    default: Date.now
+  health: {
+    type: String,
+    enum: ['not_set', 'on_track', 'at_risk', 'off_track', 'complete'],
+    default: 'not_set'
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
-});
+  lastCheckInAt: Date,
+  lastCheckInBy: actorSchema,
 
-// Indexes for performance
+  version: { type: Number, default: 0 },
+  versionHistory: [versionSchema]
+}, { timestamps: true });
+
 OKRSchema.index({ organizationId: 1, ownerId: 1, status: 1, type: 1 });
-OKRSchema.index({ 'teamHierarchy.teamId': 1 });
-OKRSchema.index({ 'alignment.parentOKRId': 1 });
+OKRSchema.index({ organizationId: 1, periodId: 1, status: 1 });
+OKRSchema.index({ organizationId: 1, period: 1, status: 1 });
+OKRSchema.index({ organizationId: 1, 'teamHierarchy.teamId': 1 });
+OKRSchema.index({ organizationId: 1, 'alignment.parentOKRId': 1 });
+OKRSchema.index(
+  { organizationId: 1, 'assignment.idempotencyKey': 1 },
+  { unique: true, sparse: true }
+);
 
-// Pre-save middleware to calculate progress
-OKRSchema.pre('save', function (next) {
-  this.updatedAt = Date.now();
+OKRSchema.methods.captureVersion = function captureVersion(reason, actor = {}, changes = {}) {
+  const nextVersion = Number(this.version || 0) + 1;
+  const plainObjectives = (this.objectives || []).map((objective) =>
+    typeof objective.toObject === 'function' ? objective.toObject() : objective
+  );
+  const plainAlignment = this.alignment && typeof this.alignment.toObject === 'function'
+    ? this.alignment.toObject()
+    : (this.alignment || null);
 
-  // Calculate overall progress from key results
-  if (this.objectives && this.objectives.length > 0) {
-    let totalProgress = 0;
-    let krCount = 0;
+  this.version = nextVersion;
+  this.versionHistory.push({
+    version: nextVersion,
+    reason,
+    changedBy: actor,
+    changes,
+    snapshot: {
+      title: this.title,
+      type: this.type,
+      ownerId: this.ownerId,
+      period: this.period,
+      periodId: this.periodId ? String(this.periodId._id || this.periodId) : null,
+      status: this.status,
+      approvalStatus: this.approvalStatus,
+      lifecycleState: this.lifecycle?.state,
+      objectives: plainObjectives,
+      alignment: plainAlignment
+    }
+  });
+  return nextVersion;
+};
 
-    this.objectives.forEach(obj => {
-      if (obj.keyResults && obj.keyResults.length > 0) {
-        obj.keyResults.forEach(kr => {
-          if (kr.targetValue && kr.targetValue !== kr.startValue) {
-            const range = kr.targetValue - (kr.startValue || 0);
-            const current = (kr.currentValue || 0) - (kr.startValue || 0);
-            const progress = Math.min(100, Math.max(0, (current / range) * 100));
-            totalProgress += progress;
-            krCount++;
-          } else if (kr.metricType === 'boolean') {
-            totalProgress += kr.currentValue ? 100 : 0;
-            krCount++;
-          }
-        });
-      }
-    });
-
-    this.progress = krCount > 0 ? Math.round(totalProgress / krCount) : 0;
+OKRSchema.pre('save', function calculateProgressBeforeSave(next) {
+  try {
+    applyGoalScore(this);
+    next();
+  } catch (error) {
+    next(error);
   }
-
-  next();
 });
 
-// Virtual for alignment depth (how many levels up to root)
-OKRSchema.virtual('alignmentDepth').get(function () {
-  // This would need to be calculated via populate in real queries
+OKRSchema.virtual('alignmentDepth').get(function alignmentDepth() {
   return this.alignment?.parentOKRId ? 1 : 0;
 });
 

@@ -31,16 +31,32 @@ const reportsRoutes = require('./routes/reports');
 const appraisalRoutes = require('./routes/appraisals');
 const webhooksRouter = require('./routes/webhooks');
 const aiRuntimeRoutes = require('./routes/aiRuntime');
+const goalPeriodRoutes = require('./routes/goalPeriods');
+const actionRoutes = require('./routes/actions');
+const notificationRoutes = require('./routes/notifications');
+const checkInRoutes = require('./routes/checkIns');
+const employeeRoutes = require('./routes/employees');
+const organizationFeatureRoutes = require('./routes/organizationFeatures');
 
 // Import RBAC middleware
 const { getUserRole, getDirectReports, getManagedTeams, getCurrentOrganization, requireAuth } = require('./middleware/rbac');
 const { claimsRefreshMiddleware } = require('./middleware/claimsRefresh');
 const { aiRequestContext } = require('./services/aiRequestContext');
+const { requireOrganization } = require('./services/tenantPolicy');
+const { requireOrganizationFeature } = require('./services/organizationFeatureService');
 
 // Import services
 const websocketService = require('./services/websocketService');
+const sessionStoreService = require('./services/sessionStore');
+const { startNotificationWorker } = require('./services/notificationWorker');
+const { startReminderScheduler } = require('./services/reminderScheduler');
 
 const app = express();
+
+const canonicalAppraisalsEnabled = requireOrganizationFeature('canonicalAppraisals');
+const goalPeriodsEnabled = requireOrganizationFeature('goalPeriods');
+const notificationsEnabled = requireOrganizationFeature('notifications');
+const continuousPerformanceEnabled = requireOrganizationFeature('continuousPerformance');
 
 const isProduction = process.env.NODE_ENV === 'production';
 const performanceRuntimeConfig = getPerformanceOidcClientConfig({
@@ -79,29 +95,43 @@ app.use(cors({
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key'],
 }));
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buffer) => {
+    if (req.originalUrl?.startsWith('/api/webhooks/')) req.rawBody = Buffer.from(buffer);
+  }
+}));
 app.use(cookieParser());
 
 // Database connection
 const mongoUri = process.env.MONGO_URI || 'mongodb://localhost/performance_db';
 mongoose.connect(mongoUri)
-  .then(() => console.log('Connected to MongoDB'))
+  .then(() => {
+    console.log('Connected to MongoDB');
+    if (process.env.NODE_ENV !== 'test' && process.env.DISABLE_BACKGROUND_WORKERS !== 'true') {
+      startNotificationWorker();
+      startReminderScheduler();
+    }
+  })
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Session configuration with MongoDB store for persistence
+const performanceSessionStore = MongoStore.create({
+  mongoUrl: mongoUri,
+  collectionName: 'sessions',
+  ttl: 24 * 60 * 60,
+});
+sessionStoreService.initSessionStore(performanceSessionStore);
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'performance-management-secret',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: mongoUri,
-    collectionName: 'sessions',
-    ttl: 24 * 60 * 60, // 1 day
-  }),
+  store: performanceSessionStore,
   cookie: {
     secure: isProduction,
     httpOnly: true,
@@ -123,11 +153,15 @@ app.get('/health', (req, res) => {
 app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
   try {
     const OKR = require('./models/OKR');
-    const { PerformanceReview } = require('./models/PerformanceReview');
+    const Appraisal = require('./models/Appraisal');
     const Feedback = require('./models/Feedback');
     const User = require('./models/User');
 
-    const userId = req.session?.user?.id;
+    const userId = req.session?.user?.id || req.session?.user?.sub;
+    const organizationId = req.currentOrganization?.id || req.currentOrganization?._id?.toString?.();
+    if (!organizationId) {
+      return res.status(403).json({ success: false, error: 'Select an organization before viewing the dashboard' });
+    }
     const { teamId, allTeams } = req.query;
     const userTeams = req.userTeams || [];
     const directReports = req.directReports || [];
@@ -160,7 +194,7 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
     // Get OKRs from database
     let okrs = [];
     if (targetUserIds.length > 0) {
-      okrs = await OKR.find({ ownerId: { $in: targetUserIds } });
+      okrs = await OKR.find({ organizationId: String(organizationId), ownerId: { $in: targetUserIds } });
     }
 
     // Calculate OKR progress
@@ -173,9 +207,13 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
     // Get pending reviews
     let reviews = [];
     if (targetUserIds.length > 0) {
-      reviews = await PerformanceReview.find({
-        userId: { $in: targetUserIds },
-        status: { $nin: ['completed'] }
+      reviews = await Appraisal.find({
+        organizationId: String(organizationId),
+        $or: [
+          { 'employee.userId': { $in: targetUserIds } },
+          { 'manager.userId': userId }
+        ],
+        status: { $nin: ['completed', 'employee_acknowledged', 'cancelled'] }
       });
     }
 
@@ -184,7 +222,9 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     if (targetUserIds.length > 0) {
       feedback = await Feedback.find({
+        organizationId: String(organizationId),
         receiverId: { $in: targetUserIds },
+        deletedAt: null,
         createdAt: { $gte: thirtyDaysAgo }
       });
     }
@@ -220,20 +260,26 @@ app.get('/api/dashboard/summary', requireAuth, async (req, res) => {
 
 // API routes
 app.use('/api/okrs', okrRoutes);
+app.use('/api/goal-periods', requireAuth, requireOrganization, goalPeriodsEnabled, goalPeriodRoutes);
+app.use('/api/actions', requireAuth, requireOrganization, notificationsEnabled, actionRoutes);
+app.use('/api/notifications', requireAuth, requireOrganization, notificationsEnabled, notificationRoutes);
+app.use('/api/check-ins', requireAuth, requireOrganization, continuousPerformanceEnabled, checkInRoutes);
+app.use('/api/employees', employeeRoutes);
 app.use('/api/reviews', reviewRoutes);
-app.use('/api/feedback', feedbackRoutes);
+app.use('/api/feedback', requireAuth, requireOrganization, continuousPerformanceEnabled, feedbackRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/ai-runtime', aiRuntimeRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/organization-features', organizationFeatureRoutes);
 app.use('/api/hub', hubRoutes);
-app.use('/api/one-on-ones', oneOnOneRoutes);
-app.use('/api/development-plans', developmentPlanRoutes);
-app.use('/api/calibration', calibrationRoutes);
+app.use('/api/one-on-ones', requireAuth, requireOrganization, continuousPerformanceEnabled, oneOnOneRoutes);
+app.use('/api/development-plans', requireAuth, requireOrganization, continuousPerformanceEnabled, developmentPlanRoutes);
+app.use('/api/calibration', requireAuth, requireOrganization, canonicalAppraisalsEnabled, calibrationRoutes);
 app.use('/api/bulk', bulkRoutes);
 app.use('/api/reports', reportsRoutes);
-app.use('/api/appraisals', appraisalRoutes);
+app.use('/api/appraisals', requireAuth, requireOrganization, canonicalAppraisalsEnabled, appraisalRoutes);
 app.use('/api/webhooks', webhooksRouter);
 
 // ============================================
@@ -717,6 +763,9 @@ const startServer = async () => {
   }
 };
 
-startServer();
+if (require.main === module) {
+  startServer();
+}
 
 module.exports = app;
+module.exports.startServer = startServer;

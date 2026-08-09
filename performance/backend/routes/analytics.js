@@ -1,167 +1,249 @@
 const express = require('express');
 const OKR = require('../models/OKR');
-const { PerformanceReview } = require('../models/PerformanceReview');
+const GoalCheckIn = require('../models/GoalCheckIn');
+const Appraisal = require('../models/Appraisal');
 const Feedback = require('../models/Feedback');
+const { requireAuth } = require('../middleware/rbac');
+const {
+  getActorId,
+  requireOrganization
+} = require('../services/tenantPolicy');
+const {
+  getDirectReportIds,
+  getManagedTeamIds,
+  getUserTeamIds
+} = require('../services/goalPermissionService');
 
 const router = express.Router();
+const ANALYTICS_PRIVACY_THRESHOLD = 5;
 
-// GET /api/analytics/team/:teamId - Get team analytics (real data only)
+router.use(requireAuth, requireOrganization);
+
+function isHr(req) {
+  return req.userRole === 'hr_admin';
+}
+
+function allowedEmployeeIds(req) {
+  if (isHr(req)) return null;
+  return Array.from(new Set([
+    getActorId(req),
+    ...getDirectReportIds(req)
+  ].filter(Boolean).map(String)));
+}
+
+function canViewTeam(req, teamId) {
+  if (isHr(req)) return true;
+  const allowedTeams = new Set([
+    ...getManagedTeamIds(req),
+    ...getUserTeamIds(req)
+  ].map(String));
+  return allowedTeams.has(String(teamId));
+}
+
+function calculateGoalProgress(goal) {
+  const stored = Number(goal?.scoring?.progress ?? goal?.progress);
+  if (Number.isFinite(stored)) return Math.max(0, Math.min(100, stored));
+
+  const values = [];
+  for (const objective of goal?.objectives || []) {
+    for (const keyResult of objective?.keyResults || []) {
+      if (keyResult.currentValue === undefined || keyResult.currentValue === null) continue;
+      const start = Number(keyResult.startValue || 0);
+      const current = Number(keyResult.currentValue);
+      const target = Number(keyResult.targetValue);
+      if (![start, current, target].every(Number.isFinite)) continue;
+      const decreasing = keyResult.direction === 'decrease' || target < start;
+      const denominator = decreasing ? start - target : target - start;
+      if (denominator === 0) {
+        values.push(current === target ? 100 : 0);
+      } else {
+        const raw = decreasing ? ((start - current) / denominator) * 100 : ((current - start) / denominator) * 100;
+        values.push(Math.max(0, Math.min(100, raw)));
+      }
+    }
+  }
+  if (values.length === 0) return null;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function monthKey(date) {
+  const value = new Date(date);
+  if (Number.isNaN(value.getTime())) return null;
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(key) {
+  const [year, month] = String(key).split('-').map(Number);
+  return new Intl.DateTimeFormat('en', { month: 'short', year: '2-digit', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+// Canonical team analytics. Ratings are suppressed below the minimum cohort.
 router.get('/team/:teamId', async (req, res) => {
   try {
-    const { teamId } = req.params;
-
-    // Get team members' OKRs and reviews from database
-    const okrs = await OKR.find({ teamId }).lean();
-    const reviews = await PerformanceReview.find({ teamId }).lean();
-
-    // Calculate performance distribution from real data
-    const distribution = {
-      exceeds: 0,
-      meets: 0,
-      needsImprovement: 0
-    };
-
-    reviews.forEach(review => {
-      const rating = review.managerEvaluation?.rating || review.selfEvaluation?.rating;
-      if (rating >= 4) distribution.exceeds++;
-      else if (rating >= 3) distribution.meets++;
-      else if (rating > 0) distribution.needsImprovement++;
-    });
-
-    // Calculate OKR completion trend from real data
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const okrHistory = [];
-    
-    // Group OKRs by month and calculate average completion
-    const currentYear = new Date().getFullYear();
-    for (let i = 0; i <= new Date().getMonth(); i++) {
-      const monthOkrs = okrs.filter(okr => {
-        const okrDate = new Date(okr.createdAt);
-        return okrDate.getMonth() === i && okrDate.getFullYear() === currentYear;
-      });
-      
-      let avgProgress = 0;
-      if (monthOkrs.length > 0) {
-        const totalProgress = monthOkrs.reduce((sum, okr) => {
-          // Calculate progress based on key results
-          let okrProgress = 0;
-          let krCount = 0;
-          okr.objectives?.forEach(obj => {
-            obj.keyResults?.forEach(kr => {
-              if (kr.targetValue > 0) {
-                okrProgress += Math.min((kr.currentValue / kr.targetValue) * 100, 100);
-                krCount++;
-              }
-            });
-          });
-          return sum + (krCount > 0 ? okrProgress / krCount : 0);
-        }, 0);
-        avgProgress = Math.round(totalProgress / monthOkrs.length);
-      }
-      
-      okrHistory.push({
-        month: months[i],
-        avg: avgProgress
-      });
+    const teamId = String(req.params.teamId || '').trim();
+    if (!teamId || !canViewTeam(req, teamId)) {
+      return res.status(403).json({ success: false, error: 'You cannot view analytics for this team' });
     }
 
+    const employeeIds = allowedEmployeeIds(req);
+    const appraisalQuery = {
+      organizationId: req.organizationId,
+      'employee.teamId': teamId,
+      status: { $in: ['completed', 'employee_acknowledged'] },
+      'finalRating.finalizedAt': { $ne: null }
+    };
+    if (employeeIds) appraisalQuery['employee.userId'] = { $in: employeeIds };
+
+    const goalQuery = {
+      organizationId: req.organizationId,
+      $or: [
+        { 'teamHierarchy.teamId': teamId },
+        { type: 'team', 'teamHierarchy.teamPath': teamId }
+      ]
+    };
+    if (employeeIds) {
+      goalQuery.$and = [{
+        $or: [
+          { ownerId: { $in: employeeIds } },
+          { type: 'team' }
+        ]
+      }];
+    }
+
+    const [appraisals, goals] = await Promise.all([
+      Appraisal.find(appraisalQuery).select('finalRating.overall employee.userId').lean(),
+      OKR.find(goalQuery).select('ownerId objectives progress scoring createdAt').lean()
+    ]);
+
+    const distribution = [
+      { name: 'Exceeds', count: 0 },
+      { name: 'Meets', count: 0 },
+      { name: 'Needs Imp.', count: 0 }
+    ];
+    for (const appraisal of appraisals) {
+      const rating = Number(appraisal.finalRating?.overall);
+      if (!Number.isFinite(rating)) continue;
+      if (rating >= 4) distribution[0].count += 1;
+      else if (rating >= 3) distribution[1].count += 1;
+      else distribution[2].count += 1;
+    }
+
+    const goalIds = goals.map((goal) => goal._id);
+    const checkIns = goalIds.length > 0
+      ? await GoalCheckIn.find({
+        organizationId: req.organizationId,
+        goalId: { $in: goalIds }
+      }).select('createdAt scoreSnapshot.progress').sort({ createdAt: 1 }).lean()
+      : [];
+
+    const monthly = new Map();
+    for (const checkIn of checkIns) {
+      const key = monthKey(checkIn.createdAt);
+      const progress = Number(checkIn.scoreSnapshot?.progress);
+      if (!key || !Number.isFinite(progress)) continue;
+      const bucket = monthly.get(key) || [];
+      bucket.push(progress);
+      monthly.set(key, bucket);
+    }
+
+    if (monthly.size === 0 && goals.length > 0) {
+      const values = goals.map(calculateGoalProgress).filter(Number.isFinite);
+      if (values.length > 0) monthly.set(monthKey(new Date()), values);
+    }
+
+    const okrCompletionHistory = Array.from(monthly.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .slice(-12)
+      .map(([key, values]) => ({
+        month: monthLabel(key),
+        avg: Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+      }));
+
+    const ratingsSuppressed = appraisals.length < ANALYTICS_PRIVACY_THRESHOLD;
     return res.json({
       success: true,
       data: {
-        performanceDistribution: [
-          { name: 'Exceeds', count: distribution.exceeds },
-          { name: 'Meets', count: distribution.meets },
-          { name: 'Needs Imp.', count: distribution.needsImprovement }
-        ],
-        okrCompletionHistory: okrHistory
+        performanceDistribution: ratingsSuppressed ? [] : distribution,
+        okrCompletionHistory,
+        privacy: {
+          threshold: ANALYTICS_PRIVACY_THRESHOLD,
+          ratingsSuppressed
+        },
+        definitions: {
+          performanceDistribution: 'Finalized canonical appraisal ratings grouped into three display bands.',
+          okrCompletionHistory: 'Average measured goal achievement from append-only goal check-ins.'
+        },
+        refreshedAt: new Date().toISOString()
       }
     });
   } catch (error) {
     console.error('Error fetching team analytics:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch team analytics'
-    });
+    return res.status(500).json({ success: false, error: 'Failed to fetch team analytics' });
   }
 });
 
-// GET /api/analytics/dashboard - Get dashboard analytics summary (real data only)
 router.get('/dashboard', async (req, res) => {
   try {
-    const userId = req.session?.user?.id;
-    
-    // Get user's OKRs from database
-    let okrs = [];
-    if (userId) {
-      okrs = await OKR.find({ ownerId: userId });
-    } else {
-      okrs = await OKR.find({}).limit(10);
-    }
-    
-    const totalKRs = okrs.reduce((acc, okr) => 
-      acc + (okr.objectives?.reduce((a, o) => a + (o.keyResults?.length || 0), 0) || 0), 0);
-    const completedKRs = okrs.reduce((acc, okr) => 
-      acc + (okr.objectives?.reduce((a, o) => 
-        a + (o.keyResults?.filter(kr => kr.currentValue >= kr.targetValue).length || 0), 0) || 0), 0);
+    const actorId = getActorId(req);
+    const employeeIds = allowedEmployeeIds(req) || [];
+    const goalQuery = { organizationId: req.organizationId };
+    const appraisalQuery = {
+      organizationId: req.organizationId,
+      status: { $nin: ['completed', 'employee_acknowledged', 'cancelled'] }
+    };
+    const feedbackQuery = {
+      organizationId: req.organizationId,
+      deletedAt: null,
+      createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+    };
 
-    // Get pending reviews from database
-    let reviews = [];
-    if (userId) {
-      reviews = await PerformanceReview.find({
-        $or: [{ userId }, { managerId: userId }],
-        status: { $nin: ['completed'] }
-      });
-    } else {
-      reviews = await PerformanceReview.find({ status: { $nin: ['completed'] } }).limit(10);
+    if (!isHr(req)) {
+      goalQuery.ownerId = { $in: employeeIds };
+      appraisalQuery.$or = [
+        { 'employee.userId': { $in: employeeIds } },
+        { 'manager.userId': actorId }
+      ];
+      feedbackQuery.receiverId = { $in: employeeIds };
     }
 
-    // Get recent feedback from database (last 30 days)
-    let feedback = [];
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    if (userId) {
-      feedback = await Feedback.find({
-        receiverId: userId,
-        createdAt: { $gte: thirtyDaysAgo }
-      });
-    } else {
-      feedback = await Feedback.find({ createdAt: { $gte: thirtyDaysAgo } }).limit(10);
-    }
+    const [goals, pendingReviews, recentFeedback] = await Promise.all([
+      OKR.find(goalQuery).select('objectives progress scoring status').lean(),
+      Appraisal.countDocuments(appraisalQuery),
+      Feedback.countDocuments(feedbackQuery)
+    ]);
 
-    // Count OKRs with upcoming deadlines (next 7 days)
-    const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    const upcomingDeadlines = okrs.filter(okr => {
-      // Check if any key result has a deadline in the next 7 days
-      return okr.objectives?.some(obj => 
-        obj.keyResults?.some(kr => 
-          kr.deadline && new Date(kr.deadline) <= sevenDaysFromNow && new Date(kr.deadline) >= new Date()
-        )
-      );
-    }).length;
+    const measuredProgress = goals.map(calculateGoalProgress).filter(Number.isFinite);
+    const now = new Date();
+    const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const upcomingDeadlines = goals.filter((goal) =>
+      (goal.objectives || []).some((objective) =>
+        (objective.keyResults || []).some((keyResult) => {
+          if (!keyResult.dueDate) return false;
+          const dueDate = new Date(keyResult.dueDate);
+          return dueDate >= now && dueDate <= sevenDaysFromNow;
+        })
+      )
+    ).length;
 
     return res.json({
       success: true,
       data: {
-        okrProgress: totalKRs > 0 ? Math.round((completedKRs / totalKRs) * 100) : 0,
-        pendingReviews: reviews.length,
-        recentFeedback: feedback.length,
-        totalOkrs: okrs.length,
-        completedOkrs: okrs.filter(o => o.status === 'closed').length,
-        upcomingDeadlines: upcomingDeadlines
+        okrProgress: measuredProgress.length > 0
+          ? Math.round(measuredProgress.reduce((sum, value) => sum + value, 0) / measuredProgress.length)
+          : null,
+        pendingReviews,
+        recentFeedback,
+        totalOkrs: goals.length,
+        completedOkrs: goals.filter((goal) => goal.status === 'closed').length,
+        upcomingDeadlines,
+        refreshedAt: new Date().toISOString()
       }
     });
   } catch (error) {
     console.error('Error fetching dashboard analytics:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch dashboard analytics'
-    });
+    return res.status(500).json({ success: false, error: 'Failed to fetch dashboard analytics' });
   }
 });
 
 module.exports = router;
-
-
-
-
-
-

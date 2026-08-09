@@ -56,6 +56,18 @@ export default function TeamMemberProfilePage() {
     loadMemberData();
   }, [userId]);
 
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    const tabIndex = {
+      performance: 0,
+      okrs: 1,
+      feedback: 2,
+      'one-on-ones': 3,
+      development: 4
+    }[requestedTab || ''];
+    if (typeof tabIndex === 'number') setSelectedTab(tabIndex);
+  }, [userId]);
+
   const loadMemberData = async () => {
     try {
       setLoading(true);
@@ -63,8 +75,18 @@ export default function TeamMemberProfilePage() {
         api.get(`/user/${userId}/profile`),
         api.get(`/user/${userId}/performance-summary`)
       ]);
-      setProfile(profileRes.data);
-      setPerformanceData(performanceRes.data);
+      const profilePayload = profileRes.data?.data ?? profileRes.data;
+      const performancePayload = performanceRes.data?.data ?? performanceRes.data;
+      setProfile(profilePayload || null);
+      setPerformanceData({
+        currentAppraisal: performancePayload?.currentAppraisal,
+        historicalRatings: Array.isArray(performancePayload?.historicalRatings) ? performancePayload.historicalRatings : [],
+        okrs: Array.isArray(performancePayload?.okrs) ? performancePayload.okrs : [],
+        feedbackReceived: Array.isArray(performancePayload?.feedbackReceived) ? performancePayload.feedbackReceived : [],
+        oneOnOnes: Array.isArray(performancePayload?.oneOnOnes) ? performancePayload.oneOnOnes : [],
+        developmentPlan: performancePayload?.developmentPlan,
+        achievements: Array.isArray(performancePayload?.achievements) ? performancePayload.achievements : []
+      });
     } catch (error) {
       console.error('Load member data error:', error);
     } finally {
@@ -239,6 +261,7 @@ export default function TeamMemberProfilePage() {
                         </ListItemIcon>
                         <ListItemText
                           primary={rating.period}
+                          slotProps={{ secondary: { component: 'div' } }}
                           secondary={
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <Rating value={rating.rating} readOnly size="small" />
@@ -311,6 +334,7 @@ export default function TeamMemberProfilePage() {
                       </ListItemIcon>
                       <ListItemText
                         primary={okr.title}
+                        slotProps={{ secondary: { component: 'div' } }}
                         secondary={
                           <Box sx={{ mt: 1 }}>
                             <LinearProgress
@@ -352,6 +376,7 @@ export default function TeamMemberProfilePage() {
                         <FeedbackIcon color={feedback.type === 'praise' ? 'success' : feedback.type === 'constructive' ? 'warning' : 'info'} />
                       </ListItemIcon>
                       <ListItemText
+                        slotProps={{ primary: { component: 'div' }, secondary: { component: 'div' } }}
                         primary={
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Typography variant="subtitle2">{feedback.from}</Typography>
@@ -450,9 +475,16 @@ export default function TeamMemberProfilePage() {
                     <Typography variant="body2" gutterBottom>
                       {performanceData.developmentPlan.summary}
                     </Typography>
-                    <Button variant="outlined" size="small" sx={{ mt: 2 }}>
-                      View Full Plan
-                    </Button>
+                    {performanceData.developmentPlan._id && (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        sx={{ mt: 2 }}
+                        onClick={() => router.push(`/development?plan=${encodeURIComponent(performanceData.developmentPlan._id)}`)}
+                      >
+                        View Full Plan
+                      </Button>
+                    )}
                   </Box>
                 ) : (
                   <Alert severity="info">No development plan created yet.</Alert>

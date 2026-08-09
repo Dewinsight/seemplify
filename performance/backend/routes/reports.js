@@ -1,23 +1,29 @@
 const express = require('express');
 const router = express.Router();
 const OKR = require('../models/OKR');
-const { PerformanceReview } = require('../models/PerformanceReview');
+const Appraisal = require('../models/Appraisal');
+const AppraisalCycle = require('../models/AppraisalCycle');
 const Feedback = require('../models/Feedback');
-const ReviewCycle = require('../models/ReviewCycle');
 const OneOnOne = require('../models/OneOnOne');
 const DevelopmentPlan = require('../models/DevelopmentPlan');
 const { requireAuth, requireManager, requireHRAdmin } = require('../middleware/rbac');
+const { requireOrganizationFeature } = require('../services/organizationFeatureService');
+const { requireOrganization, tenantFilter } = require('../services/tenantPolicy');
+
+const canonicalAppraisalsEnabled = requireOrganizationFeature('canonicalAppraisals');
+
+router.use(requireAuth, requireOrganization);
 
 /**
  * GET /api/reports/org-summary - Organization performance summary
  */
 router.get('/org-summary', requireHRAdmin, async (req, res) => {
   try {
-    const orgId = req.currentOrganization?.id;
+    const orgId = req.organizationId;
     
     // OKR stats
     const okrStats = await OKR.aggregate([
-      { $match: orgId ? { organizationId: orgId } : {} },
+      { $match: { organizationId: orgId } },
       {
         $group: {
           _id: '$status',
@@ -28,8 +34,8 @@ router.get('/org-summary', requireHRAdmin, async (req, res) => {
     ]);
     
     // Review stats
-    const reviewStats = await PerformanceReview.aggregate([
-      { $match: {} },
+    const reviewStats = await Appraisal.aggregate([
+      { $match: { organizationId: orgId } },
       {
         $group: {
           _id: '$status',
@@ -40,7 +46,7 @@ router.get('/org-summary', requireHRAdmin, async (req, res) => {
     
     // Feedback stats
     const feedbackStats = await Feedback.aggregate([
-      { $match: orgId ? { organizationId: orgId } : {} },
+      { $match: { organizationId: orgId, deletedAt: null } },
       {
         $group: {
           _id: '$type',
@@ -51,10 +57,13 @@ router.get('/org-summary', requireHRAdmin, async (req, res) => {
     
     // Recent activity
     const recentOkrs = await OKR.countDocuments({
+      organizationId: orgId,
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
     });
     
     const recentFeedback = await Feedback.countDocuments({
+      organizationId: orgId,
+      deletedAt: null,
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
     });
     
@@ -96,7 +105,7 @@ router.get('/team-performance', requireManager, async (req, res) => {
     }
     
     // OKR progress by team member
-    let okrQuery = { ownerId: { $in: directReports } };
+    let okrQuery = { organizationId: req.organizationId, ownerId: { $in: directReports } };
     if (period) okrQuery.period = period;
     
     const okrsByMember = await OKR.aggregate([
@@ -113,7 +122,7 @@ router.get('/team-performance', requireManager, async (req, res) => {
     
     // Feedback received by team
     const feedbackByMember = await Feedback.aggregate([
-      { $match: { receiverId: { $in: directReports } } },
+      { $match: { organizationId: req.organizationId, receiverId: { $in: directReports }, deletedAt: null, visibility: { $in: ['public', 'manager-only'] } } },
       {
         $group: {
           _id: '$receiverId',
@@ -124,8 +133,8 @@ router.get('/team-performance', requireManager, async (req, res) => {
     ]);
     
     // Review completion status
-    const reviewStats = await PerformanceReview.aggregate([
-      { $match: { userId: { $in: directReports } } },
+    const reviewStats = await Appraisal.aggregate([
+      { $match: { organizationId: req.organizationId, 'employee.userId': { $in: directReports } } },
       {
         $group: {
           _id: '$status',
@@ -172,31 +181,33 @@ router.get('/individual/:userId', requireAuth, async (req, res) => {
     }
     
     // Get OKRs
-    const okrs = await OKR.find({ ownerId: targetUserId })
+    const okrs = await OKR.find(tenantFilter(req, { ownerId: targetUserId }))
       .sort({ createdAt: -1 })
       .limit(10);
     
     // Get reviews
-    const reviews = await PerformanceReview.find({ userId: targetUserId })
-      .populate('cycleId', 'title')
+    const reviews = await Appraisal.find(tenantFilter(req, { 'employee.userId': targetUserId }))
+      .populate('cycleId', 'name periodStart periodEnd')
       .sort({ createdAt: -1 })
       .limit(5);
     
     // Get feedback received
-    const feedback = await Feedback.find({ receiverId: targetUserId })
+    const feedbackQuery = tenantFilter(req, { receiverId: targetUserId, deletedAt: null });
+    if (!isSelf && !isHRAdmin) feedbackQuery.visibility = { $in: ['public', 'manager-only'] };
+    const feedback = await Feedback.find(feedbackQuery)
       .sort({ createdAt: -1 })
       .limit(10);
     
     // Get 1:1 meetings
-    const meetings = await OneOnOne.find({
+    const meetings = await OneOnOne.find(tenantFilter(req, {
       $or: [{ managerId: targetUserId }, { employeeId: targetUserId }]
-    }).sort({ scheduledDate: -1 }).limit(5);
+    })).select('managerId employeeId scheduledDate status actionItems').sort({ scheduledDate: -1 }).limit(5);
     
     // Get development plan
-    const devPlan = await DevelopmentPlan.findOne({
+    const devPlan = await DevelopmentPlan.findOne(tenantFilter(req, {
       userId: targetUserId,
-      status: 'active'
-    });
+      status: { $in: ['active', 'draft'] }
+    }));
     
     // Calculate stats
     const activeOkrs = okrs.filter(o => o.status === 'active');
@@ -231,10 +242,11 @@ router.get('/individual/:userId', requireAuth, async (req, res) => {
         })),
         recentReviews: reviews.map(r => ({
           id: r._id,
-          cycleName: r.cycleId?.title,
+          cycleName: r.cycleId?.name,
           status: r.status,
-          selfRating: r.selfEvaluation?.rating,
-          managerRating: r.managerEvaluation?.rating
+          selfRating: r.selfAssessment?.overallSelfRating,
+          managerRating: r.managerReview?.overallManagerRating,
+          finalRating: r.status === 'employee_acknowledged' || isHRAdmin ? r.finalRating?.overall : null
         })),
         recentFeedback: feedback.slice(0, 5).map(f => ({
           id: f._id,
@@ -258,16 +270,16 @@ router.get('/individual/:userId', requireAuth, async (req, res) => {
 /**
  * GET /api/reports/review-cycle/:cycleId - Review cycle analytics
  */
-router.get('/review-cycle/:cycleId', requireHRAdmin, async (req, res) => {
+router.get('/review-cycle/:cycleId', requireHRAdmin, canonicalAppraisalsEnabled, async (req, res) => {
   try {
     const cycleId = req.params.cycleId;
     
-    const cycle = await ReviewCycle.findById(cycleId);
+    const cycle = await AppraisalCycle.findOne({ _id: cycleId, organizationId: req.organizationId });
     if (!cycle) {
       return res.status(404).json({ success: false, error: 'Cycle not found' });
     }
     
-    const reviews = await PerformanceReview.find({ cycleId });
+    const reviews = await Appraisal.find({ cycleId, organizationId: req.organizationId });
     
     // Status breakdown
     const statusBreakdown = {};
@@ -276,8 +288,8 @@ router.get('/review-cycle/:cycleId', requireHRAdmin, async (req, res) => {
     });
     
     // Rating distribution
-    const selfRatings = reviews.filter(r => r.selfEvaluation?.rating).map(r => r.selfEvaluation.rating);
-    const managerRatings = reviews.filter(r => r.managerEvaluation?.rating).map(r => r.managerEvaluation.rating);
+    const selfRatings = reviews.filter(r => r.selfAssessment?.overallSelfRating).map(r => r.selfAssessment.overallSelfRating);
+    const managerRatings = reviews.filter(r => r.managerReview?.overallManagerRating).map(r => r.managerReview.overallManagerRating);
     
     const avgSelfRating = selfRatings.length > 0 
       ? Math.round((selfRatings.reduce((a, b) => a + b, 0) / selfRatings.length) * 10) / 10
@@ -287,24 +299,24 @@ router.get('/review-cycle/:cycleId', requireHRAdmin, async (req, res) => {
       : null;
     
     // Completion rates
-    const selfCompleted = reviews.filter(r => r.selfEvaluation?.submittedAt).length;
-    const managerCompleted = reviews.filter(r => r.managerEvaluation?.submittedAt).length;
+    const selfCompleted = reviews.filter(r => r.selfAssessment?.submittedAt).length;
+    const managerCompleted = reviews.filter(r => r.managerReview?.submittedAt).length;
     
     res.json({
       success: true,
       data: {
         cycle: {
           id: cycle._id,
-          title: cycle.title,
+          title: cycle.name,
           status: cycle.status,
-          startDate: cycle.startDate,
-          endDate: cycle.endDate
+          startDate: cycle.periodStart,
+          endDate: cycle.periodEnd
         },
         totals: {
           totalReviews: reviews.length,
           selfCompleted,
           managerCompleted,
-          fullyCompleted: reviews.filter(r => r.status === 'completed').length
+          fullyCompleted: reviews.filter(r => ['completed', 'employee_acknowledged'].includes(r.status)).length
         },
         completionRates: {
           selfReview: reviews.length > 0 ? Math.round((selfCompleted / reviews.length) * 100) : 0,
@@ -337,6 +349,7 @@ router.get('/okr-trends', requireHRAdmin, async (req, res) => {
     startDate.setMonth(startDate.getMonth() - monthsAgo);
     
     const okrs = await OKR.find({
+      organizationId: req.organizationId,
       createdAt: { $gte: startDate }
     }).sort({ createdAt: 1 });
     
@@ -376,8 +389,24 @@ router.get('/feedback-analytics', requireHRAdmin, async (req, res) => {
     startDate.setMonth(startDate.getMonth() - parseInt(months));
     
     const feedback = await Feedback.find({
+      organizationId: req.organizationId,
+      deletedAt: null,
       createdAt: { $gte: startDate }
     });
+
+    if (feedback.length > 0 && feedback.length < 5) {
+      return res.json({
+        success: true,
+        data: {
+          total: null,
+          suppressed: true,
+          minimumCohortSize: 5,
+          typeDistribution: {},
+          weeklyVolume: [],
+          avgPerWeek: null
+        }
+      });
+    }
     
     // Type distribution
     const typeDistribution = {};
