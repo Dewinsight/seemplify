@@ -5,6 +5,7 @@ import MarketingPrivacyChoices from '@/components/MarketingPrivacyChoices'
 
 const productLinks = [
   { href: '/#modules', label: 'Product suite' },
+  { href: '/#ai', label: 'AI in Seemplify' },
   { href: '/#how-it-works', label: 'How it works' },
   { href: '/#platform', label: 'Platform and security' },
   { href: '/#faq', label: 'Questions' },
@@ -27,7 +28,7 @@ export default function MarketingFooter() {
             <SeemplifyLogo size="sm" animated={false} className="marketing-footer__logo" />
           </Link>
           <p className="marketing-footer__statement">
-            One operating system for the people work that keeps organisations moving.
+            AI-powered people operations, from the first candidate conversation to payroll review.
           </p>
           <Link
             href={idpUrl('/')}
@@ -95,7 +96,7 @@ export default function MarketingFooter() {
         <p className="marketing-footer__copyright">
           &copy; {new Date().getFullYear()} Seemplify. All rights reserved.
         </p>
-        <p className="marketing-footer__tagline">Run simple. Run smart.</p>
+        <p className="marketing-footer__tagline">People work, connected.</p>
       </div>
     </footer>
   )

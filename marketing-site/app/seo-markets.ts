@@ -38,15 +38,15 @@ export const primaryMarkets: SeoMarket[] = [
   {
     slug: 'nigeria',
     country: 'Nigeria',
-    headline: 'AI software for Nigeria',
+    headline: 'People operations software for Nigeria',
     description:
       'Manage recruiting, onboarding, leave, performance, employee records, and operational workflows for teams in Lagos, Abuja, Port Harcourt, and across Nigeria.',
     intro:
-      'Seemplify gives Nigerian teams one AI operating system for hiring, approvals, employee records, and performance management across multiple branches and remote teams.',
+      'Seemplify gives Nigerian teams one connected platform for hiring, approvals, employee records and performance management across branches and remote teams.',
     cities: ['Lagos', 'Abuja', 'Port Harcourt'],
     industries: ['Fintech', 'Professional services', 'Healthcare', 'Logistics'],
     highlights: [
-      'Replace spreadsheets and scattered chats with one AI command center for your Nigerian workforce.',
+      'Replace spreadsheets and scattered chats with one clear operating workspace for your Nigerian workforce.',
       'Standardize approvals, onboarding, and team operations across headquarters, branches, and distributed teams.',
       'Give leaders shared visibility into recruiting pipelines, leave requests, performance cycles, and employee activity.',
     ],
@@ -71,7 +71,7 @@ export const primaryMarkets: SeoMarket[] = [
   {
     slug: 'ghana',
     country: 'Ghana',
-    headline: 'AI software for Ghana',
+    headline: 'People operations software for Ghana',
     description:
       'Centralize hiring, onboarding, leave, performance, and employee operations for teams in Accra, Kumasi, Takoradi, and across Ghana.',
     intro:
@@ -85,9 +85,9 @@ export const primaryMarkets: SeoMarket[] = [
     ],
     faqs: [
       {
-        question: 'Why use dedicated AI software in Ghana instead of manual processes?',
+        question: 'Why use a connected people operations platform in Ghana?',
         answer:
-          'Dedicated AI software reduces delays, improves record accuracy, and gives teams a repeatable process for recruiting, onboarding, leave, and performance management.',
+          'A connected platform reduces delays, improves record accuracy, and gives teams a repeatable process for recruiting, onboarding, leave and performance management. AI is available only in supported workflows where teams choose to use it.',
       },
       {
         question: 'Can Seemplify support Ghana-based companies with distributed teams?',
@@ -104,11 +104,11 @@ export const primaryMarkets: SeoMarket[] = [
   {
     slug: 'kenya',
     country: 'Kenya',
-    headline: 'AI software for Kenya',
+    headline: 'People operations software for Kenya',
     description:
       'Streamline recruitment, onboarding, leave, performance, and team operations for teams in Nairobi, Mombasa, Kisumu, and across Kenya.',
     intro:
-      'Seemplify gives Kenyan companies a unified AI platform for coordinating recruiting, employee administration, approvals, and performance management at scale.',
+      'Seemplify gives Kenyan companies a connected platform for coordinating recruiting, employee administration, approvals and performance management at scale.',
     cities: ['Nairobi', 'Mombasa', 'Kisumu'],
     industries: ['Technology', 'NGOs', 'Healthcare', 'Business services'],
     highlights: [
@@ -137,7 +137,7 @@ export const primaryMarkets: SeoMarket[] = [
   {
     slug: 'south-africa',
     country: 'South Africa',
-    headline: 'AI software for South Africa',
+    headline: 'People operations software for South Africa',
     description:
       'Unify recruiting, onboarding, leave, performance, and employee operations for teams in Johannesburg, Cape Town, Durban, and across South Africa.',
     intro:
@@ -174,7 +174,7 @@ export const localizedMarkets: SeoMarket[] = [
   {
     slug: 'united-kingdom',
     country: 'United Kingdom',
-    headline: 'AI software for the United Kingdom',
+    headline: 'People operations software for the United Kingdom',
     description:
       'Support recruiting, onboarding, leave, performance, employee records, and operations for teams in London, Manchester, Birmingham, and across the United Kingdom.',
     intro:
@@ -208,24 +208,24 @@ export const localizedMarkets: SeoMarket[] = [
 
 export const homeFaqs: SeoFaq[] = [
   {
-    question: 'Does Seemplify support teams in Nigeria, Ghana, Kenya, and South Africa?',
+    question: 'What can Seemplify manage?',
     answer:
-      'Yes. Seemplify is positioned for teams across Nigeria, Ghana, Kenya, South Africa, and other English-speaking African markets that need one platform for recruiting, onboarding, leave, performance, and operations.',
+      'Seemplify connects recruiting, onboarding, organisation records, leave, performance, time and attendance, payroll operations, experience management and learning through one identity and organisation layer.',
   },
   {
-    question: 'What type of companies is Seemplify built for in Africa?',
+    question: 'How does Seemplify use AI?',
     answer:
-      'Seemplify is built for startups, scale-ups, mid-market teams, and enterprise teams that want to replace fragmented operations with a more structured, auditable platform.',
+      'Teams can use ChatGPT or an approved Local runtime for supported activities such as CV analysis, candidate matching, job content and recruiter assistance. Workspace policies control where AI can run, and people remain responsible for decisions.',
   },
   {
-    question: 'Can Seemplify help multi-country teams in English-speaking Africa?',
+    question: 'Can we begin with one workspace?',
     answer:
-      'Yes. Seemplify is designed to help leaders manage operations across multiple African markets with shared workflows, cleaner data, and stronger process control.',
+      'Yes. Organisations can start with the workflow that matters most, then enable more Seemplify applications while keeping the same identity, organisation structure and access controls.',
   },
   {
-    question: 'Which workflows can Seemplify improve first?',
+    question: 'How does regional payroll coverage work?',
     answer:
-      'Most teams start with recruiting coordination, onboarding, leave management, employee records, performance reviews, and approval workflows, then expand from there.',
+      'Core people-operation workspaces can be used across locations. Country-specific tax calculations and statutory payroll posting are available only when the jurisdiction coverage and certification status explicitly say they are ready.',
   },
 ]
 

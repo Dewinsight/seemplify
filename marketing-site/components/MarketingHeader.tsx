@@ -11,10 +11,10 @@ import MarketingThemeToggle from '@/components/MarketingThemeToggle'
 
 const navigation = [
   { href: '/#modules', label: 'Product' },
+  { href: '/#ai', label: 'AI' },
   { href: '/#how-it-works', label: 'How it works' },
   { href: '/#platform', label: 'Platform' },
-  { href: '/#africa', label: 'Africa' },
-  { href: '/#faq', label: 'FAQ' },
+  { href: '/#africa', label: 'Regions' },
 ]
 
 export default function MarketingHeader() {

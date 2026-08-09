@@ -61,7 +61,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: config.ogImage,
           width: 1200,
           height: 630,
-          alt: `${config.name} ${config === akwaIbomConfig ? 'HR software' : 'AI software'}`,
+          alt: `${config.name} ${config === akwaIbomConfig ? 'HR software' : 'people operations platform'}`,
         },
       ],
     },

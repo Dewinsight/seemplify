@@ -13,14 +13,14 @@ import { absoluteUrl, siteConfig } from '../site-config'
 import '../market-pages.css'
 
 export const metadata: Metadata = {
-  title: 'AI Software for Africa',
+  title: 'People Operations Software for Africa',
   description:
-    'Discover Seemplify AI software for Africa, with dedicated market positioning for Nigeria, Ghana, Kenya, South Africa, and English-speaking African teams.',
+    'Explore Seemplify people operations software for Nigeria, Ghana, Kenya, South Africa and distributed teams across Africa.',
   keywords: [
-    'AI software Africa',
-    'AI platform Africa',
-    'team operations software Africa',
-    'AI software English-speaking Africa',
+    'people operations software Africa',
+    'HR software Africa',
+    'recruiting software Africa',
+    'employee management software Africa',
   ],
   alternates: {
     canonical: '/africa',
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: 'AI Software for Africa | Seemplify',
+    title: 'People Operations Software for Africa | Seemplify',
     description:
       'Seemplify helps African teams centralize recruiting, onboarding, leave, performance, and operations.',
     url: '/africa',
@@ -40,13 +40,13 @@ export const metadata: Metadata = {
         url: siteConfig.ogImage,
         width: 1200,
         height: 630,
-        alt: 'Seemplify AI software for Africa',
+        alt: 'Seemplify people operations software for Africa',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'AI Software for Africa | Seemplify',
+    title: 'People Operations Software for Africa | Seemplify',
     description:
       'Explore Seemplify market pages for Nigeria, Ghana, Kenya, South Africa, and English-speaking African teams.',
     images: [siteConfig.ogImage],
@@ -58,10 +58,10 @@ const africaStructuredData = {
   '@graph': [
     {
       '@type': 'WebPage',
-      name: 'AI Software for Africa',
+      name: 'People Operations Software for Africa',
       url: absoluteUrl('/africa'),
       description:
-        'Market overview page for AI software across Africa, focused on Nigeria, Ghana, Kenya, South Africa, and English-speaking African countries.',
+        'Market overview for connected recruiting and people operations across Nigeria, Ghana, Kenya, South Africa and distributed African teams.',
     },
     {
       '@type': 'FAQPage',
@@ -102,11 +102,11 @@ export default function AfricaPage() {
 
           <div className="market-page-hero__grid">
             <div className="marketing-page-hero__inner market-page-hero__copy">
-              <p className="marketing-eyebrow">Africa Coverage</p>
-              <h1>AI software for Nigeria, Ghana, Kenya, South Africa, and English-speaking Africa.</h1>
+              <p className="marketing-eyebrow">Regional operations</p>
+              <h1>One people operations platform for teams across Africa.</h1>
               <p className="marketing-page-hero__description">
-                Explore how Seemplify supports teams across key African growth markets. Use the
-                country pages below to see the product in the context of your operating footprint.
+                Explore how Seemplify connects recruiting, onboarding and everyday people workflows
+                across key African markets. Statutory payroll coverage remains country-specific and clearly labelled.
               </p>
               <div className="market-page-actions">
                 <Link href="/#modules" className="marketing-button marketing-button--secondary">
@@ -130,7 +130,7 @@ export default function AfricaPage() {
                 </div>
                 <div>
                   <dt>Regional coverage</dt>
-                  <dd>{broaderEnglishSpeakingAfricanCountries.length} countries</dd>
+                  <dd>{broaderEnglishSpeakingAfricanCountries.length} locations</dd>
                 </div>
                 <div>
                   <dt>Operating model</dt>

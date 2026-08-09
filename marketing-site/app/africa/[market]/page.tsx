@@ -32,10 +32,10 @@ export async function generateMetadata({ params }: MarketPageProps): Promise<Met
     description: page.description,
     keywords: [
       `${page.headline}`,
-      `AI workflow automation ${page.country}`,
-      `AI platform ${page.country}`,
+      `people operations software ${page.country}`,
+      `recruiting software ${page.country}`,
       `employee management software ${page.country}`,
-      'AI software Africa',
+      'HR software Africa',
     ],
     alternates: {
       canonical: `/africa/${page.slug}`,
@@ -122,7 +122,7 @@ export default async function MarketPage({ params }: MarketPageProps) {
         '@type': 'SoftwareApplication',
         name: siteConfig.name,
         applicationCategory: 'BusinessApplication',
-        applicationSubCategory: 'AI Software',
+        applicationSubCategory: 'People Operations Software',
         operatingSystem: 'Web',
         description: page.description,
         url: absoluteUrl(`/africa/${page.slug}`),
@@ -202,7 +202,7 @@ export default async function MarketPage({ params }: MarketPageProps) {
           <aside className="market-industries" aria-labelledby="market-industries-title">
             <p className="market-panel-eyebrow">Best Fit Teams</p>
             <h2 id="market-industries-title">
-              Common sectors searching for modern AI software in {page.country}.
+              Common sectors building more connected people operations in {page.country}.
             </h2>
             <ul>
               {page.industries.map((industry, index) => (

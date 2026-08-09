@@ -1,142 +1,109 @@
-'use client'
-
-import { type LucideIcon } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import {
   ArrowRight,
   BarChart3,
+  BrainCircuit,
   BriefcaseBusiness,
   CalendarDays,
   Check,
   Clock3,
-  FileCheck2,
+  GraduationCap,
   KeyRound,
-  Landmark,
   MapPin,
-  Network,
+  MessageSquareText,
+  ScanSearch,
   ShieldCheck,
+  Sparkles,
   Target,
   UsersRound,
   WalletCards,
-  Workflow,
 } from 'lucide-react'
+import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { absoluteUrl, getSiteConfig, idpUrl } from '@/app/site-config'
+import { homeFaqs, primaryMarkets } from '@/app/seo-markets'
 import { BookDemoButton } from '@/components/BookDemoModal'
 import JsonLd from '@/components/JsonLd'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingHeader from '@/components/MarketingHeader'
-import {
-  broaderEnglishSpeakingAfricanCountries,
-  homeFaqs,
-  localizedMarketMap,
-  primaryMarketMap,
-  primaryMarkets,
-  type SeoMarket,
-} from '@/app/seo-markets'
-import { absoluteUrl, getSiteConfig, idpUrl } from '@/app/site-config'
-
-const MARKET_COOKIE = 'seemplify-market'
 
 type SuiteApp = {
   name: string
-  signal: string
   description: string
   icon: LucideIcon
-  footerLabel: string
-  footerValue: string
-  feature?: 'wide'
+  status?: 'Beta' | 'New'
 }
 
 const suiteApps: SuiteApp[] = [
   {
     name: 'Recruiter',
-    signal: 'Hire with signal',
-    description: 'Coordinate sourcing, screening, interviews, documents, and hiring decisions from one workspace.',
+    description: 'Source, screen and interview candidates, analyse CVs and keep every hiring decision in one place.',
     icon: BriefcaseBusiness,
-    footerLabel: 'Workspace',
-    footerValue: 'Recruitment',
-    feature: 'wide',
   },
   {
-    name: 'Experience Management',
-    signal: 'Listen, learn, act',
-    description: 'Turn research, listening, journeys, and evidence into a clearer picture of your people experience.',
-    icon: BarChart3,
-    footerLabel: 'Workspace',
-    footerValue: 'Insights',
+    name: 'Core HR & onboarding',
+    description: 'Manage people, teams, branches, role access, documents and structured onboarding journeys.',
+    icon: UsersRound,
   },
   {
     name: 'Leave Management',
-    signal: 'Time off, sorted',
-    description: 'Give employees a simple request flow while managers keep balances, policies, and approvals in view.',
+    description: 'Give employees a clear request flow while managers keep policies, balances and approvals in view.',
     icon: CalendarDays,
-    footerLabel: 'Workflow',
-    footerValue: 'Requests',
   },
   {
     name: 'Performance Management',
-    signal: 'Goals that move',
-    description: 'Keep OKRs, review cycles, manager actions, and ongoing feedback close to the work.',
+    description: 'Run OKRs, review cycles, feedback and manager actions with the right organisational context.',
     icon: Target,
-    footerLabel: 'Workspace',
-    footerValue: 'Reviews',
-  },
-  {
-    name: 'Payroll',
-    signal: 'Pay run confidence',
-    description: 'Prepare salaries, adjustments, contract work, approvals, reports, and exports with a clean audit trail.',
-    icon: WalletCards,
-    footerLabel: 'Workspace',
-    footerValue: 'Payroll',
+    status: 'Beta',
   },
   {
     name: 'Time & Attendance',
-    signal: 'Hours you can trust',
-    description: 'Track clock-ins, breaks, timesheets, attendance rules, approvals, and reporting in one pass.',
+    description: 'Track clock-ins, breaks, geofenced attendance, timesheets, exceptions, approvals and reports.',
     icon: Clock3,
-    footerLabel: 'Status',
-    footerValue: 'Live attendance',
-  },
-]
-
-const platformPrinciples = [
-  {
-    icon: KeyRound,
-    title: 'One identity',
-    description: 'Sign in once and move between the workspaces your organisation has made available.',
+    status: 'New',
   },
   {
-    icon: UsersRound,
-    title: 'One people structure',
-    description: 'Departments, teams, branches, roles, and reporting relationships stay connected.',
+    name: 'Payroll',
+    description: 'Prepare pay runs, salaries, adjustments, approvals, reports and exports with jurisdiction-aware controls.',
+    icon: WalletCards,
+    status: 'Beta',
   },
   {
-    icon: Workflow,
-    title: 'One approval trail',
-    description: 'Requests and decisions retain the context people need to act with confidence.',
-  },
-]
-
-const operatingStories = [
-  {
-    index: '01',
-    title: 'People join with context.',
-    description: 'Move from recruitment into onboarding, team membership, documents, and role access without re-entering the same information.',
-    icon: UsersRound,
-  },
-  {
-    index: '02',
-    title: 'Work moves through clear decisions.',
-    description: 'Leave, time, performance, and pay changes follow visible ownership and approval paths.',
-    icon: FileCheck2,
-  },
-  {
-    index: '03',
-    title: 'Leaders see the whole picture.',
-    description: 'Shared records make reporting easier to follow across people, teams, and operational workspaces.',
+    name: 'Experience Management',
+    description: 'Bring research, listening, journeys and evidence together to understand the employee experience.',
     icon: BarChart3,
   },
+  {
+    name: 'Learning',
+    description: 'Assign courses, track development and keep training connected to the people and teams it supports.',
+    icon: GraduationCap,
+  },
 ]
+
+const aiCapabilities = [
+  {
+    icon: ScanSearch,
+    title: 'CV understanding and matching',
+    description: 'Turn uploaded CVs into structured candidate profiles, then compare people against the role with explainable evidence.',
+  },
+  {
+    icon: Sparkles,
+    title: 'Job and interview content',
+    description: 'Draft job descriptions, requirements and interview questions inside the workflow where they will be used.',
+  },
+  {
+    icon: MessageSquareText,
+    title: 'Recruiter assistant',
+    description: 'Ask questions about jobs and candidates, then move directly to the record or action that needs attention.',
+  },
+]
+
+const journeySteps = [
+  ['01', 'Hire', 'Move from application and CV analysis to a documented hiring decision.'],
+  ['02', 'Welcome', 'Carry the person into team setup, access, documents and onboarding.'],
+  ['03', 'Support', 'Manage leave, attendance, goals, feedback and development.'],
+  ['04', 'Pay', 'Prepare pay runs with review gates, reports and jurisdiction coverage made visible.'],
+] as const
 
 function getHomeStructuredData(config: ReturnType<typeof getSiteConfig>, hostname: string) {
   return {
@@ -148,10 +115,6 @@ function getHomeStructuredData(config: ReturnType<typeof getSiteConfig>, hostnam
         url: config.url,
         logo: absoluteUrl(config.ogImage, hostname),
         email: config.contactEmail,
-        areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
-          '@type': 'Country',
-          name: country,
-        })),
       },
       {
         '@type': 'WebSite',
@@ -163,21 +126,19 @@ function getHomeStructuredData(config: ReturnType<typeof getSiteConfig>, hostnam
         '@type': 'SoftwareApplication',
         name: config.name,
         applicationCategory: 'BusinessApplication',
-        applicationSubCategory: 'People Operations Software',
+        applicationSubCategory: 'AI-powered people operations software',
         operatingSystem: 'Web',
         url: config.url,
         description: config.description,
-        areaServed: broaderEnglishSpeakingAfricanCountries.map((country) => ({
-          '@type': 'Country',
-          name: country,
-        })),
         featureList: [
-          'Recruiting workflow management',
-          'Employee onboarding',
+          'AI-assisted recruiting and CV analysis',
+          'Employee onboarding and organisation management',
           'Leave management',
           'Performance management',
           'Time and attendance',
           'Payroll operations',
+          'Experience management',
+          'Learning management',
         ],
       },
       {
@@ -185,222 +146,118 @@ function getHomeStructuredData(config: ReturnType<typeof getSiteConfig>, hostnam
         mainEntity: homeFaqs.map((faq) => ({
           '@type': 'Question',
           name: faq.question,
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: faq.answer,
-          },
+          acceptedAnswer: { '@type': 'Answer', text: faq.answer },
         })),
       },
     ],
   }
 }
 
-function getCookieValue(cookieName: string) {
-  if (typeof document === 'undefined') return null
-  const prefix = `${cookieName}=`
-  const entry = document.cookie
-    .split(';')
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(prefix))
-  return entry ? decodeURIComponent(entry.slice(prefix.length)) : null
-}
-
-function SuitePreview() {
-  const previewApps = suiteApps.slice(0, 6)
-
-  return (
-    <div className="marketing-suite-preview" aria-label="Seemplify application workspace preview">
-      <div className="marketing-suite-preview__header">
-        <div>
-          <p className="marketing-suite-preview__eyebrow">Working in</p>
-          <div className="marketing-suite-preview__organisation">
-            <span className="marketing-suite-preview__avatar">AI</span>
-            <div>
-              <strong>AIIN</strong>
-              <span>Connected workspace</span>
-            </div>
-          </div>
-        </div>
-        <span className="marketing-suite-preview__status"><ShieldCheck aria-hidden="true" size={14} /> SSO on</span>
-      </div>
-
-      <div className="marketing-suite-preview__apps">
-        {previewApps.map((app) => {
-          const Icon = app.icon
-          return (
-            <div className="marketing-suite-preview__app" key={app.name}>
-              <span className="marketing-suite-preview__app-icon"><Icon aria-hidden="true" size={16} /></span>
-              <span>{app.name}</span>
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="marketing-suite-preview__footer">
-        <span><KeyRound aria-hidden="true" size={14} /> One identity</span>
-        <span><UsersRound aria-hidden="true" size={14} /> Shared structure</span>
-        <span><Workflow aria-hidden="true" size={14} /> Connected work</span>
-      </div>
-    </div>
-  )
-}
-
-function WorkflowBoard() {
-  const rows = [
-    { label: 'New team member', meta: 'Recruiter', status: 'Ready' },
-    { label: 'Team and role assigned', meta: 'People structure', status: 'Connected' },
-    { label: 'Onboarding journey', meta: 'Documents and access', status: 'In progress' },
-    { label: 'Manager check-in', meta: 'Performance', status: 'Scheduled' },
+function AiWorkflowGraphic() {
+  const steps = [
+    ['CV uploaded', 'Stored securely'],
+    ['Text extracted', 'Candidate details'],
+    ['AI analysis', 'Skills and evidence'],
+    ['Profile ready', 'Review and match'],
   ]
 
   return (
-    <div className="marketing-workflow-board" aria-label="A connected people workflow">
-      <div className="marketing-workflow-board__topline">
+    <div className="marketing-ai-flow" aria-label="CV analysis workflow">
+      <div className="marketing-ai-flow__header">
         <div>
-          <span>People journey</span>
-          <strong>From hire to productive</strong>
+          <span>Recruiter workflow</span>
+          <strong>From CV to reviewable profile</strong>
         </div>
-        <span className="marketing-workflow-board__live">Live workflow</span>
+        <ShieldCheck aria-hidden="true" size={20} />
       </div>
-      <div className="marketing-workflow-board__rows">
-        {rows.map((row, index) => (
-          <div className="marketing-workflow-board__row" key={row.label}>
-            <span className="marketing-workflow-board__index">{String(index + 1).padStart(2, '0')}</span>
-            <div>
-              <strong>{row.label}</strong>
-              <span>{row.meta}</span>
-            </div>
-            <span className="marketing-workflow-board__state">{row.status}</span>
-          </div>
+      <ol>
+        {steps.map(([title, detail], index) => (
+          <li key={title}>
+            <span>{String(index + 1).padStart(2, '0')}</span>
+            <div><strong>{title}</strong><small>{detail}</small></div>
+            <Check aria-hidden="true" size={17} />
+          </li>
         ))}
+      </ol>
+      <div className="marketing-ai-flow__runtime">
+        <BrainCircuit aria-hidden="true" size={18} />
+        <div>
+          <strong>Use ChatGPT or Local inference</strong>
+          <span>Choose the runtime by activity and workspace policy.</span>
+        </div>
       </div>
     </div>
   )
 }
 
 export default function MarketingHomePage({ initialHostname }: { initialHostname: string }) {
-  const [personalizedMarket, setPersonalizedMarket] = useState<SeoMarket | null>(null)
-  const [hostname, setHostname] = useState(initialHostname)
-
-  useEffect(() => {
-    setHostname(window.location.hostname)
-    const marketSlug = getCookieValue(MARKET_COOKIE)
-    setPersonalizedMarket(
-      marketSlug && marketSlug !== 'global' ? localizedMarketMap[marketSlug] ?? null : null
-    )
-  }, [])
-
-  const config = getSiteConfig(hostname)
-  const signupUrl = idpUrl('/signup', hostname)
-  const isPrimaryAfricaMarket = personalizedMarket
-    ? Boolean(primaryMarketMap[personalizedMarket.slug])
-    : false
-  const prioritizedMarkets = personalizedMarket && isPrimaryAfricaMarket
-    ? [personalizedMarket, ...primaryMarkets.filter((market) => market.slug !== personalizedMarket.slug)]
-    : primaryMarkets
-
-  const heroEyebrow = personalizedMarket
-    ? `${personalizedMarket.country} · People operations software`
-    : 'One connected people operations suite'
-  const heroTitle = personalizedMarket
-    ? `AI software for ${personalizedMarket.country}.`
-    : 'People work, connected.'
-  const heroSubtitle = personalizedMarket
-    ? 'Built for modern teams.'
-    : 'From hire to payroll.'
-  const heroDescription = personalizedMarket
-    ? `${personalizedMarket.intro} Bring recruiting, onboarding, leave, performance, time, and payroll into one clear operating system.`
-    : 'Seemplify gives teams one place to hire, organise, support, review, and pay their people—with shared identity and structure underneath.'
+  const config = getSiteConfig(initialHostname)
+  const signupUrl = idpUrl('/signup', initialHostname)
 
   return (
-    <div className="marketing-site">
-      <JsonLd data={getHomeStructuredData(config, hostname)} />
+    <div className="marketing-site marketing-site--people-first">
+      <JsonLd data={getHomeStructuredData(config, initialHostname)} />
       <MarketingHeader />
 
       <main>
-        <section className="marketing-hero">
-          <div className="marketing-container marketing-hero__inner">
-            <div className="marketing-hero__copy">
-              <p className="marketing-eyebrow">{heroEyebrow}</p>
-              <h1 className="marketing-hero__title">
-                {heroTitle}
-                <span>{heroSubtitle}</span>
-              </h1>
-              <p className="marketing-hero__description">{heroDescription}</p>
-              <div className="marketing-hero__actions">
-                <Link
-                  href={signupUrl}
-                  data-track-cta="hero-start-free-trial"
-                  className="marketing-button marketing-button--primary"
-                >
-                  Start free trial <ArrowRight aria-hidden="true" size={16} />
+        <section className="marketing-people-hero">
+          <div className="marketing-container marketing-people-hero__layout">
+            <div className="marketing-people-hero__copy">
+              <p className="marketing-section-kicker">AI-powered people operations</p>
+              <h1>Run the work around your people in one connected platform.</h1>
+              <p className="marketing-people-hero__lead">
+                Hire, onboard, manage time and leave, support performance and prepare payroll - with shared identity,
+                clear approvals and AI inside the workflows that need it.
+              </p>
+              <div className="marketing-people-hero__actions">
+                <Link href={signupUrl} className="marketing-button marketing-button--primary" data-track-cta="hero-start-free-trial">
+                  Start your 7-day trial <ArrowRight aria-hidden="true" size={17} />
                 </Link>
-                <BookDemoButton
-                  className="marketing-button marketing-button--secondary"
-                  trackingLabel="hero-book-demo"
-                >
+                <BookDemoButton className="marketing-button marketing-button--secondary" trackingLabel="hero-book-demo">
                   Book a demo
                 </BookDemoButton>
               </div>
-              <p className="marketing-hero__note">Start with the workspaces you need. Add the rest as your team grows.</p>
+              <ul className="marketing-people-hero__trust" aria-label="Platform highlights">
+                <li><KeyRound aria-hidden="true" size={16} /> One secure identity</li>
+                <li><BrainCircuit aria-hidden="true" size={16} /> ChatGPT or Local AI</li>
+                <li><ShieldCheck aria-hidden="true" size={16} /> Human review controls</li>
+              </ul>
             </div>
 
-            <SuitePreview />
+            <figure className="marketing-people-hero__media">
+              <Image
+                src="/images/seemplify-people-operations-hero.png"
+                alt="A diverse workplace team collaborating around a table and planning wall"
+                width={1536}
+                height={1024}
+                priority
+                sizes="(max-width: 920px) 100vw, 52vw"
+              />
+              <figcaption>People work is connected when the context moves with the person.</figcaption>
+            </figure>
           </div>
         </section>
 
-        <section className="marketing-proof" aria-label="Seemplify platform foundations">
-          <div className="marketing-container marketing-proof__grid">
-            {platformPrinciples.map((principle) => {
-              const Icon = principle.icon
-              return (
-                <article className="marketing-proof__item" key={principle.title}>
-                  <Icon aria-hidden="true" size={18} />
-                  <div>
-                    <h2>{principle.title}</h2>
-                    <p>{principle.description}</p>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-
-        <section id="modules" className="marketing-section marketing-products">
+        <section id="modules" className="marketing-section marketing-suite-section">
           <div className="marketing-container">
-            <div className="marketing-section-heading">
+            <div className="marketing-heading-row">
               <div>
-                <p className="marketing-eyebrow">The Seemplify suite</p>
-                <h2>Choose the workspace. Keep the context.</h2>
-                <p>Each application has a focused job. Together, they share the identity and people structure that keeps work coherent.</p>
+                <h2>One suite for the full people journey.</h2>
+                <p>Start with the workspaces you need. The identity, organisation and access layer stays consistent underneath.</p>
               </div>
-              <p className="marketing-section-heading__count">6 connected applications</p>
+              <Link href="#how-it-works" className="marketing-inline-link">See how the work connects <ArrowRight aria-hidden="true" size={16} /></Link>
             </div>
-
-            <div className="marketing-products__grid">
+            <div className="marketing-suite-grid">
               {suiteApps.map((app) => {
                 const Icon = app.icon
                 return (
-                  <article
-                    key={app.name}
-                    className="marketing-product-card"
-                    data-feature={app.feature ?? 'standard'}
-                  >
-                    <div className="marketing-product-card__header">
-                      <span className="marketing-product-card__icon"><Icon aria-hidden="true" size={20} /></span>
-                      <div>
-                        <h3>{app.name}</h3>
-                        <p>{app.signal}</p>
-                      </div>
+                  <article className="marketing-suite-card" key={app.name}>
+                    <div className="marketing-suite-card__topline">
+                      <Icon aria-hidden="true" size={20} />
+                      {app.status ? <span>{app.status}</span> : null}
                     </div>
-                    <p className="marketing-product-card__description">{app.description}</p>
-                    <div className="marketing-product-card__footer">
-                      <div>
-                        <span>{app.footerLabel}</span>
-                        <strong>{app.footerValue}</strong>
-                      </div>
-                      <Link href="#cta" className="marketing-product-card__open">See in a demo <ArrowRight aria-hidden="true" size={15} /></Link>
-                    </div>
+                    <h3>{app.name}</h3>
+                    <p>{app.description}</p>
                   </article>
                 )
               })}
@@ -408,149 +265,105 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
           </div>
         </section>
 
-        <section id="how-it-works" className="marketing-section marketing-section--inverse marketing-how">
-          <div className="marketing-container">
-            <div className="marketing-how__heading">
-              <div>
-                <p className="marketing-eyebrow">How it works</p>
-                <h2>The record follows the person—not the app.</h2>
-              </div>
+        <section id="ai" className="marketing-section marketing-ai-section">
+          <div className="marketing-container marketing-ai-section__layout">
+            <div className="marketing-ai-section__copy">
+              <p className="marketing-section-kicker">AI where it earns its place</p>
+              <h2>Helpful automation, with the model choice left open.</h2>
               <p>
-                Seemplify links identity, team structure, and operational work so each action starts with useful context and ends with a visible decision.
+                Seemplify is not tied to one model. Connect ChatGPT for supported activities or use your organisation's Local
+                runtime. Policies decide where AI can run, and people remain responsible for the decision.
               </p>
-            </div>
-
-            <div className="marketing-how__layout">
-              <div className="marketing-how__steps">
-                {operatingStories.map((story) => {
-                  const Icon = story.icon
+              <div className="marketing-ai-capabilities">
+                {aiCapabilities.map((capability) => {
+                  const Icon = capability.icon
                   return (
-                    <article className="marketing-how__step" key={story.index}>
-                      <span className="marketing-how__step-number">{story.index}</span>
-                      <Icon aria-hidden="true" size={19} />
-                      <div>
-                        <h3>{story.title}</h3>
-                        <p>{story.description}</p>
-                      </div>
+                    <article key={capability.title}>
+                      <Icon aria-hidden="true" size={20} />
+                      <div><h3>{capability.title}</h3><p>{capability.description}</p></div>
                     </article>
                   )
                 })}
               </div>
-              <WorkflowBoard />
+            </div>
+            <AiWorkflowGraphic />
+          </div>
+        </section>
+
+        <section id="how-it-works" className="marketing-section marketing-journey-section">
+          <div className="marketing-container">
+            <div className="marketing-heading-row">
+              <div>
+                <h2>From candidate to colleague without losing the thread.</h2>
+                <p>Each workspace has a focused job. The person, organisation and decision history provide the common context.</p>
+              </div>
+            </div>
+            <div className="marketing-journey-grid">
+              <div className="marketing-journey-steps">
+                {journeySteps.map(([number, title, description]) => (
+                  <article key={number}>
+                    <span>{number}</span>
+                    <div><h3>{title}</h3><p>{description}</p></div>
+                  </article>
+                ))}
+              </div>
+              <Image
+                className="marketing-journey-image"
+                src="/images/seemplify-payroll-review.png"
+                alt="HR and finance colleagues reviewing people operations together"
+                width={1536}
+                height={1024}
+                sizes="(max-width: 920px) 100vw, 48vw"
+              />
             </div>
           </div>
         </section>
 
-        <section id="platform" className="marketing-section marketing-platform">
-          <div className="marketing-container marketing-platform__layout">
-            <div className="marketing-platform__copy">
-              <p className="marketing-eyebrow">The platform underneath</p>
-              <h2>A secure foundation for every workspace.</h2>
+        <section id="platform" className="marketing-section marketing-platform-story">
+          <div className="marketing-container marketing-platform-story__layout">
+            <div className="marketing-platform-story__image-wrap">
+              <Image
+                src="/images/seemplify-team-culture.png"
+                alt="Colleagues laughing and building something together during a workplace break"
+                width={1536}
+                height={1024}
+                sizes="(max-width: 920px) 100vw, 50vw"
+              />
+            </div>
+            <div className="marketing-platform-story__copy">
+              <p className="marketing-section-kicker">Built around people</p>
+              <h2>Corporate software does not have to make work feel cold.</h2>
               <p>
-                Access, organisational structure, and approvals are managed centrally. Teams move between applications without feeling like they have entered separate products.
+                Good people operations give teams clarity without taking away their humanity. Seemplify keeps routine work organised
+                so managers and employees have more time for useful conversations, development and the work itself.
               </p>
-              <ul className="marketing-check-list">
-                <li><Check aria-hidden="true" size={15} /> Single sign-on across enabled applications</li>
-                <li><Check aria-hidden="true" size={15} /> Role and organisation-aware access</li>
-                <li><Check aria-hidden="true" size={15} /> Shared departments, teams, branches, and reporting lines</li>
-                <li><Check aria-hidden="true" size={15} /> Traceable actions and approvals</li>
+              <ul>
+                <li><Check aria-hidden="true" size={17} /> Single sign-on across enabled applications</li>
+                <li><Check aria-hidden="true" size={17} /> Organisation-aware roles and permissions</li>
+                <li><Check aria-hidden="true" size={17} /> Clear workflow histories and approval ownership</li>
+                <li><Check aria-hidden="true" size={17} /> AI activity controls and visible processing states</li>
               </ul>
             </div>
-
-            <div className="marketing-platform__panel">
-              <div className="marketing-platform__panel-heading">
-                <span className="marketing-platform__panel-icon"><Network aria-hidden="true" size={20} /></span>
-                <div>
-                  <span>Organisation structure</span>
-                  <strong>People and roles</strong>
-                </div>
-                <span className="marketing-platform__panel-state">Connected</span>
-              </div>
-              <div className="marketing-platform__hierarchy">
-                <div className="marketing-platform__hierarchy-root">
-                  <Landmark aria-hidden="true" size={16} /> AIIN
-                </div>
-                <div className="marketing-platform__hierarchy-branches">
-                  <div><span>Department</span><strong>Engineering</strong><small>3 teams</small></div>
-                  <div><span>Department</span><strong>People</strong><small>2 teams</small></div>
-                  <div><span>Branch</span><strong>London</strong><small>Primary office</small></div>
-                </div>
-              </div>
-              <div className="marketing-platform__panel-footer">
-                <span><UsersRound aria-hidden="true" size={14} /> Members</span>
-                <span><ShieldCheck aria-hidden="true" size={14} /> Roles</span>
-                <span><MapPin aria-hidden="true" size={14} /> Locations</span>
-              </div>
-            </div>
           </div>
         </section>
 
-        <section id="onboarding" className="marketing-section marketing-operations">
+        <section id="africa" className="marketing-section marketing-regions-section">
           <div className="marketing-container">
-            <div className="marketing-section-heading marketing-section-heading--compact">
+            <div className="marketing-heading-row">
               <div>
-                <p className="marketing-eyebrow">Operational continuity</p>
-                <h2>Less repeated work between key moments.</h2>
-                <p>People data can support the next workflow instead of stopping at the edge of each application.</p>
+                <h2>Built for teams operating across Africa and beyond.</h2>
+                <p>
+                  Use the same core workspaces across locations. Country-specific payroll and statutory calculations remain available
+                  only where the published jurisdiction coverage says they are ready.
+                </p>
               </div>
+              <Link href="/africa" className="marketing-inline-link">Review regional coverage <ArrowRight aria-hidden="true" size={16} /></Link>
             </div>
-
-            <div className="marketing-operations__grid">
-              <article className="marketing-operation-card">
-                <span className="marketing-operation-card__number">01</span>
-                <div>
-                  <h3>Onboarding with a head start</h3>
-                  <p>Carry the hiring decision into role setup, team assignment, documents, access, and the first manager check-in.</p>
-                </div>
-                <span className="marketing-operation-card__meta"><UsersRound aria-hidden="true" size={15} /> Hire to team</span>
-              </article>
-              <article id="documents" className="marketing-operation-card marketing-operation-card--offset">
-                <span className="marketing-operation-card__number">02</span>
-                <div>
-                  <h3>Documents with ownership</h3>
-                  <p>Keep offers, acknowledgements, agreements, and signatures connected to the person and the action that created them.</p>
-                </div>
-                <span className="marketing-operation-card__meta"><FileCheck2 aria-hidden="true" size={15} /> Clear audit trail</span>
-              </article>
-              <article className="marketing-operation-card">
-                <span className="marketing-operation-card__number">03</span>
-                <div>
-                  <h3>Decisions managers can follow</h3>
-                  <p>Bring pending approvals, reviews, attendance, and people actions into a structure that makes the next step obvious.</p>
-                </div>
-                <span className="marketing-operation-card__meta"><Workflow aria-hidden="true" size={15} /> Action to outcome</span>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section id="africa" className="marketing-section marketing-markets">
-          <div className="marketing-container marketing-markets__layout">
-            <div className="marketing-markets__copy">
-              <p className="marketing-eyebrow">Built with African teams in mind</p>
-              <h2>
-                {personalizedMarket
-                  ? `A clearer operating model for teams in ${personalizedMarket.country}.`
-                  : 'Local context. One consistent operating model.'}
-              </h2>
-              <p>
-                {personalizedMarket
-                  ? `${personalizedMarket.intro} Seemplify also supports teams working across multiple markets.`
-                  : 'Support teams in Nigeria, Ghana, Kenya, South Africa, and across English-speaking African markets without rebuilding every workflow from scratch.'}
-              </p>
-              <Link href="/africa" className="marketing-inline-link">
-                Explore Africa coverage <ArrowRight aria-hidden="true" size={15} />
-              </Link>
-            </div>
-
-            <div className="marketing-markets__directory">
-              {prioritizedMarkets.map((market) => (
-                <Link key={market.slug} href={`/africa/${market.slug}`} className="marketing-market-row">
-                  <span className="marketing-market-row__country">{market.country}</span>
-                  <span>
-                    <strong>{market.headline}</strong>
-                    <small>{market.cities.slice(0, 3).join(' · ')}</small>
-                  </span>
+            <div className="marketing-regions-list">
+              {primaryMarkets.map((market) => (
+                <Link href={`/africa/${market.slug}`} key={market.slug}>
+                  <MapPin aria-hidden="true" size={18} />
+                  <div><strong>{market.country}</strong><span>{market.cities.join(' / ')}</span></div>
                   <ArrowRight aria-hidden="true" size={17} />
                 </Link>
               ))}
@@ -558,16 +371,12 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
           </div>
         </section>
 
-        <section id="faq" className="marketing-section marketing-faq">
-          <div className="marketing-container marketing-faq__layout">
-            <div className="marketing-faq__heading">
-              <p className="marketing-eyebrow">Common questions</p>
-              <h2>What teams ask before they bring their work together.</h2>
-              <p>Need an answer about your organisation or rollout? Book a walkthrough and we’ll map it with you.</p>
-            </div>
-            <div className="marketing-faq__items">
+        <section id="faq" className="marketing-section marketing-faq-section">
+          <div className="marketing-container marketing-faq-section__layout">
+            <div><h2>Questions teams ask before they begin.</h2><p>For a rollout or coverage question specific to your organisation, book a walkthrough.</p></div>
+            <div className="marketing-faq-list">
               {homeFaqs.map((faq, index) => (
-                <details className="marketing-faq__item" key={faq.question} open={index === 0}>
+                <details key={faq.question} open={index === 0}>
                   <summary>{faq.question}<span aria-hidden="true">+</span></summary>
                   <p>{faq.answer}</p>
                 </details>
@@ -576,29 +385,14 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
           </div>
         </section>
 
-        <section id="cta" className="marketing-cta">
-          <div className="marketing-container">
-            <div className="marketing-cta__inner">
-              <div>
-                <p className="marketing-eyebrow">Make the next workflow simpler</p>
-                <h2>Bring your people work into one system.</h2>
-                <p>Start with one workspace or walk us through the full operating model you want to build.</p>
-              </div>
-              <div className="marketing-cta__actions">
-                <Link
-                  href={signupUrl}
-                  data-track-cta="footer-start-free-trial"
-                  className="marketing-button marketing-button--primary"
-                >
-                  Start free trial <ArrowRight aria-hidden="true" size={16} />
-                </Link>
-                <BookDemoButton
-                  className="marketing-button marketing-button--secondary"
-                  trackingLabel="footer-book-demo"
-                >
-                  Book a demo
-                </BookDemoButton>
-              </div>
+        <section id="cta" className="marketing-final-cta">
+          <div className="marketing-container marketing-final-cta__inner">
+            <div><h2>Make the next people workflow easier to run.</h2><p>Start a seven-day trial or show us the work you want to bring together.</p></div>
+            <div>
+              <Link href={signupUrl} className="marketing-button marketing-button--primary" data-track-cta="footer-start-free-trial">
+                Start free trial <ArrowRight aria-hidden="true" size={17} />
+              </Link>
+              <BookDemoButton className="marketing-button marketing-button--secondary" trackingLabel="footer-book-demo">Book a demo</BookDemoButton>
             </div>
           </div>
         </section>
