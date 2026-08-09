@@ -1,156 +1,237 @@
-/**
- * IDP Webhook Receiver for Performance Management
- * Handles real-time notifications from the Identity Provider
- *
- * Events handled:
- * - team.member.added: User added to a team
- * - team.member.removed: User removed from a team
- * - team.member.role_changed: User's team role changed
- * - team.manager.changed: Team's manager changed
- * - organization.member.added: User added to organization
- * - organization.member.removed: User removed from organization
- * - user.session.invalidate: Force logout requested
- */
+const crypto = require('crypto');
+const express = require('express');
+const WebhookReceipt = require('../models/WebhookReceipt');
+const sessionStore = require('../services/sessionStore');
+const { internalServiceAuth } = require('../middleware/internalServiceAuth');
 
-const express = require('express')
-const router = express.Router()
-const crypto = require('crypto')
-const sessionStore = require('../services/sessionStore')
+const router = express.Router();
+const MAX_CLOCK_SKEW_MS = 10 * 60 * 1000;
 
-const WEBHOOK_SECRET = process.env.IDP_WEBHOOK_SECRET || 'your-webhook-secret-key'
-
-// Optional: WebSocket service for real-time frontend notifications
-let websocketService = null
+let websocketService = null;
 try {
-  websocketService = require('../services/websocketService')
-} catch (e) {
-  // WebSocket service not available, notifications will be session-only
+  websocketService = require('../services/websocketService');
+} catch (error) {
+  websocketService = null;
 }
 
-/**
- * Verify webhook signature from IDP
- */
+function webhookSecret() {
+  return process.env.IDP_WEBHOOK_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'development-webhook-secret');
+}
+
+function safeEqualHex(left, right) {
+  if (!/^[a-f0-9]{64}$/i.test(left) || !/^[a-f0-9]{64}$/i.test(right)) return false;
+  return crypto.timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
+}
+
 function verifyIdpSignature(req, res, next) {
-  const signature = req.headers['x-idp-signature']
-  const event = req.headers['x-idp-event']
-
-  if (!signature) {
-    console.warn('⚠️ Webhook received without signature')
-    return res.status(401).json({ error: 'Missing signature' })
+  const secret = webhookSecret();
+  if (!secret) return res.status(503).json({ success: false, error: 'IDP webhook authentication is not configured' });
+  const signature = String(req.get('x-idp-signature') || '').replace(/^sha256=/, '');
+  const headerEvent = String(req.get('x-idp-event') || '');
+  const event = String(req.body?.event || '');
+  const eventId = String(req.body?.eventId || '');
+  const occurredAt = Date.parse(req.body?.occurredAt || req.body?.timestamp || '');
+  if (!signature || !eventId || !event || headerEvent !== event) {
+    return res.status(401).json({ success: false, error: 'Webhook signature envelope is incomplete' });
   }
-
-  const expectedSignature = crypto
-    .createHmac('sha256', WEBHOOK_SECRET)
-    .update(JSON.stringify(req.body))
-    .digest('hex')
-
-  if (signature !== expectedSignature) {
-    console.warn('⚠️ Webhook signature mismatch')
-    return res.status(401).json({ error: 'Invalid signature' })
+  if (!Number.isFinite(occurredAt) || Math.abs(Date.now() - occurredAt) > MAX_CLOCK_SKEW_MS) {
+    return res.status(401).json({ success: false, error: 'Webhook timestamp is expired or invalid' });
   }
-
-  req.webhookEvent = event
-  next()
+  const payloadBuffer = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
+  const expected = crypto.createHmac('sha256', secret).update(payloadBuffer).digest('hex');
+  if (!safeEqualHex(signature, expected)) {
+    return res.status(401).json({ success: false, error: 'Invalid webhook signature' });
+  }
+  req.webhookPayloadHash = crypto.createHash('sha256').update(payloadBuffer).digest('hex');
+  next();
 }
 
-/**
- * Handle IDP webhook events
- */
-router.post('/idp', verifyIdpSignature, async (req, res) => {
-  const { event, data, timestamp } = req.body
-
-  console.log(`📨 Received IDP webhook: ${event}`, {
-    userId: data.userId,
-    teamId: data.teamId,
-    action: data.action,
-    timestamp,
-  })
-
-  try {
-    switch (event) {
-      case 'team.member.removed':
-        // User removed from team - invalidate their sessions
-        await sessionStore.invalidateUserSessions(data.userId)
-        console.log(`🔒 Invalidated sessions for user ${data.userId} (removed from team)`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUserLogout(data.userId, 'You have been removed from a team')
-        }
-        break
-
-      case 'team.member.added':
-        // User added to team - update their session claims if they have active sessions
-        await sessionStore.updateUserTeamClaims(data.userId, data.team)
-        console.log(`🔄 Updated team claims for user ${data.userId} (added to team)`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUser(data.userId, 'team_added', {
-            teamName: data.team?.name,
-            message: `You have been added to team: ${data.team?.name}`,
-          })
-        }
-        break
-
-      case 'team.member.role_changed':
-        // Role changed - update session claims
-        await sessionStore.refreshUserClaims(data.userId)
-        console.log(`🔄 Refreshed claims for user ${data.userId} (role changed)`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUser(data.userId, 'role_changed', {
-            oldRole: data.oldRole,
-            newRole: data.newRole,
-            message: `Your role has changed from ${data.oldRole} to ${data.newRole}`,
-          })
-        }
-        break
-
-      case 'team.manager.changed':
-        // Manager changed - refresh claims for old and new manager
-        if (data.oldManagerId) {
-          await sessionStore.refreshUserClaims(data.oldManagerId)
-        }
-        if (data.newManagerId) {
-          await sessionStore.refreshUserClaims(data.newManagerId)
-        }
-        console.log(`🔄 Refreshed manager claims for team ${data.teamId}`)
-        break
-
-      case 'organization.member.removed':
-        // User removed from org - invalidate all sessions
-        await sessionStore.invalidateUserSessions(data.userId)
-        console.log(`🔒 Invalidated sessions for user ${data.userId} (removed from org)`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUserLogout(data.userId, 'You have been removed from the organization')
-        }
-        break
-
-      case 'organization.member.added':
-        // User added to org - update claims if session exists
-        await sessionStore.updateUserOrgClaims(data.userId, data.organization)
-        console.log(`🔄 Updated org claims for user ${data.userId}`)
-        break
-
-      case 'user.session.invalidate':
-        // Force logout requested by admin
-        await sessionStore.invalidateUserSessions(data.userId)
-        console.log(`🔒 Force logout for user ${data.userId}: ${data.reason}`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUserLogout(data.userId, data.reason || 'Session invalidated by administrator')
-        }
-        break
-
-      default:
-        console.log(`⚠️ Unknown webhook event: ${event}`)
+async function beginReceipt(body, payloadHash) {
+  const existing = await WebhookReceipt.findOne({ eventId: body.eventId });
+  if (existing) {
+    if (existing.payloadHash !== payloadHash) {
+      const error = new Error('Webhook event ID was reused with a different payload');
+      error.statusCode = 409;
+      throw error;
     }
-
-    res.status(200).json({ received: true, event })
-  } catch (error) {
-    console.error(`❌ Webhook processing error:`, error)
-    res.status(500).json({ error: 'Processing failed' })
+    if (existing.status === 'processed') return { receipt: existing, replay: true };
+    existing.status = 'processing';
+    existing.attempts += 1;
+    existing.lastError = '';
+    await existing.save();
+    return { receipt: existing, replay: false };
   }
-})
+  try {
+    const receipt = await WebhookReceipt.create({
+      eventId: body.eventId,
+      event: body.event,
+      organizationId: body.organizationId || body.data?.organizationId,
+      subjectId: body.subjectId || body.data?.userId,
+      payloadHash
+    });
+    return { receipt, replay: false };
+  } catch (error) {
+    if (error.code === 11000) return beginReceipt(body, payloadHash);
+    throw error;
+  }
+}
 
-module.exports = router
+async function createLifecycleGoalDraft(event, data) {
+  if (!['organization.member.added', 'team.member.role_changed'].includes(event)) return null;
+  if (!data?.userId || !data?.organizationId) return null;
+  try {
+    const OKR = require('../models/OKR');
+    const GoalPeriod = require('../models/GoalPeriod');
+    const period = await GoalPeriod.findOne({
+      organizationId: String(data.organizationId),
+      status: { $in: ['open', 'upcoming'] },
+      endDate: { $gte: new Date() }
+    }).sort({ startDate: 1 });
+    if (!period) return null;
+    const existing = await OKR.findOne({
+      organizationId: String(data.organizationId),
+      ownerId: String(data.userId),
+      periodId: period._id,
+      'assignment.idempotencyKey': `lifecycle:${data.eventId}`
+    });
+    if (existing) return existing;
+    return OKR.create({
+      organizationId: String(data.organizationId),
+      ownerId: String(data.userId),
+      periodId: period._id,
+      period: period.name,
+      type: 'individual',
+      title: event === 'organization.member.added' ? '30/60/90-day success plan' : 'Role transition success plan',
+      creationSource: 'import',
+      status: 'draft',
+      approvalStatus: 'draft',
+      lifecycle: { state: 'draft' },
+      createdBy: { userId: data.managerId || 'system', name: 'Lifecycle automation', role: 'system' },
+      assignment: {
+        assignedBy: data.managerId ? { userId: String(data.managerId), role: 'line_manager' } : undefined,
+        assignedAt: new Date(),
+        acknowledgementStatus: 'not_required',
+        idempotencyKey: `lifecycle:${data.eventId}`
+      },
+      objectives: [],
+    });
+  } catch (error) {
+    // A missing open period should not make identity lifecycle events fail.
+    console.warn('Lifecycle goal draft was not created:', error.message);
+    return null;
+  }
+}
+
+async function processEvent(event, data, envelope) {
+  const userId = data?.userId || envelope.subjectId;
+  switch (event) {
+    case 'team.member.removed':
+      await sessionStore.invalidateUserSessions(userId);
+      websocketService?.notifyUserLogout(userId, 'Your team membership changed');
+      break;
+    case 'team.member.added':
+      await sessionStore.updateUserTeamClaims(userId, data.team);
+      websocketService?.notifyUser(userId, 'team_added', { teamName: data.team?.name, message: 'Your team membership changed' });
+      break;
+    case 'team.member.role_changed':
+      await sessionStore.refreshUserClaims(userId);
+      websocketService?.notifyUser(userId, 'role_changed', { message: 'Your team role changed' });
+      break;
+    case 'team.manager.changed':
+      if (data.oldManagerId) await sessionStore.refreshUserClaims(data.oldManagerId);
+      if (data.newManagerId) await sessionStore.refreshUserClaims(data.newManagerId);
+      break;
+    case 'organization.member.removed':
+    case 'organization.member.deactivated':
+      await sessionStore.invalidateUserSessions(userId);
+      websocketService?.notifyUserLogout(userId, 'Your organization access changed');
+      break;
+    case 'organization.member.added':
+    case 'organization.member.reactivated':
+      await sessionStore.updateUserOrgClaims(userId, data.organization);
+      break;
+    case 'user.session.invalidate':
+      await sessionStore.invalidateUserSessions(userId);
+      websocketService?.notifyUserLogout(userId, data.reason || 'Session invalidated by an administrator');
+      break;
+    case 'leave.approved':
+    case 'leave.updated': {
+      const { pauseRemindersForUserLeave } = require('../services/reminderScheduler');
+      await pauseRemindersForUserLeave({
+        organizationId: data.organizationId || envelope.organizationId,
+        userId,
+        startAt: data.startAt || data.startDate,
+        endAt: data.endAt || data.endDate,
+        reason: event
+      });
+      break;
+    }
+    case 'leave.cancelled': {
+      const { resumeRemindersForUserLeave } = require('../services/reminderScheduler');
+      await resumeRemindersForUserLeave({
+        organizationId: data.organizationId || envelope.organizationId,
+        userId,
+        reason: event
+      });
+      break;
+    }
+    default:
+      break;
+  }
+  await createLifecycleGoalDraft(event, { ...data, eventId: envelope.eventId });
+}
+
+router.post('/idp', verifyIdpSignature, async (req, res) => {
+  let receipt;
+  try {
+    const started = await beginReceipt(req.body, req.webhookPayloadHash);
+    receipt = started.receipt;
+    if (started.replay) return res.status(200).json({ received: true, event: req.body.event, idempotentReplay: true });
+    await processEvent(req.body.event, req.body.data || {}, req.body);
+    receipt.status = 'processed';
+    receipt.processedAt = new Date();
+    await receipt.save();
+    res.status(200).json({ received: true, event: req.body.event });
+  } catch (error) {
+    if (receipt) {
+      receipt.status = 'failed';
+      receipt.lastError = String(error.message || error).slice(0, 2000);
+      await receipt.save().catch(() => {});
+    }
+    console.error('Webhook processing error:', error);
+    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Webhook processing failed' });
+  }
+});
+
+// Signed internal suite events (for example approved/cancelled leave). Leave
+// changes reminder timing only and is never attached to ratings or evidence.
+router.post('/suite', internalServiceAuth, async (req, res) => {
+  let receipt;
+  try {
+    const envelope = req.body || {};
+    if (!envelope.eventId || !envelope.event || !envelope.organizationId) {
+      return res.status(400).json({ success: false, error: 'Event ID, type, and organization are required' });
+    }
+    const payloadHash = crypto.createHash('sha256').update(JSON.stringify(envelope)).digest('hex');
+    const started = await beginReceipt(envelope, payloadHash);
+    receipt = started.receipt;
+    if (started.replay) {
+      return res.status(200).json({ received: true, event: envelope.event, idempotentReplay: true });
+    }
+    await processEvent(envelope.event, envelope.data || {}, envelope);
+    receipt.status = 'processed';
+    receipt.processedAt = new Date();
+    await receipt.save();
+    return res.status(200).json({ received: true, event: envelope.event });
+  } catch (error) {
+    if (receipt) {
+      receipt.status = 'failed';
+      receipt.lastError = String(error.message || error).slice(0, 2000);
+      await receipt.save().catch(() => {});
+    }
+    console.error('Suite webhook processing error:', error);
+    return res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Webhook processing failed' });
+  }
+});
+
+module.exports = router;

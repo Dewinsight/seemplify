@@ -174,6 +174,10 @@ const appraisalCycleSchema = new mongoose.Schema({
     userId: String,
     name: String,
     email: String
+  },
+  migration: {
+    legacyReviewCycleId: { type: mongoose.Schema.Types.ObjectId, index: true },
+    migratedAt: Date
   }
 }, {
   timestamps: true

@@ -80,6 +80,25 @@ const PERMISSIONS = {
   'okr:view:all': ['hr_admin'],
   'okr:create:team': ['line_manager', 'hr_admin'],
   'okr:create:organization': ['hr_admin'],
+  'okr:submit:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'okr:acknowledge:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'okr:request_change:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'okr:checkin:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'okr:checkin:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
+  'okr:assign:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
+  'okr:decide:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
+  'okr:bulk_assign': ['team_lead', 'line_manager', 'hr_admin'],
+  'okr:align': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  // Canonical goal permissions. The `okr:*` names above remain temporary
+  // compatibility aliases for older clients.
+  'goal:create:self': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'goal:assign:direct_reports': ['team_lead', 'line_manager', 'hr_admin'],
+  'goal:assign:department': ['line_manager', 'hr_admin'],
+  'goal:assign:organization': ['hr_admin'],
+
+  // Goal period permissions
+  'goal_period:view': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
+  'goal_period:manage': ['hr_admin'],
 
   // Review Permissions
   'review:view:own': ['employee', 'team_lead', 'line_manager', 'hr_admin'],
@@ -423,7 +442,9 @@ const requirePermission = (permission) => {
     req.userRole = role;
     req.directReports = getDirectReports(req.session.user);
     req.managedTeams = getManagedTeams(req.session.user);
+    req.userTeams = req.session.user.idpTeams || req.session.user.teams || req.session.user.userinfo?.teams || [];
     req.currentOrganization = getCurrentOrganization(req.session.user);
+    req.currentTeam = getCurrentTeam(req.session.user);
 
     next();
   };

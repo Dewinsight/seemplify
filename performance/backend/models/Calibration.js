@@ -13,7 +13,7 @@ const CalibrationSchema = new mongoose.Schema({
   },
   reviewCycleId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'ReviewCycle',
+    ref: 'AppraisalCycle',
     required: true
   },
   organizationId: {
@@ -55,7 +55,7 @@ const CalibrationSchema = new mongoose.Schema({
   reviewsUnderCalibration: [{
     reviewId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'PerformanceReview'
+      ref: 'Appraisal'
     },
     employeeId: String,
     employeeName: String,

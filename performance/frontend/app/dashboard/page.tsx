@@ -48,6 +48,7 @@ export default function DashboardPage() {
     teams,
     currentTeam: contextCurrentTeam,
     managerData,
+    features,
     isLoading: contextLoading
   } = useUserContext();
 
@@ -136,7 +137,10 @@ export default function DashboardPage() {
   }, [authLoading, isAuthenticated, router]);
 
   useEffect(() => {
-    if (!isManager) return;
+    if (!isManager || features.canonicalAppraisals === false) {
+      setManagerNotifications([]);
+      return;
+    }
 
     const loadManagerNotifications = async () => {
       setManagerNotificationLoading(true);
@@ -152,7 +156,7 @@ export default function DashboardPage() {
     };
 
     loadManagerNotifications();
-  }, [isManager]);
+  }, [features.canonicalAppraisals, isManager]);
 
 const handleOpenManagerNotification = async (notification: ManagerPortalNotification) => {
   try {
@@ -222,14 +226,14 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
       gradient: 'from-amber-500 to-orange-500',
       href: '/okrs'
     },
-    {
+    ...(features.canonicalAppraisals === false ? [] : [{
       title: 'Upcoming Deadlines',
       value: data.upcomingDeadlines,
       subtitle: 'Next 7 days',
       icon: FileText,
       gradient: 'from-emerald-500 to-teal-500',
       href: '/appraisals'
-    },
+    }]),
     {
       title: 'Team Members',
       value: managerData?.directReportCount || 0,
@@ -243,14 +247,16 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
   // Quick actions
   const quickActions = [
     { name: 'Set OKRs', href: '/okrs', icon: Target, color: 'from-purple-500 to-pink-500' },
-    { name: 'My Appraisals', href: '/appraisals', icon: FileText, color: 'from-indigo-500 to-blue-500' },
+    ...(features.canonicalAppraisals === false
+      ? []
+      : [{ name: 'My Appraisals', href: '/appraisals', icon: FileText, color: 'from-indigo-500 to-blue-500' }]),
   ];
 
   if (isManager) {
     quickActions.push({ name: 'My Team', href: '/team', icon: Users, color: 'from-emerald-500 to-teal-500' });
   }
 
-  if (isHRAdmin) {
+  if (isHRAdmin && features.canonicalAppraisals !== false) {
     quickActions.push({ name: 'Create Cycle', href: '/admin/appraisal-cycles/new', icon: Flag, color: 'from-rose-500 to-orange-500' });
     quickActions.push({ name: 'Manage Cycles', href: '/admin/appraisal-cycles', icon: LayoutGrid, color: 'from-red-500 to-amber-500' });
     quickActions.push({ name: 'Admin Panel', href: '/admin', icon: Flag, color: 'from-rose-500 to-orange-500' });
@@ -258,7 +264,7 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
 
   return (
     <div className="space-y-8">
-        {isManager && managerNotifications.length > 0 && (
+        {features.canonicalAppraisals !== false && isManager && managerNotifications.length > 0 && (
           <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-red-500/10 p-4 sm:p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
@@ -503,7 +509,7 @@ const handleOpenManagerNotification = async (notification: ManagerPortalNotifica
           </div>
         </div>
 
-        {isManager && (
+        {features.canonicalAppraisals !== false && isManager && (
           <div className="glass-card rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-foreground flex items-center gap-2">

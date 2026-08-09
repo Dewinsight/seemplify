@@ -9,24 +9,27 @@ import {
 } from '@mui/material';
 import {
   AccountTree, ExpandMore, ExpandLess, Business, Groups, Person,
-  ArrowForward, CheckCircle, Warning, Link as LinkIcon
+  ArrowBack, CheckCircle, Warning, Link as LinkIcon
 } from '@mui/icons-material';
 import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 
 interface OKRNode {
   _id: string;
-  type: 'organization' | 'team' | 'individual';
+  type: 'organization' | 'department' | 'team' | 'individual';
   ownerId: string;
+  owner?: { name?: string; email?: string };
+  title?: string;
   period: string;
   status: string;
-  progress: number;
+  progress: number | null;
+  scoring?: { progress?: number | null };
   objectives: Array<{
     title: string;
     description?: string;
     keyResults: Array<{
       title: string;
-      currentValue: number;
+      currentValue?: number;
       targetValue: number;
     }>;
   }>;
@@ -35,33 +38,60 @@ interface OKRNode {
 
 interface HierarchyData {
   organization: OKRNode[];
+  unalignedDepartment: OKRNode[];
   unalignedTeam: OKRNode[];
   unalignedIndividual: OKRNode[];
 }
 
 export default function OKRAlignmentPage() {
   const { isLoading: authLoading } = useAuth();
-  const { isManager, isHRAdmin, isLoading: userLoading } = useUserContext();
+  const { isLoading: userLoading } = useUserContext();
   const [hierarchy, setHierarchy] = useState<HierarchyData | null>(null);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [selectedGoalId, setSelectedGoalId] = useState('');
+  const [selectedPeriod, setSelectedPeriod] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const fetchHierarchy = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const goalId = params.get('goal') || '';
+      const period = params.get('period') || '';
+      setSelectedGoalId(goalId);
+      setSelectedPeriod(period);
+      setError('');
+      setLoading(true);
       try {
-        const res = await api.get('/okrs/hierarchy');
+        const res = await api.get('/okrs/hierarchy', { params: period ? { period } : undefined });
         setHierarchy(res.data.data);
         setSummary(res.data.summary);
-      } catch (error) {
-        console.error('Error fetching hierarchy:', error);
+        if (goalId) {
+          const findPath = (nodes: OKRNode[], path: string[] = []): string[] | null => {
+            for (const node of nodes) {
+              const nextPath = [...path, node._id];
+              if (node._id === goalId) return nextPath;
+              const found = findPath(node.children || [], nextPath);
+              if (found) return found;
+            }
+            return null;
+          };
+          const path = findPath(res.data.data?.organization || []);
+          if (path) setExpandedNodes(new Set(path));
+          window.setTimeout(() => document.getElementById(`goal-${goalId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+        }
+      } catch (requestError: any) {
+        setHierarchy(null);
+        setError(requestError?.response?.data?.error || 'Could not load goal alignment.');
       } finally {
         setLoading(false);
       }
     };
 
     fetchHierarchy();
-  }, []);
+  }, [reloadKey]);
 
   if (authLoading || userLoading || loading) {
     return (
@@ -84,6 +114,7 @@ export default function OKRAlignmentPage() {
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'organization': return <Business color="primary" />;
+      case 'department': return <AccountTree color="info" />;
       case 'team': return <Groups color="secondary" />;
       default: return <Person color="action" />;
     }
@@ -92,6 +123,7 @@ export default function OKRAlignmentPage() {
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'organization': return 'primary';
+      case 'department': return 'info';
       case 'team': return 'secondary';
       default: return 'default';
     }
@@ -104,11 +136,14 @@ export default function OKRAlignmentPage() {
     return (
       <Box key={okr._id} sx={{ ml: depth * 4, mb: 1 }}>
         <Paper
+          id={`goal-${okr._id}`}
           elevation={depth === 0 ? 2 : 1}
           sx={{
             p: 2,
             borderLeft: 4,
-            borderColor: okr.type === 'organization' ? 'primary.main' : okr.type === 'team' ? 'secondary.main' : 'grey.400',
+            borderColor: okr.type === 'organization' ? 'primary.main' : okr.type === 'department' ? 'info.main' : okr.type === 'team' ? 'secondary.main' : 'grey.400',
+            outline: selectedGoalId === okr._id ? '2px solid' : 'none',
+            outlineColor: 'primary.main',
             '&:hover': { bgcolor: 'action.hover' }
           }}
         >
@@ -125,7 +160,7 @@ export default function OKRAlignmentPage() {
             <Box flex={1}>
               <Box display="flex" alignItems="center" gap={1}>
                 <Typography variant="subtitle1" fontWeight="bold">
-                  {okr.objectives?.[0]?.title || 'Untitled OKR'}
+                  {okr.title || okr.objectives?.[0]?.title || 'Untitled OKR'}
                 </Typography>
                 <Chip
                   size="small"
@@ -139,20 +174,20 @@ export default function OKRAlignmentPage() {
                 />
               </Box>
               <Typography variant="caption" color="text.secondary">
-                {okr.period} • Owner: {okr.ownerId}
+                {okr.period} · {okr.owner?.name || okr.owner?.email || 'Goal owner'}
               </Typography>
             </Box>
 
             <Box sx={{ minWidth: 150 }}>
               <Box display="flex" justifyContent="space-between" mb={0.5}>
                 <Typography variant="caption">Progress</Typography>
-                <Typography variant="caption" fontWeight="bold">{okr.progress || 0}%</Typography>
+                <Typography variant="caption" fontWeight="bold">{(okr.scoring?.progress ?? okr.progress) == null ? 'Not rated' : `${Math.round(okr.scoring?.progress ?? okr.progress ?? 0)}%`}</Typography>
               </Box>
               <LinearProgress
                 variant="determinate"
-                value={okr.progress || 0}
+                value={okr.scoring?.progress ?? okr.progress ?? 0}
                 sx={{ height: 6, borderRadius: 1 }}
-                color={okr.progress >= 70 ? 'success' : okr.progress >= 40 ? 'warning' : 'error'}
+                color={(okr.scoring?.progress ?? okr.progress ?? 0) >= 70 ? 'success' : (okr.scoring?.progress ?? okr.progress ?? 0) >= 40 ? 'warning' : 'error'}
               />
             </Box>
 
@@ -177,13 +212,13 @@ export default function OKRAlignmentPage() {
                 <Box key={idx} display="flex" alignItems="center" gap={2} mt={0.5}>
                   <CheckCircle
                     sx={{ fontSize: 14 }}
-                    color={kr.currentValue >= kr.targetValue ? 'success' : 'action'}
+                    color={typeof kr.currentValue === 'number' && kr.currentValue >= kr.targetValue ? 'success' : 'action'}
                   />
                   <Typography variant="body2" sx={{ flex: 1 }}>
                     {kr.title}
                   </Typography>
                   <Typography variant="caption">
-                    {kr.currentValue}/{kr.targetValue}
+                    {typeof kr.currentValue === 'number' ? `${kr.currentValue}/${kr.targetValue}` : 'Not rated'}
                   </Typography>
                 </Box>
               ))}
@@ -211,18 +246,24 @@ export default function OKRAlignmentPage() {
             OKR Alignment
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            View how objectives cascade from organization to teams to individuals
+            View how objectives cascade from the organization through departments and teams to individuals{selectedPeriod ? ` for ${selectedPeriod}` : ''}.
           </Typography>
         </Box>
         <Button
           component={Link}
           href="/okrs"
           variant="outlined"
-          startIcon={<ArrowForward />}
+          startIcon={<ArrowBack />}
         >
           Back to My OKRs
         </Button>
       </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} action={<Button color="inherit" size="small" onClick={() => setReloadKey((value) => value + 1)}>Retry</Button>}>
+          {error}
+        </Alert>
+      )}
 
       {/* Summary Cards */}
       {summary && (
@@ -233,6 +274,15 @@ export default function OKRAlignmentPage() {
                 <Business sx={{ fontSize: 40, color: 'primary.main', mb: 1 }} />
                 <Typography variant="h4" fontWeight="bold">{summary.organization}</Typography>
                 <Typography variant="caption" color="text.secondary">Organization OKRs</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid size={{ xs: 6, sm: 3 }}>
+            <Card>
+              <CardContent sx={{ textAlign: 'center' }}>
+                <AccountTree sx={{ fontSize: 40, color: 'info.main', mb: 1 }} />
+                <Typography variant="h4" fontWeight="bold">{summary.department || 0}</Typography>
+                <Typography variant="caption" color="text.secondary">Department OKRs</Typography>
               </CardContent>
             </Card>
           </Grid>
@@ -288,7 +338,7 @@ export default function OKRAlignmentPage() {
       </Card>
 
       {/* Unaligned OKRs */}
-      {((hierarchy?.unalignedTeam?.length || 0) > 0 || (hierarchy?.unalignedIndividual?.length || 0) > 0) && (
+      {((hierarchy?.unalignedDepartment?.length || 0) > 0 || (hierarchy?.unalignedTeam?.length || 0) > 0 || (hierarchy?.unalignedIndividual?.length || 0) > 0) && (
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom color="warning.main">
@@ -300,9 +350,24 @@ export default function OKRAlignmentPage() {
             </Typography>
             <Divider sx={{ my: 2 }} />
 
+            {hierarchy?.unalignedDepartment?.map(okr => (
+              <Box key={okr._id} sx={{ mb: 1 }}>
+                <Paper id={`goal-${okr._id}`} variant="outlined" sx={{ p: 2, borderColor: selectedGoalId === okr._id ? 'primary.main' : 'info.main' }}>
+                  <Box display="flex" alignItems="center" gap={2}>
+                    <AccountTree color="info" />
+                    <Box flex={1}>
+                      <Typography variant="subtitle2">{okr.title || okr.objectives?.[0]?.title || 'Untitled'}</Typography>
+                      <Typography variant="caption" color="text.secondary">Department OKR · {okr.period}</Typography>
+                    </Box>
+                    <Chip size="small" label="Unaligned" color="warning" />
+                  </Box>
+                </Paper>
+              </Box>
+            ))}
+
             {hierarchy?.unalignedTeam?.map(okr => (
               <Box key={okr._id} sx={{ mb: 1 }}>
-                <Paper variant="outlined" sx={{ p: 2, borderColor: 'warning.main' }}>
+                <Paper id={`goal-${okr._id}`} variant="outlined" sx={{ p: 2, borderColor: selectedGoalId === okr._id ? 'primary.main' : 'warning.main' }}>
                   <Box display="flex" alignItems="center" gap={2}>
                     <Groups color="secondary" />
                     <Box flex={1}>
@@ -321,7 +386,7 @@ export default function OKRAlignmentPage() {
 
             {hierarchy?.unalignedIndividual?.map(okr => (
               <Box key={okr._id} sx={{ mb: 1 }}>
-                <Paper variant="outlined" sx={{ p: 2, borderColor: 'warning.light' }}>
+                <Paper id={`goal-${okr._id}`} variant="outlined" sx={{ p: 2, borderColor: selectedGoalId === okr._id ? 'primary.main' : 'warning.light' }}>
                   <Box display="flex" alignItems="center" gap={2}>
                     <Person color="action" />
                     <Box flex={1}>

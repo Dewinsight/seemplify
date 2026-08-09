@@ -14,10 +14,68 @@ const appraisalSchema = new mongoose.Schema({
     index: true
   },
   goals: [{ type: mongoose.Schema.Types.ObjectId, ref: 'OKR' }],
+  // Immutable evidence captured when the appraisal is launched. Appraisal
+  // rendering and scoring use these snapshots so later goal edits cannot
+  // rewrite historical performance evidence.
+  goalSnapshots: [{
+    sourceGoalId: { type: mongoose.Schema.Types.ObjectId, ref: 'OKR', required: true },
+    sourceVersion: { type: Number, default: 1 },
+    legacySnapshot: { type: Boolean, default: false },
+    period: {
+      id: String,
+      label: String,
+      startDate: Date,
+      endDate: Date
+    },
+    scope: { type: String, default: 'individual' },
+    ownerId: String,
+    source: String,
+    createdBy: mongoose.Schema.Types.Mixed,
+    assignedBy: mongoose.Schema.Types.Mixed,
+    alignment: mongoose.Schema.Types.Mixed,
+    definition: {
+      title: String,
+      objectives: mongoose.Schema.Types.Mixed
+    },
+    finalCheckIn: mongoose.Schema.Types.Mixed,
+    achievement: {
+      rated: Boolean,
+      score: Number,
+      reason: String
+    },
+    evidence: [mongoose.Schema.Types.Mixed],
+    capturedAt: Date,
+    cutoffAt: Date
+  }],
+  goalEvidenceSummary: {
+    rated: { type: Boolean, default: false },
+    score: Number,
+    ratedGoals: { type: Number, default: 0 },
+    totalGoals: { type: Number, default: 0 },
+    okrWeight: Number,
+    capturedAt: Date,
+    cutoffAt: Date,
+    unavailableReason: String
+  },
+  feedbackEvidence: [{
+    feedbackId: { type: mongoose.Schema.Types.ObjectId, ref: 'Feedback', required: true },
+    type: String,
+    content: String,
+    contextType: String,
+    contextLabel: String,
+    senderDisplay: String,
+    receivedAt: Date,
+    selectedAt: Date,
+    selectedBy: String
+  }],
   organizationId: {
     type: String,
     required: true,
     index: true
+  },
+  migration: {
+    legacyPerformanceReviewId: { type: mongoose.Schema.Types.ObjectId, index: true },
+    migratedAt: Date
   },
 
   // Employee being appraised
@@ -315,6 +373,18 @@ const appraisalSchema = new mongoose.Schema({
       competencyContribution: Number
     },
 
+    override: {
+      applied: { type: Boolean, default: false },
+      calculatedRating: Number,
+      selectedRating: Number,
+      reason: String,
+      changedBy: {
+        userId: String,
+        name: String
+      },
+      changedAt: Date
+    },
+
     finalizedAt: Date,
     finalizedBy: {
       userId: String,
@@ -376,6 +446,35 @@ const appraisalSchema = new mongoose.Schema({
     message: String,
     sentAt: Date,
     readAt: Date
+  }],
+
+  // AI output is advisory. Suggestions retain the evidence used to produce
+  // them and require an explicit human accept/reject decision; acceptance
+  // never writes a rating or appraisal narrative automatically.
+  aiSuggestionReviews: [{
+    suggestionId: { type: String, required: true },
+    suggestionType: {
+      type: String,
+      enum: ['self_rating', 'manager_rating', 'bias_check', 'development_plan', 'writing_assist', 'other'],
+      default: 'other'
+    },
+    suggestion: mongoose.Schema.Types.Mixed,
+    evidence: mongoose.Schema.Types.Mixed,
+    modelUsed: String,
+    status: {
+      type: String,
+      enum: ['pending', 'accepted', 'rejected'],
+      default: 'pending'
+    },
+    generatedAt: { type: Date, default: Date.now },
+    reviewedAt: Date,
+    reviewedBy: {
+      userId: String,
+      name: String,
+      role: String
+    },
+    reviewComment: String,
+    applied: { type: Boolean, default: false }
   }],
 
   // === AUDIT TRAIL ===

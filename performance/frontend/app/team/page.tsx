@@ -41,12 +41,22 @@ interface TeamMemberStats {
   moodTrend: 'up' | 'down' | 'stable' | 'unknown';
 }
 
+const emptyMemberStats: TeamMemberStats = {
+  okrProgress: 0,
+  pendingAppraisals: 0,
+  last1on1Date: null,
+  averageScore: null,
+  feedbackCount: 0,
+  hasActiveAppraisal: false,
+  moodTrend: 'unknown'
+};
+
 export default function TeamHubPage() {
   const router = useRouter();
   const theme = useTheme();
   const { mode } = useThemeMode();
   const isDarkMode = mode === 'dark';
-  const { isManager, isHRAdmin, user, teams, currentTeam: contextCurrentTeam } = useUserContext();
+  const { isManager, isHRAdmin, user, teams, currentTeam: contextCurrentTeam, features } = useUserContext();
   const { directReports, isLoading: reportsLoading, managedTeams } = useDirectReports();
 
   const [selectedTab, setSelectedTab] = useState(0);
@@ -105,19 +115,12 @@ export default function TeamHubPage() {
       const statsPromises = allTeamMembers.map(async (member: TeamMember) => {
         try {
           const response = await api.get(`/user/${member.userId}/stats`);
-          return { userId: member.userId, stats: response.data };
+          const payload = response.data?.data ?? response.data;
+          return { userId: member.userId, stats: { ...emptyMemberStats, ...(payload || {}) } };
         } catch {
           return {
             userId: member.userId,
-            stats: {
-              okrProgress: 0,
-              pendingAppraisals: 0,
-              last1on1Date: null,
-              averageScore: null,
-              feedbackCount: 0,
-              hasActiveAppraisal: false,
-              moodTrend: 'unknown'
-            }
+            stats: emptyMemberStats
           };
         }
       });
@@ -162,7 +165,7 @@ export default function TeamHubPage() {
   const teamSummary = {
     total: filteredMembers.length,
     needsAttention: Object.values(teamStats).filter(s =>
-      s.pendingAppraisals > 0 || s.okrProgress < 30
+      (features.canonicalAppraisals !== false && s.pendingAppraisals > 0) || s.okrProgress < 30
     ).length,
     avgOkrProgress: filteredMembers.length > 0
       ? Object.values(teamStats).reduce((a, s) => a + (s.okrProgress || 0), 0) / filteredMembers.length
@@ -201,6 +204,11 @@ export default function TeamHubPage() {
 
   const handleGiveFeedback = (member: TeamMember) => {
     router.push(`/feedback/new?recipientId=${member.userId}&name=${encodeURIComponent(member.name)}`);
+    handleMenuClose();
+  };
+
+  const handleViewOkrs = (member: TeamMember) => {
+    router.push(`/team/${member.userId}?tab=okrs`);
     handleMenuClose();
   };
 
@@ -270,7 +278,7 @@ export default function TeamHubPage() {
       showProgress: true,
       progressValue: teamSummary.avgOkrProgress,
     },
-    {
+    ...(features.continuousPerformance === false ? [] : [{
       label: 'Overdue 1:1s',
       value: teamSummary.pending1on1s,
       icon: <Schedule />,
@@ -281,7 +289,7 @@ export default function TeamHubPage() {
         ? '0 10px 40px -10px rgba(239, 68, 68, 0.5)'
         : 'none',
       showBorder: teamSummary.pending1on1s > 0,
-    },
+    }]),
   ];
 
   return (
@@ -480,7 +488,7 @@ export default function TeamHubPage() {
                 hasActiveAppraisal: false,
                 moodTrend: 'unknown' as const
               };
-              const needsAttention = stats.pendingAppraisals > 0 || stats.okrProgress < 30;
+              const needsAttention = (features.canonicalAppraisals !== false && stats.pendingAppraisals > 0) || stats.okrProgress < 30;
 
               // Filter based on tab
               if (selectedTab === 1 && !needsAttention) return null;
@@ -521,7 +529,7 @@ export default function TeamHubPage() {
                             Needs Attention
                           </span>
                         )}
-                        {stats.hasActiveAppraisal && (
+                        {features.canonicalAppraisals !== false && stats.hasActiveAppraisal && (
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-md border text-xs font-semibold ${
                             isDarkMode 
                               ? 'border-blue-500/50 text-blue-400' 
@@ -566,7 +574,7 @@ export default function TeamHubPage() {
                         </span>
                       </Tooltip>
 
-                      {stats.averageScore && (
+                      {features.canonicalAppraisals !== false && stats.averageScore && (
                         <Tooltip title="Average Performance Score">
                           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 text-white text-xs font-semibold shadow-md">
                             <Star sx={{ fontSize: 14 }} />
@@ -575,7 +583,7 @@ export default function TeamHubPage() {
                         </Tooltip>
                       )}
 
-                      {stats.pendingAppraisals > 0 && (
+                      {features.canonicalAppraisals !== false && stats.pendingAppraisals > 0 && (
                         <Tooltip title="Pending Appraisals">
                           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-xs font-semibold shadow-md">
                             <Assignment sx={{ fontSize: 14 }} />
@@ -584,7 +592,7 @@ export default function TeamHubPage() {
                         </Tooltip>
                       )}
 
-                      <Tooltip title="Feedback Received">
+                      {features.continuousPerformance !== false && <Tooltip title="Feedback Received">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium ${
                           isDarkMode
                             ? 'border-zinc-700 text-zinc-400'
@@ -593,9 +601,9 @@ export default function TeamHubPage() {
                           <FeedbackIcon sx={{ fontSize: 14 }} />
                           {stats.feedbackCount || 0}
                         </span>
-                      </Tooltip>
+                      </Tooltip>}
 
-                      <Tooltip title={stats.last1on1Date ? `Last 1:1: ${new Date(stats.last1on1Date).toLocaleDateString()}` : 'No recent 1:1'}>
+                      {features.continuousPerformance !== false && <Tooltip title={stats.last1on1Date ? `Last 1:1: ${new Date(stats.last1on1Date).toLocaleDateString()}` : 'No recent 1:1'}>
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${
                           !stats.last1on1Date || (Date.now() - new Date(stats.last1on1Date).getTime()) > 14 * 24 * 60 * 60 * 1000
                             ? 'bg-gradient-to-r from-red-500 to-rose-500 text-white shadow-md'
@@ -606,13 +614,13 @@ export default function TeamHubPage() {
                           <EventNote sx={{ fontSize: 14 }} />
                           {stats.last1on1Date ? new Date(stats.last1on1Date).toLocaleDateString() : 'None'}
                         </span>
-                      </Tooltip>
+                      </Tooltip>}
                     </div>
 
                     {/* Quick Actions */}
                     <div className="flex-shrink-0">
                       <div className="flex gap-2">
-                        <Tooltip title="Schedule 1:1">
+                        {features.continuousPerformance !== false && <Tooltip title="Schedule 1:1">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleSchedule1on1(member); }}
                             className={`p-2 rounded-lg transition-all ${
@@ -623,8 +631,8 @@ export default function TeamHubPage() {
                           >
                             <VideoCall fontSize="small" />
                           </button>
-                        </Tooltip>
-                        <Tooltip title="Give Feedback">
+                        </Tooltip>}
+                        {features.continuousPerformance !== false && <Tooltip title="Give Feedback">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleGiveFeedback(member); }}
                             className={`p-2 rounded-lg transition-all ${
@@ -635,8 +643,8 @@ export default function TeamHubPage() {
                           >
                             <FeedbackIcon fontSize="small" />
                           </button>
-                        </Tooltip>
-                        <Tooltip title="View Appraisal">
+                        </Tooltip>}
+                        {features.canonicalAppraisals !== false && <Tooltip title="View Appraisal">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleViewAppraisal(member); }}
                             className={`p-2 rounded-lg transition-all ${
@@ -647,9 +655,10 @@ export default function TeamHubPage() {
                           >
                             <Description fontSize="small" />
                           </button>
-                        </Tooltip>
+                        </Tooltip>}
                         <button
                           onClick={(e) => { e.stopPropagation(); handleMenuOpen(e, member); }}
+                          aria-label={`More actions for ${member.name}`}
                           className={`p-2 rounded-lg transition-all ${
                             isDarkMode
                               ? 'text-zinc-400 hover:bg-zinc-800/50'
@@ -686,37 +695,37 @@ export default function TeamHubPage() {
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <Person sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> View Full Profile
         </MenuItem>
-        <MenuItem onClick={() => selectedMember && handleSchedule1on1(selectedMember)}
+        {features.continuousPerformance !== false && <MenuItem onClick={() => selectedMember && handleSchedule1on1(selectedMember)}
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <VideoCall sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> Schedule 1:1
-        </MenuItem>
-        <MenuItem onClick={() => selectedMember && handleViewAppraisal(selectedMember)}
+        </MenuItem>}
+        {features.canonicalAppraisals !== false && <MenuItem onClick={() => selectedMember && handleViewAppraisal(selectedMember)}
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <Assignment sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> View Appraisal
-        </MenuItem>
-        <MenuItem onClick={() => selectedMember && handleGiveFeedback(selectedMember)}
+        </MenuItem>}
+        {features.continuousPerformance !== false && <MenuItem onClick={() => selectedMember && handleGiveFeedback(selectedMember)}
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <FeedbackIcon sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> Give Feedback
-        </MenuItem>
+        </MenuItem>}
         <Divider sx={{ borderColor: isDarkMode ? 'rgba(255,255,255,0.08)' : '#e5e7eb' }} />
-        <MenuItem onClick={() => selectedMember && router.push(`/team/${selectedMember.userId}/okrs`)}
+        <MenuItem onClick={() => selectedMember && handleViewOkrs(selectedMember)}
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <Assessment sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> View OKRs
         </MenuItem>
-        <MenuItem onClick={() => selectedMember && router.push(`/one-on-ones?with=${selectedMember.userId}`)}
+        {features.continuousPerformance !== false && <MenuItem onClick={() => selectedMember && router.push(`/one-on-ones?with=${selectedMember.userId}`)}
           sx={{ color: isDarkMode ? '#e4e4e7' : '#111827', '&:hover': { bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' } }}>
           <Chat sx={{ mr: 1.5, color: isDarkMode ? '#a1a1aa' : '#6b7280' }} /> View 1:1 History
-        </MenuItem>
+        </MenuItem>}
       </Menu>
 
       {/* Quick Actions FAB */}
-      <button
+      {features.continuousPerformance !== false && <button
         onClick={() => router.push('/one-on-ones/new')}
         className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 text-white font-semibold shadow-2xl shadow-purple-500/30 hover:shadow-purple-500/40 hover:scale-105 transition-all focus:outline-none focus:ring-2 focus:ring-purple-500/50"
       >
         <Add />
         New 1:1
-      </button>
+      </button>}
     </div>
   );
 }

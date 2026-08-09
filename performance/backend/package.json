@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node --test tests/goalScoring.test.js tests/goalContracts.test.js tests/oneOnOneContracts.test.js tests/organizationFeatures.test.js",
+    "test:integration": "jest --runInBand",
+    "migrate:enhancements": "node scripts/migratePerformanceEnhancements.js",
+    "migrate:enhancements:apply": "node scripts/migratePerformanceEnhancements.js --apply",
     "seed": "node scripts/seedData.js",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop ecosystem.config.js",
@@ -17,13 +21,10 @@
   "dependencies": {
     "@azure/core-auth": "^1.9.0",
     "@azure/openai": "^2.0.0",
-    "@langchain/core": "^0.3.58",
-    "@langchain/openai": "^0.5.13",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.0",
     "axios": "^1.14.0",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.3",
-    "cloudinary": "^1.41.3",
     "connect-mongo": "^5.1.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -36,11 +37,9 @@
     "express-validator": "^7.2.1",
     "helmet": "^7.2.0",
     "jsonwebtoken": "^9.0.2",
-    "langchain": "^0.3.28",
     "lodash": "^4.17.21",
     "mammoth": "^1.9.1",
     "mathjs": "^12.0.0",
-    "mem0ai": "2.1.38",
     "mongoose": "^8.15.1",
     "multer": "^2.0.1",
     "node-cron": "^4.1.1",
@@ -48,7 +47,6 @@
     "openai": "^6.15.0",
     "openid-client": "^5.6.4",
     "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "^5.4.394",
     "pdfkit": "^0.15.0",
     "tesseract.js": "^6.0.1",
     "touch": "^3.1.1",
@@ -62,7 +60,10 @@
     "axios": "^1.14.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "jest": "^30.4.2",
+    "mongodb-memory-server": "^11.2.0",
+    "nodemon": "^3.1.11",
+    "supertest": "^7.2.2"
   },
   "keywords": [
     "performance",

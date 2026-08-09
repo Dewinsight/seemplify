@@ -1,23 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useOneOnOnes, useUserContext, useDirectReports } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
   Typography, Box, CircularProgress, Button, Card, CardContent, Chip,
   Grid, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   List, ListItem, ListItemText, ListItemIcon, IconButton, Tabs, Tab,
-  Alert, Divider, LinearProgress, Avatar
+  Alert, Divider, LinearProgress, Avatar, Snackbar, Stack
 } from '@mui/material';
 import {
   Add, Event, CheckCircle, Schedule, Person, Notes, PlayArrow, Done,
   AccessTime, VideoCall, LocationOn
 } from '@mui/icons-material';
-import { useSession } from 'next-auth/react';
 
 export default function OneOnOnesPage() {
-  const { data: session, status } = useSession();
-  const { isManager, isLoading: userLoading } = useUserContext();
+  const { user, isManager, isLoading: userLoading } = useUserContext();
   const { directReports } = useDirectReports();
   const [tabValue, setTabValue] = useState(0);
   const { meetings: upcomingMeetings, isLoading: upcomingLoading, mutate: mutateUpcoming } = useOneOnOnes({ upcoming: true });
@@ -25,6 +23,11 @@ export default function OneOnOnesPage() {
   
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [agendaTopic, setAgendaTopic] = useState('');
+  const [withUserId, setWithUserId] = useState('');
   const [newMeeting, setNewMeeting] = useState({
     employeeId: '',
     scheduledDate: '',
@@ -33,7 +36,28 @@ export default function OneOnOnesPage() {
     meetingType: 'weekly'
   });
 
-  if (status === 'loading' || userLoading || upcomingLoading) {
+  const currentUserIds = useMemo(() => new Set([
+    user?.id, user?._id, user?.userId, user?.idpSub, user?.sub,
+  ].filter(Boolean).map(String)), [user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const employeeId = params.get('employeeId');
+    setWithUserId(params.get('with') || '');
+    if (employeeId) {
+      setNewMeeting((current) => ({ ...current, employeeId }));
+      setDialogOpen(true);
+    }
+  }, []);
+
+  const upcomingDisplay = useMemo(() => withUserId
+    ? (upcomingMeetings || []).filter((meeting: any) => [meeting.employeeId, meeting.managerId].map(String).includes(withUserId))
+    : (upcomingMeetings || []), [upcomingMeetings, withUserId]);
+  const pastDisplay = useMemo(() => withUserId
+    ? (pastMeetings || []).filter((meeting: any) => [meeting.employeeId, meeting.managerId].map(String).includes(withUserId))
+    : (pastMeetings || []), [pastMeetings, withUserId]);
+
+  if (userLoading || upcomingLoading || pastLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
         <CircularProgress />
@@ -42,25 +66,66 @@ export default function OneOnOnesPage() {
   }
 
   const handleCreateMeeting = async () => {
+    const selectedEmployee = directReports?.find((report: any) => String(report.id || report._id || report.userId) === newMeeting.employeeId);
+    setSaving(true);
+    setError('');
     try {
-      await api.post('/one-on-ones', newMeeting);
+      await api.post('/one-on-ones', {
+        ...newMeeting,
+        employeeInfo: selectedEmployee ? {
+          name: selectedEmployee.name || selectedEmployee.email,
+          email: selectedEmployee.email,
+          title: selectedEmployee.title || selectedEmployee.jobTitle,
+        } : { name: new URLSearchParams(window.location.search).get('name') || undefined },
+        meetingFormat: newMeeting.location.toLowerCase().includes('virtual') ? 'video' : 'in_person',
+      });
       setDialogOpen(false);
       setNewMeeting({ employeeId: '', scheduledDate: '', duration: 30, location: 'Virtual', meetingType: 'weekly' });
-      mutateUpcoming();
-    } catch (error) {
-      console.error('Error creating meeting:', error);
+      await mutateUpcoming();
+      setNotice('1:1 meeting scheduled.');
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || requestError?.response?.data?.message || 'Could not schedule this meeting.');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleCompleteMeeting = async (meetingId: string) => {
+    setSaving(true);
+    setError('');
     try {
       await api.post(`/one-on-ones/${meetingId}/complete`, {});
-      mutateUpcoming();
-      mutatePast();
-    } catch (error) {
-      console.error('Error completing meeting:', error);
+      await Promise.all([mutateUpcoming(), mutatePast()]);
+      setSelectedMeeting(null);
+      setNotice('Meeting marked complete.');
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || 'Could not complete this meeting.');
+    } finally {
+      setSaving(false);
     }
   };
+
+  const addAgendaItem = async () => {
+    if (!selectedMeeting || !agendaTopic.trim()) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api.post(`/one-on-ones/${selectedMeeting._id}/agenda`, { topic: agendaTopic.trim(), priority: 'medium' });
+      const response = await api.get(`/one-on-ones/${selectedMeeting._id}`);
+      setSelectedMeeting(response.data?.data || response.data);
+      setAgendaTopic('');
+      await mutateUpcoming();
+      setNotice('Agenda item added.');
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || 'Could not add the agenda item.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const participantName = (meeting: any) => currentUserIds.has(String(meeting.managerId || ''))
+    ? meeting.employeeInfo?.name || 'Team member'
+    : meeting.managerInfo?.name || 'Manager';
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -72,11 +137,14 @@ export default function OneOnOnesPage() {
   };
 
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4" fontWeight="bold">
-          1:1 Meetings
-        </Typography>
+    <Box sx={{ maxWidth: 1120, mx: 'auto' }}>
+      <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={3} gap={2} flexWrap="wrap">
+        <Box>
+          <Typography variant="h4" component="h1" fontWeight={700}>1:1 meetings</Typography>
+          <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+            Prepare together, keep shared notes, and follow through on agreed actions.
+          </Typography>
+        </Box>
         {isManager && (
           <Button
             variant="contained"
@@ -88,19 +156,21 @@ export default function OneOnOnesPage() {
         )}
       </Box>
 
+      {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
+
       <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 3 }}>
-        <Tab label={`Upcoming (${upcomingMeetings?.length || 0})`} />
-        <Tab label={`Past (${pastMeetings?.length || 0})`} />
+        <Tab label={`Upcoming (${upcomingDisplay.length})`} />
+        <Tab label={`Past (${pastDisplay.length})`} />
       </Tabs>
 
       {tabValue === 0 && (
         <Grid container spacing={3}>
-          {upcomingMeetings?.length === 0 ? (
+          {upcomingDisplay.length === 0 ? (
             <Grid size={12}>
               <Alert severity="info">No upcoming 1:1 meetings scheduled.</Alert>
             </Grid>
           ) : (
-            upcomingMeetings?.map((meeting: any) => (
+            upcomingDisplay.map((meeting: any) => (
               <Grid size={{ xs: 12, md: 6, lg: 4 }} key={meeting._id}>
                 <Card sx={{ height: '100%' }}>
                   <CardContent>
@@ -111,8 +181,9 @@ export default function OneOnOnesPage() {
                         </Avatar>
                         <Box>
                           <Typography variant="subtitle1" fontWeight="medium">
-                            {meeting.meetingType} 1:1
+                            {participantName(meeting)}
                           </Typography>
+                          <Typography variant="caption" color="text.secondary">{String(meeting.meetingType || 'regular').replace('_', ' ')} 1:1</Typography>
                           <Chip 
                             size="small" 
                             label={meeting.status}
@@ -187,18 +258,18 @@ export default function OneOnOnesPage() {
 
       {tabValue === 1 && (
         <Grid container spacing={3}>
-          {pastMeetings?.length === 0 ? (
+          {pastDisplay.length === 0 ? (
             <Grid size={12}>
               <Alert severity="info">No past meetings to show.</Alert>
             </Grid>
           ) : (
-            pastMeetings?.map((meeting: any) => (
+            pastDisplay.map((meeting: any) => (
               <Grid size={{ xs: 12, md: 6, lg: 4 }} key={meeting._id}>
                 <Card sx={{ height: '100%', opacity: meeting.status === 'cancelled' ? 0.6 : 1 }}>
                   <CardContent>
                     <Box display="flex" justifyContent="space-between" alignItems="start" mb={2}>
                       <Typography variant="subtitle1" fontWeight="medium">
-                        {meeting.meetingType} 1:1
+                        {participantName(meeting)}
                       </Typography>
                       <Chip 
                         size="small" 
@@ -254,6 +325,7 @@ export default function OneOnOnesPage() {
         <DialogTitle>Schedule 1:1 Meeting</DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            {error && <Alert severity="error">{error}</Alert>}
             <TextField
               select
               label="Team Member"
@@ -313,13 +385,13 @@ export default function OneOnOnesPage() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
           <Button 
             onClick={handleCreateMeeting} 
             variant="contained"
-            disabled={!newMeeting.employeeId || !newMeeting.scheduledDate}
+            disabled={saving || !newMeeting.employeeId || !newMeeting.scheduledDate}
           >
-            Schedule
+            {saving ? 'Scheduling…' : 'Schedule'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -334,10 +406,11 @@ export default function OneOnOnesPage() {
         {selectedMeeting && (
           <>
             <DialogTitle>
-              {selectedMeeting.meetingType} 1:1 Meeting
+              1:1 with {participantName(selectedMeeting)}
             </DialogTitle>
             <DialogContent>
               <Grid container spacing={2}>
+                {error && <Grid size={12}><Alert severity="error">{error}</Alert></Grid>}
                 <Grid size={12}>
                   <Box display="flex" gap={2} flexWrap="wrap">
                     <Chip 
@@ -359,9 +432,9 @@ export default function OneOnOnesPage() {
                   </Box>
                 </Grid>
 
-                {selectedMeeting.agendaItems?.length > 0 && (
-                  <Grid size={12}>
-                    <Typography variant="h6" gutterBottom>Agenda</Typography>
+                <Grid size={12}>
+                  <Typography variant="h6" gutterBottom>Agenda</Typography>
+                  {selectedMeeting.agendaItems?.length > 0 ? (
                     <List dense>
                       {selectedMeeting.agendaItems.map((item: any, idx: number) => (
                         <ListItem key={idx}>
@@ -375,8 +448,24 @@ export default function OneOnOnesPage() {
                         </ListItem>
                       ))}
                     </List>
-                  </Grid>
-                )}
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>No agenda items yet.</Typography>
+                  )}
+                  {selectedMeeting.status === 'scheduled' && (
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                      <TextField
+                        size="small"
+                        label="Add a discussion topic"
+                        value={agendaTopic}
+                        onChange={(event) => setAgendaTopic(event.target.value)}
+                        fullWidth
+                      />
+                      <Button variant="outlined" onClick={() => void addAgendaItem()} disabled={saving || !agendaTopic.trim()}>
+                        Add
+                      </Button>
+                    </Stack>
+                  )}
+                </Grid>
 
                 {selectedMeeting.actionItems?.length > 0 && (
                   <Grid size={12}>
@@ -427,10 +516,16 @@ export default function OneOnOnesPage() {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setSelectedMeeting(null)}>Close</Button>
+              {isManager && selectedMeeting.status === 'scheduled' && (
+                <Button variant="contained" startIcon={<Done />} onClick={() => void handleCompleteMeeting(selectedMeeting._id)} disabled={saving}>
+                  Complete meeting
+                </Button>
+              )}
             </DialogActions>
           </>
         )}
       </Dialog>
+      <Snackbar open={Boolean(notice)} autoHideDuration={4000} onClose={() => setNotice('')} message={notice} />
     </Box>
   );
 }

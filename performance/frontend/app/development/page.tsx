@@ -1,38 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDevelopmentPlans, useUserContext, useDirectReports } from '@/lib/hooks';
 import api from '@/lib/api';
 import {
   Typography, Box, CircularProgress, Button, Card, CardContent, Chip,
   Grid, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   LinearProgress, Alert, Tabs, Tab, List, ListItem, ListItemText,
-  ListItemIcon, Accordion, AccordionSummary, AccordionDetails, Avatar
+  ListItemIcon, Accordion, AccordionSummary, AccordionDetails, Avatar,
+  Snackbar, Stack, FormControl, InputLabel, Select, MenuItem, Divider, Paper
 } from '@mui/material';
 import {
   Add, TrendingUp, School, EmojiEvents, ExpandMore, CheckCircle,
   RadioButtonUnchecked, Star, Work, MenuBook, Person
 } from '@mui/icons-material';
-import { useSession } from 'next-auth/react';
 
 export default function DevelopmentPlansPage() {
-  const { data: session, status } = useSession();
   const { isManager, user, isLoading: userLoading } = useUserContext();
   const { directReports } = useDirectReports();
-  const { plans, isLoading, mutate } = useDevelopmentPlans();
+  const { plans, isLoading, isError, mutate } = useDevelopmentPlans();
   
   const [tabValue, setTabValue] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [checkInPlan, setCheckInPlan] = useState<any>(null);
+  const [checkInOpen, setCheckInOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [checkIn, setCheckIn] = useState({ notes: '', progressUpdate: 0, blockers: '' });
   const [newPlan, setNewPlan] = useState({
     userId: '',
     title: '',
     description: '',
     startDate: '',
     targetDate: '',
+    careerGoal: '',
+    skillName: '',
+    learningActivity: '',
   });
 
-  if (status === 'loading' || userLoading || isLoading) {
+  useEffect(() => {
+    const planId = new URLSearchParams(window.location.search).get('plan') || '';
+    setSelectedPlanId(planId);
+    if (!planId) return;
+    const plan = (plans || []).find((item: any) => item._id === planId);
+    if (plan) {
+      setSelectedPlan(plan);
+      window.setTimeout(() => document.getElementById(`development-${planId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+    }
+  }, [plans]);
+
+  if (userLoading || isLoading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
         <CircularProgress />
@@ -40,26 +60,91 @@ export default function DevelopmentPlansPage() {
     );
   }
 
-  const myPlans = plans?.filter((p: any) => p.userId === user?.id) || [];
-  const teamPlans = plans?.filter((p: any) => p.userId !== user?.id) || [];
+  const currentUserIds = new Set([user?.id, user?._id, user?.userId, user?.idpSub, user?.sub].filter(Boolean).map(String));
+  const myPlans = plans?.filter((p: any) => currentUserIds.has(String(p.userId))) || [];
+  const teamPlans = plans?.filter((p: any) => !currentUserIds.has(String(p.userId))) || [];
+  const reportNames = new Map<string, string>((directReports || []).map((report: any) => [
+    String(report.id || report._id || report.userId),
+    report.name || report.email || 'Team member',
+  ]));
 
   const handleCreatePlan = async () => {
+    setSaving(true);
+    setError('');
     try {
-      await api.post('/development-plans', newPlan);
+      await api.post('/development-plans', {
+        userId: newPlan.userId,
+        title: newPlan.title.trim(),
+        description: newPlan.description.trim(),
+        startDate: newPlan.startDate,
+        targetDate: newPlan.targetDate,
+        careerGoals: newPlan.careerGoal.trim() ? [{ title: newPlan.careerGoal.trim(), progress: 0 }] : [],
+        skillDevelopment: newPlan.skillName.trim() ? [{ skillName: newPlan.skillName.trim(), currentLevel: 'beginner', targetLevel: 'intermediate', category: 'soft_skills', progress: 0 }] : [],
+        learningActivities: newPlan.learningActivity.trim() ? [{ title: newPlan.learningActivity.trim(), type: 'other', status: 'not_started', dueDate: newPlan.targetDate }] : [],
+      });
       setDialogOpen(false);
-      setNewPlan({ userId: '', title: '', description: '', startDate: '', targetDate: '' });
-      mutate();
-    } catch (error) {
-      console.error('Error creating plan:', error);
+      setNewPlan({ userId: '', title: '', description: '', startDate: '', targetDate: '', careerGoal: '', skillName: '', learningActivity: '' });
+      await mutate();
+      setNotice('Development plan created.');
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || 'Could not create this plan.');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleActivatePlan = async (planId: string) => {
+    setSaving(true);
+    setError('');
     try {
       await api.post(`/development-plans/${planId}/activate`, {});
-      mutate();
-    } catch (error) {
-      console.error('Error activating plan:', error);
+      await mutate();
+      setNotice('Development plan activated.');
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || 'Could not activate this plan.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addCheckIn = async () => {
+    if (!checkInPlan || !checkIn.notes.trim()) return;
+    setSaving(true);
+    setError('');
+    try {
+      const response = await api.post(`/development-plans/${checkInPlan._id}/check-in`, {
+        notes: checkIn.notes.trim(),
+        progressUpdate: checkIn.progressUpdate,
+        blockers: checkIn.blockers.trim(),
+      });
+      const updatedPlan = response.data?.data || response.data;
+      setCheckInPlan(updatedPlan);
+      if (selectedPlan?._id === updatedPlan?._id) setSelectedPlan(updatedPlan);
+      setCheckIn({ notes: '', progressUpdate: 0, blockers: '' });
+      setCheckInOpen(false);
+      setCheckInPlan(null);
+      await mutate();
+      setNotice('Progress check-in recorded.');
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || 'Could not record this check-in.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const completeActivity = async (activityIndex: number) => {
+    if (!selectedPlan) return;
+    setSaving(true);
+    setError('');
+    try {
+      const response = await api.put(`/development-plans/${selectedPlan._id}/activities/${activityIndex}`, { status: 'completed' });
+      setSelectedPlan(response.data?.data || response.data);
+      await mutate();
+      setNotice('Activity marked complete.');
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || 'Could not update this activity.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -74,20 +159,22 @@ export default function DevelopmentPlansPage() {
   };
 
   const getLevelIcon = (level: string) => {
-    switch (level) {
-      case 'expert': return '⭐⭐⭐⭐';
-      case 'advanced': return '⭐⭐⭐';
-      case 'intermediate': return '⭐⭐';
-      default: return '⭐';
-    }
+    return level ? level.replace('_', ' ') : 'beginner';
   };
 
   const PlanCard = ({ plan }: { plan: any }) => (
-    <Card sx={{ height: '100%' }}>
+    <Card
+      id={`development-${plan._id}`}
+      variant="outlined"
+      sx={{ height: '100%', borderColor: selectedPlanId === plan._id ? 'primary.main' : 'divider', borderWidth: selectedPlanId === plan._id ? 2 : 1 }}
+    >
       <CardContent>
         <Box display="flex" justifyContent="space-between" alignItems="start" mb={2}>
           <Box>
             <Typography variant="h6" fontWeight="bold">{plan.title}</Typography>
+            {!currentUserIds.has(String(plan.userId)) && (
+              <Typography variant="body2" color="text.secondary">{reportNames.get(String(plan.userId)) || 'Team member'}</Typography>
+            )}
             <Chip 
               size="small" 
               label={plan.status}
@@ -151,8 +238,17 @@ export default function DevelopmentPlansPage() {
               variant="contained"
               color="success"
               onClick={() => handleActivatePlan(plan._id)}
+              disabled={saving}
             >
               Activate
+            </Button>
+          )}
+          {plan.status === 'active' && (
+            <Button
+              size="small"
+              onClick={() => { setCheckInPlan(plan); setCheckInOpen(true); }}
+            >
+              Check in
             </Button>
           )}
         </Box>
@@ -161,11 +257,14 @@ export default function DevelopmentPlansPage() {
   );
 
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4" fontWeight="bold">
-          Development Plans
-        </Typography>
+    <Box sx={{ maxWidth: 1120, mx: 'auto' }}>
+      <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={3} gap={2} flexWrap="wrap">
+        <Box>
+          <Typography variant="h4" component="h1" fontWeight={700}>Development plans</Typography>
+          <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+            Turn career goals into skills, practical activities, and regular progress conversations.
+          </Typography>
+        </Box>
         {isManager && (
           <Button
             variant="contained"
@@ -176,6 +275,12 @@ export default function DevelopmentPlansPage() {
           </Button>
         )}
       </Box>
+
+      {(isError || error) && (
+        <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>
+          {error || 'Development plans could not be loaded. Try refreshing the page.'}
+        </Alert>
+      )}
 
       <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 3 }}>
         <Tab label={`My Plans (${myPlans.length})`} />
@@ -223,6 +328,7 @@ export default function DevelopmentPlansPage() {
         <DialogTitle>Create Development Plan</DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            {error && <Alert severity="error">{error}</Alert>}
             <TextField
               select
               label="Team Member"
@@ -254,6 +360,27 @@ export default function DevelopmentPlansPage() {
               rows={2}
             />
             <TextField
+              label="First career goal"
+              value={newPlan.careerGoal}
+              onChange={(e) => setNewPlan({ ...newPlan, careerGoal: e.target.value })}
+              fullWidth
+              placeholder="For example, move into a senior role"
+            />
+            <TextField
+              label="First skill to develop"
+              value={newPlan.skillName}
+              onChange={(e) => setNewPlan({ ...newPlan, skillName: e.target.value })}
+              fullWidth
+              placeholder="For example, stakeholder communication"
+            />
+            <TextField
+              label="First development activity"
+              value={newPlan.learningActivity}
+              onChange={(e) => setNewPlan({ ...newPlan, learningActivity: e.target.value })}
+              fullWidth
+              placeholder="For example, lead the next planning session"
+            />
+            <TextField
               type="date"
               label="Start Date"
               value={newPlan.startDate}
@@ -272,13 +399,13 @@ export default function DevelopmentPlansPage() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
           <Button 
             onClick={handleCreatePlan} 
             variant="contained"
-            disabled={!newPlan.userId || !newPlan.title || !newPlan.startDate || !newPlan.targetDate}
+            disabled={saving || !newPlan.userId || !newPlan.title || !newPlan.startDate || !newPlan.targetDate}
           >
-            Create
+            {saving ? 'Creating…' : 'Create'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -406,7 +533,12 @@ export default function DevelopmentPlansPage() {
                   <AccordionDetails>
                     <List dense>
                       {selectedPlan.learningActivities.map((activity: any, idx: number) => (
-                        <ListItem key={idx}>
+                        <ListItem
+                          key={idx}
+                          secondaryAction={activity.status !== 'completed' ? (
+                            <Button size="small" onClick={() => void completeActivity(idx)} disabled={saving}>Mark complete</Button>
+                          ) : undefined}
+                        >
                           <ListItemIcon>
                             {activity.status === 'completed' ? 
                               <CheckCircle color="success" /> : 
@@ -447,13 +579,82 @@ export default function DevelopmentPlansPage() {
                   </AccordionDetails>
                 </Accordion>
               )}
+
+              {selectedPlan.checkIns?.length > 0 && (
+                <Box sx={{ mt: 3 }}>
+                  <Divider sx={{ mb: 2 }} />
+                  <Typography variant="h6" gutterBottom>Progress check-ins</Typography>
+                  <Stack spacing={1.5}>
+                    {selectedPlan.checkIns.slice().reverse().map((entry: any, index: number) => (
+                      <Paper key={entry._id || index} variant="outlined" sx={{ p: 1.5 }}>
+                        <Stack direction="row" justifyContent="space-between" spacing={1}>
+                          <Typography variant="body2" fontWeight={600}>{entry.addedBy === 'manager' ? 'Manager update' : 'Employee update'}</Typography>
+                          <Typography variant="caption" color="text.secondary">{entry.date ? new Date(entry.date).toLocaleDateString() : ''}</Typography>
+                        </Stack>
+                        <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{entry.notes}</Typography>
+                        {entry.blockers && <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.75 }}>Blocker: {entry.blockers}</Typography>}
+                      </Paper>
+                    ))}
+                  </Stack>
+                </Box>
+              )}
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setSelectedPlan(null)}>Close</Button>
+              {selectedPlan.status === 'active' && (
+                <Button variant="contained" onClick={() => { setCheckInPlan(selectedPlan); setCheckInOpen(true); }}>
+                  Add check-in
+                </Button>
+              )}
             </DialogActions>
           </>
         )}
       </Dialog>
+
+      <Dialog
+        open={checkInOpen}
+        onClose={() => { if (!saving) { setCheckInOpen(false); setCheckInPlan(null); } }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Progress check-in</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            {error && <Alert severity="error">{error}</Alert>}
+            <TextField
+              label="Progress update"
+              value={checkIn.notes}
+              onChange={(event) => setCheckIn({ ...checkIn, notes: event.target.value })}
+              multiline
+              minRows={4}
+              required
+              placeholder="What moved forward since the last check-in?"
+            />
+            <TextField
+              type="number"
+              label="Progress percentage (optional)"
+              value={checkIn.progressUpdate}
+              onChange={(event) => setCheckIn({ ...checkIn, progressUpdate: Math.max(0, Math.min(100, Number(event.target.value))) })}
+              inputProps={{ min: 0, max: 100 }}
+            />
+            <TextField
+              label="Blockers or support needed (optional)"
+              value={checkIn.blockers}
+              onChange={(event) => setCheckIn({ ...checkIn, blockers: event.target.value })}
+              multiline
+              minRows={2}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setCheckInOpen(false); setCheckInPlan(null); }} disabled={saving}>Cancel</Button>
+          <Button variant="contained" onClick={() => void addCheckIn()} disabled={saving || !checkIn.notes.trim()}>
+            {saving ? 'Saving…' : 'Save check-in'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={Boolean(notice)} autoHideDuration={4000} onClose={() => setNotice('')} message={notice} />
     </Box>
   );
 }

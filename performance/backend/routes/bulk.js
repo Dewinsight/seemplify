@@ -1,347 +1,379 @@
+const crypto = require('crypto');
 const express = require('express');
-const router = express.Router();
+const mongoose = require('mongoose');
+
+const Appraisal = require('../models/Appraisal');
+const AppraisalCycle = require('../models/AppraisalCycle');
 const OKR = require('../models/OKR');
-const { PerformanceReview } = require('../models/PerformanceReview');
-const ReviewCycle = require('../models/ReviewCycle');
 const { requireHRAdmin } = require('../middleware/rbac');
+const { requireOrganizationFeature } = require('../services/organizationFeatureService');
+const { recordEvent } = require('../services/outboxService');
+const { cancelRemindersForTarget } = require('../services/reminderScheduler');
 
-/**
- * POST /api/bulk/okrs/import - Bulk import OKRs from CSV/JSON
- */
-router.post('/okrs/import', requireHRAdmin, async (req, res) => {
-  try {
-    const { okrs, format } = req.body;
-    
-    if (!okrs || !Array.isArray(okrs)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid data format. Expected array of OKRs.'
-      });
-    }
-    
-    const results = { created: 0, errors: [] };
-    
-    for (let i = 0; i < okrs.length; i++) {
-      try {
-        const okrData = okrs[i];
-        
-        // Validate required fields
-        if (!okrData.ownerId || !okrData.title) {
-          results.errors.push({ row: i + 1, error: 'Missing ownerId or title' });
-          continue;
-        }
-        
-        const newOKR = new OKR({
-          type: okrData.type || 'individual',
-          ownerId: okrData.ownerId,
-          organizationId: req.currentOrganization?.id || okrData.organizationId,
-          teamId: okrData.teamId,
-          period: okrData.period || `Q${Math.ceil((new Date().getMonth() + 1) / 3)} ${new Date().getFullYear()}`,
-          status: okrData.status || 'draft',
-          objectives: [{
-            title: okrData.title,
-            description: okrData.description,
-            keyResults: (okrData.keyResults || []).map(kr => ({
-              title: typeof kr === 'string' ? kr : kr.title,
-              metricType: kr.metricType || 'percentage',
-              startValue: kr.startValue || 0,
-              targetValue: kr.targetValue || 100,
-              currentValue: kr.currentValue || 0
-            }))
-          }]
-        });
-        
-        await newOKR.save();
-        results.created++;
-      } catch (err) {
-        results.errors.push({ row: i + 1, error: err.message });
-      }
-    }
-    
-    res.json({
-      success: true,
-      data: results,
-      message: `Created ${results.created} OKRs. ${results.errors.length} errors.`
+const router = express.Router();
+const canonicalAppraisalsEnabled = requireOrganizationFeature('canonicalAppraisals');
+
+const ALLOWED_GOAL_STATUSES = new Set(['closed', 'cancelled']);
+const MAX_BULK_ITEMS = 1000;
+
+function organizationId(req) {
+  return String(
+    req.currentOrganization?.id
+      || req.currentOrganization?._id
+      || req.session?.currentOrganizationId
+      || ''
+  ).trim();
+}
+
+function requireOrganization(req, res) {
+  const id = organizationId(req);
+  if (!id) {
+    res.status(403).json({
+      success: false,
+      error: 'Select an organization before performing a bulk operation.'
     });
-  } catch (error) {
-    console.error('Error bulk importing OKRs:', error);
-    res.status(500).json({ success: false, error: 'Bulk import failed' });
+    return null;
   }
-});
+  return id;
+}
+
+function validIds(values) {
+  return Array.isArray(values)
+    && values.length > 0
+    && values.length <= MAX_BULK_ITEMS
+    && values.every((value) => mongoose.isValidObjectId(value));
+}
+
+function actor(req) {
+  const user = req.session?.user || {};
+  return {
+    userId: String(user.id || user.sub || user._id || '').trim(),
+    name: user.name || user.displayName || user.email || 'HR administrator',
+    email: user.email
+  };
+}
+
+async function cancelGoalReminders(orgId, goalId, reason) {
+  const targetTypes = [
+    'goal_submission',
+    'goal_assignment',
+    'goal_approval',
+    'goal_changes',
+    'goal_change_request',
+    'goal_check_in'
+  ];
+  await Promise.all(targetTypes.map((targetType) => cancelRemindersForTarget({
+    organizationId: orgId,
+    targetType,
+    targetId: String(goalId),
+    reason
+  })));
+}
+
+function csvCell(value) {
+  let text = value == null ? '' : String(value);
+  // Prevent spreadsheet formula execution when an exported CSV is opened.
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function csv(rows, columns) {
+  return [
+    columns.map((column) => csvCell(column.label)).join(','),
+    ...rows.map((row) => columns.map((column) => csvCell(column.value(row))).join(','))
+  ].join('\r\n');
+}
+
+function sendCsv(res, filename, rows, columns) {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  return res.send(`\uFEFF${csv(rows, columns)}`);
+}
 
 /**
- * POST /api/bulk/reviews/create - Bulk create reviews for a cycle
+ * Legacy bulk writers are intentionally unavailable after the canonical goal
+ * and appraisal cutover. Their replacements preserve version history,
+ * approvals, acknowledgement and immutable appraisal snapshots.
  */
-router.post('/reviews/create', requireHRAdmin, async (req, res) => {
-  try {
-    const { cycleId, employees } = req.body;
-    
-    if (!cycleId) {
-      return res.status(400).json({ success: false, error: 'Review cycle ID required' });
-    }
-    
-    if (!employees || !Array.isArray(employees)) {
-      return res.status(400).json({ success: false, error: 'Employees array required' });
-    }
-    
-    const cycle = await ReviewCycle.findById(cycleId);
-    if (!cycle) {
-      return res.status(404).json({ success: false, error: 'Review cycle not found' });
-    }
-    
-    const results = { created: 0, skipped: 0, errors: [] };
-    
-    for (const employee of employees) {
-      try {
-        // Check if review already exists
-        const existing = await PerformanceReview.findOne({
-          cycleId,
-          userId: employee.userId
-        });
-        
-        if (existing) {
-          results.skipped++;
-          continue;
-        }
-        
-        const review = new PerformanceReview({
-          cycleId,
-          userId: employee.userId,
-          managerId: employee.managerId,
-          organizationId: req.currentOrganization?.id,
-          status: 'draft'
-        });
-        
-        await review.save();
-        results.created++;
-      } catch (err) {
-        results.errors.push({ userId: employee.userId, error: err.message });
-      }
-    }
-    
-    res.json({
-      success: true,
-      data: results,
-      message: `Created ${results.created} reviews, skipped ${results.skipped} existing.`
-    });
-  } catch (error) {
-    console.error('Error bulk creating reviews:', error);
-    res.status(500).json({ success: false, error: 'Bulk creation failed' });
-  }
-});
+router.post('/okrs/import', requireHRAdmin, (req, res) => res.status(410).json({
+  success: false,
+  error: 'The legacy goal importer is retired. Use POST /api/okrs/bulk-assign with a stable idempotency key.'
+}));
+
+router.post('/reviews/create', requireHRAdmin, (req, res) => res.status(410).json({
+  success: false,
+  error: 'The legacy review creator is retired. Launch the canonical appraisal cycle with POST /api/appraisals/cycles/:cycleId/launch.'
+}));
 
 /**
- * PUT /api/bulk/okrs/status - Bulk update OKR status
+ * Retained as a compatibility endpoint for HR clean-up jobs. It is tenant
+ * scoped, audit-attributed and limited to terminal states so it cannot bypass
+ * the normal approval/acknowledgement workflow.
  */
 router.put('/okrs/status', requireHRAdmin, async (req, res) => {
   try {
-    const { okrIds, status } = req.body;
-    
-    if (!okrIds || !Array.isArray(okrIds) || !status) {
+    const orgId = requireOrganization(req, res);
+    if (!orgId) return;
+    const { okrIds, status } = req.body || {};
+    if (!validIds(okrIds) || !ALLOWED_GOAL_STATUSES.has(status)) {
       return res.status(400).json({
         success: false,
-        error: 'OKR IDs and status required'
+        error: `Provide 1-${MAX_BULK_ITEMS} valid goal IDs and a status of closed or cancelled.`
       });
     }
-    
+
+    const now = new Date();
+    const update = {
+      $set: {
+        status,
+        'lifecycle.state': status,
+        ...(status === 'closed'
+          ? { 'lifecycle.closedAt': now }
+          : { 'lifecycle.cancelledAt': now }),
+        updatedBy: actor(req)
+      }
+    };
     const result = await OKR.updateMany(
-      { _id: { $in: okrIds } },
-      { $set: { status } }
+      { _id: { $in: okrIds }, organizationId: orgId },
+      update,
+      { runValidators: true }
     );
-    
-    res.json({
+
+    await Promise.all(okrIds.map((goalId) => (
+      cancelGoalReminders(orgId, goalId, `Goal ${status} by HR`)
+    )));
+
+    return res.json({
       success: true,
-      data: { modified: result.modifiedCount },
-      message: `Updated ${result.modifiedCount} OKRs`
+      data: { matched: result.matchedCount, modified: result.modifiedCount },
+      message: `Updated ${result.modifiedCount} goals.`
     });
   } catch (error) {
-    console.error('Error bulk updating OKRs:', error);
-    res.status(500).json({ success: false, error: 'Bulk update failed' });
+    console.error('Bulk goal status update failed:', error);
+    return res.status(500).json({ success: false, error: 'Bulk goal update failed.' });
   }
 });
 
 /**
- * POST /api/bulk/reviews/remind - Send bulk reminder emails
+ * Queue canonical appraisal reminders through the durable outbox. The route
+ * reports queued work, never claims that an email was delivered synchronously.
  */
-router.post('/reviews/remind', requireHRAdmin, async (req, res) => {
+router.post('/reviews/remind', requireHRAdmin, canonicalAppraisalsEnabled, async (req, res) => {
   try {
-    const { cycleId, reminderType } = req.body;
-    const notificationService = require('../services/notificationService');
-    
-    if (!cycleId) {
-      return res.status(400).json({ success: false, error: 'Review cycle required' });
+    const orgId = requireOrganization(req, res);
+    if (!orgId) return;
+    const { cycleId, reminderType } = req.body || {};
+    if (!mongoose.isValidObjectId(cycleId)) {
+      return res.status(400).json({ success: false, error: 'A valid appraisal cycle ID is required.' });
     }
-    
-    const cycle = await ReviewCycle.findById(cycleId);
-    if (!cycle) {
-      return res.status(404).json({ success: false, error: 'Review cycle not found' });
+    if (!['self_review', 'manager_review'].includes(reminderType)) {
+      return res.status(400).json({ success: false, error: 'reminderType must be self_review or manager_review.' });
     }
-    
-    let reviews;
-    let notificationsSent = 0;
-    
-    if (reminderType === 'self_review') {
-      // Find reviews without self-evaluation
-      reviews = await PerformanceReview.find({
-        cycleId,
-        'selfEvaluation.submittedAt': { $exists: false }
-      });
-      
-      for (const review of reviews) {
-        // Would send notification here
-        notificationsSent++;
-      }
-    } else if (reminderType === 'manager_review') {
-      // Find reviews pending manager
-      reviews = await PerformanceReview.find({
-        cycleId,
-        'selfEvaluation.submittedAt': { $exists: true },
-        'managerEvaluation.submittedAt': { $exists: false }
-      });
-      
-      for (const review of reviews) {
-        // Would send notification here
-        notificationsSent++;
-      }
+    const idempotencyKey = String(req.headers['idempotency-key'] || req.body?.idempotencyKey || '').trim();
+    if (!idempotencyKey || idempotencyKey.length > 128) {
+      return res.status(400).json({ success: false, error: 'A stable Idempotency-Key of at most 128 characters is required.' });
     }
-    
-    res.json({
-      success: true,
-      data: { notificationsSent, totalFound: reviews?.length || 0 },
-      message: `Sent ${notificationsSent} reminders`
+
+    const cycle = await AppraisalCycle.findOne({ _id: cycleId, organizationId: orgId }).lean();
+    if (!cycle) return res.status(404).json({ success: false, error: 'Appraisal cycle not found.' });
+
+    const selfReminder = reminderType === 'self_review';
+    const statuses = selfReminder
+      ? ['self_assessment_pending', 'self_assessment_in_progress']
+      : ['self_assessment_submitted', 'manager_review_pending', 'manager_review_in_progress'];
+    const appraisals = await Appraisal.find({
+      organizationId: orgId,
+      cycleId,
+      status: { $in: statuses }
+    }).select('_id employee manager deadlines').lean();
+
+    let queued = 0;
+    const errors = [];
+    for (let index = 0; index < appraisals.length; index += 20) {
+      await Promise.all(appraisals.slice(index, index + 20).map(async (appraisal) => {
+        const recipient = selfReminder ? appraisal.employee : appraisal.manager;
+        if (!recipient?.userId) {
+          errors.push({ appraisalId: String(appraisal._id), error: 'Recipient identity is missing.' });
+          return;
+        }
+        const eventType = selfReminder
+          ? 'appraisal.self_assessment_due'
+          : 'appraisal.manager_review_due';
+        const dueAt = selfReminder
+          ? appraisal.deadlines?.selfAssessmentDue
+          : appraisal.deadlines?.managerReviewDue;
+        const eventId = `manual-reminder:${orgId}:${cycleId}:${reminderType}:${appraisal._id}:${crypto
+          .createHash('sha256')
+          .update(idempotencyKey)
+          .digest('hex')}`;
+        try {
+          await recordEvent({
+            eventId,
+            eventType,
+            aggregateType: 'appraisal',
+            aggregateId: String(appraisal._id),
+            organizationId: orgId,
+            actor: actor(req),
+            recipients: [recipient],
+            payload: {
+              dueAt,
+              deepLink: `/appraisals/${appraisal._id}`,
+              manualReminder: true
+            }
+          });
+          queued += 1;
+        } catch (error) {
+          errors.push({ appraisalId: String(appraisal._id), error: error.message });
+        }
+      }));
+    }
+
+    return res.status(errors.length && !queued ? 500 : 202).json({
+      success: errors.length === 0,
+      data: { queued, totalFound: appraisals.length, failed: errors.length, errors },
+      message: `Queued ${queued} reminder${queued === 1 ? '' : 's'} for durable delivery.`
     });
   } catch (error) {
-    console.error('Error sending reminders:', error);
-    res.status(500).json({ success: false, error: 'Failed to send reminders' });
+    console.error('Bulk appraisal reminder failed:', error);
+    return res.status(500).json({ success: false, error: 'Failed to queue appraisal reminders.' });
   }
 });
 
 /**
- * DELETE /api/bulk/okrs - Bulk delete OKRs
+ * Historical delete compatibility now performs a recoverable cancellation.
  */
 router.delete('/okrs', requireHRAdmin, async (req, res) => {
+  req.body = { ...(req.body || {}), status: 'cancelled' };
+  // Express does not provide safe internal re-dispatch, so keep this endpoint
+  // explicit and tenant scoped.
   try {
+    const orgId = requireOrganization(req, res);
+    if (!orgId) return;
     const { okrIds } = req.body;
-    
-    if (!okrIds || !Array.isArray(okrIds)) {
-      return res.status(400).json({ success: false, error: 'OKR IDs required' });
+    if (!validIds(okrIds)) {
+      return res.status(400).json({ success: false, error: `Provide 1-${MAX_BULK_ITEMS} valid goal IDs.` });
     }
-    
-    const result = await OKR.deleteMany({ _id: { $in: okrIds } });
-    
-    res.json({
+    const now = new Date();
+    const result = await OKR.updateMany(
+      { _id: { $in: okrIds }, organizationId: orgId },
+      {
+        $set: {
+          status: 'cancelled',
+          'lifecycle.state': 'cancelled',
+          'lifecycle.cancelledAt': now,
+          updatedBy: actor(req)
+        }
+      },
+      { runValidators: true }
+    );
+    await Promise.all(okrIds.map((goalId) => (
+      cancelGoalReminders(orgId, goalId, 'Goal cancelled by HR')
+    )));
+    return res.json({
       success: true,
-      data: { deleted: result.deletedCount },
-      message: `Deleted ${result.deletedCount} OKRs`
+      data: { cancelled: result.modifiedCount, matched: result.matchedCount },
+      message: `Cancelled ${result.modifiedCount} goals. Historical records were retained.`
     });
   } catch (error) {
-    console.error('Error bulk deleting OKRs:', error);
-    res.status(500).json({ success: false, error: 'Bulk delete failed' });
+    console.error('Bulk goal cancellation failed:', error);
+    return res.status(500).json({ success: false, error: 'Bulk goal cancellation failed.' });
   }
 });
 
-/**
- * GET /api/bulk/export/okrs - Export OKRs to JSON/CSV
- */
 router.get('/export/okrs', requireHRAdmin, async (req, res) => {
   try {
-    const { period, status, format } = req.query;
-    
-    let query = {};
-    if (req.currentOrganization?.id) {
-      query.organizationId = req.currentOrganization.id;
-    }
-    if (period) query.period = period;
-    if (status) query.status = status;
-    
-    const okrs = await OKR.find(query).lean();
-    
-    const exportData = okrs.map(okr => ({
-      id: okr._id,
-      type: okr.type,
-      ownerId: okr.ownerId,
-      period: okr.period,
-      status: okr.status,
-      title: okr.objectives?.[0]?.title || '',
-      description: okr.objectives?.[0]?.description || '',
-      progress: okr.progress || 0,
-      keyResults: okr.objectives?.[0]?.keyResults?.map(kr => ({
-        title: kr.title,
-        target: kr.targetValue,
-        current: kr.currentValue
-      })) || [],
-      createdAt: okr.createdAt
+    const orgId = requireOrganization(req, res);
+    if (!orgId) return;
+    const query = { organizationId: orgId };
+    if (req.query.period) query.period = req.query.period;
+    if (req.query.status) query.status = req.query.status;
+    const goals = await OKR.find(query).sort({ createdAt: -1 }).lean();
+    const rows = goals.map((goal) => ({
+      id: goal._id,
+      type: goal.type,
+      ownerId: goal.ownerId,
+      period: goal.period,
+      status: goal.status,
+      acknowledgement: goal.assignment?.acknowledgementStatus || 'not_required',
+      origin: goal.creationSource,
+      title: goal.title || goal.objectives?.[0]?.title || '',
+      progress: goal.scoring?.progress ?? '',
+      health: goal.health || 'not_set',
+      createdAt: goal.createdAt
     }));
-    
-    if (format === 'csv') {
-      // Simple CSV format
-      let csv = 'ID,Type,Owner,Period,Status,Title,Progress,Created\n';
-      exportData.forEach(okr => {
-        csv += `${okr.id},${okr.type},${okr.ownerId},${okr.period},${okr.status},"${okr.title}",${okr.progress},${okr.createdAt}\n`;
-      });
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=okrs-export.csv');
-      return res.send(csv);
+    if (req.query.format === 'csv') {
+      return sendCsv(res, 'goals-export.csv', rows, [
+        { label: 'ID', value: (row) => row.id },
+        { label: 'Type', value: (row) => row.type },
+        { label: 'Owner', value: (row) => row.ownerId },
+        { label: 'Period', value: (row) => row.period },
+        { label: 'Status', value: (row) => row.status },
+        { label: 'Acknowledgement', value: (row) => row.acknowledgement },
+        { label: 'Origin', value: (row) => row.origin },
+        { label: 'Title', value: (row) => row.title },
+        { label: 'Progress', value: (row) => row.progress },
+        { label: 'Health', value: (row) => row.health },
+        { label: 'Created', value: (row) => row.createdAt }
+      ]);
     }
-    
-    res.json({ success: true, data: exportData, count: exportData.length });
+    return res.json({ success: true, data: rows, count: rows.length });
   } catch (error) {
-    console.error('Error exporting OKRs:', error);
-    res.status(500).json({ success: false, error: 'Export failed' });
+    console.error('Goal export failed:', error);
+    return res.status(500).json({ success: false, error: 'Goal export failed.' });
   }
 });
 
-/**
- * GET /api/bulk/export/reviews - Export reviews
- */
-router.get('/export/reviews', requireHRAdmin, async (req, res) => {
+router.get('/export/reviews', requireHRAdmin, canonicalAppraisalsEnabled, async (req, res) => {
   try {
-    const { cycleId, status, format } = req.query;
-    
-    let query = {};
-    if (cycleId) query.cycleId = cycleId;
-    if (status) query.status = status;
-    
-    const reviews = await PerformanceReview.find(query)
-      .populate('cycleId', 'title')
-      .lean();
-    
-    const exportData = reviews.map(r => ({
-      id: r._id,
-      cycleName: r.cycleId?.title || '',
-      employeeId: r.userId,
-      managerId: r.managerId,
-      status: r.status,
-      selfRating: r.selfEvaluation?.rating,
-      managerRating: r.managerEvaluation?.rating,
-      calibratedRating: r.calibratedRating,
-      selfSubmittedAt: r.selfEvaluation?.submittedAt,
-      managerSubmittedAt: r.managerEvaluation?.submittedAt
-    }));
-    
-    if (format === 'csv') {
-      let csv = 'ID,Cycle,Employee,Manager,Status,SelfRating,ManagerRating,CalibratedRating\n';
-      exportData.forEach(r => {
-        csv += `${r.id},"${r.cycleName}",${r.employeeId},${r.managerId},${r.status},${r.selfRating || ''},${r.managerRating || ''},${r.calibratedRating || ''}\n`;
-      });
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=reviews-export.csv');
-      return res.send(csv);
+    const orgId = requireOrganization(req, res);
+    if (!orgId) return;
+    const query = { organizationId: orgId };
+    if (req.query.cycleId) {
+      if (!mongoose.isValidObjectId(req.query.cycleId)) {
+        return res.status(400).json({ success: false, error: 'Invalid appraisal cycle ID.' });
+      }
+      query.cycleId = req.query.cycleId;
     }
-    
-    res.json({ success: true, data: exportData, count: exportData.length });
+    if (req.query.status) query.status = req.query.status;
+    const appraisals = await Appraisal.find(query)
+      .populate('cycleId', 'name title')
+      .sort({ createdAt: -1 })
+      .lean();
+    const rows = appraisals.map((appraisal) => ({
+      id: appraisal._id,
+      cycle: appraisal.cycleId?.name || appraisal.cycleId?.title || '',
+      employeeId: appraisal.employee?.userId,
+      employee: appraisal.employee?.name,
+      managerId: appraisal.manager?.userId,
+      manager: appraisal.manager?.name,
+      status: appraisal.status,
+      selfRating: appraisal.selfAssessment?.overallSelfRating ?? '',
+      managerRating: appraisal.managerReview?.overallManagerRating ?? '',
+      calibratedRating: appraisal.calibration?.calibratedRating ?? '',
+      finalRating: appraisal.finalRating?.overall ?? '',
+      acknowledgedAt: appraisal.discussion?.employeeAcknowledgedAt || ''
+    }));
+    if (req.query.format === 'csv') {
+      return sendCsv(res, 'appraisals-export.csv', rows, [
+        { label: 'ID', value: (row) => row.id },
+        { label: 'Cycle', value: (row) => row.cycle },
+        { label: 'Employee ID', value: (row) => row.employeeId },
+        { label: 'Employee', value: (row) => row.employee },
+        { label: 'Manager ID', value: (row) => row.managerId },
+        { label: 'Manager', value: (row) => row.manager },
+        { label: 'Status', value: (row) => row.status },
+        { label: 'Self rating', value: (row) => row.selfRating },
+        { label: 'Manager rating', value: (row) => row.managerRating },
+        { label: 'Calibrated rating', value: (row) => row.calibratedRating },
+        { label: 'Final rating', value: (row) => row.finalRating },
+        { label: 'Acknowledged', value: (row) => row.acknowledgedAt }
+      ]);
+    }
+    return res.json({ success: true, data: rows, count: rows.length });
   } catch (error) {
-    console.error('Error exporting reviews:', error);
-    res.status(500).json({ success: false, error: 'Export failed' });
+    console.error('Appraisal export failed:', error);
+    return res.status(500).json({ success: false, error: 'Appraisal export failed.' });
   }
 });
 
 module.exports = router;
-
-
-
-
-
-
