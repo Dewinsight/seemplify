@@ -13,7 +13,6 @@ import {
     MapPin,
     Clock3,
     ArrowRight,
-    AlertCircle,
     BellRing,
     RefreshCw,
     Download,
@@ -207,14 +206,14 @@ export default function TeamPage() {
     const getStatusStyles = (status: TeamMember['status']) => {
         switch (status) {
             case 'working':
-                return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                return 'border-emerald-600/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
             case 'on_break':
-                return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                return 'border-amber-600/25 bg-amber-500/10 text-amber-700 dark:text-amber-300';
             case 'clocked_out':
-                return 'bg-zinc-700/30 text-zinc-300 border-zinc-600';
+                return 'border-[var(--suite-line-strong)] bg-[var(--suite-surface-muted)] text-[var(--suite-muted)]';
             case 'not_clocked_in':
             default:
-                return 'bg-zinc-800/40 text-zinc-400 border-zinc-700';
+                return 'border-[var(--suite-line)] bg-transparent text-[var(--suite-subtle)]';
         }
     };
 
@@ -238,46 +237,52 @@ export default function TeamPage() {
 
     if (!hasManagerAccess) {
         return (
-            <div className="p-8 bg-zinc-900/40 border border-zinc-800 rounded-xl text-zinc-400">
-                <h1 className="text-xl font-semibold text-white mb-2">Team Attendance</h1>
+            <div className="rounded-xl border border-[var(--suite-line)] bg-[var(--suite-surface)] p-8 text-[var(--suite-muted)]">
+                <h1 className="mb-2 text-xl font-semibold text-[var(--suite-ink)]">Team Attendance</h1>
                 <p>You need line manager, team lead, or admin access to view team attendance.</p>
             </div>
         );
     }
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500" onClick={() => setIsTeamMenuOpen(false)}>
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-white">Team Attendance</h1>
-                    <p className="text-zinc-400">Line manager view of clock-in, clock-out, location, and current status.</p>
+        <div className="space-y-5 animate-in fade-in duration-300" onClick={() => setIsTeamMenuOpen(false)}>
+            <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+                <div className="max-w-xl">
+                    <h1 className="text-2xl font-semibold tracking-[-0.025em] text-[var(--suite-ink)]">Team Attendance</h1>
+                    <p className="mt-1 text-sm text-[var(--suite-muted)]">See who is working, where they clocked in, and when they were last active.</p>
                     {lastUpdatedAt && (
-                        <p className="text-xs text-zinc-500 mt-1">Last updated: {format(lastUpdatedAt, 'MMM d, h:mm:ss a')}</p>
+                        <p className="mt-1.5 text-xs text-[var(--suite-subtle)]">Updated {format(lastUpdatedAt, 'MMM d, h:mm:ss a')}</p>
                     )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                     {managedTeams.length > 0 && (
                         <div className="relative">
                             <button
+                                type="button"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     setIsTeamMenuOpen((prev) => !prev);
                                 }}
-                                className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm font-medium text-white hover:bg-zinc-800 transition-colors"
+                                aria-expanded={isTeamMenuOpen}
+                                className="flex h-9 items-center gap-2 rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)] px-3 text-sm font-medium text-[var(--suite-ink)] transition-colors hover:bg-[var(--suite-surface-muted)]"
                             >
-                                <Building2 className="h-4 w-4 text-zinc-400" />
-                                <span>{getSelectedTeamName()}</span>
-                                <ChevronDown className={cn('h-4 w-4 text-zinc-500 transition-transform', isTeamMenuOpen && 'rotate-180')} />
+                                <Building2 className="h-4 w-4 text-[var(--suite-subtle)]" />
+                                <span className="max-w-48 truncate">{getSelectedTeamName()}</span>
+                                <ChevronDown className={cn('h-4 w-4 text-[var(--suite-subtle)] transition-transform', isTeamMenuOpen && 'rotate-180')} />
                             </button>
 
                             {isTeamMenuOpen && (
-                                <div className="absolute right-0 top-full mt-2 w-60 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl py-1 z-50">
+                                <div className="absolute right-0 top-full z-50 mt-2 w-60 rounded-lg border border-[var(--suite-line)] bg-[var(--suite-surface)] py-1 shadow-[var(--suite-shadow)]">
                                     <button
-                                        onClick={() => setSelectedTeamId('')}
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedTeamId('');
+                                            setIsTeamMenuOpen(false);
+                                        }}
                                         className={cn(
-                                            'w-full text-left px-4 py-2 text-sm hover:bg-zinc-800 transition-colors',
-                                            !selectedTeamId ? 'text-teal-400 font-medium' : 'text-zinc-400'
+                                            'w-full px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--suite-surface-muted)]',
+                                            !selectedTeamId ? 'font-medium text-teal-700 dark:text-teal-300' : 'text-[var(--suite-muted)]'
                                         )}
                                     >
                                         All Managed Teams
@@ -285,10 +290,14 @@ export default function TeamPage() {
                                     {managedTeams.map((team: any) => (
                                         <button
                                             key={team.id}
-                                            onClick={() => setSelectedTeamId(team.id)}
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedTeamId(team.id);
+                                                setIsTeamMenuOpen(false);
+                                            }}
                                             className={cn(
-                                                'w-full text-left px-4 py-2 text-sm hover:bg-zinc-800 transition-colors',
-                                                selectedTeamId === team.id ? 'text-teal-400 font-medium' : 'text-zinc-400'
+                                                'w-full px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--suite-surface-muted)]',
+                                                selectedTeamId === team.id ? 'font-medium text-teal-700 dark:text-teal-300' : 'text-[var(--suite-muted)]'
                                             )}
                                         >
                                             {team.name}
@@ -300,134 +309,130 @@ export default function TeamPage() {
                     )}
 
                     <button
+                        type="button"
                         onClick={(e) => {
                             e.stopPropagation();
                             fetchTeamStatus();
                         }}
                         disabled={loading}
-                        className="inline-flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--suite-line-strong)] px-3 text-sm text-[var(--suite-muted)] transition-colors hover:bg-[var(--suite-surface-muted)] hover:text-[var(--suite-ink)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                        <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+                        <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
                         Refresh
                     </button>
                     <button
+                        type="button"
                         onClick={(e) => {
                             e.stopPropagation();
                             exportTeamAttendanceExcel();
                         }}
                         disabled={loading || exporting}
-                        className="inline-flex items-center gap-2 px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--suite-line-strong)] px-3 text-sm text-[var(--suite-muted)] transition-colors hover:bg-[var(--suite-surface-muted)] hover:text-[var(--suite-ink)] disabled:cursor-not-allowed disabled:opacity-60"
                         title="Export current team table to Excel"
                     >
-                        <Download className="h-3.5 w-3.5" />
+                        <Download className="h-4 w-4" />
                         {exporting ? 'Exporting...' : 'Export Excel'}
                     </button>
-                    <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300">
-                        <span className="text-zinc-500">Total:</span> {summary.total}
-                    </div>
-                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 text-xs text-emerald-300">
-                        <span className="text-emerald-500/80">Working:</span> {summary.working}
-                    </div>
-                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-300">
-                        <span className="text-amber-500/80">Break:</span> {summary.onBreak}
-                    </div>
-                    <div className="bg-zinc-800/70 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-300">
-                        <span className="text-zinc-500">Clocked Out:</span> {clockedOutOnlyCount}
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex flex-col xl:flex-row xl:items-center gap-3">
-                <div className="relative max-w-xl w-full">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
-                    <input
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Search by name, email, team, or status"
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
-                    />
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    {[
-                        { key: 'all', label: 'All', count: summary.total },
-                        { key: 'working', label: 'Working', count: summary.working },
-                        { key: 'on_break', label: 'On Break', count: summary.onBreak },
-                        { key: 'clocked_out', label: 'Clocked Out', count: clockedOutOnlyCount },
-                        { key: 'not_clocked_in', label: 'Not Clocked In', count: notClockedInCount },
-                    ].map((filterItem) => {
-                        const isActive = statusFilter === filterItem.key;
-                        return (
-                            <button
-                                key={filterItem.key}
-                                type="button"
-                                onClick={() => setStatusFilter(filterItem.key as TeamStatusFilter)}
-                                className={cn(
-                                    'px-3 py-1.5 rounded-lg border text-xs transition-colors',
-                                    isActive
-                                        ? 'bg-teal-500/15 border-teal-500/30 text-teal-300'
-                                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
-                                )}
-                            >
-                                {filterItem.label}: {filterItem.count}
-                            </button>
-                        );
-                    })}
                 </div>
             </div>
 
             {actionFeedback && (
                 <div
                     className={cn(
-                        'px-3 py-2 rounded-lg border text-sm',
+                        'rounded-lg border px-3 py-2 text-sm',
                         actionFeedback.type === 'success'
-                            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
-                            : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                            : 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-200'
                     )}
                 >
                     {actionFeedback.text}
                 </div>
             )}
 
-            <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
-                <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1320px]">
-                        <thead className="bg-zinc-900/95 border-b border-zinc-800 sticky top-0 z-10">
-                            <tr className="text-left text-xs uppercase tracking-wider text-zinc-500">
+            <div className="overflow-hidden rounded-xl border border-[var(--suite-line)] bg-[var(--suite-surface)] shadow-[var(--suite-shadow)]">
+                <div className="flex flex-col gap-3 border-b border-[var(--suite-line)] px-4 pt-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="relative w-full pb-3 lg:max-w-sm">
+                        <Search className="absolute left-3 top-[18px] h-4 w-4 -translate-y-1/2 text-[var(--suite-subtle)]" />
+                        <input
+                            type="search"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Search people or teams"
+                            className="h-9 w-full rounded-lg border border-[var(--suite-line-strong)] bg-transparent pl-9 pr-3 text-sm text-[var(--suite-ink)] placeholder:text-[var(--suite-subtle)] focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500/15"
+                        />
+                    </div>
+                    <div className="flex min-w-0 overflow-x-auto" role="tablist" aria-label="Filter team attendance by status">
+                        {[
+                            { key: 'all', label: 'All', count: summary.total },
+                            { key: 'working', label: 'Working', count: summary.working },
+                            { key: 'on_break', label: 'On break', count: summary.onBreak },
+                            { key: 'clocked_out', label: 'Clocked out', count: clockedOutOnlyCount },
+                            { key: 'not_clocked_in', label: 'Not clocked in', count: notClockedInCount },
+                        ].map((filterItem) => {
+                            const isActive = statusFilter === filterItem.key;
+                            return (
+                                <button
+                                    key={filterItem.key}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={isActive}
+                                    onClick={() => setStatusFilter(filterItem.key as TeamStatusFilter)}
+                                    className={cn(
+                                        'flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm transition-colors',
+                                        isActive
+                                            ? 'border-teal-600 font-medium text-[var(--suite-ink)]'
+                                            : 'border-transparent text-[var(--suite-muted)] hover:text-[var(--suite-ink)]'
+                                    )}
+                                >
+                                    {filterItem.label}
+                                    <span className="text-xs tabular-nums text-[var(--suite-subtle)]">{filterItem.count}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto" data-testid="team-table-scroll">
+                    <table className="w-full min-w-[1275px] table-fixed">
+                        <colgroup>
+                            <col className="w-[230px]" />
+                            <col className="w-[110px]" />
+                            <col className="w-[125px]" />
+                            <col className="w-[150px]" />
+                            <col className="w-[275px]" />
+                            <col className="w-[100px]" />
+                            <col className="w-[145px]" />
+                            <col className="w-[140px]" />
+                        </colgroup>
+                        <thead className="border-b border-[var(--suite-line)] bg-[var(--suite-surface-muted)]">
+                            <tr className="text-left text-xs text-[var(--suite-muted)]">
                                 <th className="px-4 py-3 font-medium">Member</th>
                                 <th className="px-4 py-3 font-medium">Team</th>
                                 <th className="px-4 py-3 font-medium">Status</th>
-                                <th className="px-4 py-3 font-medium">Clock In</th>
-                                <th className="px-4 py-3 font-medium">Clock Out</th>
-                                <th className="px-4 py-3 font-medium">Clock-In Location</th>
-                                <th className="px-4 py-3 font-medium">Clock-Out Location</th>
-                                <th className="px-4 py-3 font-medium">Worked Today</th>
-                                <th className="px-4 py-3 font-medium">Last Activity</th>
-                                <th className="px-4 py-3 font-medium text-right">Actions</th>
+                                <th className="px-4 py-3 font-medium">Today</th>
+                                <th className="px-4 py-3 font-medium">Locations</th>
+                                <th className="px-4 py-3 font-medium">Worked</th>
+                                <th className="px-4 py-3 font-medium">Last activity</th>
+                                <th className="px-4 py-3 text-right font-medium">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-zinc-800/60">
+                        <tbody className="divide-y divide-[var(--suite-line)]">
                             {loading && Array.from({ length: 5 }).map((_, idx) => (
                                 <tr key={idx} className="animate-pulse">
-                                    <td className="px-4 py-4"><div className="h-4 w-40 bg-zinc-800 rounded" /></td>
-                                    <td className="px-4 py-4"><div className="h-4 w-24 bg-zinc-800 rounded" /></td>
-                                    <td className="px-4 py-4"><div className="h-4 w-20 bg-zinc-800 rounded" /></td>
-                                    <td className="px-4 py-4"><div className="h-4 w-20 bg-zinc-800 rounded" /></td>
-                                    <td className="px-4 py-4"><div className="h-4 w-20 bg-zinc-800 rounded" /></td>
-                                    <td className="px-4 py-4"><div className="h-4 w-44 bg-zinc-800 rounded" /></td>
-                                    <td className="px-4 py-4"><div className="h-4 w-44 bg-zinc-800 rounded" /></td>
-                                    <td className="px-4 py-4"><div className="h-4 w-24 bg-zinc-800 rounded" /></td>
-                                    <td className="px-4 py-4"><div className="h-4 w-32 bg-zinc-800 rounded" /></td>
-                                    <td className="px-4 py-4"><div className="h-8 w-20 bg-zinc-800 rounded" /></td>
+                                    {Array.from({ length: 8 }).map((__, cellIndex) => (
+                                        <td key={cellIndex} className="px-4 py-5">
+                                            <div className="h-4 w-4/5 rounded bg-[var(--suite-surface-muted)]" />
+                                        </td>
+                                    ))}
                                 </tr>
                             ))}
 
                             {!loading && filteredTeamData.length === 0 && (
                                 <tr>
-                                    <td colSpan={10} className="px-4 py-12 text-center">
-                                        <Users className="h-10 w-10 text-zinc-700 mx-auto mb-3" />
-                                        <p className="text-zinc-400 font-medium">No team members found</p>
-                                        <p className="text-zinc-500 text-sm mt-1">
+                                    <td colSpan={8} className="px-4 py-14 text-center">
+                                        <Users className="mx-auto mb-3 h-9 w-9 text-[var(--suite-subtle)]" />
+                                        <p className="font-medium text-[var(--suite-ink)]">No team members found</p>
+                                        <p className="mt-1 text-sm text-[var(--suite-muted)]">
                                             {searchTerm || statusFilter !== 'all'
                                                 ? 'Try a different search or status filter.'
                                                 : 'No managed team members are available in this view.'}
@@ -440,92 +445,92 @@ export default function TeamPage() {
                                 <tr
                                     key={member.userId}
                                     className={cn(
-                                        'transition-colors cursor-pointer',
-                                        member.status === 'working' && 'bg-emerald-500/[0.03] hover:bg-emerald-500/[0.08]',
-                                        member.status === 'on_break' && 'bg-amber-500/[0.03] hover:bg-amber-500/[0.08]',
-                                        member.status !== 'working' && member.status !== 'on_break' && 'hover:bg-zinc-800/30'
+                                        'cursor-pointer transition-colors hover:bg-[var(--suite-surface-muted)]',
+                                        member.status === 'working' && 'bg-emerald-500/[0.025]',
+                                        member.status === 'on_break' && 'bg-amber-500/[0.025]'
                                     )}
                                     onClick={() => router.push(`/team/${member.userId}`)}
                                 >
-                                    <td className="px-4 py-3">
-                                        <div className="flex items-center gap-3">
-                                            <div className="h-8 w-8 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-semibold flex items-center justify-center">
+                                    <td className="px-4 py-4">
+                                        <div className="flex min-w-0 items-center gap-3">
+                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--suite-line)] bg-[var(--suite-surface-muted)] text-xs font-semibold text-[var(--suite-muted)]">
                                                 {(member.userName || member.userEmail || member.userId).slice(0, 2).toUpperCase()}
                                             </div>
-                                            <div>
-                                                <div className="font-medium text-white">{member.userName}</div>
-                                                <div className="text-xs text-zinc-500">{member.userEmail || member.userId}</div>
+                                            <div className="min-w-0">
+                                                <div className="truncate text-sm font-medium text-[var(--suite-ink)]">{member.userName}</div>
+                                                <div className="truncate text-xs text-[var(--suite-subtle)]" title={member.userEmail || member.userId}>{member.userEmail || member.userId}</div>
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-zinc-300">{member.teamName || '--'}</td>
-                                    <td className="px-4 py-3">
-                                        <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium border', getStatusStyles(member.status))}>
+                                    <td className="px-4 py-4 text-sm text-[var(--suite-muted)]">
+                                        <span className="block truncate" title={member.teamName || undefined}>{member.teamName || '--'}</span>
+                                    </td>
+                                    <td className="px-4 py-4">
+                                        <span className={cn('inline-flex whitespace-nowrap rounded-md border px-2 py-1 text-xs font-medium', getStatusStyles(member.status))}>
                                             {getStatusLabel(member.status)}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-zinc-200 font-mono">{formatTime(member.clockInAt)}</td>
-                                    <td className="px-4 py-3 text-sm text-zinc-200 font-mono">{formatTime(member.clockOutAt)}</td>
-                                    <td className="px-4 py-3 text-sm text-zinc-300 max-w-[220px]">
-                                        <div className="flex items-start gap-1.5">
-                                            <MapPin className="h-3.5 w-3.5 text-zinc-500 mt-0.5 shrink-0" />
-                                            <span className="truncate" title={formatLocation(member.clockInLocation)}>
-                                                {formatLocation(member.clockInLocation)}
-                                            </span>
+                                    <td className="px-4 py-4 text-xs tabular-nums text-[var(--suite-muted)]">
+                                        <div className="grid grid-cols-[24px_1fr] gap-x-2 gap-y-1">
+                                            <span className="text-[var(--suite-subtle)]">In</span>
+                                            <span className="whitespace-nowrap">{formatTime(member.clockInAt)}</span>
+                                            <span className="text-[var(--suite-subtle)]">Out</span>
+                                            <span className="whitespace-nowrap">{formatTime(member.clockOutAt)}</span>
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-zinc-300 max-w-[220px]">
-                                        <div className="flex items-start gap-1.5">
-                                            <MapPin className="h-3.5 w-3.5 text-zinc-500 mt-0.5 shrink-0" />
-                                            <span className="truncate" title={formatLocation(member.clockOutLocation)}>
-                                                {formatLocation(member.clockOutLocation)}
-                                            </span>
+                                    <td className="px-4 py-4 text-xs text-[var(--suite-muted)]">
+                                        <div className="space-y-1.5">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <MapPin className="h-3.5 w-3.5 shrink-0 text-[var(--suite-subtle)]" />
+                                                <span className="w-5 shrink-0 text-[var(--suite-subtle)]">In</span>
+                                                <span className="truncate" title={formatLocation(member.clockInLocation)}>{formatLocation(member.clockInLocation)}</span>
+                                            </div>
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <MapPin className="h-3.5 w-3.5 shrink-0 text-[var(--suite-subtle)]" />
+                                                <span className="w-5 shrink-0 text-[var(--suite-subtle)]">Out</span>
+                                                <span className="truncate" title={formatLocation(member.clockOutLocation)}>{formatLocation(member.clockOutLocation)}</span>
+                                            </div>
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-zinc-200">
+                                    <td className="px-4 py-4 text-sm font-medium tabular-nums text-[var(--suite-ink)]">
                                         {formatDuration(member.workedMinutesToday || 0)}
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-zinc-300">
-                                        <div className="flex items-center gap-1.5">
-                                            <Clock3 className="h-3.5 w-3.5 text-zinc-500" />
+                                    <td className="px-4 py-4 text-xs text-[var(--suite-muted)]">
+                                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                            <Clock3 className="h-3.5 w-3.5 shrink-0 text-[var(--suite-subtle)]" />
                                             <span>{formatTime(member.lastActivity, true)}</span>
                                         </div>
                                         {member.lastActivityType && (
-                                            <div className="mt-1 text-[11px] uppercase tracking-wide text-zinc-500">
+                                            <div className="mt-1 pl-5 text-[11px] text-[var(--suite-subtle)]">
                                                 {member.lastActivityType.replace('_', ' ')}
                                             </div>
                                         )}
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    sendClockOutReminder(member);
-                                                }}
-                                                disabled={!canSendClockOutReminder(member) || reminderSendingFor === member.userId}
-                                                className={cn(
-                                                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-                                                    canSendClockOutReminder(member)
-                                                        ? 'border-amber-500/30 text-amber-300 hover:bg-amber-500/10 hover:border-amber-500/50'
-                                                        : 'border-zinc-700 text-zinc-500'
-                                                )}
-                                                title={
-                                                    canSendClockOutReminder(member)
-                                                        ? 'Send clock-out reminder'
-                                                        : 'Available only for active sessions'
-                                                }
-                                            >
-                                                <BellRing className="h-3.5 w-3.5" />
-                                                {reminderSendingFor === member.userId ? 'Sending...' : 'Remind'}
-                                            </button>
+                                    <td className="px-4 py-4">
+                                        <div className="flex items-center justify-end gap-1.5">
+                                            {canSendClockOutReminder(member) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        sendClockOutReminder(member);
+                                                    }}
+                                                    disabled={reminderSendingFor === member.userId}
+                                                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-600/30 px-2.5 text-xs text-amber-700 transition-colors hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-300"
+                                                    title="Send clock-out reminder"
+                                                >
+                                                    <BellRing className="h-3.5 w-3.5" />
+                                                    {reminderSendingFor === member.userId ? 'Sending' : 'Remind'}
+                                                </button>
+                                            )}
 
                                             <button
+                                                type="button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     router.push(`/team/${member.userId}`);
                                                 }}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 text-xs text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors"
+                                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--suite-line-strong)] px-2.5 text-xs text-[var(--suite-muted)] transition-colors hover:bg-[var(--suite-surface-muted)] hover:text-[var(--suite-ink)]"
                                             >
                                                 View
                                                 <ArrowRight className="h-3.5 w-3.5" />
@@ -537,11 +542,6 @@ export default function TeamPage() {
                         </tbody>
                     </table>
                 </div>
-            </div>
-
-            <div className="text-xs text-zinc-500 flex items-center gap-2">
-                <AlertCircle className="h-3.5 w-3.5" />
-                Use "Remind" to email active team members and prompt them to clock out.
             </div>
         </div>
     );

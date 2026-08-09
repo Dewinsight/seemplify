@@ -349,7 +349,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </nav>
 
             <main className="min-h-screen bg-[var(--suite-canvas)] transition-colors duration-150">
-                <div className="mx-auto max-w-7xl px-4 pb-10 pt-24 lg:px-8">{children}</div>
+                <div className={cn(
+                    'mx-auto px-4 pb-10 pt-24 lg:px-8',
+                    pathname === '/team' ? 'max-w-[1600px]' : 'max-w-7xl'
+                )}>{children}</div>
             </main>
 
             {mobileOpen && (

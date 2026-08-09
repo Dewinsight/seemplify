@@ -146,7 +146,14 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'DELETE' && path === '/api/approvals/timesheet-1') return json(route, { success: true });
 
         if (method === 'GET' && path === '/api/attendance/team') {
-            return json(route, { team: [{ userId: 'employee-2', userName: 'Jamie Lee', userEmail: 'jamie@example.com', teamName: 'Operations', status: 'working', clockInAt: NOW, workedMinutesToday: 120, lastActivity: NOW }], summary: { total: 1, working: 1, onBreak: 0, clockedOut: 0, notClockedIn: 0 } });
+            return json(route, {
+                team: [
+                    { userId: 'employee-2', userName: 'Jamie Lee', userEmail: 'jamie@example.com', teamName: 'Operations', status: 'working', clockInAt: NOW, clockInLocation: { address: 'London office' }, workedMinutesToday: 120, lastActivity: NOW, lastActivityType: 'clock_in' },
+                    { userId: 'employee-3', userName: 'Morgan Reed', userEmail: 'morgan@example.com', teamName: 'Operations', status: 'clocked_out', clockInAt: NOW, clockOutAt: TOMORROW, clockInLocation: { address: 'Client site' }, clockOutLocation: { address: 'Client site' }, workedMinutesToday: 480, lastActivity: TOMORROW, lastActivityType: 'clock_out' },
+                    { userId: 'employee-4', userName: 'Casey Patel', userEmail: 'casey@example.com', teamName: 'Operations', status: 'not_clocked_in', workedMinutesToday: 0 },
+                ],
+                summary: { total: 3, working: 1, onBreak: 0, clockedOut: 2, notClockedIn: 1 },
+            });
         }
         if (method === 'POST' && path === '/api/attendance/team/employee-2/notify-clock-out') return json(route, { message: 'Reminder sent to Jamie Lee.' });
         if (method === 'GET' && path === '/api/attendance/team/export') return route.fulfill({ status: 200, headers: { ...corsHeaders(route), 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, body: 'mock workbook' });
@@ -324,6 +331,43 @@ test('covers manager approvals, team status, reports, rule packs and policy sett
     for (const [path, heading] of routes) {
         await page.goto(path);
         await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+    }
+});
+
+test('keeps the team attendance workspace readable at wide and standard desktop widths', async ({ page, mockState: _mockState }) => {
+    await authenticate(page);
+    await page.addInitScript(() => localStorage.setItem('seemplify-theme', 'light'));
+
+    for (const viewport of [{ width: 2048, height: 1152 }, { width: 1440, height: 900 }]) {
+        await page.setViewportSize(viewport);
+        await page.goto('/team');
+        await expect(page.getByRole('heading', { name: 'Team Attendance' })).toBeVisible();
+        await expect(page.getByText('Clocked Out', { exact: true })).toBeVisible();
+        await expect(page.getByText('Not Clocked In', { exact: true })).toBeVisible();
+
+        const tableScroll = page.getByTestId('team-table-scroll');
+        const dimensions = await tableScroll.evaluate(element => ({
+            clientWidth: element.clientWidth,
+            scrollWidth: element.scrollWidth,
+        }));
+        expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+
+        const statusCells = page.locator('tbody td:nth-child(3) span');
+        for (let index = 0; index < await statusCells.count(); index += 1) {
+            const metrics = await statusCells.nth(index).evaluate(element => ({
+                clientWidth: element.clientWidth,
+                scrollWidth: element.scrollWidth,
+                height: element.getBoundingClientRect().height,
+            }));
+            expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+            expect(metrics.height).toBeLessThanOrEqual(28);
+        }
+
+        const pageWidth = await page.evaluate(() => ({
+            viewport: window.innerWidth,
+            document: document.documentElement.scrollWidth,
+        }));
+        expect(pageWidth.document).toBeLessThanOrEqual(pageWidth.viewport);
     }
 });
 
