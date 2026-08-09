@@ -6,6 +6,7 @@ const {
   getWorkflowStage,
   getStatusAfterManagerReview,
   getStatusAfterDiscussion,
+  isCalibrationRequired,
   getNextAction
 } = require('../services/appraisalWorkflowService');
 
@@ -37,6 +38,18 @@ test('discussion moves directly to final review when calibration is disabled', (
     actor: 'manager',
     label: 'Finalize appraisal'
   });
+});
+
+test('cycle synchronization cannot accidentally enable an unused calibration phase', () => {
+  assert.equal(isCalibrationRequired({
+    currentPhase: 'finalReview',
+    phases: { calibration: { isActive: false, isCompleted: true } }
+  }), false);
+
+  assert.equal(isCalibrationRequired({
+    currentPhase: 'finalReview',
+    phases: { calibration: { startDate: new Date('2026-08-01'), endDate: new Date('2026-08-02') } }
+  }), true);
 });
 
 test('next actions clearly separate employee and line-manager responsibilities', () => {

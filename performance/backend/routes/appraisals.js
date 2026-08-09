@@ -15,7 +15,8 @@ const documentExtractionService = require('../services/documentExtractionService
 const appraisalAIService = require('../services/appraisalAIService');
 const {
   getStatusAfterManagerReview,
-  getStatusAfterDiscussion
+  getStatusAfterDiscussion,
+  isCalibrationRequired: isCalibrationEnabledForCycle
 } = require('../services/appraisalWorkflowService');
 const notificationService = require('../services/notificationService');
 const { getOrganizationFeatureState } = require('../services/organizationFeatureService');
@@ -485,20 +486,6 @@ function ensureConversationAssessmentState(appraisal) {
     : 0;
 }
 
-function isCalibrationEnabledForCycle(cycle) {
-  if (!cycle) return false;
-  const calibrationPhase = cycle?.phases?.calibration;
-  if (!calibrationPhase) return false;
-
-  return Boolean(
-    calibrationPhase.isActive ||
-    calibrationPhase.isCompleted ||
-    calibrationPhase.startDate ||
-    calibrationPhase.endDate ||
-    cycle.currentPhase === 'calibration'
-  );
-}
-
 function isAiAssistEnabledForCycle(cycle) {
   return cycle?.settings?.enableAiAssist !== false;
 }
@@ -587,6 +574,11 @@ async function syncCycleProgress(cycleId, organizationId) {
 
   phaseOrder.forEach((phase, index) => {
     if (!cycle.phases?.[phase]) return;
+    if (phase === 'calibration' && !calibrationEnabled) {
+      cycle.phases.calibration.isActive = false;
+      cycle.phases.calibration.isCompleted = false;
+      return;
+    }
     cycle.phases[phase].isActive = false;
     cycle.phases[phase].isCompleted = nextPhase === 'completed' ? true : (currentIndex >= 0 && index < currentIndex);
   });

@@ -39,6 +39,23 @@ function getStatusAfterDiscussion({ calibrationRequired = false } = {}) {
   return calibrationRequired ? 'calibration_pending' : 'final_review_pending';
 }
 
+function isCalibrationRequired(cycle) {
+  if (!cycle) return false;
+  const calibration = cycle?.phases?.calibration;
+  if (!calibration) return false;
+
+  // Calibration is configured by giving the phase a schedule. Runtime active
+  // state is also accepted while the phase is in progress. `isCompleted` is
+  // deliberately not a configuration signal because cycle progress updates
+  // mark earlier phases complete and must not enable an unused phase later.
+  return Boolean(
+    calibration.startDate ||
+    calibration.endDate ||
+    calibration.isActive ||
+    cycle.currentPhase === 'calibration'
+  );
+}
+
 function getNextAction(status, { calibrationRequired = false } = {}) {
   const actions = {
     self_assessment_pending: { actor: 'employee', label: 'Complete self-assessment' },
@@ -67,5 +84,6 @@ module.exports = {
   getWorkflowStage,
   getStatusAfterManagerReview,
   getStatusAfterDiscussion,
+  isCalibrationRequired,
   getNextAction
 };
