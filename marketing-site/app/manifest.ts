@@ -1,22 +1,27 @@
 import type { MetadataRoute } from 'next'
-import { siteConfig } from './site-config'
+import { headers } from 'next/headers'
+import { getSiteConfig } from './site-config'
 
-export default function manifest(): MetadataRoute.Manifest {
+export default async function manifest(): Promise<MetadataRoute.Manifest> {
+  const requestHeaders = await headers()
+  const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host') ?? ''
+  const config = getSiteConfig(host.toLowerCase())
+
   return {
-    name: siteConfig.name,
-    short_name: siteConfig.shortName,
-    description: siteConfig.description,
+    name: config.name,
+    short_name: config.shortName,
+    description: config.description,
     start_url: '/',
     display: 'standalone',
-    background_color: '#f7f7fb',
-    theme_color: '#0b2f29',
+    background_color: config.name === 'Akwa Ibom State' ? '#f0fdf4' : '#efede7',
+    theme_color: config.name === 'Akwa Ibom State' ? '#14532d' : '#111014',
     lang: 'en',
     categories: ['business', 'productivity', 'technology'],
     icons: [
       {
-        src: '/favicon.ico',
-        sizes: '48x48',
-        type: 'image/x-icon',
+        src: config.name === 'Akwa Ibom State' ? '/logoakwa.png' : '/favicon.svg',
+        sizes: 'any',
+        type: config.name === 'Akwa Ibom State' ? 'image/png' : 'image/svg+xml',
       },
     ],
   }

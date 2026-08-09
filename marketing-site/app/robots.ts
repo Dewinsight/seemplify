@@ -1,7 +1,12 @@
 import type { MetadataRoute } from 'next'
-import { siteConfig } from './site-config'
+import { headers } from 'next/headers'
+import { getSiteConfig } from './site-config'
 
-export default function robots(): MetadataRoute.Robots {
+export default async function robots(): Promise<MetadataRoute.Robots> {
+  const requestHeaders = await headers()
+  const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host') ?? ''
+  const config = getSiteConfig(host.toLowerCase())
+
   return {
     rules: [
       {
@@ -10,7 +15,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/api/'],
       },
     ],
-    sitemap: `${siteConfig.url}/sitemap.xml`,
-    host: siteConfig.url,
+    sitemap: `${config.url}/sitemap.xml`,
+    host: config.url,
   }
 }

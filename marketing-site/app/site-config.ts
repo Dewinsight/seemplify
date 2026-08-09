@@ -6,7 +6,7 @@ export const siteConfig = {
   title: 'AI Software for Nigeria, Ghana, Kenya & South Africa | Seemplify',
   description:
     'Seemplify is AI software for Nigeria, Ghana, Kenya, South Africa, and English-speaking African teams. Unify recruiting, onboarding, leave, performance, time, and payroll workflows in one platform.',
-  ogImage: '/hero-banner-beautiful.png',
+  ogImage: '/opengraph-image',
   contactEmail: 'michael.egbo@aiinnigeria.com',
   keywords: [
     'AI software Africa',
@@ -39,7 +39,7 @@ export const akwaIbomConfig = {
   appUrl: 'https://ibom.aiinnigeria.com',
   title: 'Akwa Ibom State — Human Resource Management Portal',
   description: 'Official Akwa Ibom State government Human Resource Management Portal. Fair, transparent public-sector hiring.',
-  ogImage: '/logoakwa.png',
+  ogImage: '/opengraph-image',
   contactEmail: 'recruitment@akwaibomstate.gov.ng',
   keywords: ['Akwa Ibom', 'Human Resource Management', 'Recruitment', 'State Government', 'Nigeria'],
 } as const

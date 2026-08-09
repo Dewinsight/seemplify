@@ -1,9 +1,13 @@
 import type { Metadata } from 'next'
+import { ArrowRight, MapPin } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import JsonLd from '@/components/JsonLd'
+import MarketingPageShell from '@/components/MarketingPageShell'
+import { BookDemoButton } from '@/components/BookDemoModal'
 import { primaryMarketMap, primaryMarkets } from '@/app/seo-markets'
 import { absoluteUrl, siteConfig } from '@/app/site-config'
+import '../../market-pages.css'
 
 type MarketPageProps = {
   params: Promise<{
@@ -133,107 +137,153 @@ export default async function MarketPage({ params }: MarketPageProps) {
   const relatedMarkets = primaryMarkets.filter((entry) => entry.slug !== page.slug)
 
   return (
-    <main className="min-h-screen bg-[#f7f7fb] px-6 py-24 text-zinc-900 dark:bg-[#020205] dark:text-white">
+    <MarketingPageShell>
       <JsonLd data={structuredData} />
 
-      <div className="mx-auto max-w-6xl">
-        <div className="max-w-4xl">
-          <Link href="/africa" className="text-sm text-emerald-700 dark:text-emerald-300">
-            Back to Africa SEO hub
-          </Link>
-          <p className="mt-8 text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">
-            {page.country}
-          </p>
-          <h1 className="mt-4 font-display text-5xl tracking-tight md:text-6xl">{page.headline}</h1>
-          <p className="mt-6 max-w-3xl text-lg text-zinc-700 dark:text-white/75">{page.intro}</p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            {page.cities.map((city) => (
-              <span
-                key={city}
-                className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm dark:border-white/10 dark:bg-white/[0.04]"
-              >
-                {city}
-              </span>
+      <section className="marketing-page-hero market-page-hero market-page-hero--country">
+        <div className="marketing-container">
+          <nav className="market-breadcrumb" aria-label="Breadcrumb">
+            <ol>
+              <li><Link href="/">Home</Link></li>
+              <li><Link href="/africa">Africa</Link></li>
+              <li aria-current="page">{page.country}</li>
+            </ol>
+          </nav>
+
+          <div className="market-page-hero__grid">
+            <div className="marketing-page-hero__inner market-page-hero__copy">
+              <p className="marketing-eyebrow">{page.country}</p>
+              <h1>{page.headline}</h1>
+              <p className="marketing-page-hero__description">{page.intro}</p>
+              <div className="market-page-actions">
+                <Link href="/#modules" className="marketing-button marketing-button--secondary">
+                  Explore the product
+                </Link>
+                <BookDemoButton
+                  className="marketing-button marketing-button--primary"
+                  trackingLabel={`${page.slug}-hero-book-demo`}
+                >
+                  Book a walkthrough
+                </BookDemoButton>
+              </div>
+            </div>
+
+            <aside className="market-country-brief" aria-label={`${page.country} market summary`}>
+              <p className="market-panel-eyebrow">Operating context</p>
+              <div className="market-country-brief__section">
+                <span><MapPin aria-hidden="true" /> Key locations</span>
+                <ul>{page.cities.map((city) => <li key={city}>{city}</li>)}</ul>
+              </div>
+              <div className="market-country-brief__section">
+                <span>Best-fit sectors</span>
+                <ul>{page.industries.map((industry) => <li key={industry}>{industry}</li>)}</ul>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section className="marketing-page-section market-fit" aria-labelledby="market-fit-title">
+        <div className="marketing-container market-fit__grid">
+          <div className="market-fit__main">
+            <p className="marketing-eyebrow">Why Teams Choose Seemplify</p>
+            <h2 id="market-fit-title">How Seemplify supports growing teams in {page.country}.</h2>
+            <p className="market-fit__description">{page.description}</p>
+            <ol className="market-highlight-list">
+              {page.highlights.map((highlight, index) => (
+                <li key={highlight}>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <p>{highlight}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          <aside className="market-industries" aria-labelledby="market-industries-title">
+            <p className="market-panel-eyebrow">Best Fit Teams</p>
+            <h2 id="market-industries-title">
+              Common sectors searching for modern AI software in {page.country}.
+            </h2>
+            <ul>
+              {page.industries.map((industry, index) => (
+                <li key={industry}>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  {industry}
+                </li>
+              ))}
+            </ul>
+          </aside>
+        </div>
+      </section>
+
+      <section className="marketing-page-section market-faq" aria-labelledby="market-faq-title">
+        <div className="marketing-container market-faq__grid">
+          <div className="market-faq__heading">
+            <p className="marketing-eyebrow">FAQ</p>
+            <h2 id="market-faq-title">Questions from teams in {page.country}.</h2>
+            <p>Practical answers on how the platform fits local and distributed operations.</p>
+          </div>
+          <div className="market-faq__list">
+            {page.faqs.map((faq, index) => (
+              <details key={faq.question} className="market-faq-item" open={index === 0}>
+                <summary>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  {faq.question}
+                </summary>
+                <p>{faq.answer}</p>
+              </details>
             ))}
           </div>
         </div>
+      </section>
 
-        <section className="mt-16 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-3xl border border-black/10 bg-white p-10 dark:border-white/10 dark:bg-white/[0.04]">
-            <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">
-              Why Teams Choose Seemplify
-            </p>
-            <h2 className="mt-4 font-display text-4xl">
-              How Seemplify supports growing teams in {page.country}.
-            </h2>
-            <p className="mt-4 text-zinc-700 dark:text-white/75">{page.description}</p>
-            <div className="mt-8 grid gap-4">
-              {page.highlights.map((highlight) => (
-                <div
-                  key={highlight}
-                  className="rounded-2xl border border-black/10 bg-zinc-50 p-5 text-sm dark:border-white/10 dark:bg-white/[0.04]"
-                >
-                  {highlight}
-                </div>
-              ))}
+      <section className="marketing-page-section market-related" aria-labelledby="related-markets-title">
+        <div className="marketing-container">
+          <div className="market-section-heading">
+            <div>
+              <p className="marketing-eyebrow">Explore More Markets</p>
+              <h2 id="related-markets-title">Keep the same operating model as your footprint grows.</h2>
             </div>
+            <Link href="/africa" className="marketing-inline-link">View Africa overview</Link>
           </div>
-
-          <div className="rounded-3xl border border-black/10 bg-[#0b2f29] p-10 text-white dark:border-white/10">
-            <p className="text-xs uppercase tracking-[0.35em] text-white/60">Best Fit Teams</p>
-            <h2 className="mt-4 font-display text-4xl">
-              Common sectors searching for modern AI software in {page.country}.
-            </h2>
-            <div className="mt-8 grid gap-3">
-              {page.industries.map((industry) => (
-                <div
-                  key={industry}
-                  className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white/80"
-                >
-                  {industry}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-20">
-          <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">
-            FAQ
-          </p>
-          <div className="mt-6 grid gap-4">
-            {page.faqs.map((faq) => (
-              <article
-                key={faq.question}
-                className="rounded-3xl border border-black/10 bg-white p-8 dark:border-white/10 dark:bg-white/[0.04]"
-              >
-                <h2 className="font-display text-2xl">{faq.question}</h2>
-                <p className="mt-3 text-zinc-700 dark:text-white/75">{faq.answer}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-20 rounded-3xl border border-black/10 bg-white p-10 dark:border-white/10 dark:bg-white/[0.04]">
-          <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">
-            Explore More Markets
-          </p>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            {relatedMarkets.map((marketEntry) => (
+          <div className="market-related__grid">
+            {relatedMarkets.map((marketEntry, index) => (
               <Link
                 key={marketEntry.slug}
                 href={`/africa/${marketEntry.slug}`}
-                className="rounded-2xl border border-black/10 bg-zinc-50 p-6 transition hover:-translate-y-1 hover:border-emerald-500/40 dark:border-white/10 dark:bg-white/[0.04]"
+                className="market-related-card"
               >
-                <h2 className="font-display text-2xl">{marketEntry.country}</h2>
-                <p className="mt-3 text-sm text-zinc-700 dark:text-white/70">
-                  {marketEntry.description}
-                </p>
+                <span className="market-related-card__index">{String(index + 1).padStart(2, '0')}</span>
+                <h3>{marketEntry.country}</h3>
+                <p>{marketEntry.description}</p>
+                <span className="market-related-card__action">
+                  View market <ArrowRight aria-hidden="true" />
+                </span>
               </Link>
             ))}
           </div>
-        </section>
-      </div>
-    </main>
+        </div>
+      </section>
+
+      <section className="market-page-cta" aria-labelledby="market-page-cta-title">
+        <div className="marketing-container market-page-cta__inner">
+          <div>
+            <p className="marketing-eyebrow">Build for {page.country}</p>
+            <h2 id="market-page-cta-title">Give your team one clear place to run the work.</h2>
+          </div>
+          <div className="market-page-actions">
+            <Link href="/#platform" className="marketing-button marketing-button--secondary">
+              See the platform
+            </Link>
+            <BookDemoButton
+              className="marketing-button marketing-button--primary"
+              trackingLabel={`${page.slug}-footer-book-demo`}
+            >
+              Talk to Seemplify
+            </BookDemoButton>
+          </div>
+        </div>
+      </section>
+    </MarketingPageShell>
   )
 }

@@ -1,12 +1,16 @@
 import type { Metadata } from 'next'
+import { ArrowRight, MapPin } from 'lucide-react'
 import Link from 'next/link'
 import JsonLd from '@/components/JsonLd'
+import MarketingPageShell from '@/components/MarketingPageShell'
+import { BookDemoButton } from '@/components/BookDemoModal'
 import {
   africaFaqs,
   broaderEnglishSpeakingAfricanCountries,
   primaryMarkets,
 } from '../seo-markets'
 import { absoluteUrl, siteConfig } from '../site-config'
+import '../market-pages.css'
 
 export const metadata: Metadata = {
   title: 'AI Software for Africa',
@@ -73,101 +77,177 @@ const africaStructuredData = {
   ],
 }
 
+const teamPriorities = [
+  'Faster hiring coordination',
+  'Cleaner employee records',
+  'Consistent onboarding journeys',
+  'Reliable leave and approval workflows',
+  'Performance management at scale',
+  'Multi-country operational visibility',
+]
+
 export default function AfricaPage() {
   return (
-    <main className="min-h-screen bg-[#f7f7fb] px-6 py-24 text-zinc-900 dark:bg-[#020205] dark:text-white">
+    <MarketingPageShell>
       <JsonLd data={africaStructuredData} />
 
-      <div className="mx-auto max-w-6xl">
-        <div className="max-w-4xl">
-          <p className="text-xs uppercase tracking-[0.35em] text-emerald-700 dark:text-emerald-300">
-            Africa Coverage
-          </p>
-          <h1 className="mt-4 font-display text-5xl tracking-tight md:text-6xl">
-            AI software for Nigeria, Ghana, Kenya, South Africa, and English-speaking Africa.
-          </h1>
-          <p className="mt-6 max-w-3xl text-lg text-zinc-700 dark:text-white/75">
-            Explore how Seemplify supports teams across key African growth markets. Use the
-            country pages below to see the product in the context of your operating footprint.
-          </p>
+      <section className="marketing-page-hero market-page-hero">
+        <div className="marketing-container">
+          <nav className="market-breadcrumb" aria-label="Breadcrumb">
+            <ol>
+              <li><Link href="/">Home</Link></li>
+              <li aria-current="page">Africa</li>
+            </ol>
+          </nav>
+
+          <div className="market-page-hero__grid">
+            <div className="marketing-page-hero__inner market-page-hero__copy">
+              <p className="marketing-eyebrow">Africa Coverage</p>
+              <h1>AI software for Nigeria, Ghana, Kenya, South Africa, and English-speaking Africa.</h1>
+              <p className="marketing-page-hero__description">
+                Explore how Seemplify supports teams across key African growth markets. Use the
+                country pages below to see the product in the context of your operating footprint.
+              </p>
+              <div className="market-page-actions">
+                <Link href="/#modules" className="marketing-button marketing-button--secondary">
+                  Explore the product
+                </Link>
+                <BookDemoButton
+                  className="marketing-button marketing-button--primary"
+                  trackingLabel="africa-hero-book-demo"
+                >
+                  Book a walkthrough
+                </BookDemoButton>
+              </div>
+            </div>
+
+            <aside className="market-coverage-brief" aria-label="Africa coverage at a glance">
+              <p className="market-panel-eyebrow">Coverage at a glance</p>
+              <dl className="market-coverage-brief__facts">
+                <div>
+                  <dt>Priority markets</dt>
+                  <dd>{primaryMarkets.length}</dd>
+                </div>
+                <div>
+                  <dt>Regional coverage</dt>
+                  <dd>{broaderEnglishSpeakingAfricanCountries.length} countries</dd>
+                </div>
+                <div>
+                  <dt>Operating model</dt>
+                  <dd>One shared system</dd>
+                </div>
+              </dl>
+            </aside>
+          </div>
         </div>
+      </section>
 
-        <section className="mt-16 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-          {primaryMarkets.map((market) => (
-            <Link
-              key={market.slug}
-              href={`/africa/${market.slug}`}
-              className="rounded-3xl border border-black/10 bg-white p-8 shadow-sm transition hover:-translate-y-1 hover:border-emerald-500/40 dark:border-white/10 dark:bg-white/[0.04]"
-            >
-              <p className="text-xs uppercase tracking-[0.3em] text-zinc-500 dark:text-white/50">
-                {market.country}
-              </p>
-              <h2 className="mt-4 font-display text-3xl">{market.headline}</h2>
-              <p className="mt-4 text-sm text-zinc-600 dark:text-white/70">{market.description}</p>
-              <p className="mt-6 text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                Explore market page
-              </p>
-            </Link>
-          ))}
-        </section>
+      <section className="marketing-page-section market-directory" aria-labelledby="market-directory-title">
+        <div className="marketing-container">
+          <div className="market-section-heading">
+            <div>
+              <p className="marketing-eyebrow">Market directory</p>
+              <h2 id="market-directory-title">Start with the market closest to your team.</h2>
+              <p>Each page puts the same Seemplify platform in the context of local operating teams.</p>
+            </div>
+            <p className="market-section-heading__count">{primaryMarkets.length} focused markets</p>
+          </div>
 
-        <section className="mt-20 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-3xl border border-black/10 bg-white p-10 dark:border-white/10 dark:bg-white/[0.04]">
-            <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">
-              Broader Coverage
-            </p>
-            <h2 className="mt-4 font-display text-4xl">
-              Built for English-speaking African teams beyond the major hubs.
-            </h2>
-            <p className="mt-4 text-zinc-700 dark:text-white/75">
+          <ol className="market-directory__list">
+            {primaryMarkets.map((market, index) => (
+              <li key={market.slug}>
+                <Link href={`/africa/${market.slug}`} className="market-directory-card">
+                  <span className="market-directory-card__index" aria-hidden="true">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <div className="market-directory-card__body">
+                    <p className="market-directory-card__country">{market.country}</p>
+                    <h3>{market.headline}</h3>
+                    <p>{market.description}</p>
+                  </div>
+                  <div className="market-directory-card__coverage">
+                    <span><MapPin aria-hidden="true" /> Key locations</span>
+                    <strong>{market.cities.join(' · ')}</strong>
+                  </div>
+                  <span className="market-directory-card__action">
+                    View market <ArrowRight aria-hidden="true" />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className="marketing-page-section market-operating-model" aria-labelledby="regional-coverage-title">
+        <div className="marketing-container market-operating-model__grid">
+          <div className="market-regional-coverage">
+            <p className="marketing-eyebrow">Broader Coverage</p>
+            <h2 id="regional-coverage-title">Built for English-speaking African teams beyond the major hubs.</h2>
+            <p>
               Seemplify is designed for regional teams that need consistent recruiting, onboarding,
               employee operations, leave, and performance workflows across multiple countries.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              {broaderEnglishSpeakingAfricanCountries.map((country) => (
-                <span
-                  key={country}
-                  className="rounded-full border border-black/10 bg-zinc-50 px-4 py-2 text-sm dark:border-white/10 dark:bg-white/[0.04]"
-                >
+            <ul className="market-country-index" aria-label="Countries in Seemplify's broader Africa coverage">
+              {broaderEnglishSpeakingAfricanCountries.map((country, index) => (
+                <li key={country}>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
                   {country}
-                </span>
+                </li>
               ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-black/10 bg-[#0b2f29] p-10 text-white dark:border-white/10">
-            <p className="text-xs uppercase tracking-[0.35em] text-white/60">What Teams Need</p>
-            <h2 className="mt-4 font-display text-4xl">
-              Core priorities for growing teams across Africa.
-            </h2>
-            <ul className="mt-6 grid gap-4 text-sm text-white/75">
-              <li>Faster hiring coordination</li>
-              <li>Cleaner employee records</li>
-              <li>Consistent onboarding journeys</li>
-              <li>Reliable leave and approval workflows</li>
-              <li>Performance management at scale</li>
-              <li>Multi-country operational visibility</li>
             </ul>
           </div>
-        </section>
 
-        <section className="mt-20">
-          <p className="text-xs uppercase tracking-[0.35em] text-zinc-600 dark:text-white/60">
-            FAQ
-          </p>
-          <div className="mt-6 grid gap-4">
-            {africaFaqs.map((faq) => (
-              <article
-                key={faq.question}
-                className="rounded-3xl border border-black/10 bg-white p-8 dark:border-white/10 dark:bg-white/[0.04]"
-              >
-                <h2 className="font-display text-2xl">{faq.question}</h2>
-                <p className="mt-3 text-zinc-700 dark:text-white/75">{faq.answer}</p>
-              </article>
+          <aside className="market-priorities" aria-labelledby="market-priorities-title">
+            <p className="market-panel-eyebrow">What Teams Need</p>
+            <h2 id="market-priorities-title">Core priorities for growing teams across Africa.</h2>
+            <ul>
+              {teamPriorities.map((priority) => <li key={priority}>{priority}</li>)}
+            </ul>
+          </aside>
+        </div>
+      </section>
+
+      <section className="marketing-page-section market-faq" aria-labelledby="africa-faq-title">
+        <div className="marketing-container market-faq__grid">
+          <div className="market-faq__heading">
+            <p className="marketing-eyebrow">FAQ</p>
+            <h2 id="africa-faq-title">What regional teams usually ask first.</h2>
+            <p>Clear answers on coverage, operating models, and where Seemplify fits.</p>
+          </div>
+          <div className="market-faq__list">
+            {africaFaqs.map((faq, index) => (
+              <details key={faq.question} className="market-faq-item" open={index === 0}>
+                <summary>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  {faq.question}
+                </summary>
+                <p>{faq.answer}</p>
+              </details>
             ))}
           </div>
-        </section>
-      </div>
-    </main>
+        </div>
+      </section>
+
+      <section className="market-page-cta" aria-labelledby="africa-cta-title">
+        <div className="marketing-container market-page-cta__inner">
+          <div>
+            <p className="marketing-eyebrow">Your operating footprint</p>
+            <h2 id="africa-cta-title">Bring every team into one clear operating system.</h2>
+          </div>
+          <div className="market-page-actions">
+            <Link href="/#platform" className="marketing-button marketing-button--secondary">
+              See the platform
+            </Link>
+            <BookDemoButton
+              className="marketing-button marketing-button--primary"
+              trackingLabel="africa-footer-book-demo"
+            >
+              Talk to Seemplify
+            </BookDemoButton>
+          </div>
+        </div>
+      </section>
+    </MarketingPageShell>
   )
 }

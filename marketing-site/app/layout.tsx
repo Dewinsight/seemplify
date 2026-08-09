@@ -1,11 +1,10 @@
 import type { Metadata, Viewport } from 'next'
 import { headers } from 'next/headers'
-import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
 import { akwaIbomConfig, getSiteConfig } from './site-config'
 
-const inter = Inter({ subsets: ['latin'] })
+const themeInitScript = `(function(){try{var valid=function(value){return value==='light'||value==='dark'||value==='system'};var cookie=function(name){var prefix=name+'=',parts=document.cookie.split(';');for(var i=0;i<parts.length;i++){var item=parts[i].trim();if(item.indexOf(prefix)===0)return decodeURIComponent(item.slice(prefix.length))}return null};var preference=cookie('seemplify_theme');if(!valid(preference)){try{preference=localStorage.getItem('seemplify-theme')}catch(_){}}if(!valid(preference))preference='system';var resolved=preference==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):preference;document.documentElement.classList.add(resolved);document.documentElement.setAttribute('data-theme',resolved);document.documentElement.style.colorScheme=resolved}catch(_){document.documentElement.setAttribute('data-theme','light')}})();`
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
@@ -74,9 +73,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     manifest: '/manifest.webmanifest',
     icons: {
-      icon: '/favicon.ico',
-      shortcut: '/favicon.ico',
-      apple: '/favicon.ico',
+      icon: config === akwaIbomConfig ? '/logoakwa.png' : '/favicon.svg',
+      shortcut: config === akwaIbomConfig ? '/logoakwa.png' : '/favicon.svg',
+      apple: config === akwaIbomConfig ? '/logoakwa.png' : '/favicon.svg',
     },
   }
 }
@@ -84,8 +83,11 @@ export async function generateMetadata(): Promise<Metadata> {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  colorScheme: 'light',
-  themeColor: '#f7f7fb',
+  colorScheme: 'light dark',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#efede7' },
+    { media: '(prefers-color-scheme: dark)', color: '#111014' },
+  ],
 }
 
 export default function RootLayout({
@@ -94,8 +96,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="scroll-smooth">
-      <body className={`${inter.className} antialiased`}>
+    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
+      <body>
         <Providers>{children}</Providers>
       </body>
     </html>

@@ -1,152 +1,176 @@
 import type { Metadata } from 'next'
-import React from 'react';
-import { Shield, Lock, Eye, FileText, Mail, Server } from 'lucide-react';
-import Link from 'next/link';
+import Link from 'next/link'
+import MarketingPageShell from '@/components/MarketingPageShell'
+import '../legal-pages.css'
 
 export const metadata: Metadata = {
-    title: 'Privacy Policy',
+  title: 'Privacy Policy',
+  description: 'Read the Seemplify privacy policy.',
+  alternates: {
+    canonical: '/privacy-policy',
+    languages: {
+      en: '/privacy-policy',
+    },
+  },
+  openGraph: {
+    title: 'Privacy Policy | Seemplify',
     description: 'Read the Seemplify privacy policy.',
-    alternates: {
-        canonical: '/privacy-policy',
-        languages: {
-            en: '/privacy-policy',
-        },
-    },
-    openGraph: {
-        title: 'Privacy Policy | Seemplify',
-        description: 'Read the Seemplify privacy policy.',
-        url: '/privacy-policy',
-    },
+    url: '/privacy-policy',
+  },
 }
 
+const sections = [
+  {
+    id: 'introduction',
+    title: 'Introduction',
+    content: (
+      <p>
+        Welcome to Seemplify (&quot;we,&quot; &quot;our,&quot; or &quot;us&quot;). We are committed to protecting your personal information and your right to privacy.
+        When you use our platform and related services, you trust us with your personal data. We take that trust seriously.
+        This privacy policy seeks to explain to you in the clearest way possible what information we collect, how we use it,
+        and what rights you have in relation to it.
+      </p>
+    ),
+  },
+  {
+    id: 'information-we-collect',
+    title: 'Information We Collect',
+    content: (
+      <>
+        <p>
+          We collect personal information that you voluntarily provide to us when you register on the Services,
+          express an interest in obtaining information about us or our products and Services, when you participate in activities
+          on the Services, or otherwise when you contact us.
+        </p>
+        <ul>
+          <li><strong>Personal Identity Information:</strong> Name, contact details, job title, and company information.</li>
+          <li><strong>Employment Data:</strong> Information related to your employment, performance reviews, and organizational role if applicable.</li>
+          <li><strong>Demo Request Information:</strong> The name, work email, company, role, and message you choose to submit when requesting a walkthrough.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    id: 'optional-analytics',
+    title: 'Optional Analytics Data',
+    content: (
+      <>
+        <p>
+          Marketing analytics are off until you choose to accept them. If you accept, we create random visitor and session identifiers
+          and collect the page URL and path you visit, the referring page, the first landing page, campaign parameters such as UTM source,
+          medium, campaign, term, and content, and the label of a marketing call-to-action you select.
+        </p>
+        <p>
+          We use this information to understand how people find and use the marketing site, which product information is useful,
+          and whether a visit leads to a demo request. The information is sent to Seemplify service infrastructure used for marketing measurement.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'storage-and-choices',
+    title: 'Storage and Your Choices',
+    content: (
+      <>
+        <p>
+          If you accept optional analytics, local storage keeps the visitor identifier and campaign, landing-page, and referrer information.
+          Session storage keeps the most recent session activity time. A new session identifier is created after 30 minutes of inactivity.
+          We also save your analytics choice so the site can continue to respect it.
+        </p>
+        <p>
+          If you decline, the marketing site does not create analytics identifiers, persist attribution information, or send page-view and
+          call-to-action analytics. Declining does not affect navigation, sign-in, or the demo request form. You can review or change your choice
+          at any time through <strong>Privacy choices</strong> in the site footer. Turning analytics off clears the attribution information stored by this site.
+        </p>
+        <p>
+          The site may still use functional storage for choices such as theme and market context. These settings support the experience you request
+          and are separate from optional marketing analytics.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'how-we-use-your-information',
+    title: 'How We Use Your Information',
+    content: (
+      <p>
+        We use personal information collected via our Services for a variety of business purposes described below.
+        We process your personal information for these purposes in reliance on our legitimate business interests,
+        in order to enter into or perform a contract with you, with your consent, and/or for compliance with our legal obligations.
+        We use the information to manage user accounts, send administrative information to you, and protect our Services.
+      </p>
+    ),
+  },
+  {
+    id: 'data-security',
+    title: 'Data Security',
+    content: (
+      <p>
+        We have implemented appropriate technical and organizational security measures designed to protect the security of any
+        personal information we process. However, despite our safeguards and efforts to secure your information, no electronic
+        transmission over the Internet or information storage technology can be guaranteed to be 100% secure, so we cannot promise
+        or guarantee that hackers, cybercriminals, or other unauthorized third parties will not be able to defeat our security
+        and improperly collect, access, steal, or modify your information.
+      </p>
+    ),
+  },
+  {
+    id: 'contact-us',
+    title: 'Contact Us',
+    content: (
+      <p>
+        If you have questions or comments about this policy, you may email us at{' '}
+        <a href="mailto:privacy@seemplify.com">privacy@seemplify.com</a>.
+      </p>
+    ),
+  },
+]
+
 export default function PrivacyPolicy() {
-    const lastUpdated = "January 6, 2026";
-
-    const sections = [
-        {
-            title: "Introduction",
-            icon: <FileText className="w-5 h-5 text-blue-500" />,
-            content: (
-                <p>
-                    Welcome to Seemplify ("we," "our," or "us"). We are committed to protecting your personal information and your right to privacy.
-                    When you use our platform and related services, you trust us with your personal data. We take that trust seriously.
-                    This privacy policy seeks to explain to you in the clearest way possible what information we collect, how we use it,
-                    and what rights you have in relation to it.
-                </p>
-            )
-        },
-        {
-            title: "Information We Collect",
-            icon: <Eye className="w-5 h-5 text-emerald-500" />,
-            content: (
-                <div className="space-y-4">
-                    <p>We collect personal information that you voluntarily provide to us when you register on the Services,
-                        express an interest in obtaining information about us or our products and Services, when you participate in activities
-                        on the Services, or otherwise when you contact us.</p>
-                    <ul className="list-disc pl-5 space-y-2 text-zinc-600 dark:text-zinc-300">
-                        <li><strong>Personal Identity Information:</strong> Name, contact details, job title, and company information.</li>
-                        <li><strong>Employment Data:</strong> Information related to your employment, performance reviews, and organizational role if applicable.</li>
-                        <li><strong>Credentials:</strong> Passwords, password hints, and similar security information used for authentication.</li>
-                    </ul>
-                </div>
-            )
-        },
-        {
-            title: "How We Use Your Information",
-            icon: <Server className="w-5 h-5 text-purple-500" />,
-            content: (
-                <p>
-                    We use personal information collected via our Services for a variety of business purposes described below.
-                    We process your personal information for these purposes in reliance on our legitimate business interests,
-                    in order to enter into or perform a contract with you, with your consent, and/or for compliance with our legal obligations.
-                    We use the information to manage user accounts, send administrative information to you, and protect our Services.
-                </p>
-            )
-        },
-        {
-            title: "Data Security",
-            icon: <Lock className="w-5 h-5 text-orange-500" />,
-            content: (
-                <p>
-                    We have implemented appropriate technical and organizational security measures designed to protect the security of any
-                    personal information we process. However, despite our safeguards and efforts to secure your information, no electronic
-                    transmission over the Internet or information storage technology can be guaranteed to be 100% secure, so we cannot promise
-                    or guarantee that hackers, cybercriminals, or other unauthorized third parties will not be able to defeat our security
-                    and improperly collect, access, steal, or modify your information.
-                </p>
-            )
-        },
-        {
-            title: "Contact Us",
-            icon: <Mail className="w-5 h-5 text-rose-500" />,
-            content: (
-                <p>
-                    If you have questions or comments about this policy, you may email us at <a href="mailto:privacy@seemplify.com" className="text-blue-600 hover:underline">privacy@seemplify.com</a> or by post to our corporate headquarters.
-                </p>
-            )
-        }
-    ];
-
-    return (
-        <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 py-16 sm:py-24">
-            {/* Background decoration */}
-            <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-                <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-float"></div>
-                <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }}></div>
-            </div>
-
-            <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-
-                {/* Header */}
-                <div className="text-center mb-16">
-                    <div className="inline-flex items-center justify-center p-3 mb-6 bg-white dark:bg-zinc-900 rounded-2xl shadow-lg shadow-zinc-200/50 dark:shadow-zinc-900/50 ring-1 ring-zinc-200 dark:ring-zinc-800">
-                        <Shield className="w-8 h-8 text-blue-600" />
-                    </div>
-                    <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4 bg-clip-text text-transparent bg-gradient-to-r from-zinc-900 to-zinc-600 dark:from-white dark:to-zinc-400">
-                        Privacy Policy
-                    </h1>
-                    <p className="text-lg text-zinc-600 dark:text-zinc-400">
-                        Last updated: {lastUpdated}
-                    </p>
-                </div>
-
-                {/* Content Card */}
-                <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-3xl shadow-xl ring-1 ring-zinc-200 dark:ring-zinc-800 p-8 sm:p-12 mb-12">
-                    <div className="prose prose-zinc dark:prose-invert max-w-none">
-
-                        {sections.map((section, index) => (
-                            <div key={index} className="mb-10 last:mb-0">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-                                        {section.icon}
-                                    </div>
-                                    <h2 className="text-2xl font-semibold m-0">{section.title}</h2>
-                                </div>
-                                <div className="text-zinc-600 dark:text-zinc-300 leading-relaxed pl-0 sm:pl-[3.25rem]">
-                                    {section.content}
-                                </div>
-                                {index !== sections.length - 1 && (
-                                    <div className="h-px bg-zinc-100 dark:bg-zinc-800 my-8 ml-0 sm:ml-[3.25rem]" />
-                                )}
-                            </div>
-                        ))}
-
-                    </div>
-                </div>
-
-                {/* Footer */}
-                <div className="text-center text-zinc-500 dark:text-zinc-500 text-sm">
-                    <p>
-                        &copy; {new Date().getFullYear()} Seemplify. All rights reserved.
-                    </p>
-                    <div className="mt-2">
-                        <Link href="/" className="hover:text-zinc-900 dark:hover:text-zinc-300 transition-colors">
-                            Back to Home
-                        </Link>
-                    </div>
-                </div>
-
-            </div>
+  return (
+    <MarketingPageShell>
+      <header className="legal-page__hero">
+        <div className="marketing-container legal-page__hero-inner">
+          <nav className="legal-page__breadcrumb" aria-label="Breadcrumb">
+            <Link href="/">Home</Link>
+            <span aria-hidden="true">/</span>
+            <span aria-current="page">Privacy</span>
+          </nav>
+          <h1 id="privacy-policy-title">Privacy Policy</h1>
+          <p className="legal-page__updated">
+            Last updated: <time dateTime="2026-08-09">August 9, 2026</time>
+          </p>
         </div>
-    );
+      </header>
+
+      <section className="legal-page__body" aria-labelledby="privacy-policy-title">
+        <div className="marketing-container legal-page__layout">
+          <nav className="legal-page__contents" aria-label="Privacy policy sections">
+            <p className="legal-page__contents-title">On this page</p>
+            <ol className="legal-page__contents-list">
+              {sections.map((section) => (
+                <li key={section.id}>
+                  <a href={`#${section.id}`}>{section.title}</a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+
+          <article className="legal-page__document">
+            {sections.map((section) => (
+              <section
+                key={section.id}
+                id={section.id}
+                className="legal-page__section"
+                aria-labelledby={`${section.id}-title`}
+              >
+                <h2 id={`${section.id}-title`}>{section.title}</h2>
+                <div className="legal-page__copy">{section.content}</div>
+              </section>
+            ))}
+          </article>
+        </div>
+      </section>
+    </MarketingPageShell>
+  )
 }

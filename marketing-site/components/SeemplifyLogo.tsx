@@ -1,7 +1,6 @@
 'use client'
 
 import Image from 'next/image'
-import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 
 interface SeemplifyLogoProps {
@@ -40,24 +39,21 @@ function LogoImage({
   }, [])
 
   return (
-    <motion.div
-      className={className}
+    <div
+      className={`${animated ? 'seemplify-logo--animated' : ''} ${className}`.trim()}
       style={{ width, height }}
-      initial={animated ? { opacity: 0, y: 4 } : false}
-      animate={animated ? { opacity: 1, y: 0 } : undefined}
-      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       role="img"
       aria-label={isAkwa ? "Akwa Ibom State" : "Seemplify"}
     >
       <Image
-        src={isAkwa ? "/logoakwa.png" : "/images/seemplifylogo.png"}
+        src={isAkwa ? "/logoakwa.png" : "/logo.svg"}
         alt={isAkwa ? "Akwa Ibom State" : "Seemplify"}
         width={1229}
         height={512}
         className="h-full w-full object-contain"
         priority={priority}
       />
-    </motion.div>
+    </div>
   )
 }
 
