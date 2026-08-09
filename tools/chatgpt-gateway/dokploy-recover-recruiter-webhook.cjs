@@ -19,10 +19,11 @@ async function main(source = process.env) {
 
   // Restore the receiver first. The operator master remains in Actions only;
   // Recruiter receives just its target-bound derivative.
+  const healthGatedDeployment = { waitForDeploymentImpl: async () => ({ status: 'health-gated' }) };
   await configureApplication(recruiterId, {
     IDP_WEBHOOK_SECRET: recruiterSecret,
     ENABLE_LLM_MATCHING: 'true'
-  }, ['IDP_WEBHOOK_SECRET_PREVIOUS']);
+  }, ['IDP_WEBHOOK_SECRET_PREVIOUS'], null, healthGatedDeployment);
   await waitForReadiness('Recruiter recovery health', () => (
     publicHealthProbe('https://api.seemplifyai.com/api/health')
   ));
@@ -31,7 +32,10 @@ async function main(source = process.env) {
   // other product receives or can use Recruiter's webhook credential.
   await configureApplication(identityProviderId, {
     IDP_WEBHOOK_SECRET_RECRUITER: recruiterSecret
-  });
+  }, [], null, healthGatedDeployment);
+  await waitForReadiness('Identity Provider recovery health', () => (
+    publicHealthProbe('https://auth.seemplifyai.com/health')
+  ));
 
   process.stdout.write('Recruiter and Identity Provider webhook trust recovered with a target-bound secret.\n');
 }
