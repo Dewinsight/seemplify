@@ -14,6 +14,7 @@ const {
   normalizeRuntimePolicy
 } = require('../config/aiRuntimeCatalog');
 const { AIRuntimeService } = require('../services/aiRuntime/aiRuntimeService');
+const codexAccountService = require('../services/aiRuntime/codexAccountService');
 
 test('the catalog exposes ChatGPT and the Control Center selected local runtime', () => {
   const settings = createDefaultRuntimeSettings();
@@ -33,6 +34,34 @@ test('the catalog exposes ChatGPT and the Control Center selected local runtime'
     assert.equal(route.model, CHATGPT_MODEL);
     assert.equal(route.codexModel, CHATGPT_DEFAULT_CODEX_MODEL);
     assert.equal(route.failoverPolicy, 'chatgpt_required');
+  }
+});
+
+test('the default ChatGPT subject adapter forwards the verified workspace context', async () => {
+  const originalResolve = codexAccountService.resolveRoutableSubject;
+  let captured;
+  codexAccountService.resolveRoutableSubject = async (actorId, options) => {
+    captured = { actorId, options };
+    return { subjectId: actorId, subjectKey: 'connected-subject', sourceApp: 'recruiter' };
+  };
+
+  try {
+    const service = new AIRuntimeService();
+    const route = await service.attachChatGptSubject(
+      { activity: 'job.description' },
+      { runtimeActorId: 'local-user', localOrganizationId: 'local-org' }
+    );
+    assert.deepEqual(captured, {
+      actorId: 'local-user',
+      options: {
+        consentApp: 'recruiter',
+        organizationId: 'local-org',
+        explainUnavailable: true
+      }
+    });
+    assert.equal(route.chatgptSubjectId, 'local-user');
+  } finally {
+    codexAccountService.resolveRoutableSubject = originalResolve;
   }
 });
 

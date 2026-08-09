@@ -192,7 +192,9 @@ class AIRuntimeService {
   } = {}) {
     this.fetch = fetchImpl;
     this.Settings = settingsModel;
-    this.resolveSubject = resolveSubject || ((actorId) => require('./codexAccountService').resolveRoutableSubject(actorId));
+    this.resolveSubject = resolveSubject || ((actorId, options) => (
+      require('./codexAccountService').resolveRoutableSubject(actorId, options)
+    ));
     this.resolveInterviewSubject = resolveInterviewSubject || ((sessionId) => (
       require('./interviewCodexAccountService').resolveRoutableSubject(sessionId)
     ));
