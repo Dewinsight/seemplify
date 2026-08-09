@@ -4,6 +4,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getCurrentWsBaseUrl } from '@/services/apiConfig';
 
+export const ASSISTANT_RESPONSE_TIMEOUT_MS = 120_000;
+
 // Get fallback WebSocket URL from JSON config
 const getFallbackWsUrl = async (): Promise<string> => {
   try {
@@ -370,6 +372,22 @@ const useWebSocket = (url?: string): WebSocketHookReturn => {
 
     return () => clearInterval(pingInterval);
   }, [isConnected, sendMessage]);
+
+  // A provider or downstream tool can remain connected while never producing a
+  // terminal event. Keep the socket alive, but never leave the recruiter locked
+  // in an indefinite "thinking" state.
+  useEffect(() => {
+    if (!isProcessing) return;
+
+    const timeout = setTimeout(() => {
+      setError(
+        'The assistant did not finish within two minutes. ChatGPT may be busy or out of usage credits. Check AI Account and try again.'
+      );
+      setIsProcessing(false);
+    }, ASSISTANT_RESPONSE_TIMEOUT_MS);
+
+    return () => clearTimeout(timeout);
+  }, [isProcessing]);
 
   return {
     isConnected,

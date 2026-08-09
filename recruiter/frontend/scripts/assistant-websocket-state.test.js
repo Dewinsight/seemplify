@@ -44,3 +44,11 @@ test('the assistant sends the selected workspace and clears processing on socket
   assert.match(page, /seemplify_active_organization_id/);
   assert.match(page, /settleAssistantWebSocketError\(previous, wsError\)/);
 });
+
+test('a live socket cannot leave the assistant in a permanent thinking state', () => {
+  const hook = fs.readFileSync(path.join(__dirname, '..', 'hooks', 'useWebSocket.ts'), 'utf8');
+  assert.match(hook, /ASSISTANT_RESPONSE_TIMEOUT_MS = 120_000/);
+  assert.match(hook, /if \(!isProcessing\) return/);
+  assert.match(hook, /did not finish within two minutes/);
+  assert.match(hook, /setIsProcessing\(false\)/);
+});

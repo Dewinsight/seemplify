@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recruiter AI production audit — 9 August 2026</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17212b;
+      --muted: #5f6b78;
+      --line: #d7dde3;
+      --paper: #f3f5f7;
+      --surface: #ffffff;
+      --nav: #101820;
+      --blue: #225fc7;
+      --blue-bg: #eaf1ff;
+      --green: #176b48;
+      --green-bg: #e8f5ee;
+      --amber: #8a570d;
+      --amber-bg: #fff3dc;
+      --red: #a63737;
+      --red-bg: #fbeaea;
+      --slate-bg: #edf1f4;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--blue); text-underline-offset: 3px; }
+    code { font: .92em/1.4 "SFMono-Regular", Consolas, monospace; }
+    img { display: block; width: 100%; height: auto; }
+
+    .layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: 100vh; }
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 28px 20px;
+      background: var(--nav);
+      color: #eef3f7;
+      border-right: 1px solid #0a1117;
+    }
+    .mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid #83909d;
+      font-weight: 800;
+      margin-bottom: 18px;
+    }
+    .rail h1 { margin: 0; font-size: 19px; line-height: 1.2; }
+    .rail .date { margin: 8px 0 24px; color: #a9b4bf; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    .rail nav { display: grid; gap: 2px; }
+    .rail nav a { color: #c8d1da; padding: 7px 8px; text-decoration: none; border-left: 2px solid transparent; font-size: 13px; }
+    .rail nav a:hover, .rail nav a:focus { color: #fff; background: #192630; border-left-color: #79a6ff; outline: none; }
+    .rail small { position: absolute; left: 20px; right: 20px; bottom: 24px; color: #94a1ad; border-top: 1px solid #31404c; padding-top: 14px; }
+
+    main { min-width: 0; }
+    header { padding: 44px clamp(24px, 5vw, 72px) 34px; background: var(--surface); border-bottom: 1px solid var(--line); }
+    .eyebrow { margin: 0 0 10px; color: var(--blue); font-weight: 750; font-size: 12px; text-transform: uppercase; letter-spacing: .11em; }
+    header h2 { margin: 0; max-width: 900px; font-size: clamp(30px, 4vw, 46px); line-height: 1.06; letter-spacing: -.035em; }
+    header p { max-width: 900px; color: var(--muted); font-size: 17px; margin: 17px 0 0; }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 22px; }
+
+    section { padding: 40px clamp(24px, 5vw, 72px); border-bottom: 1px solid var(--line); }
+    section:nth-of-type(even) { background: var(--surface); }
+    .section-head { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(320px, 1.25fr); gap: 30px; align-items: start; margin-bottom: 24px; }
+    .section-head h3 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+    .section-head p { margin: 0; color: var(--muted); }
+    h4 { margin: 0 0 6px; font-size: 16px; }
+    p { margin: 0 0 12px; }
+
+    .status { display: inline-flex; align-items: center; gap: 7px; padding: 4px 8px; border: 1px solid currentColor; font-size: 12px; font-weight: 750; white-space: nowrap; }
+    .status::before { content: ""; width: 7px; height: 7px; background: currentColor; }
+    .pass { color: var(--green); background: var(--green-bg); }
+    .partial, .blocked { color: var(--amber); background: var(--amber-bg); }
+    .fail { color: var(--red); background: var(--red-bg); }
+    .published { color: var(--blue); background: var(--blue-bg); }
+
+    .verdict { display: grid; grid-template-columns: 1.35fr .65fr; gap: 22px; }
+    .verdict-copy, .summary-box, .release-note, .method-card { background: var(--surface); border: 1px solid var(--line); padding: 22px; }
+    .verdict-copy { border-left: 4px solid var(--amber); }
+    .summary-box { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); padding: 0; }
+    .metric { background: var(--surface); padding: 18px; min-height: 100px; }
+    .metric strong { display: block; font-size: 28px; line-height: 1; margin-bottom: 8px; }
+    .metric span { color: var(--muted); font-size: 13px; }
+    .callout { margin-top: 14px; padding: 14px 16px; background: var(--blue-bg); border-left: 3px solid var(--blue); }
+    .callout strong { display: block; margin-bottom: 3px; }
+
+    .matrix { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); }
+    .matrix th, .matrix td { padding: 12px 13px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    .matrix th { background: #edf1f4; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+    .matrix td:nth-child(1) { width: 21%; font-weight: 700; }
+    .matrix td:nth-child(2) { width: 13%; }
+    .matrix tr:last-child td { border-bottom: 0; }
+
+    .evidence-lead { display: grid; grid-template-columns: 1.25fr .75fr; gap: 20px; margin-bottom: 20px; }
+    .evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    figure { margin: 0; background: var(--surface); border: 1px solid var(--line); }
+    figure img { aspect-ratio: 16 / 9; object-fit: contain; background: #e8ebee; border-bottom: 1px solid var(--line); }
+    figcaption { padding: 13px 15px 15px; color: var(--muted); font-size: 13px; }
+    figcaption strong { color: var(--ink); }
+    .evidence-note { background: var(--surface); border: 1px solid var(--line); padding: 20px; }
+    .evidence-note dl { display: grid; grid-template-columns: 120px 1fr; gap: 7px 12px; margin: 18px 0 0; }
+    .evidence-note dt { color: var(--muted); }
+    .evidence-note dd { margin: 0; font-weight: 650; }
+
+    .fix-list, .risk-list, .release-list { display: grid; gap: 10px; }
+    .item { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 18px; padding: 16px 0; border-top: 1px solid var(--line); }
+    .item:last-child { border-bottom: 1px solid var(--line); }
+    .item p { color: var(--muted); margin: 0; }
+    .tag { width: fit-content; height: fit-content; padding: 3px 7px; background: var(--slate-bg); border: 1px solid var(--line); color: #465463; font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .05em; }
+
+    .flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); background: var(--surface); }
+    .flow article { padding: 17px; border-right: 1px solid var(--line); }
+    .flow article:last-child { border-right: 0; }
+    .flow b { display: block; color: var(--blue); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 9px; }
+    .flow strong { display: block; margin-bottom: 7px; }
+    .flow span { display: block; color: var(--muted); font-size: 13px; }
+
+    .tests { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); background: var(--line); gap: 1px; }
+    .test { padding: 18px; background: var(--surface); }
+    .test strong { display: block; font-size: 24px; margin-bottom: 5px; }
+    .test span { color: var(--muted); font-size: 13px; }
+    .command-note { margin-top: 18px; padding: 15px; border: 1px solid var(--line); background: #111820; color: #dbe5ee; white-space: pre-wrap; overflow: auto; font: 12px/1.55 "SFMono-Regular", Consolas, monospace; }
+
+    .method-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .method-card p { color: var(--muted); }
+    footer { padding: 26px clamp(24px, 5vw, 72px); color: var(--muted); font-size: 12px; background: var(--surface); }
+
+    @media (max-width: 980px) {
+      .layout { display: block; }
+      .rail { position: static; height: auto; }
+      .rail nav { grid-template-columns: repeat(3, 1fr); }
+      .rail small { position: static; display: block; margin-top: 20px; }
+      .section-head, .verdict, .evidence-lead { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr 1fr; }
+      .flow article { border-bottom: 1px solid var(--line); }
+    }
+    @media (max-width: 680px) {
+      .evidence-grid, .tests, .method-grid, .summary-box { grid-template-columns: 1fr; }
+      .item { grid-template-columns: 1fr; gap: 8px; }
+      .matrix { display: block; overflow-x: auto; }
+      .flow { grid-template-columns: 1fr; }
+      .rail nav { grid-template-columns: 1fr 1fr; }
+    }
+    @media print {
+      .layout { display: block; }
+      .rail { display: none; }
+      section, figure, .item { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="rail" aria-label="Report navigation">
+      <div class="mark" aria-hidden="true">R</div>
+      <h1>Recruiter AI<br>production audit</h1>
+      <p class="date">9 August 2026</p>
+      <nav>
+        <a href="#verdict">Verdict</a>
+        <a href="#matrix">Live matrix</a>
+        <a href="#evidence">Evidence</a>
+        <a href="#fixes">Published fixes</a>
+        <a href="#harness">AI harness</a>
+        <a href="#validation">Validation</a>
+        <a href="#remaining">Remaining</a>
+        <a href="#method">Method</a>
+      </nav>
+      <small>Prepared from the signed-in production Edge session, focused automated suites, source review, and parallel feature workstreams.</small>
+    </aside>
+
+    <main>
+      <header>
+        <p class="eyebrow">Seemplify Recruiter · production + release evidence</p>
+        <h2>The application is published and materially stronger. Live generative acceptance is externally quota-blocked.</h2>
+        <p>The connected ChatGPT identity, runtime routing, cached AI matching, shortlist scores, CV processing history, detailed stages, artifacts, failures, retries, and release health were verified. Fresh ChatGPT generation cannot be truthfully marked 100% today because the connected account has reached its provider usage limit. A new CV attachment is separately blocked by one browser-extension permission.</p>
+        <div class="chips" aria-label="Outcome summary">
+          <span class="status published">Published</span>
+          <span class="status pass">Connection verified</span>
+          <span class="status pass">Matching verified</span>
+          <span class="status pass">CV history verified</span>
+          <span class="status blocked">Fresh generation quota-blocked</span>
+          <span class="status blocked">New file attachment blocked</span>
+        </div>
+      </header>
+
+      <section id="verdict">
+        <div class="section-head">
+          <h3>Executive verdict</h3>
+          <p>This release passes its code, tenant-isolation, queue, cache, build, and deployed health gates. It does not yet pass every fresh production model call because external provider quota and browser file-access permission are prerequisites the application cannot override.</p>
+        </div>
+        <div class="verdict">
+          <article class="verdict-copy">
+            <h4>Release status: published, conditionally accepted</h4>
+            <p>The false “Connect ChatGPT” error was fixed and the deployed request now reaches the already-connected ChatGPT identity. The provider then returns its real usage-limit response. That proves account routing is working while also preventing fresh job, interview-question, Assistant, and CV-analysis completion until quota resets or credits are added.</p>
+            <div class="callout">
+              <strong>What “not 100%” means here</strong>
+              It does not mean the release is still local. It means the final provider-backed operations cannot be executed today with this account. Cached/vector matching and existing CV processing records remain testable and passed.
+            </div>
+          </article>
+          <div class="summary-box" aria-label="Audit outcome counts">
+            <div class="metric"><strong>7</strong><span>Production journeys passed</span></div>
+            <div class="metric"><strong>4</strong><span>Fresh AI calls quota-blocked</span></div>
+            <div class="metric"><strong>1</strong><span>Browser permission block</span></div>
+            <div class="metric"><strong>0</strong><span>Open P0 tenant leaks in tested scope</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="matrix">
+        <div class="section-head">
+          <h3>Signed-in browser matrix</h3>
+          <p>All live observations used the user’s existing authenticated Edge session and active AIIN workspace. No real applicant was contacted and no live interview invitation was sent.</p>
+        </div>
+        <table class="matrix">
+          <thead><tr><th>Journey</th><th>Status</th><th>Observed production result</th><th>Interpretation</th></tr></thead>
+          <tbody>
+            <tr><td>ChatGPT account</td><td><span class="status pass">Pass</span></td><td>Connected as <code>pubgegbo@gmail.com</code>, ChatGPT Pro; Recruiter processing consent enabled.</td><td>The account and app consent are present.</td></tr>
+            <tr><td>Activity preferences</td><td><span class="status pass">Pass</span></td><td>CV parsing resolves to GPT-5.6-Sol/high; job description and requirements resolve to GPT-5.6-Terra/high.</td><td>Activity-level model/effort controls are live, not hard-coded to one model.</td></tr>
+            <tr><td>Workspace routing</td><td><span class="status pass">Pass</span></td><td>After PR #34, job generation stopped returning false account-required errors and reached the connected provider account.</td><td>Exact organization context is now forwarded through the default runtime adapter.</td></tr>
+            <tr><td>Job description / requirements</td><td><span class="status blocked">Quota</span></td><td>Fresh request returns the provider’s usage-limit message with retry date, not a fake reconnect instruction.</td><td>Routing passes; fresh content quality cannot be re-accepted until quota is available.</td></tr>
+            <tr><td>AI Matches</td><td><span class="status pass">Pass</span></td><td>Product Owner job loaded cached top-10 matches in about seven seconds with scores, identities, and explanation controls.</td><td>Matching UI, scoped cache, result ordering, and vector fallback are operational.</td></tr>
+            <tr><td>Match explanation</td><td><span class="status partial">Vector fallback</span></td><td>“Why?” displayed semantic vector similarity and clearly said AI analysis was unavailable.</td><td>Truthful fallback; a fresh LLM explanation remains quota-blocked.</td></tr>
+            <tr><td>Shortlist ranking</td><td><span class="status pass">Pass</span></td><td>Persisted relevance scores and pipeline states loaded on the Shortlist tab.</td><td>Read path and persisted ranking presentation pass.</td></tr>
+            <tr><td>Interview questions</td><td><span class="status partial">Quota + UX</span></td><td>Three historic AI-generated questions loaded. A fresh one-question advanced request failed under quota; the modal did not retain a strong inline diagnostic.</td><td>Existing data passes; fresh generation and error presentation need a post-quota recheck.</td></tr>
+            <tr><td>Recruiter Assistant</td><td><span class="status partial">Partial</span></td><td>PR #35 fixed the actor/workspace 409: the deployed socket now authenticates and receives <code>chat_start</code>. Under the constrained provider, no terminal event arrived after two minutes.</td><td>A follow-up adds a two-minute UI timeout so the recruiter always regains the input with an actionable message.</td></tr>
+            <tr><td>Bulk upload page</td><td><span class="status pass">UI pass</span></td><td>The page explains durable background processing, return-later recovery, file selection, and upload state.</td><td>The requested workflow exists and is understandable.</td></tr>
+            <tr><td>New CV attachment</td><td><span class="status blocked">Browser permission</span></td><td>Edge’s ChatGPT extension denied programmatic file attachment because “Allow access to file URLs” is disabled.</td><td>Enable that extension setting, then rerun the supplied fictional PDF.</td></tr>
+            <tr><td>CV processing history</td><td><span class="status pass">Pass</span></td><td>Production retained ten bulk/public records with completed and failed outcomes across 180-day history.</td><td>The recruiter can leave, return, filter, and inspect durable processing.</td></tr>
+            <tr><td>CV detail / retry</td><td><span class="status pass">Pass</span></td><td>Detail showed all seven stages, artifacts, 10,573 extracted characters, five failed attempts, successful manual retry, exact codes/timestamps, and Retry action.</td><td>The original visibility/recovery requirement is implemented and live.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="evidence">
+        <div class="section-head">
+          <h3>Production browser evidence</h3>
+          <p>These are direct captures from the signed-in production session. They are not mockups or local screenshots.</p>
+        </div>
+        <div class="evidence-lead">
+          <figure>
+            <img src="assets/recruiter-ai-e2e-2026-08-09/chatgpt-connected.png" alt="Recruiter AI account settings showing the connected ChatGPT Pro account">
+            <figcaption><strong>Connected account.</strong> ChatGPT Pro identity and Recruiter consent were visible in the signed-in settings page.</figcaption>
+          </figure>
+          <aside class="evidence-note">
+            <h4>Evidence boundary</h4>
+            <p>A connected badge alone is not accepted as end-to-end proof. The audit also tested downstream routing, matching, CV history, detailed failures, and release health.</p>
+            <dl>
+              <dt>Workspace</dt><dd>AIIN</dd>
+              <dt>Role</dt><dd>Owner</dd>
+              <dt>Browser</dt><dd>Signed-in Edge</dd>
+              <dt>Production</dt><dd>app.seemplifyai.com</dd>
+            </dl>
+          </aside>
+        </div>
+        <div class="evidence-grid">
+          <figure>
+            <img src="assets/recruiter-ai-e2e-2026-08-09/chatgpt-account-limit.png" alt="Recruiter settings showing the real ChatGPT provider usage limit message">
+            <figcaption><strong>Real provider response reached.</strong> Routing now reaches ChatGPT; the account reports a usage limit and a retry date. The separate “55% used” display is contradictory and should be reconciled.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/recruiter-ai-e2e-2026-08-09/ai-matching.png" alt="Product Owner job AI Matches showing ranked cached candidates">
+            <figcaption><strong>AI matching loaded.</strong> The active job displayed ranked, cached candidates with score and explanation controls.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/recruiter-ai-e2e-2026-08-09/cv-processing-detail.png" alt="CV processing detail showing seven processing stages, attempts, and artifacts">
+            <figcaption><strong>Detailed CV history works.</strong> Stage-by-stage execution, artifacts, failures, retry attempts, and the final completed result are visible after returning later.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/recruiter-ai-e2e-2026-08-09/bulk-upload-ready-file-permission-blocked.png" alt="Bulk CV upload page ready for files">
+            <figcaption><strong>Bulk workflow is ready.</strong> The only attachment block was the local Edge extension setting, not a missing product control.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/recruiter-ai-e2e-2026-08-09/assistant-chat-database-failure.png" alt="Earlier Recruiter Assistant terminal error evidence">
+            <figcaption><strong>Pre-fix Assistant evidence.</strong> The original socket failure established the need for authoritative session/workspace binding and terminal UI settlement implemented in PR #35.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/recruiter-ai-e2e-2026-08-09/assistant-provider-pending.jpg" alt="Recruiter Assistant still processing a quota-constrained request after two minutes">
+            <figcaption><strong>Post-fix live boundary.</strong> Authentication succeeds and the request starts, but the provider path emits no terminal event while quota-constrained. The follow-up timeout prevents an indefinite disabled input.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="fixes">
+        <div class="section-head">
+          <h3>Published fixes</h3>
+          <p>The release addressed correctness and tenant safety before model-specific optimization. All listed changes are merged into <code>main</code>.</p>
+        </div>
+        <div class="fix-list">
+          <article class="item"><span class="tag">Runtime</span><div><h4>Connected-account workspace resolution</h4><p>The default ChatGPT subject adapter now forwards the exact organization context. Unauthorized organizations still fail closed.</p></div></article>
+          <article class="item"><span class="tag">Assistant</span><div><h4>Authoritative WebSocket identity, context, and bounded waiting</h4><p>Every chat validates the access token, resolves the real actor and active organization, ignores client-supplied identity, enters canonical AI request context, settles terminal errors, and releases the UI after a two-minute downstream timeout.</p></div></article>
+          <article class="item"><span class="tag">Jobs</span><div><h4>Tenant-safe job and question generation</h4><p>Interview CRUD/generation/analytics are organization-scoped; exact requested counts and zero-result failures are enforced; job IDs reach credit attribution; department IDs are resolved to human names.</p></div></article>
+          <article class="item"><span class="tag">Matching</span><div><h4>Scoped cache, invalidation, ranking, and enrichment</h4><p>Top-K cache retrieval, provider/model/prompt identity, report/bulk rows, tenant checks, vector ranking, candidate invalidation, and authoritative server-side enrichment inputs are corrected.</p></div></article>
+          <article class="item"><span class="tag">CV queue</span><div><h4>Durable visibility, recovery, and release readiness</h4><p>Recruiter/admin history, seven-stage timelines, artifacts, errors, attempts, retry/replacement, candidate badges, persistent intake, orphan cleanup, and worker readiness are live and health-gated.</p></div></article>
+          <article class="item"><span class="tag">Security</span><div><h4>Fail-closed organization boundaries</h4><p>Jobs, interview questions, matching reports, assistant operations, cache operations, enrichment, bulk upload, public capabilities, and external audit events now preserve tenant isolation.</p></div></article>
+        </div>
+      </section>
+
+      <section id="harness">
+        <div class="section-head">
+          <h3>Provider-neutral AI harness</h3>
+          <p>The optimization is not ChatGPT-only. ChatGPT, Local, and future registered runtimes use the same canonical activity contract; provider, model, and effort remain policy choices.</p>
+        </div>
+        <div class="flow" aria-label="Provider-neutral request lifecycle">
+          <article><b>01 · Context</b><strong>Canonical input</strong><span>Actor, organization, activity, source application, data class, request ID.</span></article>
+          <article><b>02 · Policy</b><strong>Runtime choice</strong><span>Admin default plus user activity preference selects Local, ChatGPT, or another provider.</span></article>
+          <article><b>03 · Harness</b><strong>Lean prompt + schema</strong><span>Instructions are stated once; counts, enums, lengths, and required fields live in schema.</span></article>
+          <article><b>04 · Validation</b><strong>Bounded repair</strong><span>Strict output checks, stable idempotency, limited repair context, fail-closed inconsistency.</span></article>
+          <article><b>05 · Evidence</b><strong>Usage + cache identity</strong><span>Provider, model, effort, prompt version, input fingerprint, tenant, and result state are recorded.</span></article>
+        </div>
+        <div class="callout">
+          <strong>Performance conclusion</strong>
+          The largest latency source was repeated sequential model calls and duplicated format instructions, not merely the old Llama model. Deterministic normalization, concurrent independent work, native structured output, smaller repair payloads, and cache correctness are the durable optimizations.
+        </div>
+      </section>
+
+      <section id="validation">
+        <div class="section-head">
+          <h3>Automated and release validation</h3>
+          <p>Workstream counts overlap shared runtime tests, so they are deliberately shown by lane rather than added into a misleading total.</p>
+        </div>
+        <div class="tests">
+          <div class="test"><strong>111 / 111</strong><span>CV backend pass, plus one environment skip</span></div>
+          <div class="test"><strong>8 / 8</strong><span>CV frontend processing contracts</span></div>
+          <div class="test"><strong>104 / 104</strong><span>Jobs, questions, Assistant, runtime</span></div>
+          <div class="test"><strong>19 / 19</strong><span>Jobs/account/error frontend</span></div>
+          <div class="test"><strong>25 / 25</strong><span>Matching backend</span></div>
+          <div class="test"><strong>1 / 1</strong><span>Matching frontend</span></div>
+          <div class="test"><strong>46 / 46</strong><span>ChatGPT gateway</span></div>
+          <div class="test"><strong>87 routes</strong><span>Recruiter production frontend build</span></div>
+        </div>
+        <div class="command-note">Independent final Assistant rerun:
+backend assistant/runtime/account/jobs subset  → 35/35 PASS
+frontend account/error/WebSocket subset       → 21/21 PASS
+backend production Docker build               → PASS
+frontend production Docker build              → PASS
+CV Redis 7 contract/restart run                → PASS
+scoped syntax and diff checks                  → PASS</div>
+      </section>
+
+      <section id="remaining">
+        <div class="section-head">
+          <h3>Remaining actions</h3>
+          <p>These are external or operational gates, not hidden claims of completion. Complete them in this order and rerun the indicated browser actions.</p>
+        </div>
+        <div class="risk-list">
+          <article class="item"><span class="status blocked">Required</span><div><h4>Restore ChatGPT quota</h4><p>Purchase additional credits or wait until the provider reset, then rerun job description, requirements, one interview-question generation, Assistant read-only chat, and one CV analysis.</p></div></article>
+          <article class="item"><span class="status blocked">Required</span><div><h4>Enable Edge extension file URL access</h4><p>Open <code>edge://extensions</code>, choose Details for the ChatGPT browser extension, and enable “Allow access to file URLs.” Then upload the supplied fictional PDF.</p></div></article>
+          <article class="item"><span class="status partial">Observe</span><div><h4>Reconcile the quota display</h4><p>The provider says the account is at its limit while Recruiter displays “55% used · 45% remaining” and a different reset time. Treat the provider error as authoritative until usage ingestion is reconciled.</p></div></article>
+          <article class="item"><span class="status partial">Operations</span><div><h4>Configure a Dokploy backup destination</h4><p>The live gateway is serving, but its upgrade workflow correctly refuses to replace the volume without an S3-compatible backup destination.</p></div></article>
+          <article class="item"><span class="status partial">Operations</span><div><h4>Review historical AI usage dead letters</h4><p>Health reports two old validation dead-letter events while current processing has no active error. Resolve or archive them so operational health is fully clean.</p></div></article>
+          <article class="item"><span class="status partial">Maintenance</span><div><h4>Plan dependency remediation</h4><p>Frontend production audit is clean. Backend still inherits five high and six moderate advisories through broad transitive packages; there are no critical advisories.</p></div></article>
+        </div>
+      </section>
+
+      <section id="release">
+        <div class="section-head">
+          <h3>Published release record</h3>
+          <p>The following pull requests were merged into <code>main</code> and triggered production workflows.</p>
+        </div>
+        <div class="release-list">
+          <article class="item"><span class="tag">PR #27</span><div><h4><a href="https://github.com/michaelegbo/seemplify/pull/27">Recruiter AI release</a></h4><p>Provider-neutral harness, jobs/questions, matching, CV visibility/recovery, tenant isolation, and release foundations.</p></div></article>
+          <article class="item"><span class="tag">PR #33</span><div><h4><a href="https://github.com/michaelegbo/seemplify/pull/33">Safe ChatGPT routing diagnostics</a></h4><p>Actionable reason codes without leaking account data or weakening authorization.</p></div></article>
+          <article class="item"><span class="tag">PR #34</span><div><h4><a href="https://github.com/michaelegbo/seemplify/pull/34">Workspace context forwarding</a></h4><p>Correct default connected-account resolution for the exact Recruiter organization.</p></div></article>
+          <article class="item"><span class="tag">PR #35</span><div><h4><a href="https://github.com/michaelegbo/seemplify/pull/35">Assistant WebSocket identity and UI settlement</a></h4><p>Authoritative session/workspace binding, canonical runtime context, forged identity rejection, safe errors, and no permanent “thinking” state.</p></div></article>
+          <article class="item"><span class="tag">PR #36</span><div><h4><a href="https://github.com/michaelegbo/seemplify/pull/36">Bounded Assistant response timeout and final evidence report</a></h4><p>Live acceptance found a downstream path that stayed connected without a terminal event. The UI now exits after two minutes with a clear quota/busy-provider action, and this production report is included as a release artifact.</p></div></article>
+        </div>
+      </section>
+
+      <section id="method">
+        <div class="section-head">
+          <h3>Method and boundaries</h3>
+          <p>The audit separates direct production observation, automated proof, and blocked acceptance so the report does not overstate certainty.</p>
+        </div>
+        <div class="method-grid">
+          <article class="method-card"><h4>Live production</h4><p>Existing signed-in Edge session, semantic browser controls, direct screenshots, existing active job, existing non-sensitive processing history, and read-only matching/shortlist inspection.</p></article>
+          <article class="method-card"><h4>Parallel workstreams</h4><p>CV/queue, jobs/questions/Assistant, and matching/cache/enrichment were independently owned, tested, and then reconciled in one release branch.</p></article>
+          <article class="method-card"><h4>Safe test-data policy</h4><p>No real applicant was contacted, no interview invitation was created, no account was disconnected, and no high-cost large-candidate rerank was forced while quota was constrained.</p></article>
+          <article class="method-card"><h4>Acceptance boundary</h4><p>A feature is marked passed only where production evidence or focused automated proof exists. Quota-blocked or permission-blocked steps remain explicitly blocked.</p></article>
+        </div>
+      </section>
+
+      <footer>Recruiter AI production audit · 9 August 2026 · Seemplify · This is a release evidence artifact, not a security or legal certification.</footer>
+    </main>
+  </div>
+</body>
+</html>
