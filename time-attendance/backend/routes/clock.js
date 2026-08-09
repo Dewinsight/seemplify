@@ -15,6 +15,10 @@ const { startOfWeek, endOfWeek, getISOWeek, getYear } = require('date-fns');
 const { evaluateClockIn, buildPolicySummary } = require('../services/attendanceRulesService');
 const attendanceEvents = require('../services/attendanceEventService');
 const { buildSessions, localDayBounds } = require('../services/timeCalculationService');
+const {
+    getLockedPeriodDisposition,
+    ensureVersionedAdjustment,
+} = require('../services/lockedPeriodAdjustmentService');
 
 // Apply auth middleware to all clock routes
 router.use(requireAuth);
@@ -74,7 +78,7 @@ async function findLockedTimesheetAt(userId, organizationId, timestamp = new Dat
         startDate: { $lte: timestamp },
         endDate: { $gte: timestamp },
         status: { $in: ['approved', 'locked', 'payroll_pending', 'payroll_exported'] },
-    }).select('_id status startDate endDate').lean();
+    }).sort({ version: -1, updatedAt: -1 });
 }
 
 function rejectLockedPeriod(res, timesheet) {
@@ -84,6 +88,51 @@ function rejectLockedPeriod(res, timesheet) {
         timesheetId: timesheet._id,
         status: timesheet.status,
     });
+}
+
+function protectedPeriodMetadata(timesheet, reason) {
+    if (!timesheet) return undefined;
+    return {
+        sourceTimesheetId: timesheet._id,
+        sourceTimesheetStatus: timesheet.status,
+        sourceTimesheetVersion: timesheet.version || 1,
+        state: 'pending',
+        reason,
+        recordedAt: new Date(),
+    };
+}
+
+async function completeProtectedPeriodAdjustment({ entry, timesheet, disposition, req, action }) {
+    if (!disposition.requiresAdjustment || !timesheet) return null;
+    try {
+        const result = await ensureVersionedAdjustment({
+            sourceTimesheet: timesheet,
+            entry,
+            actor: { userId: req.user.id, userName: req.user.name },
+            action,
+            reason: disposition.reason,
+        });
+        entry.protectedPeriodAdjustment.state = 'version_created';
+        entry.protectedPeriodAdjustment.adjustmentTimesheetId = result.adjustment._id;
+        await entry.save();
+        return {
+            required: true,
+            state: 'version_created',
+            timesheetId: result.adjustment._id,
+            version: result.adjustment.version,
+            created: result.created,
+        };
+    } catch (error) {
+        // Ending attendance is safety-critical. The terminal event is already
+        // durable and must remain successful even if correction creation needs
+        // a later retry or manager review.
+        console.error('Protected-period adjustment creation failed:', error);
+        return {
+            required: true,
+            state: 'pending_manager_review',
+            sourceTimesheetId: timesheet._id,
+        };
+    }
 }
 
 // Get current clock status
@@ -173,7 +222,8 @@ router.post('/in', async (req, res) => {
         if (!eligibility.allowed) return res.status(403).json(eligibility);
 
         const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
-        if (lockedTimesheet) return rejectLockedPeriod(res, lockedTimesheet);
+        const lockDisposition = getLockedPeriodDisposition('clock_in', lockedTimesheet);
+        if (!lockDisposition.allowed) return rejectLockedPeriod(res, lockedTimesheet);
 
         const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
         if (policy.clockSettings?.requireNote && !String(note || '').trim()) {
@@ -316,8 +366,15 @@ router.post('/out', async (req, res) => {
             });
         }
 
-        const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
-        if (lockedTimesheet) return rejectLockedPeriod(res, lockedTimesheet);
+        const lockedTimesheet = await findLockedTimesheetAt(
+            userId,
+            organizationId,
+            currentStatus.lastEntry.timestamp
+        );
+        const lockDisposition = getLockedPeriodDisposition('clock_out', lockedTimesheet);
+
+        const locationCheck = await validateClockLocation(location, organizationId, 'Clock-out');
+        if (!locationCheck.ok) return res.status(locationCheck.status).json(locationCheck);
 
         // End any active break first
         const breakStatus = await TimeEntry.isOnBreak(userId, organizationId);
@@ -336,9 +393,6 @@ router.post('/out', async (req, res) => {
             await breakEndEntry.save();
             attendanceEvents.publish(userId, organizationId, { type: 'break_end', entryId: breakEndEntry._id, at: breakEndEntry.timestamp });
         }
-
-        const locationCheck = await validateClockLocation(location, organizationId, 'Clock-out');
-        if (!locationCheck.ok) return res.status(locationCheck.status).json(locationCheck);
 
         // Validate geofencing if location provided
         let locationVerified = locationCheck.verified;
@@ -383,10 +437,20 @@ router.post('/out', async (req, res) => {
             jobCode: currentStatus.lastEntry.jobCode,
             activityCode: currentStatus.lastEntry.activityCode,
             costCentreCode: currentStatus.lastEntry.costCentreCode,
+            timesheetId: lockedTimesheet?._id,
+            protectedPeriodAdjustment: protectedPeriodMetadata(lockedTimesheet, lockDisposition.reason),
         });
 
         await entry.save();
         attendanceEvents.publish(userId, organizationId, { type: 'clock_out', entryId: entry._id, at: entry.timestamp });
+
+        const adjustment = await completeProtectedPeriodAdjustment({
+            entry,
+            timesheet: lockedTimesheet,
+            disposition: lockDisposition,
+            req,
+            action: 'clock_out',
+        });
 
         // Calculate hours worked for this session
         const clockInEntry = currentStatus.lastEntry;
@@ -396,7 +460,10 @@ router.post('/out', async (req, res) => {
             success: true,
             entry,
             hoursWorked: parseFloat(hoursWorked.toFixed(2)),
-            message: 'Clocked out successfully',
+            adjustment,
+            message: adjustment
+                ? 'Clocked out successfully. A correction version was created without changing the protected timesheet.'
+                : 'Clocked out successfully',
         });
     } catch (error) {
         console.error('Clock out error:', error);
@@ -421,7 +488,8 @@ router.post('/break/start', async (req, res) => {
         }
 
         const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
-        if (lockedTimesheet) return rejectLockedPeriod(res, lockedTimesheet);
+        const lockDisposition = getLockedPeriodDisposition('break_start', lockedTimesheet);
+        if (!lockDisposition.allowed) return rejectLockedPeriod(res, lockedTimesheet);
 
         // Check if already on break
         const breakStatus = await TimeEntry.isOnBreak(userId, organizationId);
@@ -474,8 +542,12 @@ router.post('/break/end', async (req, res) => {
             });
         }
 
-        const lockedTimesheet = await findLockedTimesheetAt(userId, organizationId);
-        if (lockedTimesheet) return rejectLockedPeriod(res, lockedTimesheet);
+        const lockedTimesheet = await findLockedTimesheetAt(
+            userId,
+            organizationId,
+            breakStatus.lastBreakEntry.timestamp
+        );
+        const lockDisposition = getLockedPeriodDisposition('break_end', lockedTimesheet);
 
         const entry = new TimeEntry({
             userId,
@@ -487,10 +559,20 @@ router.post('/break/end', async (req, res) => {
             timestamp: new Date(),
             source: req.user.authSurface === 'hub' ? 'hub' : 'web',
             note,
+            timesheetId: lockedTimesheet?._id,
+            protectedPeriodAdjustment: protectedPeriodMetadata(lockedTimesheet, lockDisposition.reason),
         });
 
         await entry.save();
         attendanceEvents.publish(userId, organizationId, { type: 'break_end', entryId: entry._id, at: entry.timestamp });
+
+        const adjustment = await completeProtectedPeriodAdjustment({
+            entry,
+            timesheet: lockedTimesheet,
+            disposition: lockDisposition,
+            req,
+            action: 'break_end',
+        });
 
         // Calculate break duration
         const breakStart = breakStatus.lastBreakEntry.timestamp;
@@ -500,7 +582,10 @@ router.post('/break/end', async (req, res) => {
             success: true,
             entry,
             breakDuration: Math.round(breakDuration),
-            message: 'Break ended',
+            adjustment,
+            message: adjustment
+                ? 'Break ended. A correction version was created without changing the protected timesheet.'
+                : 'Break ended',
         });
     } catch (error) {
         console.error('End break error:', error);

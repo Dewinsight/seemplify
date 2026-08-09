@@ -10,6 +10,7 @@ type MockState = {
     browserErrors: string[];
     clockedIn: boolean;
     onBreak: boolean;
+    lockedClockOut: boolean;
     notificationRead: boolean;
     exceptionStatus: string;
     shiftAcknowledged: boolean;
@@ -116,7 +117,16 @@ async function installApiMock(page: Page, state: MockState) {
         }
         if (method === 'GET' && path === '/api/clock/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ready\ndata: {"connected":true}\n\n' });
         if (method === 'POST' && path === '/api/clock/in') { state.clockedIn = true; return json(route, { success: true }); }
-        if (method === 'POST' && path === '/api/clock/out') { state.clockedIn = false; state.onBreak = false; return json(route, { success: true }); }
+        if (method === 'POST' && path === '/api/clock/out') {
+            state.clockedIn = false;
+            state.onBreak = false;
+            return json(route, {
+                success: true,
+                adjustment: state.lockedClockOut
+                    ? { required: true, state: 'version_created', timesheetId: 'timesheet-adjustment-2', version: 2 }
+                    : null,
+            });
+        }
         if (method === 'POST' && path === '/api/clock/break/start') { state.onBreak = true; return json(route, { success: true }); }
         if (method === 'POST' && path === '/api/clock/break/end') { state.onBreak = false; return json(route, { success: true }); }
         if (method === 'GET' && path === '/api/clock/entries') {
@@ -199,6 +209,7 @@ const test = base.extend<{ mockState: MockState }>({
     mockState: async ({ page }, use) => {
         const state: MockState = {
             calls: [], unhandled: [], browserErrors: [], clockedIn: false, onBreak: false,
+            lockedClockOut: false,
             notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false,
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
@@ -230,6 +241,18 @@ test('clocks in from the dashboard and refreshes attendance state', async ({ pag
     await page.getByRole('button', { name: 'Clock In' }).click();
     await expect(page.getByRole('button', { name: 'Clock Out' })).toBeVisible();
     expect(mockState.calls).toContain('POST /api/clock/in');
+});
+
+test('allows an employee to clock out when the current timesheet is protected', async ({ page, mockState }) => {
+    mockState.clockedIn = true;
+    mockState.lockedClockOut = true;
+    await authenticate(page);
+    await page.goto('/dashboard');
+
+    await expect(page.getByRole('button', { name: 'Clock Out' })).toBeVisible();
+    await page.getByRole('button', { name: 'Clock Out' }).click();
+    await expect(page.getByRole('button', { name: 'Clock In' })).toBeVisible();
+    expect(mockState.calls).toContain('POST /api/clock/out');
 });
 
 test('covers the employee attendance, timesheet, scheduling, exception and presence workspaces', async ({ page, mockState: _mockState }) => {

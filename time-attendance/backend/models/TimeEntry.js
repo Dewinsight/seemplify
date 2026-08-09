@@ -131,6 +131,19 @@ const TimeEntrySchema = new Schema({
         ref: 'Timesheet',
     },
 
+    // Terminal events are always allowed so an employee cannot be trapped in
+    // an active session. If the source period is protected, this links the
+    // event to the automatically created correction version.
+    protectedPeriodAdjustment: {
+        sourceTimesheetId: { type: Schema.Types.ObjectId, ref: 'Timesheet' },
+        sourceTimesheetStatus: String,
+        sourceTimesheetVersion: Number,
+        adjustmentTimesheetId: { type: Schema.Types.ObjectId, ref: 'Timesheet' },
+        state: { type: String, enum: ['pending', 'version_created'] },
+        reason: String,
+        recordedAt: Date,
+    },
+
     // Metadata
     createdAt: {
         type: Date,

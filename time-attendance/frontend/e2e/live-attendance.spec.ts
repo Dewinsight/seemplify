@@ -272,6 +272,75 @@ test('runs reports, real Excel exports, rule simulation and policy persistence',
     expect(policy.timesheetSettings.periodType).toBe('weekly');
 });
 
+test('lets a worker stop a live session after the current period is protected', async ({ page, diagnostics: _diagnostics }, testInfo) => {
+    test.skip(!testInfo.project.name.startsWith('desktop'), 'Desktop live-flow coverage');
+    const mongoUri = process.env.LIVE_MONGODB_URI || 'mongodb://127.0.0.1:27017/time-attendance-live-e2e';
+    expect(mongoUri).toMatch(/live-e2e|ta-e2e/i);
+
+    // This is deliberately a real Mongo transition, not an HTTP mock: it
+    // recreates the production failure where a session remains active after
+    // its timesheet has already become protected.
+    const { TimeEntry, Timesheet } = require('../../backend/models');
+    const mongoose = Timesheet.db.base;
+    await mongoose.connect(mongoUri);
+    const source = await Timesheet.findOne({
+        organizationId: 'org-live-e2e',
+        userId: 'employee-live-1',
+        periodKey: { $ne: 'live-e2e-previous' },
+        supersedesTimesheetId: null,
+    }).sort({ startDate: -1 });
+    expect(source).toBeTruthy();
+    const protectedSummary = source.summary.toObject();
+    source.status = 'locked';
+    source.lockedAt = new Date();
+    source.lockedBy = 'live-e2e';
+    await source.save();
+    const clockIn = await TimeEntry.create({
+        userId: 'employee-live-1',
+        userEmail: 'alex.live@example.test',
+        userName: 'Alex Live',
+        organizationId: 'org-live-e2e',
+        organizationName: 'Seemplify Live E2E',
+        entryType: 'clock_in',
+        timestamp: new Date(Date.now() - (30 * 60 * 1000)),
+        timezone: 'Europe/London',
+        source: 'web',
+        workMode: 'remote',
+    });
+    await mongoose.disconnect();
+
+    await authenticate(page);
+    await page.goto('/dashboard');
+    await expect(page.getByRole('button', { name: /Clock out/i })).toBeVisible();
+    const clockOutResponsePromise = page.waitForResponse(response => response.url().endsWith('/api/clock/out'));
+    await page.getByRole('button', { name: /Clock out/i }).click();
+    const clockOutResponse = await clockOutResponsePromise;
+    expect(clockOutResponse.status(), await clockOutResponse.text()).toBe(200);
+    const body = await clockOutResponse.json();
+    expect(body.adjustment).toMatchObject({ required: true, state: 'version_created', version: 2 });
+    await expect(page.getByRole('button', { name: /Clock in/i })).toBeVisible();
+
+    await mongoose.connect(mongoUri);
+    const [protectedAfter, adjustment, clockOut] = await Promise.all([
+        Timesheet.findById(source._id).lean(),
+        Timesheet.findOne({ supersedesTimesheetId: source._id, status: 'adjusted' }).lean(),
+        TimeEntry.findOne({
+            userId: 'employee-live-1',
+            organizationId: 'org-live-e2e',
+            entryType: 'clock_out',
+            timestamp: { $gte: clockIn.timestamp },
+        }).sort({ timestamp: -1 }).lean(),
+    ]);
+    expect(protectedAfter.status).toBe('locked');
+    expect(protectedAfter.summary).toMatchObject(protectedSummary);
+    expect(adjustment).toMatchObject({ status: 'adjusted', version: 2 });
+    expect(clockOut.protectedPeriodAdjustment).toMatchObject({
+        sourceTimesheetStatus: 'locked',
+        state: 'version_created',
+    });
+    await mongoose.disconnect();
+});
+
 test('renders authenticated navigation and core workspaces at a mobile viewport', async ({ page, diagnostics: _diagnostics }, testInfo) => {
     test.skip(!testInfo.project.name.startsWith('mobile'), 'Mobile-only live responsive coverage');
     await authenticate(page);
