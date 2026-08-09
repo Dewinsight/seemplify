@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -21,6 +21,10 @@ import {
   Download,
   Loader2,
   ListPlus,
+  AlertCircle,
+  CheckCircle2,
+  Clock3,
+  RefreshCw,
 } from "lucide-react"
 import useMobile from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
@@ -49,13 +53,15 @@ import { OwnerChip } from "@/components/owner-chip"
 import { SourceChip } from "@/components/source-chip"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { getAllCandidates, getCandidatesPaginated, deleteCandidate, bulkDeleteCandidates, bulkDownloadCandidates, type CandidateData } from "@/services/candidateService"
+import { getAllCandidates, getCandidatesPaginated, deleteCandidate, bulkDeleteCandidates, bulkDownloadCandidates, replaceCVIngestionJob, retryCVIngestionJob, type CandidateData } from "@/services/candidateService"
 import { getAllJobs, addCandidateToShortlist, bulkAddToShortlist, type JobData } from "@/services/jobService"
 import candidateShortlistService, { type CandidateShortlistInfo } from "@/services/candidateShortlistService"
 import { AddToCandidateListDialog } from "@/components/candidate-lists/AddToCandidateListDialog"
 import { toast } from "sonner"
 import { TourProvider, useTour, type StepType } from "@reactour/tour"
 import { useFeatureFlags } from "@/context/FeatureFlagsContext"
+import { candidateCvProgressView } from "@/utils/cvUploadProgress"
+import { getCVIngestionJob } from "@/services/cvIngestionService"
 
 // Helper function to format date
 function formatDate(dateString: string) {
@@ -83,6 +89,101 @@ function StarRating({ rating }: { rating: number }) {
           }`}
         />
       ))}
+    </div>
+  )
+}
+
+function CandidateCvStatus({
+  candidate,
+  retrying,
+  replacing,
+  retryAvailable,
+  replacementAvailable,
+  onRetry,
+  onReplace,
+  onOpenQueue,
+}: {
+  candidate: CandidateData
+  retrying: boolean
+  replacing: boolean
+  retryAvailable: boolean
+  replacementAvailable: boolean
+  onRetry: (event: React.MouseEvent) => void
+  onReplace: (file: File) => void
+  onOpenQueue: (event: React.MouseEvent) => void
+}) {
+  const replacementInputRef = useRef<HTMLInputElement>(null)
+  const metadata = candidate.processingMetadata
+  const view = candidateCvProgressView(metadata)
+  if (!view) return null
+  const error = metadata?.cvProcessingError?.message
+  const canRetry = retryAvailable && Boolean(metadata?.cvProcessingJobId)
+  const canReplace = replacementAvailable && !canRetry && Boolean(metadata?.cvProcessingJobId)
+  const toneClass = view.tone === "danger"
+    ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+    : view.tone === "warning"
+      ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+      : view.tone === "success"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+        : "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+
+  return (
+    <div className={`mt-2 border px-2.5 py-2 text-xs ${toneClass}`}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {view.tone === "danger" ? <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          : view.tone === "success" ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+            : <Clock3 className={`h-3.5 w-3.5 shrink-0 ${view.active ? "animate-pulse" : ""}`} />}
+        <span className="font-medium">{view.label}</span>
+        {typeof metadata?.cvProcessingProgress === "number" && view.active ? (
+          <span className="text-current/70">{metadata.cvProcessingProgress}%</span>
+        ) : null}
+      </div>
+      {error ? <p className="mt-1 line-clamp-2 text-current/80" title={error}>{error}</p> : null}
+      {(canRetry || canReplace || view.active || view.tone === "danger") ? (
+        <div className="mt-1.5 flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
+          {canRetry ? (
+            <button
+              type="button"
+              className="inline-flex items-center font-medium underline-offset-2 hover:underline disabled:opacity-60"
+              onClick={onRetry}
+              disabled={retrying}
+            >
+              {retrying ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
+              Retry
+            </button>
+          ) : null}
+          {canReplace ? (
+            <>
+              <button
+                type="button"
+                className="inline-flex items-center font-medium underline-offset-2 hover:underline disabled:opacity-60"
+                onClick={(event) => { event.stopPropagation(); replacementInputRef.current?.click() }}
+                disabled={replacing}
+              >
+                {replacing ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Upload className="mr-1 h-3 w-3" />}
+                Upload corrected CV
+              </button>
+              <input
+                ref={replacementInputRef}
+                type="file"
+                className="hidden"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.tif,.tiff"
+                aria-label={`Choose a corrected CV for ${candidate.firstName} ${candidate.lastName}`}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  event.stopPropagation()
+                  const file = event.target.files?.[0]
+                  if (file) onReplace(file)
+                  event.target.value = ""
+                }}
+              />
+            </>
+          ) : null}
+          <button type="button" className="font-medium underline-offset-2 hover:underline" onClick={onOpenQueue}>
+            Processing queue
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -272,6 +373,11 @@ export default function CandidatesPage() {
     const [showAddToListDialog, setShowAddToListDialog] = useState(false)
     const [listDialogCandidateIds, setListDialogCandidateIds] = useState<string[]>([])
     const [showAllMatchingListDialog, setShowAllMatchingListDialog] = useState(false)
+    const [retryingCandidateId, setRetryingCandidateId] = useState<string | null>(null)
+    const [replacingCandidateId, setReplacingCandidateId] = useState<string | null>(null)
+    const [retryEligibleJobIds, setRetryEligibleJobIds] = useState<Set<string>>(new Set())
+    const [replacementEligibleJobIds, setReplacementEligibleJobIds] = useState<Set<string>>(new Set())
+    const progressRefreshInFlight = useRef(false)
 
     // Debounced search - update searchTerm 500ms after user stops typing
     useEffect(() => {
@@ -311,9 +417,9 @@ export default function CandidatesPage() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchTerm, currentPage, itemsPerPage])
 
-    const fetchCandidates = useCallback(async () => {
+    const fetchCandidates = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
       try {
-        setLoading(true)
+        if (!silent) setLoading(true)
         const data = await getCandidatesPaginated({
           page: currentPage,
           limit: itemsPerPage,
@@ -330,9 +436,128 @@ export default function CandidatesPage() {
         setTotalPages(0)
         setTotalCandidates(0)
       } finally {
-        setLoading(false)
+        if (!silent) setLoading(false)
       }
     }, [currentPage, searchTerm, itemsPerPage])
+
+    const retryCandidateCv = useCallback(async (candidate: CandidateData) => {
+      const jobId = candidate.processingMetadata?.cvProcessingJobId
+      if (!jobId || retryingCandidateId) return
+      setRetryingCandidateId(candidate._id)
+      try {
+        await retryCVIngestionJob(jobId, "failed")
+        toast.success("CV processing restarted")
+        await fetchCandidates({ silent: true })
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "CV processing could not be retried")
+      } finally {
+        setRetryingCandidateId(null)
+      }
+    }, [fetchCandidates, retryingCandidateId])
+
+    const replaceCandidateCv = useCallback(async (candidate: CandidateData, file: File) => {
+      const jobId = candidate.processingMetadata?.cvProcessingJobId
+      if (!jobId || replacingCandidateId) return
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("Corrected CVs must be 10MB or smaller")
+        return
+      }
+      const fingerprint = `${file.name}:${file.size}:${file.lastModified}`
+      const storageKey = `seemplify:cv-replacement:v1:${jobId}`
+      let retained: { fingerprint?: string; idempotencyKey?: string } | null = null
+      try { retained = JSON.parse(localStorage.getItem(storageKey) || "null") } catch { retained = null }
+      const idempotencyKey = retained?.fingerprint === fingerprint && retained.idempotencyKey
+        ? retained.idempotencyKey
+        : globalThis.crypto?.randomUUID?.() || `replacement-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      localStorage.setItem(storageKey, JSON.stringify({ fingerprint, idempotencyKey }))
+      setReplacingCandidateId(candidate._id)
+      try {
+        const result = await replaceCVIngestionJob(jobId, file, idempotencyKey)
+        localStorage.removeItem(storageKey)
+        toast.success("Corrected CV secured for processing")
+        await fetchCandidates({ silent: true })
+        router.push(`/cv-processing?jobId=${encodeURIComponent(result.job.jobId)}`)
+      } catch (error) {
+        const typedError = error as Error & { status?: number; code?: string }
+        const keyConflict = typedError.status === 409 && typedError.code === "CV_IDEMPOTENCY_KEY_REUSED"
+        if (keyConflict) localStorage.removeItem(storageKey)
+        toast.error(keyConflict
+          ? "This corrected file differs from the earlier attempt. Choose it again to use a new request key."
+          : error instanceof Error ? error.message : "Corrected CV could not be accepted")
+      } finally {
+        setReplacingCandidateId(null)
+      }
+    }, [fetchCandidates, replacingCandidateId, router])
+
+    useEffect(() => {
+      let cancelled = false
+      let expiryTimer: number | undefined
+      const jobIds = [...new Set(candidates.flatMap((candidate) => {
+        const metadata = candidate.processingMetadata
+        return metadata?.cvIngestionState === "failed" && metadata.cvProcessingJobId
+          ? [metadata.cvProcessingJobId]
+          : []
+      }))]
+      if (!jobIds.length) {
+        setRetryEligibleJobIds(new Set())
+        setReplacementEligibleJobIds(new Set())
+        return () => { cancelled = true }
+      }
+
+      const refreshEligibility = async () => {
+        if (typeof document !== "undefined" && document.visibilityState !== "visible") return
+        if (typeof navigator !== "undefined" && !navigator.onLine) return
+
+        const details = await Promise.all(jobIds.map(async (jobId) => {
+          try {
+            return { jobId, detail: await getCVIngestionJob(jobId) }
+          } catch {
+            return null
+          }
+        }))
+        if (cancelled) return
+
+        const retryable = new Set<string>()
+        const replaceable = new Set<string>()
+        details.forEach((result) => {
+          if (!result) return
+          if (result.detail.retry?.available === true) retryable.add(result.jobId)
+          if (result.detail.retry?.replacementAvailable === true && result.detail.retry?.available !== true) {
+            replaceable.add(result.jobId)
+          }
+        })
+        setRetryEligibleJobIds(retryable)
+        setReplacementEligibleJobIds(replaceable)
+
+        if (expiryTimer) window.clearTimeout(expiryTimer)
+        const nextExpiry = details.reduce<number | null>((earliest, result) => {
+          const availableUntil = result?.detail.retry?.available === true
+            ? Date.parse(result.detail.retry.availableUntil || "")
+            : Number.NaN
+          if (!Number.isFinite(availableUntil) || availableUntil <= Date.now()) return earliest
+          return earliest === null ? availableUntil : Math.min(earliest, availableUntil)
+        }, null)
+        if (nextExpiry !== null) {
+          expiryTimer = window.setTimeout(
+            () => void refreshEligibility(),
+            Math.min(Math.max(nextExpiry - Date.now() + 1_000, 1_000), 2_147_000_000),
+          )
+        }
+      }
+
+      void refreshEligibility()
+      const wake = () => void refreshEligibility()
+      window.addEventListener("focus", wake)
+      window.addEventListener("online", wake)
+      document.addEventListener("visibilitychange", wake)
+      return () => {
+        cancelled = true
+        if (expiryTimer) window.clearTimeout(expiryTimer)
+        window.removeEventListener("focus", wake)
+        window.removeEventListener("online", wake)
+        document.removeEventListener("visibilitychange", wake)
+      }
+    }, [candidates])
 
     // Load candidate shortlist information
     const loadCandidateShortlists = async () => {
@@ -348,6 +573,40 @@ export default function CandidatesPage() {
     useEffect(() => {
       fetchCandidates()
     }, [fetchCandidates])
+
+    const hasActiveCvProcessing = candidates.some((candidate) => (
+      ["accepted", "queued", "processing", "waiting", "waiting_for_chatgpt"].includes(
+        candidate.processingMetadata?.cvIngestionState || ""
+      )
+    ))
+
+    useEffect(() => {
+      if (!hasActiveCvProcessing) return
+      const refreshProgress = async () => {
+        if (progressRefreshInFlight.current
+          || (typeof document !== "undefined" && document.visibilityState !== "visible")
+          || (typeof navigator !== "undefined" && !navigator.onLine)) return
+        progressRefreshInFlight.current = true
+        try {
+          await fetchCandidates({ silent: true })
+        } finally {
+          progressRefreshInFlight.current = false
+        }
+      }
+      const refreshWhenVisible = () => {
+        if (document.visibilityState === "visible") void refreshProgress()
+      }
+      const timer = window.setInterval(() => void refreshProgress(), 5_000)
+      window.addEventListener("focus", refreshWhenVisible)
+      window.addEventListener("online", refreshWhenVisible)
+      document.addEventListener("visibilitychange", refreshWhenVisible)
+      return () => {
+        window.clearInterval(timer)
+        window.removeEventListener("focus", refreshWhenVisible)
+        window.removeEventListener("online", refreshWhenVisible)
+        document.removeEventListener("visibilitychange", refreshWhenVisible)
+      }
+    }, [fetchCandidates, hasActiveCvProcessing])
 
     // Load candidate shortlist information on mount
     useEffect(() => {
@@ -796,6 +1055,20 @@ export default function CandidatesPage() {
                               </div>
                               <p className="text-sm text-gray-500 dark:text-gray-400">{candidate.email}</p>
                               <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">{candidate.position}</p>
+                              <CandidateCvStatus
+                                candidate={candidate}
+                                retrying={retryingCandidateId === candidate._id}
+                                replacing={replacingCandidateId === candidate._id}
+                                retryAvailable={Boolean(candidate.processingMetadata?.cvProcessingJobId && retryEligibleJobIds.has(candidate.processingMetadata.cvProcessingJobId))}
+                                replacementAvailable={Boolean(candidate.processingMetadata?.cvProcessingJobId && replacementEligibleJobIds.has(candidate.processingMetadata.cvProcessingJobId))}
+                                onRetry={(event) => { event.stopPropagation(); void retryCandidateCv(candidate) }}
+                                onReplace={(file) => void replaceCandidateCv(candidate, file)}
+                                onOpenQueue={(event) => {
+                                  event.stopPropagation()
+                                  const jobId = candidate.processingMetadata?.cvProcessingJobId
+                                  router.push(jobId ? `/cv-processing?jobId=${encodeURIComponent(jobId)}` : "/cv-processing")
+                                }}
+                              />
                             </div>
                           </div>
                           <div className="mt-4 space-y-3">
@@ -925,6 +1198,20 @@ export default function CandidatesPage() {
                                     </Badge>
                                   )}
                                 </div>
+                                <CandidateCvStatus
+                                  candidate={candidate}
+                                  retrying={retryingCandidateId === candidate._id}
+                                  replacing={replacingCandidateId === candidate._id}
+                                  retryAvailable={Boolean(candidate.processingMetadata?.cvProcessingJobId && retryEligibleJobIds.has(candidate.processingMetadata.cvProcessingJobId))}
+                                  replacementAvailable={Boolean(candidate.processingMetadata?.cvProcessingJobId && replacementEligibleJobIds.has(candidate.processingMetadata.cvProcessingJobId))}
+                                  onRetry={(event) => { event.stopPropagation(); void retryCandidateCv(candidate) }}
+                                  onReplace={(file) => void replaceCandidateCv(candidate, file)}
+                                  onOpenQueue={(event) => {
+                                    event.stopPropagation()
+                                    const jobId = candidate.processingMetadata?.cvProcessingJobId
+                                    router.push(jobId ? `/cv-processing?jobId=${encodeURIComponent(jobId)}` : "/cv-processing")
+                                  }}
+                                />
                               </div>
                             </div>
                           </TableCell>

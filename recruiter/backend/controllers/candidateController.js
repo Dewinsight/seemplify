@@ -1,4 +1,5 @@
 const Candidate = require('../models/Candidate');
+const crypto = require('crypto');
 const Notification = require('../models/Notification');
 const fs = require('fs');
 const util = require('util');
@@ -13,6 +14,7 @@ const websocketService = require('../services/websocketService');
 const RetryHelper = require('../utils/retryHelper');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
+const publicApplicationCapability = require('../services/publicApplicationCapabilityService');
 
 // Promisify fs.unlink for deleting temporary files
 const unlinkAsync = util.promisify(fs.unlink);
@@ -66,7 +68,7 @@ exports.uploadAndCreateCandidate = async (req, res) => {
 
   try {
     console.log("🚀 Starting PARALLEL CV processing with retry logic...");
-    console.log(`File: ${req.file.originalname}, Type: ${fileType}, Size: ${req.file.size} bytes`);
+    console.log('CV upload processing started');
 
     // ⚡ PARALLEL EXECUTION with retry: Run both services simultaneously
     const uploadWithRetry = async () => {
@@ -558,18 +560,299 @@ exports.createPublicCandidate = async (req, res) => {
     }
 
     const Job = require('../models/Job');
-    const job = await Job.findById(jobId).select('_id title organization isPublic status').lean();
+    const publicApplicationCapacityService = require('../services/publicApplicationCapacityService');
+    const job = await Job.findById(jobId)
+      .select('_id title organization isPublic status candidateApplyLimit publicApplicationCount reservedCredits publicApplicationCreditUnitCost')
+      .lean();
     if (!job) {
       return res.status(404).json({ msg: 'Job not found' });
     }
     if (!job.isPublic || job.status !== 'active') {
       return res.status(403).json({ msg: 'This job is not accepting public applications', code: 'PUBLIC_JOB_NOT_PUBLIC' });
     }
+    const Organization = require('../models/Organization');
+    const activeOrganization = await Organization.exists({
+      _id: job.organization,
+      isActive: { $ne: false },
+      erasureState: { $ne: 'tombstoned' }
+    });
+    if (!activeOrganization) {
+      return res.status(403).json({
+        msg: 'This organization is not accepting public applications',
+        code: 'PUBLIC_JOB_NOT_PUBLIC'
+      });
+    }
+    const organizationCvWriteFence = require('../services/organizationCvWriteFenceService');
+    const publicApplicationFence = await organizationCvWriteFence.acquire(
+      job.organization,
+      'public-application'
+    );
+    const stopFenceHeartbeat = organizationCvWriteFence.startHeartbeat(publicApplicationFence);
+    let fenceReleased = false;
+    const originalJson = res.json.bind(res);
+    res.json = async function fencedJson(body) {
+      if (!fenceReleased) {
+        fenceReleased = true;
+        stopFenceHeartbeat();
+        await organizationCvWriteFence.release(publicApplicationFence).catch(() => {});
+      }
+      return originalJson(body);
+    };
+    const renewPublicApplicationFence = () => (
+      organizationCvWriteFence.renew(publicApplicationFence)
+    );
+    await renewPublicApplicationFence();
 
-    const candidate = new Candidate({
+    const suppliedKey = String(req.get?.('Idempotency-Key') || '').trim().slice(0, 200);
+    if (!suppliedKey) {
+      return res.status(400).json({
+        msg: 'An Idempotency-Key is required for public applications',
+        code: 'PUBLIC_APPLICATION_IDEMPOTENCY_KEY_REQUIRED'
+      });
+    }
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const requestFingerprint = crypto.createHash('sha256').update(JSON.stringify({
+      firstName: String(firstName).trim(),
+      lastName: String(lastName).trim(),
+      email: normalizedEmail,
+      phone: String(phone).trim(),
+      coverLetter: String(coverLetter || ''),
+      isOrganizationStaff: Boolean(isOrganizationStaff)
+    })).digest('hex');
+    const publicApplicationKey = crypto
+      .createHash('sha256')
+      .update(`${job._id}:email:${normalizedEmail}`)
+      .digest('hex');
+    const publicApplicationRequestKey = crypto
+      .createHash('sha256')
+      .update(`${job._id}:request:${suppliedKey}`)
+      .digest('hex');
+    const deterministicId = new (require('mongoose').Types.ObjectId)(
+      crypto.createHash('sha256')
+        .update(`public-candidate:${job.organization}:${job._id}:${publicApplicationKey}`)
+        .digest('hex')
+      .slice(0, 24)
+    );
+    const commitApplication = async (candidate) => {
+      await renewPublicApplicationFence();
+      const commitStartedAt = new Date();
+      const committing = await Candidate.updateOne(
+        {
+          _id: candidate._id,
+          organization: job.organization,
+          deletionState: { $ne: 'tombstoned' },
+          $or: [
+            { publicApplicationCommitState: { $in: ['provisional', 'committing'] } },
+            { publicApplicationCommitState: { $exists: false } }
+          ]
+        },
+        {
+          $set: {
+            publicApplicationCommitState: 'committing',
+            publicApplicationCommitStartedAt: commitStartedAt
+          },
+          // Clear the TTL before changing Job capacity. A crash can now leave
+          // only a hidden, repairable `committing` row, never delete a
+          // shortlist-backed accepted applicant.
+          $unset: { publicApplicationProvisionalExpiresAt: 1 }
+        }
+      );
+      if (!Number(committing.matchedCount || committing.n || 0)) {
+        const alreadyCommitted = await Candidate.exists({
+          _id: candidate._id,
+          organization: job.organization,
+          publicApplicationCommitState: 'committed',
+          deletionState: { $ne: 'tombstoned' }
+        });
+        if (!alreadyCommitted) {
+          const stateError = new Error('Public application is no longer available');
+          stateError.code = 'PUBLIC_APPLICATION_STATE_INVALID';
+          stateError.statusCode = 409;
+          throw stateError;
+        }
+      }
+
+      let capacity;
+      try {
+        await renewPublicApplicationFence();
+        capacity = await publicApplicationCapacityService.commit({
+          jobId: job._id,
+          organizationId: job.organization,
+          candidateId: candidate._id,
+          processingJobId: candidate._id,
+          processingJobPublicId: `public-application:${candidate._id}`
+        });
+      } catch (error) {
+        const jobCommitted = await Job.exists({
+          _id: job._id,
+          organization: job.organization,
+          'shortlist.candidate': candidate._id
+        });
+        if (!jobCommitted) {
+          await Candidate.updateOne(
+            {
+              _id: candidate._id,
+              organization: job.organization,
+              publicApplicationCommitState: 'committing',
+              publicApplicationCommitStartedAt: commitStartedAt
+            },
+            {
+              $set: {
+                publicApplicationCommitState: 'provisional',
+                publicApplicationProvisionalExpiresAt: new Date(Date.now() + 60 * 60 * 1000)
+              },
+              $unset: { publicApplicationCommitStartedAt: 1 }
+            }
+          );
+        }
+        throw error;
+      }
+      await renewPublicApplicationFence();
+      await Candidate.updateOne(
+        {
+          _id: candidate._id,
+          organization: job.organization,
+          deletionState: { $ne: 'tombstoned' }
+        },
+        {
+          $set: { publicApplicationCommitState: 'committed' },
+          $unset: {
+            publicApplicationProvisionalExpiresAt: 1,
+            publicApplicationCommitStartedAt: 1
+          }
+        }
+      );
+      if (!capacity.duplicate) {
+        try {
+          const notificationJob = await Job.findById(job._id);
+          await notificationJob?.populate([
+            { path: 'organization' },
+            { path: 'department', select: 'name' }
+          ]);
+          if (notificationJob) {
+            const candidateEmailNotificationService = require('../services/candidateEmailNotificationService');
+            await candidateEmailNotificationService.sendApplicationConfirmationEmail({
+              candidate,
+              job: notificationJob
+            });
+            if (capacity.limitReached) {
+              await candidateEmailNotificationService.sendJobApplicationLimitReachedEmail({
+                job: notificationJob
+              });
+            }
+          }
+        } catch (emailError) {
+          console.error('Public application confirmation could not be sent:', emailError.message);
+        }
+      }
+      return capacity;
+    };
+
+    const existing = await Candidate.findOne({
+      organization: job.organization,
+      jobAppliedFor: job._id,
+      $or: [
+        { publicApplicationKey },
+        ...(publicApplicationRequestKey ? [{ publicApplicationRequestKey }] : [])
+      ]
+    }).select(
+      '+publicApplicationKey +publicApplicationRequestKey '
+      + '+publicApplicationRequestFingerprint +publicApplicationCapabilityHash '
+      + '+publicApplicationCapabilityExpiresAt'
+    );
+    if (existing) {
+      const sameRequest = existing.publicApplicationRequestKey === publicApplicationRequestKey;
+      if (!sameRequest) {
+        // Do not reveal whether this email already applied, nor return its
+        // candidate identifier to a caller holding a fresh request key.
+        return res.status(202).json({
+          msg: 'If this application was already submitted, it remains on file',
+          duplicate: true,
+          accessGranted: false
+        });
+      }
+      if (
+        existing.email !== normalizedEmail
+        || existing.publicApplicationRequestFingerprint !== requestFingerprint
+      ) {
+        return res.status(409).json({
+          msg: 'This application key was already used for different application details',
+          code: 'PUBLIC_APPLICATION_IDEMPOTENCY_MISMATCH'
+        });
+      }
+      const capability = publicApplicationCapability.issue({
+        organizationId: job.organization,
+        jobId: job._id,
+        candidateId: existing._id,
+        requestKey: publicApplicationRequestKey
+      });
+      await renewPublicApplicationFence();
+      await Candidate.updateOne(
+        { _id: existing._id, publicApplicationRequestKey },
+        {
+          $set: {
+            publicApplicationCapabilityHash: capability.hash,
+            publicApplicationCapabilityExpiresAt: capability.expiresAt
+          }
+        }
+      );
+      const capacity = await commitApplication(existing);
+      return res.status(200).json({
+        msg: 'Candidate application already received',
+        duplicate: true,
+        candidate: {
+          _id: existing._id,
+          firstName: existing.firstName,
+          lastName: existing.lastName,
+          email: existing.email,
+          phone: existing.phone,
+        },
+        applicationCapability: {
+          token: capability.token,
+          expiresAt: capability.expiresAt
+        },
+        applicationCount: capacity.applicationCount,
+        limitReached: capacity.limitReached
+      });
+    }
+
+    const reconciliation = await publicApplicationCapacityService.reconcileInflatedCount({
+      jobId: job._id,
+      organizationId: job.organization
+    });
+    const applicationCount = Number(
+      reconciliation?.applicationCount ?? job.publicApplicationCount ?? 0
+    );
+    const candidateLimit = Number(job.candidateApplyLimit || 0);
+    if (candidateLimit <= 0 || applicationCount >= candidateLimit) {
+      return res.status(409).json({
+        msg: 'This job has reached its maximum number of public applications',
+        code: 'PUBLIC_APPLICATION_LIMIT_REACHED'
+      });
+    }
+    const unitCost = Number(
+      job.publicApplicationCreditUnitCost
+      || await publicApplicationCapacityService.uploadCandidateCost()
+      || 0
+    );
+    if ((applicationCount + 1) * unitCost > Number(job.reservedCredits || 0)) {
+      return res.status(409).json({
+        msg: 'This job has no reserved public-application credits remaining',
+        code: 'PUBLIC_APPLICATION_CREDITS_EXHAUSTED'
+      });
+    }
+
+    const capability = publicApplicationCapability.issue({
+      organizationId: job.organization,
+      jobId: job._id,
+      candidateId: deterministicId,
+      requestKey: publicApplicationRequestKey
+    });
+    const candidatePayload = {
+      _id: deterministicId,
       firstName,
       lastName,
-      email,
+      email: normalizedEmail,
       phone,
       position: job.title || 'Position TBD',
       experience: 'See CV',
@@ -580,14 +863,70 @@ exports.createPublicCandidate = async (req, res) => {
       isInternalCandidate: Boolean(isOrganizationStaff),
       organization: job.organization,
       jobAppliedFor: job._id,
-    });
+      publicApplicationKey,
+      publicApplicationRequestKey,
+      publicApplicationRequestFingerprint: requestFingerprint,
+      publicApplicationCapabilityHash: capability.hash,
+      publicApplicationCapabilityExpiresAt: capability.expiresAt,
+      publicApplicationCommitState: 'provisional',
+      publicApplicationProvisionalExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      processingMetadata: {
+        cvIngestionState: 'not_received',
+        cvProcessingStage: 'received',
+        cvProcessingProgress: 0,
+        cvProcessingUpdatedAt: new Date(),
+        cvRetryEligible: false
+      }
+    };
 
-    await candidate.save();
+    let candidate;
+    try {
+      await renewPublicApplicationFence();
+      candidate = await Candidate.findOneAndUpdate(
+        { _id: deterministicId },
+        { $setOnInsert: candidatePayload },
+        { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+      ).select('+publicApplicationRequestKey +publicApplicationRequestFingerprint');
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      candidate = await Candidate.findOne({
+        organization: job.organization,
+        jobAppliedFor: job._id,
+        publicApplicationKey
+      }).select('+publicApplicationRequestKey +publicApplicationRequestFingerprint');
+      if (!candidate) throw error;
+    }
 
+    if (
+      candidate.publicApplicationRequestKey !== publicApplicationRequestKey
+      || candidate.publicApplicationRequestFingerprint !== requestFingerprint
+    ) {
+      return res.status(202).json({
+        msg: 'If this application was already submitted, it remains on file',
+        duplicate: true,
+        accessGranted: false
+      });
+    }
+
+    const capacity = await commitApplication(candidate);
+
+    // Concurrent exact replays converge on one candidate and one currently
+    // valid capability. The conditional update makes the returned token own
+    // that capability without exposing it to a different request key.
+    await Candidate.updateOne(
+      { _id: candidate._id, publicApplicationRequestKey },
+      {
+        $set: {
+          publicApplicationCapabilityHash: capability.hash,
+          publicApplicationCapabilityExpiresAt: capability.expiresAt
+        }
+      }
+    );
     gptAnalysisService.cache.onCandidateAdded(candidate._id);
 
-    res.status(201).json({
+    return res.status(201).json({
       msg: 'Candidate created successfully',
+      duplicate: false,
       candidate: {
         _id: candidate._id,
         firstName: candidate.firstName,
@@ -595,10 +934,21 @@ exports.createPublicCandidate = async (req, res) => {
         email: candidate.email,
         phone: candidate.phone,
       },
+      applicationCapability: {
+        token: capability.token,
+        expiresAt: capability.expiresAt
+      },
+      applicationCount: capacity.applicationCount,
+      limitReached: capacity.limitReached
     });
   } catch (error) {
     console.error('Error creating public candidate:', error);
-    res.status(500).json({ msg: 'Server error', error: error.message });
+    const requestedStatus = Number(error?.statusCode);
+    const statusCode = requestedStatus >= 400 && requestedStatus < 500 ? requestedStatus : 500;
+    return res.status(statusCode).json({
+      code: error?.code || 'PUBLIC_APPLICATION_FAILED',
+      msg: statusCode < 500 ? error.message : 'Server error'
+    });
   }
 };
 
@@ -681,7 +1031,11 @@ exports.exportCandidates = async (req, res) => {
     const { status, search } = req.query;
 
     // reuse the same query logic as getAllCandidates but without pagination
-    const query = { organization: organizationId };
+    const query = {
+      organization: organizationId,
+      publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+      deletionState: { $ne: 'tombstoned' }
+    };
 
     if (status) query.status = status;
     if (search) {
@@ -795,7 +1149,11 @@ exports.getAllCandidates = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const { page = 1, limit = 10, status, search } = req.query;
 
-    const query = { organization: organizationId };
+    const query = {
+      organization: organizationId,
+      publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+      deletionState: { $ne: 'tombstoned' }
+    };
 
     if (status) query.status = status;
     if (search) {
@@ -859,7 +1217,9 @@ exports.getCandidateById = async (req, res) => {
     const organizationId = req.user.currentOrganization;
     const candidate = await Candidate.findOne({
       _id: req.params.id,
-      organization: organizationId
+      organization: organizationId,
+      publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+      deletionState: { $ne: 'tombstoned' }
     });
 
     if (!candidate) {
@@ -927,6 +1287,8 @@ exports.updateCandidate = async (req, res) => {
 
     // Build query based on whether we have organization context
     const query = { _id: req.params.id };
+    query.publicApplicationCommitState = { $nin: ['provisional', 'committing'] };
+    query.deletionState = { $ne: 'tombstoned' };
     if (organizationId) {
       query.organization = organizationId;
     }
@@ -961,7 +1323,10 @@ exports.updateCandidate = async (req, res) => {
     }
 
     // Invalidate AI match cache if candidate profile changed
-    const cacheInvalidatingFields = ['experience', 'skills', 'position', 'education', 'coverLetter'];
+    const cacheInvalidatingFields = [
+      'firstName', 'lastName', 'experience', 'skills', 'position', 'education',
+      'location', 'coverLetter', 'resumeText', 'workExperience', 'certifications', 'aiAnalysis'
+    ];
     const shouldInvalidateCache = cacheInvalidatingFields.some(field => candidateFields[field] !== undefined);
 
     if (shouldInvalidateCache) {
@@ -992,34 +1357,27 @@ exports.deleteCandidate = async (req, res) => {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
 
-    console.log(`🗑️ Deleting candidate: ${candidate.firstName} ${candidate.lastName} (${req.params.id})`);
+    // Cancellation, CV/GridFS/Cloudinary removal, embedding removal, and audit
+    // redaction are durable outbox-backed operations. They are registered
+    // before the candidate record is removed, so transient provider failures
+    // cannot strand PII without a retry target.
+    const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
+    const erasure = await cvAnalysisQueue.eraseCandidateProcessingData(
+      organizationId,
+      [candidate._id]
+    );
+    await require('../services/aiMatchCacheService')
+      .invalidateCandidateCache(candidate._id, organizationId);
 
-    // Delete embedding from vector store first
-    try {
-      await embeddingService.deleteEmbedding(req.params.id);
-      console.log(`✅ Embedding deleted from vector store for candidate: ${req.params.id}`);
-    } catch (embeddingError) {
-      console.warn(`⚠️ Failed to delete embedding for candidate ${req.params.id}:`, embeddingError.message);
-      // Continue with deletion even if embedding deletion fails
-    }
-
-    // Optional: Delete resume from Cloudinary if needed
-    // if (candidate.resumeUrl) {
-    //   const publicId = candidate.resumeUrl.split('/').pop().split('.')[0];
-    //   await cloudinary.uploader.destroy(publicId);
-    // }
-
-    // Delete candidate from database
-    await Candidate.findByIdAndDelete(req.params.id);
-
-    console.log(`✅ Candidate and embedding successfully deleted: ${candidate.firstName} ${candidate.lastName}`);
-
-    res.json({
-      msg: 'Candidate removed successfully',
+    res.status(erasure.candidates[0]?.hardDeleted === true ? 200 : 202).json({
+      msg: erasure.candidates[0]?.hardDeleted === true
+        ? 'Candidate removed successfully'
+        : 'Candidate deletion accepted; final cleanup is pending',
       deletedCandidate: {
         id: req.params.id,
-        name: `${candidate.firstName} ${candidate.lastName}`,
-        embeddingDeleted: true
+        erasureScheduled: true,
+        pending: erasure.candidates[0]?.hardDeleted !== true,
+        hardDeleted: erasure.candidates[0]?.hardDeleted === true
       }
     });
   } catch (error) {
@@ -1027,7 +1385,13 @@ exports.deleteCandidate = async (req, res) => {
     if (error.kind === 'ObjectId') {
       return res.status(404).json({ msg: 'Candidate not found (invalid ID format)' });
     }
-    res.status(500).json({ msg: 'Server error' });
+    if (['CV_ERASURE_REGISTRATION_FAILED', 'CV_ERASURE_TOMBSTONE_FAILED'].includes(error.code)) {
+      return res.status(503).json({
+        code: error.code,
+        msg: error.message
+      });
+    }
+    res.status(error.statusCode || 500).json({ msg: 'Server error' });
   }
 };
 
@@ -1053,15 +1417,18 @@ exports.bulkDeleteCandidates = async (req, res) => {
           continue;
         }
 
-        try {
-          await embeddingService.deleteEmbedding(id);
-        } catch (embeddingError) {
-          // Log but do not fail deletion
-          console.warn(`⚠️ Failed to delete embedding for candidate ${id}:`, embeddingError.message);
-        }
-
-        await Candidate.findByIdAndDelete(id);
-        results.push({ id, success: true });
+        const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
+        const erasure = await cvAnalysisQueue.eraseCandidateProcessingData(
+          organizationId,
+          [candidate._id]
+        );
+        await require('../services/aiMatchCacheService')
+          .invalidateCandidateCache(candidate._id, organizationId);
+        results.push({
+          id,
+          success: true,
+          hardDeleted: erasure.candidates[0]?.hardDeleted === true
+        });
       } catch (err) {
         failures.push({ id, error: err.message });
       }
@@ -1130,7 +1497,9 @@ exports.bulkDownloadCandidates = async (req, res) => {
 
     const candidates = await Candidate.find({
       _id: { $in: candidateIds },
-      organization: organizationId
+      organization: organizationId,
+      publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+      deletionState: { $ne: 'tombstoned' }
     });
 
     if (candidates.length === 0) {
@@ -1199,7 +1568,11 @@ exports.getAccessibleResumeUrl = async (req, res) => {
     const organizationId = req.user?.currentOrganization;
 
     // Build query based on whether we have organization context
-    const query = { _id: req.params.id };
+    const query = {
+      _id: req.params.id,
+      publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+      deletionState: { $ne: 'tombstoned' }
+    };
     if (organizationId) {
       query.organization = organizationId;
     }
@@ -1211,8 +1584,29 @@ exports.getAccessibleResumeUrl = async (req, res) => {
 
     if (!candidate.cloudinaryPublicId) {
       return res.status(400).json({
-        msg: 'No Cloudinary public ID found for this candidate',
-        resumeUrl: candidate.resumeUrl
+        msg: 'No managed resume asset found for this candidate'
+      });
+    }
+
+    // Public feedback never receives a provider URL. Return revocable proxy
+    // links that re-run interview capability verification on every view or
+    // download, so cancellation/expiry closes already-generated links.
+    if (req.publicFeedbackInterview) {
+      const token = req.get('X-Public-Feedback-Token') || req.query?.accessToken;
+      if (!token) return res.status(404).json({ msg: 'Resume access was not found' });
+      const origin = `${req.protocol}://${req.get('host')}`;
+      const route = `/api/candidates/public/interviews/${encodeURIComponent(String(req.params.interviewId))}`
+        + `/candidates/${encodeURIComponent(String(candidate._id))}/resume`;
+      const capabilityQuery = `accessToken=${encodeURIComponent(token)}`;
+      res.setHeader?.('Cache-Control', 'private, no-store');
+      res.setHeader?.('Referrer-Policy', 'no-referrer');
+      return res.json({
+        msg: 'Capability-bound resume proxy URLs generated successfully',
+        resumeAvailable: true,
+        accessible: true,
+        viewUrl: `${origin}${route}?mode=view&${capabilityQuery}`,
+        downloadUrl: `${origin}${route}?mode=download&${capabilityQuery}`,
+        candidateId: candidate._id
       });
     }
 
@@ -1238,6 +1632,7 @@ exports.getAccessibleResumeUrl = async (req, res) => {
       msg: 'Accessible URLs generated successfully',
       originalUrl: candidate.resumeUrl,
       accessibleUrl,
+      viewUrl: accessibleUrl,
       downloadUrl,
       previewUrl,
       candidateId: candidate._id,
@@ -1250,6 +1645,46 @@ exports.getAccessibleResumeUrl = async (req, res) => {
       return res.status(404).json({ msg: 'Candidate not found (invalid ID format)' });
     }
     res.status(500).json({ msg: 'Server error', error: error.message });
+  }
+};
+
+exports.streamPublicFeedbackResume = async (req, res) => {
+  try {
+    const interview = req.publicFeedbackInterview;
+    const candidateQuery = {
+      _id: req.params.id,
+      publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+      deletionState: { $ne: 'tombstoned' },
+      cloudinaryPublicId: { $exists: true, $ne: '' }
+    };
+    if (interview?.organizationId) candidateQuery.organization = interview.organizationId;
+    const candidate = await Candidate.findOne(candidateQuery).select(
+      '_id cloudinaryPublicId cloudinaryResourceType cloudinaryDeliveryType resumeUrl'
+    );
+    if (!candidate || String(interview?.candidateId || '') !== String(candidate._id)) {
+      return res.status(404).json({ msg: 'Resume access was not found' });
+    }
+
+    const deliveryType = candidate.cloudinaryDeliveryType || 'authenticated';
+    const providerUrl = req.query?.mode === 'download'
+      ? cloudinaryUploadService.getDownloadUrl(candidate.cloudinaryPublicId, deliveryType)
+      : cloudinaryUploadService.getAccessiblePdfUrl(candidate.cloudinaryPublicId, deliveryType);
+    const upstream = await fetch(providerUrl);
+    if (!upstream.ok) {
+      return res.status(502).json({ msg: 'Resume asset is temporarily unavailable' });
+    }
+    const content = Buffer.from(await upstream.arrayBuffer());
+    const disposition = req.query?.mode === 'download' ? 'attachment' : 'inline';
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', String(content.length));
+    res.setHeader('Content-Disposition', `${disposition}; filename="candidate-resume"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    return res.send(content);
+  } catch (error) {
+    console.error('Error proxying public feedback resume:', error.message);
+    return res.status(502).json({ msg: 'Resume asset is temporarily unavailable' });
   }
 };
 

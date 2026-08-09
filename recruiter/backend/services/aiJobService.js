@@ -3,14 +3,66 @@
 // and embedding services for job-related operations.
 
 const Job = require('../models/Job');
+const Department = require('../models/Department');
 const Notification = require('../models/Notification');
 const embeddingService = require('./embeddingService');
 const AIModelService = require('./aiModelService');
+const mongoose = require('mongoose');
 
 class AiJobService {
     constructor() {
         this.aiModelService = new AIModelService();
         console.log('AiJobService initialized');
+    }
+
+    _requireOrganizationId(organizationId) {
+        if (!organizationId) {
+            const error = new Error('Organization context is required');
+            error.code = 'ORGANIZATION_CONTEXT_REQUIRED';
+            throw error;
+        }
+        return organizationId;
+    }
+
+    async _invalidateMatchingCaches(jobId) {
+        const aiMatchCacheService = require('./aiMatchCacheService');
+        const gptAnalysisService = require('./gptAnalysisService');
+        await aiMatchCacheService.invalidateJobCache(jobId);
+        gptAnalysisService.cache.invalidateJob(jobId);
+    }
+
+    _escapeRegex(value) {
+        return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    async _resolveDepartmentId(organizationId, departmentValue, { required = true } = {}) {
+        const tenantId = this._requireOrganizationId(organizationId);
+        const rawValue = departmentValue && typeof departmentValue === 'object'
+            ? (departmentValue._id || departmentValue.id || departmentValue.name)
+            : departmentValue;
+
+        if (!rawValue) {
+            if (!required) return null;
+            const error = new Error('Department is required');
+            error.code = 'DEPARTMENT_REQUIRED';
+            throw error;
+        }
+
+        const departmentQuery = mongoose.isValidObjectId(rawValue)
+            ? { _id: rawValue, organization: tenantId, isActive: { $ne: false } }
+            : {
+                organization: tenantId,
+                name: { $regex: new RegExp(`^${this._escapeRegex(String(rawValue).trim())}$`, 'i') },
+                isActive: { $ne: false }
+            };
+        const department = await Department.findOne(departmentQuery).select('_id name');
+        if (!department) {
+            if (!required) return null;
+            const error = new Error(`Department "${String(rawValue)}" was not found in the active organization`);
+            error.code = 'DEPARTMENT_NOT_FOUND';
+            throw error;
+        }
+        return department._id;
     }
 
     /**
@@ -23,11 +75,14 @@ class AiJobService {
     async createJobAndEmbed(jobData, userId) {
         console.log(`[AiJobService] Attempting to create job with title: ${jobData.title}`);
         try {
+            const organizationId = this._requireOrganizationId(jobData.organization);
             const jobToCreate = {
                 ...jobData,
+                organization: organizationId,
                 createdBy: userId || null, // Handled by JobAgent's userContext
                 uploadMetadata: jobData.uploadMetadata || { source: 'agent' }, // Default source if not provided
             };
+            jobToCreate.department = await this._resolveDepartmentId(organizationId, jobData.department);
 
             // Remove createdBy if it's null and not explicitly required by schema
             if (!jobToCreate.createdBy && Job.schema.paths.createdBy?.isRequired === false) {
@@ -129,31 +184,46 @@ class AiJobService {
     async listJobs(filterParams = {}) {
         console.log('[AiJobService] Listing jobs with filters:', filterParams);
         try {
-            const { status, department, type, title, search, limit = 20, page = 1 } = filterParams;
-            const query = {};
+            const {
+                status,
+                department,
+                type,
+                title,
+                search,
+                organization,
+                organizationId,
+                limit = 20,
+                page = 1
+            } = filterParams;
+            const tenantId = this._requireOrganizationId(organization || organizationId);
+            const query = { organization: tenantId };
 
             // Status filter (exact match)
             if (status) query.status = status;
             
             // Department filter (case-insensitive regex)
-            if (department) query.department = new RegExp(department, 'i');
+            if (department) {
+                const departmentId = await this._resolveDepartmentId(tenantId, department, { required: false });
+                if (!departmentId) return [];
+                query.department = departmentId;
+            }
             
             // Type filter (exact match)
             if (type) query.type = type;
             
             // Title filter (case-insensitive regex) - NEW
             if (title) {
-                query.title = new RegExp(title, 'i');
+                query.title = new RegExp(this._escapeRegex(title), 'i');
                 console.log(`[AiJobService] 🎯 Filtering by job title: "${title}"`);
             }
             
             // Search filter (searches across multiple fields)
             if (search) {
+                const safeSearch = new RegExp(this._escapeRegex(search), 'i');
                 query.$or = [
-                    { title: new RegExp(search, 'i') },
-                    { description: new RegExp(search, 'i') },
-                    { department: new RegExp(search, 'i') },
-                    { location: new RegExp(search, 'i') },
+                    { title: safeSearch },
+                    { description: safeSearch },
+                    { location: safeSearch },
                 ];
             }
             
@@ -185,10 +255,11 @@ class AiJobService {
      * @param {string} jobId - The ID of the job.
      * @returns {Promise<object|null>} The job object or null if not found.
      */
-    async getJobById(jobId) {
+    async getJobById(jobId, organizationId) {
         console.log(`[AiJobService] Getting job by ID: ${jobId}`);
         try {
-            const job = await Job.findById(jobId)
+            const tenantId = this._requireOrganizationId(organizationId);
+            const job = await Job.findOne({ _id: jobId, organization: tenantId })
                 .populate('hiringManager', 'firstName lastName email'); // Example population
             
             if (!job) {
@@ -210,14 +281,19 @@ class AiJobService {
      * @param {string} [userId] - Optional ID of the user updating the job.
      * @returns {Promise<object|null>} The updated job object or null if not found.
      */
-    async updateJobAndEmbed(jobId, updateData, userId) {
+    async updateJobAndEmbed(jobId, updateData, userId, organizationId) {
         console.log(`[AiJobService] Updating job ID: ${jobId}`);
         try {
+            const tenantId = this._requireOrganizationId(organizationId);
             const dataToUpdate = {
                 ...updateData,
                 updatedBy: userId || null,
                 // updatedAt is handled by Mongoose pre-save hook in JobSchema
             };
+            delete dataToUpdate.organization;
+            if (Object.prototype.hasOwnProperty.call(updateData, 'department')) {
+                dataToUpdate.department = await this._resolveDepartmentId(tenantId, updateData.department);
+            }
 
             // Handle date fields if they exist in updateData
             if (dataToUpdate.applicationDeadline) {
@@ -243,7 +319,11 @@ class AiJobService {
             }
 
 
-            const job = await Job.findByIdAndUpdate(jobId, dataToUpdate, { new: true, runValidators: true });
+            const job = await Job.findOneAndUpdate(
+                { _id: jobId, organization: tenantId },
+                dataToUpdate,
+                { new: true, runValidators: true }
+            );
 
             if (!job) {
                 console.log(`[AiJobService] Job not found with ID: ${jobId} for update.`);
@@ -263,6 +343,8 @@ class AiJobService {
                     console.error(`[AiJobService] WARNING: Failed to update embedding for job ${job._id}:`, embeddingError.message);
                 // Don't fail the update if embedding fails
             }
+
+            await this._invalidateMatchingCaches(job._id);
             
             return job.toObject({ virtuals: true });
         } catch (error) {
@@ -276,10 +358,11 @@ class AiJobService {
      * @param {string} jobId - The ID of the job to delete.
      * @returns {Promise<boolean>} True if successful, false otherwise.
      */
-    async deleteJobAndEmbed(jobId) {
+    async deleteJobAndEmbed(jobId, organizationId) {
         console.log(`[AiJobService] Deleting job ID: ${jobId}`);
         try {
-            const job = await Job.findById(jobId);
+            const tenantId = this._requireOrganizationId(organizationId);
+            const job = await Job.findOne({ _id: jobId, organization: tenantId });
             if (!job) {
                 console.log(`[AiJobService] Job not found with ID: ${jobId} for deletion.`);
                 return false;
@@ -294,7 +377,8 @@ class AiJobService {
                 // Continue with DB deletion even if embedding deletion fails
             }
 
-            await Job.findByIdAndDelete(jobId);
+            await Job.deleteOne({ _id: jobId, organization: tenantId });
+            await this._invalidateMatchingCaches(jobId);
             console.log(`[AiJobService] Job deleted successfully from DB: ${job.title}`);
             return true;
         } catch (error) {
@@ -335,18 +419,20 @@ class AiJobService {
      * Finds matching candidates for a given job.
      * @param {string} jobId - The ID of the job.
      * @param {number} [topK=10] - Number of matches to return.
-     * @returns {Promise<Array<object>>} Array of matching candidate objects with explanations.
+     * @param {string} organizationId - Active organization scope.
+     * @returns {Promise<{matches: Array<object>}>} Cache-aware matching result.
      */
-    async getMatchingCandidatesForJob(jobId, topK = 10) {
+    async getMatchingCandidatesForJob(jobId, topK = 10, organizationId) {
         console.log(`[AiJobService] Getting matching candidates for job ID: ${jobId}, topK: ${topK}`);
         try {
-            const job = await Job.findById(jobId);
+            const tenantId = this._requireOrganizationId(organizationId);
+            const job = await Job.findOne({ _id: jobId, organization: tenantId });
             if (!job) {
                 throw new Error('Job not found');
             }
             // Uses the enhanced method from embeddingService
-            const matches = await embeddingService.findMatchingCandidatesWithExplanation(job, parseInt(topK));
-            return matches;
+            const requestedTopK = Math.min(Math.max(Number.parseInt(topK, 10) || 10, 1), 100);
+            return await embeddingService.findMatchingCandidatesWithExplanation(job, requestedTopK);
         } catch (error) {
             console.error(`[AiJobService] Error getting matching candidates for job ID ${jobId}:`, error);
             throw new Error(`Failed to get matching candidates: ${error.message}`);
@@ -370,7 +456,11 @@ class AiJobService {
             
             if (!jobGenerationResult.success) {
                 console.error('[AiJobService] AI generation failed:', jobGenerationResult.error);
-                throw new Error(jobGenerationResult.error || 'AI generation failed');
+                const error = new Error(jobGenerationResult.error || 'AI generation failed');
+                error.code = jobGenerationResult.code;
+                error.statusCode = jobGenerationResult.statusCode;
+                error.retryable = jobGenerationResult.retryable === true;
+                throw error;
             }
             
             console.log('[AiJobService] AI runtime responded successfully.');
@@ -411,10 +501,10 @@ class AiJobService {
         } catch (error) {
             console.error('[AiJobService] Error generating comprehensive job details:', error);
             
-            // Provide fallback content if AI generation fails
-            console.log('[AiJobService] 🔄 Using fallback content generation');
-            const fallbackContent = this._generateFallbackContent(promptData);
-            return fallbackContent;
+            // This path is explicitly presented as AI generation. Propagate
+            // runtime/account failures so callers can show the connection or
+            // retry action instead of silently labelling canned copy as AI.
+            throw error;
         }
     }
 

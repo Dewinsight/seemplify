@@ -2,6 +2,38 @@ const AIInterviewRuntimeAccount = require('../../models/AIInterviewRuntimeAccoun
 const { AIRuntimeError } = require('./aiRuntimeService');
 const { callGateway, subjectKeyForUser } = require('./codexAccountService');
 
+const CLEANUP_RETENTION_DAYS = Math.max(1, Number(process.env.AI_INTERVIEW_CONNECTION_RETENTION_DAYS || 30));
+
+function cleanupRetryAt(attempts, now = Date.now()) {
+  const minutes = Math.min(60, 2 ** Math.min(Math.max(1, Number(attempts) || 1), 6));
+  return new Date(now + minutes * 60 * 1000);
+}
+
+function cleanupState(account) {
+  if (!account.credentialCleanup) account.credentialCleanup = {};
+  return account.credentialCleanup;
+}
+
+function clearConnection(account, { reason = 'candidate_requested', terminal = false } = {}) {
+  account.status = 'disconnected';
+  account.connectedEmail = '';
+  account.planType = '';
+  account.connectedAt = null;
+  account.disconnectedAt = new Date();
+  account.dataSharingAcknowledgedAt = null;
+  const cleanup = cleanupState(account);
+  cleanup.status = 'pending';
+  cleanup.requestedAt = cleanup.requestedAt || new Date();
+  cleanup.nextAttemptAt = new Date();
+  cleanup.completedAt = null;
+  cleanup.reason = String(reason || '').slice(0, 80);
+  cleanup.lastError = '';
+  if (terminal) {
+    account.purgeAfter = new Date(Date.now() + CLEANUP_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  }
+  return account;
+}
+
 /**
  * A candidate's own ChatGPT connection for one live AI interview.
  *
@@ -48,6 +80,37 @@ function applyStatus(account, status) {
   if (connected && !account.connectedAt) account.connectedAt = new Date();
   if (!connected) account.connectedAt = null;
   account.lastError = String(status?.loginError || '').slice(0, 500);
+  if (connected) {
+    const cleanup = cleanupState(account);
+    cleanup.status = 'idle';
+    cleanup.attempts = 0;
+    cleanup.requestedAt = null;
+    cleanup.nextAttemptAt = null;
+    cleanup.completedAt = null;
+    cleanup.reason = '';
+    cleanup.lastError = '';
+    account.purgeAfter = null;
+  }
+  return account;
+}
+
+async function attemptCredentialCleanup(account, options = {}) {
+  const cleanup = cleanupState(account);
+  cleanup.status = 'processing';
+  cleanup.attempts = Number(cleanup.attempts || 0) + 1;
+  cleanup.nextAttemptAt = null;
+  await account.save();
+  try {
+    await callGateway('logout', subjectIdForSession(account.session), options);
+    cleanup.status = 'completed';
+    cleanup.completedAt = new Date();
+    cleanup.lastError = '';
+  } catch (error) {
+    cleanup.status = 'pending';
+    cleanup.nextAttemptAt = cleanupRetryAt(cleanup.attempts);
+    cleanup.lastError = String(error?.message || 'Credential cleanup failed').slice(0, 500);
+  }
+  await account.save();
   return account;
 }
 
@@ -55,6 +118,12 @@ function applyStatus(account, status) {
  * host must not keep routing interview turns that would then fail mid-answer. */
 async function readAccount(session, options = {}) {
   const account = await accountForSession(session);
+  if (['pending', 'processing'].includes(account.credentialCleanup?.status)) {
+    return attemptCredentialCleanup(account, options);
+  }
+  if (account.credentialCleanup?.status === 'completed' && account.status === 'disconnected') {
+    return account;
+  }
   try {
     applyStatus(account, await callGateway('account', subjectIdForSession(account.session), options));
   } catch (error) {
@@ -67,6 +136,15 @@ async function readAccount(session, options = {}) {
 
 async function startLogin(session, options = {}) {
   const account = await accountForSession(session);
+  const cleanup = cleanupState(account);
+  cleanup.status = 'idle';
+  cleanup.attempts = 0;
+  cleanup.requestedAt = null;
+  cleanup.nextAttemptAt = null;
+  cleanup.completedAt = null;
+  cleanup.reason = '';
+  cleanup.lastError = '';
+  account.purgeAfter = null;
   const login = await callGateway('login/start', subjectIdForSession(account.session), options);
   if (login.connected) {
     applyStatus(account, { connected: true });
@@ -95,15 +173,35 @@ async function setConsent(session, acknowledged) {
  * host can never keep a candidate connected against their wish. */
 async function disconnect(session, options = {}) {
   const account = await accountForSession(session);
-  account.status = 'disconnected';
-  account.connectedEmail = '';
-  account.planType = '';
-  account.connectedAt = null;
-  account.disconnectedAt = new Date();
-  account.dataSharingAcknowledgedAt = null;
+  clearConnection(account, options);
   await account.save();
-  await callGateway('logout', subjectIdForSession(account.session), options).catch(() => undefined);
-  return account;
+  return attemptCredentialCleanup(account, options);
+}
+
+async function processPendingCredentialCleanup(limit = 20, options = {}) {
+  const now = new Date();
+  const accounts = await AIInterviewRuntimeAccount.find({
+    'credentialCleanup.status': 'pending',
+    $or: [
+      { 'credentialCleanup.nextAttemptAt': { $lte: now } },
+      { 'credentialCleanup.nextAttemptAt': null },
+      { 'credentialCleanup.nextAttemptAt': { $exists: false } }
+    ]
+  }).sort({ 'credentialCleanup.nextAttemptAt': 1 }).limit(Math.max(1, Number(limit) || 20));
+  for (const account of accounts) {
+    await attemptCredentialCleanup(account, options);
+  }
+  return accounts.length;
+}
+
+async function disconnectInterview(aiInterviewId, options = {}) {
+  const accounts = await AIInterviewRuntimeAccount.find({ aiInterview: aiInterviewId });
+  for (const account of accounts) {
+    clearConnection(account, { ...options, terminal: true });
+    await account.save();
+    await attemptCredentialCleanup(account, options);
+  }
+  return accounts.length;
 }
 
 /** The subject a live interview turn runs on, or null when the candidate has
@@ -125,7 +223,10 @@ async function resolveRoutableSubject(sessionId) {
 module.exports = {
   accountForSession,
   cancelLogin,
+  cleanupRetryAt,
   disconnect,
+  disconnectInterview,
+  processPendingCredentialCleanup,
   readAccount,
   resolveRoutableSubject,
   setConsent,

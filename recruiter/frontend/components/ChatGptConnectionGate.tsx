@@ -133,13 +133,14 @@ export function ChatGptConnectionGate() {
     }
   }, [])
 
-  // While a device login is pending, poll until the account turns connected,
-  // then complete the gate by acknowledging data sharing.
+  // While a device login is pending, poll until the account turns connected.
+  // Connection and consent are intentionally separate: signing in must never
+  // silently accept the data-sharing disclosure on the user's behalf.
   useEffect(() => {
     if (!open || !deviceLogin) return
     const poll = async () => {
       const next = await refresh()
-      if (next?.status === "connected") void acknowledgeConsent()
+      if (next?.status === "connected") setDeviceLogin(null)
     }
     const timer = window.setInterval(() => { void poll() }, POLL_INTERVAL_MS)
     const onVisibility = () => { if (document.visibilityState === "visible") void poll() }
@@ -148,7 +149,7 @@ export function ChatGptConnectionGate() {
       window.clearInterval(timer)
       document.removeEventListener("visibilitychange", onVisibility)
     }
-  }, [open, deviceLogin, refresh, acknowledgeConsent])
+  }, [open, deviceLogin, refresh])
 
   async function connect(restart = false) {
     if (busy || cooldownLeft > 0) return
@@ -171,7 +172,7 @@ export function ChatGptConnectionGate() {
       const { login, account: next } = result
       setAccount(next)
       if (login.connected) {
-        await acknowledgeConsent()
+        setDeviceLogin(null)
       } else {
         setDeviceLogin(login)
       }
@@ -249,7 +250,7 @@ export function ChatGptConnectionGate() {
           </DialogTitle>
           <DialogDescription className="mx-auto mt-2 max-w-[19rem] text-center text-[14.5px] leading-relaxed">
             {needsConsent
-              ? "Confirm this account as the AI runtime for your work."
+              ? "Confirm this account as the AI runtime for Recruiter."
               : "This workspace runs AI on your own ChatGPT account. Sign in with OpenAI to use AI features."}
           </DialogDescription>
         </DialogHeader>
@@ -280,7 +281,8 @@ export function ChatGptConnectionGate() {
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               Candidate data, job descriptions, and interview content in the AI tasks you run are
-              processed by OpenAI on your connected account.
+              processed by OpenAI on your connected account. This agreement applies only to Recruiter;
+              Performance Management asks for consent separately.
             </span>
           </p>
 
@@ -360,7 +362,7 @@ export function ChatGptConnectionGate() {
               {working === "consent"
                 ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 : <OpenAILogo className="mr-2 h-4 w-4" />}
-              Continue with ChatGPT
+              Agree and continue
             </Button>
           ) : (
             <Button

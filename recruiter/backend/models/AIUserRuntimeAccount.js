@@ -1,5 +1,13 @@
 const mongoose = require('mongoose');
 
+const reasoningEfforts = ['minimal', 'none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+
+const AIActivityOverrideSchema = new mongoose.Schema({
+  activity: { type: String, required: true, trim: true, maxlength: 120 },
+  codexModel: { type: String, default: null, trim: true, maxlength: 120 },
+  reasoningEffort: { type: String, enum: [...reasoningEfforts, null], default: null }
+}, { _id: false });
+
 /**
  * One recruiter's connection to their own ChatGPT account.
  *
@@ -31,6 +39,10 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
   /** Routing to a personal plan requires an explicit acknowledgement that task
    * content leaves for OpenAI. Revoking it stops routing immediately. */
   dataSharingAcknowledgedAt: { type: Date, default: null },
+  /** Performance has its own disclosure/consent. Connecting ChatGPT is global,
+   * but approving Performance content must not implicitly approve Recruiter
+   * CVs or other Recruiter workloads. */
+  performanceDataSharingAcknowledgedAt: { type: Date, default: null },
   /** What the connected plan currently allows, as last reported by Codex. Kept
    * so the account screen can show it even when the gateway is unreachable —
    * a stale number with its timestamp beats no answer to "why has AI stopped".
@@ -43,26 +55,58 @@ const AIUserRuntimeAccountSchema = new mongoose.Schema({
     type: String,
     enum: ['default', 'local', 'chatgpt'],
     default: 'default'
-  }
+  },
+  /** Personal ChatGPT selections. Credentials remain gateway-only; these are
+   * harmless routing preferences and can be shared across Seemplify apps. */
+  aiDefaults: {
+    codexModel: { type: String, default: null, trim: true, maxlength: 120 },
+    reasoningEffort: { type: String, enum: [...reasoningEfforts, null], default: null }
+  },
+  activityOverrides: { type: [AIActivityOverrideSchema], default: [] }
 }, { timestamps: true });
 
-AIUserRuntimeAccountSchema.methods.isRoutable = function isRoutable() {
-  return this.status === 'connected' && Boolean(this.dataSharingAcknowledgedAt);
+AIUserRuntimeAccountSchema.methods.consentAt = function consentAt(app = 'recruiter') {
+  return app === 'performance'
+    ? this.performanceDataSharingAcknowledgedAt
+    : this.dataSharingAcknowledgedAt;
 };
 
-AIUserRuntimeAccountSchema.methods.toPublicJSON = function toPublicJSON() {
+AIUserRuntimeAccountSchema.methods.isRoutable = function isRoutable(app = 'recruiter') {
+  return this.status === 'connected' && Boolean(this.consentAt(app));
+};
+
+AIUserRuntimeAccountSchema.methods.toPublicJSON = function toPublicJSON(options = {}) {
+  const app = options.app === 'performance' ? 'performance' : 'recruiter';
+  const scopedConsent = this.consentAt(app);
   return {
     status: this.status,
     connectedEmail: this.connectedEmail || null,
     planType: this.planType || null,
     connectedAt: this.connectedAt,
     lastVerifiedAt: this.lastVerifiedAt,
-    dataSharingAcknowledgedAt: this.dataSharingAcknowledgedAt,
-    routable: this.isRoutable(),
+    // Backward-compatible scoped alias used by each product UI.
+    dataSharingAcknowledgedAt: scopedConsent,
+    consentScope: app,
+    consents: {
+      recruiter: this.dataSharingAcknowledgedAt || null,
+      performance: this.performanceDataSharingAcknowledgedAt || null
+    },
+    routable: this.isRoutable(app),
     rateLimits: this.rateLimits || null,
     usageLimit: this.usageLimit || null,
     lastError: this.lastError || null,
-    runtimePreference: this.runtimePreference || 'default'
+    runtimePreference: this.runtimePreference || 'default',
+    /** Do not manufacture plan totals: this is explicitly an observed report
+     * from the connected runtime, with the timestamp needed to judge staleness. */
+    usage: {
+      source: 'connected_chatgpt_runtime',
+      available: Boolean(this.rateLimits || this.usageLimit),
+      // Connectivity verification is not usage observation. Leave this null
+      // unless the upstream actually supplied a rate/limit timestamp.
+      observedAt: this.rateLimits?.capturedAt || this.usageLimit?.at || null,
+      rateLimits: this.rateLimits || null,
+      usageLimit: this.usageLimit || null
+    }
   };
 };
 

@@ -3,6 +3,7 @@ const auth = require('../middleware/authMiddleware');
 const { normalizeRuntimePolicy } = require('../config/aiRuntimeCatalog');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const codexAccountService = require('../services/aiRuntime/codexAccountService');
+const userAISettingsService = require('../services/aiRuntime/userAISettingsService');
 
 const router = express.Router();
 
@@ -90,6 +91,24 @@ router.put('/runtime-preference', auth, async (request, response) => {
 router.get('/models', auth, async (request, response) => {
   try {
     return response.json({ models: await codexAccountService.listModels(request.user) });
+  } catch (error) { return sendError(response, error); }
+});
+
+router.get('/activity-overrides', auth, async (request, response) => {
+  try {
+    return response.json(await userAISettingsService.readPreferences(request.user));
+  } catch (error) { return sendError(response, error); }
+});
+
+router.put('/activity-overrides', auth, async (request, response) => {
+  try {
+    return response.json(await userAISettingsService.writePreference(request.user, request.body));
+  } catch (error) { return sendError(response, error); }
+});
+
+router.delete('/activity-overrides', auth, async (request, response) => {
+  try {
+    return response.json(await userAISettingsService.deletePreference(request.user, request.body));
   } catch (error) { return sendError(response, error); }
 });
 

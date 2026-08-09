@@ -15,10 +15,13 @@ const User = require('../models/User');
 const CVParsingService = require('./cvParsingService');
 const CloudinaryUploadService = require('./cloudinaryUploadService');
 const durableCvFileStore = require('./durableCvFileStore');
+const staleCvUploadSweeper = require('./staleCvUploadSweeper');
 const embeddingService = require('./embeddingService');
 const websocketService = require('./websocketService');
 const creditsService = require('./creditsService');
 const publicApplicationCapacityService = require('./publicApplicationCapacityService');
+const publicApplicationCapability = require('./publicApplicationCapabilityService');
+const organizationCvWriteFence = require('./organizationCvWriteFenceService');
 const { runWithAIRequestContext } = require('./aiRuntime/requestContext');
 const {
   createGlobalDispatchConnection,
@@ -28,6 +31,7 @@ const {
 } = require('./cvGlobalDispatch');
 
 const unlinkAsync = promisify(fs.unlink);
+const statAsync = promisify(fs.stat);
 const queueName = 'cv-analysis-chatgpt';
 const redisHost = process.env.REDIS_HOST || (process.env.NODE_ENV === 'production' ? 'dokploy-redis' : '127.0.0.1');
 const redisPort = Number(process.env.REDIS_PORT || 6379);
@@ -104,7 +108,11 @@ const defaultCompletionEffectHandlers = {
   }
 };
 let completionEffectHandlers = { ...defaultCompletionEffectHandlers };
+let batchLifecycleHooks = {};
+let intakeLifecycleHooks = {};
+let batchFileHasher = (...args) => sha256Path(...args);
 let queue;
+let queueOverrideForTests;
 let worker;
 let maintenanceTimer;
 let cleanupTimer;
@@ -115,6 +123,7 @@ let initRetryTimer;
 let historyBackfillPromise;
 let lastHistoryBackfillAt = 0;
 let historyBackfillCursor = null;
+let cvIndexesReady = false;
 
 function normalizedDispatchLimit(value, fallback = 1) {
   const parsed = Number(value);
@@ -143,6 +152,22 @@ const DEFERRED_RETRY_MAX_MS = Math.max(
 const MAX_BILLING_FAILURE_ATTEMPTS = Math.max(
   1,
   Number(process.env.CV_BILLING_MAX_ATTEMPTS || 5)
+);
+const CLOUD_UPLOAD_UNCERTAINTY_MS = Math.max(
+  60_000,
+  Number(process.env.CV_CLOUD_UPLOAD_UNCERTAINTY_MS || 15 * 60 * 1000)
+);
+const CLOUD_UPLOAD_TIMEOUT_MS = Math.max(
+  60_000,
+  Number(process.env.CV_CLOUD_UPLOAD_TIMEOUT_MS || 5 * 60 * 1000)
+);
+const CLOUD_UPLOAD_RECONCILIATION_MS = Math.max(
+  CLOUD_UPLOAD_TIMEOUT_MS + CLOUD_UPLOAD_UNCERTAINTY_MS,
+  Number(process.env.CV_CLOUD_UPLOAD_RECONCILIATION_MS || 24 * 60 * 60 * 1000)
+);
+const INTAKE_LEASE_MS = Math.max(
+  60_000,
+  Number(process.env.CV_INGESTION_INTAKE_LEASE_MS || 5 * 60 * 1000)
 );
 const BILLING_RETRY_BASE_MS = Math.max(
   1_000,
@@ -174,6 +199,11 @@ const FAILED_RETRY_RETENTION_MS = (
     ? Math.max(1, configuredFailedRetryRetentionDays)
     : 30
 ) * 24 * 60 * 60 * 1000;
+const configuredAuditRetentionDays = Number(process.env.CV_PROCESSING_AUDIT_RETENTION_DAYS || 180);
+const AUDIT_RETENTION_DAYS = Number.isFinite(configuredAuditRetentionDays) && configuredAuditRetentionDays > 0
+  ? Math.max(1, configuredAuditRetentionDays)
+  : 180;
+const AUDIT_RETENTION_MS = AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 function terminalJobExpiry(now = Date.now()) {
   return new Date(now + TERMINAL_JOB_RETENTION_MS);
@@ -309,6 +339,9 @@ function attemptTrail(job = {}, { includeActor = false } = {}) {
     startedAt: attempt.startedAt || null,
     finishedAt: attempt.finishedAt || null,
     errorCode: attempt.errorCode || null,
+    errorMessage: attempt.errorMessage
+      ? String(attempt.errorMessage).slice(0, 1000)
+      : null,
     ...(includeActor && attempt.requestedBy ? { requestedBy: retryActor(attempt.requestedBy) } : {})
   }));
 }
@@ -341,6 +374,10 @@ function retrySummary(job = {}, { includeActor = false, includeCapabilities = fa
     automaticRetries: trail.filter((attempt) => attempt.trigger === 'automatic').length,
     manualRetries: trail.filter((attempt) => attempt.trigger === 'manual').length,
     lastRequestedAt: job.retry?.lastRequestedAt || null,
+    replacementAvailable: job.state === 'failed'
+      && Boolean(job.linkedCandidate)
+      && ['public', 'replacement'].includes(job.source)
+      && !job.supersededBy,
     ...(includeActor && job.retry?.lastRequestedBy
       ? { lastRequestedBy: retryActor(job.retry.lastRequestedBy) }
       : {}),
@@ -363,13 +400,13 @@ function cvUsageExecutionId(job = {}) {
 }
 
 function lifecyclePhase(job) {
-  if (['completed', 'failed'].includes(job.state)) return job.state;
+  if (['completed', 'failed', 'cancelled'].includes(job.state)) return job.state;
   if (processingAttemptCount(job) > 1) return 'retrying';
   return job.state;
 }
 
 function operationalJob(job, sampledAt) {
-  const terminalAt = job.completedAt || job.failedAt || sampledAt;
+  const terminalAt = job.completedAt || job.failedAt || job.cancelledAt || sampledAt;
   return {
     jobId: job.publicId,
     source: job.source,
@@ -384,10 +421,15 @@ function operationalJob(job, sampledAt) {
     startedAt: job.startedAt || null,
     completedAt: job.completedAt || null,
     failedAt: job.failedAt || null,
+    cancelledAt: job.cancelledAt || null,
     updatedAt: job.updatedAt,
     waitMs: elapsedMs(job.createdAt, job.startedAt || terminalAt),
     processingMs: job.startedAt ? elapsedMs(job.startedAt, terminalAt) : null,
-    errorCode: job.lastError?.code || null
+    errorCode: job.lastError?.code || null,
+    error: processingError(job),
+    stageStartedAt: job.stageStartedAt || null,
+    stageHistory: stageTrail(job),
+    artifacts: artifactSummary(job)
   };
 }
 
@@ -430,6 +472,9 @@ function auditDocument(job) {
     source: job.source,
     state: job.state,
     stage: job.stage || undefined,
+    stageStartedAt: job.stageStartedAt || undefined,
+    stageHistory: stageTrail(job),
+    artifacts: job.artifacts || undefined,
     progress: operational.progress,
     attempts: operational.attempts,
     processingAttempts: operational.processingAttempts,
@@ -451,6 +496,12 @@ function auditDocument(job) {
     jobAppliedFor: job.jobAppliedFor || undefined,
     jobKey: job.jobAppliedFor ? String(job.jobAppliedFor) : undefined,
     candidate: job.candidate || undefined,
+    linkedCandidate: job.linkedCandidate || undefined,
+    batch: job.batch || undefined,
+    batchPublicId: job.batchPublicId || undefined,
+    supersededBy: job.supersededBy || undefined,
+    supersedes: job.supersedes || undefined,
+    revision: Number(job.revision || 1),
     originalName: job.originalName || '',
     fileType: job.fileType || '',
     fileSize: Number(job.fileSize || 0),
@@ -458,10 +509,13 @@ function auditDocument(job) {
     startedAt: job.startedAt || undefined,
     completedAt: job.completedAt || undefined,
     failedAt: job.failedAt || undefined,
+    cancelledAt: job.cancelledAt || undefined,
     lastUpdatedAt: job.updatedAt || sampledAt,
     waitMs: operational.waitMs,
     processingMs: operational.processingMs,
-    errorCode: operational.errorCode || undefined
+    errorCode: operational.errorCode || undefined,
+    error: processingError(job) || undefined,
+    expiresAt: new Date(new Date(job.createdAt || Date.now()).getTime() + AUDIT_RETENTION_MS)
   };
 }
 
@@ -494,6 +548,9 @@ function auditOperationalJob(job) {
     source: job.source,
     state: job.state,
     stage: job.stage,
+    stageStartedAt: job.stageStartedAt,
+    stageHistory: job.stageHistory,
+    artifacts: job.artifacts,
     progress: job.progress,
     attempts: job.attempts,
     processingAttempts: job.processingAttempts,
@@ -502,7 +559,7 @@ function auditOperationalJob(job) {
     completedAt: job.completedAt,
     failedAt: job.failedAt,
     updatedAt: job.lastUpdatedAt,
-    lastError: job.errorCode ? { code: job.errorCode } : null
+    lastError: job.error || (job.errorCode ? { code: job.errorCode } : null)
   }, new Date(job.lastUpdatedAt || Date.now()));
   return {
     ...operational,
@@ -511,6 +568,10 @@ function auditOperationalJob(job) {
     transitions: operationalTransitions(job.transitions),
     retry: {
       available: false,
+      replacementAvailable: job.state === 'failed'
+        && Boolean(job.linkedCandidate)
+        && ['public', 'replacement'].includes(job.source)
+        && !job.supersededBy,
       availableUntil: job.retry?.availableUntil || null,
       nextAttemptAt: job.retry?.nextAttemptAt || null,
       deferredCycles: Number(job.retry?.deferredCycles || 0),
@@ -522,7 +583,9 @@ function auditOperationalJob(job) {
       lastRequestedAt: job.retry?.lastRequestedAt || null,
       ...(job.retry?.lastRequestedBy ? { lastRequestedBy: retryActor(job.retry.lastRequestedBy) } : {})
     },
-    attemptHistory: attemptTrail(job, { includeActor: true })
+    attemptHistory: attemptTrail(job, { includeActor: true }),
+    error: job.error || operational.error || null,
+    batch: job.batchPublicId ? { id: String(job.batchPublicId) } : null
   };
 }
 
@@ -533,6 +596,50 @@ function externalQueueText(value, maximumLength = 200) {
 function externalQueueDate(value, fallback = null) {
   const date = value ? new Date(value) : null;
   return date && Number.isFinite(date.getTime()) ? date : fallback;
+}
+
+async function resolveAuditOrganizationId(value) {
+  const key = String(value || '').trim();
+  if (!key) return null;
+  if (mongoose.isValidObjectId(key)) {
+    const organization = await Organization.findById(key).select('_id').lean();
+    return organization?._id || null;
+  }
+  const organization = await Organization.findOne({ idpOrganizationId: key }).select('_id').lean();
+  return organization?._id || null;
+}
+
+async function withAuditWriteFence(organizationKey, writer) {
+  // The standalone AI Interview service historically emits the literal
+  // namespace `settings`. It is not a Recruiter tenant key, so avoid an
+  // unnecessary database lookup (and keep isolated producer tests fast).
+  if (String(organizationKey || '').trim() === 'settings') return writer();
+  const organizationId = await resolveAuditOrganizationId(organizationKey);
+  // Integrated producers must name a current Recruiter ObjectId or mapped IdP
+  // organization. Unknown keys fail closed so a delayed outbox event cannot
+  // recreate history after either identifier was erased with the tenant. The
+  // literal standalone AI Interview store namespace is the one documented
+  // legacy producer that is not a Recruiter tenant identifier.
+  if (!organizationId) return false;
+  let lease;
+  try {
+    lease = await organizationCvWriteFence.acquire(organizationId, 'cv-audit-write');
+  } catch (error) {
+    if (error?.code === 'ORGANIZATION_ERASURE_IN_PROGRESS') return false;
+    throw error;
+  }
+  const stopHeartbeat = organizationCvWriteFence.startHeartbeat(lease);
+  try {
+    await organizationCvWriteFence.renew(lease);
+    return await writer();
+  } finally {
+    stopHeartbeat();
+    await organizationCvWriteFence.release(lease).catch(() => {});
+  }
+}
+
+function runAuditWriteFence(organizationKey, writer) {
+  return withAuditWriteFence(organizationKey, writer);
 }
 
 async function ingestExternalQueueEvent(serviceId, input = {}) {
@@ -585,7 +692,7 @@ async function ingestExternalQueueEvent(serviceId, input = {}) {
     throw error;
   }
   const state = String(job.state || '');
-  if (!['queued', 'waiting_for_chatgpt', 'processing', 'completed', 'failed'].includes(state)) {
+  if (!['queued', 'waiting_for_chatgpt', 'processing', 'completed', 'failed', 'cancelled'].includes(state)) {
     const error = new Error('External CV queue event has an invalid state');
     error.code = 'CV_QUEUE_EVENT_INVALID';
     error.statusCode = 400;
@@ -597,7 +704,11 @@ async function ingestExternalQueueEvent(serviceId, input = {}) {
   const startedAt = externalQueueDate(job.startedAt);
   const completedAt = externalQueueDate(job.completedAt);
   const failedAt = externalQueueDate(job.failedAt);
-  const allowedStages = new Set(['ingesting', 'uploading', 'extracting', 'analyzing', 'finalizing', 'completed', 'failed']);
+  const cancelledAt = externalQueueDate(job.cancelledAt);
+  const allowedStages = new Set([
+    'received', 'ingesting', 'uploading', 'stored', 'extracting', 'analyzing',
+    'profile_creation', 'finalizing', 'retry_scheduled', 'completed', 'failed', 'cancelled'
+  ]);
   const stage = allowedStages.has(String(job.stage || '')) ? String(job.stage) : undefined;
   const producerSequence = job.sequence != null
     && Number.isSafeInteger(Number(job.sequence))
@@ -624,11 +735,15 @@ async function ingestExternalQueueEvent(serviceId, input = {}) {
     startedAt: startedAt || undefined,
     completedAt: completedAt || undefined,
     failedAt: failedAt || undefined,
+    cancelledAt: cancelledAt || undefined,
     lastUpdatedAt: updatedAt,
     ...(producerSequence == null ? {} : { producerSequence }),
-    waitMs: elapsedMs(createdAt, startedAt || completedAt || failedAt || updatedAt),
-    processingMs: startedAt ? elapsedMs(startedAt, completedAt || failedAt || updatedAt) : null,
-    errorCode: externalQueueText(job.lastError?.code || job.errorCode, 100) || undefined
+    waitMs: elapsedMs(createdAt, startedAt || completedAt || failedAt || cancelledAt || updatedAt),
+    processingMs: startedAt
+      ? elapsedMs(startedAt, completedAt || failedAt || cancelledAt || updatedAt)
+      : null,
+    errorCode: externalQueueText(job.lastError?.code || job.errorCode, 100) || undefined,
+    expiresAt: new Date(createdAt.getTime() + AUDIT_RETENTION_MS)
   };
   const transition = auditTransition({
     publicId,
@@ -641,66 +756,71 @@ async function ingestExternalQueueEvent(serviceId, input = {}) {
     updatedAt,
     lastError: normalized.errorCode ? { code: normalized.errorCode } : null
   });
-  await CVProcessingAudit.updateOne(
-    { publicId },
-    { $setOnInsert: normalized },
-    { upsert: true }
-  );
-  const monotonicFilter = producerSequence == null
-    ? { publicId, producerSequence: { $exists: false }, lastUpdatedAt: { $lt: updatedAt } }
-    : {
-        publicId,
-        $or: [
-          { producerSequence: { $lt: producerSequence } },
-          { producerSequence: { $exists: false }, lastUpdatedAt: { $lte: updatedAt } }
-        ]
-      };
-  await CVProcessingAudit.updateOne(monotonicFilter, { $set: normalized });
-  await CVProcessingAudit.updateOne(
-    { publicId, 'transitions.eventKey': { $ne: transition.eventKey } },
-    {
-      $push: {
-        transitions: {
-          $each: [transition],
-          $slice: -HISTORY_TRANSITION_LIMIT
+  const written = await runAuditWriteFence(normalized.organizationKey, async () => {
+    await CVProcessingAudit.updateOne(
+      { publicId },
+      { $setOnInsert: normalized },
+      { upsert: true }
+    );
+    const monotonicFilter = producerSequence == null
+      ? { publicId, producerSequence: { $exists: false }, lastUpdatedAt: { $lt: updatedAt } }
+      : {
+          publicId,
+          $or: [
+            { producerSequence: { $lt: producerSequence } },
+            { producerSequence: { $exists: false }, lastUpdatedAt: { $lte: updatedAt } }
+          ]
+        };
+    await CVProcessingAudit.updateOne(monotonicFilter, { $set: normalized });
+    await CVProcessingAudit.updateOne(
+      { publicId, 'transitions.eventKey': { $ne: transition.eventKey } },
+      {
+        $push: {
+          transitions: {
+            $each: [transition],
+            $slice: -HISTORY_TRANSITION_LIMIT
+          }
         }
       }
-    }
-  );
+    );
+    return true;
+  });
   publishTelemetrySoon(0);
-  return { accepted: true, jobId: publicId };
+  return { accepted: true, jobId: publicId, dropped: written === false };
 }
 
 async function syncHistory(processingJobId) {
   const job = processingJobId && typeof processingJobId === 'object' && processingJobId.publicId
     ? processingJobId
     : await CVProcessingJob.findById(processingJobId)
-      .select('publicId source state stage progress attempts processingAttempts retry attemptHistory organization actor jobAppliedFor candidate originalName fileType fileSize durableFile cloudinary +resumeText createdAt startedAt completedAt failedAt updatedAt lastError.code')
+      .select('publicId source state stage stageStartedAt stageHistory artifacts progress attempts processingAttempts retry attemptHistory organization actor jobAppliedFor candidate linkedCandidate batch batchPublicId supersededBy supersedes revision originalName fileType fileSize durableFile cloudinary +resumeText createdAt startedAt completedAt failedAt cancelledAt updatedAt lastError')
       .lean();
   if (!job) return false;
-  const transition = auditTransition(job);
-  const document = auditDocument(job);
-  await CVProcessingAudit.updateOne(
-    { publicId: job.publicId },
-    { $setOnInsert: document },
-    { upsert: true }
-  );
-  await CVProcessingAudit.updateOne(
-    { publicId: job.publicId, lastUpdatedAt: { $lt: document.lastUpdatedAt } },
-    { $set: document }
-  );
-  await CVProcessingAudit.updateOne(
-    { publicId: job.publicId, 'transitions.eventKey': { $ne: transition.eventKey } },
-    {
-      $push: {
-        transitions: {
-          $each: [transition],
-          $slice: -HISTORY_TRANSITION_LIMIT
+  return runAuditWriteFence(job.organization, async () => {
+    const transition = auditTransition(job);
+    const document = auditDocument(job);
+    await CVProcessingAudit.updateOne(
+      { publicId: job.publicId },
+      { $setOnInsert: document },
+      { upsert: true }
+    );
+    await CVProcessingAudit.updateOne(
+      { publicId: job.publicId, lastUpdatedAt: { $lt: document.lastUpdatedAt } },
+      { $set: document }
+    );
+    await CVProcessingAudit.updateOne(
+      { publicId: job.publicId, 'transitions.eventKey': { $ne: transition.eventKey } },
+      {
+        $push: {
+          transitions: {
+            $each: [transition],
+            $slice: -HISTORY_TRANSITION_LIMIT
+          }
         }
       }
-    }
-  );
-  return true;
+    );
+    return true;
+  });
 }
 
 async function syncHistorySafely(processingJobId) {
@@ -712,9 +832,797 @@ async function syncHistorySafely(processingJobId) {
   }
 }
 
+async function candidateErasureContext(organizationId, candidateId) {
+  const candidate = await Candidate.findOne({
+    _id: candidateId,
+    organization: organizationId
+  }).select(
+    'cloudinaryPublicId cloudinaryResourceType cloudinaryDeliveryType '
+    + 'processingMetadata.cvProcessingJobId +deletionState +deletionPreparationToken '
+    + '+deletionToken +deletionRequestedAt'
+  ).lean();
+  if (!candidate) return null;
+  const candidateJobPublicId = candidate.processingMetadata?.cvProcessingJobId;
+  const jobs = await CVProcessingJob.find({
+    organization: organizationId,
+    $or: [
+      { candidate: candidate._id },
+      { linkedCandidate: candidate._id },
+      ...(candidateJobPublicId ? [{ publicId: candidateJobPublicId }] : [])
+    ]
+  }).select('+resumeText');
+  return { candidate, jobs };
+}
+
+async function registerCandidateErasure(organizationId, candidateId, activationKey) {
+  const context = await candidateErasureContext(organizationId, candidateId);
+  if (!context) return null;
+  const tasks = [];
+  tasks.push(await registerRequiredErasureTask(
+    'embedding',
+    { candidateId },
+    { reason: 'candidate-erasure', held: true, activationKey }
+  ));
+  if (context.candidate.cloudinaryPublicId) {
+    tasks.push(await registerRequiredErasureTask(
+      'cloudinary',
+      {
+        publicId: context.candidate.cloudinaryPublicId,
+        resourceType: context.candidate.cloudinaryResourceType || 'raw',
+        deliveryType: context.candidate.cloudinaryDeliveryType || 'authenticated'
+      },
+      { reason: 'candidate-erasure-after-job-retention', held: true, activationKey }
+    ));
+  }
+  for (const job of context.jobs) {
+    if (job.durableFile?.fileId && !job.durableFile?.releasedAt) {
+      tasks.push(await registerRequiredErasureTask('gridfs', job.durableFile, {
+        reason: 'candidate-erasure-durable-file',
+        jobPublicId: job.publicId,
+        held: true,
+        activationKey
+      }));
+    }
+    if (job.cloudinary?.publicId && !job.cloudinary?.releasedAt) {
+      tasks.push(await registerRequiredErasureTask('cloudinary', job.cloudinary, {
+        reason: 'candidate-erasure-cloudinary-asset',
+        jobPublicId: job.publicId,
+        held: true,
+        activationKey
+      }));
+    }
+    if (job.cloudinaryUploadIntent?.publicId && !job.cloudinary?.publicId) {
+      tasks.push(await registerRequiredErasureTask('cloudinary', job.cloudinaryUploadIntent, {
+        reason: 'candidate-erasure-cloudinary-upload-intent',
+        jobPublicId: job.publicId,
+        held: true,
+        activationKey,
+        notBefore: new Date(Date.now() + CLOUD_UPLOAD_TIMEOUT_MS + CLOUD_UPLOAD_UNCERTAINTY_MS),
+        reconcileUntil: new Date(Date.now() + CLOUD_UPLOAD_RECONCILIATION_MS)
+      }));
+    }
+  }
+
+  // Adopt an earlier uncommitted held registration for the same resource.
+  // Completed tasks stay completed; every other task remains non-executable
+  // until the Candidate tombstone commits below.
+  const taskIds = tasks.filter(Boolean).map((task) => task._id);
+  const matchingHeldResources = tasks.filter(Boolean).map((task) => {
+    if (task.provider === 'embedding') {
+      return { provider: 'embedding', 'resource.candidateId': task.resource?.candidateId };
+    }
+    if (task.provider === 'gridfs') {
+      return {
+        provider: 'gridfs',
+        'resource.bucket': task.resource?.bucket,
+        'resource.fileId': task.resource?.fileId
+      };
+    }
+    return {
+      provider: 'cloudinary',
+      'resource.publicId': task.resource?.publicId,
+      'resource.resourceType': task.resource?.resourceType,
+      'resource.deliveryType': task.resource?.deliveryType
+    };
+  });
+  // Adopt a receipt left by a pre-tombstone partial registration. This also
+  // repairs rows written by the earlier random-per-retry implementation.
+  if (matchingHeldResources.length) {
+    await CVStorageCleanupTask.updateMany(
+      { state: 'held', $or: matchingHeldResources },
+      {
+        $set: { activationKey },
+        $unset: { expiresAt: 1 }
+      }
+    );
+  }
+  if (taskIds.length) {
+    await CVStorageCleanupTask.updateMany(
+      { _id: { $in: taskIds }, state: { $ne: 'completed' } },
+      {
+        $set: {
+          state: 'held',
+          activationKey,
+        },
+        $unset: { nextAttemptAt: 1, lastError: 1, expiresAt: 1 }
+      }
+    );
+  }
+  return { ...context, activationKey, taskIds };
+}
+
+async function activateCandidateErasure(activationKey) {
+  if (!activationKey) return 0;
+  const tasks = await CVStorageCleanupTask.find({ activationKey, state: 'held' });
+  const now = new Date();
+  let activated = 0;
+  for (const task of tasks) {
+    const dueAt = task.notBefore && task.notBefore > now ? task.notBefore : now;
+    const result = await CVStorageCleanupTask.updateOne(
+      { _id: task._id, state: 'held' },
+      {
+        $set: { state: 'pending', nextAttemptAt: dueAt },
+        $unset: { expiresAt: 1 }
+      }
+    );
+    activated += Number(result.modifiedCount || result.nModified || 0);
+  }
+  return activated;
+}
+
+async function executeCandidateErasureTasks(activationKey) {
+  if (!activationKey) return { examined: 0, completed: 0 };
+  const tasks = await CVStorageCleanupTask.find({
+    activationKey,
+    state: { $in: ['pending', 'failed'] },
+    $or: [
+      { nextAttemptAt: { $exists: false } },
+      { nextAttemptAt: null },
+      { nextAttemptAt: { $lte: new Date() } }
+    ]
+  });
+  let completed = 0;
+  for (const task of tasks) {
+    try {
+      if (await executeCleanupTask(task)) completed += 1;
+    } catch (error) {
+      console.error('Candidate provider erasure deferred:', error.message);
+    }
+  }
+  return { examined: tasks.length, completed };
+}
+
+async function eraseCandidateProcessingData(organizationId, candidateIds = []) {
+  if (!mongoose.isValidObjectId(organizationId)) {
+    throw manualRetryError('CV_REDACTION_ORGANIZATION_INVALID', 'CV redaction organization is invalid', 400);
+  }
+  const ids = [...new Set(candidateIds.map(String))].filter((id) => mongoose.isValidObjectId(id));
+  const results = [];
+  for (const value of ids) {
+    const candidateId = new mongoose.Types.ObjectId(value);
+    let current = await Candidate.findOne({
+      _id: candidateId,
+      organization: organizationId
+    }).select('+deletionState +deletionPreparationToken +deletionToken +deletionRequestedAt');
+    if (!current) {
+      results.push({ candidateId: value, missing: true, hardDeleted: true });
+      continue;
+    }
+
+    let activationKey = current.deletionState === 'tombstoned' && current.deletionToken
+      ? current.deletionToken
+      : current.deletionPreparationToken;
+    if (current.deletionState !== 'tombstoned') {
+      if (!activationKey) {
+        const proposedToken = crypto.randomUUID();
+        await Candidate.updateOne(
+          {
+            _id: candidateId,
+            organization: organizationId,
+            deletionState: { $ne: 'tombstoned' },
+            $or: [
+              { deletionPreparationToken: { $exists: false } },
+              { deletionPreparationToken: null },
+              { deletionPreparationToken: '' }
+            ]
+          },
+          { $set: { deletionPreparationToken: proposedToken } }
+        );
+        current = await Candidate.findOne({ _id: candidateId, organization: organizationId })
+          .select('+deletionState +deletionPreparationToken +deletionToken');
+        activationKey = current?.deletionState === 'tombstoned'
+          ? current.deletionToken
+          : current?.deletionPreparationToken;
+        if (!activationKey) {
+          throw manualRetryError(
+            'CV_ERASURE_PREPARATION_FAILED',
+            'Candidate erasure could not be prepared safely. Please retry.',
+            503
+          );
+        }
+      }
+      const receipt = await registerCandidateErasure(organizationId, candidateId, activationKey);
+      if (!receipt) {
+        results.push({ candidateId: value, missing: true, hardDeleted: true });
+        continue;
+      }
+      const tombstoned = await Candidate.updateOne(
+        {
+          _id: candidateId,
+          organization: organizationId,
+          deletionState: { $ne: 'tombstoned' },
+          deletionPreparationToken: activationKey
+        },
+        {
+          $set: {
+            deletionState: 'tombstoned',
+            deletionToken: activationKey,
+            deletionRequestedAt: new Date(),
+            firstName: '[deleted]',
+            lastName: '[deleted]',
+            email: `deleted-${crypto.createHash('sha256').update(value).digest('hex').slice(0, 24)}@redacted.invalid`,
+            phone: '[deleted]',
+            position: '[deleted]',
+            experience: '[deleted]',
+            education: '[deleted]'
+          },
+          $unset: {
+            publicApplicationCapabilityHash: 1,
+            publicApplicationCapabilityExpiresAt: 1,
+            publicApplicationKey: 1,
+            publicApplicationRequestKey: 1,
+            publicApplicationRequestFingerprint: 1,
+            deletionPreparationToken: 1,
+            location: 1,
+            skills: 1,
+            coverLetter: 1,
+            resumeUrl: 1,
+            resumeText: 1,
+            cloudinaryPublicId: 1,
+            cloudinaryResourceType: 1,
+            cloudinaryDeliveryType: 1,
+            parsedData: 1,
+            fullCVData: 1,
+            aiAnalysis: 1,
+            workExperience: 1,
+            educationHistory: 1,
+            certifications: 1,
+            languages: 1,
+            awards: 1,
+            projects: 1,
+            publications: 1,
+            volunteerWork: 1,
+            professionalMemberships: 1,
+            portfolioLinks: 1,
+            additionalSections: 1,
+            notes: 1,
+            processingMetadata: 1
+          }
+        }
+      );
+      if (!Number(tombstoned.matchedCount || tombstoned.n || 0)) {
+        current = await Candidate.findOne({ _id: candidateId, organization: organizationId })
+          .select('+deletionState +deletionToken');
+        if (!current || current.deletionState !== 'tombstoned' || !current.deletionToken) {
+          throw manualRetryError(
+            'CV_ERASURE_TOMBSTONE_FAILED',
+            'Candidate erasure could not be committed safely. Please retry.',
+            503
+          );
+        }
+        activationKey = current.deletionToken;
+      }
+    }
+
+    await activateCandidateErasure(activationKey);
+    await executeCandidateErasureTasks(activationKey);
+    await redactCandidateProcessingData(organizationId, [candidateId]);
+    let hardDeleted = false;
+    try {
+      const removed = await Candidate.deleteOne({
+        _id: candidateId,
+        organization: organizationId,
+        deletionState: 'tombstoned',
+        deletionToken: activationKey
+      });
+      hardDeleted = Number(removed.deletedCount || removed.n || 0) === 1;
+    } catch (error) {
+      // The logical deletion is already committed and cleanup is durable.
+      // Maintenance will retry the final hard delete; never revive this row.
+      console.error('Candidate tombstone hard-delete deferred:', error.message);
+    }
+    results.push({ candidateId: value, tombstoned: true, hardDeleted });
+  }
+  return { candidates: results };
+}
+
+async function recoverTombstonedCandidateErasures({ limit = 100 } = {}) {
+  const pageSize = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  const snapshotTail = await Candidate.findOne({ deletionState: 'tombstoned' })
+    .sort({ _id: -1 })
+    .select('_id')
+    .lean();
+  if (!snapshotTail) return { examined: 0, recovered: 0 };
+  let examined = 0;
+  let recovered = 0;
+  let cursor = null;
+  while (true) {
+    const candidates = await Candidate.find({
+      deletionState: 'tombstoned',
+      _id: {
+        ...(cursor ? { $gt: cursor } : {}),
+        $lte: snapshotTail._id
+      }
+    })
+      .select('_id organization +deletionState +deletionToken')
+      .sort({ _id: 1 })
+      .limit(pageSize)
+      .lean();
+    if (!candidates.length) break;
+    examined += candidates.length;
+    for (const candidate of candidates) {
+      try {
+        const result = await eraseCandidateProcessingData(candidate.organization, [candidate._id]);
+        if (result.candidates[0]?.hardDeleted) recovered += 1;
+      } catch (error) {
+        console.error('Candidate tombstone recovery deferred:', error.message);
+      }
+    }
+    cursor = candidates.at(-1)._id;
+    if (String(cursor) === String(snapshotTail._id)) break;
+  }
+  return { examined, recovered };
+}
+
+async function redactCandidateProcessingData(organizationId, candidateIds = []) {
+  if (!mongoose.isValidObjectId(organizationId)) {
+    throw manualRetryError('CV_REDACTION_ORGANIZATION_INVALID', 'CV redaction organization is invalid', 400);
+  }
+  const ids = [...new Set(candidateIds.map(String))]
+    .filter((id) => mongoose.isValidObjectId(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  if (!ids.length) return { jobs: 0, audits: 0, candidateAssets: 0, embeddings: 0 };
+
+  // Candidate documents retain the canonical Cloudinary reference after the
+  // operational job TTL expires. Register cleanup from that reference first,
+  // so deleting an old candidate cannot orphan their CV asset.
+  const candidates = await Candidate.find({
+    _id: { $in: ids },
+    organization: organizationId
+  }).select(
+    'cloudinaryPublicId cloudinaryResourceType cloudinaryDeliveryType '
+    + 'processingMetadata.cvProcessingJobId'
+  ).lean();
+  const candidateJobPublicIds = candidates
+    .map((candidate) => candidate.processingMetadata?.cvProcessingJobId)
+    .filter(Boolean);
+  const jobs = await CVProcessingJob.find({
+    organization: organizationId,
+    $or: [
+      { candidate: { $in: ids } },
+      { linkedCandidate: { $in: ids } },
+      ...(candidateJobPublicIds.length ? [{ publicId: { $in: candidateJobPublicIds } }] : [])
+    ]
+  }).select('+resumeText');
+
+  // A candidate record is the final durable pointer to its embedding and may
+  // also be the final pointer to a Cloudinary asset after processing-job TTL.
+  // Register every cleanup task before deleting that pointer. Registration is
+  // the commit boundary: database failure aborts candidate deletion, while a
+  // provider failure is safe because the persisted task will be retried.
+  const erasureTasks = [];
+  for (const candidateId of ids) {
+    erasureTasks.push({
+      label: 'Candidate embedding erasure',
+      task: await registerRequiredErasureTask(
+        'embedding',
+        { candidateId },
+        { reason: 'candidate-erasure' }
+      )
+    });
+  }
+  let candidateAssets = 0;
+  for (const candidate of candidates) {
+    if (!candidate.cloudinaryPublicId) continue;
+    erasureTasks.push({
+      label: 'Candidate retained CV asset erasure',
+      task: await registerRequiredErasureTask(
+        'cloudinary',
+        {
+          publicId: candidate.cloudinaryPublicId,
+          resourceType: candidate.cloudinaryResourceType || 'raw',
+          deliveryType: candidate.cloudinaryDeliveryType || 'authenticated'
+        },
+        { reason: 'candidate-erasure-after-job-retention' }
+      )
+    });
+    candidateAssets += 1;
+  }
+  for (const job of jobs) {
+    if (job.durableFile?.fileId && !job.durableFile?.releasedAt) {
+      await registerRequiredErasureTask('gridfs', job.durableFile, {
+        reason: 'candidate-erasure-durable-file',
+        jobPublicId: job.publicId
+      });
+    }
+    if (job.cloudinary?.publicId && !job.cloudinary?.releasedAt) {
+      await registerRequiredErasureTask('cloudinary', job.cloudinary, {
+        reason: 'candidate-erasure-cloudinary-asset',
+        jobPublicId: job.publicId
+      });
+    }
+    if (job.cloudinaryUploadIntent?.publicId && !job.cloudinary?.publicId) {
+      await registerRequiredErasureTask('cloudinary', job.cloudinaryUploadIntent, {
+        reason: 'candidate-erasure-cloudinary-upload-intent',
+        jobPublicId: job.publicId,
+        generationKey: job.cloudinaryUploadIntent.generation,
+        notBefore: new Date(Date.now() + CLOUD_UPLOAD_TIMEOUT_MS + CLOUD_UPLOAD_UNCERTAINTY_MS),
+        reconcileUntil: new Date(Date.now() + CLOUD_UPLOAD_RECONCILIATION_MS)
+      });
+    }
+  }
+
+  for (const { label, task } of erasureTasks) {
+    try {
+      await executeCleanupTask(task);
+    } catch (error) {
+      console.error(`${label} deferred:`, error.message);
+    }
+  }
+  const embeddings = ids.length;
+
+  for (const job of jobs) {
+    const cancelledAt = new Date();
+    const cancellationEvent = processingStageEvent(
+      'cancelled', 'cancelled', Number(job.progress || 0), job, null, cancelledAt
+    );
+    const cancelled = await CVProcessingJob.findOneAndUpdate(
+      { _id: job._id, state: { $ne: 'cancelled' } },
+      {
+        $set: {
+          state: 'cancelled',
+          stage: 'cancelled',
+          stageStartedAt: cancelledAt,
+          cancelledAt,
+          cancellationReason: 'candidate-deleted'
+        },
+        $unset: {
+          'retry.pendingTrigger': 1,
+          'retry.nextAttemptAt': 1,
+          processingLeaseId: 1,
+          lastError: 1,
+          expiresAt: 1
+        },
+        $push: {
+          stageHistory: {
+            $each: [cancellationEvent],
+            $slice: -HISTORY_TRANSITION_LIMIT
+          }
+        }
+      },
+      { new: true }
+    ).select('+resumeText');
+    const terminalJob = cancelled || await CVProcessingJob.findById(job._id).select('+resumeText');
+    if (!terminalJob) continue;
+
+    // Waiting BullMQ records can be removed immediately. An active record is
+    // stopped by the database cancellation checks in processJob.
+    if (queue) {
+      try {
+        const queued = await queue.getJob(terminalJob.publicId);
+        if (queued && (await queued.getState()) !== 'active') await queued.remove();
+      } catch {}
+    }
+
+    await releaseDurableFile(terminalJob).catch((error) => {
+      console.error('Candidate durable CV erasure deferred:', error.message);
+    });
+    await releaseCloudinaryAsset(terminalJob).catch((error) => {
+      console.error('Candidate Cloudinary CV erasure deferred:', error.message);
+    });
+
+    const redactedAttempts = (terminalJob.attemptHistory || []).map((attempt) => ({
+      ...attempt.toObject?.() || attempt,
+      requestedBy: undefined,
+      errorMessage: undefined
+    }));
+    const redactedStages = (terminalJob.stageHistory || []).map((stage) => ({
+      ...stage.toObject?.() || stage,
+      errorMessage: undefined
+    }));
+    await CVProcessingJob.updateOne(
+      { _id: terminalJob._id },
+      {
+        $set: {
+          originalName: '[redacted]',
+          formData: {},
+          resumeText: '',
+          attemptHistory: redactedAttempts,
+          stageHistory: redactedStages,
+          cancellationReason: 'candidate-deleted'
+        },
+        $unset: {
+          actor: 1,
+          candidate: 1,
+          linkedCandidate: 1,
+          'retry.lastRequestedBy': 1,
+          'cloudinary.resumeUrl': 1,
+          'cloudinary.publicId': 1,
+          'cloudinary.assetId': 1,
+          cloudinaryUploadIntent: 1,
+          lastError: 1
+        }
+      }
+    );
+    await syncHistorySafely(terminalJob._id);
+  }
+
+  const publicIds = jobs.map((job) => job.publicId);
+  const audits = await CVProcessingAudit.find({
+    organizationKey: String(organizationId),
+    $or: [
+      { candidate: { $in: ids } },
+      { linkedCandidate: { $in: ids } },
+      ...(publicIds.length ? [{ publicId: { $in: publicIds } }] : [])
+    ]
+  });
+  for (const audit of audits) {
+    audit.actor = undefined;
+    audit.actorKey = undefined;
+    audit.candidate = undefined;
+    audit.linkedCandidate = undefined;
+    audit.originalName = '[redacted]';
+    if (audit.error) audit.error.message = undefined;
+    if (audit.retry) audit.retry.lastRequestedBy = undefined;
+    for (const attempt of audit.attemptHistory || []) {
+      attempt.requestedBy = undefined;
+      attempt.errorMessage = undefined;
+    }
+    for (const stage of audit.stageHistory || []) stage.errorMessage = undefined;
+    await audit.save();
+  }
+  const notifications = await Notification.deleteMany({
+    type: 'candidate_uploaded',
+    $or: [
+      { 'data.candidateId': { $in: ids } },
+      { 'data.candidateId': { $in: ids.map(String) } }
+    ]
+  });
+  return {
+    jobs: jobs.length,
+    audits: audits.length,
+    candidateAssets,
+    embeddings,
+    notifications: Number(notifications.deletedCount || notifications.n || 0)
+  };
+}
+
+async function forEachSnapshotPage(Model, filter, {
+  select,
+  pageSize = 100,
+  handler
+} = {}) {
+  const size = Math.min(Math.max(Number(pageSize) || 100, 1), 500);
+  const tail = await Model.findOne(filter).sort({ _id: -1 }).select('_id').lean();
+  if (!tail) return 0;
+  let cursor;
+  let examined = 0;
+  while (true) {
+    let query = Model.find({
+      $and: [
+        filter,
+        {
+          _id: {
+            ...(cursor ? { $gt: cursor } : {}),
+            $lte: tail._id
+          }
+        }
+      ]
+    }).sort({ _id: 1 }).limit(size);
+    if (select) query = query.select(select);
+    const rows = await query;
+    if (!rows.length) break;
+    for (const row of rows) await handler(row);
+    examined += rows.length;
+    cursor = rows.at(-1)._id;
+    if (String(cursor) === String(tail._id)) break;
+  }
+  return examined;
+}
+
+async function redactOrganizationProcessingData(organizationId, { pageSize = 100 } = {}) {
+  if (!mongoose.isValidObjectId(organizationId)) {
+    throw manualRetryError('CV_REDACTION_ORGANIZATION_INVALID', 'CV redaction organization is invalid', 400);
+  }
+  let failureCount = 0;
+  const failedJobIds = [];
+  const jobs = await forEachSnapshotPage(
+    CVProcessingJob,
+    { organization: organizationId },
+    {
+      pageSize,
+      select: '+resumeText',
+      handler: async (job) => {
+        try {
+          // Register every external pointer before removing it from the job.
+          // A failed registration leaves this one row intact, while cursor
+          // paging still lets every later tenant row make progress.
+          if (job.durableFile?.fileId && !job.durableFile?.releasedAt) {
+            await registerRequiredErasureTask('gridfs', job.durableFile, {
+              reason: 'organization-erasure-durable-file',
+              jobPublicId: job.publicId
+            });
+          }
+          if (job.cloudinary?.publicId && !job.cloudinary?.releasedAt) {
+            await registerRequiredErasureTask('cloudinary', job.cloudinary, {
+              reason: 'organization-erasure-cloudinary-asset',
+              jobPublicId: job.publicId
+            });
+          }
+          if (job.cloudinaryUploadIntent?.publicId && !job.cloudinary?.publicId) {
+            await registerRequiredErasureTask('cloudinary', job.cloudinaryUploadIntent, {
+              reason: 'organization-erasure-cloudinary-upload-intent',
+              jobPublicId: job.publicId,
+              generationKey: job.cloudinaryUploadIntent.generation,
+              notBefore: new Date(Date.now() + CLOUD_UPLOAD_TIMEOUT_MS + CLOUD_UPLOAD_UNCERTAINTY_MS),
+              reconcileUntil: new Date(Date.now() + CLOUD_UPLOAD_RECONCILIATION_MS)
+            });
+          }
+        } catch (error) {
+          failureCount += 1;
+          if (failedJobIds.length < 100) failedJobIds.push(job.publicId);
+          return;
+        }
+
+        const cancelledAt = new Date();
+        const cancellationEvent = processingStageEvent(
+          'cancelled', 'cancelled', Number(job.progress || 0), job, null, cancelledAt
+        );
+        const cancelled = await CVProcessingJob.findOneAndUpdate(
+          { _id: job._id, state: { $ne: 'cancelled' } },
+          {
+            $set: {
+              state: 'cancelled',
+              stage: 'cancelled',
+              stageStartedAt: cancelledAt,
+              cancelledAt,
+              cancellationReason: 'organization-deleted'
+            },
+            $unset: {
+              processingLeaseId: 1,
+              lastError: 1,
+              expiresAt: 1,
+              'retry.pendingTrigger': 1,
+              'retry.nextAttemptAt': 1
+            },
+            $push: {
+              stageHistory: {
+                $each: [cancellationEvent],
+                $slice: -HISTORY_TRANSITION_LIMIT
+              }
+            }
+          },
+          { new: true }
+        ).select('+resumeText');
+        const terminalJob = cancelled || await CVProcessingJob.findById(job._id).select('+resumeText');
+        if (!terminalJob) return;
+        if (queue) {
+          try {
+            const queued = await queue.getJob(terminalJob.publicId);
+            if (queued && (await queued.getState()) !== 'active') await queued.remove();
+          } catch {}
+        }
+        await releaseDurableFile(terminalJob).catch((error) => {
+          console.error('Organization durable CV erasure deferred:', error.message);
+        });
+        await releaseCloudinaryAsset(terminalJob).catch((error) => {
+          console.error('Organization Cloudinary CV erasure deferred:', error.message);
+        });
+        const redactedAttempts = (terminalJob.attemptHistory || []).map((attempt) => ({
+          ...attempt.toObject?.() || attempt,
+          requestedBy: undefined,
+          errorMessage: undefined
+        }));
+        const redactedStages = (terminalJob.stageHistory || []).map((stage) => ({
+          ...stage.toObject?.() || stage,
+          errorMessage: undefined
+        }));
+        await CVProcessingJob.updateOne(
+          { _id: terminalJob._id },
+          {
+            $set: {
+              originalName: '[redacted]',
+              formData: {},
+              resumeText: '',
+              attemptHistory: redactedAttempts,
+              stageHistory: redactedStages,
+              cancellationReason: 'organization-deleted'
+            },
+            $unset: {
+              actor: 1,
+              candidate: 1,
+              linkedCandidate: 1,
+              jobAppliedFor: 1,
+              batch: 1,
+              batchPublicId: 1,
+              'retry.lastRequestedBy': 1,
+              'cloudinary.resumeUrl': 1,
+              'cloudinary.publicId': 1,
+              'cloudinary.assetId': 1,
+              cloudinaryUploadIntent: 1,
+              lastError: 1
+            }
+          }
+        );
+        await syncHistorySafely(terminalJob._id);
+      }
+    }
+  );
+
+  const auditFilter = {
+    $or: [
+      { organization: organizationId },
+      { organizationKey: String(organizationId) }
+    ]
+  };
+  const audits = await forEachSnapshotPage(CVProcessingAudit, auditFilter, {
+    pageSize,
+    handler: async (audit) => {
+      audit.actor = undefined;
+      audit.actorKey = undefined;
+      audit.candidate = undefined;
+      audit.linkedCandidate = undefined;
+      audit.jobAppliedFor = undefined;
+      audit.jobKey = undefined;
+      audit.batch = undefined;
+      audit.batchPublicId = undefined;
+      audit.originalName = '[redacted]';
+      if (audit.error) audit.error.message = undefined;
+      if (audit.retry) audit.retry.lastRequestedBy = undefined;
+      for (const attempt of audit.attemptHistory || []) {
+        attempt.requestedBy = undefined;
+        attempt.errorMessage = undefined;
+      }
+      for (const stage of audit.stageHistory || []) stage.errorMessage = undefined;
+      await audit.save();
+    }
+  });
+
+  const batches = await forEachSnapshotPage(
+    CVProcessingBatch,
+    { organization: organizationId },
+    {
+      pageSize,
+      handler: async (batch) => {
+        await CVProcessingBatch.updateOne(
+          { _id: batch._id },
+          {
+            $set: {
+              rejected: (batch.rejected || []).map(() => ({ fileName: '[redacted]' }))
+            },
+            $unset: { actor: 1, idempotencyKey: 1, requestFingerprint: 1 }
+          }
+        );
+      }
+    }
+  );
+  if (failureCount) {
+    const error = manualRetryError(
+      'ORGANIZATION_CV_ERASURE_PENDING',
+      `Organization deletion is waiting for ${failureCount} CV cleanup registration(s)`,
+      503
+    );
+    error.failedJobIds = failedJobIds;
+    error.failureCount = failureCount;
+    throw error;
+  }
+  return { jobs, audits, batches };
+}
+
 async function backfillHistory({ force = false } = {}) {
   if (historyBackfillPromise) return historyBackfillPromise;
   if (!force && Date.now() - lastHistoryBackfillAt < HISTORY_REPAIR_INTERVAL_MS) return 0;
+  if (force) historyBackfillCursor = null;
   historyBackfillPromise = (async () => {
     const cursorFilter = historyBackfillCursor
       ? {
@@ -725,42 +1633,54 @@ async function backfillHistory({ force = false } = {}) {
         }
       : {};
     const rows = await CVProcessingJob.find(cursorFilter)
-      .select('publicId source state stage progress attempts processingAttempts retry attemptHistory organization actor jobAppliedFor candidate originalName fileType fileSize durableFile cloudinary +resumeText createdAt startedAt completedAt failedAt updatedAt lastError.code')
+      .select('publicId source state stage stageStartedAt stageHistory artifacts progress attempts processingAttempts retry attemptHistory organization actor jobAppliedFor candidate linkedCandidate batch batchPublicId supersededBy supersedes revision originalName fileType fileSize durableFile cloudinary +resumeText createdAt startedAt completedAt failedAt cancelledAt updatedAt lastError')
       .sort({ updatedAt: 1, _id: 1 })
       .limit(HISTORY_REPAIR_BATCH_SIZE)
       .lean();
     if (rows.length) {
-      await CVProcessingAudit.bulkWrite(rows.flatMap((job) => {
-        const document = auditDocument(job);
-        return [{
-          updateOne: {
-            filter: { publicId: job.publicId },
-            update: { $setOnInsert: document },
-            upsert: true
-          }
-        }, {
-          updateOne: {
-            filter: { publicId: job.publicId, lastUpdatedAt: { $lt: document.lastUpdatedAt } },
-            update: { $set: document }
-          }
-        }];
-      }), { ordered: false });
-      await CVProcessingAudit.bulkWrite(rows.map((job) => {
-        const transition = auditTransition(job);
-        return {
-        updateOne: {
-          filter: { publicId: job.publicId, 'transitions.eventKey': { $ne: transition.eventKey } },
-          update: {
-            $push: {
-              transitions: {
-                $each: [transition],
-                $slice: -HISTORY_TRANSITION_LIMIT
+      const byOrganization = new Map();
+      for (const job of rows) {
+        const key = String(job.organization || '');
+        const group = byOrganization.get(key) || [];
+        group.push(job);
+        byOrganization.set(key, group);
+      }
+      for (const [organizationId, organizationRows] of byOrganization) {
+        await runAuditWriteFence(organizationId, async () => {
+          await CVProcessingAudit.bulkWrite(organizationRows.flatMap((job) => {
+            const document = auditDocument(job);
+            return [{
+              updateOne: {
+                filter: { publicId: job.publicId },
+                update: { $setOnInsert: document },
+                upsert: true
               }
-            }
-          }
-        }
-        };
-      }), { ordered: false });
+            }, {
+              updateOne: {
+                filter: { publicId: job.publicId, lastUpdatedAt: { $lt: document.lastUpdatedAt } },
+                update: { $set: document }
+              }
+            }];
+          }), { ordered: false });
+          await CVProcessingAudit.bulkWrite(organizationRows.map((job) => {
+            const transition = auditTransition(job);
+            return {
+              updateOne: {
+                filter: { publicId: job.publicId, 'transitions.eventKey': { $ne: transition.eventKey } },
+                update: {
+                  $push: {
+                    transitions: {
+                      $each: [transition],
+                      $slice: -HISTORY_TRANSITION_LIMIT
+                    }
+                  }
+                }
+              }
+            };
+          }), { ordered: false });
+          return true;
+        });
+      }
     }
     const last = rows.at(-1);
     historyBackfillCursor = rows.length === HISTORY_REPAIR_BATCH_SIZE && last
@@ -781,35 +1701,54 @@ function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function historyQuery(input = {}) {
+function historyQuery(input = {}, { mandatoryFilter = {}, searchClauses = [] } = {}) {
   const page = Math.max(1, Math.min(100_000, Number(input.page) || 1));
   const limit = Math.max(10, Math.min(100, Number(input.limit) || 25));
-  const filter = {};
-  const allowedStates = new Set(['queued', 'waiting_for_chatgpt', 'processing', 'retrying', 'completed', 'failed']);
-  const allowedSources = new Set(['private', 'public', 'bulk', 'ai-interview']);
+  const filter = { ...mandatoryFilter };
+  const allowedStates = new Set(['queued', 'waiting_for_chatgpt', 'processing', 'retrying', 'completed', 'failed', 'cancelled']);
+  const allowedSources = new Set(['private', 'public', 'bulk', 'replacement', 'ai-interview']);
   const requestedState = String(input.state || '');
-  if (requestedState === 'retrying') {
+  if (requestedState === 'active') {
+    filter.state = { $in: TELEMETRY_ACTIVE_STATES };
+  } else if (requestedState === 'retrying') {
     filter.state = { $in: ['queued', 'waiting_for_chatgpt', 'processing'] };
     filter.attempts = { $gt: 1 };
   } else if (allowedStates.has(requestedState)) {
     filter.state = requestedState;
   }
   if (allowedSources.has(String(input.source || ''))) filter.source = String(input.source);
-  const search = String(input.search || '').trim().slice(0, 100);
-  if (search) filter.publicId = { $regex: escapeRegex(search), $options: 'i' };
+  if (searchClauses.length) filter.$or = searchClauses;
   const from = input.from ? new Date(input.from) : null;
   const to = input.to ? new Date(input.to) : null;
   if ((from && Number.isFinite(from.getTime())) || (to && Number.isFinite(to.getTime()))) {
     filter.jobCreatedAt = {};
     if (from && Number.isFinite(from.getTime())) filter.jobCreatedAt.$gte = from;
-    if (to && Number.isFinite(to.getTime())) filter.jobCreatedAt.$lte = to;
+    if (to && Number.isFinite(to.getTime())) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(input.to))) {
+        filter.jobCreatedAt.$lt = new Date(to.getTime() + 24 * 60 * 60 * 1000);
+      } else {
+        filter.jobCreatedAt.$lte = to;
+      }
+    }
   }
   return { page, limit, filter };
 }
 
-async function listHistory(input = {}) {
+async function listOrganizationHistory(organizationId, input = {}) {
+  if (!mongoose.isValidObjectId(organizationId)) {
+    throw manualRetryError(
+      'CV_HISTORY_ORGANIZATION_REQUIRED',
+      'An organization is required to list CV processing jobs',
+      403
+    );
+  }
   await backfillHistory();
-  const { page, limit, filter } = historyQuery(input);
+  const organizationKey = String(organizationId);
+  const searchClauses = await historySearchClauses(input.search, { organizationId });
+  const { page, limit, filter } = historyQuery(input, {
+    mandatoryFilter: { organizationKey },
+    searchClauses
+  });
   const [total, rows, earliest] = await Promise.all([
     CVProcessingAudit.countDocuments(filter),
     CVProcessingAudit.find(filter)
@@ -817,18 +1756,36 @@ async function listHistory(input = {}) {
       .skip((page - 1) * limit)
       .limit(limit)
       .lean(),
-    CVProcessingAudit.findOne({})
+    CVProcessingAudit.findOne({ organizationKey })
       .sort({ jobCreatedAt: 1 })
       .select('jobCreatedAt')
       .lean()
   ]);
+  const live = rows.length
+    ? await adminJobQuery({
+      organization: organizationId,
+      publicId: { $in: rows.map((row) => row.publicId) }
+    })
+    : [];
+  const liveById = new Map(
+    live.map((job) => [job.publicId, adminOperationalJob(job, new Date())])
+  );
+  const retained = await adminJobsFromAudits(
+    rows.filter((row) => !liveById.has(row.publicId))
+  );
+  const retainedById = new Map(retained.map((job) => [job.jobId, job]));
   return {
     page,
     limit,
     total,
     pages: Math.max(1, Math.ceil(total / limit)),
-    jobs: rows.map(auditOperationalJob),
-    retainedIndefinitely: true,
+    jobs: rows.map((row) => (
+      liveById.get(row.publicId)
+      || retainedById.get(row.publicId)
+      || auditOperationalJob(row)
+    )),
+    retainedIndefinitely: false,
+    retentionDays: AUDIT_RETENTION_DAYS,
     coverageStartedAt: earliest?.jobCreatedAt || null,
     measuredAt: new Date().toISOString()
   };
@@ -836,7 +1793,21 @@ async function listHistory(input = {}) {
 
 async function listAdminHistory(input = {}) {
   await backfillHistory();
-  const { page, limit, filter } = historyQuery(input);
+  const requestedOrganizationId = String(input.organizationId || '').trim();
+  if (requestedOrganizationId && !mongoose.isValidObjectId(requestedOrganizationId)) {
+    throw manualRetryError(
+      'CV_HISTORY_ORGANIZATION_INVALID',
+      'The organization filter is invalid',
+      400
+    );
+  }
+  const searchClauses = await historySearchClauses(input.search, { administrator: true });
+  const { page, limit, filter } = historyQuery(input, {
+    mandatoryFilter: requestedOrganizationId
+      ? { organizationKey: requestedOrganizationId }
+      : {},
+    searchClauses
+  });
   const [total, rows, earliest] = await Promise.all([
     CVProcessingAudit.countDocuments(filter),
     CVProcessingAudit.find(filter)
@@ -849,13 +1820,28 @@ async function listAdminHistory(input = {}) {
       .select('jobCreatedAt')
       .lean()
   ]);
+  const live = rows.length
+    ? await adminJobQuery({ publicId: { $in: rows.map((row) => row.publicId) } })
+    : [];
+  const liveById = new Map(
+    live.map((job) => [job.publicId, adminOperationalJob(job, new Date())])
+  );
+  const retained = await adminJobsFromAudits(
+    rows.filter((row) => !liveById.has(row.publicId))
+  );
+  const retainedById = new Map(retained.map((job) => [job.jobId, job]));
   return {
     page,
     limit,
     total,
     pages: Math.max(1, Math.ceil(total / limit)),
-    jobs: await adminJobsFromAudits(rows),
-    retainedIndefinitely: true,
+    jobs: rows.map((row) => (
+      liveById.get(row.publicId)
+      || retainedById.get(row.publicId)
+      || auditOperationalJob(row)
+    )),
+    retainedIndefinitely: false,
+    retentionDays: AUDIT_RETENTION_DAYS,
     coverageStartedAt: earliest?.jobCreatedAt || null,
     measuredAt: new Date().toISOString()
   };
@@ -875,6 +1861,9 @@ function adminOperationalJob(job, sampledAt) {
   const organization = job.organization && typeof job.organization === 'object' ? job.organization : null;
   const appliedJob = job.jobAppliedFor && typeof job.jobAppliedFor === 'object' ? job.jobAppliedFor : null;
   const candidate = job.candidate && typeof job.candidate === 'object' ? job.candidate : null;
+  const linkedCandidate = job.linkedCandidate && typeof job.linkedCandidate === 'object'
+    ? job.linkedCandidate
+    : null;
   const applicantName = [job.formData?.firstName, job.formData?.lastName].filter(Boolean).join(' ');
   return {
     ...operational,
@@ -882,6 +1871,9 @@ function adminOperationalJob(job, sampledAt) {
     queue: queueName,
     retry: retrySummary(job, { includeActor: true, includeCapabilities: true }),
     attemptHistory: attemptTrail(job, { includeActor: true }),
+    revision: Number(job.revision || 1),
+    supersedesJobId: job.supersedes ? String(job.supersedes) : null,
+    supersededByJobId: job.supersededBy ? String(job.supersededBy) : null,
     organization: {
       id: String(organization?._id || job.organization || ''),
       name: organization?.name || 'Unknown organization'
@@ -897,7 +1889,11 @@ function adminOperationalJob(job, sampledAt) {
       email: job.formData?.email || '',
       type: 'public'
     },
-    application: appliedJob ? { id: String(appliedJob._id), title: appliedJob.title || 'Untitled job' } : null,
+    application: appliedJob ? {
+      id: String(appliedJob._id),
+      title: appliedJob.title || 'Untitled job',
+      candidateId: linkedCandidate?._id ? String(linkedCandidate._id) : null
+    } : null,
     candidate: candidate ? {
       id: String(candidate._id),
       name: [candidate.firstName, candidate.lastName].filter(Boolean).join(' ') || candidate.email || 'Candidate',
@@ -906,8 +1902,37 @@ function adminOperationalJob(job, sampledAt) {
     file: {
       name: job.originalName || '',
       type: job.fileType || '',
-      size: Number(job.fileSize || 0)
-    }
+      size: Number(job.fileSize || 0),
+      receivedAt: job.createdAt || null,
+      storedAt: job.durableFile?.persistedAt || null,
+      cloudStored: Boolean(job.cloudinary?.publicId)
+    },
+    batch: job.batchPublicId ? { id: String(job.batchPublicId) } : null
+  };
+}
+
+async function listAdminOrganizations(input = {}) {
+  await backfillHistory();
+  const limit = Math.max(1, Math.min(200, Number(input.limit) || 100));
+  const keys = await CVProcessingAudit.distinct('organizationKey', {
+    organizationKey: { $regex: /^[a-f\d]{24}$/i }
+  });
+  if (!keys.length) return { organizations: [] };
+  const search = String(input.search || '').trim().slice(0, 100);
+  const query = {
+    _id: { $in: keys.slice(0, 5_000) },
+    ...(search ? { name: new RegExp(escapeRegex(search), 'i') } : {})
+  };
+  const organizations = await Organization.find(query)
+    .select('name')
+    .sort({ name: 1 })
+    .limit(limit)
+    .lean();
+  return {
+    organizations: organizations.map((organization) => ({
+      id: String(organization._id),
+      name: organization.name || 'Unknown organization'
+    }))
   };
 }
 
@@ -957,7 +1982,8 @@ async function adminJobsFromAudits(audits) {
       },
       application: audit.jobKey ? {
         id: String(audit.jobKey),
-        title: appliedJob?.title || (isExternal ? 'AI Interview role' : 'Untitled job')
+        title: appliedJob?.title || (isExternal ? 'AI Interview role' : 'Untitled job'),
+        candidateId: audit.linkedCandidate ? String(audit.linkedCandidate) : null
       } : null,
       candidate: candidate ? {
         id: String(candidate._id),
@@ -967,8 +1993,12 @@ async function adminJobsFromAudits(audits) {
       file: {
         name: audit.originalName || '',
         type: audit.fileType || '',
-        size: Number(audit.fileSize || 0)
-      }
+        size: Number(audit.fileSize || 0),
+        receivedAt: audit.jobCreatedAt || null,
+        storedAt: null,
+        cloudStored: false
+      },
+      batch: audit.batchPublicId ? { id: String(audit.batchPublicId) } : null
     };
   });
 }
@@ -1000,6 +2030,7 @@ function isOfflineError(error) {
 function isRuntimeGateError(error) {
   return [
     'AI_RUNTIME_ACCOUNT_REQUIRED',
+    'ORG_AUTOMATION_RUNTIME_REQUIRED',
     'CODEX_DATA_SHARING_ACKNOWLEDGEMENT_REQUIRED',
     'AI_RUNTIME_CHATGPT_DISABLED',
     'CHATGPT_NOT_CONNECTED',
@@ -1020,53 +2051,50 @@ function isUnboundedRuntimeDeferral(error) {
  * runtime the administrator selected — exactly as if the recruiter had
  * uploaded the CV themselves, so queued work uses the correct connected account.
  */
-const organizationRuntimeActorCache = new Map();
-const ORGANIZATION_RUNTIME_ACTOR_TTL_MS = 60_000;
-
 async function resolveOrganizationRuntimeActor(organizationId) {
-  const key = String(organizationId || '');
-  if (!key) return null;
-  const cached = organizationRuntimeActorCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
-  let value = null;
-  try {
-    const AIUserRuntimeAccount = require('../models/AIUserRuntimeAccount');
-    let account = await AIUserRuntimeAccount.findOne({
-      organization: organizationId,
-      status: 'connected',
-      dataSharingAcknowledgedAt: { $ne: null }
-    }).sort({ connectedAt: -1 }).select('user').lean();
-    if (!account) {
-      // Accounts connected before their organization was recorded heal
-      // lazily elsewhere; here they are matched through their user so parked
-      // public work does not have to wait for that.
-      const orphans = await AIUserRuntimeAccount.find({
-        organization: null,
-        status: 'connected',
-        dataSharingAcknowledgedAt: { $ne: null }
-      }).sort({ connectedAt: -1 }).limit(20).select('user').lean();
-      for (const candidate of orphans) {
-        const member = await User.findById(candidate.user).select('currentOrganization').lean();
-        if (member && String(member.currentOrganization || '') === key) {
-          account = candidate;
-          await AIUserRuntimeAccount.updateOne(
-            { user: candidate.user, organization: null },
-            { $set: { organization: organizationId } }
-          );
-          break;
-        }
-      }
-    }
-    if (account?.user) {
-      const owner = await User.findById(account.user)
-        .select('email profile.firstName profile.lastName profile.displayName').lean();
-      if (owner) value = { id: String(account.user), user: owner };
-    }
-  } catch (error) {
-    console.warn('Organization runtime actor lookup failed:', error.message);
-  }
-  organizationRuntimeActorCache.set(key, { value, expiresAt: Date.now() + ORGANIZATION_RUNTIME_ACTOR_TTL_MS });
-  return value;
+  if (!String(organizationId || '')) return null;
+  // A personal ChatGPT connection consents to work the person initiates. It
+  // is not an organization-owned service account and must never be borrowed
+  // for an anonymous applicant/background job. Until an explicit org runtime
+  // assignment and disclosure exist, actorless work remains durably deferred.
+  return null;
+}
+
+async function historySearchClauses(searchValue, { organizationId, administrator = false } = {}) {
+  const search = String(searchValue || '').trim().slice(0, 100);
+  if (!search) return [];
+  const regex = new RegExp(escapeRegex(search), 'i');
+  const candidateFilter = {
+    ...(organizationId ? { organization: organizationId } : {}),
+    $or: [{ firstName: regex }, { lastName: regex }, { email: regex }]
+  };
+  const [candidates, actors, jobs, organizations] = await Promise.all([
+    Candidate.find(candidateFilter).select('_id').limit(250).lean(),
+    User.find({
+      $or: [
+        { email: regex },
+        { 'profile.firstName': regex },
+        { 'profile.lastName': regex },
+        { 'profile.displayName': regex }
+      ]
+    }).select('_id').limit(250).lean(),
+    Job.find({
+      ...(organizationId ? { organization: organizationId } : {}),
+      title: regex
+    }).select('_id').limit(250).lean(),
+    administrator
+      ? Organization.find({ name: regex }).select('_id').limit(100).lean()
+      : []
+  ]);
+  const clauses = [
+    { publicId: regex },
+    { originalName: regex },
+    ...candidates.map((candidate) => ({ candidate: candidate._id })),
+    ...actors.map((actor) => ({ actorKey: String(actor._id) })),
+    ...jobs.map((job) => ({ jobKey: String(job._id) })),
+    ...organizations.map((organization) => ({ organizationKey: String(organization._id) }))
+  ];
+  return clauses.slice(0, 1_000);
 }
 
 function isRetryableProcessingError(error) {
@@ -1110,10 +2138,21 @@ function idempotentStatusToken(organizationId, idempotencyKey) {
 function publicState(job) {
   const billingFailure = job.billing?.required === true && job.billing?.state === 'failed';
   const retry = retrySummary(job);
+  const error = billingFailure
+    ? {
+      code: job.billing.lastError?.code || 'CV_BILLING_FAILED',
+      message: job.billing.lastError?.message || 'CV upload billing failed',
+      stage: 'received',
+      at: job.billing.lastAttemptAt || null
+    }
+    : processingError(job);
   return {
     jobId: job.publicId,
+    source: job.source,
     state: billingFailure ? 'failed' : job.state,
     stage: billingFailure ? 'failed' : (job.stage || null),
+    stageStartedAt: job.stageStartedAt || null,
+    stageHistory: stageTrail(job),
     progress: job.progress,
     position: null,
     createdAt: job.createdAt,
@@ -1121,6 +2160,21 @@ function publicState(job) {
     completedAt: job.completedAt,
     failedAt: billingFailure ? job.billing.lastAttemptAt : job.failedAt,
     candidateId: job.candidate ? String(job.candidate) : null,
+    application: {
+      jobId: job.jobAppliedFor ? String(job.jobAppliedFor?._id || job.jobAppliedFor) : null,
+      candidateId: job.linkedCandidate ? String(job.linkedCandidate?._id || job.linkedCandidate) : null
+    },
+    batch: job.batchPublicId ? { id: String(job.batchPublicId) } : null,
+    file: {
+      name: job.originalName || '',
+      type: job.fileType || '',
+      size: Number(job.fileSize || 0),
+      receivedAt: job.createdAt || null,
+      storedAt: job.durableFile?.persistedAt || null,
+      cloudStoredAt: job.cloudinary?.publicId
+        ? (stageTrail(job).find((entry) => entry.stage === 'extracting')?.at || null)
+        : null
+    },
     attempts: processingAttemptCount(job),
     aiAttempts: Number(job.attempts || 0),
     retry,
@@ -1132,12 +2186,67 @@ function publicState(job) {
       stage: attempt.stage,
       startedAt: attempt.startedAt,
       finishedAt: attempt.finishedAt,
-      errorCode: attempt.errorCode
+      errorCode: attempt.errorCode,
+      errorMessage: attempt.errorMessage
     })),
-    error: billingFailure
-      ? job.billing.lastError
-      : job.state === 'failed' ? job.lastError : undefined
+    error: error || undefined
   };
+}
+
+// Compatibility alias kept fail-closed: tenant context is never optional.
+async function listHistory(input = {}) {
+  return listOrganizationHistory(input.organizationId, input);
+}
+
+function candidateIngestionState(job, explicitState) {
+  if (explicitState) return explicitState;
+  if (job.state === 'waiting_for_chatgpt') return 'waiting';
+  if (job.state === 'processing') return 'processing';
+  if (job.state === 'failed') return 'failed';
+  if (job.state === 'completed') return 'completed';
+  return 'queued';
+}
+
+async function syncLinkedCandidateProcessing(job, {
+  state,
+  stage,
+  progress,
+  error,
+  retryEligible
+} = {}) {
+  if (!job?.linkedCandidate) return false;
+  const currentError = error === undefined ? processingError(job) : error;
+  const set = {
+    'processingMetadata.cvProcessingJobId': job.publicId,
+    'processingMetadata.cvIngestionState': candidateIngestionState(job, state),
+    'processingMetadata.cvProcessingStage': stage || job.stage || 'received',
+    'processingMetadata.cvProcessingProgress': Math.max(
+      0,
+      Math.min(100, Number(progress ?? job.progress ?? 0))
+    ),
+    'processingMetadata.cvProcessingUpdatedAt': new Date(),
+    'processingMetadata.cvRetryEligible': retryEligible === undefined
+      ? retrySummary(job).available
+      : retryEligible === true
+  };
+  if (currentError) set['processingMetadata.cvProcessingError'] = currentError;
+  const update = { $set: set };
+  if (!currentError) update.$unset = { 'processingMetadata.cvProcessingError': 1 };
+  const result = await Candidate.updateOne(
+    {
+      _id: job.linkedCandidate,
+      organization: job.organization,
+      jobAppliedFor: job.jobAppliedFor,
+      deletionState: { $ne: 'tombstoned' },
+      $or: [
+        { 'processingMetadata.cvProcessingJobId': job.publicId },
+        { 'processingMetadata.cvProcessingJobId': { $exists: false } },
+        { 'processingMetadata.cvProcessingJobId': null }
+      ]
+    },
+    update
+  );
+  return Number(result.matchedCount || result.n || 0) === 1;
 }
 
 async function ensureConnection() {
@@ -1150,6 +2259,7 @@ async function ensureConnection() {
 }
 
 async function getQueue() {
+  if (queueOverrideForTests) return queueOverrideForTests;
   await ensureConnection();
   if (!queue) queue = new Queue(queueName, { connection });
   return queue;
@@ -1184,6 +2294,31 @@ function submissionError(code, message, statusCode) {
   const error = new Error(message);
   error.code = code;
   error.statusCode = statusCode;
+  return error;
+}
+
+async function organizationAcceptsCvWrites(organizationId) {
+  if (!mongoose.isValidObjectId(organizationId)) return false;
+  return Boolean(await Organization.exists({
+    _id: organizationId,
+    isActive: { $ne: false },
+    erasureState: { $ne: 'tombstoned' }
+  }));
+}
+
+async function requireOrganizationAcceptsCvWrites(organizationId) {
+  if (await organizationAcceptsCvWrites(organizationId)) return true;
+  throw submissionError(
+    'ORGANIZATION_ERASURE_IN_PROGRESS',
+    'This organization is being deleted and cannot accept new CV processing work.',
+    409
+  );
+}
+
+function intakeInProgressError(code, message, leaseAt) {
+  const elapsed = Date.now() - new Date(leaseAt || Date.now()).getTime();
+  const error = submissionError(code, message, 425);
+  error.retryAfterSeconds = Math.max(1, Math.ceil((INTAKE_LEASE_MS - elapsed) / 1000));
   return error;
 }
 
@@ -1224,13 +2359,6 @@ async function resolveSubmissionContext(req, source) {
         403
       );
     }
-    const reconciliation = await publicApplicationCapacityService.reconcileInflatedCount({
-      jobId: job._id,
-      organizationId: job.organization
-    });
-    if (reconciliation?.repaired) {
-      job.publicApplicationCount = reconciliation.applicationCount;
-    }
     if (job.status !== 'active') {
       throw submissionError(
         'PUBLIC_JOB_NOT_ACTIVE',
@@ -1238,20 +2366,18 @@ async function resolveSubmissionContext(req, source) {
         403
       );
     }
-    if (
-      Number(job.candidateApplyLimit || 0) > 0
-      && Number(job.publicApplicationCount || 0) >= Number(job.candidateApplyLimit)
-    ) {
-      throw submissionError(
-        'PUBLIC_APPLICATION_LIMIT_REACHED',
-        'This job has reached its maximum number of public applications',
-        409
-      );
-    }
     return {
       organizationId: String(job.organization),
       job
     };
+  }
+
+  if (source === 'ai-interview' && !req.user?.currentOrganization) {
+    throw submissionError(
+      'CV_AUTHENTICATED_ORGANIZATION_REQUIRED',
+      'AI Interview CV parsing requires an authenticated organization',
+      401
+    );
   }
 
   if (req.user?.currentOrganization) {
@@ -1271,7 +2397,7 @@ function safeFormData(body = {}) {
   return Object.fromEntries(allowed.filter((key) => body[key] != null).map((key) => [key, String(body[key]).slice(0, 20_000)]));
 }
 
-async function submitUpload(req, source = 'private', options = {}) {
+async function submitUploadUnfenced(req, source = 'private', options = {}) {
   if (!req.file) {
     const error = new Error('No CV file was uploaded');
     error.statusCode = 400;
@@ -1291,109 +2417,406 @@ async function submitUpload(req, source = 'private', options = {}) {
     try { await unlinkAsync(req.file.path); } catch {}
     throw error;
   }
-
-  const idempotencyKey = String(req.get?.('Idempotency-Key') || '').trim() || undefined;
-  if (idempotencyKey) {
-    const existing = await CVProcessingJob.findOne({ organization: organizationId, idempotencyKey });
-    if (existing) {
-      try { await unlinkAsync(req.file.path); } catch {}
-      if (
-        existing.source !== source
-        || (
-          source === 'public'
-          && String(existing.jobAppliedFor || '') !== String(context.job?._id || '')
-        )
-      ) {
-        throw submissionError(
-          'CV_IDEMPOTENCY_CONTEXT_MISMATCH',
-          'This idempotency key was already used for a different CV upload context',
-          409
-        );
-      }
-      return { job: existing, statusToken: idempotentStatusToken(organizationId, idempotencyKey), duplicate: true };
+  try {
+    await requireOrganizationAcceptsCvWrites(organizationId);
+    if (options.organizationWriteLease) {
+      await organizationCvWriteFence.renew(options.organizationWriteLease);
     }
+  } catch (error) {
+    try { await unlinkAsync(req.file.path); } catch {}
+    throw error;
   }
 
-  const statusToken = idempotencyKey
-    ? idempotentStatusToken(organizationId, idempotencyKey)
-    : crypto.randomBytes(32).toString('base64url');
-  const publicId = `cv_${crypto.randomUUID()}`;
+  const suppliedIdempotencyKey = String(req.get?.('Idempotency-Key') || '').trim() || undefined;
+  if (source === 'private' && !suppliedIdempotencyKey) {
+    try { await unlinkAsync(req.file.path); } catch {}
+    throw submissionError(
+      'CV_IDEMPOTENCY_KEY_REQUIRED',
+      'An Idempotency-Key is required for authenticated CV uploads',
+      400
+    );
+  }
 
+  const requestedLinkedCandidateId = options.linkedCandidateId || req.body?.candidateId;
   let linkedCandidate;
-  if (options.linkedCandidateId && mongoose.isValidObjectId(options.linkedCandidateId)) {
+  let previousPublicJobId;
+  let publicApplicationGeneration;
+  if (source === 'public') {
+    if (!mongoose.isValidObjectId(requestedLinkedCandidateId)) {
+      try { await unlinkAsync(req.file.path); } catch {}
+      throw submissionError(
+        'PUBLIC_APPLICATION_CANDIDATE_REQUIRED',
+        'Upload this CV from a submitted public application',
+        403
+      );
+    }
+    let committedCandidate;
+    try {
+      committedCandidate = await publicApplicationCapability.verify({
+        candidateId: requestedLinkedCandidateId,
+        jobId: context.job?._id,
+        organizationId,
+        token: req.get?.('X-Public-Application-Token') || req.body?.applicationToken
+      });
+    } catch (error) {
+      try { await unlinkAsync(req.file.path); } catch {}
+      throw error;
+    }
+    const committedApplication = committedCandidate
+      ? await Job.exists({
+        _id: context.job?._id,
+        organization: organizationId,
+        'shortlist.candidate': committedCandidate._id
+      })
+      : null;
+    if (!committedCandidate || !committedApplication) {
+      try { await unlinkAsync(req.file.path); } catch {}
+      throw submissionError(
+        'PUBLIC_APPLICATION_NOT_COMMITTED',
+        'The public application must be submitted before its CV can be analyzed',
+        403
+      );
+    }
+    linkedCandidate = committedCandidate._id;
+    previousPublicJobId = committedCandidate.processingMetadata?.cvProcessingJobId;
+    publicApplicationGeneration = committedCandidate.publicApplicationRequestKey;
+  } else if (requestedLinkedCandidateId && mongoose.isValidObjectId(requestedLinkedCandidateId)) {
     const candidateDoc = await Candidate.findOne({
-      _id: options.linkedCandidateId,
+      _id: requestedLinkedCandidateId,
       organization: organizationId
     }).select('_id').lean();
     if (candidateDoc) linkedCandidate = candidateDoc._id;
   }
 
-  let durableFile;
-  let job;
+  const idempotencyKey = source === 'public'
+    ? `public:${String(context.job?._id)}:${String(linkedCandidate)}:${String(publicApplicationGeneration || '')}`
+    : suppliedIdempotencyKey;
+  let requestFingerprint;
   try {
-    durableFile = await durableFileStore.persistPath(req.file.path, {
-      originalName: req.file.originalname,
-      fileType: req.file.mimetype,
-      organizationId,
-      source
-    });
-    job = await CVProcessingJob.create({
-      publicId,
-      statusTokenHash: tokenHash(statusToken),
-      idempotencyKey,
-      state: 'queued',
-      stage: 'ingesting',
-      progress: 5,
-      organization: organizationId,
-      actor: req.user?.id || undefined,
-      jobAppliedFor: context.job?._id || req.body?.jobId || undefined,
+    requestFingerprint = await uploadRequestFingerprint(
+      req,
       source,
-      billing: source === 'private' && req.creditsAction
-        ? {
-          required: true,
-          action: req.creditsAction.action || 'uploadCandidate',
-          cost: Number(req.creditsAction.cost || 0),
-          state: 'pending',
-          idempotencyKey: `cv-upload:${publicId}`
-        }
-        : {
-          required: false,
-          state: 'not_required'
-        },
-      originalName: req.file.originalname,
-      fileType: req.file.mimetype,
-      fileSize: req.file.size,
-      durableFile,
-      linkedCandidate,
-      formData: safeFormData(req.body)
-    });
-    await syncHistorySafely(job);
+      organizationId,
+      context.job?._id || req.body?.jobId,
+      linkedCandidate
+    );
   } catch (error) {
-    if (error?.code === 11000 && idempotencyKey) {
-      const cleanupReference = durableFile || error.cleanupReference;
-      if (cleanupReference) {
-        await cleanupWithOutbox('gridfs', cleanupReference, {
-          reason: 'idempotency-race-loser'
-        }).catch((cleanupError) => {
-          error.cleanupError = error.cleanupError || cleanupError;
-        });
+    try { await unlinkAsync(req.file.path); } catch {}
+    throw error;
+  }
+  if (typeof intakeLifecycleHooks.beforeReceipt === 'function') {
+    try {
+      await intakeLifecycleHooks.beforeReceipt({ organizationId, source, requestFingerprint });
+    } catch (error) {
+      try { await unlinkAsync(req.file.path); } catch {}
+      throw error;
+    }
+  }
+  try {
+    // Authorization may have completed before an organization tombstone was
+    // committed. Recheck at the durable receipt boundary, not merely in route
+    // middleware.
+    await requireOrganizationAcceptsCvWrites(organizationId);
+    if (options.organizationWriteLease) {
+      await organizationCvWriteFence.renew(options.organizationWriteLease);
+    }
+  } catch (error) {
+    try { await unlinkAsync(req.file.path); } catch {}
+    throw error;
+  }
+  if (previousPublicJobId) {
+    const previousJob = await CVProcessingJob.findOne({
+      publicId: previousPublicJobId,
+      organization: organizationId,
+      jobAppliedFor: context.job?._id,
+      linkedCandidate,
+      source: 'public'
+    }).select('+requestFingerprint');
+    if (previousJob) {
+      if (previousJob.requestFingerprint !== requestFingerprint) {
+        try { await unlinkAsync(req.file.path); } catch {}
+        throw idempotencyReuseError();
       }
-      const existing = await CVProcessingJob.findOne({ organization: organizationId, idempotencyKey });
-      if (existing) {
+      if (previousJob.stage !== 'received' || previousJob.durableFile?.fileId) {
+        try { await unlinkAsync(req.file.path); } catch {}
         return {
-          job: existing,
+          job: previousJob,
           statusToken: idempotentStatusToken(organizationId, idempotencyKey),
           duplicate: true
         };
       }
+      // A committed public application may have survived a process exit after
+      // its received receipt but before GridFS. Fall through to the normal
+      // lease reclaim path so the resent bytes repair that same job.
+    } else {
+      try { await unlinkAsync(req.file.path); } catch {}
+      throw submissionError(
+        'PUBLIC_CV_REPLACEMENT_REQUIRED',
+        'This application already has a CV processing record. A recruiter must explicitly replace or retry it.',
+        409
+      );
     }
+  }
+  const statusToken = idempotencyKey
+    ? idempotentStatusToken(organizationId, idempotencyKey)
+    : crypto.randomBytes(32).toString('base64url');
+  let publicId = `cv_${crypto.randomUUID()}`;
+  const intakeLeaseId = crypto.randomUUID();
+  const intakeLeaseAt = new Date();
+  const receivedAt = new Date();
+  let durableFile;
+  let job;
+  let duplicate = false;
+
+  const matchingSubmission = (existing) => (
+    existing.requestFingerprint === requestFingerprint
+    && existing.source === source
+    && (source !== 'public' || (
+      String(existing.jobAppliedFor || '') === String(context.job?._id || '')
+      && String(existing.linkedCandidate || '') === String(linkedCandidate || '')
+    ))
+  );
+  const loadExisting = () => CVProcessingJob.findOne({ organization: organizationId, idempotencyKey })
+    .select('+requestFingerprint +intakeLeaseId');
+  const claimStaleIntake = (existing) => CVProcessingJob.findOneAndUpdate(
+    {
+      _id: existing._id,
+      state: 'queued',
+      stage: 'received',
+      'durableFile.fileId': { $exists: false },
+      $or: [
+        { intakeLeaseAt: { $exists: false } },
+        { intakeLeaseAt: null },
+        { intakeLeaseAt: { $lte: new Date(Date.now() - INTAKE_LEASE_MS) } }
+      ]
+    },
+    { $set: { intakeLeaseId, intakeLeaseAt } },
+    { new: true }
+  ).select('+requestFingerprint +intakeLeaseId');
+
+  try {
+    let existing = idempotencyKey ? await loadExisting() : null;
+    if (existing) {
+      if (!matchingSubmission(existing)) throw idempotencyReuseError();
+      if (existing.stage !== 'received' || existing.durableFile?.fileId) {
+        try { await unlinkAsync(req.file.path); } catch {}
+        return { job: existing, statusToken, duplicate: true };
+      }
+      job = await claimStaleIntake(existing);
+      if (!job) {
+        try { await unlinkAsync(req.file.path); } catch {}
+        throw intakeInProgressError(
+          'CV_INTAKE_IN_PROGRESS',
+          'This exact CV intake is still being stored. Retry after the indicated delay.',
+          existing.intakeLeaseAt
+        );
+      }
+      publicId = job.publicId;
+      duplicate = true;
+    } else {
+      try {
+        job = await CVProcessingJob.create({
+          publicId,
+          statusTokenHash: tokenHash(statusToken),
+          idempotencyKey,
+          requestFingerprint,
+          intakeLeaseId,
+          intakeLeaseAt,
+          state: 'queued',
+          stage: 'received',
+          stageStartedAt: receivedAt,
+          stageHistory: [processingStageEvent('received', 'queued', 0, {}, null, receivedAt)],
+          artifacts: { receivedAt, extractedTextLength: 0 },
+          progress: 0,
+          organization: organizationId,
+          actor: req.user?.id || undefined,
+          jobAppliedFor: context.job?._id || req.body?.jobId || undefined,
+          source,
+          billing: source === 'private' && req.creditsAction
+            ? {
+              required: true,
+              action: req.creditsAction.action || 'uploadCandidate',
+              cost: Number(req.creditsAction.cost || 0),
+              state: 'pending',
+              idempotencyKey: `cv-upload:${publicId}`
+            }
+            : { required: false, state: 'not_required' },
+          originalName: req.file.originalname,
+          fileType: req.file.mimetype,
+          fileSize: req.file.size,
+          linkedCandidate,
+          supersedes: options.supersedes || undefined,
+          revision: Math.max(1, Number(options.revision || 1)),
+          formData: safeFormData(req.body)
+        });
+      } catch (error) {
+        if (error?.code !== 11000 || !idempotencyKey) throw error;
+        existing = await loadExisting();
+        if (!existing || !matchingSubmission(existing)) throw idempotencyReuseError();
+        if (existing.stage !== 'received' || existing.durableFile?.fileId) {
+          try { await unlinkAsync(req.file.path); } catch {}
+          return { job: existing, statusToken, duplicate: true };
+        }
+        job = await claimStaleIntake(existing);
+        if (!job) {
+          try { await unlinkAsync(req.file.path); } catch {}
+          throw intakeInProgressError(
+            'CV_INTAKE_IN_PROGRESS',
+            'This exact CV intake is still being stored. Retry after the indicated delay.',
+            existing.intakeLeaseAt
+          );
+        }
+        publicId = job.publicId;
+        duplicate = true;
+      }
+      if (!options.skipCandidateProjection) try {
+        await syncLinkedCandidateProcessing(job, {
+          state: 'accepted',
+          stage: 'received',
+          progress: 0,
+          retryEligible: false,
+          error: null
+        });
+      } catch (projectionError) {
+        console.error('CV received candidate projection will be repaired:', projectionError.message);
+      }
+      await syncHistorySafely(job);
+    }
+
+    if (typeof intakeLifecycleHooks.afterReceipt === 'function') {
+      await intakeLifecycleHooks.afterReceipt({ job, organizationId, source });
+    }
+    try {
+      await requireOrganizationAcceptsCvWrites(organizationId);
+      if (options.organizationWriteLease) {
+        await organizationCvWriteFence.renew(options.organizationWriteLease);
+      }
+    } catch (error) {
+      // No provider bytes exist yet. Remove the received receipt (and any
+      // repair projection) so an intake authorized just before a tenant
+      // tombstone cannot outlive that tenant.
+      await Promise.all([
+        CVProcessingJob.deleteOne({
+          _id: job._id,
+          state: 'queued',
+          stage: 'received',
+          'durableFile.fileId': { $exists: false },
+          intakeLeaseId
+        }),
+        CVProcessingAudit.deleteOne({ publicId: job.publicId })
+      ]).catch(() => {});
+      throw error;
+    }
+
+    durableFile = await durableFileStore.persistPath(req.file.path, {
+      originalName: req.file.originalname,
+      fileType: req.file.mimetype,
+      organizationId,
+      source,
+      intakeId: publicId,
+      intakeKeyHash: crypto.createHash('sha256')
+        .update(`${organizationId}:${idempotencyKey || publicId}`)
+        .digest('hex'),
+      requestFingerprint
+    });
+    if (options.organizationWriteLease) {
+      // The GridFS side effect is now durable, but the job binding is not. A
+      // lost fence aborts into the cleanup-outbox path below instead of
+      // attaching bytes after an organization tombstone.
+      await organizationCvWriteFence.renew(options.organizationWriteLease);
+    }
+    const storedAt = durableFile.persistedAt || new Date();
+    const storedEvent = processingStageEvent('stored', 'queued', 10, job, null, storedAt);
+    const attached = await CVProcessingJob.findOneAndUpdate(
+      {
+        _id: job._id,
+        state: 'queued',
+        stage: 'received',
+        intakeLeaseId
+      },
+      {
+        $set: {
+          durableFile,
+          stage: 'stored',
+          stageStartedAt: storedAt,
+          progress: 10,
+          'artifacts.durableStoredAt': storedAt
+        },
+        $unset: { intakeLeaseId: 1, intakeLeaseAt: 1, lastError: 1 },
+        $push: {
+          stageHistory: {
+            $each: [storedEvent],
+            $slice: -HISTORY_TRANSITION_LIMIT
+          }
+        }
+      },
+      { new: true }
+    ).select('+requestFingerprint +intakeLeaseId');
+    if (attached) {
+      job = attached;
+    } else {
+      const current = await CVProcessingJob.findById(job._id)
+        .select('+requestFingerprint +intakeLeaseId');
+      const sameDurableFile = current?.durableFile?.fileId
+        && String(current.durableFile.fileId) === String(durableFile.fileId);
+      if (!sameDurableFile) {
+        await cleanupWithOutbox('gridfs', durableFile, {
+          reason: 'intake-lease-lost'
+        });
+      }
+      if (!current?.durableFile?.fileId) {
+        throw submissionError(
+          'CV_INTAKE_COMMIT_LOST',
+          'The CV intake changed while its durable file was being committed. Retry with the same Idempotency-Key.',
+          409
+        );
+      }
+      job = current;
+      duplicate = true;
+    }
+    if (!options.skipCandidateProjection) try {
+      await syncLinkedCandidateProcessing(job, {
+        state: 'accepted',
+        stage: 'stored',
+        progress: 10,
+        retryEligible: false,
+        error: null
+      });
+    } catch (projectionError) {
+      // The GridFS object and processing job are already committed. Candidate
+      // list projection is repairable and must never make us delete the only
+      // durable copy or turn a successful acceptance into an HTTP failure.
+      console.error('CV candidate processing projection will be repaired:', projectionError.message);
+    }
+    await syncHistorySafely(job);
+  } catch (error) {
     const cleanupReference = durableFile || error.cleanupReference;
-    if (cleanupReference) {
+    const attachedFileId = job?._id
+      ? (await CVProcessingJob.findById(job._id).select('durableFile.fileId').lean())?.durableFile?.fileId
+      : null;
+    if (cleanupReference && String(attachedFileId || '') !== String(cleanupReference.fileId || '')) {
       await cleanupWithOutbox('gridfs', cleanupReference, {
-        reason: 'job-persistence-failed'
+        reason: 'intake-storage-failed'
       }).catch((cleanupError) => {
         error.cleanupError = error.cleanupError || cleanupError;
       });
+    }
+    if (job?._id) {
+      await CVProcessingJob.updateOne(
+        { _id: job._id, stage: 'received', intakeLeaseId },
+        {
+          $set: {
+            lastError: {
+              code: String(error.code || 'CV_DURABLE_STORAGE_WRITE_FAILED').slice(0, 120),
+              message: String(error.message || error).slice(0, 1000),
+              stage: 'received',
+              at: new Date()
+            }
+          },
+          $unset: { intakeLeaseId: 1, intakeLeaseAt: 1 }
+        }
+      ).catch(() => {});
+      await syncHistorySafely(job._id);
     }
     throw error;
   } finally {
@@ -1406,20 +2829,385 @@ async function submitUpload(req, source = 'private', options = {}) {
       await enqueueJob(job);
     } catch (error) {
       enqueueDeferred = true;
+      const nextAttemptAt = new Date(Date.now() + 60_000);
+      const queueError = {
+        code: error.code || 'CV_QUEUE_UNAVAILABLE',
+        message: String(error.message).slice(0, 1000),
+        stage: 'stored',
+        at: new Date()
+      };
       await CVProcessingJob.updateOne({ _id: job._id }, {
         $set: {
-          lastError: {
-            code: error.code || 'CV_QUEUE_UNAVAILABLE',
-            message: String(error.message).slice(0, 1000),
-            at: new Date()
+          stage: 'retry_scheduled',
+          stageStartedAt: queueError.at,
+          'retry.nextAttemptAt': nextAttemptAt,
+          lastError: queueError
+        },
+        $push: {
+          stageHistory: {
+            $each: [processingStageEvent('retry_scheduled', 'queued', 10, job, queueError, queueError.at)],
+            $slice: -HISTORY_TRANSITION_LIMIT
           }
         }
       });
+      job.stage = 'retry_scheduled';
+      job.stageStartedAt = queueError.at;
+      job.retry = { ...(job.retry?.toObject?.() || job.retry || {}), nextAttemptAt };
+      job.lastError = queueError;
       await syncHistorySafely(job._id);
     }
   }
+  if (!options.skipCandidateProjection) {
+    try {
+      await syncLinkedCandidateProcessing(job, {
+        state: enqueueDeferred ? 'waiting' : 'queued',
+        error: processingError(job),
+        retryEligible: false
+      });
+    } catch (projectionError) {
+      console.error('CV queued candidate projection will be repaired:', projectionError.message);
+    }
+  }
   publishTelemetrySoon();
-  return { job, statusToken, duplicate: false, enqueueDeferred };
+  return { job, statusToken, duplicate, enqueueDeferred };
+}
+
+async function submitUpload(req, source = 'private', options = {}) {
+  if (!req?.file) return submitUploadUnfenced(req, source, options);
+  let context;
+  try {
+    context = await resolveSubmissionContext(req, source);
+  } catch {
+    return submitUploadUnfenced(req, source, options);
+  }
+  if (!context?.organizationId) return submitUploadUnfenced(req, source, options);
+  let lease;
+  try {
+    lease = await organizationCvWriteFence.acquire(context.organizationId, `cv-intake:${source}`);
+  } catch (error) {
+    try { await unlinkAsync(req.file.path); } catch {}
+    throw error;
+  }
+  const stopHeartbeat = organizationCvWriteFence.startHeartbeat(lease);
+  try {
+    return await submitUploadUnfenced(req, source, {
+      ...options,
+      organizationWriteLease: lease
+    });
+  } finally {
+    stopHeartbeat();
+    await organizationCvWriteFence.release(lease).catch(() => {});
+  }
+}
+
+async function cancelReplacementRevision(replacement, reason = 'replacement-version-conflict') {
+  const cancelledAt = new Date();
+  const cancelled = await CVProcessingJob.findOneAndUpdate(
+    {
+      _id: replacement._id,
+      state: { $in: ['queued', 'waiting_for_chatgpt', 'processing', 'failed'] }
+    },
+    {
+      $set: {
+        state: 'cancelled',
+        stage: 'cancelled',
+        stageStartedAt: cancelledAt,
+        cancelledAt,
+        cancellationReason: reason
+      },
+      $unset: {
+        processingLeaseId: 1,
+        'retry.availableUntil': 1,
+        'retry.nextAttemptAt': 1,
+        'retry.pendingTrigger': 1
+      },
+      $push: {
+        stageHistory: {
+          $each: [processingStageEvent(
+            'cancelled', 'cancelled', replacement.progress, replacement, null, cancelledAt
+          )],
+          $slice: -HISTORY_TRANSITION_LIMIT
+        }
+      }
+    },
+    { new: true }
+  ).select('+resumeText');
+  if (!cancelled) return false;
+  await releaseDurableFile(cancelled).catch(() => {});
+  await releaseCloudinaryAsset(cancelled).catch(() => {});
+  await syncHistorySafely(cancelled._id);
+  return true;
+}
+
+// A replacement is activated as a recoverable two-document state machine:
+// first make the old revision permanently non-retryable, then switch the
+// candidate's canonical pointer. Recovery can safely repeat either CAS.
+async function activateReplacementRevision(replacementInput, priorInput) {
+  const replacement = replacementInput?.publicId
+    ? replacementInput
+    : await CVProcessingJob.findById(replacementInput).select('+resumeText');
+  if (!replacement?.supersedes || !replacement.linkedCandidate) return true;
+  const prior = priorInput?.publicId
+    ? priorInput
+    : await CVProcessingJob.findById(replacement.supersedes).select('+resumeText');
+  if (!prior || String(prior.organization) !== String(replacement.organization)) {
+    await cancelReplacementRevision(replacement, 'replacement-prior-missing');
+    return false;
+  }
+
+  const superseded = await CVProcessingJob.updateOne(
+    {
+      _id: prior._id,
+      $or: [
+        { supersededBy: { $exists: false } },
+        { supersededBy: null },
+        { supersededBy: replacement._id }
+      ]
+    },
+    {
+      $set: { supersededBy: replacement._id },
+      $unset: {
+        'retry.availableUntil': 1,
+        'retry.nextAttemptAt': 1,
+        'retry.pendingTrigger': 1
+      }
+    }
+  );
+  if (!Number(superseded.matchedCount || superseded.n || 0)) {
+    const winningPrior = await CVProcessingJob.findById(prior._id).select('supersededBy');
+    if (String(winningPrior?.supersededBy || '') !== String(replacement._id)) {
+      await cancelReplacementRevision(replacement, 'replacement-supersession-conflict');
+      return false;
+    }
+  }
+
+  const switched = await Candidate.updateOne(
+    {
+      _id: replacement.linkedCandidate,
+      organization: replacement.organization,
+      jobAppliedFor: replacement.jobAppliedFor,
+      deletionState: { $ne: 'tombstoned' },
+      $or: [
+        { 'processingMetadata.cvProcessingJobId': prior.publicId },
+        { 'processingMetadata.cvProcessingJobId': replacement.publicId }
+      ]
+    },
+    {
+      $set: {
+        'processingMetadata.cvProcessingJobId': replacement.publicId,
+        'processingMetadata.cvIngestionState': candidateIngestionState(replacement),
+        'processingMetadata.cvProcessingStage': replacement.stage,
+        'processingMetadata.cvProcessingProgress': replacement.progress,
+        'processingMetadata.cvProcessingUpdatedAt': new Date(),
+        'processingMetadata.cvRetryEligible': false
+      },
+      $unset: { 'processingMetadata.cvProcessingError': 1 }
+    }
+  );
+  if (!Number(switched.matchedCount || switched.n || 0)) {
+    const alreadyCurrent = await Candidate.exists({
+      _id: replacement.linkedCandidate,
+      organization: replacement.organization,
+      deletionState: { $ne: 'tombstoned' },
+      'processingMetadata.cvProcessingJobId': replacement.publicId
+    });
+    if (!alreadyCurrent) {
+      await cancelReplacementRevision(replacement, 'replacement-version-conflict');
+      return false;
+    }
+  }
+  return true;
+}
+
+async function repairReplacementActivations({ limit = 500 } = {}) {
+  const replacements = await CVProcessingJob.find({
+    supersedes: { $exists: true },
+    state: { $in: ['queued', 'waiting_for_chatgpt', 'processing'] }
+  }).sort({ createdAt: 1 }).limit(Math.min(Math.max(Number(limit) || 500, 1), 2000));
+  let repaired = 0;
+  let cancelled = 0;
+  for (const replacement of replacements) {
+    const activated = await activateReplacementRevision(replacement);
+    if (activated) repaired += 1;
+    else cancelled += 1;
+  }
+  return { examined: replacements.length, repaired, cancelled };
+}
+
+async function replaceFailedJob(req, priorPublicId) {
+  const organizationId = req.user?.currentOrganization;
+  const discardIncoming = async () => {
+    if (req.file?.path) {
+      try { await unlinkAsync(req.file.path); } catch {}
+    }
+  };
+  if (!organizationId || !mongoose.isValidObjectId(organizationId)) {
+    await discardIncoming();
+    throw manualRetryError('CV_REPLACEMENT_ORGANIZATION_REQUIRED', 'Organization is required', 400);
+  }
+  if (!req.file) {
+    throw manualRetryError('CV_REPLACEMENT_FILE_REQUIRED', 'A corrected CV file is required', 400);
+  }
+  const expectedPriorJobId = String(req.body?.expectedPriorJobId || '').trim();
+  if (!expectedPriorJobId || expectedPriorJobId !== String(priorPublicId || '')) {
+    await discardIncoming();
+    throw manualRetryError(
+      'CV_REPLACEMENT_VERSION_MISMATCH',
+      'The expected prior CV job does not match this replacement request',
+      409
+    );
+  }
+  if (!String(req.get?.('Idempotency-Key') || '').trim()) {
+    await discardIncoming();
+    throw manualRetryError(
+      'CV_IDEMPOTENCY_KEY_REQUIRED',
+      'An Idempotency-Key is required for corrected CV uploads',
+      400
+    );
+  }
+  const prior = await CVProcessingJob.findOne({
+    publicId: String(priorPublicId || ''),
+    organization: organizationId,
+    state: 'failed',
+    source: { $in: ['public', 'replacement'] },
+    linkedCandidate: { $ne: null }
+  });
+  if (!prior) {
+    await discardIncoming();
+    throw manualRetryError(
+      'CV_REPLACEMENT_NOT_ELIGIBLE',
+      'This CV job is not eligible for corrected-file replacement',
+      409
+    );
+  }
+  if (!prior.supersededBy) {
+    const persistedSuccessor = await CVProcessingJob.findOne({
+      supersedes: prior._id,
+      organization: organizationId,
+      state: { $ne: 'cancelled' }
+    }).sort({ revision: -1, createdAt: 1 }).select('+requestFingerprint +resumeText');
+    if (persistedSuccessor) {
+      await activateReplacementRevision(persistedSuccessor, prior);
+      const refreshedPrior = await CVProcessingJob.findById(prior._id).select('supersededBy');
+      prior.supersededBy = refreshedPrior?.supersededBy;
+    }
+  }
+  if (prior.supersededBy) {
+    const current = await CVProcessingJob.findOne({
+      _id: prior.supersededBy,
+      organization: organizationId,
+      supersedes: prior._id
+    }).select('+requestFingerprint');
+    const suppliedKey = String(req.get?.('Idempotency-Key') || '').trim();
+    req.body = {
+      ...(req.body || {}),
+      jobId: String(prior.jobAppliedFor || ''),
+      candidateId: String(prior.linkedCandidate || '')
+    };
+    const incomingFingerprint = await uploadRequestFingerprint(
+      req,
+      'replacement',
+      organizationId,
+      prior.jobAppliedFor,
+      prior.linkedCandidate
+    );
+    await discardIncoming();
+    if (
+      !current
+      || current.idempotencyKey !== suppliedKey
+      || current.requestFingerprint !== incomingFingerprint
+    ) {
+      throw idempotencyReuseError();
+    }
+    return {
+      job: current,
+      statusToken: idempotentStatusToken(organizationId, suppliedKey),
+      duplicate: true,
+      enqueueDeferred: false,
+      queueAvailable: true,
+      priorJobId: prior.publicId,
+      replacement: true
+    };
+  }
+  const candidate = await Candidate.findOne({
+    _id: prior.linkedCandidate,
+    organization: organizationId,
+    'processingMetadata.cvProcessingJobId': prior.publicId
+  }).select('_id processingMetadata');
+  if (!candidate) {
+    await discardIncoming();
+    throw manualRetryError(
+      'CV_REPLACEMENT_VERSION_MISMATCH',
+      'A newer CV revision already owns this candidate',
+      409
+    );
+  }
+
+  req.body = {
+    ...(req.body || {}),
+    jobId: String(prior.jobAppliedFor || ''),
+    candidateId: String(candidate._id)
+  };
+  const submitted = await submitUpload(req, 'replacement', {
+    linkedCandidateId: candidate._id,
+    deferEnqueue: true,
+    skipCandidateProjection: true,
+    supersedes: prior._id,
+    revision: Number(prior.revision || 1) + 1
+  });
+  const replacement = submitted.job;
+  if (!(await activateReplacementRevision(replacement, prior))) {
+    throw manualRetryError(
+      'CV_REPLACEMENT_VERSION_MISMATCH',
+      'A newer CV revision already owns this candidate',
+      409
+    );
+  }
+  let queueAvailable = true;
+  try {
+    await enqueueJob(replacement);
+  } catch (error) {
+    queueAvailable = false;
+    const at = new Date();
+    await CVProcessingJob.updateOne(
+      { _id: replacement._id, state: 'queued' },
+      {
+        $set: {
+          stage: 'retry_scheduled',
+          stageStartedAt: at,
+          'retry.nextAttemptAt': new Date(Date.now() + 60_000),
+          lastError: {
+            code: error.code || 'CV_QUEUE_UNAVAILABLE',
+            message: String(error.message || error).slice(0, 1000),
+            stage: 'stored',
+            at
+          }
+        },
+        $push: {
+          stageHistory: {
+            $each: [processingStageEvent('retry_scheduled', 'queued', replacement.progress, replacement, error, at)],
+            $slice: -HISTORY_TRANSITION_LIMIT
+          }
+        }
+      }
+    );
+    replacement.stage = 'retry_scheduled';
+  }
+  await syncLinkedCandidateProcessing(replacement, {
+    state: queueAvailable ? 'queued' : 'waiting',
+    stage: replacement.stage,
+    error: queueAvailable ? null : processingError(replacement),
+    retryEligible: false
+  });
+  await Promise.all([syncHistorySafely(prior._id), syncHistorySafely(replacement._id)]);
+  publishTelemetrySoon();
+  return {
+    ...submitted,
+    job: replacement,
+    queueAvailable,
+    priorJobId: prior.publicId,
+    replacement: true
+  };
 }
 
 const PERMANENT_BILLING_FAILURE_CODES = new Set([
@@ -1456,6 +3244,17 @@ async function finalizePrivateUploadSubmission(processingJob, req) {
   const freshJob = await CVProcessingJob.findById(processingJob._id);
   if (!freshJob) {
     throw submissionError('CV_JOB_NOT_FOUND', 'CV processing job was not found after ingestion', 500);
+  }
+
+  if (freshJob.stage === 'received' && !freshJob.durableFile?.fileId) {
+    return {
+      billing: {
+        status: freshJob.billing?.state || 'pending',
+        charged: false,
+        retryable: true
+      },
+      enqueueDeferred: true
+    };
   }
 
   if (!freshJob.billing?.required) {
@@ -1732,20 +3531,49 @@ function candidatePayload(job, result) {
       fileSize: job.fileSize,
       originalName: job.originalName,
       processedAt: new Date(),
-      cvProcessingJobId: job.publicId
+      cvProcessingJobId: job.publicId,
+      cvIngestionState: 'completed',
+      cvProcessingStage: 'completed',
+      cvProcessingProgress: 100,
+      cvProcessingUpdatedAt: new Date(),
+      cvRetryEligible: false
     }
   };
 }
 
 async function updateProcessingStage(processingJob, bullJob, stage, progress, extra = {}) {
-  await CVProcessingJob.updateOne(
-    { _id: processingJob._id, state: { $ne: 'completed' } },
-    { $set: { state: 'processing', stage, progress, ...extra } }
+  const stageStartedAt = new Date();
+  const stageEvent = processingStageEvent(stage, 'processing', progress, processingJob, null, stageStartedAt);
+  const updated = await CVProcessingJob.updateOne(
+    {
+      _id: processingJob._id,
+      state: 'processing',
+      processingLeaseId: processingJob.processingLeaseId
+    },
+    {
+      $set: { state: 'processing', stage, stageStartedAt, progress, ...extra },
+      $push: {
+        stageHistory: {
+          $each: [stageEvent],
+          $slice: -HISTORY_TRANSITION_LIMIT
+        }
+      }
+    }
   );
+  if (!updated.matchedCount) {
+    const error = new Error('CV processing was cancelled or superseded');
+    error.code = 'CV_PROCESSING_CANCELLED';
+    error.permanent = true;
+    throw error;
+  }
   processingJob.state = 'processing';
   processingJob.stage = stage;
+  processingJob.stageStartedAt = stageStartedAt;
+  processingJob.stageHistory = [...(processingJob.stageHistory || []), stageEvent]
+    .slice(-HISTORY_TRANSITION_LIMIT);
   processingJob.progress = progress;
   Object.assign(processingJob, extra);
+  await syncLinkedCandidateProcessing(processingJob, { error: null, retryEligible: false });
   await syncHistorySafely(processingJob._id);
   await bullJob.updateProgress(progress);
   publishTelemetrySoon();
@@ -1777,43 +3605,86 @@ function cleanupTaskResource(provider, input = {}) {
       deliveryType: String(input.deliveryType || 'authenticated').slice(0, 40)
     };
   }
+  if (provider === 'embedding') {
+    if (!mongoose.isValidObjectId(input.candidateId)) {
+      throw new Error('Embedding cleanup requires a candidate ID');
+    }
+    return { candidateId: String(input.candidateId) };
+  }
   throw new Error(`Unsupported CV cleanup provider: ${provider}`);
 }
 
-function cleanupTaskKey(provider, resource) {
+function cleanupTaskKey(provider, resource, generation) {
   const identity = provider === 'gridfs'
     ? `${resource.bucket}:${resource.fileId}`
-    : `${resource.assetId || resource.publicId}:${resource.resourceType}:${resource.deliveryType}`;
-  return crypto.createHash('sha256').update(`recruiter:${provider}:${identity}`).digest('hex');
+    : provider === 'embedding'
+      ? resource.candidateId
+      : `${resource.assetId || resource.publicId}:${resource.resourceType}:${resource.deliveryType}`;
+  return crypto.createHash('sha256')
+    .update(`recruiter:${provider}:${identity}:${generation || 'resource'}`)
+    .digest('hex');
 }
 
 async function registerCleanupTask(provider, input, {
   reason,
-  jobPublicId
+  jobPublicId,
+  held = false,
+  activationKey,
+  generationKey,
+  notBefore,
+  reconcileUntil
 } = {}) {
   const resource = cleanupTaskResource(provider, input);
-  const key = cleanupTaskKey(provider, resource);
+  // Candidate erasure is versioned by its tombstone activation token. A
+  // deterministic public Candidate ID can be created again later with a new
+  // embedding or CV, so a completed task from an earlier deletion must never
+  // suppress cleanup for the new resource generation.
+  const key = cleanupTaskKey(
+    provider,
+    resource,
+    held ? activationKey : generationKey
+  );
   return CVStorageCleanupTask.findOneAndUpdate(
     { key },
     {
       $setOnInsert: {
         key,
         provider,
-        state: 'pending',
+        state: held ? 'held' : 'pending',
         resource,
         reason: String(reason || 'cv-storage-release').slice(0, 120),
         jobPublicId: jobPublicId ? String(jobPublicId).slice(0, 100) : undefined,
+        activationKey: held ? String(activationKey || '') : undefined,
         attempts: 0,
-        nextAttemptAt: new Date()
+        notBefore: notBefore ? new Date(notBefore) : undefined,
+        reconcileUntil: reconcileUntil ? new Date(reconcileUntil) : undefined,
+        nextAttemptAt: held ? undefined : (notBefore ? new Date(notBefore) : new Date())
       }
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 }
 
-async function executeCleanupTask(task) {
+async function registerRequiredErasureTask(provider, resource, context) {
+  try {
+    return await registerCleanupTask(provider, resource, context);
+  } catch (cause) {
+    const error = manualRetryError(
+      'CV_ERASURE_REGISTRATION_FAILED',
+      'Candidate erasure could not be scheduled safely. Please retry.',
+      503
+    );
+    error.cause = cause;
+    throw error;
+  }
+}
+
+async function executeCleanupTask(task, {
+  cloudinaryOutcomeConfirmed = false,
+  now = new Date()
+} = {}) {
   if (!task || task.state === 'completed') return true;
-  const attemptedAt = new Date();
+  const attemptedAt = new Date(now);
   const attempts = Number(task.attempts || 0) + 1;
   await CVStorageCleanupTask.updateOne(
     { _id: task._id, state: { $ne: 'completed' } },
@@ -1867,6 +3738,42 @@ async function executeCleanupTask(task) {
         const error = new Error(result?.error || 'Cloudinary cleanup failed');
         error.code = 'CV_CLOUD_CLEANUP_FAILED';
         throw error;
+      }
+      if (
+        !cloudinaryOutcomeConfirmed
+        && String(task.reason || '').includes('upload-intent')
+        && task.reconcileUntil
+        && task.reconcileUntil > attemptedAt
+      ) {
+        const nextAttemptAt = new Date(Math.min(
+          task.reconcileUntil.getTime(),
+          attemptedAt.getTime() + CLOUD_UPLOAD_UNCERTAINTY_MS
+        ));
+        await CVStorageCleanupTask.updateOne(
+          { _id: task._id, state: { $ne: 'completed' } },
+          {
+            $set: {
+              state: 'pending',
+              attempts,
+              lastAttemptAt: attemptedAt,
+              nextAttemptAt
+            },
+            $unset: { lastError: 1, expiresAt: 1 }
+          }
+        );
+        return false;
+      }
+    } else if (task.provider === 'embedding') {
+      const currentCandidate = await Candidate.findById(task.resource?.candidateId)
+        .select('+deletionState +deletionToken')
+        .lean();
+      const sameTombstoneGeneration = currentCandidate?.deletionState === 'tombstoned'
+        && task.activationKey
+        && currentCandidate.deletionToken === task.activationKey;
+      // Deterministic public Candidate IDs can be recreated. An old failed
+      // erasure must never delete the replacement candidate's new vector.
+      if (!currentCandidate || sameTombstoneGeneration) {
+        await embeddingService.deleteEmbedding(task.resource?.candidateId);
       }
     } else {
       throw new Error(`Unsupported CV cleanup provider: ${task.provider}`);
@@ -1930,7 +3837,7 @@ async function finalizeTerminalExpiry(processingJob) {
   const current = await CVProcessingJob.findById(processingJob._id)
     .select('state durableFile cloudinary completionEffectsCompletedAt expiresAt')
     .lean();
-  if (!current || !['completed', 'failed'].includes(current.state)) return false;
+  if (!current || !['completed', 'failed', 'cancelled'].includes(current.state)) return false;
   if (hasOutstandingTerminalCleanup(current)) {
     if (current.expiresAt) {
       await CVProcessingJob.updateOne({ _id: current._id }, { $unset: { expiresAt: 1 } });
@@ -1939,7 +3846,7 @@ async function finalizeTerminalExpiry(processingJob) {
   }
   if (!current.expiresAt) {
     await CVProcessingJob.updateOne(
-      { _id: current._id, state: { $in: ['completed', 'failed'] }, expiresAt: { $exists: false } },
+      { _id: current._id, state: { $in: ['completed', 'failed', 'cancelled'] }, expiresAt: { $exists: false } },
       { $set: { expiresAt: terminalJobExpiry() } }
     );
   }
@@ -2104,28 +4011,132 @@ async function releaseCloudinaryAsset(processingJob) {
   return true;
 }
 
-async function createCandidateOnce(processingJob, analysis) {
+async function createCandidateWithinOrganizationFence(processingJob, analysis) {
+  const active = await CVProcessingJob.exists({
+    _id: processingJob._id,
+    state: 'processing',
+    processingLeaseId: processingJob.processingLeaseId
+  });
+  if (!active) {
+    const error = new Error('CV processing was cancelled or superseded');
+    error.code = 'CV_PROCESSING_CANCELLED';
+    error.permanent = true;
+    throw error;
+  }
+  if (!await organizationAcceptsCvWrites(processingJob.organization)) {
+    const cancelledAt = new Date();
+    await CVProcessingJob.updateOne(
+      {
+        _id: processingJob._id,
+        state: 'processing',
+        processingLeaseId: processingJob.processingLeaseId
+      },
+      {
+        $set: {
+          state: 'cancelled',
+          stage: 'cancelled',
+          cancelledAt,
+          stageStartedAt: cancelledAt,
+          cancellationReason: 'organization-deleted'
+        },
+        $unset: { processingLeaseId: 1, expiresAt: 1 }
+      }
+    );
+    const error = new Error('CV processing was cancelled because its organization is being deleted');
+    error.code = 'CV_PROCESSING_CANCELLED';
+    error.permanent = true;
+    throw error;
+  }
   if (processingJob.linkedCandidate) {
-    return mergeAnalysisOntoCandidate(processingJob, analysis);
+    const candidate = await mergeAnalysisOntoCandidate(processingJob, analysis);
+    if (await organizationAcceptsCvWrites(processingJob.organization)) return candidate;
+    await eraseCandidateProcessingData(processingJob.organization, [candidate._id]).catch(() => {});
+    const error = new Error('Candidate enrichment was cancelled during organization deletion');
+    error.code = 'CV_PROCESSING_CANCELLED';
+    error.permanent = true;
+    throw error;
   }
 
   const filter = { 'processingMetadata.cvProcessingJobId': processingJob.publicId };
   const existing = await Candidate.findOne(filter);
-  if (existing) return existing;
+  if (existing) {
+    if (await organizationAcceptsCvWrites(processingJob.organization)) return existing;
+    await eraseCandidateProcessingData(processingJob.organization, [existing._id]).catch(() => {});
+    const error = new Error('Candidate recovery was cancelled during organization deletion');
+    error.code = 'CV_PROCESSING_CANCELLED';
+    error.permanent = true;
+    throw error;
+  }
   const deterministicId = new mongoose.Types.ObjectId(
     crypto.createHash('sha256').update(`cv-candidate:${processingJob.publicId}`).digest('hex').slice(0, 24)
   );
   try {
-    return await Candidate.findOneAndUpdate(
+    const candidate = await Candidate.findOneAndUpdate(
       { _id: deterministicId },
       { $setOnInsert: candidatePayload(processingJob, analysis) },
       { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
     );
+    if (await organizationAcceptsCvWrites(processingJob.organization)) return candidate;
+    await eraseCandidateProcessingData(processingJob.organization, [candidate._id]).catch(() => {});
+    const error = new Error('Candidate creation was cancelled during organization deletion');
+    error.code = 'CV_PROCESSING_CANCELLED';
+    error.permanent = true;
+    throw error;
   } catch (error) {
+    if (error?.code === 'CV_PROCESSING_CANCELLED') throw error;
     if (error?.code !== 11000) throw error;
     const duplicate = await Candidate.findOne(filter);
-    if (duplicate) return duplicate;
+    if (duplicate) {
+      if (await organizationAcceptsCvWrites(processingJob.organization)) return duplicate;
+      await eraseCandidateProcessingData(processingJob.organization, [duplicate._id]).catch(() => {});
+      const cancelled = new Error('Candidate recovery was cancelled during organization deletion');
+      cancelled.code = 'CV_PROCESSING_CANCELLED';
+      cancelled.permanent = true;
+      throw cancelled;
+    }
     throw error;
+  }
+}
+
+async function createCandidateOnce(processingJob, analysis) {
+  let lease;
+  try {
+    lease = await organizationCvWriteFence.acquire(
+      processingJob.organization,
+      'cv-worker:candidate-commit'
+    );
+  } catch (acquireError) {
+    if (acquireError?.code !== 'ORGANIZATION_ERASURE_IN_PROGRESS') throw acquireError;
+    const cancelledAt = new Date();
+    await CVProcessingJob.updateOne(
+      {
+        _id: processingJob._id,
+        state: 'processing',
+        processingLeaseId: processingJob.processingLeaseId
+      },
+      {
+        $set: {
+          state: 'cancelled',
+          stage: 'cancelled',
+          stageStartedAt: cancelledAt,
+          cancelledAt,
+          cancellationReason: 'organization-deleted'
+        },
+        $unset: { processingLeaseId: 1, expiresAt: 1 }
+      }
+    );
+    const error = new Error('CV processing was cancelled because its organization is being deleted');
+    error.code = 'CV_PROCESSING_CANCELLED';
+    error.permanent = true;
+    throw error;
+  }
+  const stopHeartbeat = organizationCvWriteFence.startHeartbeat(lease);
+  try {
+    await organizationCvWriteFence.renew(lease);
+    return await createCandidateWithinOrganizationFence(processingJob, analysis);
+  } finally {
+    stopHeartbeat();
+    await organizationCvWriteFence.release(lease).catch(() => {});
   }
 }
 
@@ -2134,12 +4145,19 @@ async function createCandidateOnce(processingJob, analysis) {
 // applicant's own submitted identity fields are left untouched — only the
 // CV-derived enrichment fields are merged in.
 async function mergeAnalysisOntoCandidate(processingJob, analysis) {
-  const existing = await Candidate.findById(processingJob.linkedCandidate);
+  const currentRevisionFilter = {
+    _id: processingJob.linkedCandidate,
+    organization: processingJob.organization,
+    jobAppliedFor: processingJob.jobAppliedFor,
+    deletionState: { $ne: 'tombstoned' },
+    'processingMetadata.cvProcessingJobId': processingJob.publicId
+  };
+  const existing = await Candidate.findOne(currentRevisionFilter);
   if (!existing) {
-    // Linked candidate is gone (deleted) - fall back to normal creation so
-    // the extracted data isn't lost.
-    processingJob.linkedCandidate = undefined;
-    return createCandidateOnce(processingJob, analysis);
+    const error = new Error('The linked candidate was deleted or a newer CV revision became current');
+    error.code = 'CV_LINKED_CANDIDATE_NOT_CURRENT';
+    error.permanent = true;
+    throw error;
   }
 
   const payload = candidatePayload(processingJob, analysis);
@@ -2154,10 +4172,60 @@ async function mergeAnalysisOntoCandidate(processingJob, analysis) {
     delete enrichmentFields.position;
   }
 
-  return Candidate.findByIdAndUpdate(
-    existing._id,
+  const enriched = await Candidate.findOneAndUpdate(
+    currentRevisionFilter,
     { $set: enrichmentFields },
     { new: true, runValidators: true }
+  );
+  if (!enriched) {
+    const error = new Error('The linked candidate was deleted or a newer CV revision became current');
+    error.code = 'CV_LINKED_CANDIDATE_NOT_CURRENT';
+    error.permanent = true;
+    throw error;
+  }
+  return enriched;
+}
+
+async function sha256Path(filePath) {
+  const hash = crypto.createHash('sha256');
+  await new Promise((resolve, reject) => {
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', reject);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', resolve);
+  });
+  return hash.digest('hex');
+}
+
+function digestRequest(value) {
+  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+async function uploadRequestFingerprint(req, source, organizationId, jobId, linkedCandidate) {
+  const [sha256, stat] = await Promise.all([
+    sha256Path(req.file.path),
+    statAsync(req.file.path)
+  ]);
+  return digestRequest({
+    version: 1,
+    mode: 'single',
+    source,
+    organizationId: String(organizationId || ''),
+    jobId: String(jobId || ''),
+    candidateId: String(linkedCandidate || ''),
+    file: {
+      name: String(req.file.originalname || ''),
+      size: Number(req.file.size || stat.size || 0),
+      sha256
+    }
+  });
+}
+
+function idempotencyReuseError() {
+  return submissionError(
+    'CV_IDEMPOTENCY_KEY_REUSED',
+    'This idempotency key was already used for a different CV file or upload context',
+    409
   );
 }
 
@@ -2185,7 +4253,7 @@ async function skipCompletionEffect(processingJobId, effectName) {
   );
 }
 
-async function runCompletionEffect(processingJobId, effectName, handler) {
+async function runCompletionEffectWithinFence(processingJobId, effectName, handler) {
   const prefix = `completionEffects.${effectName}`;
   const statusPath = `${prefix}.status`;
   const claimToken = crypto.randomUUID();
@@ -2193,6 +4261,7 @@ async function runCompletionEffect(processingJobId, effectName, handler) {
   const claimed = await CVProcessingJob.findOneAndUpdate(
     {
       _id: processingJobId,
+      state: 'completed',
       $or: [
         { [statusPath]: { $exists: false } },
         { [statusPath]: 'pending' },
@@ -2221,9 +4290,44 @@ async function runCompletionEffect(processingJobId, effectName, handler) {
 
   try {
     await handler(claimed);
-    await CVProcessingJob.updateOne(
+    const currentCandidate = claimed.candidate
+      ? await Candidate.findOne({
+          _id: claimed.candidate,
+          deletionState: { $ne: 'tombstoned' },
+          ...(claimed.linkedCandidate
+            ? { 'processingMetadata.cvProcessingJobId': claimed.publicId }
+            : {})
+        })
+      : null;
+    const stillCurrent = Boolean(currentCandidate && await CVProcessingJob.exists({
+      _id: processingJobId,
+      state: 'completed',
+      candidate: claimed.candidate,
+      [`${prefix}.claimToken`]: claimToken
+    }));
+    if (!stillCurrent) {
+      if (effectName === 'candidateNotification') {
+        await Notification.deleteMany({ eventKey: `cv-completed:${claimed.publicId}` });
+      } else if (effectName === 'embedding' && claimed.candidate) {
+        const replacement = await Candidate.findOne({
+          _id: claimed.candidate,
+          deletionState: { $ne: 'tombstoned' }
+        });
+        if (replacement) {
+          // A deterministic Candidate ID may have been recreated while the old
+          // effect was running. Restore the current generation rather than
+          // deleting its vector with the stale generation's compensation.
+          await embeddingService.createCandidateEmbedding(replacement);
+        } else {
+          await embeddingService.deleteEmbedding(claimed.candidate);
+        }
+      }
+      return { effectName, claimed: true, completed: false, cancelled: true };
+    }
+    const completed = await CVProcessingJob.updateOne(
       {
         _id: processingJobId,
+        state: 'completed',
         [`${prefix}.claimToken`]: claimToken
       },
       {
@@ -2238,11 +4342,16 @@ async function runCompletionEffect(processingJobId, effectName, handler) {
         }
       }
     );
-    return { effectName, claimed: true, completed: true };
+    return {
+      effectName,
+      claimed: true,
+      completed: Number(completed.matchedCount || completed.n || 0) === 1
+    };
   } catch (error) {
     await CVProcessingJob.updateOne(
       {
         _id: processingJobId,
+        state: 'completed',
         [`${prefix}.claimToken`]: claimToken
       },
       {
@@ -2261,6 +4370,31 @@ async function runCompletionEffect(processingJobId, effectName, handler) {
     );
     console.error(`CV completion effect ${effectName} failed:`, error.message);
     return { effectName, claimed: true, completed: false, error };
+  }
+}
+
+async function runCompletionEffect(processingJobId, effectName, handler) {
+  const job = await CVProcessingJob.findById(processingJobId).select('organization').lean();
+  if (!job?.organization) return { effectName, claimed: false };
+  let lease;
+  try {
+    lease = await organizationCvWriteFence.acquire(
+      job.organization,
+      `cv-completion:${effectName}`
+    );
+  } catch (error) {
+    if (error?.code === 'ORGANIZATION_ERASURE_IN_PROGRESS') {
+      return { effectName, claimed: false, cancelled: true };
+    }
+    throw error;
+  }
+  const stopHeartbeat = organizationCvWriteFence.startHeartbeat(lease);
+  try {
+    await organizationCvWriteFence.renew(lease);
+    return await runCompletionEffectWithinFence(processingJobId, effectName, handler);
+  } finally {
+    stopHeartbeat();
+    await organizationCvWriteFence.release(lease).catch(() => {});
   }
 }
 
@@ -2358,6 +4492,7 @@ async function beginProcessingAttempt(processingJob) {
       $inc: { processingAttempts: 1 },
       $set: {
         state: 'processing',
+        processingLeaseId: attemptId,
         'retry.requestedStage': requestedStage
       },
       $unset: { 'retry.pendingTrigger': 1, 'retry.nextAttemptAt': 1 }
@@ -2382,6 +4517,7 @@ async function beginProcessingAttempt(processingJob) {
     { $push: { attemptHistory: { $each: [attempt], $slice: -HISTORY_TRANSITION_LIMIT } } }
   );
   processingJob.processingAttempts = attempt.number;
+  processingJob.processingLeaseId = attemptId;
   processingJob.attemptHistory = [...(processingJob.attemptHistory || []), attempt].slice(-HISTORY_TRANSITION_LIMIT);
   return attempt;
 }
@@ -2459,20 +4595,45 @@ async function retainFailedAssetsForRetry(processingJob, failedAt = new Date()) 
 }
 
 async function recoverCommittedCandidate(processingJob) {
+  if (processingJob.state === 'cancelled') return null;
   const candidate = processingJob.candidate
-    ? await Candidate.findById(processingJob.candidate)
-    : await Candidate.findOne({ 'processingMetadata.cvProcessingJobId': processingJob.publicId });
+    ? await Candidate.findOne({
+        _id: processingJob.candidate,
+        deletionState: { $ne: 'tombstoned' },
+        ...(processingJob.linkedCandidate
+          ? { 'processingMetadata.cvProcessingJobId': processingJob.publicId }
+          : {})
+      })
+    : !processingJob.linkedCandidate
+      ? await Candidate.findOne({
+          'processingMetadata.cvProcessingJobId': processingJob.publicId,
+          deletionState: { $ne: 'tombstoned' }
+        })
+      : null;
   if (!candidate) return null;
 
-  await CVProcessingJob.updateOne(
-    { _id: processingJob._id },
+  const completedAt = processingJob.completedAt || new Date();
+  const completedEvent = processingStageEvent(
+    'completed', 'completed', 100, processingJob, null, completedAt
+  );
+
+  const recovered = await CVProcessingJob.updateOne(
+    {
+      _id: processingJob._id,
+      state: processingJob.state,
+      ...(processingJob.state === 'processing'
+        ? { processingLeaseId: processingJob.processingLeaseId }
+        : {})
+    },
     {
       $set: {
         state: 'completed',
         stage: 'completed',
+        stageStartedAt: completedAt,
         progress: 100,
         candidate: candidate._id,
-        completedAt: processingJob.completedAt || new Date()
+        completedAt,
+        'artifacts.profileCommittedAt': completedAt
       },
       $unset: {
         lastError: 1,
@@ -2480,13 +4641,28 @@ async function recoverCommittedCandidate(processingJob) {
         expiresAt: 1,
         'retry.pendingTrigger': 1,
         'retry.nextAttemptAt': 1
+      },
+      $push: {
+        stageHistory: {
+          $each: [completedEvent],
+          $slice: -HISTORY_TRANSITION_LIMIT
+        }
       }
     }
   );
+  if (!recovered.matchedCount) return null;
   processingJob.state = 'completed';
   processingJob.stage = 'completed';
+  processingJob.stageStartedAt = completedAt;
   processingJob.progress = 100;
   processingJob.candidate = candidate._id;
+  processingJob.completedAt = completedAt;
+  processingJob.lastError = undefined;
+  processingJob.stageHistory = [...(processingJob.stageHistory || []), completedEvent]
+    .slice(-HISTORY_TRANSITION_LIMIT);
+  await syncLinkedCandidateProcessing(processingJob, {
+    state: 'completed', stage: 'completed', progress: 100, error: null, retryEligible: false
+  });
   await syncHistorySafely(processingJob._id);
   await deliverCompletionEffects(processingJob._id).catch((error) => {
     console.error('CV completion effect recovery failed:', error.message);
@@ -2494,9 +4670,71 @@ async function recoverCommittedCandidate(processingJob) {
   return candidate;
 }
 
+function deterministicCloudinaryUploadIntent(processingJob, generation) {
+  const requestedId = String(processingJob.publicId || '')
+    .replace(/[^A-Za-z0-9_-]/g, '_');
+  const uploadGeneration = String(generation || crypto.randomUUID())
+    .replace(/[^A-Za-z0-9_-]/g, '_');
+  // Every processing attempt gets its own provider identity. Cleanup for an
+  // uncertain earlier upload can therefore finish after a manual retry
+  // without deleting the retry's newly committed asset.
+  const providerRequestId = `${requestedId}_${uploadGeneration}`.slice(0, 220);
+  const image = ['image/jpeg', 'image/png', 'image/tiff'].includes(processingJob.fileType);
+  const document = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/msword'
+  ].includes(processingJob.fileType);
+  return {
+    publicId: `${image ? 'resumes/images' : document ? 'resumes/documents' : 'resumes/other'}/${providerRequestId}`,
+    resourceType: image ? 'image' : document ? 'raw' : 'auto',
+    deliveryType: 'authenticated',
+    generation: uploadGeneration,
+    preparedAt: new Date()
+  };
+}
+
+async function releaseCloudinaryUploadIntent(
+  processingJob,
+  resource,
+  reason,
+  { outcomeConfirmed = false } = {}
+) {
+  const intent = resource?.publicId ? resource : processingJob.cloudinaryUploadIntent;
+  if (!intent?.publicId) return false;
+  let task;
+  try {
+    task = await registerCleanupTask('cloudinary', intent, {
+      reason: reason || 'cloudinary-upload-intent-release',
+      jobPublicId: processingJob.publicId,
+      generationKey: processingJob.cloudinaryUploadIntent?.generation || intent.generation,
+      notBefore: new Date(Date.now() + CLOUD_UPLOAD_TIMEOUT_MS + CLOUD_UPLOAD_UNCERTAINTY_MS),
+      reconcileUntil: new Date(Date.now() + CLOUD_UPLOAD_RECONCILIATION_MS)
+    });
+  } catch (cause) {
+    const error = new Error('Cloudinary upload cleanup could not be recorded durably');
+    error.code = 'CV_CLOUD_CLEANUP_REGISTRATION_FAILED';
+    error.cause = cause;
+    throw error;
+  }
+  await executeCleanupTask(task, { cloudinaryOutcomeConfirmed: outcomeConfirmed }).catch((error) => {
+    console.error('Cloudinary upload-intent cleanup deferred:', error.message);
+  });
+  await CVProcessingJob.updateOne(
+    {
+      _id: processingJob._id,
+      'cloudinaryUploadIntent.generation': processingJob.cloudinaryUploadIntent?.generation
+    },
+    { $unset: { cloudinaryUploadIntent: 1 } }
+  ).catch(() => {});
+  return true;
+}
+
 async function processJob(bullJob, workerToken) {
-  const processingJob = await CVProcessingJob.findById(bullJob.data.processingJobId).select('+resumeText +statusTokenHash');
+  const processingJob = await CVProcessingJob.findById(bullJob.data.processingJobId)
+    .select('+resumeText +statusTokenHash +processingLeaseId');
   if (!processingJob) return { skipped: true };
+  if (processingJob.state === 'cancelled') return { skipped: true, cancelled: true };
   // Candidate creation and job completion are separate durable writes. Repair
   // either a crash between them or an older duplicate delivery that regressed
   // the state after the candidate had already been committed.
@@ -2514,21 +4752,10 @@ async function processJob(bullJob, workerToken) {
   const initialStage = !processingJob.cloudinary?.publicId
     ? 'uploading'
     : processingJob.resumeText ? 'analyzing' : 'extracting';
-  await CVProcessingJob.updateOne({ _id: processingJob._id }, {
-    $set: {
-      state: 'processing',
-      stage: initialStage,
-      progress: 15,
-      startedAt: processingJob.startedAt || new Date()
-    }
-  });
-  processingJob.state = 'processing';
-  processingJob.stage = initialStage;
-  processingJob.progress = 15;
   processingJob.startedAt = processingJob.startedAt || new Date();
-  await syncHistorySafely(processingJob._id);
-  await bullJob.updateProgress(15);
-  publishTelemetrySoon();
+  await updateProcessingStage(processingJob, bullJob, initialStage, 15, {
+    startedAt: processingJob.startedAt
+  });
   try {
     if (!processingJob.resumeText || !processingJob.cloudinary?.publicId) {
       const materialized = await durableFileStore.materialize(processingJob.durableFile, {
@@ -2538,9 +4765,31 @@ async function processJob(bullJob, workerToken) {
       try {
         if (!processingJob.cloudinary?.publicId) {
           await updateProcessingStage(processingJob, bullJob, 'uploading', 20);
+          const uploadIntent = deterministicCloudinaryUploadIntent(
+            processingJob,
+            processingAttempt.attemptId
+          );
+          const prepared = await CVProcessingJob.updateOne(
+            {
+              _id: processingJob._id,
+              state: 'processing',
+              processingLeaseId: processingJob.processingLeaseId
+            },
+            { $set: { cloudinaryUploadIntent: uploadIntent } }
+          );
+          if (!prepared.matchedCount) {
+            const error = new Error('CV processing was cancelled before document storage');
+            error.code = 'CV_PROCESSING_CANCELLED';
+            error.permanent = true;
+            throw error;
+          }
+          processingJob.cloudinaryUploadIntent = uploadIntent;
           const upload = await cloudinary.uploadFile(materialized.filePath, processingJob.fileType, {
             privateAsset: true,
-            publicId: processingJob.publicId
+            // CloudinaryUploadService adds the type-specific resumes/* folder.
+            // Keep this leaf exactly aligned with the durable full publicId in
+            // cloudinaryUploadIntent.
+            publicId: uploadIntent.publicId.split('/').at(-1)
           });
           if (!upload?.success) {
             const error = new Error(upload?.error || 'CV document upload failed');
@@ -2555,11 +4804,51 @@ async function processJob(bullJob, workerToken) {
             deliveryType: upload.deliveryType || 'authenticated',
             cleanupState: 'retained'
           };
-          await CVProcessingJob.updateOne(
-            { _id: processingJob._id },
-            { $set: { cloudinary: cloudinaryMetadata } }
-          );
+          let cloudReferencePersisted = false;
+          try {
+            const persisted = await CVProcessingJob.updateOne(
+              {
+                _id: processingJob._id,
+                state: 'processing',
+                processingLeaseId: processingJob.processingLeaseId
+              },
+              {
+                $set: {
+                  cloudinary: cloudinaryMetadata,
+                  'artifacts.cloudinaryStoredAt': new Date()
+                },
+                $unset: { cloudinaryUploadIntent: 1 }
+              }
+            );
+            cloudReferencePersisted = persisted.matchedCount > 0;
+          } catch (error) {
+            await releaseCloudinaryUploadIntent(
+              processingJob,
+              cloudinaryMetadata,
+              'cloudinary-reference-persistence-failed',
+              { outcomeConfirmed: true }
+            );
+            throw error;
+          }
+          if (!cloudReferencePersisted) {
+            await releaseCloudinaryUploadIntent(
+              processingJob,
+              cloudinaryMetadata,
+              'cancelled-during-cloudinary-upload',
+              { outcomeConfirmed: true }
+            );
+            const error = new Error('CV processing was cancelled during document storage');
+            error.code = 'CV_PROCESSING_CANCELLED';
+            error.permanent = true;
+            throw error;
+          }
           processingJob.cloudinary = cloudinaryMetadata;
+          processingJob.cloudinaryUploadIntent = undefined;
+          processingJob.artifacts = {
+            ...(processingJob.artifacts?.toObject?.() || processingJob.artifacts || {}),
+            cloudinaryStoredAt: new Date()
+          };
+          await updateProcessingStage(processingJob, bullJob, 'stored', 30);
         }
 
         if (!processingJob.resumeText) {
@@ -2570,11 +4859,32 @@ async function processJob(bullJob, workerToken) {
             error.code = 'CV_TEXT_EXTRACTION_FAILED';
             throw error;
           }
-          await CVProcessingJob.updateOne(
-            { _id: processingJob._id },
-            { $set: { resumeText } }
+          const extracted = await CVProcessingJob.updateOne(
+            {
+              _id: processingJob._id,
+              state: 'processing',
+              processingLeaseId: processingJob.processingLeaseId
+            },
+            {
+              $set: {
+                resumeText,
+                'artifacts.textExtractedAt': new Date(),
+                'artifacts.extractedTextLength': resumeText.length
+              }
+            }
           );
+          if (!extracted.matchedCount) {
+            const error = new Error('CV processing was cancelled during text extraction');
+            error.code = 'CV_PROCESSING_CANCELLED';
+            error.permanent = true;
+            throw error;
+          }
           processingJob.resumeText = resumeText;
+          processingJob.artifacts = {
+            ...(processingJob.artifacts?.toObject?.() || processingJob.artifacts || {}),
+            textExtractedAt: new Date(),
+            extractedTextLength: resumeText.length
+          };
         }
       } finally {
         await materialized.cleanup().catch(() => {});
@@ -2583,9 +4893,9 @@ async function processJob(bullJob, workerToken) {
 
     await updateProcessingStage(processingJob, bullJob, 'analyzing', 50);
     const [organization, actor] = await Promise.all([
-      Organization.findById(processingJob.organization).select('name').lean(),
+      Organization.findById(processingJob.organization).select('name idpOrganizationId').lean(),
       processingJob.actor
-        ? User.findById(processingJob.actor).select('email profile.firstName profile.lastName profile.displayName').lean()
+        ? User.findById(processingJob.actor).select('email idpSubject profile.firstName profile.lastName profile.displayName').lean()
         : Promise.resolve(null)
     ]);
     const runtimeActor = processingJob.actor
@@ -2593,20 +4903,35 @@ async function processJob(bullJob, workerToken) {
       : await resolveOrganizationRuntimeActor(processingJob.organization);
     const effectiveActorId = processingJob.actor ? String(processingJob.actor) : runtimeActor?.id;
     const effectiveActor = actor || runtimeActor?.user || null;
+    const canonicalActorId = effectiveActor?.idpSubject || undefined;
+    const localOrganizationId = String(processingJob.organization);
+    const canonicalOrganizationId = organization?.idpOrganizationId || localOrganizationId;
     const analysis = await runInferenceWithGlobalPermit(
       bullJob,
       workerToken,
       async ({ signal }) => {
-        await CVProcessingJob.updateOne(
-          { _id: processingJob._id },
+        const activeAttempt = await CVProcessingJob.updateOne(
+          {
+            _id: processingJob._id,
+            state: 'processing',
+            processingLeaseId: processingJob.processingLeaseId
+          },
           { $inc: { attempts: 1 } }
         );
+        if (!activeAttempt.matchedCount) {
+          const error = new Error('CV processing was cancelled before AI analysis');
+          error.code = 'CV_PROCESSING_CANCELLED';
+          error.permanent = true;
+          throw error;
+        }
         processingJob.attempts = Number(processingJob.attempts || 0) + 1;
         return runWithAIRequestContext({
           sourceApp: 'recruiter-cv-worker',
-          organizationId: String(processingJob.organization),
+          organizationId: canonicalOrganizationId,
+          localOrganizationId,
           organizationName: organization?.name,
-          actorId: effectiveActorId || undefined,
+          actorId: canonicalActorId,
+          runtimeActorId: effectiveActorId || undefined,
           actorName: personName(effectiveActor)
             || [processingJob.formData?.firstName, processingJob.formData?.lastName].filter(Boolean).join(' ')
             || (processingJob.source === 'public' ? 'Public applicant' : undefined),
@@ -2631,7 +4956,11 @@ async function processJob(bullJob, workerToken) {
           message: error?.message || `CV inference is waiting for shared dispatch capacity (${reason || 'waiting'})`,
           at: new Date()
         };
-        await CVProcessingJob.updateOne({ _id: processingJob._id }, {
+        const parked = await CVProcessingJob.updateOne({
+          _id: processingJob._id,
+          state: 'processing',
+          processingLeaseId: processingJob.processingLeaseId
+        }, {
           $set: {
             state: 'waiting_for_chatgpt',
             stage: 'analyzing',
@@ -2640,6 +4969,7 @@ async function processJob(bullJob, workerToken) {
           },
           $unset: { expiresAt: 1 }
         });
+        if (!parked.matchedCount) return;
         processingJob.state = 'waiting_for_chatgpt';
         processingJob.stage = 'analyzing';
         processingJob.progress = Math.max(50, Number(processingJob.progress || 50));
@@ -2657,22 +4987,80 @@ async function processJob(bullJob, workerToken) {
       error.retryable = analysis.retryable === true;
       throw error;
     }
-    await updateProcessingStage(processingJob, bullJob, 'finalizing', 80);
+    const analysisCompletedAt = new Date();
+    const analysisRecorded = await CVProcessingJob.updateOne(
+      {
+        _id: processingJob._id,
+        state: 'processing',
+        processingLeaseId: processingJob.processingLeaseId
+      },
+      { $set: { 'artifacts.analysisCompletedAt': analysisCompletedAt } }
+    );
+    if (!analysisRecorded.matchedCount) {
+      const error = new Error('CV processing was cancelled during AI analysis');
+      error.code = 'CV_PROCESSING_CANCELLED';
+      error.permanent = true;
+      throw error;
+    }
+    processingJob.artifacts = {
+      ...(processingJob.artifacts?.toObject?.() || processingJob.artifacts || {}),
+      analysisCompletedAt
+    };
+    await updateProcessingStage(processingJob, bullJob, 'profile_creation', 80);
     const candidate = await createCandidateOnce(processingJob, analysis);
-    await CVProcessingJob.updateOne({ _id: processingJob._id }, {
+    const completedAt = new Date();
+    const completedEvent = processingStageEvent(
+      'completed',
+      'completed',
+      100,
+      processingJob,
+      null,
+      completedAt
+    );
+    const completed = await CVProcessingJob.updateOne({
+      _id: processingJob._id,
+      state: 'processing',
+      processingLeaseId: processingJob.processingLeaseId
+    }, {
       $set: {
         state: 'completed',
         stage: 'completed',
+        stageStartedAt: completedAt,
         progress: 100,
         candidate: candidate._id,
-        completedAt: new Date()
+        completedAt,
+        'artifacts.profileCommittedAt': completedAt
       },
-      $unset: { lastError: 1, expiresAt: 1 }
+      $unset: { lastError: 1, expiresAt: 1, processingLeaseId: 1 },
+      $push: {
+        stageHistory: {
+          $each: [completedEvent],
+          $slice: -HISTORY_TRANSITION_LIMIT
+        }
+      }
     });
+    if (!completed.matchedCount) {
+      const error = new Error('CV processing was cancelled before profile commit');
+      error.code = 'CV_PROCESSING_CANCELLED';
+      error.permanent = true;
+      throw error;
+    }
     processingJob.state = 'completed';
     processingJob.stage = 'completed';
+    processingJob.stageStartedAt = completedAt;
     processingJob.progress = 100;
     processingJob.candidate = candidate._id;
+    processingJob.completedAt = completedAt;
+    processingJob.lastError = undefined;
+    processingJob.stageHistory = [...(processingJob.stageHistory || []), completedEvent]
+      .slice(-HISTORY_TRANSITION_LIMIT);
+    await syncLinkedCandidateProcessing(processingJob, {
+      state: 'completed',
+      stage: 'completed',
+      progress: 100,
+      error: null,
+      retryEligible: false
+    });
     await finishProcessingAttempt(processingJob, processingAttempt, {
       status: 'completed',
       stage: 'completed'
@@ -2688,6 +5076,24 @@ async function processJob(bullJob, workerToken) {
     });
     return { candidateId: String(candidate._id), jobId: processingJob.publicId };
   } catch (error) {
+    if (!processingJob.actor && error?.code === 'AI_RUNTIME_ACCOUNT_REQUIRED') {
+      error.code = 'ORG_AUTOMATION_RUNTIME_REQUIRED';
+      error.message = 'Enable Local or configure an organization-owned runtime for public CV automation';
+    }
+    const cancelledJob = await CVProcessingJob.findOne({
+      _id: processingJob._id,
+      state: 'cancelled'
+    }).select('_id').lean();
+    if (cancelledJob || error?.code === 'CV_PROCESSING_CANCELLED') {
+      await finishProcessingAttempt(processingJob, processingAttempt, {
+        status: 'cancelled',
+        stage: 'cancelled',
+        error
+      });
+      await syncHistorySafely(processingJob._id);
+      bullJob.discard?.();
+      return { skipped: true, cancelled: true, jobId: processingJob.publicId };
+    }
     // A duplicate delivery may have started before the atomic lease above was
     // deployed, or while an older process was draining during a rollout. Once
     // any delivery has committed a candidate, a later failure must never
@@ -2710,16 +5116,52 @@ async function processJob(bullJob, workerToken) {
     }
     if (error instanceof DelayedError || String(error?.code || '').startsWith('CV_GLOBAL_DISPATCH_')) {
       const nextAttemptAt = new Date(Date.now() + cvBackoffDelay(Number(bullJob.attemptsMade || 0) + 1, error));
-      await CVProcessingJob.updateOne(
-        { _id: processingJob._id },
+      const retryScheduledAt = new Date();
+      const retryEvent = processingStageEvent(
+        'retry_scheduled',
+        'waiting_for_chatgpt',
+        Math.max(50, Number(processingJob.progress || 50)),
+        processingJob,
+        error,
+        retryScheduledAt
+      );
+      const retryScheduled = await CVProcessingJob.updateOne(
+        {
+          _id: processingJob._id,
+          state: { $in: ['processing', 'waiting_for_chatgpt'] },
+          processingLeaseId: processingJob.processingLeaseId
+        },
         {
           $set: {
+            state: 'waiting_for_chatgpt',
+            stage: 'retry_scheduled',
+            stageStartedAt: retryScheduledAt,
             'retry.pendingTrigger': 'automatic',
             'retry.requestedStage': 'failed',
             'retry.nextAttemptAt': nextAttemptAt
+          },
+          $unset: { processingLeaseId: 1 },
+          $push: {
+            stageHistory: {
+              $each: [retryEvent],
+              $slice: -HISTORY_TRANSITION_LIMIT
+            }
           }
         }
       );
+      if (!retryScheduled.matchedCount) {
+        await finishProcessingAttempt(processingJob, processingAttempt, {
+          status: 'cancelled', stage: 'cancelled', error
+        });
+        await syncHistorySafely(processingJob._id);
+        bullJob.discard?.();
+        return { skipped: true, cancelled: true, jobId: processingJob.publicId };
+      }
+      processingJob.state = 'waiting_for_chatgpt';
+      processingJob.stage = 'retry_scheduled';
+      processingJob.stageStartedAt = retryScheduledAt;
+      processingJob.stageHistory = [...(processingJob.stageHistory || []), retryEvent]
+        .slice(-HISTORY_TRANSITION_LIMIT);
       processingJob.retry = {
         ...(processingJob.retry?.toObject?.() || processingJob.retry || {}),
         pendingTrigger: 'automatic',
@@ -2728,8 +5170,14 @@ async function processJob(bullJob, workerToken) {
       };
       await finishProcessingAttempt(processingJob, processingAttempt, {
         status: 'waiting_for_runtime',
-        stage: processingJob.stage,
+        stage: 'retry_scheduled',
         error
+      });
+      await syncLinkedCandidateProcessing(processingJob, {
+        state: 'waiting',
+        stage: 'retry_scheduled',
+        error: processingError(processingJob),
+        retryEligible: false
       });
       await syncHistorySafely(processingJob._id);
       throw error;
@@ -2760,10 +5208,24 @@ async function processJob(bullJob, workerToken) {
     const nextAttemptAt = terminal
       ? null
       : new Date(Date.now() + retryDelay);
+    const resultingState = terminal
+      ? 'failed'
+      : (unboundedDeferral || deferred) ? 'waiting_for_chatgpt' : 'queued';
+    const resultingStage = terminal ? 'failed' : 'retry_scheduled';
+    const failureRecordedAt = new Date();
+    const failureEvent = processingStageEvent(
+      resultingStage,
+      resultingState,
+      terminal ? processingJob.progress : Math.max(5, Number(processingJob.progress || 5)),
+      processingJob,
+      error,
+      failureRecordedAt
+    );
     const failureUpdate = {
       $set: {
-        state: terminal ? 'failed' : (unboundedDeferral || deferred) ? 'waiting_for_chatgpt' : 'queued',
-        stage: terminal ? 'failed' : (processingJob.stage || 'ingesting'),
+        state: resultingState,
+        stage: resultingStage,
+        stageStartedAt: failureRecordedAt,
         progress: terminal ? processingJob.progress : Math.max(5, Number(processingJob.progress || 5)),
         ...(deferred ? {
           boundedFailureAttempts: 0,
@@ -2780,22 +5242,45 @@ async function processJob(bullJob, workerToken) {
           code: error.code || 'CV_ANALYSIS_ERROR',
           message: String(error.message).slice(0, 1000),
           stage: failedStage,
-          at: new Date()
+          at: failureRecordedAt
+        }
+      },
+      $push: {
+        stageHistory: {
+          $each: [failureEvent],
+          $slice: -HISTORY_TRANSITION_LIMIT
         }
       }
     };
-    failureUpdate.$unset = { expiresAt: 1 };
+    failureUpdate.$unset = { expiresAt: 1, processingLeaseId: 1 };
     if (!unboundedDeferral && !deferred) failureUpdate.$inc = { boundedFailureAttempts: 1 };
-    await CVProcessingJob.updateOne({ _id: processingJob._id }, failureUpdate);
+    const failureRecorded = await CVProcessingJob.updateOne({
+      _id: processingJob._id,
+          state: { $in: ['processing', 'waiting_for_chatgpt'] },
+      processingLeaseId: processingJob.processingLeaseId
+    }, failureUpdate);
+    if (!failureRecorded.matchedCount) {
+      await finishProcessingAttempt(processingJob, processingAttempt, {
+        status: 'cancelled',
+        stage: 'cancelled',
+        error
+      });
+      await syncHistorySafely(processingJob._id);
+      bullJob.discard?.();
+      return { skipped: true, cancelled: true, jobId: processingJob.publicId };
+    }
     processingJob.boundedFailureAttempts = deferred ? 0 : boundedFailureAttempts;
-    processingJob.state = terminal ? 'failed' : (unboundedDeferral || deferred) ? 'waiting_for_chatgpt' : 'queued';
-    processingJob.stage = terminal ? 'failed' : failedStage;
+    processingJob.state = resultingState;
+    processingJob.stage = resultingStage;
+    processingJob.stageStartedAt = failureRecordedAt;
+    processingJob.stageHistory = [...(processingJob.stageHistory || []), failureEvent]
+      .slice(-HISTORY_TRANSITION_LIMIT);
     processingJob.failedAt = failedAt || processingJob.failedAt;
     processingJob.lastError = {
       code: error.code || 'CV_ANALYSIS_ERROR',
       message: String(error.message).slice(0, 1000),
       stage: failedStage,
-      at: new Date()
+      at: failureRecordedAt
     };
     if (!terminal) {
       processingJob.retry = {
@@ -2817,6 +5302,12 @@ async function processJob(bullJob, workerToken) {
         console.error('CV failed asset retention could not be scheduled:', retentionError.message);
       });
     }
+    await syncLinkedCandidateProcessing(processingJob, {
+      state: terminal ? 'failed' : 'waiting',
+      stage: resultingStage,
+      error: processingError(processingJob),
+      retryEligible: terminal ? retrySummary(processingJob).available : false
+    });
     await syncHistorySafely(processingJob._id);
     publishTelemetrySoon();
     if (terminal) bullJob.discard?.();
@@ -2893,6 +5384,37 @@ async function retryFailedJob(publicId, {
   if (job.source === 'ai-interview') {
     throw manualRetryError('CV_RETRY_EXTERNAL_JOB', 'AI Interview CV jobs must be retried by the AI Interview service');
   }
+  if (!job.supersededBy) {
+    const successor = await CVProcessingJob.findOne({
+      supersedes: job._id,
+      organization: job.organization,
+      state: { $ne: 'cancelled' }
+    }).select('_id');
+    if (successor) {
+      await CVProcessingJob.updateOne(
+        {
+          _id: job._id,
+          $or: [{ supersededBy: { $exists: false } }, { supersededBy: null }]
+        },
+        {
+          $set: { supersededBy: successor._id },
+          $unset: {
+            'retry.availableUntil': 1,
+            'retry.nextAttemptAt': 1,
+            'retry.pendingTrigger': 1
+          }
+        }
+      );
+      job.supersededBy = successor._id;
+    }
+  }
+  if (job.supersededBy) {
+    throw manualRetryError(
+      'CV_RETRY_SUPERSEDED',
+      'A corrected CV revision has already replaced this processing job',
+      409
+    );
+  }
   if (job.state !== 'failed') {
     throw manualRetryError(
       'CV_RETRY_NOT_FAILED',
@@ -2927,15 +5449,27 @@ async function retryFailedJob(publicId, {
   const progress = effectiveStage === 'analysis' ? 50 : queueStage === 'extracting' ? 30 : 10;
   const actor = retryActor(requestedBy || { type: administrator ? 'admin' : 'user' });
   const requestedAt = new Date();
+  const retryEvent = processingStageEvent(
+    'retry_scheduled',
+    'queued',
+    progress,
+    job,
+    null,
+    requestedAt
+  );
   const set = {
     state: 'queued',
-    stage: queueStage,
+    stage: 'retry_scheduled',
+    stageStartedAt: requestedAt,
     progress,
     boundedFailureAttempts: 0,
     'retry.pendingTrigger': 'manual',
     'retry.requestedStage': requestedStage,
     'retry.lastRequestedAt': requestedAt,
     'retry.lastRequestedBy': actor,
+    ...(actor.type === 'user' && mongoose.isValidObjectId(actor.id)
+      ? { actor: actor.id }
+      : {}),
     ...(job.durableFile?.fileId && !job.durableFile?.releasedAt
       ? { 'durableFile.cleanupState': 'retained' }
       : {}),
@@ -2961,7 +5495,13 @@ async function retryFailedJob(publicId, {
       $set: set,
       $unset: unset,
       $inc: { 'retry.manualRequests': 1 },
-      $max: { processingAttempts: Number(job.attempts || 0) }
+      $max: { processingAttempts: Number(job.attempts || 0) },
+      $push: {
+        stageHistory: {
+          $each: [retryEvent],
+          $slice: -HISTORY_TRANSITION_LIMIT
+        }
+      }
     },
     { new: true }
   ).select('+resumeText');
@@ -3004,9 +5544,15 @@ async function retryFailedJob(publicId, {
       );
     }
   }
+  const refreshed = await CVProcessingJob.findById(claimed._id).select('+resumeText');
+  await syncLinkedCandidateProcessing(refreshed || claimed, {
+    state: queueAvailable ? 'queued' : 'waiting',
+    stage: 'retry_scheduled',
+    error: queueAvailable ? null : processingError(refreshed || claimed),
+    retryEligible: false
+  });
   await syncHistorySafely(claimed._id);
   publishTelemetrySoon(0);
-  const refreshed = await CVProcessingJob.findById(claimed._id).select('+resumeText');
   return {
     job: refreshed || claimed,
     queueAvailable,
@@ -3043,22 +5589,46 @@ async function retryJobNow(publicId, { requestedBy, stage = 'failed' } = {}) {
   } else if (await queued.getState() === 'delayed') {
     await queued.promote();
   }
+  const requestedAt = new Date();
+  const retryEvent = processingStageEvent(
+    'retry_scheduled',
+    'queued',
+    Math.max(10, Number(job.progress || 10)),
+    job,
+    null,
+    requestedAt
+  );
   await CVProcessingJob.updateOne(
     { _id: job._id, state: 'waiting_for_chatgpt' },
     {
       $set: {
         state: 'queued',
+        stage: 'retry_scheduled',
+        stageStartedAt: requestedAt,
         'retry.pendingTrigger': 'manual',
-        'retry.lastRequestedAt': new Date(),
+        'retry.lastRequestedAt': requestedAt,
         'retry.lastRequestedBy': retryActor(requestedBy || { type: 'system', name: 'Seemplify ChatGPT Gateway' })
       },
       $unset: { 'retry.nextAttemptAt': 1 },
-      $inc: { 'retry.manualRequests': 1 }
+      $inc: { 'retry.manualRequests': 1 },
+      $push: {
+        stageHistory: {
+          $each: [retryEvent],
+          $slice: -HISTORY_TRANSITION_LIMIT
+        }
+      }
     }
   );
+  const refreshed = await CVProcessingJob.findById(job._id).select('+resumeText');
+  await syncLinkedCandidateProcessing(refreshed || job, {
+    state: 'queued',
+    stage: 'retry_scheduled',
+    error: null,
+    retryEligible: false
+  });
   await syncHistorySafely(job._id);
   publishTelemetrySoon(0);
-  return { job: await CVProcessingJob.findById(job._id), queueAvailable: true, requestedAt: new Date() };
+  return { job: refreshed || job, queueAvailable: true, requestedAt };
 }
 
 /**
@@ -3094,10 +5664,197 @@ function cleanupIsDue(resource, now) {
     || new Date(resource.cleanupNextAttemptAt).getTime() <= now.getTime();
 }
 
+async function sweepOrphanedDurableIntakes({ now = new Date(), pageSize = 100 } = {}) {
+  if (typeof durableFileStore.sweepOrphanedIntakes !== 'function') {
+    return { examined: 0, removed: 0, retained: 0, errors: 0 };
+  }
+  return durableFileStore.sweepOrphanedIntakes({
+    now,
+    pageSize,
+    isReferenced: async (reference) => {
+      if (!reference.intakeId) {
+        return Boolean(await CVProcessingJob.exists({
+          'durableFile.fileId': reference.fileId
+        }));
+      }
+      const job = await CVProcessingJob.findOne({
+        publicId: reference.intakeId,
+        organization: reference.organizationId
+      }).select('+requestFingerprint +intakeLeaseId');
+      if (!job) return false;
+      if (String(job.durableFile?.fileId || '') === String(reference.fileId)) return true;
+      if (job.durableFile?.fileId || job.state !== 'queued' || job.stage !== 'received') {
+        return false;
+      }
+      if (
+        reference.requestFingerprint
+        && job.requestFingerprint !== reference.requestFingerprint
+      ) {
+        return false;
+      }
+      const storedAt = reference.persistedAt || new Date();
+      const durableFile = {
+        provider: 'gridfs',
+        bucket: reference.bucket,
+        fileId: reference.fileId,
+        sha256: reference.sha256,
+        length: reference.length,
+        persistedAt: storedAt,
+        cleanupState: 'retained'
+      };
+      const storedEvent = processingStageEvent('stored', 'queued', 10, job, null, storedAt);
+      const attached = await CVProcessingJob.findOneAndUpdate(
+        {
+          _id: job._id,
+          state: 'queued',
+          stage: 'received',
+          'durableFile.fileId': { $exists: false }
+        },
+        {
+          $set: {
+            durableFile,
+            stage: 'stored',
+            stageStartedAt: storedAt,
+            progress: 10,
+            'artifacts.durableStoredAt': storedAt
+          },
+          $unset: { intakeLeaseId: 1, intakeLeaseAt: 1, lastError: 1 },
+          $push: {
+            stageHistory: {
+              $each: [storedEvent],
+              $slice: -HISTORY_TRANSITION_LIMIT
+            }
+          }
+        },
+        { new: true }
+      );
+      const current = attached || await CVProcessingJob.findById(job._id);
+      if (String(current?.durableFile?.fileId || '') !== String(reference.fileId)) return false;
+      await syncHistorySafely(current._id);
+      await syncLinkedCandidateProcessing(current, {
+        state: 'queued',
+        stage: 'stored',
+        progress: 10,
+        retryEligible: false,
+        error: null
+      }).catch(() => {});
+      return true;
+    }
+  });
+}
+
+async function reconcileBatchRetention({ now = new Date(), pageSize = 100 } = {}) {
+  const size = Math.min(Math.max(Number(pageSize) || 100, 1), 500);
+  const tail = await CVProcessingBatch.findOne({}).sort({ _id: -1 }).select('_id').lean();
+  if (!tail) return { examined: 0, protected: 0, finalized: 0 };
+  let cursor;
+  let examined = 0;
+  let protectedCount = 0;
+  let finalized = 0;
+  while (true) {
+    const batches = await CVProcessingBatch.find({
+      _id: { ...(cursor ? { $gt: cursor } : {}), $lte: tail._id }
+    }).sort({ _id: 1 }).limit(size).populate({ path: 'jobs', select: 'state' });
+    if (!batches.length) break;
+    for (const batch of batches) {
+      examined += 1;
+      const terminalChildren = (batch.jobs || []).filter((job) => (
+        ['completed', 'failed', 'cancelled'].includes(job.state)
+      )).length + (batch.rejected || []).length;
+      const terminal = batch.intakeState !== 'accepting'
+        && terminalChildren >= Number(batch.totalFiles || 0);
+      if (terminal) {
+        if (!batch.expiresAt) {
+          await CVProcessingBatch.updateOne(
+            { _id: batch._id, expiresAt: { $exists: false } },
+            { $set: { expiresAt: terminalJobExpiry(new Date(now).getTime()) } }
+          );
+          finalized += 1;
+        }
+      } else if (batch.expiresAt) {
+        await CVProcessingBatch.updateOne(
+          { _id: batch._id },
+          { $unset: { expiresAt: 1 } }
+        );
+        protectedCount += 1;
+      }
+    }
+    cursor = batches.at(-1)._id;
+    if (String(cursor) === String(tail._id)) break;
+  }
+  return { examined, protected: protectedCount, finalized };
+}
+
+async function expireInterruptedIntakeLeases({ now = new Date(), limit = 100 } = {}) {
+  const staleBefore = new Date(new Date(now).getTime() - INTAKE_LEASE_MS);
+  const receipts = await CVProcessingJob.find({
+    state: 'queued',
+    stage: 'received',
+    'durableFile.fileId': { $exists: false },
+    intakeLeaseAt: { $lte: staleBefore }
+  }).sort({ intakeLeaseAt: 1 }).limit(Math.min(Math.max(Number(limit) || 100, 1), 500));
+  let jobs = 0;
+  for (const receipt of receipts) {
+    const at = new Date(now);
+    const updated = await CVProcessingJob.updateOne(
+      {
+        _id: receipt._id,
+        state: 'queued',
+        stage: 'received',
+        'durableFile.fileId': { $exists: false },
+        intakeLeaseAt: { $lte: staleBefore }
+      },
+      {
+        $set: {
+          lastError: {
+            code: 'CV_INTAKE_REUPLOAD_REQUIRED',
+            message: 'The original upload was interrupted before durable storage. Replay the same file and Idempotency-Key.',
+            stage: 'received',
+            at
+          }
+        },
+        $unset: { intakeLeaseId: 1, intakeLeaseAt: 1 }
+      }
+    );
+    if (!Number(updated.modifiedCount || updated.nModified || 0)) continue;
+    jobs += 1;
+    const current = await CVProcessingJob.findById(receipt._id);
+    if (current) {
+      await syncLinkedCandidateProcessing(current, {
+        state: 'failed',
+        stage: 'received',
+        progress: 0,
+        retryEligible: false,
+        error: processingError(current)
+      }).catch(() => {});
+      await syncHistorySafely(current._id);
+    }
+  }
+  const batches = await CVProcessingBatch.updateMany(
+    { intakeState: 'accepting', intakeLeaseAt: { $lte: staleBefore } },
+    { $unset: { intakeLeaseId: 1, intakeLeaseAt: 1 } }
+  );
+  return {
+    jobs,
+    batches: Number(batches.modifiedCount || batches.nModified || 0)
+  };
+}
+
 async function retryStorageCleanup({
   now = new Date(),
   limit = 100
 } = {}) {
+  const interruptedIntakes = await expireInterruptedIntakeLeases({ now, limit });
+  const orphanedDurableFiles = await sweepOrphanedDurableIntakes({ now, pageSize: limit })
+    .catch((error) => ({ examined: 0, removed: 0, retained: 0, errors: 1, error: error.message }));
+  const staleRequestUploads = await staleCvUploadSweeper.sweepStaleUploads({ now, limit })
+    .catch((error) => ({ examined: 0, removed: 0, retained: 0, errors: 1, error: error.message }));
+  const batchRetention = await reconcileBatchRetention({ now, pageSize: limit });
+  const publicApplicationCommits = await publicApplicationCapacityService
+    .reconcileCandidateCommitStates({ limit, now });
+  const candidateErasures = await recoverTombstonedCandidateErasures({ limit });
+  const organizationErasures = await require('./organizationErasureService')
+    .recoverOrganizationErasures({ limit: Math.min(limit, 20) });
   const dueTasks = await CVStorageCleanupTask.find({
     state: { $in: ['pending', 'failed'] },
     $or: [
@@ -3109,13 +5866,12 @@ async function retryStorageCleanup({
   let tasksCompleted = 0;
   for (const task of dueTasks) {
     try {
-      await executeCleanupTask(task);
-      tasksCompleted += 1;
+      if (await executeCleanupTask(task, { now })) tasksCompleted += 1;
     } catch {}
   }
 
   const terminalJobs = await CVProcessingJob.find({
-    state: { $in: ['completed', 'failed'] },
+    state: { $in: ['completed', 'failed', 'cancelled'] },
     $or: [
       {
         'durableFile.fileId': { $exists: true },
@@ -3123,10 +5879,14 @@ async function retryStorageCleanup({
         'durableFile.cleanupState': { $ne: 'deleted' }
       },
       {
-        state: 'failed',
+        state: { $in: ['failed', 'cancelled'] },
         'cloudinary.publicId': { $exists: true },
         'cloudinary.releasedAt': null,
         'cloudinary.cleanupState': { $ne: 'deleted' }
+      },
+      {
+        state: { $in: ['failed', 'cancelled'] },
+        'cloudinaryUploadIntent.publicId': { $exists: true }
       }
     ]
   }).sort({ updatedAt: 1 }).limit(limit);
@@ -3149,9 +5909,29 @@ async function retryStorageCleanup({
     ) {
       await releaseCloudinaryAsset(job).catch(() => {});
     }
+    if (
+      ['failed', 'cancelled'].includes(job.state)
+      && job.cloudinaryUploadIntent?.publicId
+    ) {
+      await releaseCloudinaryUploadIntent(
+        job,
+        job.cloudinaryUploadIntent,
+        'terminal-cloudinary-upload-intent'
+      ).catch(() => {});
+    }
     if (await finalizeTerminalExpiry(job)) jobsFinalized += 1;
   }
-  return { tasksCompleted, jobsFinalized };
+  return {
+    tasksCompleted,
+    jobsFinalized,
+    orphanedDurableFiles,
+    staleRequestUploads,
+    batchRetention,
+    interruptedIntakes,
+    publicApplicationCommits,
+    candidateErasures,
+    organizationErasures
+  };
 }
 
 async function startStorageCleanupMaintenance() {
@@ -3170,65 +5950,149 @@ async function startStorageCleanupMaintenance() {
 
 async function recoverStaleJobs() {
   const q = await getQueue();
-  const stale = await CVProcessingJob.find({
+  await repairReplacementActivations();
+  const staleBefore = new Date(Date.now() - 60_000);
+  const baseFilter = {
     state: { $in: ['queued', 'waiting_for_chatgpt', 'processing'] },
-    updatedAt: { $lt: new Date(Date.now() - 60_000) },
+    $and: [
+      {
+        $or: [
+          { updatedAt: { $lt: staleBefore } },
+          { supersedes: { $exists: true } }
+        ]
+      },
+      {
+        $nor: [{
+          stage: 'received',
+          'durableFile.fileId': { $exists: false }
+        }]
+      }
+    ],
     $or: [
       { 'billing.required': { $ne: true } },
       { 'billing.state': 'charged' }
     ]
-  }).sort({ createdAt: 1 }).limit(500);
+  };
   let recovered = 0;
-  for (const job of stale) {
-    const existing = await q.getJob(job.publicId);
-    if (!existing) {
-      if (job.state === 'processing') {
-        const reset = await CVProcessingJob.findOneAndUpdate(
-          { _id: job._id, state: 'processing', updatedAt: job.updatedAt },
-          {
-            $set: {
-              state: 'queued',
-              'retry.pendingTrigger': 'automatic',
-              'retry.requestedStage': 'failed'
-            }
-          },
-          { new: true }
-        );
-        if (!reset) continue;
-        await addQueueJob(reset);
-      } else {
-        await addQueueJob(job);
+  let cursor = null;
+  do {
+    const cursorFilter = cursor
+      ? {
+          $or: [
+            { createdAt: { $gt: cursor.createdAt } },
+            { createdAt: cursor.createdAt, _id: { $gt: cursor.id } }
+          ]
+        }
+      : null;
+    const stale = await CVProcessingJob.find({
+      ...baseFilter,
+      ...(cursorFilter ? { $and: [...baseFilter.$and, cursorFilter] } : {})
+    }).sort({ createdAt: 1, _id: 1 }).limit(500);
+    for (const job of stale) {
+      if (job.supersedes && !(await activateReplacementRevision(job))) continue;
+      await syncLinkedCandidateProcessing(job).catch((error) => {
+        console.error('CV candidate processing projection repair failed:', error.message);
+      });
+      const existing = await q.getJob(job.publicId);
+      if (!existing) {
+        if (job.state === 'processing') {
+          const reset = await CVProcessingJob.findOneAndUpdate(
+            { _id: job._id, state: 'processing', updatedAt: job.updatedAt },
+            {
+              $set: {
+                state: 'queued',
+                'retry.pendingTrigger': 'automatic',
+                'retry.requestedStage': 'failed'
+              }
+            },
+            { new: true }
+          );
+          if (!reset) continue;
+          await addQueueJob(reset);
+        } else {
+          await addQueueJob(job);
+        }
+        recovered += 1;
+        continue;
       }
-      recovered += 1;
-      continue;
-    }
-    const queueState = await existing.getState();
-    if (['completed', 'failed'].includes(queueState)) {
-      let runnableJob = job;
-      if (job.state === 'processing') {
-        runnableJob = await CVProcessingJob.findOneAndUpdate(
-          { _id: job._id, state: 'processing', updatedAt: job.updatedAt },
-          {
-            $set: {
-              state: 'queued',
-              'retry.pendingTrigger': 'automatic',
-              'retry.requestedStage': 'failed'
-            }
-          },
-          { new: true }
-        );
-        if (!runnableJob) continue;
+      const queueState = await existing.getState();
+      if (['completed', 'failed'].includes(queueState)) {
+        let runnableJob = job;
+        if (job.state === 'processing') {
+          runnableJob = await CVProcessingJob.findOneAndUpdate(
+            { _id: job._id, state: 'processing', updatedAt: job.updatedAt },
+            {
+              $set: {
+                state: 'queued',
+                'retry.pendingTrigger': 'automatic',
+                'retry.requestedStage': 'failed'
+              }
+            },
+            { new: true }
+          );
+          if (!runnableJob) continue;
+        }
+        await addQueueJob(runnableJob, { replaceTerminal: true });
+        recovered += 1;
       }
-      await addQueueJob(runnableJob, { replaceTerminal: true });
-      recovered += 1;
     }
-  }
+    const last = stale.at(-1);
+    cursor = stale.length === 500 && last
+      ? { createdAt: last.createdAt, id: last._id }
+      : null;
+  } while (cursor);
   if (recovered) publishTelemetrySoon();
   return recovered;
 }
 
 async function publishTelemetry() {
   return true;
+}
+
+function evaluateWorkerReadiness({
+  environment = process.env.NODE_ENV,
+  queueEnabled = redisEnabled,
+  mongoReady = mongoose.connection.readyState === 1,
+  indexesReady = cvIndexesReady,
+  workerInitialized = Boolean(worker),
+  dispatchHealth = globalDispatch.health()
+} = {}) {
+  const dispatcherRequired = environment === 'production' || queueEnabled === true;
+  const dispatcherReady = !dispatcherRequired || (
+    queueEnabled === true
+    && workerInitialized === true
+    && dispatchHealth?.initialized === true
+    && dispatchHealth?.healthy === true
+    && dispatchHealth?.stopping !== true
+  );
+  const durableStorageReady = mongoReady === true;
+  const indexSetReady = indexesReady === true;
+  return {
+    healthy: durableStorageReady && indexSetReady && dispatcherReady,
+    durableStorage: {
+      ready: durableStorageReady,
+      provider: 'mongodb-gridfs'
+    },
+    indexes: {
+      ready: indexSetReady
+    },
+    dispatcher: {
+      required: dispatcherRequired,
+      enabled: queueEnabled === true,
+      ready: dispatcherReady,
+      workerInitialized: workerInitialized === true,
+      global: {
+        initialized: dispatchHealth?.initialized === true,
+        healthy: dispatchHealth?.healthy === true,
+        stopping: dispatchHealth?.stopping === true,
+        errorCode: dispatchHealth?.errorCode || null
+      }
+    }
+  };
+}
+
+function readiness() {
+  return evaluateWorkerReadiness();
 }
 
 async function initWorker() {
@@ -3244,6 +6108,13 @@ async function initWorker() {
       },
       { $unset: { expiresAt: 1 } }
     );
+    await Promise.all([
+      CVProcessingJob.init(),
+      CVProcessingAudit.init(),
+      CVStorageCleanupTask.init(),
+      CVProcessingBatch.init()
+    ]);
+    cvIndexesReady = true;
     await getQueue();
     startupDispatchState = await globalDispatch.initialize();
     await applyGlobalDispatchState(startupDispatchState);
@@ -3275,7 +6146,10 @@ async function initWorker() {
   worker.on('failed', async (job, error) => {
     publishTelemetrySoon();
     if (!job || Number(job.attemptsMade || 0) < Number(job.opts.attempts || 0)) return;
-    await CVProcessingJob.updateOne({ publicId: job.id }, {
+    await CVProcessingJob.updateOne({
+      publicId: job.id,
+      state: { $in: ['queued', 'waiting_for_chatgpt', 'processing'] }
+    }, {
       $set: {
         state: 'failed',
         failedAt: new Date(),
@@ -3577,7 +6451,8 @@ async function telemetry() {
       p95ProcessingMs: percentile(durations, 0.95)
     },
     history: {
-      retainedIndefinitely: true,
+      retainedIndefinitely: false,
+      retentionDays: AUDIT_RETENTION_DAYS,
       total: Object.values(historyStates).reduce((sum, value) => sum + Number(value || 0), 0),
       completed: Number(historyStates.completed || 0),
       failed: Number(historyStates.failed || 0),
@@ -3587,8 +6462,9 @@ async function telemetry() {
     },
     retention: {
       recruiterStateWindowDays: Math.round(TERMINAL_JOB_RETENTION_MS / (24 * 60 * 60 * 1000)),
-      aiInterviewStateSource: 'permanent-audit',
-      permanentHistory: true
+      aiInterviewStateSource: 'bounded-audit',
+      auditRetentionDays: AUDIT_RETENTION_DAYS,
+      permanentHistory: false
     },
     oldestQueuedAt,
     oldestWaitMs: oldestQueuedAt ? elapsedMs(oldestQueuedAt, sampledAt) : 0,
@@ -3667,11 +6543,12 @@ function adminJobQuery(filter, limit) {
     .sort({ updatedAt: -1 });
   if (limit) query = query.limit(limit);
   return query
-    .select('publicId source state stage progress attempts processingAttempts boundedFailureAttempts retry attemptHistory durableFile cloudinary +resumeText createdAt startedAt completedAt failedAt updatedAt lastError originalName fileType fileSize organization actor jobAppliedFor candidate formData.firstName formData.lastName formData.email formData.position formData.location')
+    .select('publicId source state stage stageStartedAt stageHistory artifacts progress attempts processingAttempts boundedFailureAttempts retry attemptHistory durableFile cloudinary +resumeText createdAt startedAt completedAt failedAt cancelledAt updatedAt lastError originalName fileType fileSize organization actor jobAppliedFor candidate linkedCandidate batch batchPublicId supersededBy supersedes revision formData.firstName formData.lastName formData.email formData.position formData.location')
     .populate('organization', 'name')
     .populate('actor', 'email profile.firstName profile.lastName profile.displayName')
     .populate('jobAppliedFor', 'title')
     .populate('candidate', 'firstName lastName email')
+    .populate('linkedCandidate', 'firstName lastName email')
     .lean();
 }
 
@@ -3717,6 +6594,36 @@ async function getAdminJobDetail(publicId) {
   const [jobs, audit] = await Promise.all([
     adminJobQuery({ publicId: normalizedId }, 1),
     CVProcessingAudit.findOne({ publicId: normalizedId }).lean()
+  ]);
+  if (jobs[0]) {
+    return {
+      ...adminOperationalJob(jobs[0], new Date()),
+      transitions: operationalTransitions(audit?.transitions || [])
+    };
+  }
+  if (!audit) return null;
+  return (await adminJobsFromAudits([audit]))[0] || null;
+}
+
+async function getOrganizationJobDetail(organizationId, publicId) {
+  if (!mongoose.isValidObjectId(organizationId)) {
+    throw manualRetryError(
+      'CV_HISTORY_ORGANIZATION_REQUIRED',
+      'An organization is required to view CV processing jobs',
+      403
+    );
+  }
+  const normalizedId = String(publicId || '').slice(0, 120);
+  const organizationKey = String(organizationId);
+  const [jobs, audit] = await Promise.all([
+    adminJobQuery({
+      publicId: normalizedId,
+      organization: organizationId
+    }, 1),
+    CVProcessingAudit.findOne({
+      publicId: normalizedId,
+      organizationKey
+    }).lean()
   ]);
   if (jobs[0]) {
     return {
@@ -3776,6 +6683,7 @@ function setDependenciesForTests(overrides = {}) {
   if (overrides.cloudinary) cloudinary = overrides.cloudinary;
   if (overrides.durableFileStore) durableFileStore = overrides.durableFileStore;
   if (overrides.enqueueJob) enqueueJob = overrides.enqueueJob;
+  if (overrides.queue) queueOverrideForTests = overrides.queue;
   if (overrides.dispatchInferenceRunner) {
     runInferenceWithGlobalPermit = overrides.dispatchInferenceRunner;
   }
@@ -3785,6 +6693,13 @@ function setDependenciesForTests(overrides = {}) {
       ...overrides.completionEffectHandlers
     };
   }
+  if (overrides.batchLifecycleHooks) {
+    batchLifecycleHooks = { ...overrides.batchLifecycleHooks };
+  }
+  if (overrides.intakeLifecycleHooks) {
+    intakeLifecycleHooks = { ...overrides.intakeLifecycleHooks };
+  }
+  if (overrides.batchFileHasher) batchFileHasher = overrides.batchFileHasher;
 }
 
 function resetDependenciesForTests() {
@@ -3792,8 +6707,12 @@ function resetDependenciesForTests() {
   cloudinary = defaultCloudinary;
   durableFileStore = durableCvFileStore;
   enqueueJob = (...args) => addQueueJob(...args);
+  queueOverrideForTests = undefined;
   runInferenceWithGlobalPermit = defaultDispatchInferenceRunner;
   completionEffectHandlers = { ...defaultCompletionEffectHandlers };
+  batchLifecycleHooks = {};
+  intakeLifecycleHooks = {};
+  batchFileHasher = (...args) => sha256Path(...args);
 }
 
 async function closeForTests() {
@@ -3813,6 +6732,7 @@ async function closeForTests() {
   historyBackfillPromise = null;
   lastHistoryBackfillAt = 0;
   historyBackfillCursor = null;
+  cvIndexesReady = false;
   if (worker) await worker.close();
   worker = null;
   await globalDispatch.releaseAll();
@@ -3843,7 +6763,14 @@ async function mapWithConcurrency(items, limit, mapper) {
   return results;
 }
 
-async function submitBatch(req) {
+async function removeUploadFiles(files = []) {
+  await Promise.all((files || []).map(async (file) => {
+    if (!file?.path) return;
+    try { await unlinkAsync(file.path); } catch {}
+  }));
+}
+
+async function submitBatchUnfenced(req, options = {}) {
   const files = Array.isArray(req.files) ? req.files : [];
   if (!files.length) {
     const error = new Error('No CV files were uploaded');
@@ -3856,35 +6783,301 @@ async function submitBatch(req) {
     error.statusCode = 400;
     throw error;
   }
-  const baseIdempotency = String(req.get?.('Idempotency-Key') || crypto.randomUUID());
+  try {
+    await requireOrganizationAcceptsCvWrites(organizationId);
+    if (options.organizationWriteLease) {
+      await organizationCvWriteFence.renew(options.organizationWriteLease);
+    }
+  } catch (error) {
+    await removeUploadFiles(files);
+    throw error;
+  }
+  const baseIdempotency = String(req.get?.('Idempotency-Key') || '').trim().slice(0, 200);
+  if (!baseIdempotency) {
+    for (const file of files) {
+      try { await unlinkAsync(file.path); } catch {}
+    }
+    const error = new Error('An Idempotency-Key is required for bulk CV uploads');
+    error.code = 'CV_BATCH_IDEMPOTENCY_KEY_REQUIRED';
+    error.statusCode = 400;
+    throw error;
+  }
   const ingestConcurrency = Math.max(1, Math.min(16, Number(process.env.CV_BULK_INGEST_CONCURRENCY || 4)));
-  const submittedFiles = await mapWithConcurrency(files, ingestConcurrency, async (file, index) => {
-    try {
+  let batchRequestFingerprint;
+  let manifest;
+  try {
+    manifest = await mapWithConcurrency(files, ingestConcurrency, async (file) => ({
+      name: String(file.originalname || ''),
+      size: Number(file.size || 0),
+      sha256: await batchFileHasher(file.path)
+    }));
+    batchRequestFingerprint = digestRequest({
+      version: 1,
+      mode: 'bulk',
+      source: 'bulk',
+      organizationId: String(organizationId),
+      actorId: String(req.user?.id || ''),
+      files: manifest
+    });
+  } catch (error) {
+    for (const file of files) {
+      try { await unlinkAsync(file.path); } catch {}
+    }
+    throw error;
+  }
+  try {
+    await requireOrganizationAcceptsCvWrites(organizationId);
+    if (options.organizationWriteLease) {
+      await organizationCvWriteFence.renew(options.organizationWriteLease);
+    }
+  } catch (error) {
+    await removeUploadFiles(files);
+    throw error;
+  }
+  let batch;
+  let receiptCreated = false;
+  const intakeLeaseId = crypto.randomUUID();
+  const intakeLeaseAt = new Date();
+  try {
+    batch = await CVProcessingBatch.create({
+      publicId: `batch_${crypto.randomUUID()}`,
+      organization: organizationId,
+      actor: req.user?.id,
+      idempotencyKey: baseIdempotency,
+      requestFingerprint: batchRequestFingerprint,
+      intakeState: 'accepting',
+      intakeLeaseId,
+      intakeLeaseAt,
+      jobs: [],
+      rejected: [],
+      totalFiles: files.length
+    });
+    receiptCreated = true;
+  } catch (error) {
+    if (error?.code !== 11000) {
+      for (const file of files) {
+        try { await unlinkAsync(file.path); } catch {}
+      }
+      throw error;
+    }
+    batch = await CVProcessingBatch.findOne({
+      organization: organizationId,
+      actor: req.user?.id,
+      idempotencyKey: baseIdempotency
+    }).select('+requestFingerprint +intakeLeaseId');
+    if (!batch) throw error;
+  }
+  if (batch.requestFingerprint !== batchRequestFingerprint) {
+    for (const file of files) {
+      try { await unlinkAsync(file.path); } catch {}
+    }
+    throw idempotencyReuseError();
+  }
+  if (batch.intakeState === 'accepted') {
+    for (const file of files) {
+      try { await unlinkAsync(file.path); } catch {}
+    }
+    return {
+      ...(await getBatchStatus(batch.publicId, organizationId)),
+      duplicate: true
+    };
+  }
+  if (!receiptCreated) {
+    const claimed = await CVProcessingBatch.findOneAndUpdate(
+      {
+        _id: batch._id,
+        intakeState: 'accepting',
+        $or: [
+          { intakeLeaseAt: { $exists: false } },
+          { intakeLeaseAt: null },
+          { intakeLeaseAt: { $lte: new Date(Date.now() - INTAKE_LEASE_MS) } }
+        ]
+      },
+      { $set: { intakeLeaseId, intakeLeaseAt } },
+      { new: true }
+    ).select('+requestFingerprint +intakeLeaseId');
+    if (!claimed) {
+      for (const file of files) {
+        try { await unlinkAsync(file.path); } catch {}
+      }
+      throw intakeInProgressError(
+        'CV_BATCH_INTAKE_IN_PROGRESS',
+        'This exact bulk intake is still being stored. Retry after the indicated delay.',
+        batch.intakeLeaseAt
+      );
+    }
+    batch = claimed;
+  }
+
+  try {
+    await requireOrganizationAcceptsCvWrites(organizationId);
+    if (options.organizationWriteLease) {
+      await organizationCvWriteFence.renew(options.organizationWriteLease);
+    }
+  } catch (error) {
+    await Promise.all([
+      removeUploadFiles(files),
+      CVProcessingBatch.deleteOne({
+        _id: batch._id,
+        intakeState: 'accepting',
+        jobs: { $size: 0 },
+        intakeLeaseId
+      })
+    ]).catch(() => {});
+    throw error;
+  }
+
+  // The fingerprint receipt is the intake commit boundary. A crash from this
+  // point can be resumed only with the exact same ordered byte manifest; a
+  // changed request can never claim the already-created child jobs.
+  if (typeof batchLifecycleHooks.afterReceipt === 'function') {
+    await batchLifecycleHooks.afterReceipt({ batch, manifest });
+  }
+  try {
+    await requireOrganizationAcceptsCvWrites(organizationId);
+    if (options.organizationWriteLease) {
+      await organizationCvWriteFence.renew(options.organizationWriteLease);
+    }
+  } catch (error) {
+    await Promise.all([
+      removeUploadFiles(files),
+      CVProcessingBatch.deleteOne({
+        _id: batch._id,
+        intakeState: 'accepting',
+        jobs: { $size: 0 },
+        intakeLeaseId
+      })
+    ]).catch(() => {});
+    throw error;
+  }
+  const heartbeat = setInterval(() => {
+    void CVProcessingBatch.updateOne(
+      { _id: batch._id, intakeState: 'accepting', intakeLeaseId },
+      { $set: { intakeLeaseAt: new Date() } }
+    ).catch(() => {});
+  }, Math.max(10_000, Math.floor(INTAKE_LEASE_MS / 3)));
+  heartbeat.unref?.();
+  let submittedFiles;
+  try {
+    submittedFiles = await mapWithConcurrency(files, ingestConcurrency, async (file, index) => {
+      try {
+      const childIdempotencyKey = `cv-batch-child:${crypto.createHash('sha256')
+        .update(`${batch.publicId}:${index}`)
+        .digest('hex')}`;
       const childRequest = {
         ...req,
         file,
         files: undefined,
         body: req.body || {},
-        get: (name) => name.toLowerCase() === 'idempotency-key' ? `${baseIdempotency}:${index}` : req.get?.(name)
+        get: (name) => name.toLowerCase() === 'idempotency-key' ? childIdempotencyKey : req.get?.(name)
       };
       const submitted = await submitUpload(childRequest, 'bulk');
-      return { jobId: submitted.job._id };
-    } catch (error) {
-      try { await unlinkAsync(file.path); } catch {}
-      return { rejected: { fileName: file.originalname, error: error.message } };
-    }
-  });
+      const [receipt] = await Promise.all([
+        CVProcessingBatch.updateOne(
+          {
+            _id: batch._id,
+            requestFingerprint: batchRequestFingerprint,
+            intakeState: 'accepting',
+            intakeLeaseId
+          },
+          { $addToSet: { jobs: submitted.job._id } }
+        ),
+        CVProcessingJob.updateOne(
+          { _id: submitted.job._id, organization: organizationId },
+          { $set: { batch: batch._id, batchPublicId: batch.publicId } }
+        )
+      ]);
+      if (!Number(receipt.matchedCount || receipt.n || 0)) {
+        throw submissionError(
+          'CV_BATCH_INTAKE_LEASE_LOST',
+          'This batch intake is already being completed by another request.',
+          409
+        );
+      }
+      await syncHistorySafely(submitted.job._id);
+      return { index, jobId: submitted.job._id };
+      } catch (error) {
+        try { await unlinkAsync(file.path); } catch {}
+        if (['CV_IDEMPOTENCY_KEY_REUSED', 'CV_BATCH_INTAKE_LEASE_LOST'].includes(error?.code)) {
+          throw error;
+        }
+        const rejected = { index, fileName: file.originalname, error: error.message };
+        const recorded = await CVProcessingBatch.updateOne(
+          {
+            _id: batch._id,
+            requestFingerprint: batchRequestFingerprint,
+            intakeState: 'accepting',
+            intakeLeaseId
+          },
+          { $addToSet: { rejected } }
+        );
+        if (!Number(recorded.matchedCount || recorded.n || 0)) {
+          throw submissionError(
+            'CV_BATCH_INTAKE_LEASE_LOST',
+            'This batch intake is already being completed by another request.',
+            409
+          );
+        }
+        return { index, rejected };
+      }
+    });
+  } finally {
+    clearInterval(heartbeat);
+  }
   const jobs = submittedFiles.flatMap((item) => item.jobId ? [item.jobId] : []);
   const rejected = submittedFiles.flatMap((item) => item.rejected ? [item.rejected] : []);
-  const batch = await CVProcessingBatch.create({
-    publicId: `batch_${crypto.randomUUID()}`,
-    organization: organizationId,
-    actor: req.user?.id,
-    jobs,
-    rejected,
-    totalFiles: files.length
-  });
-  return getBatchStatus(batch.publicId, organizationId);
+  const finalized = await CVProcessingBatch.updateOne(
+    {
+      _id: batch._id,
+      requestFingerprint: batchRequestFingerprint,
+      intakeState: 'accepting',
+      intakeLeaseId
+    },
+    {
+      $set: {
+        jobs,
+        rejected,
+        intakeState: 'accepted',
+        acceptedAt: new Date()
+      },
+      $unset: { intakeLeaseId: 1, intakeLeaseAt: 1 }
+    }
+  );
+  if (!Number(finalized.matchedCount || finalized.n || 0)) {
+    const current = await CVProcessingBatch.findById(batch._id).select('+requestFingerprint');
+    if (!current || current.requestFingerprint !== batchRequestFingerprint) {
+      throw idempotencyReuseError();
+    }
+  }
+  return {
+    ...(await getBatchStatus(batch.publicId, organizationId)),
+    duplicate: !receiptCreated
+  };
+}
+
+async function submitBatch(req) {
+  const files = Array.isArray(req?.files) ? req.files : [];
+  let context;
+  try {
+    context = await resolveSubmissionContext(req, 'bulk');
+  } catch {
+    return submitBatchUnfenced(req);
+  }
+  if (!context?.organizationId) return submitBatchUnfenced(req);
+  let lease;
+  try {
+    lease = await organizationCvWriteFence.acquire(context.organizationId, 'cv-intake:bulk');
+  } catch (error) {
+    await removeUploadFiles(files);
+    throw error;
+  }
+  const stopHeartbeat = organizationCvWriteFence.startHeartbeat(lease);
+  try {
+    return await submitBatchUnfenced(req, { organizationWriteLease: lease });
+  } finally {
+    stopHeartbeat();
+    await organizationCvWriteFence.release(lease).catch(() => {});
+  }
 }
 
 async function repairCommittedBatchJobs(jobs) {
@@ -3899,32 +7092,56 @@ async function repairCommittedBatchJobs(jobs) {
   if (!committed.length) return 0;
 
   const completedAt = new Date();
-  await CVProcessingJob.updateMany(
-    { _id: { $in: committed.map((job) => job._id) }, state: { $ne: 'completed' } },
-    {
-      $set: { state: 'completed', stage: 'completed', progress: 100, completedAt },
-      $unset: {
-        lastError: 1,
-        failedAt: 1,
-        expiresAt: 1,
-        'retry.pendingTrigger': 1,
-        'retry.nextAttemptAt': 1
-      }
-    }
-  );
   for (const job of committed) {
+    const event = processingStageEvent('completed', 'completed', 100, job, null, completedAt);
+    await CVProcessingJob.updateOne(
+      { _id: job._id, state: { $ne: 'completed' } },
+      {
+        $set: {
+          state: 'completed',
+          stage: 'completed',
+          stageStartedAt: completedAt,
+          progress: 100,
+          completedAt,
+          'artifacts.profileCommittedAt': completedAt
+        },
+        $unset: {
+          lastError: 1,
+          failedAt: 1,
+          expiresAt: 1,
+          'retry.pendingTrigger': 1,
+          'retry.nextAttemptAt': 1
+        },
+        $push: {
+          stageHistory: {
+            $each: [event],
+            $slice: -HISTORY_TRANSITION_LIMIT
+          }
+        }
+      }
+    );
     job.state = 'completed';
     job.stage = 'completed';
+    job.stageStartedAt = completedAt;
     job.progress = 100;
     job.completedAt = completedAt;
     job.lastError = undefined;
+    job.stageHistory = [...(job.stageHistory || []), event].slice(-HISTORY_TRANSITION_LIMIT);
+    await syncLinkedCandidateProcessing(job, {
+      state: 'completed',
+      stage: 'completed',
+      progress: 100,
+      error: null,
+      retryEligible: false
+    });
   }
   await Promise.all(committed.map((job) => syncHistorySafely(job._id)));
   return committed.length;
 }
 
 async function getBatchStatus(publicId, organizationId) {
-  const batch = await CVProcessingBatch.findOne({ publicId, organization: organizationId }).populate('jobs');
+  const batch = await CVProcessingBatch.findOne({ publicId, organization: organizationId })
+    .populate({ path: 'jobs', select: '+resumeText' });
   if (!batch) return null;
   const jobs = batch.jobs || [];
   // Status polling is also a safe reconciliation point: if a worker already
@@ -3932,10 +7149,23 @@ async function getBatchStatus(publicId, organizationId) {
   // state while a duplicate BullMQ delivery sits delayed.
   await repairCommittedBatchJobs(jobs);
   const completedJobs = jobs.filter((job) => job.state === 'completed');
-  const failedJobs = jobs.filter((job) => job.state === 'failed');
+  const failedJobs = jobs.filter((job) => ['failed', 'cancelled'].includes(job.state));
   const waitingJobs = jobs.filter((job) => ['queued', 'waiting_for_chatgpt'].includes(job.state));
   const activeJobs = jobs.filter((job) => job.state === 'processing');
   const completed = completedJobs.length + failedJobs.length + batch.rejected.length;
+  if (batch.intakeState !== 'accepting' && completed >= batch.totalFiles) {
+    if (!batch.expiresAt) {
+      const expiresAt = terminalJobExpiry();
+      await CVProcessingBatch.updateOne(
+        { _id: batch._id, expiresAt: { $exists: false } },
+        { $set: { expiresAt } }
+      );
+      batch.expiresAt = expiresAt;
+    }
+  } else if (batch.expiresAt) {
+    await CVProcessingBatch.updateOne({ _id: batch._id }, { $unset: { expiresAt: 1 } });
+    batch.expiresAt = undefined;
+  }
   // A parked job looks identical to a slow one from the outside. Carrying the
   // reason it is waiting is the difference between "still processing" and
   // "your ChatGPT plan is out of quota until the 13th".
@@ -3943,19 +7173,65 @@ async function getBatchStatus(publicId, organizationId) {
   // retry state. Treat it as parked so the user can promote it immediately;
   // a plain, healthy queued job has no lastError and keeps the normal spinner.
   const parked = waitingJobs.find((job) => job.lastError?.message);
+  const intakeLeaseActive = batch.intakeState === 'accepting'
+    && batch.intakeLeaseAt
+    && batch.intakeLeaseAt.getTime() > Date.now() - INTAKE_LEASE_MS;
+  const intakeWaitingForReplay = batch.intakeState === 'accepting' && !intakeLeaseActive;
+  const fileJobs = jobs.map((job) => ({
+    ...publicState(job),
+    fileName: job.originalName,
+    artifacts: artifactSummary(job)
+  }));
+  const rejectedJobs = batch.rejected.map((item, index) => ({
+    jobId: null,
+    source: 'bulk',
+    state: 'failed',
+    stage: 'received',
+    stageStartedAt: batch.createdAt,
+    stageHistory: [{
+      stage: 'received',
+      state: 'failed',
+      progress: 0,
+      attempt: 0,
+      at: batch.createdAt,
+      errorCode: 'CV_BATCH_FILE_REJECTED',
+      errorMessage: item.error
+    }],
+    progress: 0,
+    fileName: item.fileName,
+    file: { name: item.fileName, type: '', size: 0, receivedAt: batch.createdAt },
+    attempts: 0,
+    retry: { available: false },
+    error: {
+      code: 'CV_BATCH_FILE_REJECTED',
+      message: item.error,
+      stage: 'received',
+      at: batch.createdAt
+    },
+    batch: { id: batch.publicId },
+    rejectedIndex: index
+  }));
   return {
     batchId: batch.publicId,
-    waitingReason: parked?.lastError?.message || null,
-    waitingCode: parked?.lastError?.code || null,
+    intakeState: batch.intakeState || 'accepted',
+    waitingReason: intakeWaitingForReplay
+      ? 'The batch receipt is waiting for an exact file-set replay after an interrupted upload.'
+      : (parked?.lastError?.message || null),
+    waitingCode: intakeWaitingForReplay
+      ? 'CV_BATCH_INTAKE_REPLAY_REQUIRED'
+      : (parked?.lastError?.code || null),
     totalFiles: batch.totalFiles,
     completed,
     successful: completedJobs.length,
     failed: failedJobs.length + batch.rejected.length,
     processing: activeJobs.length,
     queued: waitingJobs.length,
-    state: completed >= batch.totalFiles
+    state: batch.intakeState === 'accepting'
+      ? (intakeWaitingForReplay ? 'intake_waiting_for_reupload' : 'receiving')
+      : completed >= batch.totalFiles
       ? 'completed'
       : waitingJobs.some((job) => job.state === 'waiting_for_chatgpt') ? 'waiting_for_chatgpt' : 'processing',
+    jobs: [...fileJobs, ...rejectedJobs],
     results: completedJobs.map((job) => ({ fileName: job.originalName, candidateId: String(job.candidate), success: true })),
     errors: [
       ...batch.rejected.map((item) => ({ fileName: item.fileName, error: item.error, success: false })),
@@ -4015,11 +7291,84 @@ async function retryBatchNow(publicId, organizationId, requestedBy) {
   };
 }
 
+function processingStageEvent(stage, state, progress, job = {}, error = null, at = new Date()) {
+  const event = {
+    stage,
+    state,
+    progress: Math.max(0, Math.min(100, Number(progress || 0))),
+    attempt: processingAttemptCount(job),
+    at
+  };
+  if (error) {
+    event.errorCode = String(error.code || 'CV_ANALYSIS_ERROR').slice(0, 120);
+    event.errorMessage = String(error.message || error).slice(0, 1000);
+  }
+  return event;
+}
+
+function stageTrail(job = {}) {
+  return (job.stageHistory || []).map((entry) => ({
+    stage: entry.stage,
+    state: entry.state,
+    progress: Number(entry.progress || 0),
+    attempt: Number(entry.attempt || 0),
+    at: entry.at || null,
+    errorCode: entry.errorCode || null,
+    errorMessage: entry.errorMessage || null
+  }));
+}
+
+function processingError(job = {}) {
+  if (!job.lastError?.code && !job.lastError?.message) return null;
+  return {
+    code: job.lastError?.code || 'CV_PROCESSING_ERROR',
+    message: job.lastError?.message || 'CV processing did not complete',
+    stage: job.lastError?.stage || job.stage || null,
+    at: job.lastError?.at || job.failedAt || job.updatedAt || null
+  };
+}
+
+function artifactSummary(job = {}) {
+  const textLength = Math.max(
+    0,
+    Number(job.artifacts?.extractedTextLength || job.resumeText?.length || 0)
+  );
+  return {
+    received: { available: true, at: job.artifacts?.receivedAt || job.createdAt || null },
+    durableFile: {
+      available: Boolean(job.durableFile?.fileId && job.durableFile?.cleanupState !== 'deleted'),
+      storedAt: job.artifacts?.durableStoredAt || job.durableFile?.persistedAt || null
+    },
+    cloudinaryFile: {
+      available: Boolean(job.cloudinary?.publicId && job.cloudinary?.cleanupState !== 'deleted'),
+      storedAt: job.artifacts?.cloudinaryStoredAt || null
+    },
+    extractedText: {
+      available: textLength > 0,
+      length: textLength,
+      extractedAt: job.artifacts?.textExtractedAt || null
+    },
+    analysis: {
+      available: Boolean(job.artifacts?.analysisCompletedAt),
+      completedAt: job.artifacts?.analysisCompletedAt || null
+    },
+    profile: {
+      available: Boolean(job.candidate || job.artifacts?.profileCommittedAt),
+      committedAt: job.artifacts?.profileCommittedAt || job.completedAt || null
+    }
+  };
+}
+
 module.exports = {
+  _backfillHistoryForTests: backfillHistory,
   _deliverCompletionEffectsForTests: deliverCompletionEffects,
   _processJobForTests: processJob,
   _recoverCompletionEffectsForTests: recoverCompletionEffects,
   _retryStorageCleanupForTests: retryStorageCleanup,
+  _sweepOrphanedDurableIntakesForTests: sweepOrphanedDurableIntakes,
+  _reconcileBatchRetentionForTests: reconcileBatchRetention,
+  _expireInterruptedIntakeLeasesForTests: expireInterruptedIntakeLeases,
+  _recoverTombstonedCandidateErasuresForTests: recoverTombstonedCandidateErasures,
   _resetDependenciesForTests: resetDependenciesForTests,
   _setDependenciesForTests: setDependenciesForTests,
   _createGlobalDispatchCoordinator: createGlobalDispatchCoordinator,
@@ -4028,8 +7377,12 @@ module.exports = {
   _initializeGlobalDispatchForTests: initializeGlobalDispatchForTests,
   _loadAdminAuditsForTests: loadAdminAudits,
   _loadRecentExternalAuditsForTests: loadRecentExternalAudits,
+  _activateReplacementRevisionForTests: activateReplacementRevision,
+  _repairReplacementActivationsForTests: repairReplacementActivations,
+  _mergeAnalysisOntoCandidateForTests: mergeAnalysisOntoCandidate,
   _sharedDispatchWorkerState: sharedDispatchWorkerState,
   _cvUsageExecutionIdForTests: cvUsageExecutionId,
+  _evaluateWorkerReadinessForTests: evaluateWorkerReadiness,
   adminTelemetry,
   closeForTests,
   enqueueExistingJob,
@@ -4043,9 +7396,14 @@ module.exports = {
   ingestExternalQueueEvent,
   initWorker,
   listAdminHistory,
+  listAdminOrganizations,
+  listOrganizationHistory,
   listHistory,
+  getOrganizationJobDetail,
   publishTelemetry,
+  readiness,
   retryFailedJob,
+  replaceFailedJob,
   retryJobNow,
   promoteWaitingJobsForOrganization,
   resolveOrganizationRuntimeActor,
@@ -4063,6 +7421,9 @@ module.exports = {
   setPaused,
   submitBatch,
   submitUpload,
+  eraseCandidateProcessingData,
+  redactCandidateProcessingData,
+  redactOrganizationProcessingData,
   telemetry,
   tokenHash
 };

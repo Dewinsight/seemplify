@@ -49,35 +49,41 @@ function resetLabel(resetsAt: string | null) {
   })}`
 }
 
-function UsageBar({ window: usage }: { window: AiPlanWindow }) {
+function UsageRow({ window: usage }: { window: AiPlanWindow }) {
   const percent = usage.usedPercent
-  // Colour only where it changes a decision: nearly out, or out.
-  const tone = percent == null ? "bg-muted-foreground/40"
-    : percent >= 100 ? "bg-destructive"
-      : percent >= 80 ? "bg-amber-500"
-        : "bg-[#0d0d0d] dark:bg-white"
   const reset = resetLabel(usage.resetsAt)
+  const remaining = percent == null ? null : Math.max(0, 100 - Math.round(percent))
   return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="font-medium">{windowLabel(usage.windowMinutes)}</span>
-        <span className="tabular-nums text-muted-foreground">
-          {percent == null ? "Usage unknown" : `${Math.round(percent)}% used`}
-        </span>
+    <div className="flex flex-col gap-1 border-t py-3 first:border-t-0 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <p className="text-sm font-medium">{windowLabel(usage.windowMinutes)}</p>
+        {reset ? (
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />{reset}
+          </p>
+        ) : null}
       </div>
-      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className={`h-full rounded-full transition-all ${tone}`}
-          style={{ width: `${Math.max(2, Math.min(100, percent ?? 0))}%` }}
-        />
-      </div>
-      {reset && (
-        <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-          <Clock className="h-3 w-3" />{reset}
-        </p>
-      )}
+      <p className="text-sm tabular-nums text-muted-foreground">
+        {percent == null ? "Usage not reported" : `${Math.round(percent)}% used · ${remaining}% remaining`}
+      </p>
     </div>
   )
+}
+
+function capturedLabel(capturedAt?: string | null) {
+  if (!capturedAt) return "No usage snapshot has been reported yet"
+  const captured = new Date(capturedAt)
+  if (Number.isNaN(captured.getTime())) return "Usage snapshot time unavailable"
+  return `Last reported ${captured.toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+  })}`
+}
+
+function recordedLabel(value?: string | null) {
+  if (!value) return null
+  const recorded = new Date(value)
+  if (Number.isNaN(recorded.getTime())) return null
+  return `Recorded ${recorded.toLocaleString()}`
 }
 
 /**
@@ -92,18 +98,21 @@ export function ChatGptPlanLimits({
   planType,
   rateLimits,
   usageLimit,
+  observedAt,
   className = ""
 }: {
   planType?: string | null
   rateLimits?: AiPlanRateLimits | null
   usageLimit?: AiPlanUsageLimit | null
+  observedAt?: string | null
   className?: string
 }) {
   const windows = [rateLimits?.primary, rateLimits?.secondary].filter(Boolean) as AiPlanWindow[]
+  const usageLimitRecorded = recordedLabel(usageLimit?.at)
 
   return (
     <div
-      className={`rounded-xl border border-black/10 p-4 dark:border-white/10 ${className}`}
+      className={`rounded-lg border border-black/10 p-4 dark:border-white/10 ${className}`}
       data-testid="chatgpt-plan-limits"
     >
       <div className="flex items-center gap-2.5">
@@ -112,7 +121,7 @@ export function ChatGptPlanLimits({
         </span>
         <div className="min-w-0">
           <p className="text-sm font-medium" data-testid="chatgpt-plan-label">{planLabel(planType)}</p>
-          <p className="text-xs text-muted-foreground">Your plan runs this workspace's AI</p>
+          <p className="text-xs text-muted-foreground">{capturedLabel(observedAt || rateLimits?.capturedAt)}</p>
         </div>
       </div>
 
@@ -122,20 +131,21 @@ export function ChatGptPlanLimits({
           data-testid="chatgpt-plan-usage-limit"
         >
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{usageLimit.message}</span>
+          <span>
+            {usageLimit.message}
+            {usageLimitRecorded ? <span className="mt-1 block text-[11px] opacity-80">{usageLimitRecorded}</span> : null}
+          </span>
         </div>
       )}
 
       {windows.length > 0 ? (
-        <div className="mt-4 space-y-3">
-          {windows.map((usage, index) => <UsageBar key={index} window={usage} />)}
+        <div className="mt-4">
+          {windows.map((usage, index) => <UsageRow key={index} window={usage} />)}
         </div>
       ) : (
-        // Codex reports limits as a side effect of running work, so a freshly
-        // connected account has none yet. Saying so beats an empty panel.
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground" data-testid="chatgpt-plan-no-limits">
-          OpenAI reports your remaining allowance as you use it — run an AI task and your limits
-          will appear here. You can always see the full picture at{" "}
+          OpenAI has not reported a usage window for this connection. This page does not estimate a quota.
+          You can check your account directly at{" "}
           <a
             className="underline underline-offset-2 hover:text-foreground"
             href="https://chatgpt.com/#settings"

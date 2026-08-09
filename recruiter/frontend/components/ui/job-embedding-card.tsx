@@ -1129,7 +1129,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                 Why This Candidate Matches
                               </h5>
                               <div className="grid gap-2">
-                                {explanation.reasons.map((reason, idx) => (
+                                {explanation.reasons.map((reason: string, idx: number) => (
                                   <div key={idx} className="flex items-start gap-2 p-2 rounded bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700">
                                     <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
                                     <span className="text-sm text-green-800 dark:text-green-300">{reason}</span>
@@ -1150,7 +1150,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                               <div>
                                 <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">Matched Skills:</p>
                                 <div className="flex flex-wrap gap-1">
-                                  {explanation.skillsMatch.matchedSkills.map((skill, idx) => (
+                                  {explanation.skillsMatch.matchedSkills.map((skill: string, idx: number) => (
                                     <Badge key={idx} className="text-xs bg-green-100 text-green-800 border-green-200">
                                       {skill}
                                     </Badge>
@@ -1163,7 +1163,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                               <div>
                                 <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">Additional Skills:</p>
                                 <div className="flex flex-wrap gap-1">
-                                  {explanation.skillsMatch.bonusSkills.map((skill, idx) => (
+                                  {explanation.skillsMatch.bonusSkills.map((skill: string, idx: number) => (
                                     <Badge key={idx} variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
                                       {skill}
                                     </Badge>
@@ -1176,7 +1176,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                               <div>
                                 <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">Missing Skills:</p>
                                 <div className="flex flex-wrap gap-1">
-                                  {explanation.skillsMatch.missingSkills.map((skill, idx) => (
+                                  {explanation.skillsMatch.missingSkills.map((skill: string, idx: number) => (
                                     <Badge key={idx} variant="destructive" className="text-xs">
                                       {skill}
                                     </Badge>
@@ -1240,7 +1240,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                 <div>
                                   <p className="text-xs text-gray-600 dark:text-gray-300 mb-1">AI-Identified Strengths:</p>
                                   <div className="space-y-1">
-                                    {explanation.aiInsights.strengths.slice(0, 3).map((strength, idx) => (
+                                    {explanation.aiInsights.strengths.slice(0, 3).map((strength: string, idx: number) => (
                                       <div key={idx} className="flex items-start gap-2 text-xs">
                                         <CheckCircle className="h-3 w-3 text-green-600 mt-0.5 flex-shrink-0" />
                                         <span className="text-gray-700 dark:text-gray-300">{strength}</span>
@@ -1258,7 +1258,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                               <div className="bg-blue-50 dark:bg-blue-900/20 p-2 sm:p-3 rounded border border-blue-200 dark:border-blue-700">
                                 <h6 className="font-medium text-blue-800 dark:text-blue-300 text-xs mb-1">Industry Match</h6>
                                 <div className="flex flex-wrap gap-1">
-                                  {explanation.industryMatch.matchedIndustries.map((industry, idx) => (
+                                  {explanation.industryMatch.matchedIndustries.map((industry: string, idx: number) => (
                                     <Badge key={idx} variant="outline" className="text-xs bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-600">
                                       {industry}
                                     </Badge>
@@ -1413,7 +1413,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                     💬 AI-Suggested Interview Questions
                                   </h6>
                                   <div className="space-y-2">
-                                    {explanation.gptEnhanced.interviewFocus.map((question, idx) => (
+                                    {explanation.gptEnhanced.interviewFocus.map((question: string, idx: number) => (
                                       <div key={idx} className="flex items-start gap-2 text-xs">
                                         <div className="w-4 h-4 rounded-full bg-purple-500 text-white flex items-center justify-center text-xs font-bold mt-0.5">
                                           {idx + 1}
@@ -1435,7 +1435,7 @@ export function JobEmbeddingCard({ jobId, onCandidateAdded, pipelineCandidateIds
                                 Areas to Consider
                               </h5>
                               <div className="grid gap-2">
-                                {explanation.concerns.map((concern, idx) => (
+                                {explanation.concerns.map((concern: string, idx: number) => (
                                   <div key={idx} className="flex items-start gap-2 p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700">
                                     <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
                                     <span className="text-sm text-amber-800 dark:text-amber-300">{concern}</span>

@@ -65,6 +65,59 @@ const CandidateSchema = new mongoose.Schema({
     type: String,
     default: 'Uploaded CV',
   },
+  // A one-way digest of the public form's Idempotency-Key (or the normalized
+  // job/email fallback). It prevents browser/network retries from creating
+  // orphan candidates before the shortlist/capacity commit completes.
+  publicApplicationKey: {
+    type: String,
+    select: false,
+    trim: true
+  },
+  publicApplicationRequestKey: {
+    type: String,
+    select: false,
+    trim: true
+  },
+  publicApplicationRequestFingerprint: {
+    type: String,
+    select: false,
+    trim: true
+  },
+  publicApplicationCapabilityHash: {
+    type: String,
+    select: false,
+    trim: true
+  },
+  publicApplicationCapabilityExpiresAt: {
+    type: Date,
+    select: false
+  },
+  publicApplicationCommitState: {
+    type: String,
+    enum: ['provisional', 'committing', 'committed'],
+    select: false
+  },
+  publicApplicationProvisionalExpiresAt: {
+    type: Date,
+    select: false
+  },
+  publicApplicationCommitStartedAt: {
+    type: Date,
+    select: false
+  },
+  // Logical deletion is the commit boundary for CV/embedding erasure. A
+  // tombstoned candidate is immediately invisible and cannot be enriched by
+  // an in-flight worker while durable cleanup finishes asynchronously.
+  deletionState: {
+    type: String,
+    enum: ['active', 'tombstoned'],
+    default: 'active',
+    select: false,
+    index: true
+  },
+  deletionPreparationToken: { type: String, select: false },
+  deletionToken: { type: String, select: false },
+  deletionRequestedAt: { type: Date, select: false },
   notes: [{
     note: String,
     date: { type: Date, default: Date.now },
@@ -244,6 +297,26 @@ const CandidateSchema = new mongoose.Schema({
     originalName: String,
     processedAt: Date,
     cvProcessingJobId: String,
+    // Public applications are committed before a CV is uploaded. Keeping an
+    // explicit `not_received` state makes that honest in candidate lists and
+    // distinguishes it from a CV that was accepted but failed later.
+    cvIngestionState: {
+      type: String,
+      enum: ['not_received', 'accepted', 'queued', 'processing', 'waiting', 'failed', 'completed'],
+      default: function cvIngestionDefault() {
+        return this.source === 'public' ? 'not_received' : undefined;
+      }
+    },
+    cvProcessingStage: String,
+    cvProcessingProgress: { type: Number, min: 0, max: 100 },
+    cvProcessingUpdatedAt: Date,
+    cvRetryEligible: { type: Boolean, default: false },
+    cvProcessingError: {
+      code: String,
+      message: String,
+      stage: String,
+      at: Date
+    }
   },
   // Fields for tracking application process
   applicationDate: {
@@ -313,6 +386,28 @@ CandidateSchema.index({ organization: 1 });
 CandidateSchema.index({ organization: 1, status: 1 });
 CandidateSchema.index({ organization: 1, createdAt: -1 });
 CandidateSchema.index({ organization: 1, email: 1 });
+CandidateSchema.index(
+  { organization: 1, jobAppliedFor: 1, publicApplicationKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { publicApplicationKey: { $type: 'string' } },
+    name: 'uniq_public_application_candidate_key'
+  }
+);
+CandidateSchema.index(
+  { publicApplicationProvisionalExpiresAt: 1 },
+  { expireAfterSeconds: 0, name: 'expire_uncommitted_public_candidates' }
+);
+CandidateSchema.index({ deletionState: 1, deletionRequestedAt: 1 });
+CandidateSchema.index({ deletionState: 1, _id: 1 });
+CandidateSchema.index(
+  { organization: 1, jobAppliedFor: 1, publicApplicationRequestKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { publicApplicationRequestKey: { $type: 'string' } },
+    name: 'uniq_public_application_request_key'
+  }
+);
 CandidateSchema.index(
   { 'processingMetadata.cvProcessingJobId': 1 },
   {

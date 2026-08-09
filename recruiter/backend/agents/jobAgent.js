@@ -20,6 +20,12 @@ const SALARY_SCHEMA = {
     }
 };
 
+function normalizeMatchingResult(result) {
+    if (Array.isArray(result)) return { matches: result };
+    if (result && Array.isArray(result.matches)) return result;
+    return { matches: [] };
+}
+
 class JobAgent {
     constructor(langchainAgentServiceInstance) {
         // this.langchainAgentService = langchainAgentServiceInstance; // For context, memory, communication
@@ -29,17 +35,21 @@ class JobAgent {
         console.log('JobAgent initialized with AiJobService, InterviewService, and AIModelService');
     }
 
+    _organizationId(userContext = {}) {
+        return userContext.organizationId || userContext.currentOrganization;
+    }
+
     /**
      * Prepares and normalizes job data, applying mapping rules.
      * Enhanced to handle comprehensive job descriptions from AI extraction.
      * @param {object} initialJobData - The raw job data.
      * @returns {object} The prepared and normalized job data.
      */
-    async _prepareJobData(initialJobData, userContext = {}) { // Added userContext
+    async _prepareJobData(initialJobData, userContext = {}, { partial = false } = {}) { // Added userContext
         const mappedParams = { ...initialJobData };
         
         // Ensure organization context is included in job data
-        const organizationId = userContext.organizationId || userContext.currentOrganization;
+        const organizationId = this._organizationId(userContext);
         if (organizationId) {
             mappedParams.organization = organizationId;
             console.log(`🔒 Including organization ${organizationId} in job data`);
@@ -53,48 +63,36 @@ class JobAgent {
             hasSalary: !!mappedParams.salary
         });
 
-        // Map level values using AI
-        if (mappedParams.level && typeof mappedParams.level === 'string') {
-            mappedParams.level = await this._normalizeFieldWithAI(
-                this.aiModelService,
-                mappedParams.level,
-                ['Entry', 'Mid', 'Senior', 'Lead', 'Executive'],
-                'job level',
-                'Mid'
-            );
-        }
-
-        // Map experience values using AI
-        if (mappedParams.experience && typeof mappedParams.experience === 'string') {
-            mappedParams.experience = await this._normalizeFieldWithAI(
-                this.aiModelService,
-                mappedParams.experience,
-                ['0-1', '1-3', '3-5', '5-10', '10+'],
-                'years of experience',
-                '1-3'
-            );
-        }
-
-        // Map education values using AI
-        if (mappedParams.education && typeof mappedParams.education === 'string') {
-            mappedParams.education = await this._normalizeFieldWithAI(
-                this.aiModelService,
-                mappedParams.education,
-                ['High School', 'Associate', 'Bachelor', 'Master', 'PhD', 'Professional Certificate', 'Vocational', 'Other'],
-                'education level',
-                'Bachelor'
-            );
-        }
+        // Normalize independent enum fields concurrently. Canonical values are
+        // resolved locally by _normalizeFieldWithAI, so the runtime is only used
+        // for genuinely ambiguous inputs.
+        const enumNormalizations = [
+            ['level', ['Entry', 'Mid', 'Senior', 'Lead', 'Executive'], 'job level', 'Mid'],
+            ['experience', ['0-1', '1-3', '3-5', '5-10', '10+'], 'years of experience', '1-3'],
+            ['education', ['High School', 'Associate', 'Bachelor', 'Master', 'PhD', 'Professional Certificate', 'Vocational', 'Other'], 'education level', 'Bachelor'],
+            ['type', ['Full-time', 'Part-time', 'Contract', 'Internship', 'Freelance', 'Temporary'], 'employment type', 'Full-time']
+        ];
+        await Promise.all(enumNormalizations.map(async ([field, validValues, label, fallback]) => {
+            if (mappedParams[field] && typeof mappedParams[field] === 'string') {
+                mappedParams[field] = await this._normalizeFieldWithAI(
+                    this.aiModelService,
+                    mappedParams[field],
+                    validValues,
+                    label,
+                    fallback
+                );
+            }
+        }));
 
         // Only generate placeholder content if not already provided from extraction
-        if (!mappedParams.responsibilities) {
+        if (!partial && !mappedParams.responsibilities) {
             if (mappedParams.description && mappedParams.description.length > 100) {
                 mappedParams.responsibilities = `Based on the job description: ${mappedParams.description.substring(0, 200)}...`; // Placeholder, AI can refine
             } else {
                 mappedParams.responsibilities = 'Key responsibilities to be generated.';
             }
         }
-        if (!mappedParams.requirements) {
+        if (!partial && !mappedParams.requirements) {
             if (mappedParams.description && mappedParams.description.length > 100) {
                 mappedParams.requirements = `Based on the job description for ${mappedParams.title || 'the position'}.`; // Placeholder, AI can refine
             } else {
@@ -102,24 +100,17 @@ class JobAgent {
             }
         }
 
-        // Map job type values using AI
-        if (mappedParams.type && typeof mappedParams.type === 'string') {
-            mappedParams.type = await this._normalizeFieldWithAI(
-                this.aiModelService,
-                mappedParams.type,
-                ['Full-time', 'Part-time', 'Contract', 'Internship', 'Freelance', 'Temporary'],
-                'employment type',
-                'Full-time'
-            );
-        }
-
         // Infer Department if missing or placeholder
-        if (!mappedParams.department || mappedParams.department === 'To be determined' || mappedParams.department.toLowerCase() === 'general') {
+        if ((!partial || Object.prototype.hasOwnProperty.call(mappedParams, 'department'))
+            && (!mappedParams.department
+                || mappedParams.department === 'To be determined'
+                || (typeof mappedParams.department === 'string' && mappedParams.department.toLowerCase() === 'general'))) {
             mappedParams.department = await this._inferDepartmentWithAI(mappedParams.title, mappedParams.description);
         }
 
         // Infer/Standardize Location if missing or placeholder
-        if (!mappedParams.location || mappedParams.location === 'To be determined' || mappedParams.location === 'Please specify location') {
+        if ((!partial || Object.prototype.hasOwnProperty.call(mappedParams, 'location'))
+            && (!mappedParams.location || mappedParams.location === 'To be determined' || mappedParams.location === 'Please specify location')) {
             mappedParams.location = await this._inferLocationWithAI(mappedParams.title, mappedParams.description, mappedParams.location);
         }
 
@@ -138,28 +129,30 @@ class JobAgent {
 
         // Set default values for core fields if still missing (as per Job model schema where applicable)
         // These are crucial for passing Mongoose validation if not provided by user/AI
-        mappedParams.type = mappedParams.type || 'Full-time';
-        mappedParams.level = mappedParams.level || 'Mid';
-        mappedParams.experience = mappedParams.experience || '1-3'; // Default if not mapped
-        mappedParams.education = mappedParams.education || 'Bachelor'; // Default if not mapped
-        mappedParams.status = mappedParams.status || 'active'; // Default status for new jobs by agent
+        if (!partial) {
+            mappedParams.type = mappedParams.type || 'Full-time';
+            mappedParams.level = mappedParams.level || 'Mid';
+            mappedParams.experience = mappedParams.experience || '1-3'; // Default if not mapped
+            mappedParams.education = mappedParams.education || 'Bachelor'; // Default if not mapped
+            mappedParams.status = mappedParams.status || 'active'; // Default status for new jobs by agent
 
-        // Ensure required fields by schema are present, only use defaults if not extracted
-        mappedParams.title = mappedParams.title || 'Untitled Job';
-        mappedParams.department = mappedParams.department || 'To be determined';
-        mappedParams.location = mappedParams.location || 'To be determined';
-        
-        // Only set default description if not already extracted (avoid overriding comprehensive JD)
-        if (!mappedParams.description || mappedParams.description.length < 50) {
-            mappedParams.description = 'Detailed job description to be generated.';
-        }
-        
-        // Requirements and responsibilities already handled above - don't override
-        if (!mappedParams.requirements) {
-            mappedParams.requirements = 'Specific requirements to be generated.';
-        }
-        if (!mappedParams.responsibilities) {
-            mappedParams.responsibilities = 'Key responsibilities to be generated.';
+            // Ensure required fields by schema are present, only use defaults if not extracted
+            mappedParams.title = mappedParams.title || 'Untitled Job';
+            mappedParams.department = mappedParams.department || 'To be determined';
+            mappedParams.location = mappedParams.location || 'To be determined';
+
+            // Only set default description if not already extracted (avoid overriding comprehensive JD)
+            if (!mappedParams.description || mappedParams.description.length < 50) {
+                mappedParams.description = 'Detailed job description to be generated.';
+            }
+
+            // Requirements and responsibilities already handled above - don't override
+            if (!mappedParams.requirements) {
+                mappedParams.requirements = 'Specific requirements to be generated.';
+            }
+            if (!mappedParams.responsibilities) {
+                mappedParams.responsibilities = 'Key responsibilities to be generated.';
+            }
         }
 
 
@@ -188,11 +181,11 @@ class JobAgent {
             case 'delete_job_contextual':
                 return await this.processContextualDeleteJob(initialData, userContext);
             case 'get_matching_candidates':
-                return await this.processGetMatchingCandidates(initialData.jobId, initialData.criteria, userContext);
+                return await this.processGetMatchingCandidates(initialData.jobId || initialData, initialData.criteria, userContext);
             case 'get_job_embedding_status':
                 return await this.processGetJobEmbeddingStatus(initialData.jobId, userContext);
             case 'get_top_candidates':
-                return await this.processGetTopCandidates(initialData.jobId, initialData.options, userContext);
+                return await this.processGetTopCandidates(initialData.jobId || initialData, initialData.options, userContext);
             case 'generate_interview_questions':
                 return await this.processGenerateInterviewQuestions(initialData.jobId, initialData.options, userContext);
             case 'get_interview_questions':
@@ -532,7 +525,7 @@ class JobAgent {
         console.log("JobAgent: Processing list_jobs with filters:", filterData);
         
         // Ensure organization context
-        const organizationId = userContext.organizationId || userContext.currentOrganization;
+        const organizationId = this._organizationId(userContext);
         if (!organizationId) {
             throw new Error('Organization context is required for accessing jobs');
         }
@@ -555,18 +548,13 @@ class JobAgent {
         }
         
         // Ensure organization context
-        const organizationId = userContext.organizationId || userContext.currentOrganization;
+        const organizationId = this._organizationId(userContext);
         if (!organizationId) {
             throw new Error('Organization context is required for accessing jobs');
         }
         
         try {
-            const job = await this.aiJobService.getJobById(jobId);
-            
-            // Verify job belongs to user's organization
-            if (job && job.organization?.toString() !== organizationId.toString()) {
-                return { success: false, message: `JobAgent: Job with ID ${jobId} not found.` };
-            }
+            const job = await this.aiJobService.getJobById(jobId, organizationId);
             
             if (job) {
                 return { success: true, data: job, message: "Job retrieved successfully." };
@@ -585,9 +573,13 @@ class JobAgent {
             return { success: false, message: "JobAgent: Job ID and update data are required." };
         }
         const userId = userContext?.userId;
+        const organizationId = this._organizationId(userContext);
+        if (!organizationId) {
+            return { success: false, message: 'Organization context is required for updating jobs.' };
+        }
         
         // Apply the same preparation logic to updates if they contain fields that need mapping
-        const preparedUpdates = await this._prepareJobData(updates, userContext); // Added userContext
+        const preparedUpdates = await this._prepareJobData(updates, userContext, { partial: true }); // Added userContext
         // Note: _prepareJobData might add default fields if not present in 'updates'.
         // We only want to pass actual updates. A more refined _prepareUpdates method might be needed.
         // For now, this will ensure enums are mapped correctly if provided in updates.
@@ -599,7 +591,7 @@ class JobAgent {
             // 3. Run the merged data through `_prepareJobData` to ensure consistency.
             // 4. Then pass to `aiJobService.updateJobAndEmbed`.
             // For now, directly passing preparedUpdates.
-            const updatedJob = await this.aiJobService.updateJobAndEmbed(jobId, preparedUpdates, userId);
+            const updatedJob = await this.aiJobService.updateJobAndEmbed(jobId, preparedUpdates, userId, organizationId);
             if (updatedJob) {
                 return { success: true, data: updatedJob, message: "Job updated successfully." };
             } else {
@@ -616,9 +608,13 @@ class JobAgent {
         if (!jobId) {
             return { success: false, message: "JobAgent: Job ID is required." };
         }
+        const organizationId = this._organizationId(userContext);
+        if (!organizationId) {
+            return { success: false, message: 'Organization context is required for deleting jobs.' };
+        }
         // TODO: Agent might ask for confirmation here
         try {
-            const success = await this.aiJobService.deleteJobAndEmbed(jobId);
+            const success = await this.aiJobService.deleteJobAndEmbed(jobId, organizationId);
             if (success) {
                 return { success: true, message: `Job with ID ${jobId} deleted successfully.` };
             } else {
@@ -634,6 +630,10 @@ class JobAgent {
         console.log(`JobAgent: Processing contextual delete_job with data:`, initialData);
         
         try {
+            const organizationId = this._organizationId(userContext);
+            if (!organizationId) {
+                return { success: false, message: 'Organization context is required for deleting jobs.' };
+            }
             // Strategy 1: Look for job ID in conversation history
             let recentJobId = null;
             let recentJobTitle = null;
@@ -702,7 +702,7 @@ class JobAgent {
                 
                 try {
                     // Get all jobs and find the most recent one
-                    const allJobs = await this.aiJobService.listJobs({ limit: 5, sort: { createdAt: -1 } });
+                    const allJobs = await this.aiJobService.listJobs({ organization: organizationId, limit: 5, sort: { createdAt: -1 } });
                     
                     if (allJobs && allJobs.length > 0) {
                         const mostRecentJob = allJobs[0];
@@ -721,7 +721,7 @@ class JobAgent {
                 
                 // Try to get available jobs to show user
                 try {
-                    const availableJobs = await this.aiJobService.listJobs({ limit: 5 });
+                    const availableJobs = await this.aiJobService.listJobs({ organization: organizationId, limit: 5 });
                     
                     if (availableJobs && availableJobs.length > 0) {
                         let jobsList = availableJobs.map((job, index) => 
@@ -774,7 +774,7 @@ Error details: ${listError.message}`
             
             let job;
             try {
-                job = await this.aiJobService.getJobById(recentJobId);
+                job = await this.aiJobService.getJobById(recentJobId, organizationId);
             } catch (getError) {
                 console.warn('⚠️ Error getting job by ID:', getError.message);
                 job = null;
@@ -785,7 +785,7 @@ Error details: ${listError.message}`
                 
                 // Try to get available jobs as fallback
                 try {
-                    const availableJobs = await this.aiJobService.listJobs({ limit: 3 });
+                    const availableJobs = await this.aiJobService.listJobs({ organization: organizationId, limit: 3 });
                     
                     if (availableJobs && availableJobs.length > 0) {
                         let jobsList = availableJobs.map((job, index) => 
@@ -829,7 +829,7 @@ Please list available jobs first: "show me all jobs"`
             console.log(`🗑️ Proceeding to delete job: ${job.title} (ID: ${recentJobId})`);
             
             try {
-                const success = await this.aiJobService.deleteJobAndEmbed(recentJobId);
+                const success = await this.aiJobService.deleteJobAndEmbed(recentJobId, organizationId);
                 
                 if (success) {
                     return {
@@ -883,6 +883,10 @@ Please try again with a specific job ID or list available jobs first: "show me a
 
     async processGetMatchingCandidates(jobIdOrData, criteria, userContext) {
         console.log(`JobAgent: Processing get_matching_candidates with:`, jobIdOrData, 'criteria:', criteria);
+        const organizationId = this._organizationId(userContext);
+        if (!organizationId) {
+            return { success: false, message: 'Organization context is required for candidate matching.' };
+        }
         
         let jobId = null;
         let jobTitle = null;
@@ -901,6 +905,7 @@ Please try again with a specific job ID or list available jobs first: "show me a
             try {
                 const jobs = await this.aiJobService.listJobs({ 
                     search: jobTitle,
+                    organization: organizationId,
                     limit: 5 
                 });
                 
@@ -953,13 +958,13 @@ Please check the job title or create the job first. You can:
         }
         
         try {
-            const topK = criteria?.topK || 10; // Default to 10 if not specified
+            const topK = Math.min(Math.max(Number.parseInt(criteria?.topK, 10) || 10, 1), 100);
             const includeExplanations = criteria?.includeExplanations !== false; // Default to true
             
             console.log(`🔍 Finding matching candidates for job ${jobId}...`);
 
             // Get the job first
-            const job = await this.aiJobService.getJobById(jobId);
+            const job = await this.aiJobService.getJobById(jobId, organizationId);
             if (!job) {
                 return { 
                     success: false, 
@@ -967,7 +972,10 @@ Please check the job title or create the job first. You can:
                 };
             }
 
-            const matches = await this.aiJobService.getMatchingCandidatesForJob(jobId, topK);
+            const matchResult = normalizeMatchingResult(
+                await this.aiJobService.getMatchingCandidatesForJob(jobId, topK, organizationId)
+            );
+            const matches = matchResult.matches;
             
             if (!matches || matches.length === 0) {
                 return {
@@ -1046,7 +1054,9 @@ ${matches.length > 6 ? `\n*... and ${matches.length - 6} more candidates*` : ''}
                     jobId,
                     jobTitle: job.title,
                     matches,
-                    matchCount: matches.length
+                    matchCount: matches.length,
+                    fromCache: matchResult.fromCache === true,
+                    cacheAgeMinutes: matchResult.cacheAgeMinutes ?? null
                 }, 
                 message: responseMessage 
             };
@@ -1194,13 +1204,10 @@ ${matches.length > 6 ? `\n*... and ${matches.length - 6} more candidates*` : ''}
                 }
             } catch (error) {
                 console.error('❌ Error generating comprehensive job details:', error);
-                // Fallback to basic description generation
-                updatedData.description = await this._generateJobDescription(updatedData);
-                
-                // Remove description from missing fields
-                if (updatedData.missingFields) {
-                    updatedData.missingFields = updatedData.missingFields.filter(field => field !== 'description');
-                }
+                // The user explicitly requested AI generation. Preserve the
+                // runtime error so the assistant can request connection/retry
+                // rather than returning template copy as a successful AI run.
+                throw error;
             }
         }
         else if (userInput.length > 50 && !inputLower.includes('location')) {
@@ -1352,15 +1359,7 @@ We offer a competitive compensation package, comprehensive benefits, and a suppo
             
         } catch (error) {
             console.error('❌ Error generating comprehensive job details:', error);
-            
-            // Fallback to template-based generation
-            console.log('🔄 Using fallback comprehensive generation...');
-            return {
-                description: await this._generateJobDescription(jobData),
-                requirements: this._generateFallbackRequirements(jobData),
-                responsibilities: this._generateFallbackResponsibilities(jobData),
-                skills: this._generateFallbackSkills(jobData)
-            };
+            throw error;
         }
     }
 
@@ -1468,6 +1467,10 @@ We offer a competitive compensation package, comprehensive benefits, and a suppo
      */
     async processGetTopCandidates(jobIdOrData, options, userContext) {
         console.log(`JobAgent: Processing get_top_candidates with:`, jobIdOrData);
+        const organizationId = this._organizationId(userContext);
+        if (!organizationId) {
+            return { success: false, message: 'Organization context is required for candidate matching.' };
+        }
         
         let jobId = null;
         let jobTitle = null;
@@ -1486,6 +1489,7 @@ We offer a competitive compensation package, comprehensive benefits, and a suppo
             try {
                 const jobs = await this.aiJobService.listJobs({ 
                     search: jobTitle,
+                    organization: organizationId,
                     limit: 5 
                 });
                 
@@ -1539,15 +1543,16 @@ Please check the job title or create the job first. You can:
 
         try {
             const { 
-                topK = 10, 
+                topK: rawTopK = 10,
                 includeExplanations = true,
                 minSimilarity = 0.5 
             } = options || {};
+            const topK = Math.min(Math.max(Number.parseInt(rawTopK, 10) || 10, 1), 100);
 
             console.log(`🔍 Finding top ${topK} candidates for job ${jobId}...`);
 
             // Get the job first
-            const job = await this.aiJobService.getJobById(jobId);
+            const job = await this.aiJobService.getJobById(jobId, organizationId);
             if (!job) {
                 return { 
                     success: false, 
@@ -1556,7 +1561,10 @@ Please check the job title or create the job first. You can:
             }
 
             // Get matching candidates using the existing method
-            const matches = await this.aiJobService.getMatchingCandidatesForJob(jobId, topK);
+            const matchResult = normalizeMatchingResult(
+                await this.aiJobService.getMatchingCandidatesForJob(jobId, topK, organizationId)
+            );
+            const matches = matchResult.matches;
 
             if (!matches || matches.length === 0) {
                 return {
@@ -1627,6 +1635,8 @@ ${filteredMatches.length > 6 ? `\n*... and ${filteredMatches.length - 6} more ca
                     matches: filteredMatches,
                     matchCount: filteredMatches.length,
                     totalCandidatesFound: matches.length,
+                    fromCache: matchResult.fromCache === true,
+                    cacheAgeMinutes: matchResult.cacheAgeMinutes ?? null,
                     minSimilarityApplied: minSimilarity,
                     searchCriteria: {
                         topK,
@@ -1662,6 +1672,10 @@ ${filteredMatches.length > 6 ? `\n*... and ${filteredMatches.length - 6} more ca
 
         try {
             const userId = userContext?.userId;
+            const organizationId = this._organizationId(userContext);
+            if (!organizationId) {
+                return { success: false, message: 'Organization context is required for generating interview questions.' };
+            }
             const {
                 stage = 'first_round',
                 questionCount = 10,
@@ -1672,7 +1686,7 @@ ${filteredMatches.length > 6 ? `\n*... and ${filteredMatches.length - 6} more ca
             console.log(`🤖 Generating ${questionCount} interview questions for job ${jobId}...`);
 
             // Get the job first to provide context
-            const job = await this.aiJobService.getJobById(jobId);
+            const job = await this.aiJobService.getJobById(jobId, organizationId);
             if (!job) {
                 return { 
                     success: false, 
@@ -1685,7 +1699,8 @@ ${filteredMatches.length > 6 ? `\n*... and ${filteredMatches.length - 6} more ca
                 questionCount: parseInt(questionCount),
                 difficulty,
                 includeTypes: Array.isArray(includeTypes) ? includeTypes : [includeTypes],
-                userId
+                userId,
+                organizationId
             };
 
             const questions = await this.interviewService.generateQuestionsWithAI(jobId, generationOptions);
@@ -1742,6 +1757,10 @@ ${questions.length > 3 ? `\n*... and ${questions.length - 3} more questions*` : 
         }
 
         try {
+            const organizationId = this._organizationId(userContext);
+            if (!organizationId) {
+                return { success: false, message: 'Organization context is required for accessing interview questions.' };
+            }
             const {
                 type,
                 stage,
@@ -1751,7 +1770,7 @@ ${questions.length > 3 ? `\n*... and ${questions.length - 3} more questions*` : 
             console.log(`🔍 Getting interview questions for job ${jobId}...`);
 
             // Get the job first to provide context
-            const job = await this.aiJobService.getJobById(jobId);
+            const job = await this.aiJobService.getJobById(jobId, organizationId);
             if (!job) {
                 return { 
                     success: false, 
@@ -1764,7 +1783,7 @@ ${questions.length > 3 ? `\n*... and ${questions.length - 3} more questions*` : 
             if (stage) filterOptions.stage = stage;
             if (difficulty) filterOptions.difficulty = difficulty;
 
-            const questions = await this.interviewService.getQuestionsByJob(jobId, filterOptions);
+            const questions = await this.interviewService.getQuestionsByJob(jobId, filterOptions, organizationId);
 
             if (!questions || questions.length === 0) {
                 return {
@@ -1859,6 +1878,10 @@ Just let me know what type of questions you'd like me to create!`,
         
         try {
             const userId = userContext?.userId;
+            const organizationId = this._organizationId(userContext);
+            if (!organizationId) {
+                return { success: false, message: 'Organization context is required for creating interview questions.' };
+            }
             
             if (!questionData.jobId) {
                 return { 
@@ -1874,7 +1897,7 @@ Just let me know what type of questions you'd like me to create!`,
                 };
             }
 
-            const question = await this.interviewService.createQuestion(questionData, userId);
+            const question = await this.interviewService.createQuestion(questionData, userId, organizationId);
 
             return {
                 success: true,
@@ -1913,7 +1936,11 @@ The question is now ready to use in your interviews.`,
 
         try {
             const userId = userContext?.userId;
-            const updatedQuestion = await this.interviewService.updateQuestion(questionId, updates, userId);
+            const organizationId = this._organizationId(userContext);
+            if (!organizationId) {
+                return { success: false, message: 'Organization context is required for updating interview questions.' };
+            }
+            const updatedQuestion = await this.interviewService.updateQuestion(questionId, updates, userId, organizationId);
 
             return {
                 success: true,
@@ -1950,7 +1977,11 @@ The changes have been saved and are ready to use.`,
         }
 
         try {
-            const result = await this.interviewService.deleteQuestion(questionId);
+            const organizationId = this._organizationId(userContext);
+            if (!organizationId) {
+                return { success: false, message: 'Organization context is required for deleting interview questions.' };
+            }
+            const result = await this.interviewService.deleteQuestion(questionId, organizationId);
 
             return {
                 success: true,
@@ -1986,6 +2017,40 @@ The question has been permanently removed from the system.
         if (!text || typeof text !== 'string' || text.trim() === '') {
             return defaultValue;
         }
+        const comparable = (value) => String(value).trim().toLowerCase().replace(/[^a-z0-9+]/g, '');
+        const directMatch = validEnums.find((value) => comparable(value) === comparable(text));
+        if (directMatch) return directMatch;
+
+        const aliases = {
+            'job level': {
+                junior: 'Entry',
+                entrylevel: 'Entry',
+                intermediate: 'Mid',
+                midlevel: 'Mid',
+                seniorlevel: 'Senior',
+                teamlead: 'Lead',
+                csuite: 'Executive'
+            },
+            'education level': {
+                bachelors: 'Bachelor',
+                bachelordegree: 'Bachelor',
+                masters: 'Master',
+                mastersdegree: 'Master',
+                doctorate: 'PhD',
+                doctoraldegree: 'PhD',
+                secondaryschool: 'High School'
+            },
+            'years of experience': {
+                '0to1years': '0-1',
+                '1to3years': '1-3',
+                '3to5years': '3-5',
+                '5to10years': '5-10',
+                '10plusyears': '10+'
+            }
+        };
+        const localAlias = aliases[fieldNameForPrompt]?.[comparable(text)];
+        if (localAlias && validEnums.includes(localAlias)) return localAlias;
+
         const prompt = `Given the ${fieldNameForPrompt}: "${text.substring(0, 200)}"\nMap this to one of the following standard values: ${validEnums.join(', ')}.\nIf unsure or no clear match, default to "${defaultValue}".\nReturn only the single, most appropriate standard value string.`;
         try {
             const serviceToUse = aiService || this.aiModelService;
@@ -2118,3 +2183,4 @@ Return only the JSON object.`;
 }
 
 module.exports = JobAgent;
+module.exports.normalizeMatchingResult = normalizeMatchingResult;

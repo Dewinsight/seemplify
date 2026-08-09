@@ -485,7 +485,7 @@ const JobSchema = new mongoose.Schema({
   candidateApplyLimit: {
     type: Number,
     min: 0,
-    default: 0 // 0 means no limit
+    default: 0 // 0 is fail-closed until a funded public application pool is configured
   },
   reservedCredits: {
     type: Number,

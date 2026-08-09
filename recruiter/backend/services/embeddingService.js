@@ -1056,11 +1056,17 @@ class EmbeddingService {
   async findMatchingCandidatesForJob(job, topK = 10, options = {}) {
     try {
       const aiMatchCacheService = require('./aiMatchCacheService');
+      const { vectorMatchingIdentity } = require('./matchingCacheIdentityService');
       const startTime = Date.now();
+      const requestedTopK = Math.min(Math.max(Number.parseInt(topK, 10) || 10, 1), 5000);
+      const cacheIdentity = vectorMatchingIdentity(job);
       
       // Check cache first unless explicitly skipped
       if (!options.skipCache) {
-        const cached = await aiMatchCacheService.getCachedBulkMatch(job._id);
+        const cached = await aiMatchCacheService.getCachedBulkMatch(job._id, {
+          topK: requestedTopK,
+          identity: cacheIdentity
+        });
         if (cached) {
           console.log(`⚡ Cache hit! Returning cached matches for job ${job._id} (${cached.cacheAgeMinutes} minutes old)`);
           return {
@@ -1086,11 +1092,11 @@ class EmbeddingService {
       const organizationId = job.organization?.toString() || job.organization;
       
       if (!organizationId) {
-        console.warn('⚠️ No organization ID found for job, searching all candidates');
+        throw new Error('Organization context is required for candidate matching');
       }
 
       // Search for similar candidates within the same organization
-      const matches = await this.searchSimilarCandidates(jobText, topK, organizationId);
+      const matches = await this.searchSimilarCandidates(jobText, requestedTopK, organizationId);
       
       console.log(`🔍 Found ${matches.length} matching candidates for job ${job._id}`);
       
@@ -1126,8 +1132,11 @@ class EmbeddingService {
       const generationTime = Date.now() - startTime;
       aiMatchCacheService.setCachedBulkMatch(job._id, formattedMatches, {
         candidateCount: formattedMatches.length,
+        requestedTopK,
+        exhausted: formattedMatches.length < requestedTopK,
         generationTime,
-        modelUsed: 'text-embedding-ada-002',
+        modelUsed: cacheIdentity.model,
+        identity: cacheIdentity,
         version: 1
       }).catch(err => console.error('Failed to cache matches:', err));
 
@@ -1137,7 +1146,9 @@ class EmbeddingService {
         generationTime,
         metadata: {
           candidateCount: formattedMatches.length,
-          modelUsed: 'text-embedding-ada-002'
+          requestedTopK,
+          modelUsed: cacheIdentity.model,
+          cacheIdentity
         }
       };
     } catch (error) {
@@ -1412,6 +1423,9 @@ class EmbeddingService {
       
       if (gptAnalysisService.isEnabled) {
         console.log(`🧠 Using ${gptAnalysisService.modelName || 'LLM'} enhanced analysis for ranking shortlist...`);
+
+        const jobText = this.createJobEmbeddingText(job);
+        const queryEmbedding = await this.generateEmbedding(jobText);
         
         const candidatesForAnalysis = candidateRecords.map(record => {
           const candidateSkills = this.parseSkills(record.metadata?.skills);
@@ -1425,7 +1439,7 @@ class EmbeddingService {
             currentRole: record.metadata?.currentPosition || '',
             education: record.metadata?.education || '',
             bio: record.metadata?.aiSummary || '',
-            score: this.calculateCosineSimilarity(job.embedding, record.values)
+            score: this.calculateCosineSimilarity(queryEmbedding, record.values)
           };
         });
 

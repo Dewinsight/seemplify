@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -21,13 +21,17 @@ import {
   uploadCV,
   createCandidateManually,
   retryCVProcessing,
+  resumeCVProcessing,
   CandidateData,
   CVProcessingError,
+  CVProcessingPendingError,
   type AcceptedCVProcessing,
   type CVProcessingStatus,
 } from "@/services/candidateService"
 import { useCreditError } from "@/hooks/useCreditError"
 import { CreditErrorDialog } from "@/components/ui/credit-error-dialog"
+import { useOrganization } from "@/context/OrganizationContext"
+import { useUser } from "@/context/UserContext"
 
 const MAX_FILE_SIZE = 5000000 // 5MB
 const ACCEPTED_FILE_TYPES = [
@@ -81,11 +85,15 @@ const defaultValues: Partial<CandidateFormValues> = {
 
 export default function UploadCVPage() {
   const router = useRouter()
+  const { currentOrganization } = useOrganization()
+  const { state: userState } = useUser()
   const { creditError, showCreditDialog, setShowCreditDialog, handleError } = useCreditError()
   const [activeTab, setActiveTab] = useState("upload")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [restoredFileName, setRestoredFileName] = useState<string | null>(null)
+  const [uncertainUploadName, setUncertainUploadName] = useState<string | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingComplete, setProcessingComplete] = useState(false)
@@ -97,11 +105,21 @@ export default function UploadCVPage() {
     status: CVProcessingStatus
   } | null>(null)
   const [isRetrying, setIsRetrying] = useState(false)
+  const processingAbortRef = useRef<AbortController | null>(null)
+  const processingStorageKey = currentOrganization?._id && userState.user?._id
+    ? `seemplify:single-cv-upload:v1:${currentOrganization._id}:${userState.user._id}`
+    : null
+
+  const clearRetainedProcessing = () => {
+    if (processingStorageKey) localStorage.removeItem(processingStorageKey)
+  }
 
   const form = useForm<CandidateFormValues>({
     resolver: zodResolver(candidateFormSchema),
     defaultValues,
   })
+
+  useEffect(() => () => processingAbortRef.current?.abort(), [])
 
   async function onSubmit(data: CandidateFormValues) {
     if (createdCandidateId) {
@@ -156,7 +174,10 @@ export default function UploadCVPage() {
   };
 
   const handleStartOver = () => {
+    clearRetainedProcessing();
     setUploadedFile(null);
+    setRestoredFileName(null);
+    setUncertainUploadName(null);
     setIsUploading(false);
     setIsProcessing(false);
     setProcessingComplete(false);
@@ -171,6 +192,7 @@ export default function UploadCVPage() {
   };
 
   const completeCVProcessing = (result: Awaited<ReturnType<typeof uploadCV>>) => {
+    clearRetainedProcessing();
     const candidate: CandidateData = result.candidate;
     setCreatedCandidateId(candidate._id);
     setProcessingResults(result.processingResults);
@@ -195,18 +217,88 @@ export default function UploadCVPage() {
     });
   };
 
+  useEffect(() => {
+    if (!processingStorageKey) return
+    let cancelled = false
+    let retained: { fileName?: string; idempotencyKey?: string; accepted?: AcceptedCVProcessing } | null = null
+    try {
+      retained = JSON.parse(localStorage.getItem(processingStorageKey) || "null")
+    } catch {
+      localStorage.removeItem(processingStorageKey)
+    }
+    if (!retained?.accepted?.jobId || !retained.accepted.statusToken || !retained.accepted.statusUrl) {
+      if (retained?.idempotencyKey && retained.fileName) setUncertainUploadName(retained.fileName)
+      return
+    }
+    setUncertainUploadName(null)
+    setRestoredFileName(retained.fileName || "Retained CV")
+    setQueueStatus(retained.accepted)
+    setIsProcessing(true)
+    processingAbortRef.current?.abort()
+    const controller = new AbortController()
+    processingAbortRef.current = controller
+    void resumeCVProcessing(retained.accepted, (status) => {
+      if (!cancelled) setQueueStatus(status)
+    }, { signal: controller.signal }).then((result) => {
+      if (!cancelled) completeCVProcessing(result)
+    }).catch((error) => {
+      if (cancelled) return
+      if (error?.name === "AbortError") return
+      setIsProcessing(false)
+      if (error instanceof CVProcessingPendingError) {
+        setQueueStatus(error.status)
+        toast({
+          title: "Processing continues in the background",
+          description: "You can leave this page and follow the CV from Processing history.",
+        })
+        return
+      }
+      if (error instanceof CVProcessingError) {
+        setQueueStatus(error.status)
+        setFailedProcessing({ accepted: error.accepted, status: error.status })
+      }
+      toast({
+        title: "CV processing needs attention",
+        description: error instanceof Error ? error.message : "Open Processing history to inspect this CV.",
+        variant: "destructive",
+      })
+    })
+    return () => {
+      cancelled = true
+      controller.abort()
+      if (processingAbortRef.current === controller) processingAbortRef.current = null
+    }
+    // completeCVProcessing intentionally reads the latest form instance; the
+    // durable recovery should run only when this account/org key changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processingStorageKey])
+
   const handleProcessingRetry = async () => {
     if (!failedProcessing || isRetrying) return;
     setIsRetrying(true);
     setIsProcessing(true);
+    processingAbortRef.current?.abort()
+    const controller = new AbortController()
+    processingAbortRef.current = controller
     try {
       const result = await retryCVProcessing(failedProcessing.accepted, (status) => {
         setQueueStatus(status);
         setFailedProcessing((current) => current ? { ...current, status } : current);
-      });
+      }, 'failed', { signal: controller.signal });
+      if (processingAbortRef.current === controller) processingAbortRef.current = null
       completeCVProcessing(result);
     } catch (error) {
+      if (processingAbortRef.current === controller) processingAbortRef.current = null
+      if ((error as Error)?.name === "AbortError") return
       setIsProcessing(false);
+      if (error instanceof CVProcessingPendingError) {
+        setQueueStatus(error.status)
+        toast({
+          title: "Retry continues in the background",
+          description: "Follow this CV from Processing history.",
+        })
+        return
+      }
       if (error instanceof CVProcessingError) {
         setQueueStatus(error.status);
         setFailedProcessing({ accepted: error.accepted, status: error.status });
@@ -246,6 +338,8 @@ export default function UploadCVPage() {
     }
 
     setUploadedFile(file)
+    setRestoredFileName(null)
+    setUncertainUploadName(null)
     setIsUploading(true)
     setUploadProgress(0)
     setIsProcessing(false)
@@ -269,12 +363,42 @@ export default function UploadCVPage() {
       })
     }, 100)
 
+    processingAbortRef.current?.abort()
+    const controller = new AbortController()
+    processingAbortRef.current = controller
+
     try {
+      const fingerprint = `${file.name}:${file.size}:${file.lastModified}`
+      let retained: { fingerprint?: string; idempotencyKey?: string } | null = null
+      if (processingStorageKey) {
+        try { retained = JSON.parse(localStorage.getItem(processingStorageKey) || "null") } catch { retained = null }
+      }
+      const idempotencyKey = retained?.fingerprint === fingerprint && retained.idempotencyKey
+        ? retained.idempotencyKey
+        : globalThis.crypto?.randomUUID?.() || `cv-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      if (processingStorageKey) {
+        localStorage.setItem(processingStorageKey, JSON.stringify({ fingerprint, idempotencyKey, fileName: file.name }))
+      }
       const result = await uploadCV(formData, (status) => {
         setQueueStatus(status)
         setIsUploading(false)
         setIsProcessing(true)
+      }, {
+        idempotencyKey,
+        onAccepted: (accepted) => {
+          if (processingStorageKey) {
+            localStorage.setItem(processingStorageKey, JSON.stringify({
+              fingerprint,
+              idempotencyKey,
+              fileName: file.name,
+              accepted,
+            }))
+          }
+        },
+        signal: controller.signal,
       });
+
+      if (processingAbortRef.current === controller) processingAbortRef.current = null
 
       clearInterval(progressInterval);
       setUploadProgress(100);
@@ -288,8 +412,21 @@ export default function UploadCVPage() {
 
     } catch (error: any) {
       clearInterval(progressInterval);
+      if (processingAbortRef.current === controller) processingAbortRef.current = null
+      if (error?.name === "AbortError") return
       setIsUploading(false);
       setIsProcessing(false);
+      if (error instanceof CVProcessingPendingError) {
+        setQueueStatus(error.status)
+        toast({
+          title: "Processing continues in the background",
+          description: "The CV is secure. You can leave this page and follow it from Processing history.",
+        })
+        return
+      }
+      if (error?.status === 409 && error?.code === "CV_IDEMPOTENCY_KEY_REUSED" && processingStorageKey) {
+        localStorage.removeItem(processingStorageKey)
+      }
       if (error instanceof CVProcessingError) {
         setQueueStatus(error.status);
         setFailedProcessing({ accepted: error.accepted, status: error.status });
@@ -321,6 +458,12 @@ export default function UploadCVPage() {
     }
   }
 
+  const queueContinuesInBackground = Boolean(
+    !isProcessing
+    && queueStatus
+    && ["queued", "processing", "waiting_for_chatgpt"].includes(queueStatus.state),
+  )
+
   return (
     <div className="container mx-auto py-6">
       <div className="mb-6 flex items-center justify-between">
@@ -346,8 +489,14 @@ export default function UploadCVPage() {
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 pt-6">
                 <TabsContent value="upload" className="space-y-4">
+                  {uncertainUploadName ? (
+                    <div role="status" className="flex flex-col gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                      <p>An earlier upload of <strong>{uncertainUploadName}</strong> may already be secured. Select the same file to reconnect safely, or inspect processing history.</p>
+                      <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={() => router.push('/cv-processing')}>Processing history</Button>
+                    </div>
+                  ) : null}
                   <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 p-12">
-                    {!uploadedFile ? (
+                    {!uploadedFile && !restoredFileName ? (
                       <>
                         <div className="mb-4 rounded-full bg-primary/10 p-3">
                           <Upload className="h-6 w-6 text-primary" />
@@ -380,9 +529,9 @@ export default function UploadCVPage() {
                               <FileText className="h-5 w-5 text-primary" />
                             </div>
                             <div>
-                              <p className="font-medium">{uploadedFile.name}</p>
+                              <p className="font-medium">{uploadedFile?.name || restoredFileName}</p>
                               <p className="text-xs text-muted-foreground">
-                                {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
+                                {uploadedFile ? `${(uploadedFile.size / 1024 / 1024).toFixed(2)} MB` : "Recovered from server"}
                               </p>
                             </div>
                           </div>
@@ -391,6 +540,9 @@ export default function UploadCVPage() {
                             size="icon"
                             onClick={() => {
                               setUploadedFile(null)
+                              setRestoredFileName(null)
+                              setUncertainUploadName(null)
+                              clearRetainedProcessing()
                               setUploadProgress(0)
                               setIsUploading(false)
                               setIsProcessing(false)
@@ -413,7 +565,7 @@ export default function UploadCVPage() {
                           </div>
                         )}
 
-                        {isProcessing && (
+                        {(isProcessing || queueContinuesInBackground) && (
                           <div className="mt-4 border-t pt-4">
                             <div className="flex items-center gap-2">
                               <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -437,6 +589,21 @@ export default function UploadCVPage() {
                                 )}
                               </div>
                             )}
+                            {queueContinuesInBackground && queueStatus?.jobId ? (
+                              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                                <p className="text-xs text-muted-foreground">
+                                  This upload is durable and continues after you leave this page.
+                                </p>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => router.push(`/cv-processing?jobId=${encodeURIComponent(queueStatus.jobId)}`)}
+                                >
+                                  View live details
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                         )}
 

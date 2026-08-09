@@ -11,11 +11,13 @@ process.env.CHATGPT_GATEWAY_BASE_URL = '';
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const Candidate = require('../models/Candidate');
+const Organization = require('../models/Organization');
 const CVProcessingAudit = require('../models/CVProcessingAudit');
 const CVProcessingBatch = require('../models/CVProcessingBatch');
 const CVProcessingJob = require('../models/CVProcessingJob');
 const CVStorageCleanupTask = require('../models/CVStorageCleanupTask');
 const durableCvFileStore = require('../services/durableCvFileStore');
+const staleCvUploadSweeper = require('../services/staleCvUploadSweeper');
 const embeddingService = require('../services/embeddingService');
 const creditsService = require('../services/creditsService');
 const { deductCredits } = require('../middleware/creditsMiddleware');
@@ -97,6 +99,11 @@ function successfulAnalysis() {
 test.before(async () => {
   mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
+  await Organization.create({
+    _id: organizationId,
+    name: 'Durable CV test organization',
+    owner: new mongoose.Types.ObjectId()
+  });
   await Candidate.syncIndexes();
   fixtureDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'seemplify-durable-cv-test-'));
 });
@@ -163,8 +170,8 @@ test('submission is immediately visible and does not await Cloudinary or text ex
 
   assert.ok(elapsedMs < 1_000, `submission waited ${elapsedMs} ms`);
   assert.equal(result.job.state, 'queued');
-  assert.equal(result.job.stage, 'ingesting');
-  assert.equal(result.job.progress, 5);
+  assert.equal(result.job.stage, 'stored');
+  assert.equal(result.job.progress, 10);
   assert.equal(result.job.expiresAt, undefined);
   assert.equal(extractionCalls, 0);
   assert.equal(cloudinaryCalls, 0);
@@ -324,13 +331,15 @@ test('upload and extraction failures retry from durable bytes and complete witho
   await assert.rejects(() => cvQueue._processJobForTests(bullJob(result.job, 0)), /synthetic upload failure/);
   let stored = await CVProcessingJob.findById(result.job._id).select('+resumeText');
   assert.equal(stored.state, 'queued');
-  assert.equal(stored.stage, 'uploading');
+  assert.equal(stored.stage, 'retry_scheduled');
+  assert.equal(stored.lastError.stage, 'uploading');
   assert.equal(await Candidate.countDocuments({}), 0);
 
   await assert.rejects(() => cvQueue._processJobForTests(bullJob(result.job, 1)), /Could not extract readable text/);
   stored = await CVProcessingJob.findById(result.job._id).select('+resumeText');
   assert.equal(stored.state, 'queued');
-  assert.equal(stored.stage, 'extracting');
+  assert.equal(stored.stage, 'retry_scheduled');
+  assert.equal(stored.lastError.stage, 'extracting');
   assert.equal(uploadCalls, 2);
 
   await cvQueue._processJobForTests(bullJob(result.job, 2));
@@ -393,7 +402,7 @@ test('full shared capacity preserves preprocessed durable state without counting
   );
   const stored = await CVProcessingJob.findById(result.job._id).select('+resumeText').lean();
   assert.equal(stored.state, 'waiting_for_chatgpt');
-  assert.equal(stored.stage, 'analyzing');
+  assert.equal(stored.stage, 'retry_scheduled');
   assert.equal(stored.attempts, 0);
   assert.equal(stored.boundedFailureAttempts, 0);
   assert.equal(stored.resumeText, extractedText);
@@ -735,7 +744,7 @@ test('manual analysis retry preserves the failed-to-success trail and candidate 
 
   stored = await CVProcessingJob.findById(result.job._id).select('+resumeText');
   assert.equal(stored.state, 'queued');
-  assert.equal(stored.stage, 'analyzing');
+  assert.equal(stored.stage, 'retry_scheduled');
   assert.equal(stored.retry.manualRequests, 1);
   assert.equal(stored.retry.pendingTrigger, 'manual');
   assert.equal(stored.retry.lastRequestedBy.email, requestedBy.email);
@@ -840,7 +849,7 @@ test('manual parsing retry is organization-scoped and reuses the retained origin
     stage: 'parsing'
   });
   assert.equal(retry.effectiveStage, 'parsing');
-  assert.equal(retry.job.stage, 'extracting');
+  assert.equal(retry.job.stage, 'retry_scheduled');
   assert.equal(retry.job.resumeText, '');
   assert.equal(retry.job.durableFile.cleanupState, 'retained');
   assert.equal(retry.job.cloudinary.cleanupState, 'retained');
@@ -895,6 +904,181 @@ test('concurrent duplicate deliveries atomically create one candidate for one pr
   const completed = await CVProcessingJob.findById(processingJob._id).lean();
   assert.equal(completed.state, 'completed');
   assert.ok(completed.candidate);
+});
+
+test('a precommitted intake cannot be swept into a job with missing GridFS bytes', async () => {
+  const filePath = await fixtureFile();
+  let persistedReference;
+  let releasePersist;
+  let markPersisted;
+  const persisted = new Promise((resolve) => { markPersisted = resolve; });
+  cvQueue._setDependenciesForTests({
+    durableFileStore: {
+      ...durableCvFileStore,
+      async persistPath(...args) {
+        persistedReference = await durableCvFileStore.persistPath(...args);
+        markPersisted();
+        await new Promise((resolve) => { releasePersist = resolve; });
+        return persistedReference;
+      }
+    }
+  });
+
+  const submission = cvQueue.submitUpload(requestFor(filePath, 'intake-sweep-race'), 'private');
+  await persisted;
+  await assert.rejects(
+    async () => cvQueue.submitUpload(
+      requestFor(await fixtureFile(), 'intake-sweep-race'),
+      'private'
+    ),
+    (error) => error.code === 'CV_INTAKE_IN_PROGRESS'
+      && error.statusCode === 425
+      && error.retryAfterSeconds > 0
+  );
+  await mongoose.connection.db.collection('cv_ingestion_files.files').updateOne(
+    { _id: new mongoose.Types.ObjectId(persistedReference.fileId) },
+    { $set: { uploadDate: new Date(Date.now() - 60 * 60 * 1000) } }
+  );
+  const swept = await cvQueue._sweepOrphanedDurableIntakesForTests({
+    now: new Date(),
+    pageSize: 10
+  });
+  assert.equal(swept.removed, 0);
+  assert.equal(swept.retained, 1);
+  releasePersist();
+  const accepted = await submission;
+  const stored = await CVProcessingJob.findById(accepted.job._id).lean();
+  assert.equal(stored.stage, 'stored');
+  assert.equal(stored.durableFile.fileId, persistedReference.fileId);
+  assert.equal(await CVProcessingJob.countDocuments({ idempotencyKey: 'intake-sweep-race' }), 1);
+  assert.equal(
+    await mongoose.connection.db.collection('cv_ingestion_files.files').countDocuments({
+      _id: new mongoose.Types.ObjectId(persistedReference.fileId)
+    }),
+    1
+  );
+});
+
+test('stale received receipts are not enqueued and an exact resend repairs the same job', async () => {
+  const key = 'received-resume-replay';
+  cvQueue._setDependenciesForTests({
+    durableFileStore: {
+      async persistPath() {
+        throw Object.assign(new Error('synthetic exit before durable attach'), {
+          code: 'CV_DURABLE_STORAGE_WRITE_FAILED'
+        });
+      },
+      async remove() { return true; }
+    }
+  });
+  await assert.rejects(
+    async () => cvQueue.submitUpload(requestFor(await fixtureFile(), key), 'private'),
+    /synthetic exit/
+  );
+  const receipt = await CVProcessingJob.findOne({ idempotencyKey: key }).lean();
+  assert.equal(receipt.stage, 'received');
+  assert.equal(receipt.durableFile?.fileId, undefined);
+  await CVProcessingJob.collection.updateOne(
+    { _id: receipt._id },
+    { $set: { updatedAt: new Date(Date.now() - 10 * 60 * 1000) } }
+  );
+
+  const enqueued = [];
+  cvQueue._setDependenciesForTests({
+    durableFileStore: durableCvFileStore,
+    queue: {
+      async getJob() { return null; },
+      async add(_name, _data, options) { enqueued.push(options.jobId); return { id: options.jobId }; }
+    }
+  });
+  assert.equal(await cvQueue.recoverStaleJobs(), 0);
+  assert.deepEqual(enqueued, []);
+
+  const repaired = await cvQueue.submitUpload(requestFor(await fixtureFile(), key), 'private');
+  assert.equal(repaired.duplicate, true);
+  assert.equal(String(repaired.job._id), String(receipt._id));
+  assert.equal(repaired.job.stage, 'stored');
+  assert.ok(repaired.job.durableFile?.fileId);
+  assert.equal(await CVProcessingJob.countDocuments({ idempotencyKey: key }), 1);
+});
+
+test('legacy GridFS orphans are swept while referenced legacy files are retained', async () => {
+  const orphan = await durableCvFileStore.persistPath(await fixtureFile(), {
+    originalName: 'legacy-orphan.txt',
+    fileType: 'text/plain',
+    organizationId,
+    source: 'private'
+  });
+  const referenced = await durableCvFileStore.persistPath(await fixtureFile(), {
+    originalName: 'legacy-referenced.txt',
+    fileType: 'text/plain',
+    organizationId,
+    source: 'private'
+  });
+  await CVProcessingJob.create({
+    publicId: `cv_legacy_reference_${new mongoose.Types.ObjectId()}`,
+    statusTokenHash: 'a'.repeat(64),
+    state: 'queued', stage: 'stored', progress: 10,
+    organization: organizationId, source: 'private',
+    originalName: 'legacy-referenced.txt', fileType: 'text/plain', fileSize: resumeBytes.length,
+    durableFile: referenced
+  });
+  const old = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  await mongoose.connection.db.collection('cv_ingestion_files.files').updateMany(
+    { _id: { $in: [orphan.fileId, referenced.fileId].map((id) => new mongoose.Types.ObjectId(id)) } },
+    { $set: { uploadDate: old } }
+  );
+  const result = await cvQueue._sweepOrphanedDurableIntakesForTests({ now: new Date(), pageSize: 10 });
+  assert.ok(result.removed >= 1);
+  assert.ok(result.retained >= 1);
+  const remaining = await mongoose.connection.db.collection('cv_ingestion_files.files')
+    .find({ _id: { $in: [orphan.fileId, referenced.fileId].map((id) => new mongoose.Types.ObjectId(id)) } })
+    .toArray();
+  assert.deepEqual(remaining.map((file) => String(file._id)), [referenced.fileId]);
+});
+
+test('temporary upload sweep retains an active bulk lease and removes only abandoned owned paths', async () => {
+  const root = path.join(fixtureDirectory, 'uploads');
+  const bulk = path.join(root, 'bulk');
+  const active = path.join(bulk, 'cv-bulk-active-123');
+  const abandoned = path.join(bulk, 'cv-bulk-abandoned-123');
+  await Promise.all([
+    fs.promises.mkdir(active, { recursive: true }),
+    fs.promises.mkdir(abandoned, { recursive: true })
+  ]);
+  const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const activeFile = path.join(active, 'candidate.pdf');
+  const abandonedFile = path.join(abandoned, 'candidate.pdf');
+  const activeHeartbeat = path.join(active, staleCvUploadSweeper.BULK_HEARTBEAT_FILE);
+  const abandonedHeartbeat = path.join(abandoned, staleCvUploadSweeper.BULK_HEARTBEAT_FILE);
+  const rootOwned = path.join(root, 'resume-old.pdf');
+  const unrelated = path.join(root, 'keep-me.txt');
+  await Promise.all([
+    fs.promises.writeFile(activeFile, 'active'),
+    fs.promises.writeFile(abandonedFile, 'abandoned'),
+    fs.promises.writeFile(activeHeartbeat, ''),
+    fs.promises.writeFile(abandonedHeartbeat, ''),
+    fs.promises.writeFile(rootOwned, 'old'),
+    fs.promises.writeFile(unrelated, 'unrelated')
+  ]);
+  await Promise.all([
+    fs.promises.utimes(activeFile, old, old),
+    fs.promises.utimes(abandonedFile, old, old),
+    fs.promises.utimes(abandonedHeartbeat, old, old),
+    fs.promises.utimes(rootOwned, old, old),
+    fs.promises.utimes(active, old, old),
+    fs.promises.utimes(abandoned, old, old)
+  ]);
+  const result = await staleCvUploadSweeper.sweepStaleUploads({
+    rootDirectory: root,
+    now: new Date(),
+    graceMs: 60 * 60 * 1000
+  });
+  assert.ok(result.removed >= 2);
+  assert.equal(fs.existsSync(activeFile), true);
+  assert.equal(fs.existsSync(abandoned), false);
+  assert.equal(fs.existsSync(rootOwned), false);
+  assert.equal(fs.existsSync(unrelated), true);
 });
 
 test('a regressed queue state repairs from its committed candidate without another AI call', async () => {

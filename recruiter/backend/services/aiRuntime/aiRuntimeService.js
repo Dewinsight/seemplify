@@ -17,15 +17,34 @@ const { normalizeUsage, sanitizeMessage } = require('./usageService');
 const { validateJsonSchema } = require('./jsonSchemaValidator');
 
 const SETTINGS_CACHE_MS = 15_000;
+const LOCAL_LLM_SERVICE_ID = 'recruiter';
+const LOCAL_LLM_SERVICE_KEY_CONTEXT = 'seemplify-local-llm-service-v2';
 // This service belongs to the registered Recruiter product. Worker, admin and
 // interview labels remain useful as requestSource diagnostics, but platform
 // metering and authorization must always use the product identity.
 const PLATFORM_SOURCE_APP = 'recruiter';
+const METERING_SOURCE_APPS = new Set([
+  'recruiter', 'performance-management', 'identity-provider',
+  'leave-management', 'payroll', 'time-attendance'
+]);
+
+function meteringSourceApp(value) {
+  const candidate = String(value || PLATFORM_SOURCE_APP).trim().toLowerCase();
+  return METERING_SOURCE_APPS.has(candidate) ? candidate : PLATFORM_SOURCE_APP;
+}
+
+function meteringDimension(value, maximum = 160) {
+  return String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, maximum) || undefined;
+}
 const STRUCTURED_ACTIVITIES = new Set([
   'candidate.cv_parse', 'candidate.insights', 'job.description', 'job.requirements', 'job.normalize',
   'matching.analysis', 'assistant.tool_selection', 'assistant.memory', 'assistant.job_extract',
   'interview.questions', 'interview.bias', 'interview.analysis', 'interview.summary',
-  'interview.team_feedback', 'ai_interview.question_generation', 'ai_interview.cv_parse', 'ai_interview.scoring'
+  'interview.team_feedback', 'ai_interview.question_generation', 'ai_interview.cv_parse', 'ai_interview.scoring',
+  'performance.self_assessment.report', 'performance.self_assessment.coach',
+  'performance.document.analysis', 'performance.manager_review.assist', 'performance.review.bias',
+  'performance.development_plan.suggest', 'performance.okr.generate', 'performance.feedback.analyze',
+  'performance.team.insights', 'performance.meeting.analysis', 'performance.calibration.insights'
 ]);
 
 class AIRuntimeError extends Error {
@@ -40,25 +59,75 @@ class AIRuntimeError extends Error {
   }
 }
 
-function signGatewayRequest(secret, body, { method = 'POST', path: requestPath, now = Date.now() } = {}) {
+function signGatewayRequest(secret, body, {
+  method = 'POST', path: requestPath, now = Date.now(), serviceId
+} = {}) {
   const timestamp = String(now);
   const nonce = crypto.randomBytes(24).toString('base64url');
+  const canonical = serviceId
+    ? `${timestamp}\n${nonce}\n${serviceId}\n${method.toUpperCase()}\n${requestPath}\n${body}`
+    : `${timestamp}\n${nonce}\n${method.toUpperCase()}\n${requestPath}\n${body}`;
   const signature = crypto.createHmac('sha256', String(secret || ''))
-    .update(`${timestamp}\n${nonce}\n${method.toUpperCase()}\n${requestPath}\n${body}`)
+    .update(canonical)
     .digest('base64url');
-  return { timestamp, nonce, signature };
+  return { timestamp, nonce, signature, ...(serviceId ? { serviceId, signatureVersion: '2' } : {}) };
+}
+
+function deriveLocalServiceSecret(masterSecret, serviceId = LOCAL_LLM_SERVICE_ID) {
+  return crypto.createHmac('sha256', String(masterSecret || '').trim())
+    .update(`${LOCAL_LLM_SERVICE_KEY_CONTEXT}:${serviceId}`)
+    .digest('base64url');
 }
 
 function stableHash(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
-function withUsageExecutionContext(context = {}) {
-  if (context.usageExecutionId) return context;
-  const identity = [
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function completionInputFingerprint(input = {}, route = {}) {
+  // Hash only deterministic inference inputs. Timeouts, request IDs and other
+  // transport metadata are deliberately excluded. The digest distinguishes
+  // two logical prompts in one request/activity while an exact retry keeps the
+  // same receipt and gateway execution ID. No prompt text is persisted.
+  return stableHash(canonicalJson({
+    messages: input.messages || [],
+    tools: input.tools || null,
+    toolChoice: input.toolChoice ?? input.tool_choice ?? null,
+    jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema || null,
+    schemaName: input.schemaName || input.response_format?.json_schema?.name || null,
+    temperature: input.temperature ?? null,
+    topP: input.topP ?? input.top_p ?? null,
+    frequencyPenalty: input.frequencyPenalty ?? input.frequency_penalty ?? null,
+    presencePenalty: input.presencePenalty ?? input.presence_penalty ?? null,
+    maxTokens: input.maxTokens ?? input.max_tokens ?? input.max_completion_tokens ?? null,
+    promptVersion: input.promptVersion || null,
+    schemaStrict: input.schemaStrict === true,
+    model: route.codexModel || route.model || null,
+    reasoningEffort: route.reasoningEffort || null
+  }));
+}
+
+function withUsageExecutionContext(context = {}, { input = {}, route = {} } = {}) {
+  const baseIdentity = context.usageExecutionId || [
     context.requestId || crypto.randomUUID(), context.sourceApp || 'recruiter',
     context.actorId || '', context.jobId || '', context.candidateId || '',
-    context.interviewId || context.interviewSessionId || '', context.structuredCompletionOrdinal || 1
+    context.interviewId || context.interviewSessionId || ''
+  ].join(':');
+  const identity = [
+    baseIdentity,
+    // Explicit operation keys remain the strongest caller-provided logical
+    // boundary. The input fingerprint protects legacy multi-stage flows that
+    // reuse request/activity/provider without supplying one.
+    context.operationKey || '',
+    context.structuredCompletionOrdinal || 1,
+    completionInputFingerprint(input, route)
   ].join(':');
   return { ...context, usageExecutionId: stableHash(identity) };
 }
@@ -93,19 +162,34 @@ function gatewayConfiguration(provider) {
   const baseUrl = String(local
     ? process.env.LOCAL_LLM_BASE_URL || ''
     : process.env.CHATGPT_GATEWAY_BASE_URL || '').replace(/\/+$/, '');
-  const secret = String(local
-    ? process.env.LOCAL_LLM_SHARED_SECRET || ''
-    : process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
+  const localServiceSecret = String(process.env.LOCAL_LLM_SERVICE_SECRET || '').trim();
+  const localMasterSecret = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim();
+  const secret = local
+    ? (localServiceSecret || (localMasterSecret
+      ? deriveLocalServiceSecret(localMasterSecret)
+      : ''))
+    : String(process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
   if (!baseUrl || !secret) {
     throw new AIRuntimeError(`${local ? 'Local inference' : 'The ChatGPT gateway'} is not configured`, {
       code: local ? 'AI_LOCAL_NOT_CONFIGURED' : 'CHATGPT_GATEWAY_NOT_CONFIGURED', statusCode: 503, retryable: true
     });
   }
-  return { baseUrl, secret };
+  return {
+    baseUrl,
+    secret,
+    ...(local ? { serviceId: LOCAL_LLM_SERVICE_ID, signatureVersion: '2' } : {})
+  };
 }
 
 class AIRuntimeService {
-  constructor({ fetchImpl = global.fetch, settingsModel = AIRuntimeSettings, resolveSubject, resolveInterviewSubject, resolveRuntimePreference } = {}) {
+  constructor({
+    fetchImpl = global.fetch,
+    settingsModel = AIRuntimeSettings,
+    resolveSubject,
+    resolveInterviewSubject,
+    resolveRuntimePreference,
+    resolveUserRoute
+  } = {}) {
     this.fetch = fetchImpl;
     this.Settings = settingsModel;
     this.resolveSubject = resolveSubject || ((actorId) => require('./codexAccountService').resolveRoutableSubject(actorId));
@@ -114,8 +198,20 @@ class AIRuntimeService {
     ));
     this.resolveRuntimePreference = resolveRuntimePreference || (async (actorId) => {
       if (!actorId) return 'default';
-      const account = await require('../../models/AIUserRuntimeAccount').findOne({ user: actorId }).lean();
+      const Account = require('../../models/AIUserRuntimeAccount');
+      if (!Account.db.base.isValidObjectId(actorId)) return 'default';
+      const account = await Account.findOne({ user: actorId }).lean();
       return account?.runtimePreference || 'default';
+    });
+    this.resolveUserRoute = resolveUserRoute || (async (actorId, activity, adminRoute) => {
+      if (!actorId || isCandidateInterviewActivity(activity)) return adminRoute;
+      const Account = require('../../models/AIUserRuntimeAccount');
+      if (!Account.db.base.isValidObjectId(actorId)) return adminRoute;
+      const account = await Account.findOne({ user: actorId }).lean();
+      if (!account) return adminRoute;
+      const resolved = require('./userAISettingsService')
+        .resolveActivityPreference(activity, adminRoute, account).effective;
+      return { ...adminRoute, ...resolved };
     });
     this.settingsCache = null;
     this.settingsCacheExpiresAt = 0;
@@ -179,23 +275,26 @@ class AIRuntimeService {
     return settings;
   }
 
-  resolveRoute(activity, settings, selectedRuntime) {
+  resolveRoute(activity, settings, selectedRuntime, { bypassRuntimePolicy = false } = {}) {
     const definition = ACTIVITY_DEFINITIONS[activity];
     if (!definition) throw new AIRuntimeError(`Unknown AI activity ${activity}`, { code: 'AI_ACTIVITY_UNKNOWN', statusCode: 400 });
     const route = settings.routes.find((item) => item.activity === activity);
-    if (!route || route.enabled === false || settings.providerEnabled === false) {
+    if (!route || route.enabled === false || (!bypassRuntimePolicy && settings.providerEnabled === false)) {
       throw new AIRuntimeError(`AI activity ${activity} is disabled`, { code: 'AI_ACTIVITY_DISABLED', statusCode: 503 });
     }
     const policy = normalizeRuntimePolicy(settings.runtimePolicy);
-    if (!policy.localEnabled && !policy.chatgptEnabled) {
+    if (!bypassRuntimePolicy && !policy.localEnabled && !policy.chatgptEnabled) {
       throw new AIRuntimeError('AI is disabled by a platform administrator', {
         code: 'AI_RUNTIME_DISABLED', statusCode: 503
       });
     }
-    const runtime = selectedRuntime || policy.defaultRuntime;
+    // A trusted cross-product call owns its runtime policy. Recruiter's admin
+    // local/ChatGPT switch must not silently disable Performance after
+    // Performance explicitly selected the shared ChatGPT service.
+    const runtime = bypassRuntimePolicy ? 'chatgpt' : (selectedRuntime || policy.defaultRuntime);
     const local = runtime === 'local';
-    if (local && !policy.localEnabled) throw new AIRuntimeError('Local inference is disabled', { code: 'AI_RUNTIME_LOCAL_DISABLED', statusCode: 503 });
-    if (!local && !policy.chatgptEnabled) throw new AIRuntimeError('ChatGPT is disabled', { code: 'AI_RUNTIME_CHATGPT_DISABLED', statusCode: 503 });
+    if (!bypassRuntimePolicy && local && !policy.localEnabled) throw new AIRuntimeError('Local inference is disabled', { code: 'AI_RUNTIME_LOCAL_DISABLED', statusCode: 503 });
+    if (!bypassRuntimePolicy && !local && !policy.chatgptEnabled) throw new AIRuntimeError('ChatGPT is disabled', { code: 'AI_RUNTIME_CHATGPT_DISABLED', statusCode: 503 });
     return {
       ...route,
       activity,
@@ -211,15 +310,19 @@ class AIRuntimeService {
     if (policy.localEnabled && !policy.chatgptEnabled) return 'local';
     if (policy.chatgptEnabled && !policy.localEnabled) return 'chatgpt';
     if (!policy.localEnabled && !policy.chatgptEnabled) return policy.defaultRuntime;
-    const preference = await this.resolveRuntimePreference(String(context.actorId || '').trim());
+    const preference = await this.resolveRuntimePreference(String(context.runtimeActorId || context.actorId || '').trim());
     return ['local', 'chatgpt'].includes(preference) ? preference : policy.defaultRuntime;
   }
 
-  async attachChatGptSubject(route, context) {
+  async attachChatGptSubject(route, context, { consentApp = 'recruiter' } = {}) {
     const interviewSessionId = String(context.interviewSessionId || '').trim();
+    const runtimeActorId = String(context.runtimeActorId || context.actorId || '').trim();
     const subject = isCandidateInterviewActivity(route.activity)
       ? (interviewSessionId ? await this.resolveInterviewSubject(interviewSessionId) : null)
-      : await this.resolveSubject(String(context.actorId || '').trim());
+      : await this.resolveSubject(runtimeActorId, {
+        consentApp,
+        organizationId: context.localOrganizationId || context.organizationId
+      });
     if (!subject) {
       throw new AIRuntimeError(
         isCandidateInterviewActivity(route.activity)
@@ -243,16 +346,20 @@ class AIRuntimeService {
       topP: input.topP ?? input.top_p,
       maxTokens: input.maxTokens ?? input.max_tokens ?? input.max_completion_tokens,
       reasoningEffort: route.reasoningEffort,
+      promptVersion: input.promptVersion,
       tools: input.tools,
       toolChoice: input.toolChoice ?? input.tool_choice,
       jsonSchema: input.jsonSchema || input.response_format?.json_schema?.schema,
-      schemaName: input.schemaName
+      schemaName: input.schemaName,
+      schemaStrict: input.schemaStrict === true,
+      frequencyPenalty: input.frequencyPenalty ?? input.frequency_penalty,
+      presencePenalty: input.presencePenalty ?? input.presence_penalty
     };
   }
 
   async gatewayRequest({ route, input, context, requestId, timeoutMs, signal }) {
     const local = route.provider === LOCAL_PROVIDER;
-    const { baseUrl, secret } = gatewayConfiguration(route.provider);
+    const { baseUrl, secret, serviceId } = gatewayConfiguration(route.provider);
     const eventId = deriveRuntimeUsageEventId({ context, route });
     const body = JSON.stringify({
       activity: route.activity,
@@ -275,12 +382,17 @@ class AIRuntimeService {
         eventId,
         requestId,
         gatewayExecutionId: deriveGatewayExecutionId(eventId, route.provider),
-        sourceApp: PLATFORM_SOURCE_APP
+        // Credential ownership stays Recruiter (`codexSourceApp` above), but
+        // usage attribution follows the authenticated product and active org.
+        sourceApp: meteringSourceApp(context.sourceApp),
+        actorId: meteringDimension(context.actorId),
+        organizationId: meteringDimension(context.organizationId, 120),
+        organizationName: meteringDimension(context.organizationName, 200)
       }
     });
     const endpoint = ['candidate.cv_parse', 'ai_interview.cv_parse'].includes(route.activity)
       ? '/v1/cv/analyze' : '/v1/complete';
-    const signed = signGatewayRequest(secret, body, { path: endpoint });
+    const signed = signGatewayRequest(secret, body, { path: endpoint, serviceId });
     let response;
     try {
       response = await this.fetch(`${baseUrl}${endpoint}`, {
@@ -289,7 +401,11 @@ class AIRuntimeService {
           'content-type': 'application/json',
           'x-seemplify-timestamp': signed.timestamp,
           'x-seemplify-nonce': signed.nonce,
-          'x-seemplify-signature': signed.signature
+          'x-seemplify-signature': signed.signature,
+          ...(signed.serviceId ? {
+            'x-seemplify-service': signed.serviceId,
+            'x-seemplify-signature-version': signed.signatureVersion
+          } : {})
         },
         body,
         signal: combinedSignal(timeoutMs, signal)
@@ -318,11 +434,26 @@ class AIRuntimeService {
     if (aborted) throw aborted;
     const settings = await this.getSettings();
     const baseContext = getAIRequestContext({ ...(input.context || {}), ...(options.context || {}) });
-    const context = withUsageExecutionContext(baseContext);
-    const requestId = String(context.requestId || crypto.randomUUID());
-    const selectedRuntime = await this.selectRuntime(settings, context);
-    let route = this.resolveRoute(activity, settings, selectedRuntime);
-    if (route.provider === CHATGPT_PROVIDER) route = await this.attachChatGptSubject(route, context);
+    const requestId = String(baseContext.requestId || crypto.randomUUID());
+    const requiredRuntime = ['local', 'chatgpt'].includes(options.requiredRuntime)
+      ? options.requiredRuntime : null;
+    // Candidate interview screens explicitly require the candidate's own
+    // connected ChatGPT account. Never let the workspace's Local default
+    // silently process their answers after presenting that contract.
+    const selectedRuntime = isCandidateInterviewActivity(activity)
+      ? 'chatgpt'
+      : (requiredRuntime || await this.selectRuntime(settings, baseContext));
+    let route = this.resolveRoute(activity, settings, selectedRuntime, {
+      bypassRuntimePolicy: options.sharedAccountRuntime === true
+    });
+    const runtimeActorId = String(baseContext.runtimeActorId || baseContext.actorId || '').trim();
+    if (route.provider === CHATGPT_PROVIDER) {
+      route = await this.resolveUserRoute(runtimeActorId, activity, route);
+    }
+    if (route.provider === CHATGPT_PROVIDER) {
+      route = await this.attachChatGptSubject(route, baseContext, { consentApp: options.consentApp });
+    }
+    const context = withUsageExecutionContext(baseContext, { input, route });
     const data = await this.gatewayRequest({
       route, input, context, requestId,
       timeoutMs: Number(options.timeoutMs || input.timeoutMs || 240_000),
@@ -338,7 +469,12 @@ class AIRuntimeService {
         finish_reason: data.finishReason || (data.toolCalls?.length ? 'tool_calls' : 'stop')
       }],
       usage: data.usage || {},
-      gatewayExecutionId: data.gatewayExecutionId
+      gatewayExecutionId: data.gatewayExecutionId,
+      modelSource: data.modelSource,
+      reasoningEffort: data.reasoningEffort,
+      reasoningEffortSource: data.reasoningEffortSource,
+      degraded: data.degraded,
+      planType: data.planType
     };
     return {
       requestId,
@@ -346,6 +482,11 @@ class AIRuntimeService {
       toolCalls: data.toolCalls || [],
       finishReason: raw.choices[0].finish_reason,
       model: data.model || CHATGPT_MODEL,
+      modelSource: data.modelSource || null,
+      reasoningEffort: data.reasoningEffort || route.reasoningEffort || null,
+      reasoningEffortSource: data.reasoningEffortSource || null,
+      degraded: data.degraded === true,
+      planType: data.planType || null,
       provider: route.provider,
       providerLabel: data.providerLabel || (route.provider === LOCAL_PROVIDER ? 'Local inference' : 'ChatGPT Connect'),
       engine: data.engine || (route.provider === LOCAL_PROVIDER ? 'control-center-selected' : 'codex-app-server'),
@@ -366,6 +507,9 @@ class AIRuntimeService {
       await options.beforeAttempt?.({ attempt: attempt + 1, activity });
       const result = await this.complete(activity, {
         ...input,
+        max_tokens: attempt > 0 && Number(input.retryMaxTokens) > 0
+          ? Number(input.retryMaxTokens)
+          : (input.maxTokens ?? input.max_tokens ?? input.max_completion_tokens),
         messages,
         context: { ...stableContext, structuredCompletionOrdinal: attempt + 1 },
         response_format: { type: 'json_schema', json_schema: { name: input.schemaName || 'response', strict: true, schema } }
@@ -376,12 +520,14 @@ class AIRuntimeService {
         ? { valid: false, errors: ['$: response is not valid JSON'] }
         : validateJsonSchema(parsed, schema);
       if (validation.valid) return { ...result, data: parsed, schemaRepairAttempted: attempt > 0 };
-      messages = [...baseMessages, { role: 'assistant', content: result.content }, {
+      const compactLimit = Math.max(500, Number(input.compactMaxChars || 12_000));
+      const repairContent = String(result.content || '').slice(0, compactLimit);
+      messages = [...baseMessages, { role: 'assistant', content: repairContent }, {
         role: 'user',
         content: `Correct the JSON to match the schema. Validation issues: ${validation.errors.slice(0, 12).join('; ')}`
       }];
     }
-    throw new AIRuntimeError('ChatGPT did not satisfy the required schema after one repair attempt', {
+    throw new AIRuntimeError('The selected AI runtime did not satisfy the required schema after one repair attempt', {
       code: 'AI_SCHEMA_VALIDATION_FAILED', statusCode: 503, retryable: true
     });
   }

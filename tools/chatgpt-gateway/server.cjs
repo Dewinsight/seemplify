@@ -13,11 +13,32 @@ const { ChatGptExecutionReceiptStore, canonicalRequestFingerprint } = require('.
 const { ChatGptUsageMeteringOutbox } = require('./usage-metering-outbox.cjs');
 const { PlatformUsageLedger } = require('./usage-ledger.cjs');
 const { canonicalConsumerId } = require('./consumer-registry.cjs');
+const { signatureMatchesAny } = require('./request-auth.cjs');
 
 const dataDir = path.resolve(process.env.CHATGPT_GATEWAY_DATA_DIR || path.join(__dirname, '.data'));
 const host = process.env.CHATGPT_GATEWAY_HOST || '127.0.0.1';
 const port = Number(process.env.CHATGPT_GATEWAY_PORT || 11435);
-const sharedSecret = String(process.env.CHATGPT_GATEWAY_SHARED_SECRET || '').trim();
+// Request authentication is deliberately separate from at-rest receipt
+// encryption. The original shared secret was once distributed to multiple
+// products; accepting it forever would let an old consumer impersonate the
+// Recruiter credential namespace. Production deployment now rotates a fresh
+// Recruiter-only request key while retaining the legacy value only as the
+// storage key so existing execution receipts remain decryptable.
+const production = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+const requestSecret = String(
+  process.env.RECRUITER_CHATGPT_GATEWAY_SECRET
+  || (!production ? process.env.CHATGPT_GATEWAY_SHARED_SECRET : '')
+  || ''
+).trim();
+const previousRequestSecret = String(
+  process.env.RECRUITER_CHATGPT_GATEWAY_PREVIOUS_SECRET || ''
+).trim();
+const requestSecrets = [...new Set([requestSecret, previousRequestSecret].filter(Boolean))];
+const storageSecret = String(
+  process.env.CHATGPT_GATEWAY_STORAGE_SECRET
+  || process.env.CHATGPT_GATEWAY_SHARED_SECRET
+  || requestSecret
+).trim();
 const usageSinkUrl = String(process.env.PLATFORM_AI_USAGE_SINK_URL || '').trim();
 const maxBodyBytes = Math.max(1024, Number(process.env.CHATGPT_GATEWAY_MAX_BODY_BYTES || 8 * 1024 * 1024));
 const signatureSkewMs = Number(process.env.CHATGPT_GATEWAY_SIGNATURE_SKEW_MS || 5 * 60_000);
@@ -25,7 +46,8 @@ const nonceTtlMs = Number(process.env.CHATGPT_GATEWAY_NONCE_TTL_MS || 10 * 60_00
 const nonceDir = path.join(dataDir, 'nonces');
 const logFile = path.join(dataDir, 'gateway.log');
 
-if (!sharedSecret) throw new Error('CHATGPT_GATEWAY_SHARED_SECRET is required');
+if (!requestSecret) throw new Error('RECRUITER_CHATGPT_GATEWAY_SECRET is required');
+if (!storageSecret) throw new Error('CHATGPT_GATEWAY_STORAGE_SECRET is required');
 for (const directory of [dataDir, nonceDir]) fs.mkdirSync(directory, { recursive: true });
 
 let logChain = Promise.resolve();
@@ -57,13 +79,13 @@ const scheduler = new ActivityQueueScheduler({
   maxWaitMs: Number(process.env.CHATGPT_GATEWAY_QUEUE_MAX_WAIT_MS || 10 * 60_000)
 });
 const receipts = new ChatGptExecutionReceiptStore({
-  directory: path.join(dataDir, 'execution-receipts'), encryptionSecret: sharedSecret,
+  directory: path.join(dataDir, 'execution-receipts'), encryptionSecret: storageSecret,
   retentionMs: Number(process.env.CHATGPT_GATEWAY_RECEIPT_RETENTION_MS || 30 * 24 * 60 * 60_000),
   leaseMs: Number(process.env.CHATGPT_GATEWAY_EXECUTION_LEASE_MS || 300_000), log
 });
 const usageLedger = new PlatformUsageLedger({ directory: path.join(dataDir, 'usage-ledger'), log });
 const usageOutbox = usageSinkUrl ? new ChatGptUsageMeteringOutbox({
-  directory: path.join(dataDir, 'usage-outbox'), endpointUrl: usageSinkUrl, secret: sharedSecret,
+  directory: path.join(dataDir, 'usage-outbox'), endpointUrl: usageSinkUrl, secret: requestSecret,
   initialDelayMs: Number(process.env.CHATGPT_GATEWAY_USAGE_INITIAL_DELAY_MS || 1_000), log
 }) : null;
 usageOutbox?.start?.();
@@ -106,11 +128,10 @@ async function verifySignature(headers, method, requestPath, body) {
   if (!/^[A-Za-z0-9_-]{20,120}$/.test(nonce) || !/^[A-Za-z0-9_-]{40,120}$/.test(supplied)) {
     return { ok: false, code: 'SIGNATURE_INVALID' };
   }
-  const expected = crypto.createHmac('sha256', sharedSecret)
-    .update(`${timestamp}\n${nonce}\n${method.toUpperCase()}\n${requestPath}\n${body}`)
-    .digest('base64url');
-  const a = Buffer.from(supplied); const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return { ok: false, code: 'SIGNATURE_INVALID' };
+  const signatureInput = { timestamp, nonce, method, path: requestPath, body };
+  if (!signatureMatchesAny(requestSecrets, signatureInput, supplied)) {
+    return { ok: false, code: 'SIGNATURE_INVALID' };
+  }
   return await claimNonce(nonce, at + nonceTtlMs)
     ? { ok: true } : { ok: false, code: 'SIGNATURE_REPLAYED' };
 }
@@ -207,7 +228,23 @@ function meteringContext(input) {
   if (!/^usage_[a-f0-9]{48}$/.test(eventId) || !/^chatgptexec_[a-f0-9]{48}$/.test(executionId)) {
     throw Object.assign(new Error('Invalid ChatGPT usage identity'), { code: 'CHATGPT_USAGE_CONTEXT_INVALID', status: 400 });
   }
-  return { eventId, executionId, requestId: String(input.metering.requestId || ''), sourceApp: String(input.metering.sourceApp || 'recruiter') };
+  const sourceApp = canonicalConsumerId(input.metering.sourceApp || 'recruiter');
+  if (!sourceApp) {
+    throw Object.assign(new Error('Invalid ChatGPT metering source application'), {
+      code: 'CHATGPT_USAGE_SOURCE_INVALID', status: 400
+    });
+  }
+  const dimension = (value, maximum) => String(value || '')
+    .replace(/[\u0000-\u001f\u007f]/g, '').slice(0, maximum) || undefined;
+  return {
+    eventId,
+    executionId,
+    requestId: dimension(input.metering.requestId, 200) || '',
+    sourceApp,
+    actorId: dimension(input.metering.actorId, 160),
+    organizationId: dimension(input.metering.organizationId, 120),
+    organizationName: dimension(input.metering.organizationName, 200)
+  };
 }
 
 function tokenCounts(usage = {}) {
@@ -225,6 +262,8 @@ function usageRecord({ input, metering, result, status, latencyMs, error }) {
   return {
     eventId: metering.eventId, gatewayExecutionId: metering.executionId,
     requestId: metering.requestId, sourceApp: metering.sourceApp,
+    actorId: metering.actorId, organizationId: metering.organizationId,
+    organizationName: metering.organizationName,
     activity: input.activity, provider: 'chatgpt-connect',
     model: result?.model || error?.usageEnvelope?.model || 'connected-account',
     providerRequestId: result?.id || error?.usageEnvelope?.id || metering.executionId,
@@ -297,7 +336,8 @@ async function handleCompletion(request, response, requestPath, raw, cvOnly) {
     const payload = {
       id: result.id, provider: 'chatgpt-connect', providerLabel: `ChatGPT Connect (${result.model})`,
       engine: 'codex-app-server', model: result.model, runtimeOwner: 'user', planType: result.planType || undefined,
-      modelSource: result.modelSource, reasoningEffortSource: result.reasoningEffortSource,
+      modelSource: result.modelSource, reasoningEffort: result.reasoningEffort,
+      reasoningEffortSource: result.reasoningEffortSource,
       degraded: result.degraded || undefined, gatewayExecutionId: metering?.executionId,
       content: result.content, data: result.data, toolCalls: result.toolCalls,
       finishReason: result.finishReason, usage: result.usage, usageReported: result.usageReported,

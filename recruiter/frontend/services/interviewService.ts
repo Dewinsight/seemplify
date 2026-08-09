@@ -1755,7 +1755,7 @@ class InterviewService {
   /**
    * Get questions for interview feedback
    */
-  async getInterviewQuestionsForFeedback(interviewId: string): Promise<{ 
+  async getInterviewQuestionsForFeedback(interviewId: string, accessToken?: string): Promise<{
     success: boolean; 
     questions: InterviewQuestion[];
     candidateInfo?: any;
@@ -1765,8 +1765,9 @@ class InterviewService {
   }> {
     try {
       const response = await apiRequest(`/api/interviews/${interviewId}/feedback/questions`, {
-        method: 'GET'
-        // No authentication headers - this is a public endpoint
+        skipAuth: Boolean(accessToken),
+        method: 'GET',
+        headers: accessToken ? { 'X-Public-Feedback-Token': accessToken } : {},
       }) as any;
       
       const data = await response.json();
@@ -1832,13 +1833,16 @@ class InterviewService {
       communicationRating?: number;
       culturalRating?: number;
       isGeneral?: boolean;
-    }
+    },
+    accessToken?: string,
   ): Promise<{ success: boolean; comment: any }> {
     try {
       const response = await apiRequest(`/api/interviews/${interviewId}/feedback/public`, {
+        skipAuth: Boolean(accessToken),
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'X-Public-Feedback-Token': accessToken } : {}),
         },
         body: JSON.stringify(data)
       });
@@ -1893,13 +1897,16 @@ class InterviewService {
           rating?: number;
         };
       };
-    }
+    },
+    accessToken?: string,
   ): Promise<{ success: boolean; commentsCreated: number }> {
     try {
       const response = await apiRequest(`/api/interviews/${interviewId}/feedback/bulk`, {
+        skipAuth: Boolean(accessToken),
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(accessToken ? { 'X-Public-Feedback-Token': accessToken } : {}),
         },
         body: JSON.stringify(data),
       });
@@ -1919,12 +1926,14 @@ class InterviewService {
   /**
    * Generate OTP for email verification in public feedback
    */
-  async generateFeedbackOTP(interviewId: string, email: string, name: string): Promise<{ success: boolean; message: string }> {
+  async generateFeedbackOTP(interviewId: string, email: string, name: string, accessToken?: string): Promise<{ success: boolean; message: string }> {
     try {
       const response = await apiRequest(`/api/interviews/${interviewId}/feedback/generate-otp`, {
+        skipAuth: Boolean(accessToken),
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'X-Public-Feedback-Token': accessToken } : {}),
         },
         body: JSON.stringify({ email, name })
       });
@@ -1944,12 +1953,14 @@ class InterviewService {
   /**
    * Verify OTP for email verification in public feedback
    */
-  async verifyFeedbackOTP(interviewId: string, email: string, otp: string): Promise<{ success: boolean; message: string; verifiedEmail: string; verifiedName: string }> {
+  async verifyFeedbackOTP(interviewId: string, email: string, otp: string, accessToken?: string): Promise<{ success: boolean; message: string; verifiedEmail: string; verifiedName: string }> {
     try {
       const response = await apiRequest(`/api/interviews/${interviewId}/feedback/verify-otp`, {
+        skipAuth: Boolean(accessToken),
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(accessToken ? { 'X-Public-Feedback-Token': accessToken } : {}),
         },
         body: JSON.stringify({ email, otp })
       });

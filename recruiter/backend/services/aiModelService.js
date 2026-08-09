@@ -47,11 +47,23 @@ const JOB_DESCRIPTION_SCHEMA = {
   additionalProperties: false,
   required: ['description', 'responsibilities', 'requirements', 'skills', 'benefits'],
   properties: {
-    description: { type: 'string' },
-    responsibilities: { type: 'array', items: { type: 'string' } },
-    requirements: { type: 'array', items: { type: 'string' } },
-    skills: { type: 'array', items: { type: 'string' } },
-    benefits: { type: 'array', items: { type: 'string' } }
+    description: { type: 'string', minLength: 900, maxLength: 1800 },
+    responsibilities: {
+      type: 'array', minItems: 8, maxItems: 8,
+      items: { type: 'string', minLength: 12, maxLength: 180 }
+    },
+    requirements: {
+      type: 'array', minItems: 8, maxItems: 8,
+      items: { type: 'string', minLength: 12, maxLength: 180 }
+    },
+    skills: {
+      type: 'array', minItems: 10, maxItems: 10,
+      items: { type: 'string', minLength: 2, maxLength: 80 }
+    },
+    benefits: {
+      type: 'array', minItems: 5, maxItems: 5,
+      items: { type: 'string', minLength: 4, maxLength: 100 }
+    }
   }
 };
 
@@ -60,8 +72,14 @@ const JOB_REQUIREMENTS_SCHEMA = {
   additionalProperties: false,
   required: ['requiredQualifications', 'preferredQualifications'],
   properties: {
-    requiredQualifications: { type: 'array', items: { type: 'string' } },
-    preferredQualifications: { type: 'array', items: { type: 'string' } }
+    requiredQualifications: {
+      type: 'array', minItems: 6, maxItems: 8,
+      items: { type: 'string', minLength: 12, maxLength: 220 }
+    },
+    preferredQualifications: {
+      type: 'array', minItems: 4, maxItems: 6,
+      items: { type: 'string', minLength: 12, maxLength: 220 }
+    }
   }
 };
 
@@ -412,8 +430,13 @@ class AIModelService {
       promptVersion: options.promptVersion,
       messages,
       max_tokens: options.max_completion_tokens ?? 1500,
+      retryMaxTokens: options.retry_max_completion_tokens,
+      compactMaxTokens: options.compact_max_completion_tokens,
+      compactMaxChars: options.compact_max_chars,
       temperature: options.temperature ?? 0.4,
       top_p: options.top_p ?? 1,
+      frequency_penalty: options.frequency_penalty ?? 0,
+      presence_penalty: options.presence_penalty ?? 0,
       jsonSchema: options.jsonSchema || FLEXIBLE_OBJECT_SCHEMA,
       schemaName: options.schemaName || contextLabel.toLowerCase().replace(/[^a-z0-9_-]+/g, '_').slice(0, 64),
       schemaStrict: options.schemaStrict === true
@@ -824,33 +847,24 @@ ${cvText}`
       const messages = [
         {
           role: "system",
-          content: `You are a senior talent partner and workforce-planning specialist. Write a role-specific job description that gives a qualified candidate a clear picture of the work, expected outcomes, operating context, and selection criteria.
+          content: `You are a senior talent partner. Create a role-specific job description from only the supplied facts.
 
-          CRITICAL FORMATTING RULES:
-          1. DO NOT use any markdown formatting (no *, #, _, \`, etc.)
-          2. DO NOT use asterisks for bullet points or emphasis
-          3. DO NOT use hashtags or number signs
-          4. DO NOT use any special formatting characters
-          5. Write in plain, clean text only
-          6. Use natural language for emphasis instead of formatting symbols
+Writing requirements:
+- Use inclusive, direct, plain text with no Markdown.
+- Describe concrete ownership, collaboration, decisions, deliverables, and outcomes.
+- Avoid generic filler and do not repeat ideas across sections.
+- Keep expectations realistic for the stated seniority.
+- Do not invent a company, salary, stack, reporting line, metrics, entitlements, or confirmed benefits.
+- Phrase benefits as options the employer can confirm or customise.
 
-          QUALITY RULES:
-          - Tailor every line to the supplied role, department, seniority, location, employment type, experience, and education
-          - Describe concrete ownership, collaboration, decisions, deliverables, and outcomes; avoid generic filler such as "work in a fast-paced environment"
-          - Distinguish essential requirements from useful skills and do not repeat the same idea across sections
-          - Use inclusive, direct language and realistic expectations for the stated seniority
-          - Do not invent a company name, salary, technology stack, reporting line, exact performance metric, legal entitlement, or benefit that was not supplied
-          - Benefits must be phrased as items the employer can confirm or customise, not as fabricated promises
-          - Make responsibilities observable and outcome-oriented without manufacturing numbers
+Content requirements:
+- description: three concise paragraphs covering purpose, operating context, and expected impact.
+- responsibilities: eight distinct, observable, outcome-oriented items.
+- requirements: eight genuinely necessary criteria.
+- skills: ten relevant technical and behavioural skills.
+- benefits: five concise employer-confirmable options.
 
-          Return ONLY a compact JSON object with these fields:
-          - description: 3 concise paragraphs, 1200 to 1800 characters total, covering role purpose, operating context, and expected impact
-          - responsibilities: Array of exactly 8 distinct, outcome-oriented responsibilities, each maximum 180 characters
-          - requirements: Array of exactly 8 genuinely necessary qualifications or experience criteria, each maximum 180 characters
-          - skills: Array of exactly 10 relevant technical and behavioural skills, each maximum 80 characters
-          - benefits: Array of exactly 5 benefits and perks, each maximum 100 characters
-
-          Remember: Each string should be clean, plain text with NO formatting symbols. Return no text before or after the JSON.`
+The response schema enforces field names, counts, and length limits.`
         },
         {
           role: "user",
@@ -883,14 +897,7 @@ ${cvText}`
           temperature: 0.3,
           frequency_penalty: 0,
           presence_penalty: 0,
-          schemaHint: `Use this schema exactly:
-          {
-            "description": "Three role-specific paragraphs between 1200 and 1800 characters total.",
-            "responsibilities": ["Eight distinct, outcome-oriented responsibility strings."],
-            "requirements": ["Eight genuinely necessary qualification or experience strings."],
-            "skills": ["Ten relevant technical and behavioural skill strings."],
-            "benefits": ["Five concise benefit strings."]
-          }`
+          schemaHint: 'The runtime supplies and validates the job-description JSON Schema.'
         },
         "Job description generation"
       );
@@ -960,42 +967,15 @@ ${cvText}`
       const messages = [
         {
           role: "system",
-          content: `You are an expert HR professional specializing in creating detailed job requirements.
+          content: `You are a senior talent partner. Create comprehensive, realistic job requirements from only the supplied role facts.
 
-          CRITICAL FORMATTING RULES:
-          1. Return ONLY valid JSON format
-          2. NO markdown formatting (no *, #, _, \`, etc.)
-          3. NO asterisks, hashtags, or special formatting characters
-          4. Write in plain, clean text only
-          5. Each qualification should be a separate string in the array
-          6. Use natural language for emphasis instead of formatting symbols
+- Separate genuinely essential qualifications from useful preferences.
+- Cover relevant experience, education, technical capability, and behavioural skills without padding.
+- Keep every item specific, concise, measurable where appropriate, and realistic for the seniority.
+- Use professional plain text with no Markdown or formatting symbols.
+- Do not invent a company, technology stack, certification, or legal requirement.
 
-          Generate comprehensive and realistic job requirements that are:
-          - Specific to the role and industry
-          - Balanced between must-have and nice-to-have qualifications
-          - Include both technical and soft skills
-          - Realistic for the experience level
-          - Include education, certifications, and experience requirements
-
-          Return a JSON object with this EXACT structure:
-          {
-            "requiredQualifications": [
-              "First required qualification as plain text",
-              "Second required qualification as plain text",
-              "Third required qualification as plain text"
-            ],
-            "preferredQualifications": [
-              "First preferred qualification as plain text",
-              "Second preferred qualification as plain text",
-              "Third preferred qualification as plain text"
-            ]
-          }
-
-          Each qualification string should be:
-          - Clear and concise (1-2 sentences maximum)
-          - Written in plain text without any formatting symbols
-          - Specific and measurable when possible
-          - Professional and grammatically correct`
+The response schema enforces the two sections, item counts, and length limits.`
         },
         {
           role: "user",
@@ -1027,11 +1007,7 @@ ${cvText}`
           temperature: 0.3,
           frequency_penalty: 0,
           presence_penalty: 0,
-          schemaHint: `Use this schema exactly:
-          {
-            "requiredQualifications": ["Six to eight concise qualification strings."],
-            "preferredQualifications": ["Four to six concise qualification strings."]
-          }`
+          schemaHint: 'The runtime supplies and validates the job-requirements JSON Schema.'
         },
         "Job requirements generation"
       );

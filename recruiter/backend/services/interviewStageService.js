@@ -439,7 +439,8 @@ class InterviewStageService {
         difficulty: stage.aiQuestionGeneration.difficulty,
         includeTypes: stage.aiQuestionGeneration.questionTypes,
         focusAreas: stage.aiQuestionGeneration.focusAreas,
-        userId: stage.createdBy
+        userId: stage.createdBy,
+        organizationId: job.organization
       };
       
       const questions = await interviewService.generateQuestionsWithAI(job._id, options);
@@ -600,4 +601,4 @@ class InterviewStageService {
   }
 }
 
-module.exports = new InterviewStageService(); 
+module.exports = new InterviewStageService();

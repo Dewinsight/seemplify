@@ -514,6 +514,14 @@ const InterviewSchema = new mongoose.Schema({
     required: false,
     index: true
   },
+
+  // Capability used by emailed public-feedback links. Only a digest is
+  // persisted; the bearer value is scoped to this interview (and therefore
+  // its organization/candidate relationship) and expires automatically.
+  publicFeedbackTokenHash: { type: String, select: false },
+  publicFeedbackTokenIssuedAt: Date,
+  publicFeedbackTokenExpiresAt: Date,
+  publicFeedbackRevokedAt: Date,
   
   // Analytics and scoring data
   analytics: {
@@ -640,6 +648,13 @@ InterviewSchema.statics.findUpcoming = function(userId, days = 7) {
 
 // Pre-save middleware to validate scheduling
 InterviewSchema.pre('save', function(next) {
+  if (this.isModified('status') && this.status === 'cancelled') {
+    this.publicFeedbackRevokedAt = this.publicFeedbackRevokedAt || new Date();
+    this.publicFeedbackTokenHash = undefined;
+    this.publicFeedbackTokenIssuedAt = undefined;
+    this.publicFeedbackTokenExpiresAt = undefined;
+  }
+
   // Skip validation for completed or cancelled interviews
   if (this.status === 'completed' || this.status === 'cancelled') {
     return next();
@@ -659,5 +674,30 @@ InterviewSchema.pre('save', function(next) {
   
   next();
 });
+
+function revokePublicFeedbackOnCancellation(next) {
+  const update = this.getUpdate() || {};
+  const status = update.status ?? update.$set?.status;
+  if (status === 'cancelled') {
+    update.$set = {
+      ...(update.$set || {}),
+      status: 'cancelled',
+      publicFeedbackRevokedAt: new Date()
+    };
+    update.$unset = {
+      ...(update.$unset || {}),
+      publicFeedbackTokenHash: 1,
+      publicFeedbackTokenIssuedAt: 1,
+      publicFeedbackTokenExpiresAt: 1
+    };
+    if (Object.prototype.hasOwnProperty.call(update, 'status')) delete update.status;
+    this.setUpdate(update);
+  }
+  next();
+}
+
+InterviewSchema.pre('findOneAndUpdate', revokePublicFeedbackOnCancellation);
+InterviewSchema.pre('updateOne', revokePublicFeedbackOnCancellation);
+InterviewSchema.pre('updateMany', revokePublicFeedbackOnCancellation);
 
 module.exports = mongoose.model('Interview', InterviewSchema); 

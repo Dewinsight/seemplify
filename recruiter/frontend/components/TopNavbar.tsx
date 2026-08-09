@@ -83,6 +83,7 @@ const navigationItems: NavigationItem[] = [
     children: [
       { title: "Candidates", href: "/candidates", icon: Users },
       { title: "Jobs", href: "/jobs", icon: Briefcase },
+      { title: "CV Processing", href: "/cv-processing", icon: ListChecks },
       { title: "AI Interviews", href: "/ai-interviews", icon: Bot, feature: "aiInterviews" },
     ],
   },

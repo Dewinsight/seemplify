@@ -21,7 +21,16 @@ function getAIRequestContext(overrides = {}) {
 
 function updateAIRequestContext(updates = {}) {
   const current = storage.getStore();
-  if (current) Object.assign(current, cleanContext(updates));
+  if (current) {
+    // A later organization-selection middleware is authoritative over the
+    // organization captured when the bearer token was first resolved. Allow
+    // callers to explicitly clear stale optional dimensions (for example an
+    // organization name that is not present on the newly selected record).
+    for (const [key, value] of Object.entries(updates || {})) {
+      if (value === undefined || value === null || value === '') delete current[key];
+    }
+    Object.assign(current, cleanContext(updates));
+  }
   return getAIRequestContext();
 }
 

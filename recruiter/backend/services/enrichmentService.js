@@ -5,6 +5,11 @@ const creditsService = require('./creditsService');
 const embeddingService = require('./embeddingService');
 const gptAnalysisService = require('./gptAnalysisService');
 const { runWithAIRequestContext } = require('./aiRuntime/requestContext');
+const { hydrateCanonicalAIContext } = require('./aiRuntime/canonicalAIContext');
+const {
+  candidateIdFromMatch,
+  selectAuthoritativeMatches
+} = require('./matchingEnrichmentInputService');
 
 const REDIS_ENABLED = process.env.REDIS_ENABLED
   ? process.env.REDIS_ENABLED !== 'false'
@@ -285,8 +290,15 @@ async function persistFinalCache(status) {
   if (!status?.rankedMatches?.length) return;
   await aiMatchCacheService.setCachedBulkMatch(status.jobId, status.rankedMatches, {
     candidateCount: status.rankedMatches.length,
+    requestedTopK: status.totalCandidates,
     generationTime: Date.now() - new Date(status.startedAt).getTime(),
     modelUsed: gptAnalysisService.modelName || 'enrichment-service',
+    identity: {
+      provider: 'matching-enrichment',
+      model: gptAnalysisService.modelName || 'enrichment-service',
+      promptVersion: 'matching-v3',
+      routeVersion: 'background-v2'
+    },
     version: 2,
   });
 }
@@ -299,7 +311,6 @@ async function processEnrichmentBatch(job) {
     jobId,
     organizationId,
     userId,
-    candidates,
     originalMatches,
   } = job.data;
 
@@ -312,12 +323,27 @@ async function processEnrichmentBatch(job) {
   }
 
   const Job = require('../models/Job');
-  const Organization = require('../models/Organization');
-  const User = require('../models/User');
+  const Candidate = require('../models/Candidate');
   const dbJob = await Job.findOne({ _id: jobId, organization: organizationId }).lean();
   if (!dbJob) {
     throw new Error(`Job ${jobId} not found for enrichment`);
   }
+
+  const candidateIds = (originalMatches || []).map(candidateIdFromMatch).filter(Boolean).map(String);
+  const dbCandidates = await Candidate.find({
+    _id: { $in: candidateIds },
+    organization: organizationId,
+    publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+    deletionState: { $ne: 'tombstoned' }
+  }).select(
+    '_id firstName lastName email phone position experience skills education location status '
+    + 'workExperience.totalYearsExperience aiAnalysis.summary'
+  ).lean();
+  const refreshedMatches = selectAuthoritativeMatches(originalMatches, dbCandidates, candidateIds);
+  if (refreshedMatches.length !== candidateIds.length) {
+    throw new Error('One or more enrichment candidates are no longer available in this organization');
+  }
+  const candidates = refreshedMatches.map(normalizeCandidateForGpt);
 
   await job.updateProgress(10);
 
@@ -342,18 +368,13 @@ async function processEnrichmentBatch(job) {
 
   await job.updateProgress(35);
 
-  const [organization, actor] = await Promise.all([
-    Organization.findById(organizationId).select('name').lean(),
-    User.findById(userId).select('email profile').lean()
-  ]);
+  const identityContext = await hydrateCanonicalAIContext({
+    actorId: userId,
+    organizationId
+  });
   const gptResults = await runWithAIRequestContext({
     sourceApp: 'recruiter-worker',
-    organizationId,
-    organizationName: organization?.name,
-    actorId: userId,
-    actorName: actor?.profile?.displayName
-      || `${actor?.profile?.firstName || ''} ${actor?.profile?.lastName || ''}`.trim(),
-    actorEmail: actor?.email,
+    ...identityContext,
     jobId,
     requestId: `matching-enrichment:${enrichmentId}:${batchIndex}`,
     promptVersion: 'matching-v2'
@@ -363,7 +384,7 @@ async function processEnrichmentBatch(job) {
   await job.updateProgress(75);
 
   const enrichedMatches = [];
-  for (const match of originalMatches) {
+  for (const match of refreshedMatches) {
     const result = getGptResultForMatch(resultById, match);
     if (!result) continue;
 
@@ -483,8 +504,11 @@ async function addEnrichmentJobs({
       userId,
       batchIndex: index + 1,
       batchSize: batch.length,
-      candidates: batch.map(normalizeCandidateForGpt),
-      originalMatches: batch,
+      originalMatches: batch.map((match) => ({
+        candidateId: String(candidateIdFromMatch(match)),
+        similarity: Number(match.similarity ?? match.relevanceScore ?? 0) || 0,
+        relevanceScore: Number(match.relevanceScore ?? match.similarity ?? 0) || 0
+      })),
     },
     opts: {
       attempts: 1,

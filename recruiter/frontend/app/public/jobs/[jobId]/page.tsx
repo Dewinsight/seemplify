@@ -106,6 +106,8 @@ export default function PublicJobPage() {
   }
 
   const handleApplyClick = () => {
+    if (!job || !job.candidateApplyLimit || job.candidateApplyLimit <= 0) return
+    if ((job.publicApplicationCount || 0) >= job.candidateApplyLimit) return
     setShowApplicationForm(true)
   }
 
@@ -217,6 +219,10 @@ export default function PublicJobPage() {
   if (!job) {
     return null
   }
+
+  const candidateApplyLimit = job.candidateApplyLimit ?? 0
+  const publicApplicationCount = job.publicApplicationCount ?? 0
+  const acceptingApplications = candidateApplyLimit > 0 && publicApplicationCount < candidateApplyLimit
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white overflow-x-hidden">
@@ -330,13 +336,15 @@ export default function PublicJobPage() {
             )}
 
           {/* Application Limit Reached Banner */}
-          {job.candidateApplyLimit && job.candidateApplyLimit > 0 && job.publicApplicationCount && job.publicApplicationCount >= job.candidateApplyLimit && (
+          {!acceptingApplications && (
             <Alert variant="destructive" className="mb-6 bg-red-900/20 border-red-500/50 text-red-200">
               <AlertCircle className="h-4 w-4" />
               <div>
-                <h4 className="font-bold mb-1">Applications Closed</h4>
+                <h4 className="font-bold mb-1">Applications closed</h4>
                 <AlertDescription>
-                  This position has received the maximum number of applications ({job.candidateApplyLimit}) and is no longer accepting new applicants.
+                  {candidateApplyLimit <= 0
+                    ? "This position does not have a funded application limit and is not accepting applications."
+                    : `This position has received the maximum number of applications (${candidateApplyLimit}) and is no longer accepting new applicants.`}
                 </AlertDescription>
               </div>
             </Alert>
@@ -373,8 +381,7 @@ export default function PublicJobPage() {
 
           {/* Apply Button & Posted Date */}
           <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
-            {(!job.candidateApplyLimit || job.candidateApplyLimit === 0 || 
-              !job.publicApplicationCount || job.publicApplicationCount < job.candidateApplyLimit) ? (
+            {acceptingApplications ? (
               <Button 
                 size="lg" 
                 onClick={handleApplyClick}
@@ -386,7 +393,11 @@ export default function PublicJobPage() {
             ) : (
               <div className="bg-slate-800/50 rounded-lg p-6 border border-slate-700/50 text-center">
                 <p className="text-slate-300 mb-2">This position is no longer accepting applications.</p>
-                <p className="text-sm text-slate-400">All available spots have been filled.</p>
+                <p className="text-sm text-slate-400">
+                  {candidateApplyLimit <= 0
+                    ? "The employer needs to fund an application limit before applications can open."
+                    : "All available application spots have been filled."}
+                </p>
               </div>
             )}
             
@@ -693,22 +704,29 @@ export default function PublicJobPage() {
                  
                  <div className="relative z-10">
               <CardHeader className="text-center pb-4">
-                     <CardTitle className="text-xl lg:text-2xl font-bold text-white mb-2">Ready to Apply?</CardTitle>
+                     <CardTitle className="text-xl lg:text-2xl font-bold text-white mb-2">
+                       {acceptingApplications ? "Ready to apply?" : "Applications closed"}
+                     </CardTitle>
                      <CardDescription className="text-slate-100 text-sm lg:text-base">
-                  Join our team and take the next step in your career journey
+                  {acceptingApplications
+                    ? "Join our team and take the next step in your career journey"
+                    : "This role is not currently accepting new applications."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-center">
                 <Button 
                   onClick={handleApplyClick}
+                  disabled={!acceptingApplications}
                        className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0 shadow-lg hover:shadow-2xl transition-all duration-300 h-12 lg:h-14 text-sm lg:text-base font-semibold"
                   size="lg"
                 >
                        <ArrowRight className="mr-2 h-4 w-4 lg:h-5 lg:w-5" />
-                       Apply Now
+                       {!acceptingApplications ? "Not accepting applications" : "Apply Now"}
                 </Button>
                      <p className="text-xs text-slate-200 mt-3 opacity-80">
-                       No account required • Quick application
+                       {candidateApplyLimit <= 0
+                         ? "A funded application limit is required before applications can open."
+                         : "No account required · Quick application"}
                   </p>
                    </CardContent>
                 </div>
@@ -716,7 +734,7 @@ export default function PublicJobPage() {
             </motion.div>
 
             {/* Deadline Warning */}
-            {job.applicationDeadline && (() => {
+            {acceptingApplications && job.applicationDeadline && (() => {
               const days = getDaysUntilDeadline(job.applicationDeadline)
               if (days <= 7 && days > 0) {
                 return (

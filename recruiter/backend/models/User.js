@@ -13,6 +13,27 @@ const UserSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
   },
+  // Stable subject issued by the Seemplify identity provider.  Cross-product
+  // services use this value to resolve the same person without coupling
+  // themselves to Recruiter's local Mongo ObjectId.
+  idpSubject: {
+    type: String,
+    trim: true,
+    maxlength: 255,
+    index: true,
+    sparse: true,
+    unique: true,
+  },
+  // Identity-only rows are created when another Seemplify product needs the
+  // shared ChatGPT account service before the person has ever opened
+  // Recruiter. They are not Recruiter accounts and must never authenticate
+  // locally or fund Recruiter background work. A successful Recruiter OIDC
+  // membership/app-access sync is the only flow allowed to clear this flag.
+  sharedAIOnly: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
   password: {
     type: String,
     required: true,
@@ -212,6 +233,14 @@ const UserSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Organization'
   },
+  // Product authorization is organization-scoped. A person can have
+  // Recruiter in org A and Performance-only access in org B; a global user
+  // flag cannot safely answer which org may use this account for CV work.
+  recruiterAuthorizedOrganizations: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization'
+  }],
+  recruiterAppAccessSyncedAt: { type: Date, default: null },
   hasCompletedOrganizationSetup: {
     type: Boolean,
     default: false
@@ -480,6 +509,7 @@ UserSchema.index({ isActive: 1 });
 UserSchema.index({ createdAt: -1 });
 UserSchema.index({ currentOrganization: 1 });
 UserSchema.index({ 'organizationMemberships.organization': 1 });
+UserSchema.index({ recruiterAuthorizedOrganizations: 1 });
 UserSchema.index({ hasCompletedOrganizationSetup: 1 });
 UserSchema.index({ nylasGrantId: 1 }, { sparse: true }); // Sparse index for grant lookups
 UserSchema.index({ grantConnectedAt: -1 }, { sparse: true }); // For finding oldest grants

@@ -37,6 +37,8 @@ interface Job {
   remote: boolean
   openings: number
   createdAt: string
+  candidateApplyLimit?: number
+  publicApplicationCount?: number
   organization: {
     _id: string
     name: string
@@ -250,13 +252,14 @@ export default function PublicJobsPage() {
               </div>
               <Button 
                 size="sm" 
+                disabled={!job.candidateApplyLimit || job.candidateApplyLimit <= 0 || (job.publicApplicationCount || 0) >= job.candidateApplyLimit}
                 className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0 shrink-0"
                 onClick={(e) => {
                   e.preventDefault()
                   window.location.href = `/public/jobs/${job._id}`
                 }}
               >
-                Apply Now
+                {!job.candidateApplyLimit || job.candidateApplyLimit <= 0 || (job.publicApplicationCount || 0) >= job.candidateApplyLimit ? 'Not accepting' : 'Apply Now'}
               </Button>
             </div>
           </CardContent>

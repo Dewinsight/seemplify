@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,7 +53,15 @@ interface CandidateInfo {
   id: string;
   name: string;
   email: string;
-  resumeUrl?: string;
+  resumeAvailable: boolean;
+}
+
+interface AccessibleResumeUrls {
+  resumeAvailable: boolean;
+  accessible: boolean;
+  viewUrl?: string;
+  downloadUrl?: string;
+  candidateId?: string;
 }
 
 interface JobInfo {
@@ -108,7 +116,12 @@ interface ValidationState {
 
 export default function PublicFeedbackPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const interviewId = params.interviewId as string;
+  const feedbackTokenFromUrl = searchParams.get('accessToken')?.trim() || null;
+  const feedbackTokenStorageKey = `public-feedback-access:${interviewId}`;
+  const [feedbackAccessToken, setFeedbackAccessToken] = useState<string | null>(() => feedbackTokenFromUrl);
+  const [feedbackAccessResolved, setFeedbackAccessResolved] = useState(() => Boolean(feedbackTokenFromUrl));
   
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,6 +140,35 @@ export default function PublicFeedbackPage() {
   // Check if user is logged in and auto-fill info
   const [isInternalUser, setIsInternalUser] = useState(false);
   const [internalUserData, setInternalUserData] = useState<any>(null);
+  const isAuthenticatedInternalAccess = isInternalUser && !feedbackAccessToken;
+
+  useEffect(() => {
+    let storedToken = feedbackTokenFromUrl;
+
+    try {
+      if (storedToken) {
+        sessionStorage.setItem(feedbackTokenStorageKey, storedToken);
+      } else {
+        storedToken = sessionStorage.getItem(feedbackTokenStorageKey)?.trim() || null;
+      }
+    } catch {
+      // Storage can be unavailable in hardened/private browser contexts. The URL
+      // capability still works for this page load and the server enforces expiry.
+    }
+
+    setFeedbackAccessToken(storedToken);
+    setFeedbackAccessResolved(true);
+
+    if (!feedbackTokenFromUrl) return;
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('accessToken');
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [feedbackTokenFromUrl, feedbackTokenStorageKey]);
 
   useEffect(() => {
     try {
@@ -174,7 +216,7 @@ export default function PublicFeedbackPage() {
 
   // CV/Resume handling state
   const [loadingUrls, setLoadingUrls] = useState(false);
-  const [accessibleUrls, setAccessibleUrls] = useState<any>(null);
+  const [accessibleUrls, setAccessibleUrls] = useState<AccessibleResumeUrls | null>(null);
 
   // Validation state
   const [validationState, setValidationState] = useState<ValidationState>({
@@ -197,37 +239,28 @@ export default function PublicFeedbackPage() {
     }
   });
 
-  // Helper function to get the best available URL for viewing/downloading
+  // Resume bytes remain behind the capability-checked backend proxy. Never
+  // fall back to a persisted provider URL that could outlive revocation.
   const getResumeUrls = useCallback(() => {
-    if (!candidateInfo?.resumeUrl) return null;
-
-    const isPdf = candidateInfo.resumeUrl.includes('.pdf');
-
-    if (isPdf && accessibleUrls) {
-      return {
-        viewUrl: accessibleUrls.viewUrl || candidateInfo.resumeUrl,
-        downloadUrl: accessibleUrls.downloadUrl || candidateInfo.resumeUrl,
-        previewUrl: accessibleUrls.previewUrl || null,
-        isPdf: true,
-        hasAccessibleUrls: !!(accessibleUrls.viewUrl || accessibleUrls.downloadUrl)
-      };
-    }
-
-    // For all file types, return URLs
+    if (!candidateInfo?.resumeAvailable || !accessibleUrls?.accessible) return null;
     return {
-      viewUrl: candidateInfo.resumeUrl,
-      downloadUrl: candidateInfo.resumeUrl,
-      previewUrl: null,
-      isPdf,
-      hasAccessibleUrls: false
+      viewUrl: accessibleUrls.viewUrl,
+      downloadUrl: accessibleUrls.downloadUrl,
     };
-  }, [candidateInfo?.resumeUrl, accessibleUrls]);
+  }, [candidateInfo?.resumeAvailable, accessibleUrls]);
 
   // Fetch accessible URLs for PDF resumes
   const fetchAccessibleUrls = useCallback(async (candidateId: string) => {
     try {
       setLoadingUrls(true);
-      const response = await apiRequest(`/api/candidates/public/${candidateId}/accessible-resume-url`);
+      setAccessibleUrls(null);
+      const response = await apiRequest(
+        `/api/candidates/public/interviews/${encodeURIComponent(interviewId)}/candidates/${encodeURIComponent(candidateId)}/accessible-resume-url`,
+        {
+          skipAuth: Boolean(feedbackAccessToken),
+          headers: feedbackAccessToken ? { 'X-Public-Feedback-Token': feedbackAccessToken } : {},
+        },
+      );
       if (response.ok) {
         const data = await response.json();
         setAccessibleUrls(data);
@@ -237,22 +270,23 @@ export default function PublicFeedbackPage() {
     } finally {
       setLoadingUrls(false);
     }
-  }, []);
+  }, [feedbackAccessToken, interviewId]);
 
   useEffect(() => {
+    if (!feedbackAccessResolved) return;
     fetchQuestions();
-  }, [interviewId]);
+  }, [feedbackAccessResolved, feedbackAccessToken, interviewId]);
 
   // Fetch accessible URLs when candidate info is available
   useEffect(() => {
-    if (candidateInfo?.resumeUrl && candidateInfo.resumeUrl.includes('.pdf') && candidateInfo.id) {
+    if (candidateInfo?.resumeAvailable && candidateInfo.id) {
       fetchAccessibleUrls(candidateInfo.id);
     }
   }, [candidateInfo, fetchAccessibleUrls]);
 
   // Real-time validation for user info - only if visible and required
   useEffect(() => {
-    if (!isInternalUser) {
+    if (!isAuthenticatedInternalAccess) {
       let nameValidation = { isValid: true };
       let emailValidation = { isValid: true };
       
@@ -272,7 +306,7 @@ export default function PublicFeedbackPage() {
         }
       }));
     }
-  }, [userInfo.name, userInfo.email, isInternalUser, feedbackFormConfig]);
+  }, [userInfo.name, userInfo.email, isAuthenticatedInternalAccess, feedbackFormConfig]);
 
   // Real-time validation for ratings - only validate if visible and required
   useEffect(() => {
@@ -331,7 +365,7 @@ export default function PublicFeedbackPage() {
         canSubmit: formValidation.canSubmit
       }
     }));
-  }, [userInfo, overallFeedback, isInternalUser]);
+  }, [userInfo, overallFeedback, isAuthenticatedInternalAccess]);
 
   // Real-time calculation for calculated fields
   useEffect(() => {
@@ -390,10 +424,24 @@ export default function PublicFeedbackPage() {
       setError(null);
       
       // For public page, we fetch without authentication
-      const response = await apiRequest(`/api/interviews/${interviewId}/feedback/questions`);
+      const response = await apiRequest(`/api/interviews/${interviewId}/feedback/questions`, {
+        skipAuth: Boolean(feedbackAccessToken),
+        headers: feedbackAccessToken ? { 'X-Public-Feedback-Token': feedbackAccessToken } : {},
+      });
       
       if (!response.ok) {
-        throw new Error('Interview not found or questions not available');
+        const failure = await response.clone().json().catch(() => ({}))
+        const capabilityRejected = response.status === 404
+          && failure.code === 'PUBLIC_FEEDBACK_ACCESS_NOT_FOUND'
+        if (feedbackAccessToken && capabilityRejected) {
+          try {
+            sessionStorage.removeItem(feedbackTokenStorageKey);
+          } catch {
+            // Ignore storage failures; the rejected capability remains unusable.
+          }
+          setFeedbackAccessToken(null);
+        }
+        throw new Error(failure.msg || 'Interview not found or questions not available');
       }
       
       const data = await response.json();
@@ -539,7 +587,7 @@ export default function PublicFeedbackPage() {
     const errors: string[] = [];
     
     // Validate user info (public users only) - only if visible and required
-    if (!isInternalUser) {
+    if (!isAuthenticatedInternalAccess) {
       if (isFieldVisible('name') && isFieldRequired('name')) {
         const nameValidation = validateName(userInfo.name);
         if (!nameValidation.isValid) {
@@ -691,7 +739,10 @@ export default function PublicFeedbackPage() {
     try {
       setIsSubmitting(true);
 
-      if (isInternalUser) {
+      // A capability is the authority for a public invitation even when this
+      // browser also carries an unrelated or stale Recruiter login. Keep the
+      // same token-first contract used by the read endpoints for submission.
+      if (isAuthenticatedInternalAccess) {
         // Submit as internal user (using existing individual endpoints)
         if (hasGeneralFeedback) {
           await interviewService.addQuestionFeedback(interviewId, {
@@ -742,7 +793,7 @@ export default function PublicFeedbackPage() {
           customFieldResponses: customFieldResponses
         };
 
-        await interviewService.addBulkPublicFeedback(interviewId, bulkFeedbackData);
+        await interviewService.addBulkPublicFeedback(interviewId, bulkFeedbackData, feedbackAccessToken || undefined);
       }
       
       toast.success('Thank you! Your feedback has been submitted successfully.');
@@ -751,7 +802,7 @@ export default function PublicFeedbackPage() {
       setFeedbackSubmitted(true);
       
       // If internal user, close window/redirect back after showing success
-      if (isInternalUser) {
+      if (isAuthenticatedInternalAccess) {
         setTimeout(() => {
           window.close(); // Try to close if opened in new tab
           // If can't close, redirect back
@@ -844,7 +895,7 @@ export default function PublicFeedbackPage() {
                 </div>
               </div>
 
-              {!isInternalUser && (
+              {!isAuthenticatedInternalAccess && (
                 <div className="mb-6">
                   <Button 
                     variant="outline" 
@@ -858,10 +909,10 @@ export default function PublicFeedbackPage() {
 
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 <p>This feedback was submitted on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
-                {!isInternalUser && (
+                {!isAuthenticatedInternalAccess && (
                   <p className="mt-2">You can now safely close this window.</p>
                 )}
-                {isInternalUser && (
+                {isAuthenticatedInternalAccess && (
                   <p className="mt-2">Redirecting you back to the interview page...</p>
                 )}
               </div>
@@ -892,7 +943,7 @@ export default function PublicFeedbackPage() {
           
           <div className="max-w-3xl mx-auto space-y-4">
             <p className="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-              {isInternalUser ? (
+              {isAuthenticatedInternalAccess ? (
                 <>Share your detailed assessment to help the team make informed hiring decisions. Your insights are valuable for evaluating candidate performance.</>
               ) : (
                 <>Your feedback helps us make better hiring decisions. Please share your honest assessment of the candidate's interview performance.</>
@@ -942,10 +993,8 @@ export default function PublicFeedbackPage() {
                           <p className="text-sm text-slate-600 dark:text-slate-300">{candidateInfo.email}</p>
                         </div>
                       </div>
-                      {candidateInfo.resumeUrl && (() => {
+                      {candidateInfo.resumeAvailable && (() => {
                         const resumeUrls = getResumeUrls();
-                        const isPdf = resumeUrls?.isPdf;
-                        const isLoadingPdfUrls = isPdf && loadingUrls && !accessibleUrls;
 
                         return (
                           <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-600">
@@ -970,13 +1019,13 @@ export default function PublicFeedbackPage() {
                                   </a>
                                 </Button>
                               )}
-                              {isPdf && !resumeUrls?.hasAccessibleUrls && !isLoadingPdfUrls && (
+                              {!resumeUrls && !loadingUrls && (
                                 <div className="flex items-center gap-1 px-2 py-1 bg-amber-50 dark:bg-amber-900/20 rounded-md">
                                   <AlertCircle className="h-3 w-3 text-amber-500" />
-                                  <span className="text-xs text-amber-600 dark:text-amber-400">Preview unavailable</span>
+                                  <span className="text-xs text-amber-600 dark:text-amber-400">Resume unavailable</span>
                                 </div>
                               )}
-                              {isLoadingPdfUrls && (
+                              {loadingUrls && (
                                 <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/20 rounded-md">
                                   <Loader2 className="h-3 w-3 animate-spin text-blue-500" />
                                   <span className="text-xs text-blue-600 dark:text-blue-400">Loading...</span>
@@ -1079,7 +1128,7 @@ export default function PublicFeedbackPage() {
         )}
 
         {/* Enhanced User Information Card - Only show for public users */}
-        {!isInternalUser && (
+        {!isAuthenticatedInternalAccess && (
           <Card className="shadow-xl mb-8 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border-0 rounded-2xl overflow-hidden">
             <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-cyan-500/10 p-6 border-b border-slate-200/50 dark:border-slate-700/50">
               <CardTitle className="flex items-center gap-3 text-slate-900 dark:text-white text-xl">
@@ -1186,7 +1235,7 @@ export default function PublicFeedbackPage() {
         )}
 
         {/* Enhanced logged in user info for internal users */}
-        {isInternalUser && (
+        {isAuthenticatedInternalAccess && (
           <Card className="shadow-xl mb-8 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border-emerald-200 dark:border-emerald-700 rounded-2xl overflow-hidden">
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
@@ -1739,7 +1788,7 @@ export default function PublicFeedbackPage() {
             <Heart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           </div>
           <AlertDescription className="text-slate-700 dark:text-slate-300">
-            {isInternalUser ? (
+            {isAuthenticatedInternalAccess ? (
               <><strong className="text-slate-900 dark:text-white">Team Member Notice:</strong> Your feedback will be recorded and visible to other team members involved in the hiring process.</>
             ) : (
               <><strong className="text-slate-900 dark:text-white">Privacy Notice:</strong> Your feedback will be shared with the hiring team to help evaluate this candidate. 

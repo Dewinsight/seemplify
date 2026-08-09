@@ -1,28 +1,40 @@
 const express = require('express');
-const crypto = require('crypto');
 const router = express.Router();
 const { verifyNylasWebhook, logWebhookRequest } = require('../middleware/webhookVerification');
 const webhookController = require('../controllers/webhookController');
-
-// IDP Webhook Secret
-const IDP_WEBHOOK_SECRET = process.env.IDP_WEBHOOK_SECRET || 'your-webhook-secret-key';
+const {
+  applyMemberAppAccessChanged,
+  applyMemberRemoved,
+  applyIdentityClaimsChanged
+} = require('../services/idpAppAccessEventService');
+const { resolveIdpWebhookSecrets, verifyIdpWebhook } = require('../services/idpWebhookSecurity');
+const {
+  claimIdpWebhookEvent,
+  markIdpWebhookProcessed,
+  markIdpWebhookFailed
+} = require('../services/idpWebhookReceiptService');
+const IDP_WEBHOOK_SECRETS = resolveIdpWebhookSecrets();
 
 /**
  * Verify IDP webhook signature
  */
 function verifyIdpSignature(req, res, next) {
-  const signature = req.headers['x-idp-signature'];
+  const signature = req.headers['x-idp-signature-v2'];
+  const deliveryTimestamp = req.headers['x-idp-delivery-timestamp'];
   if (!signature) {
     console.warn('IDP Webhook: Missing signature');
     return res.status(401).json({ error: 'Missing signature' });
   }
   
-  const expected = crypto.createHmac('sha256', IDP_WEBHOOK_SECRET)
-    .update(JSON.stringify(req.body)).digest('hex');
-  
-  if (signature !== expected) {
+  const verified = verifyIdpWebhook({
+    payload: req.body,
+    signature,
+    deliveryTimestamp,
+    secret: IDP_WEBHOOK_SECRETS
+  });
+  if (!verified.ok) {
     console.warn('IDP Webhook: Invalid signature');
-    return res.status(401).json({ error: 'Invalid signature' });
+    return res.status(401).json({ error: 'Invalid or stale webhook', code: verified.code });
   }
   next();
 }
@@ -58,7 +70,17 @@ router.post('/nylas/scheduler',
  * Receives team/organization membership change notifications from the Identity Provider
  */
 router.post('/idp', verifyIdpSignature, async (req, res) => {
+  let receiptClaim;
   try {
+    receiptClaim = await claimIdpWebhookEvent(req.body);
+    if (receiptClaim.duplicate) {
+      return res.json({ received: true, event: req.body.event, eventId: req.body.eventId, duplicate: true });
+    }
+    if (!receiptClaim.claimed) {
+      res.set('Retry-After', '1');
+      return res.status(409).json({ error: 'Webhook event is already processing', retryable: true });
+    }
+
     const { event, data, timestamp } = req.body;
     console.log(`📥 IDP Webhook received: ${event}`, { userId: data?.userId, timestamp });
 
@@ -70,10 +92,12 @@ router.post('/idp', verifyIdpSignature, async (req, res) => {
 
       case 'team.member.removed':
         console.log(`  Team member removed: user=${data.userId}, team=${data.teamId}`);
+        console.log('  Claims invalidated:', await applyIdentityClaimsChanged(data));
         break;
 
       case 'team.member.role_changed':
         console.log(`  Team role changed: user=${data.userId}, ${data.oldRole} -> ${data.newRole}`);
+        console.log('  Claims invalidated:', await applyIdentityClaimsChanged(data));
         break;
 
       case 'organization.member.added':
@@ -81,8 +105,18 @@ router.post('/idp', verifyIdpSignature, async (req, res) => {
         break;
 
       case 'organization.member.removed':
-        console.log(`  Org member removed: user=${data.userId}, org=${data.organizationId}`);
+        console.log('  Organization member removed:', await applyMemberRemoved(data));
         break;
+
+      case 'organization.member.role_changed':
+        console.log('  Organization role changed:', await applyIdentityClaimsChanged(data));
+        break;
+
+      case 'organization.member.app_access_changed': {
+        const result = await applyMemberAppAccessChanged(data);
+        console.log('  Organization app access updated:', result);
+        break;
+      }
 
       case 'team.manager.changed':
         console.log(`  Team manager changed: team=${data.teamId}, ${data.oldManagerId} -> ${data.newManagerId}`);
@@ -97,11 +131,17 @@ router.post('/idp', verifyIdpSignature, async (req, res) => {
         console.log(`  Unknown IDP event: ${event}`);
     }
 
-    res.json({ received: true, event });
+    await markIdpWebhookProcessed(receiptClaim);
+    res.json({ received: true, event, eventId: req.body.eventId });
   } catch (error) {
     console.error('IDP Webhook processing error:', error);
+    if (receiptClaim?.claimed) {
+      await markIdpWebhookFailed(receiptClaim, error).catch(markError => {
+        console.error('IDP Webhook receipt failure update failed:', markError);
+      });
+    }
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
-module.exports = router; 
+module.exports = router;

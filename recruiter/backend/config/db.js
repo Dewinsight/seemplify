@@ -29,6 +29,14 @@ const connectDB = async () => {
     const compatibility = await ensureCvProcessingCompatibility();
     console.log('CV runtime compatibility checks complete:', compatibility);
 
+    const { reconcileCandidateCommitStates } = require('../services/publicApplicationCapacityService');
+    const publicApplicationRepair = await reconcileCandidateCommitStates();
+    console.log('Public application commit repair complete:', publicApplicationRepair);
+
+    const { recoverOrganizationErasures } = require('../services/organizationErasureService');
+    const organizationErasureRepair = await recoverOrganizationErasures();
+    console.log('Organization erasure recovery complete:', organizationErasureRepair);
+
     // Raw AI usage events are the authoritative ledger. Repair legacy event
     // identities and rebuild any missing/ghost materialized projections before
     // the API begins accepting inference traffic.

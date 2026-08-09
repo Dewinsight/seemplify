@@ -369,7 +369,7 @@ function atSourceMeteringCore(event = {}) {
 
 function isAtSourceEvent(event = {}) {
   return event.atSourceOnly === true
-    && event.meteringOrigin === 'local-gateway-at-source';
+    && ['local-gateway-at-source', 'chatgpt-gateway-at-source'].includes(event.meteringOrigin);
 }
 
 function isBackendMeteringEvent(event = {}) {
@@ -378,7 +378,7 @@ function isBackendMeteringEvent(event = {}) {
 }
 
 function sameAtSourceMeteringIdentity(existing, incoming) {
-  return /^localexec_[a-f0-9]{48}$/.test(String(existing?.gatewayExecutionId || ''))
+  return /^(localexec|chatgptexec)_[a-f0-9]{48}$/.test(String(existing?.gatewayExecutionId || ''))
     && existing.gatewayExecutionId === incoming?.gatewayExecutionId
     && atSourceMeteringCore(existing) === atSourceMeteringCore(incoming);
 }

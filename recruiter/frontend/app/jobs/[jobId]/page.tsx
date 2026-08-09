@@ -163,6 +163,11 @@ function JobDetailInnerPage() {
           setCandidatesTab('shortlist')
           // Clean up the URL
           window.history.replaceState({}, '', window.location.pathname)
+        } else if (tab === 'ai-matching') {
+          console.log('Navigating to candidates -> AI matches')
+          setActiveTab('candidates')
+          setCandidatesTab('ai-matches')
+          window.history.replaceState({}, '', window.location.pathname)
         }
       }
     }
@@ -181,7 +186,7 @@ function JobDetailInnerPage() {
     const checkInterval = setInterval(() => {
       const searchParams = new URLSearchParams(window.location.search)
       const tab = searchParams.get('tab')
-      if (tab === 'shortlist') {
+      if (tab === 'shortlist' || tab === 'ai-matching') {
         handleTabNavigation()
       }
     }, 100)

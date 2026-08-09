@@ -16,6 +16,12 @@ export async function POST(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(request.headers.get('idempotency-key')
+          ? { 'Idempotency-Key': request.headers.get('idempotency-key') as string }
+          : {}),
+        ...(request.headers.get('x-public-application-token')
+          ? { 'X-Public-Application-Token': request.headers.get('x-public-application-token') as string }
+          : {}),
       },
       body: JSON.stringify(shortlistData),
     })

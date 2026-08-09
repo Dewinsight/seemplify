@@ -13,6 +13,26 @@ interface CandidateData extends CandidateFormValues {
     strengths?: string[];
     potentialFlags?: string[];
   };
+  processingMetadata?: {
+    uploadSuccess?: boolean;
+    parseSuccess?: boolean;
+    aiSuccess?: boolean;
+    fileSize?: number;
+    originalName?: string;
+    processedAt?: string;
+    cvProcessingJobId?: string;
+    cvIngestionState?: 'not_received' | 'accepted' | 'queued' | 'processing' | 'waiting' | 'waiting_for_chatgpt' | 'failed' | 'completed' | 'cancelled' | 'deleted';
+    cvProcessingStage?: 'received' | 'ingesting' | 'uploading' | 'stored' | 'extracting' | 'analyzing' | 'profile_creation' | 'finalizing' | 'retry_scheduled' | 'completed' | 'failed' | string;
+    cvProcessingProgress?: number;
+    cvProcessingUpdatedAt?: string;
+    cvRetryEligible?: boolean;
+    cvProcessingError?: {
+      code?: string;
+      message?: string;
+      stage?: string;
+      at?: string;
+    };
+  };
   workExperience?: {
     experienceSummary?: string;
     totalYearsExperience?: number;
@@ -45,7 +65,7 @@ interface CandidateData extends CandidateFormValues {
 
 export interface CVProcessingStatus {
   jobId: string;
-  state: 'queued' | 'waiting_for_chatgpt' | 'processing' | 'completed' | 'failed';
+  state: 'queued' | 'waiting_for_chatgpt' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'deleted';
   stage?: 'ingesting' | 'uploading' | 'extracting' | 'analyzing' | 'finalizing' | 'completed' | 'failed' | null;
   progress: number;
   position: number | null;
@@ -70,6 +90,7 @@ export interface CVProcessingStatus {
     startedAt?: string | null;
     finishedAt?: string | null;
     errorCode?: string | null;
+    errorMessage?: string | null;
   }>;
   error?: { code?: string; message?: string };
 }
@@ -89,6 +110,47 @@ export class CVProcessingError extends Error {
     this.status = status;
     this.accepted = accepted;
   }
+}
+
+export class CVProcessingPendingError extends Error {
+  status: CVProcessingStatus;
+  accepted: AcceptedCVProcessing;
+
+  constructor(status: CVProcessingStatus, accepted: AcceptedCVProcessing) {
+    super('CV processing is continuing safely in the background. You can follow it from Processing history.');
+    this.name = 'CVProcessingPendingError';
+    this.status = status;
+    this.accepted = accepted;
+  }
+}
+
+type CVProcessingWaitOptions = {
+  signal?: AbortSignal;
+  maxWaitMs?: number;
+};
+
+function abortedProcessingError() {
+  const error = new Error('CV status polling was cancelled');
+  error.name = 'AbortError';
+  return error;
+}
+
+function waitForPoll(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortedProcessingError());
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortedProcessingError());
+    };
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 interface UploadCVResponse {
@@ -129,18 +191,31 @@ const handleOrganizationError = (error: ApiError) => {
 const waitForCVProcessing = async (
   accepted: AcceptedCVProcessing,
   onStatus?: (status: CVProcessingStatus) => void,
+  options: CVProcessingWaitOptions = {},
 ): Promise<UploadCVResponse> => {
   let status: CVProcessingStatus = accepted;
+  const deadline = Date.now() + Math.max(5_000, options.maxWaitMs ?? 120_000);
   onStatus?.(status);
-  while (!['completed', 'failed'].includes(status.state)) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    const response = await apiRequest(`${accepted.statusUrl}?token=${encodeURIComponent(accepted.statusToken)}`, { method: 'GET' });
+  while (!['completed', 'failed', 'cancelled', 'deleted'].includes(status.state)) {
+    if (options.signal?.aborted) throw abortedProcessingError();
+    if (Date.now() >= deadline) throw new CVProcessingPendingError(status, accepted);
+    await waitForPoll(2_000, options.signal);
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') continue;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) continue;
+    const response = await apiRequest(accepted.statusUrl, {
+      method: 'GET',
+      headers: { 'X-CV-Status-Token': accepted.statusToken },
+      signal: options.signal,
+    });
     if (!response.ok) throw new Error('Could not read CV processing status');
     status = await response.json();
     onStatus?.(status);
   }
-  if (status.state === 'failed' || !status.candidateId) {
-    throw new CVProcessingError(status.error?.message || 'CV processing failed', status, accepted);
+  if (status.state !== 'completed' || !status.candidateId) {
+    const fallback = ['cancelled', 'deleted'].includes(status.state)
+      ? 'CV processing was cancelled'
+      : 'CV processing failed';
+    throw new CVProcessingError(status.error?.message || fallback, status, accepted);
   }
   const candidate = await getCandidateById(status.candidateId);
   return {
@@ -156,35 +231,51 @@ const waitForCVProcessing = async (
   };
 };
 
+export const resumeCVProcessing = (
+  accepted: AcceptedCVProcessing,
+  onStatus?: (status: CVProcessingStatus) => void,
+  options?: CVProcessingWaitOptions,
+) => waitForCVProcessing(accepted, onStatus, options);
+
 export const retryCVProcessing = async (
   accepted: AcceptedCVProcessing,
   onStatus?: (status: CVProcessingStatus) => void,
   stage: 'failed' | 'parsing' | 'analysis' = 'failed',
+  options: CVProcessingWaitOptions = {},
 ): Promise<UploadCVResponse> => {
   const response = await apiRequest(`/api/candidates/cv-jobs/${encodeURIComponent(accepted.jobId)}/retry`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ stage }),
+    signal: options.signal,
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(result.msg || result.message || 'CV processing could not be retried');
   }
   onStatus?.(result as CVProcessingStatus);
-  return waitForCVProcessing(accepted, onStatus);
+  return waitForCVProcessing(accepted, onStatus, options);
 };
 
 export const uploadCV = async (
   formData: FormData,
   onStatus?: (status: CVProcessingStatus) => void,
+  options?: {
+    idempotencyKey?: string;
+    onAccepted?: (accepted: AcceptedCVProcessing) => void;
+    signal?: AbortSignal;
+    maxWaitMs?: number;
+  },
 ): Promise<UploadCVResponse> => {
   const token = localStorage.getItem('jwt');
   const response = await apiRequest(`/api/candidates/upload-cv`, {
     method: "POST",
     headers: {
       ...(token && { 'Authorization': `Bearer ${token}` }),
+      ...(options?.idempotencyKey && { 'Idempotency-Key': options.idempotencyKey }),
     },
     body: formData,
+    signal: options?.signal,
   });
 
   if (!response.ok) {
@@ -204,11 +295,18 @@ export const uploadCV = async (
                         errorResult.error ||          // Error string
                         'Failed to upload CV. Please try again.';
     
-    // Throw error with the full message from backend
-    throw new Error(errorMessage);
+    // Preserve response metadata so callers can rotate a definitively rejected
+    // idempotency key without weakening replay safety for network/5xx failures.
+    const error = new Error(errorMessage);
+    (error as Error & { status?: number; code?: string }).status = response.status;
+    (error as Error & { status?: number; code?: string }).code = errorResult.code;
+    throw error;
   }
   const result = await response.json();
-  if (response.status === 202) return waitForCVProcessing(result, onStatus);
+  if (response.status === 202) {
+    options?.onAccepted?.(result as AcceptedCVProcessing);
+    return waitForCVProcessing(result, onStatus, options);
+  }
   return result;
 };
 
@@ -324,6 +422,7 @@ export const bulkDeleteCandidates = async (candidateIds: string[]): Promise<{
   success: boolean;
   deleted: number;
   failed: number;
+  cancelled?: number;
   results: Array<{ id: string; success: boolean }>;
   failures: Array<{ id: string; error: string }>;
 }> => {
@@ -481,16 +580,88 @@ export interface BulkUploadResponse {
   statusUrl: string;
 }
 
+export interface CVIngestionJob {
+  jobId: string;
+  source: 'private' | 'public' | 'bulk' | 'replacement' | 'ai-interview' | string;
+  state: 'queued' | 'waiting_for_chatgpt' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'deleted';
+  phase?: string | null;
+  stage?: 'received' | 'ingesting' | 'uploading' | 'stored' | 'extracting' | 'analyzing' | 'profile_creation' | 'finalizing' | 'retry_scheduled' | 'completed' | 'failed' | 'cancelled' | 'deleted' | null;
+  progress?: number | null;
+  stageStartedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  failedAt?: string | null;
+  attempts?: number;
+  processingAttempts?: number;
+  revision?: number;
+  supersedesJobId?: string | null;
+  supersededByJobId?: string | null;
+  artifacts?: {
+    received?: { available?: boolean; at?: string | null };
+    durableFile?: { available?: boolean; storedAt?: string | null };
+    cloudinaryFile?: { available?: boolean; storedAt?: string | null };
+    extractedText?: { available?: boolean; length?: number; extractedAt?: string | null };
+    analysis?: { available?: boolean; completedAt?: string | null };
+    profile?: { available?: boolean; committedAt?: string | null };
+  } | null;
+  error?: { code?: string | null; message?: string | null; stage?: string | null; at?: string | null } | null;
+  retry?: {
+    available?: boolean;
+    availableUntil?: string | null;
+    nextAttemptAt?: string | null;
+    requestedStage?: 'failed' | 'parsing' | 'analysis' | null;
+    manualRequests?: number;
+    automaticRetries?: number;
+    manualRetries?: number;
+    replacementAvailable?: boolean;
+  } | null;
+  stageHistory?: Array<{
+    stage?: string | null;
+    state?: string | null;
+    status?: string | null;
+    progress?: number | null;
+    attempt?: number | null;
+    at?: string | null;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+  }>;
+  attemptHistory?: CVProcessingStatus['attemptHistory'];
+  organization?: { id?: string | null; organizationId?: string | null; name?: string | null } | string | null;
+  uploader?: { id?: string | null; userId?: string | null; name?: string | null; email?: string | null } | string | null;
+  file?: {
+    name?: string | null;
+    originalName?: string | null;
+    size?: number | null;
+    type?: string | null;
+    receivedAt?: string | null;
+    storedAt?: string | null;
+    cloudStoredAt?: string | null;
+  } | null;
+  originalName?: string | null;
+  application?: { jobId?: string | null; jobTitle?: string | null } | null;
+  candidate?: { id?: string | null; candidateId?: string | null; name?: string | null; email?: string | null } | string | null;
+  candidateId?: string | null;
+  batch?: { id?: string | null; batchId?: string | null } | string | null;
+}
+
 export interface BulkUploadStatus {
   batchId: string;
   totalFiles: number;
   completed: number;
   successful: number;
   failed: number;
+  cancelled?: number;
   processing: number;
   queued: number;
-  results: Array<{ fileName: string; candidateId: string; candidateName: string; success: true }>;
+  results: Array<{ fileName: string; candidateId: string; candidateName?: string; success: true }>;
   errors: Array<{ fileName: string; error: string; success: false }>;
+  /** Rich per-file rows are additive to the legacy aggregate fields. Older
+   * deployments may omit this array, so callers must keep an honest fallback. */
+  jobs?: CVIngestionJob[];
   startedAt: string;
   completedAt: string | null;
   state: 'processing' | 'waiting_for_chatgpt' | 'completed';
@@ -500,20 +671,26 @@ export interface BulkUploadStatus {
   waitingCode?: string | null;
 }
 
-export const bulkUploadCVs = async (files: File[]): Promise<BulkUploadResponse> => {
+export const bulkUploadCVs = async (files: File[], idempotencyKey?: string): Promise<BulkUploadResponse> => {
   const token = localStorage.getItem('jwt');
   const formData = new FormData();
   files.forEach((file) => formData.append('resumes', file));
 
   const response = await apiRequest('/api/bulk-upload/cv', {
     method: 'POST',
-    headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+    headers: {
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...(idempotencyKey && { 'Idempotency-Key': idempotencyKey }),
+    },
     body: formData,
   });
 
   if (!response.ok) {
     const err: any = await response.json().catch(() => ({ msg: 'Bulk upload failed' }));
-    throw new Error(err.msg || err.error || 'Bulk upload failed');
+    const error = new Error(err.msg || err.error || 'Bulk upload failed');
+    (error as Error & { status?: number; code?: string }).status = response.status;
+    (error as Error & { status?: number; code?: string }).code = err.code;
+    throw error;
   }
   return response.json();
 };
@@ -522,9 +699,54 @@ export const getBulkUploadStatus = async (batchId: string): Promise<BulkUploadSt
   const response = await apiRequest(`/api/bulk-upload/status/${batchId}`, { method: 'GET' });
   if (!response.ok) {
     const err: any = await response.json().catch(() => ({ msg: 'Status check failed' }));
-    throw new Error(err.msg || 'Status check failed');
+    const error = new Error(err.msg || 'Status check failed');
+    (error as Error & { status?: number; code?: string }).status = response.status;
+    (error as Error & { status?: number; code?: string }).code = err.code;
+    throw error;
   }
   return response.json();
+};
+
+export const retryCVIngestionJob = async (
+  jobId: string,
+  stage: 'failed' | 'parsing' | 'analysis' = 'failed',
+): Promise<{ job: CVIngestionJob; queueAvailable?: boolean; requestedStage?: string; effectiveStage?: string }> => {
+  const response = await apiRequest(`/api/cv-ingestion/jobs/${encodeURIComponent(jobId)}/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stage }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.msg || payload.message || 'CV processing could not be retried');
+    (error as Error & { status?: number; code?: string }).status = response.status;
+    (error as Error & { status?: number; code?: string }).code = payload.code;
+    throw error;
+  }
+  return payload;
+};
+
+export const replaceCVIngestionJob = async (
+  jobId: string,
+  file: File,
+  idempotencyKey: string,
+): Promise<{ job: CVIngestionJob; priorJobId: string; replacement: true; duplicate?: boolean; queueAvailable?: boolean }> => {
+  const body = new FormData();
+  body.append('resume', file);
+  body.append('expectedPriorJobId', jobId);
+  const response = await apiRequest(`/api/cv-ingestion/jobs/${encodeURIComponent(jobId)}/replace`, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || response.status !== 202 || !payload.job?.jobId) {
+    const error = new Error(payload.msg || payload.message || 'Corrected CV could not be accepted');
+    (error as Error & { status?: number; code?: string }).status = response.status;
+    (error as Error & { status?: number; code?: string }).code = payload.code;
+    throw error;
+  }
+  return payload;
 };
 
 export const getRecentBulkUploadStatus = async (): Promise<BulkUploadStatus | null> => {

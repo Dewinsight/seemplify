@@ -18,7 +18,11 @@ function escapeRegex(value = '') {
 }
 
 function buildCandidateQuery(organizationId, { search, status } = {}) {
-  const query = { organization: organizationId };
+  const query = {
+    organization: organizationId,
+    publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+    deletionState: { $ne: 'tombstoned' }
+  };
 
   if (status && status !== 'all') {
     query.status = status;
@@ -61,6 +65,8 @@ async function getValidCandidateIds(candidateIds, organizationId) {
   const candidates = await Candidate.find({
     _id: { $in: uniqueIds },
     organization: organizationId,
+    publicApplicationCommitState: { $nin: ['provisional', 'committing'] },
+    deletionState: { $ne: 'tombstoned' }
   }).select('_id').lean();
 
   const allowed = new Set(candidates.map(candidate => String(candidate._id)));

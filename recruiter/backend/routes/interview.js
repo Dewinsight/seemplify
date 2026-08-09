@@ -4,12 +4,13 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization } = require('../middleware/organizationMiddleware');
 const { requireCredits, deductCredits } = require('../middleware/creditsMiddleware');
 const interviewController = require('../controllers/interviewController');
+const requirePublicFeedbackAccess = require('../middleware/publicFeedbackAccess');
 
 // Additional CORS headers for interview routes (especially for multi-candidate scheduling)
 router.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', req.headers.origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Session-ID');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Session-ID, X-Public-Feedback-Token');
   res.header('Access-Control-Allow-Credentials', 'true');
   
   // Handle preflight OPTIONS requests
@@ -62,15 +63,15 @@ router.delete('/:interviewId/comments/:commentId', authMiddleware, requireOrgani
 router.post('/:interviewId/analyze-comments', authMiddleware, requireOrganization, interviewController.analyzeTeamComments);
 
 // Question-based feedback routes
-router.get('/:interviewId/feedback/questions', interviewController.getInterviewQuestions); // Made public for public feedback page
+router.get('/:interviewId/feedback/questions', requirePublicFeedbackAccess, interviewController.getInterviewQuestions);
 router.get('/:interviewId/feedback/summary', authMiddleware, requireOrganization, interviewController.getFeedbackSummary);
 router.post('/:interviewId/feedback/question', authMiddleware, requireOrganization, interviewController.addQuestionFeedback);
-router.post('/:interviewId/feedback/public', interviewController.addPublicFeedback); // No auth required for public feedback
-router.post('/:interviewId/feedback/bulk', interviewController.addBulkPublicFeedback); // New bulk feedback endpoint
+router.post('/:interviewId/feedback/public', requirePublicFeedbackAccess, interviewController.addPublicFeedback);
+router.post('/:interviewId/feedback/bulk', requirePublicFeedbackAccess, interviewController.addBulkPublicFeedback);
 
 // OTP verification routes for public feedback
-router.post('/:interviewId/feedback/generate-otp', interviewController.generateFeedbackOTP); // Generate OTP for email verification
-router.post('/:interviewId/feedback/verify-otp', interviewController.verifyFeedbackOTP); // Verify OTP
+router.post('/:interviewId/feedback/generate-otp', requirePublicFeedbackAccess, interviewController.generateFeedbackOTP);
+router.post('/:interviewId/feedback/verify-otp', requirePublicFeedbackAccess, interviewController.verifyFeedbackOTP);
 
 // Delete feedback route
 router.delete('/:interviewId/feedback/:commentId', authMiddleware, requireOrganization, interviewController.deleteFeedback); // Delete feedback
@@ -124,4 +125,4 @@ const interviewQuestionsController = require('../controllers/interviewQuestionsC
 router.post('/:interviewId/questions/send', authMiddleware, requireOrganization, interviewQuestionsController.sendInterviewQuestions);
 router.get('/:interviewId/questions', authMiddleware, requireOrganization, interviewQuestionsController.getSelectedQuestions);
 
-module.exports = router; 
+module.exports = router;

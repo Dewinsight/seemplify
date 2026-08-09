@@ -70,7 +70,7 @@ test('every ChatGPT runtime-gate failure defers instead of failing a CV', () => 
   assert.equal(isRuntimeGateError({ code: 'AI_RUNTIME_ERROR', message: 'boom' }), false);
 });
 
-test('an actorless job is attributed to the recruiter with a routable ChatGPT account', async () => {
+test('an actorless job never borrows a member personal ChatGPT account', async () => {
   const organizationId = new mongoose.Types.ObjectId();
   const stale = await User.create({
     email: 'stale@example.test',
@@ -101,15 +101,12 @@ test('an actorless job is attributed to the recruiter with a routable ChatGPT ac
   });
 
   const resolved = await resolveOrganizationRuntimeActor(organizationId);
-  assert.ok(resolved, 'a routable account must resolve');
-  assert.equal(resolved.id, String(owner._id));
-  assert.equal(resolved.user.email, 'owner@example.test');
+  assert.equal(resolved, null, 'personal consent only covers work the member initiates');
 
   const nobody = await resolveOrganizationRuntimeActor(new mongoose.Types.ObjectId());
   assert.equal(nobody, null, 'an organization with no routable account resolves to none');
 
-  // An account connected before its organization was recorded still resolves
-  // through its user, and the organization is healed onto the account row.
+  // An older account without an organization is equally ineligible.
   const orphanOrgId = new mongoose.Types.ObjectId();
   const orphanUser = await User.create({
     email: 'orphan@example.test',
@@ -125,10 +122,9 @@ test('an actorless job is attributed to the recruiter with a routable ChatGPT ac
     connectedAt: new Date('2026-07-01')
   });
   const viaOrphan = await resolveOrganizationRuntimeActor(orphanOrgId);
-  assert.ok(viaOrphan, 'the orphaned account must resolve through its user');
-  assert.equal(viaOrphan.id, String(orphanUser._id));
+  assert.equal(viaOrphan, null);
   const healed = await AIUserRuntimeAccount.findOne({ user: orphanUser._id }).lean();
-  assert.equal(String(healed.organization), String(orphanOrgId), 'organization heals onto the account');
+  assert.equal(healed.organization, undefined, 'actorless lookup must not mutate a personal account');
 });
 
 test('login wakes waiting CV analyses once and tells the recruiter once', async () => {

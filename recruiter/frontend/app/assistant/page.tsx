@@ -1198,7 +1198,7 @@ export default function AssistantPage() {
           },
           actions: [
             { label: "View All Candidates", icon: "users", action: "navigate", data: { url: "/candidates" } },
-            { label: "AI Matching", icon: "search", action: "navigate", data: { url: `/jobs/${job.jobId}/matching` } },
+            { label: "AI Matching", icon: "search", action: "navigate", data: { url: `/jobs/${job.jobId}?tab=ai-matching` } },
             { label: "Job Details", icon: "external-link", action: "navigate", data: { url: `/jobs/${job.jobId}` } },
             { label: "Analyze Job", icon: "chart", action: "analyze-job", data: { jobId: job.jobId } }
           ]

@@ -51,7 +51,8 @@ router.get('/public', async (req, res) => {
     // Build query
     const query = {
       isPublic: true,
-      status: 'active'
+      status: 'active',
+      candidateApplyLimit: { $gt: 0 }
     };
 
     // Text search (title, description, requirements, skills)
@@ -120,7 +121,7 @@ router.get('/public', async (req, res) => {
       .select(
         'title department location type level description requirements ' +
         'skills experience education salary benefits remote openings ' +
-        'applicationDeadline createdAt'
+        'applicationDeadline createdAt candidateApplyLimit publicApplicationCount'
       )
       .sort(sortOptions)
       .skip(skip)
@@ -132,7 +133,11 @@ router.get('/public', async (req, res) => {
 
     // Get unique filter options (for dropdown lists)
     // Fetch each job individually and populate, skipping ones with errors
-    const allPublicJobsRaw = await Job.find({ isPublic: true, status: 'active' })
+    const allPublicJobsRaw = await Job.find({
+      isPublic: true,
+      status: 'active',
+      candidateApplyLimit: { $gt: 0 }
+    })
       .select('location department type organization')
       .lean();
 
@@ -208,7 +213,13 @@ router.get('/public', async (req, res) => {
     });
 
     res.json({
-      jobs,
+      jobs: jobs.map((job) => ({
+        ...job,
+        acceptsApplications: Number(job.publicApplicationCount || 0) < Number(job.candidateApplyLimit || 0),
+        applicationStatus: Number(job.publicApplicationCount || 0) < Number(job.candidateApplyLimit || 0)
+          ? 'accepting'
+          : 'full'
+      })),
       pagination: {
         total,
         page: pageNum,
@@ -233,7 +244,8 @@ router.get('/public/:id', async (req, res) => {
     const job = await Job.findOne({ 
       _id: id,
       isPublic: true,
-      status: 'active'
+      status: 'active',
+      candidateApplyLimit: { $gt: 0 }
     }).select(
       'title department location type level description requirements responsibilities ' +
       'skills experience education salary benefits remote openings applicationDeadline ' +
@@ -250,14 +262,29 @@ router.get('/public/:id', async (req, res) => {
       $inc: { 'analytics.publicViews': 1 }
     });
 
-    res.json(job);
+    res.json({
+      ...job.toObject(),
+      acceptsApplications: Number(job.publicApplicationCount || 0) < Number(job.candidateApplyLimit || 0),
+      applicationStatus: Number(job.publicApplicationCount || 0) < Number(job.candidateApplyLimit || 0)
+        ? 'accepting'
+        : 'full'
+    });
   } catch (error) {
     console.error('Error fetching public job:', error);
     res.status(500).json({ msg: 'Server error' });
   }
 });
 
-// Public endpoint to submit job application (no authentication required)
+// The legacy endpoint below performed a global email lookup and could attach a
+// candidate from another tenant. Keep an explicit tombstone ahead of it so old
+// clients receive an actionable response while no request can reach that code.
+router.post('/public/apply', (_req, res) => res.status(410).json({
+  code: 'PUBLIC_APPLICATION_ENDPOINT_RETIRED',
+  msg: 'Use the public candidate and shortlist application flow.'
+}));
+
+// Retained temporarily as unreachable migration reference. The tombstone
+// above always terminates the matching request first.
 router.post('/public/apply', async (req, res) => {
   try {
     const {

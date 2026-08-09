@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { ACTIVITY_DEFINITIONS } = require('../../config/aiRuntimeCatalog');
 const { recordUsage } = require('./usageService');
+const { claimMongoNonce } = require('../../middleware/internalServiceAuth');
 
 const SIGNATURE_SKEW_MS = 5 * 60 * 1000;
 const NONCE_TTL_MS = 10 * 60 * 1000;
@@ -68,6 +69,33 @@ function verifyChatGptUsageSignature({
   }
   nonceStore.set(nonce, now + NONCE_TTL_MS);
   return { ok: true };
+}
+
+async function verifyAndClaimChatGptUsageSignature(input = {}, { claimNonce = claimMongoNonce } = {}) {
+  // Preserve the pure verifier for focused tests, but production replay state
+  // must be shared by every Recruiter replica rather than its process-local
+  // compatibility map.
+  const verified = verifyChatGptUsageSignature({ ...input, nonceStore: new Map() });
+  if (!verified.ok) return verified;
+  const header = name => input.headers?.[name] ?? input.headers?.[name.toLowerCase()];
+  const nonce = String(header('x-seemplify-nonce') || '');
+  const currentTime = Number(input.now) || Date.now();
+  try {
+    const claimed = await claimNonce(`chatgpt-usage:${nonce}`, currentTime + NONCE_TTL_MS);
+    return claimed ? verified : {
+      ok: false,
+      statusCode: 409,
+      code: 'CHATGPT_USAGE_REPLAY_REJECTED',
+      message: 'ChatGPT usage request was already received'
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      statusCode: 503,
+      code: 'CHATGPT_USAGE_REPLAY_GUARD_UNAVAILABLE',
+      message: 'ChatGPT usage replay protection is unavailable'
+    };
+  }
 }
 
 function validationError(message) {
@@ -216,5 +244,6 @@ module.exports = {
   ingestChatGptUsageEnvelope,
   resetChatGptUsageNonceStoreForTests,
   validateChatGptUsageEnvelope,
+  verifyAndClaimChatGptUsageSignature,
   verifyChatGptUsageSignature
 };

@@ -38,23 +38,29 @@ const AIMatchCacheSchema = new Schema({
   },
   metadata: {
     candidateCount: Number, // For bulk caches
+    resultCount: Number,
+    requestedTopK: Number,
+    exhausted: Boolean,
     generationTime: Number, // Time taken to generate (ms)
     modelUsed: String, // e.g., 'Llama-3.3-70B-Instruct', 'text-embedding-3-large'
     tokensUsed: Number, // API tokens consumed
-    hasInsights: Boolean // For report caches - indicates if GPT insights are included
+    hasInsights: Boolean, // For report caches - indicates if GPT insights are included
+    cacheIdentity: Schema.Types.Mixed,
+    identityKey: String
   },
   expiresAt: {
     type: Date,
-    required: true,
-    index: true
+    required: true
     // TTL index will auto-delete expired documents
   }
 }, {
   timestamps: true
 });
 
-// Compound index for efficient lookups
-AIMatchCacheSchema.index({ jobId: 1, candidateId: 1 }, { unique: true, sparse: true });
+// Cache type is part of the identity. Deterministic sentinels in the service
+// keep this backward-compatible with deployments that still have the former
+// {jobId,candidateId} unique index.
+AIMatchCacheSchema.index({ jobId: 1, candidateId: 1, cacheType: 1 }, { unique: true });
 AIMatchCacheSchema.index({ jobId: 1, cacheType: 1 });
 
 // TTL index - MongoDB will automatically delete documents when expiresAt is reached

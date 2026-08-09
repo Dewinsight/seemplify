@@ -29,6 +29,10 @@ class CloudinaryUploadService {
       const commonOptions = {
         type: deliveryType,
         overwrite: true,
+        timeout: Math.max(
+          60_000,
+          Number(process.env.CV_CLOUD_UPLOAD_TIMEOUT_MS || 5 * 60 * 1000)
+        ),
         ...(options.publicId ? { public_id: String(options.publicId).replace(/[^A-Za-z0-9_-]/g, '_') } : {})
       };
 
