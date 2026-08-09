@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Alert,
@@ -280,6 +280,8 @@ function TabPanel({ active, children }: { active: boolean; children: React.React
   return <Box sx={{ pt: 3 }}>{children}</Box>;
 }
 
+const periodInitializationByOrganization = new Map<string, Promise<GoalPeriod[]>>();
+
 function EmptyState({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
   return (
     <Paper variant="outlined" sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
@@ -333,8 +335,6 @@ export default function OKRWorkspacePage() {
     parentOKRId: '',
     objectives: [emptyObjective()],
   });
-  const periodInitializationRef = useRef<Promise<GoalPeriod[]> | null>(null);
-
   const currentUserIds = useMemo(
     () => new Set([user?.id, user?.sub].filter(Boolean).map(String)),
     [user?.id, user?.sub],
@@ -436,18 +436,23 @@ export default function OKRWorkspacePage() {
       setGoals(records);
       let periods = periodResponse ? unwrapData<GoalPeriod[]>(periodResponse, []) : [];
       if ((!Array.isArray(periods) || periods.length === 0) && canManageGoalWorkspace) {
-        if (!periodInitializationRef.current) {
-          periodInitializationRef.current = api.post('/goal-periods/generate-fiscal', {
+        const organizationKey = String(authOrganization?.id || authOrganization?._id || 'active-organization');
+        let initialization = periodInitializationByOrganization.get(organizationKey);
+        if (!initialization) {
+          initialization = api.post('/goal-periods/generate-fiscal', {
             startMonth: 1,
             years: 2,
             includeQuarters: true,
           }).then((generatedResponse) => unwrapData<GoalPeriod[]>(generatedResponse, []))
             .catch((initializationError) => {
-              periodInitializationRef.current = null;
               throw initializationError;
+            })
+            .finally(() => {
+              periodInitializationByOrganization.delete(organizationKey);
             });
+          periodInitializationByOrganization.set(organizationKey, initialization);
         }
-        periods = await periodInitializationRef.current;
+        periods = await initialization;
       }
       setPeriodDefinitions(Array.isArray(periods) ? periods : []);
     } catch (loadError) {
@@ -456,7 +461,7 @@ export default function OKRWorkspacePage() {
     } finally {
       setLoading(false);
     }
-  }, [canManageGoalWorkspace]);
+  }, [authOrganization?.id, authOrganization?._id, canManageGoalWorkspace]);
 
   useEffect(() => {
     if (!contextLoading) loadGoals();

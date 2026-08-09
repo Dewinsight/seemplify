@@ -37,10 +37,10 @@ interface ManagerReviewData {
   okrAssessment: Array<{
     okrId: string;
     okrTitle: string;
-    managerVerifiedCompletion: number;
+    managerVerifiedCompletion: number | null;
     managerComments: string;
-    qualityRating: number;
-    employeeCompletion?: number;
+    qualityRating: number | null;
+    employeeCompletion?: number | null;
   }>;
   overallManagerRating: number;
 }
@@ -151,13 +151,19 @@ export default function ManagerReviewPage() {
       // Initialize OKRs with employee's self-assessment
       const okrs = selfAssessment.okrAssessment?.map((okr: any) => {
         const managerOkr = existing.okrAssessment?.find((o: any) => o.okrId === okr.okrId);
+        const employeeCompletion = typeof okr.completionPercentage === 'number'
+          ? okr.completionPercentage
+          : null;
+        const managerCompletion = typeof managerOkr?.managerVerifiedCompletion === 'number'
+          ? managerOkr.managerVerifiedCompletion
+          : employeeCompletion;
         return {
           okrId: okr.okrId,
           okrTitle: okr.okrTitle,
-          managerVerifiedCompletion: managerOkr?.managerVerifiedCompletion ?? okr.completionPercentage ?? 0,
+          managerVerifiedCompletion: managerCompletion,
           managerComments: managerOkr?.managerComments || '',
-          qualityRating: managerOkr?.qualityRating || 3,
-          employeeCompletion: okr.completionPercentage
+          qualityRating: managerCompletion === null ? null : (managerOkr?.qualityRating || 3),
+          employeeCompletion
         };
       }) || [];
 
@@ -759,52 +765,66 @@ export default function ManagerReviewPage() {
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">Employee's Claim</Typography>
-                    <Typography variant="h6" fontWeight={600}>{okr.employeeCompletion || 0}%</Typography>
+                    <Typography variant="h6" fontWeight={600}>
+                      {okr.employeeCompletion === null || okr.employeeCompletion === undefined
+                        ? 'Not rated'
+                        : `${okr.employeeCompletion}%`}
+                    </Typography>
                   </Grid>
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">Your Verification</Typography>
-                    <Typography variant="h6" fontWeight={600} color="primary.main">{okr.managerVerifiedCompletion}%</Typography>
+                    <Typography variant="h6" fontWeight={600} color="primary.main">
+                      {okr.managerVerifiedCompletion === null ? 'Not rated' : `${okr.managerVerifiedCompletion}%`}
+                    </Typography>
                   </Grid>
                 </Grid>
               </Box>
 
-              <Typography variant="body2" sx={{ mt: 2, mb: 1 }}>Verified Completion:</Typography>
-              <Slider
-                value={okr.managerVerifiedCompletion}
-                onChange={(_, value) => {
-                  setBiasAcknowledged(false);
-                  setFormData(prev => ({
-                    ...prev,
-                    okrAssessment: prev.okrAssessment.map((o, i) =>
-                      i === index ? { ...o, managerVerifiedCompletion: value as number } : o
-                    )
-                  }));
-                }}
-                min={0}
-                max={100}
-                valueLabelDisplay="auto"
-                marks={[
-                  { value: 0, label: '0%' },
-                  { value: 50, label: '50%' },
-                  { value: 100, label: '100%' }
-                ]}
-              />
+              {okr.managerVerifiedCompletion === null ? (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  No progress was available at the appraisal cutoff. This goal is excluded from scoring.
+                </Alert>
+              ) : (
+                <>
+                  <Typography variant="body2" sx={{ mt: 2, mb: 1 }}>Verified Completion:</Typography>
+                  <Slider
+                    value={okr.managerVerifiedCompletion}
+                    onChange={(_, value) => {
+                      setBiasAcknowledged(false);
+                      setFormData(prev => ({
+                        ...prev,
+                        okrAssessment: prev.okrAssessment.map((o, i) =>
+                          i === index ? { ...o, managerVerifiedCompletion: value as number } : o
+                        )
+                      }));
+                    }}
+                    min={0}
+                    max={100}
+                    valueLabelDisplay="auto"
+                    marks={[
+                      { value: 0, label: '0%' },
+                      { value: 50, label: '50%' },
+                      { value: 100, label: '100%' }
+                    ]}
+                  />
 
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
-                <Typography variant="body2">Quality Rating:</Typography>
-                <Rating
-                  value={okr.qualityRating}
-                  onChange={(_, value) => {
-                    setBiasAcknowledged(false);
-                    setFormData(prev => ({
-                      ...prev,
-                      okrAssessment: prev.okrAssessment.map((o, i) =>
-                        i === index ? { ...o, qualityRating: value || 3 } : o
-                      )
-                    }));
-                  }}
-                />
-              </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+                    <Typography variant="body2">Quality Rating:</Typography>
+                    <Rating
+                      value={okr.qualityRating}
+                      onChange={(_, value) => {
+                        setBiasAcknowledged(false);
+                        setFormData(prev => ({
+                          ...prev,
+                          okrAssessment: prev.okrAssessment.map((o, i) =>
+                            i === index ? { ...o, qualityRating: value || 3 } : o
+                          )
+                        }));
+                      }}
+                    />
+                  </Box>
+                </>
+              )}
 
               <TextField
                 fullWidth

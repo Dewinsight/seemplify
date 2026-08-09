@@ -23,7 +23,7 @@ interface ReportData {
   okrAssessment?: {
     okrId: string;
     okrTitle: string;
-    completionPercentage: number;
+    completionPercentage: number | null;
     selfComments: string;
   }[];
   suggestedOverallRating: number | null;
@@ -500,8 +500,14 @@ export default function ReportPreview({
                 </Typography>
                 <Chip
                   size="small"
-                  label={`${okr.completionPercentage}% complete`}
-                  color={okr.completionPercentage >= 80 ? 'success' : okr.completionPercentage >= 50 ? 'warning' : 'error'}
+                  label={okr.completionPercentage === null ? 'Not rated' : `${okr.completionPercentage}% complete`}
+                  color={okr.completionPercentage === null
+                    ? 'default'
+                    : okr.completionPercentage >= 80
+                      ? 'success'
+                      : okr.completionPercentage >= 50
+                        ? 'warning'
+                        : 'error'}
                   sx={{ mt: 1 }}
                 />
                 {okr.selfComments && (

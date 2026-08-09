@@ -42,7 +42,7 @@ type ManualSelfAssessmentForm = {
   okrAssessment: Array<{
     okrId: string;
     okrTitle: string;
-    completionPercentage: number;
+    completionPercentage: number | null;
     selfComments: string;
   }>;
 };
@@ -87,7 +87,7 @@ function buildManualForm(appraisal: any): ManualSelfAssessmentForm {
     ? selfAssessment.okrAssessment.map((item: any) => ({
       okrId: item.okrId || '',
       okrTitle: item.okrTitle || 'OKR',
-      completionPercentage: typeof item.completionPercentage === 'number' ? item.completionPercentage : 0,
+      completionPercentage: typeof item.completionPercentage === 'number' ? item.completionPercentage : null,
       selfComments: item.selfComments || ''
     }))
     : [];
@@ -478,10 +478,19 @@ export default function SelfAssessmentPage() {
                             fullWidth
                             type="number"
                             label="Completion (%)"
-                            value={okr.completionPercentage}
+                            value={okr.completionPercentage ?? ''}
                             onChange={(e) => {
+                              if (e.target.value === '') {
+                                setManualForm((prev) => ({
+                                  ...prev,
+                                  okrAssessment: prev.okrAssessment.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, completionPercentage: null } : item
+                                  )
+                                }));
+                                return;
+                              }
                               const nextValue = Number(e.target.value);
-                              const clamped = Number.isNaN(nextValue) ? 0 : Math.max(0, Math.min(100, nextValue));
+                              const clamped = Number.isNaN(nextValue) ? null : Math.max(0, Math.min(100, nextValue));
                               setManualForm((prev) => ({
                                 ...prev,
                                 okrAssessment: prev.okrAssessment.map((item, itemIndex) =>
@@ -489,6 +498,7 @@ export default function SelfAssessmentPage() {
                                 )
                               }));
                             }}
+                            helperText={okr.completionPercentage === null ? 'Not rated at the appraisal cutoff' : undefined}
                             sx={{ mb: 1.5 }}
                           />
                           <TextField

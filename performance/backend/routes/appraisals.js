@@ -301,17 +301,22 @@ function normalizeManagerReviewPayload(managerReview = {}, appraisal = null) {
       .map((rawOkr) => {
         const okrId = normalizeOptionalObjectId(rawOkr?.okrId);
         const okrTitle = typeof rawOkr?.okrTitle === 'string' ? rawOkr.okrTitle.trim() : '';
-        const managerVerifiedCompletion = normalizeNumberInRange(rawOkr?.managerVerifiedCompletion, 0, 100, 0);
-        const qualityRating = normalizeNumberInRange(rawOkr?.qualityRating, 1, 5, 3);
+        const rawCompletion = rawOkr?.managerVerifiedCompletion;
+        const managerVerifiedCompletion = rawCompletion === null || rawCompletion === undefined || rawCompletion === ''
+          ? null
+          : normalizeNumberInRange(rawCompletion, 0, 100, null);
+        const qualityRating = managerVerifiedCompletion === null
+          ? null
+          : normalizeNumberInRange(rawOkr?.qualityRating, 1, 5, 3);
 
         if (!okrId && !okrTitle) return null;
 
         return {
           ...(okrId ? { okrId } : {}),
           okrTitle,
-          managerVerifiedCompletion,
+          ...(managerVerifiedCompletion !== null ? { managerVerifiedCompletion } : {}),
           managerComments: typeof rawOkr?.managerComments === 'string' ? rawOkr.managerComments.trim() : '',
-          qualityRating
+          ...(qualityRating !== null ? { qualityRating } : {})
         };
       })
       .filter(Boolean)
@@ -4870,10 +4875,31 @@ router.post('/:appraisalId/conversation/finalize-report', requireAuth, async (re
 
     // Update self-assessment with report data.
     // Avoid writing undefined nested values (e.g., aiInsights) because that can trigger validation errors.
+    const submittedReportOkrs = new Map(
+      (Array.isArray(finalReport.okrAssessment) ? finalReport.okrAssessment : [])
+        .filter((assessment) => assessment?.okrId)
+        .map((assessment) => [String(assessment.okrId), assessment])
+    );
+    const frozenOkrAssessment = (appraisal.goalSnapshots || []).map((snapshot) => {
+      const submitted = submittedReportOkrs.get(String(snapshot.sourceGoalId)) || {};
+      return {
+        okrId: snapshot.sourceGoalId,
+        okrTitle: snapshot.definition?.title,
+        targetValue: 100,
+        achievedValue: snapshot.achievement?.rated ? snapshot.achievement.score : null,
+        completionPercentage: snapshot.achievement?.rated ? snapshot.achievement.score : null,
+        selfComments: String(submitted.selfComments || '').slice(0, 5000),
+        evidenceDocuments: Array.isArray(submitted.evidenceDocuments) ? submitted.evidenceDocuments : []
+      };
+    });
+    const persistedOkrAssessment = frozenOkrAssessment.length > 0
+      ? frozenOkrAssessment
+      : (Array.isArray(finalReport.okrAssessment) ? finalReport.okrAssessment : appraisal.selfAssessment?.okrAssessment || []);
+
     const nextSelfAssessment = {
       overallSummary: normalizedSummary,
       competencyRatings: appraisal.selfAssessment?.competencyRatings || [],
-      okrAssessment: finalReport.okrAssessment || appraisal.selfAssessment?.okrAssessment || [],
+      okrAssessment: persistedOkrAssessment,
       overallSelfRating: finalReport.overallSelfRating,
       aiRatingSuggestion: normalizedAiRatingSuggestion ? {
         ...normalizedAiRatingSuggestion,

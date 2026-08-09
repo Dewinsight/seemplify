@@ -46,6 +46,7 @@ export default function FinalReviewPage() {
     const [finalRatingTouched, setFinalRatingTouched] = useState(false);
     const [justification, setJustification] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     const isAssignedManager = useMemo(() => {
         if (!appraisal || !user) return false;
@@ -266,6 +267,7 @@ export default function FinalReviewPage() {
                                 startIcon={submitting ? <CircularProgress size={18} color="inherit" /> : <CheckCircle />}
                                 disabled={!canFinalize || submitting || (aiSuggestion?.suggestedRating && finalRating !== aiSuggestion.suggestedRating && !justification.trim())}
                                 onClick={async () => {
+                                    setSubmitError(null);
                                     setSubmitting(true);
                                     try {
                                         await api.post(`/appraisals/${appraisalId}/finalize`, {
@@ -277,7 +279,7 @@ export default function FinalReviewPage() {
                                     } catch (e: unknown) {
                                         const axiosError = e as { response?: { data?: { error?: string } } };
                                         console.error('Finalize failed', e);
-                                        alert(axiosError.response?.data?.error || 'Failed to finalize appraisal');
+                                        setSubmitError(axiosError.response?.data?.error || 'Failed to finalize appraisal');
                                     } finally {
                                         setSubmitting(false);
                                     }
@@ -286,6 +288,11 @@ export default function FinalReviewPage() {
                                 Complete Appraisal
                             </Button>
                         </Box>
+                        {submitError && (
+                            <Alert severity="error" sx={{ mt: 2 }}>
+                                {submitError}
+                            </Alert>
+                        )}
                     </>
                 )}
             </Paper>

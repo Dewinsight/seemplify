@@ -50,3 +50,35 @@ test('guided fallback walks each OKR before moving to achievements', () => {
   assert.equal(result.currentOkrIndex, 1);
   assert.match(result.response, /OKR 2/);
 });
+
+test('unrated goals are excluded instead of being averaged as zero', () => {
+  const evidence = {
+    achievements: [{ text: 'Improved current goal delivery with measurable evidence.' }],
+    challenges: [],
+    skills: [],
+    goals: []
+  };
+  const report = appraisalAIService.getFallbackReport(evidence, [
+    { id: 'future', title: 'Future goal', progress: null },
+    { id: 'current', title: 'Current goal', progress: 82 }
+  ]);
+
+  assert.equal(report.okrAssessment[0].completionPercentage, null);
+  assert.equal(report.okrAssessment[1].completionPercentage, 82);
+  assert.match(report.ratingJustification, /82% average OKR completion/);
+});
+
+test('legacy composite scoring also ignores missing completion values', () => {
+  const score = appraisalAIService.calculateCompositeScore({
+    managerReview: {
+      okrAssessment: [
+        { managerVerifiedCompletion: null },
+        { managerVerifiedCompletion: 82 }
+      ],
+      competencyRatings: []
+    }
+  }, { okrWeight: 40, ratingScale: { min: 1, max: 5 } });
+
+  assert.equal(score.okrCompletion, 82);
+  assert.equal(score.okrScore, 4.3);
+});

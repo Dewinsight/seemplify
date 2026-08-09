@@ -910,12 +910,16 @@ Keep it to 2-3 sentences.`;
     const okrPerformance = okrs.map(okr => ({
       id: okr._id,
       title: okr.title || okr.objectives?.[0]?.title,
-      progress: okr.progress || 0,
+      progress: this.getRatedOkrProgress(okr),
       objectives: okr.objectives?.map(obj => ({
         title: obj.title,
         keyResults: obj.keyResults?.map(kr => ({
           title: kr.title,
-          achievement: kr.targetValue > 0 ? Math.round((kr.currentValue / kr.targetValue) * 100) : 0
+          achievement: kr.currentValue === null || kr.currentValue === undefined || kr.currentValue === ''
+            ? null
+            : kr.targetValue > 0
+              ? Math.round((kr.currentValue / kr.targetValue) * 100)
+              : null
         }))
       }))
     }));
@@ -1038,7 +1042,9 @@ Keep it to 2-3 sentences.`;
     const hasSnapshotScore = snapshotSummary?.rated === true && Number.isFinite(Number(snapshotSummary.score));
     const okrAssessment = appraisal.managerReview?.okrAssessment || appraisal.selfAssessment?.okrAssessment || [];
     const ratedLegacyOkrs = okrAssessment
-      .map((item) => Number(item.managerVerifiedCompletion ?? item.completionPercentage))
+      .map((item) => item.managerVerifiedCompletion ?? item.completionPercentage)
+      .filter((value) => value !== null && value !== undefined && value !== '')
+      .map(Number)
       .filter(Number.isFinite);
     const avgOkrCompletion = hasSnapshotScore
       ? Number(snapshotSummary.score)
@@ -1124,6 +1130,20 @@ Keep it to 2-3 sentences.`;
   }
 
   /**
+   * Return progress only when goal evidence actually exists. Missing progress
+   * stays unrated so a future or unreported goal cannot reduce a rating.
+   */
+  getRatedOkrProgress(okr = {}) {
+    if (okr?.achievement?.rated === false) return null;
+    const rawProgress = okr?.progress ?? okr?.achievement?.score;
+    if (rawProgress === null || rawProgress === undefined || rawProgress === '') return null;
+    const numericProgress = Number(rawProgress);
+    return Number.isFinite(numericProgress)
+      ? Math.min(100, Math.max(0, numericProgress))
+      : null;
+  }
+
+  /**
    * Get rating label from numeric rating
    */
   getRatingLabel(rating) {
@@ -1142,8 +1162,11 @@ Keep it to 2-3 sentences.`;
    * Used when AI is unavailable to avoid static 3.0 ratings.
    */
   estimateSelfSuggestedRating(okrPerformance = [], extractedData = {}) {
-    const okrAvg = okrPerformance.length > 0
-      ? okrPerformance.reduce((sum, o) => sum + (o.progress || 0), 0) / okrPerformance.length
+    const ratedOkrs = okrPerformance
+      .map((okr) => this.getRatedOkrProgress(okr))
+      .filter((progress) => progress !== null);
+    const okrAvg = ratedOkrs.length > 0
+      ? ratedOkrs.reduce((sum, progress) => sum + progress, 0) / ratedOkrs.length
       : null;
 
     const base = okrAvg !== null ? this.percentageToRating(okrAvg) : 3;
@@ -1179,14 +1202,16 @@ Keep it to 2-3 sentences.`;
     const selfAssessment = appraisal.selfAssessment || {};
     const okrPerformance = okrs.map(okr => ({
       title: okr.title || okr.objectives?.[0]?.title,
-      progress: okr.progress || 0
+      progress: this.getRatedOkrProgress(okr)
     }));
 
     if (!this.client) {
       const score = this.calculateCompositeScore(appraisal, appraisal.cycleId);
       return {
         suggestedRating: score.suggestedRating,
-        ratingJustification: `Based on ${score.okrCompletion}% OKR completion and competency scores.`,
+        ratingJustification: score.okrCompletion === null
+          ? 'No goals had reportable progress, so the available competency evidence was renormalized.'
+          : `Based on ${score.okrCompletion}% OKR completion and competency scores.`,
         keyStrengths: [],
         developmentAreas: [],
         calibrationNotes: 'AI analysis unavailable. Using calculated composite score.',
@@ -1205,7 +1230,7 @@ Self-Assessment Summary:
 - Self-Rating: ${selfAssessment.overallSelfRating || 'Not provided'}/5
 
 OKR Performance:
-${okrPerformance.map(o => `- ${o.title}: ${o.progress}%`).join('\n')}
+${okrPerformance.map(o => `- ${o.title}: ${o.progress === null ? 'Not rated' : `${o.progress}%`}`).join('\n')}
 
 Competency Self-Ratings:
 ${selfAssessment.competencyRatings?.map(c => `- ${c.competencyName}: ${c.selfRating}/5`).join('\n') || 'No ratings'}
