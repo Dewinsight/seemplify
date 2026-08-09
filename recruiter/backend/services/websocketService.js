@@ -4,11 +4,18 @@
 const WebSocket = require('ws');
 const { allowFeatureUpgrade } = require('../middleware/websocketFeatureGuard');
 const { getPlatformFeatureSettings } = require('./platformFeatureService');
+const { runWithAIRequestContext } = require('./aiRuntime/requestContext');
+const { resolveAssistantWebsocketIdentity } = require('./assistantWebsocketAuthService');
 
 class WebSocketService {
-  constructor() {
+  constructor({
+    resolveIdentity = resolveAssistantWebsocketIdentity,
+    streamAgent = null
+  } = {}) {
     this.wss = null;
     this.clients = new Map(); // Map to store client connections with metadata
+    this.resolveIdentity = resolveIdentity;
+    this.streamAgent = streamAgent;
   }
 
   /**
@@ -128,35 +135,29 @@ class WebSocketService {
     const client = this.clients.get(clientId);
     if (!client) return;
 
-    // Extract organization from auth token for data isolation
-    let organizationId = null;
-    if (message.authToken) {
-      try {
-        const jwt = require('jsonwebtoken');
-        const token = message.authToken.replace('Bearer ', '');
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        organizationId = decoded.user.currentOrganization;
-        console.log(`🔒 WebSocket organization context extracted: ${organizationId}`);
-      } catch (error) {
-        console.error('Error extracting organization from WebSocket auth token:', error);
-      }
+    try {
+      const identity = await this.resolveIdentity({
+        authToken: message.authToken,
+        organizationId: message.organizationId,
+        requestId: message.requestId
+      });
+      client.userId = identity.userId;
+      client.sessionId = message.sessionId;
+      client.authToken = message.authToken;
+      client.organizationId = identity.organizationId;
+
+      console.log(`🔐 Client ${clientId} authenticated in organization ${identity.organizationId}`);
+      this.sendMessage(clientId, {
+        type: 'auth_success',
+        userId: identity.userId,
+        sessionId: message.sessionId,
+        organizationId: identity.organizationId,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error(`WebSocket authentication failed for ${clientId}:`, error.message);
+      this.sendError(clientId, error.message, error);
     }
-
-    // Store user info with organization context
-    client.userId = message.userId;
-    client.sessionId = message.sessionId;
-    client.authToken = message.authToken;
-    client.organizationId = organizationId;
-
-    console.log(`🔐 Client ${clientId} authenticated as user ${message.userId} in organization ${organizationId}`);
-
-    this.sendMessage(clientId, {
-      type: 'auth_success',
-      userId: message.userId,
-      sessionId: message.sessionId,
-      organizationId: organizationId,
-      timestamp: new Date().toISOString()
-    });
   }
 
   /**
@@ -168,24 +169,39 @@ class WebSocketService {
     const client = this.clients.get(clientId);
     if (!client) return;
 
-    const { userInput, userId, sessionId, authToken } = message;
+    const { userInput, sessionId, authToken } = message;
 
     if (!userInput) {
       this.sendError(clientId, 'Missing userInput in chat message');
       return;
     }
-    const { streamMessageWithAgent } = require('./langchainAgentService');
+    let identity;
+    try {
+      identity = await this.resolveIdentity({
+        authToken: authToken || client.authToken,
+        organizationId: message.organizationId || client.organizationId,
+        requestId: message.requestId
+      });
+    } catch (error) {
+      console.error(`WebSocket chat authorization failed for ${clientId}:`, error.message);
+      this.sendError(clientId, error.message, error);
+      return;
+    }
+    client.userId = identity.userId;
+    client.authToken = authToken || client.authToken;
+    client.organizationId = identity.organizationId;
+    const streamMessageWithAgent = this.streamAgent
+      || require('./langchainAgentService').streamMessageWithAgent;
 
     // 🔍 DEBUG: Log session information to track the issue
     console.log(`💬 Processing chat for ${clientId}: "${userInput}"`);
     console.log('🔍 DEBUG - WebSocket handleChat received:');
-    console.log('  - message.userId:', userId);
     console.log('  - message.sessionId:', sessionId);
     console.log('  - message.sessionId type:', typeof sessionId);
     console.log('  - message.sessionId length:', sessionId?.length);
     console.log('  - client.userId:', client.userId);
     console.log('  - client.sessionId:', client.sessionId);
-    console.log('  - final userId:', userId || client.userId);
+    console.log('  - final userId:', identity.userId);
     console.log('  - final sessionId:', sessionId || client.sessionId);
     
     // 🚨 CRITICAL: Check if sessionId is changing every time
@@ -213,11 +229,11 @@ class WebSocketService {
 
     try {
       // Stream the LangChain agent response
-      await streamMessageWithAgent(
+      await runWithAIRequestContext(identity.context, () => streamMessageWithAgent(
         userInput,
-        userId || client.userId,
+        identity.userId,
         sessionId || client.sessionId,
-        authToken || client.authToken,
+        client.authToken,
         {
           onData: (chunk) => {
             // Send thinking process in real-time
@@ -236,13 +252,13 @@ class WebSocketService {
           },
           onError: (error) => {
             // Send error
-            this.sendError(clientId, error.message);
+            this.sendError(clientId, error.message, error);
           }
         }
-      );
+      ));
     } catch (error) {
       console.error(`❌ Chat processing error for ${clientId}:`, error);
-      this.sendError(clientId, 'Failed to process chat message');
+      this.sendError(clientId, error.message || 'Failed to process chat message', error);
     }
   }
 
@@ -270,10 +286,16 @@ class WebSocketService {
    * @param {string} clientId - Client identifier
    * @param {string} errorMessage - Error message
    */
-  sendError(clientId, errorMessage) {
+  sendError(clientId, errorMessage, metadata = {}) {
+    const safeReason = String(metadata.details?.reason || '').trim();
     this.sendMessage(clientId, {
       type: 'error',
       error: errorMessage,
+      ...(metadata.code ? { code: metadata.code } : {}),
+      ...(metadata.statusCode || metadata.status
+        ? { status: metadata.statusCode || metadata.status }
+        : {}),
+      ...(safeReason ? { details: { reason: safeReason } } : {}),
       timestamp: new Date().toISOString()
     });
   }
@@ -355,3 +377,4 @@ class WebSocketService {
 // Export singleton instance
 const websocketService = new WebSocketService();
 module.exports = websocketService;
+module.exports.WebSocketService = WebSocketService;
