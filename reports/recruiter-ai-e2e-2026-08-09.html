@@ -231,7 +231,7 @@
             <tr><td>Match explanation</td><td><span class="status partial">Vector fallback</span></td><td>“Why?” displayed semantic vector similarity and clearly said AI analysis was unavailable.</td><td>Truthful fallback; a fresh LLM explanation remains quota-blocked.</td></tr>
             <tr><td>Shortlist ranking</td><td><span class="status pass">Pass</span></td><td>Persisted relevance scores and pipeline states loaded on the Shortlist tab.</td><td>Read path and persisted ranking presentation pass.</td></tr>
             <tr><td>Interview questions</td><td><span class="status partial">Quota + UX</span></td><td>Three historic AI-generated questions loaded. A fresh one-question advanced request failed under quota; the modal did not retain a strong inline diagnostic.</td><td>Existing data passes; fresh generation and error presentation need a post-quota recheck.</td></tr>
-            <tr><td>Recruiter Assistant</td><td><span class="status partial">Partial</span></td><td>PR #35 fixed the actor/workspace 409: the deployed socket now authenticates and receives <code>chat_start</code>. Under the constrained provider, no terminal event arrived after two minutes.</td><td>A follow-up adds a two-minute UI timeout so the recruiter always regains the input with an actionable message.</td></tr>
+            <tr><td>Recruiter Assistant</td><td><span class="status pass">Degraded pass</span></td><td>PR #35 fixed the actor/workspace 409: the deployed socket authenticates and receives <code>chat_start</code>. PR #36 releases the input after two minutes when the quota-constrained provider sends no terminal event.</td><td>Live browser acceptance passed: the pending bubble became an actionable quota/busy-provider message and the textbox was re-enabled.</td></tr>
             <tr><td>Bulk upload page</td><td><span class="status pass">UI pass</span></td><td>The page explains durable background processing, return-later recovery, file selection, and upload state.</td><td>The requested workflow exists and is understandable.</td></tr>
             <tr><td>New CV attachment</td><td><span class="status blocked">Browser permission</span></td><td>Edge’s ChatGPT extension denied programmatic file attachment because “Allow access to file URLs” is disabled.</td><td>Enable that extension setting, then rerun the supplied fictional PDF.</td></tr>
             <tr><td>CV processing history</td><td><span class="status pass">Pass</span></td><td>Production retained ten bulk/public records with completed and failed outcomes across 180-day history.</td><td>The recruiter can leave, return, filter, and inspect durable processing.</td></tr>
@@ -283,8 +283,8 @@
             <figcaption><strong>Pre-fix Assistant evidence.</strong> The original socket failure established the need for authoritative session/workspace binding and terminal UI settlement implemented in PR #35.</figcaption>
           </figure>
           <figure>
-            <img src="assets/recruiter-ai-e2e-2026-08-09/assistant-provider-pending.jpg" alt="Recruiter Assistant still processing a quota-constrained request after two minutes">
-            <figcaption><strong>Post-fix live boundary.</strong> Authentication succeeds and the request starts, but the provider path emits no terminal event while quota-constrained. The follow-up timeout prevents an indefinite disabled input.</figcaption>
+            <img src="assets/recruiter-ai-e2e-2026-08-09/assistant-timeout-complete.jpg" alt="Recruiter Assistant displaying its actionable two-minute timeout with the input re-enabled">
+            <figcaption><strong>Post-fix live acceptance.</strong> Authentication succeeds; when the constrained provider emits no terminal event, the two-minute bound replaces the pending bubble with an actionable message and re-enables the input.</figcaption>
           </figure>
         </div>
       </section>
