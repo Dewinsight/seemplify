@@ -544,6 +544,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             Action centre
                           </Link>
                         )}
+                        <Link
+                          href="/ai-account"
+                          className={cn(
+                            "block px-4 py-2 text-sm transition-colors",
+                            isDarkMode ? "text-zinc-300 hover:bg-zinc-800/70" : "text-gray-700 hover:bg-gray-50"
+                          )}
+                          onClick={() => setUserDropdownOpen(false)}
+                        >
+                          <Sparkles className="h-4 w-4 inline mr-2" />
+                          ChatGPT account
+                        </Link>
                         {isManager && (
                           <Link
                             href="/team"

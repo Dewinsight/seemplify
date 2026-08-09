@@ -480,7 +480,11 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       </Paper>
 
       {guidedFallbackActive && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={<Button color="inherit" size="small" href="/ai-account">Connect ChatGPT</Button>}
+        >
           Live ChatGPT assistance is temporarily unavailable. Guided mode is saving your responses and will still let you review and submit a complete self-assessment.
         </Alert>
       )}

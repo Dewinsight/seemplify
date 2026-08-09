@@ -31,6 +31,7 @@ const reportsRoutes = require('./routes/reports');
 const appraisalRoutes = require('./routes/appraisals');
 const webhooksRouter = require('./routes/webhooks');
 const aiRuntimeRoutes = require('./routes/aiRuntime');
+const aiAccountRoutes = require('./routes/aiAccount');
 const goalPeriodRoutes = require('./routes/goalPeriods');
 const actionRoutes = require('./routes/actions');
 const notificationRoutes = require('./routes/notifications');
@@ -270,6 +271,7 @@ app.use('/api/feedback', requireAuth, requireOrganization, continuousPerformance
 app.use('/api/teams', teamRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/ai-runtime', aiRuntimeRoutes);
+app.use('/api/ai-account', aiAccountRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/organization-features', organizationFeatureRoutes);

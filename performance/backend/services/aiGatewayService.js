@@ -115,7 +115,11 @@ class AIGatewayService {
     const requestId = String(options.requestId || context.requestId || crypto.randomUUID());
     const activity = String(options.activity || 'performance.general');
     const local = runtime === LOCAL;
-    const subjectId = String(options.chatgptSubjectId || process.env.PERFORMANCE_CHATGPT_SUBJECT_ID || '').trim();
+    let subjectId = String(options.chatgptSubjectId || process.env.PERFORMANCE_CHATGPT_SUBJECT_ID || '').trim();
+    if (!local && !subjectId && context.actorId) {
+      const subject = await require('./chatGptAccountService').resolveRoutableSubject(context.actorId);
+      subjectId = String(subject?.subjectId || '').trim();
+    }
     if (!local && !subjectId) {
       throw new PerformanceAIRuntimeError(
         'Connect a ChatGPT account for Performance Management or select local inference.',

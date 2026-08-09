@@ -47,7 +47,18 @@ interface MockApiState {
   createdCheckInBodies: Array<Record<string, unknown>>;
   appraisalEvidenceBodies: Array<Record<string, unknown>>;
   notificationPreferenceBodies: Array<Record<string, unknown>>;
+  aiRuntimePreferenceBodies: Array<Record<string, unknown>>;
   readNotificationIds: string[];
+  chatGptAccount: {
+    status: 'disconnected' | 'pending' | 'connected';
+    connectedEmail: string | null;
+    planType: string | null;
+    connectedAt: string | null;
+    lastVerifiedAt: string | null;
+    dataSharingAcknowledgedAt: string | null;
+    routable: boolean;
+    lastError: string | null;
+  };
   notificationPreferences: {
     channels: { inApp: true; email: boolean; chat: boolean };
     digest: { frequency: 'immediate' | 'daily' | 'weekly' | 'off'; time: string; dayOfWeek: number };
@@ -192,7 +203,18 @@ function createState(): MockApiState {
     createdCheckInBodies: [],
     appraisalEvidenceBodies: [],
     notificationPreferenceBodies: [],
+    aiRuntimePreferenceBodies: [],
     readNotificationIds: [],
+    chatGptAccount: {
+      status: 'disconnected',
+      connectedEmail: null,
+      planType: null,
+      connectedAt: null,
+      lastVerifiedAt: null,
+      dataSharingAcknowledgedAt: null,
+      routable: false,
+      lastError: null,
+    },
     notificationPreferences: {
       channels: { inApp: true, email: false, chat: false },
       digest: { frequency: 'immediate', time: '09:00', dayOfWeek: 1 },
@@ -312,6 +334,45 @@ async function installMockApi(page: Page, state: MockApiState) {
           totalDirectReports: directReports.length,
         },
       });
+    }
+    if (method === 'GET' && path === '/ai-account') {
+      return fulfill({
+        success: true,
+        data: {
+          account: state.chatGptAccount,
+          policy: { localEnabled: true, chatgptEnabled: true, defaultRuntime: 'local' },
+        },
+      });
+    }
+    if (method === 'POST' && path === '/ai-account/login') {
+      state.chatGptAccount.status = 'pending';
+      return fulfill({
+        success: true,
+        data: {
+          account: state.chatGptAccount,
+          login: { userCode: 'ABCD-EFGH', verificationUrl: 'https://chatgpt.com/device' },
+        },
+      });
+    }
+    if (method === 'POST' && path === '/ai-account/consent') {
+      state.chatGptAccount.dataSharingAcknowledgedAt = new Date().toISOString();
+      state.chatGptAccount.routable = true;
+      return fulfill({ success: true, data: { account: state.chatGptAccount } });
+    }
+    if (method === 'POST' && path === '/ai-account/login/reset') {
+      state.chatGptAccount.status = 'disconnected';
+      return fulfill({ success: true, data: { account: state.chatGptAccount } });
+    }
+    if (method === 'DELETE' && path === '/ai-account') {
+      state.chatGptAccount.status = 'disconnected';
+      state.chatGptAccount.routable = false;
+      state.chatGptAccount.dataSharingAcknowledgedAt = null;
+      return fulfill({ success: true, data: { account: state.chatGptAccount } });
+    }
+    if (method === 'PUT' && path === '/ai-runtime/preference') {
+      const body = await jsonBody(request);
+      state.aiRuntimePreferenceBodies.push(body);
+      return fulfill({ success: true, runtimePreference: body.runtimePreference });
     }
     if (method === 'GET' && (path === '/user/employees-for-appraisal' || path === '/user/all-employees')) {
       return fulfill({
@@ -703,4 +764,28 @@ test('hides organization features that are explicitly disabled', async ({ page }
   await expect(page.getByRole('link', { name: 'Appraisals' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Growth' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /unread notifications/ })).toHaveCount(0);
+});
+
+test('connects an employee ChatGPT account and records explicit consent before routing AI work', async ({ page }) => {
+  const state = createState();
+  await installMockApi(page, state);
+
+  await page.goto('/ai-account');
+  await expect(page.getByRole('heading', { level: 1, name: 'ChatGPT account' })).toBeVisible();
+  await expect(page.getByText('No ChatGPT credentials are stored in Performance Management.')).toBeVisible();
+  await page.getByRole('button', { name: 'Connect ChatGPT' }).click();
+  await expect(page.getByText('ABCD-EFGH')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open OpenAI' })).toHaveAttribute('href', 'https://chatgpt.com/device');
+
+  state.chatGptAccount.status = 'connected';
+  state.chatGptAccount.connectedEmail = 'alex@example.com';
+  state.chatGptAccount.planType = 'Plus';
+  state.chatGptAccount.connectedAt = new Date().toISOString();
+  await expect(page.getByRole('button', { name: 'Consent and use ChatGPT' })).toBeVisible({ timeout: 5000 });
+  await page.getByRole('button', { name: 'Consent and use ChatGPT' }).click();
+
+  await expect(page.getByText('ChatGPT is now the AI runtime for your Performance Management work.')).toBeVisible();
+  await expect(page.getByText('Ready')).toBeVisible();
+  expect(state.chatGptAccount.routable).toBe(true);
+  expect(state.aiRuntimePreferenceBodies).toEqual([{ runtimePreference: 'chatgpt' }]);
 });
