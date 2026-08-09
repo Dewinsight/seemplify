@@ -1,6 +1,3 @@
-import { OnboardingAssignment } from '../models/OnboardingAssignment.js'
-import { normalizeOnboardingStatus } from './onboardingStatus.js'
-
 const PROFILE_COMPLETION_STEPS = [
   {
     key: 'personal',
@@ -22,18 +19,19 @@ const PROFILE_COMPLETION_STEPS = [
   }
 ]
 
-const ONBOARDING_PROFILE_COMPLETION_STEP = {
-  key: 'documents',
-  label: 'Onboarding',
-  route: '/profile/documents',
-  description: 'Complete the onboarding documents and tasks assigned to you in Document Workspace.'
-}
-
 const PROFILE_COMPLETION_STEP_MAP = new Map(
-  [...PROFILE_COMPLETION_STEPS, ONBOARDING_PROFILE_COMPLETION_STEP].map(step => [step.key, step])
+  PROFILE_COMPLETION_STEPS.map(step => [step.key, step])
 )
 
-const ONBOARDING_ACTIONABLE_STATUSES = new Set(['pending', 'in_progress', 'not_started'])
+const EMPTY_ONBOARDING_COMPLETION = Object.freeze({
+  required: false,
+  complete: true,
+  status: 'not_started',
+  latestAssignment: null,
+  assignmentCount: 0,
+  pendingCount: 0,
+  completedCount: 0
+})
 
 function hasText(value) {
   return String(value || '').trim().length > 0
@@ -137,68 +135,6 @@ function hasRequiredBankFields(account = {}, fallbackCountry = '') {
   }
 }
 
-function normalizeWorkflowType(value, fallback = 'onboarding') {
-  const normalized = String(value || '').trim().toLowerCase()
-  return normalized || fallback
-}
-
-function resolveCurrentOrganizationId(account = {}, explicitOrganizationId = null) {
-  return explicitOrganizationId
-    || account?.currentOrganization?._id?.toString?.()
-    || account?.currentOrganization?.toString?.()
-    || null
-}
-
-function sortAssignmentsByLatest(assignments = []) {
-  return [...assignments].sort((left, right) => {
-    const leftTime = new Date(left?.updatedAt || left?.createdAt || 0).getTime()
-    const rightTime = new Date(right?.updatedAt || right?.createdAt || 0).getTime()
-    return rightTime - leftTime
-  })
-}
-
-function buildOnboardingRequirement(onboardingAssignments = []) {
-  const relevantAssignments = sortAssignmentsByLatest(
-    (Array.isArray(onboardingAssignments) ? onboardingAssignments : []).filter((assignment) => {
-      return normalizeWorkflowType(assignment?.workflowType, 'onboarding') === 'onboarding'
-    })
-  )
-
-  const requiredAssignments = relevantAssignments.filter((assignment) => {
-    return normalizeOnboardingStatus(assignment?.status, 'pending') !== 'cancelled'
-  })
-
-  if (requiredAssignments.length === 0) {
-    return {
-      required: false,
-      complete: true,
-      status: 'not_started',
-      latestAssignment: null,
-      assignmentCount: 0,
-      pendingCount: 0,
-      completedCount: 0
-    }
-  }
-
-  const incompleteAssignments = requiredAssignments.filter((assignment) => {
-    return normalizeOnboardingStatus(assignment?.status, 'pending') !== 'completed'
-  })
-  const latestAssignment = requiredAssignments[0] || null
-  const currentStatus = incompleteAssignments.length > 0
-    ? normalizeOnboardingStatus(incompleteAssignments[0]?.status, 'pending')
-    : 'completed'
-
-  return {
-    required: true,
-    complete: incompleteAssignments.length === 0,
-    status: currentStatus,
-    latestAssignment,
-    assignmentCount: requiredAssignments.length,
-    pendingCount: incompleteAssignments.length,
-    completedCount: requiredAssignments.length - incompleteAssignments.length
-  }
-}
-
 export function getProfileCompletion(account = {}, options = {}) {
   const profile = getProfile(account)
   const personalInfo = getPersonalInfo(profile)
@@ -210,7 +146,7 @@ export function getProfileCompletion(account = {}, options = {}) {
   const validDependents = getValidDependents(profile)
   const dependentsDeclaration = getDependentsDeclaration(profile)
   const reminder = profile?.completionReminders || {}
-  const onboarding = buildOnboardingRequirement(options.onboardingAssignments)
+  const onboarding = EMPTY_ONBOARDING_COMPLETION
 
   const personalComplete = Boolean(
     normalizeDate(personalInfo?.dateOfBirth) &&
@@ -232,16 +168,6 @@ export function getProfileCompletion(account = {}, options = {}) {
     complete: completionByKey[step.key] === true
   }))
 
-  if (onboarding.required) {
-    steps.push({
-      ...ONBOARDING_PROFILE_COMPLETION_STEP,
-      complete: onboarding.complete,
-      description: onboarding.complete
-        ? 'Your assigned onboarding documents and tasks are complete.'
-        : ONBOARDING_PROFILE_COMPLETION_STEP.description
-    })
-  }
-
   const completedCount = steps.filter(step => step.complete).length
   const nextIncompleteStep = steps.find(step => !step.complete) || null
 
@@ -262,9 +188,9 @@ export function getProfileCompletion(account = {}, options = {}) {
     },
     onboarding: {
       ...onboarding,
-      isAssigned: onboarding.required,
-      requiresAction: onboarding.required && !onboarding.complete,
-      isActionableStatus: ONBOARDING_ACTIONABLE_STATUSES.has(onboarding.status)
+      isAssigned: false,
+      requiresAction: false,
+      isActionableStatus: false
     },
     summary: {
       primaryEmergencyContact,
@@ -278,47 +204,13 @@ export function getProfileCompletion(account = {}, options = {}) {
               : ''
           }
         : null,
-      onboarding: onboarding.required
-        ? {
-            status: onboarding.status,
-            assignmentCount: onboarding.assignmentCount,
-            pendingCount: onboarding.pendingCount,
-            completedCount: onboarding.completedCount,
-            latestAssignmentCreatedAt: normalizeDate(onboarding.latestAssignment?.createdAt),
-            latestAssignmentDueAt: normalizeDate(onboarding.latestAssignment?.dueAt),
-            latestAssignmentCompletedAt: normalizeDate(onboarding.latestAssignment?.completedAt)
-          }
-        : null
+      onboarding: null
     }
   }
 }
 
 export async function getProfileCompletionForAccount(account = {}, options = {}) {
-  if (Array.isArray(options.onboardingAssignments)) {
-    return getProfileCompletion(account, options)
-  }
-
-  const organizationId = resolveCurrentOrganizationId(account, options.organizationId)
-  const accountId = options.accountId || account?._id
-
-  if (!organizationId || !accountId) {
-    return getProfileCompletion(account, options)
-  }
-
-  const onboardingAssignments = await OnboardingAssignment.find({
-    organization: organizationId,
-    member: accountId,
-    workflowType: 'onboarding',
-    status: { $in: ['pending', 'in_progress', 'completed', 'cancelled'] }
-  })
-    .select('status workflowType dueAt completedAt createdAt updatedAt')
-    .sort({ updatedAt: -1, createdAt: -1 })
-    .lean()
-
-  return getProfileCompletion(account, {
-    ...options,
-    onboardingAssignments
-  })
+  return getProfileCompletion(account, options)
 }
 
 export function getProfileCompletionStep(stepKey) {

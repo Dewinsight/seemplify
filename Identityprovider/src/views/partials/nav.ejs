@@ -466,44 +466,6 @@
   </div>
 </nav>
 <%
-  const navInitialPendingSignatureCount = Math.max(
-    0,
-    Number(
-      (typeof notificationSummary !== 'undefined' && notificationSummary?.pendingSignatureCount)
-      || (typeof pendingSignatureCount !== 'undefined' && pendingSignatureCount)
-      || 0
-    ) || 0
-  );
-  const navInitialNotificationTasks = (typeof notificationSummary !== 'undefined' && Array.isArray(notificationSummary?.tasks))
-    ? notificationSummary.tasks
-    : [];
-  const navInitialDocumentTask = navInitialNotificationTasks.find(task => task?.category === 'documents' && task?.actionUrl) || null;
-  const navPendingSignatureHref = navInitialDocumentTask?.actionUrl || '/notifications?category=documents';
-%>
-<div
-  class="top-action-strip"
-  data-pending-signature-banner
-  <%= navInitialPendingSignatureCount > 0 ? '' : 'hidden' %>
->
-  <div class="top-action-strip__content">
-    <div class="top-action-strip__eyebrow">Signature Required</div>
-    <div class="top-action-strip__title">You have pending documents to sign</div>
-    <div class="top-action-strip__meta" data-pending-signature-copy>
-      <%= navInitialPendingSignatureCount === 1
-        ? '1 document is waiting for your signature.'
-        : `${navInitialPendingSignatureCount} documents are waiting for your signature.` %>
-    </div>
-  </div>
-  <a
-    href="<%= navPendingSignatureHref %>"
-    class="btn btn-primary btn-sm"
-    data-pending-signature-link
-    data-fallback-href="/notifications?category=documents"
-  >
-    Review &amp; Sign
-  </a>
-</div>
-<%
   const navProfileCompletion = typeof profileCompletion === 'undefined' ? null : profileCompletion;
   const navCurrentProfileSection = typeof currentProfileSection === 'undefined' ? '' : currentProfileSection;
   const navProfileCompletionEnforced = typeof profileCompletionEnforced === 'undefined' ? false : profileCompletionEnforced;
@@ -554,10 +516,7 @@
 
   (function initNotificationBadge() {
     const badges = Array.from(document.querySelectorAll('[data-notification-badge]'));
-    const pendingSignatureBanner = document.querySelector('[data-pending-signature-banner]');
-    const pendingSignatureCopy = document.querySelector('[data-pending-signature-copy]');
-    const pendingSignatureLink = document.querySelector('[data-pending-signature-link]');
-    if (!badges.length && !pendingSignatureBanner) return;
+    if (!badges.length) return;
 
     const setCount = (count) => {
       const safeCount = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
@@ -572,30 +531,6 @@
       });
     };
 
-    const setPendingSignatureBanner = (count) => {
-      if (!pendingSignatureBanner || !pendingSignatureCopy) return;
-
-      const safeCount = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
-      if (safeCount > 0) {
-        pendingSignatureBanner.hidden = false;
-        pendingSignatureCopy.textContent = safeCount === 1
-          ? '1 document is waiting for your signature.'
-          : `${safeCount} documents are waiting for your signature.`;
-      } else {
-        pendingSignatureBanner.hidden = true;
-        pendingSignatureCopy.textContent = '0 documents are waiting for your signature.';
-      }
-    };
-
-    const setPendingSignatureLink = (tasks) => {
-      if (!pendingSignatureLink) return;
-      const fallbackHref = pendingSignatureLink.dataset.fallbackHref || '/notifications?category=documents';
-      const nextHref = Array.isArray(tasks)
-        ? (tasks.find((task) => task && task.category === 'documents' && typeof task.actionUrl === 'string' && task.actionUrl.trim())?.actionUrl || fallbackHref)
-        : fallbackHref;
-      pendingSignatureLink.href = nextHref;
-    };
-
     fetch('/api/notifications/summary', {
       method: 'GET',
       credentials: 'same-origin',
@@ -606,13 +541,10 @@
         return response.json();
       })
       .then((payload) => {
-        setCount(payload?.totalUnread || 0);
-        setPendingSignatureBanner(payload?.pendingSignatureCount || 0);
-        setPendingSignatureLink(payload?.tasks || []);
+        setCount(payload?.counts?.simplePerformance || 0);
       })
       .catch(() => {
         setCount(0);
-        setPendingSignatureBanner(<%= navInitialPendingSignatureCount %>);
       });
   })();
 

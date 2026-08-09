@@ -40,96 +40,6 @@
       flex-wrap: wrap;
     }
 
-    .notifications-filters {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .notifications-signature-callout {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      flex-wrap: wrap;
-      border-color: rgba(245, 158, 11, 0.28);
-      background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(249, 115, 22, 0.08));
-    }
-
-    .notifications-signature-content {
-      display: grid;
-      gap: 8px;
-    }
-
-    .notifications-signature-eyebrow {
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: #f59e0b;
-    }
-
-    .notifications-signature-title {
-      margin: 0;
-      font-size: 18px;
-      color: var(--text);
-    }
-
-    .notifications-signature-copy {
-      margin: 0;
-      color: var(--text-secondary);
-      font-size: 14px;
-      line-height: 1.5;
-      max-width: 760px;
-    }
-
-    .notifications-signature-preview {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .notifications-signature-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 7px 10px;
-      border-radius: 999px;
-      border: 1px solid rgba(245, 158, 11, 0.24);
-      background: rgba(255, 255, 255, 0.08);
-      color: var(--text);
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .notifications-signature-chip span {
-      color: var(--muted);
-      font-weight: 500;
-    }
-
-    .notifications-filter-chip {
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 8px 12px;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 600;
-      text-decoration: none;
-      transition: all 0.2s ease;
-    }
-
-    .notifications-filter-chip:hover {
-      color: var(--text);
-      background: var(--hover-bg);
-      border-color: rgba(255, 255, 255, 0.18);
-    }
-
-    .notifications-filter-chip.active {
-      color: var(--text);
-      background: var(--panel-strong);
-      border-color: rgba(99, 102, 241, 0.45);
-    }
-
     .notification-task-list {
       display: grid;
       gap: 12px;
@@ -179,11 +89,6 @@
       letter-spacing: 0.04em;
     }
 
-    .notification-task-badge.documents {
-      background: rgba(14, 165, 233, 0.15);
-      color: #0284c7;
-    }
-
     .notification-task-badge.simplePerformance {
       background: rgba(34, 197, 94, 0.15);
       color: #16a34a;
@@ -221,11 +126,10 @@
 
 <body>
   <%- include('partials/nav', { activePage: 'notifications' }) %>
-  <% const pendingSignatureCount = notificationSummary?.pendingSignatureCount || 0; %>
-  <% const pendingSignatureDocuments = Array.isArray(notificationSummary?.pendingSignatureDocuments) ? notificationSummary.pendingSignatureDocuments : []; %>
-  <% const firstDocumentTaskActionUrl = Array.isArray(tasks)
-    ? (tasks.find(task => task?.category === 'documents' && task?.actionUrl)?.actionUrl || '/notifications?category=documents')
-    : '/notifications?category=documents'; %>
+  <% const remainingNotificationCount = Math.max(0, Number(notificationSummary?.counts?.simplePerformance || 0)); %>
+  <% const visibleTasks = Array.isArray(notificationSummary?.tasks)
+    ? notificationSummary.tasks.filter(task => task?.category === 'simplePerformance')
+    : []; %>
 
   <div class="container notifications-shell">
     <a href="/" class="back-link">&larr; Back to Hub</a>
@@ -233,7 +137,7 @@
     <div class="header" style="margin-bottom: 0;">
       <div>
         <h1 style="margin-bottom: 4px;">Notifications</h1>
-        <div class="header-subtitle">Track all pending tasks across documents and evaluations.</div>
+        <div class="header-subtitle">Review performance feedback that still needs your attention.</div>
       </div>
     </div>
 
@@ -246,67 +150,32 @@
 
     <div class="card notifications-summary">
       <div>
-        <div class="notifications-summary-count"><%= notificationSummary?.totalUnread || 0 %></div>
-        <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">Unread notification task<%= (notificationSummary?.totalUnread || 0) === 1 ? '' : 's' %></div>
+        <div class="notifications-summary-count"><%= remainingNotificationCount %></div>
+        <div style="color: var(--muted); font-size: 13px; margin-top: 4px;">Unread performance update<%= remainingNotificationCount === 1 ? '' : 's' %></div>
       </div>
       <div class="notifications-summary-actions">
-        <span class="pill pill--soft">Documents: <%= notificationSummary?.counts?.documents || 0 %></span>
-        <span class="pill pill--soft">Simple Evaluation: <%= notificationSummary?.counts?.simplePerformance || 0 %></span>
-        <% if (pendingSignatureCount > 0) { %>
-          <span class="pill pill--soft">To Sign: <%= pendingSignatureCount %></span>
+        <span class="pill pill--soft">Performance feedback: <%= remainingNotificationCount %></span>
+        <% if (remainingNotificationCount > 0) { %>
+          <button class="btn btn-secondary btn-sm" type="button" data-mark-all-read>
+            Mark All as Read
+          </button>
         <% } %>
-        <button class="btn btn-secondary btn-sm" type="button" data-mark-all-read>
-          Mark <%= selectedCategory === 'all' ? 'All' : 'Shown' %> as Read
-        </button>
       </div>
     </div>
 
-    <% if (pendingSignatureCount > 0) { %>
-      <div class="card notifications-signature-callout">
-        <div class="notifications-signature-content">
-          <div class="notifications-signature-eyebrow">Signature Required</div>
-          <h2 class="notifications-signature-title">
-            You have <%= pendingSignatureCount %> pending document<%= pendingSignatureCount === 1 ? '' : 's' %> to sign
-          </h2>
-          <p class="notifications-signature-copy">
-            Review and sign the pending documents from your documents workspace. This reminder stays visible here until the documents are completed.
-          </p>
-          <% if (pendingSignatureDocuments.length > 0) { %>
-            <div class="notifications-signature-preview">
-              <% pendingSignatureDocuments.slice(0, 3).forEach(doc => { %>
-                <span class="notifications-signature-chip">
-                  <%= doc.title %>
-                  <span><%= doc.organizationName || 'Organization' %></span>
-                </span>
-              <% }) %>
-            </div>
-          <% } %>
-        </div>
-        <a href="<%= firstDocumentTaskActionUrl %>" class="btn btn-primary">Review &amp; Sign</a>
-      </div>
-    <% } %>
-
-    <div class="notifications-filters">
-      <a href="/notifications" class="notifications-filter-chip<%= selectedCategory === 'all' ? ' active' : '' %>">All</a>
-      <a href="/notifications?category=documents" class="notifications-filter-chip<%= selectedCategory === 'documents' ? ' active' : '' %>">Documents</a>
-      <a href="/notifications?category=simplePerformance" class="notifications-filter-chip<%= selectedCategory === 'simplePerformance' ? ' active' : '' %>">Simple Evaluation</a>
-    </div>
-
-    <% if (!tasks || tasks.length === 0) { %>
+    <% if (visibleTasks.length === 0) { %>
       <div class="empty-state">
-        <h3>No unread notifications in this view</h3>
-        <p>Everything is up to date for this category.</p>
+        <h3>No unread performance feedback</h3>
+        <p>You are up to date.</p>
       </div>
     <% } else { %>
       <div class="notification-task-list">
-        <% tasks.forEach(task => { %>
+        <% visibleTasks.forEach(task => { %>
           <% const taskDate = new Date(task.createdAt || Date.now()); %>
           <article class="notification-task">
             <div class="notification-task-header">
               <h2 class="notification-task-title"><%= task.title %></h2>
-              <span class="notification-task-badge <%= task.category %>">
-                <%= task.category === 'documents' ? 'Document' : 'Evaluation' %>
-              </span>
+              <span class="notification-task-badge simplePerformance">Evaluation</span>
             </div>
             <p class="notification-task-message"><%= task.message %></p>
             <div class="notification-task-footer">
@@ -336,7 +205,7 @@
   </div>
 
   <script>
-    const selectedNotificationCategory = '<%= selectedCategory || "all" %>';
+    const selectedNotificationCategory = 'simplePerformance';
 
     async function postNotificationAction(url, payload) {
       const response = await fetch(url, {

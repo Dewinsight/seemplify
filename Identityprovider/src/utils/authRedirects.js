@@ -36,6 +36,13 @@ export function normalizeInternalReturnTo(value) {
   }
 }
 
+export function buildInternalLoginRedirect(returnTo) {
+  const safeReturnTo = normalizeInternalReturnTo(returnTo)
+  return safeReturnTo
+    ? `/login?return_to=${encodeURIComponent(safeReturnTo)}`
+    : '/login'
+}
+
 export function escapeHtmlAttribute(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')

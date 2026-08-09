@@ -27,7 +27,8 @@ import { SignJWT, jwtVerify } from 'jose'
 import { emailService } from './services/emailService.js'
 import { issueAttendanceHubToken } from './services/attendanceHubService.js'
 import { renderOidcRecoveryPage } from './services/oidcRecoveryPage.js'
-import { normalizeInternalReturnTo, renderInternalReturnToInput, serializeForInlineScript } from './utils/authRedirects.js'
+import { buildInternalLoginRedirect, normalizeInternalReturnTo, renderInternalReturnToInput, serializeForInlineScript } from './utils/authRedirects.js'
+import { isLegacyIdpOnboardingUiPath } from './utils/legacyUiRedirects.js'
 import { otpService } from './services/otpService.js'
 import MarketingVisit from './models/MarketingVisit.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
@@ -3755,7 +3756,6 @@ app.get('/', async (req, res) => {
     const notificationSummary = await buildNotificationCenterData(account, {
       maxTasks: 12
     })
-    const unreadPendingOnboardingAssignments = notificationSummary.unreadDocumentAssignments || []
     const latestReceivedEvaluationsWithMetrics = (notificationSummary.unreadPerformanceEvaluations || []).slice(0, 3)
     const receivedEvaluationCount = notificationSummary.counts?.simplePerformance || 0
     const profileCompletion = await getProfileCompletionForAccount(account, {
@@ -3776,8 +3776,6 @@ app.get('/', async (req, res) => {
       accessError: req.query?.error === 'app_not_assigned'
         ? `${req.query?.app || 'This app'} is not assigned to your account for the current organization.`
         : null,
-      pendingOnboardingCount: notificationSummary.counts?.documents || unreadPendingOnboardingAssignments.length,
-      pendingOnboardingAssignments: unreadPendingOnboardingAssignments,
       receivedEvaluationCount,
       latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
       notificationSummary,
@@ -4108,7 +4106,7 @@ app.get('/launch/:appId', async (req, res) => {
         appId,
         status: 'no_session'
       })
-      return res.redirect('/login')
+      return res.redirect(buildInternalLoginRedirect(req.originalUrl || `/launch/${encodeURIComponent(appId)}`))
     }
 
     app = getAppById(appId)
@@ -4490,23 +4488,14 @@ const getSessionUser = async (req, res, next) => {
     const profileCompletion = await getProfileCompletionForAccount(account, {
       organizationId: account?.currentOrganization?._id?.toString?.() || account?.currentOrganization?.toString?.() || req.session?.currentOrganization || null
     })
-    const nextIncompleteStepKey = String(profileCompletion?.nextIncompleteStep?.key || '').trim().toLowerCase()
     const isProfileRoute = req.path.startsWith('/profile')
-    const isDocumentWorkspaceRoute = req.path === '/documents'
-      || req.path.startsWith('/documents/')
-      || req.path === '/onboarding'
-      || req.path.startsWith('/onboarding/')
-    const isCurrentCompletionRoute = isProfileRoute
-      || (nextIncompleteStepKey === 'documents' && isDocumentWorkspaceRoute)
 
     req.profileCompletion = profileCompletion
     res.locals.user = account
     res.locals.profileCompletion = profileCompletion
-    res.locals.currentProfileSection = nextIncompleteStepKey === 'documents' && isDocumentWorkspaceRoute
-      ? 'documents'
-      : ''
+    res.locals.currentProfileSection = ''
     res.locals.activeProfileSection = res.locals.activeProfileSection || ''
-    res.locals.profileCompletionEnforced = !profileCompletion.complete && !isCurrentCompletionRoute
+    res.locals.profileCompletionEnforced = !profileCompletion.complete && !isProfileRoute
   }
 
   // Check if user has a session (set during login)
@@ -4857,91 +4846,6 @@ const buildNotificationCenterData = async (account, options = {}) => {
     })
   }
 
-  const pendingOnboardingAssignments = await OnboardingAssignment.find({
-    $or: buildOnboardingParticipantMatchClauses(account._id),
-    status: { $nin: ['completed', 'cancelled'] }
-  })
-    .select([
-      'organization',
-      'member',
-      'workflowType',
-      'status',
-      'dueAt',
-      'completedAt',
-      'createdAt',
-      'updatedAt',
-      'items._id',
-      'items.type',
-      'items.title',
-      'items.description',
-      'items.status',
-      'items.config.document',
-      'items.config.signers',
-      'items.config.signatureFields',
-      'items.data.esign.status',
-      'items.data.esign.signedAt',
-      'items.data.esign.signedUrl',
-      'items.data.esign.signedFileName',
-      'items.data.esign.signers'
-    ].join(' '))
-    .populate('organization', 'name')
-    .sort({ updatedAt: -1, createdAt: -1 })
-    .lean()
-
-  const pendingSignatureDocuments = buildProfileDocumentEntries(pendingOnboardingAssignments, account)
-    .filter(document => document.requiresSignature)
-
-  const pendingSignatureDocumentsByAssignmentId = new Map()
-  pendingSignatureDocuments.forEach(document => {
-    const assignmentId = String(document?.assignmentId || '').trim()
-    if (!assignmentId) return
-
-    const documentsForAssignment = pendingSignatureDocumentsByAssignmentId.get(assignmentId) || []
-    documentsForAssignment.push(document)
-    pendingSignatureDocumentsByAssignmentId.set(assignmentId, documentsForAssignment)
-  })
-
-  // Documents notifications represent pending work until explicitly read.
-  // A pending assignment reappears if it is updated after it was marked as read.
-  const unreadDocumentAssignments = pendingOnboardingAssignments.filter(assignment => {
-    const assignmentId = assignment?._id?.toString()
-    if (!assignmentId) return true
-
-    const signatureDocuments = pendingSignatureDocumentsByAssignmentId.get(assignmentId) || []
-    if (signatureDocuments.length > 0) {
-      return true
-    }
-
-    const assignmentOrganizationId =
-      assignment?.organization?._id?.toString() ||
-      assignment?.organization?.toString() ||
-      ''
-    const referenceTimestamp = assignment?.updatedAt || assignment?.createdAt
-      ? new Date(assignment.updatedAt || assignment.createdAt).getTime()
-      : 0
-
-    const entityReadAt = getNotificationEntityReadAt(
-      account,
-      NOTIFICATION_CATEGORY.documents,
-      assignmentId
-    )
-    if (entityReadAt && (!referenceTimestamp || entityReadAt.getTime() >= referenceTimestamp)) {
-      return false
-    }
-
-    // Backward compatibility: respect older category-level viewed checkpoints.
-    const categoryViewedAt = getDashboardNotificationViewedAt(
-      account,
-      NOTIFICATION_CATEGORY.documents,
-      assignmentOrganizationId
-    )
-    if (categoryViewedAt && referenceTimestamp && categoryViewedAt.getTime() >= referenceTimestamp) {
-      return false
-    }
-
-    return true
-  })
-
   const unreadPerformanceEvaluations = organizationIds.length === 0
       ? []
     : (await PerformanceEvaluation.find({
@@ -4989,57 +4893,6 @@ const buildNotificationCenterData = async (account, options = {}) => {
         averageRating: calculateAverageRating(entry.ratings)
       }))
 
-  const documentTasks = unreadDocumentAssignments.map(assignment => {
-    const organizationId =
-      assignment?.organization?._id?.toString() ||
-      assignment?.organization?.toString() ||
-      currentOrgId
-    const workflowType = normalizeWorkflowType(assignment.workflowType, { allowAll: false, fallback: 'onboarding' })
-    const workflowLabel = WORKFLOW_LABELS[workflowType] || WORKFLOW_LABELS.onboarding
-    const createdAt = assignment.updatedAt || assignment.createdAt || new Date()
-    const assignmentId = assignment?._id?.toString?.() || ''
-    const signatureDocuments = pendingSignatureDocumentsByAssignmentId.get(assignmentId) || []
-    const pendingSignatureCount = signatureDocuments.length
-    const primarySignatureDocument = signatureDocuments[0] || null
-    const organizationName = assignment?.organization?.name || organizationNameById.get(organizationId) || 'your organization'
-
-    return {
-      id: `documents:${assignment._id}`,
-      category: NOTIFICATION_CATEGORY.documents,
-      title: pendingSignatureCount === 1
-        ? 'Document signature pending'
-        : (pendingSignatureCount > 1 ? `${pendingSignatureCount} documents pending signature` : `${workflowLabel} task pending`),
-      message: pendingSignatureCount === 1
-        ? `${primarySignatureDocument?.title || 'A document'} is waiting for your signature for ${organizationName}.`
-        : (pendingSignatureCount > 1
-            ? `${pendingSignatureCount} documents are waiting for your signature in ${workflowLabel.toLowerCase()} for ${organizationName}.`
-            : `Complete your ${workflowLabel.toLowerCase()} step for ${organizationName}.`),
-      organizationId,
-      organizationName: assignment?.organization?.name || organizationNameById.get(organizationId) || 'Organization',
-      createdAt,
-      actionLabel: pendingSignatureCount > 0 ? 'Review & Sign' : 'Open task',
-      actionUrl: buildNotificationActionUrl(
-        pendingSignatureCount > 0
-          ? {
-              type: NOTIFICATION_CATEGORY.documents,
-              organizationId,
-              assignmentId: assignment._id,
-              workflowType,
-              itemId: primarySignatureDocument?.itemId,
-              action: 'sign'
-            }
-          : {
-              type: NOTIFICATION_CATEGORY.documents,
-              organizationId,
-              assignmentId: assignment._id,
-              workflowType
-            }
-      ),
-      pendingSignatureCount,
-      workflowType
-    }
-  })
-
   const performanceTasks = unreadPerformanceEvaluations.map(evaluation => {
     const organizationId =
       evaluation?.organization?._id?.toString() ||
@@ -5067,22 +4920,22 @@ const buildNotificationCenterData = async (account, options = {}) => {
     }
   })
 
-  const sortedTasks = [...documentTasks, ...performanceTasks]
+  const sortedTasks = [...performanceTasks]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   const tasks = includeAllTasks
     ? sortedTasks
     : sortedTasks.slice(0, maxTasks)
 
   return {
-    totalUnread: documentTasks.length + performanceTasks.length,
+    totalUnread: performanceTasks.length,
     counts: {
-      documents: documentTasks.length,
+      documents: 0,
       simplePerformance: performanceTasks.length
     },
     tasks,
-    pendingSignatureCount: pendingSignatureDocuments.length,
-    pendingSignatureDocuments,
-    unreadDocumentAssignments,
+    pendingSignatureCount: 0,
+    pendingSignatureDocuments: [],
+    unreadDocumentAssignments: [],
     unreadPerformanceEvaluations
   }
 }
@@ -5877,6 +5730,15 @@ app.use('/api/teams', teamsRouter)
 app.use('/api', teamsRouter)
 
 // UI Routes (HTML pages)
+
+// Recruiter owns onboarding and document-management UI. Keep the legacy IDP
+// APIs and file endpoints available for existing service integrations, but
+// route old page bookmarks into Recruiter instead of rendering a second UI.
+app.use((req, res, next) => {
+  if (req.method !== 'GET') return next()
+  if (!isLegacyIdpOnboardingUiPath(req.path)) return next()
+  return res.redirect(302, '/launch/smarthr')
+})
 
 app.get('/api/notifications/summary', getSessionUser, async (req, res) => {
   try {

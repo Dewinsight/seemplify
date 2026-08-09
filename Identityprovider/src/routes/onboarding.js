@@ -10,6 +10,7 @@ import { emailService } from '../services/emailService.js'
 import cloudinary, { uploadBufferToCloudinary, isCloudinaryConfigured, deleteFromCloudinary } from '../services/cloudinaryService.js'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { normalizeManualOnboardingStatus } from '../utils/onboardingStatus.js'
+import { buildRecruiterLaunchUrl } from '../utils/legacyUiRedirects.js'
 
 const router = express.Router()
 
@@ -796,9 +797,8 @@ const resolveEsignSigners = async (item, memberId, organization) => {
 const buildOnboardingEmail = (memberName, orgName, issuerUrl, workflowType = 'onboarding') => {
   const normalizedWorkflowType = normalizeWorkflowType(workflowType)
   const workflowLabel = getWorkflowLabel(normalizedWorkflowType)
-  const baseUrl = issuerUrl || 'http://localhost:4000'
-  const workspaceUrl = `${baseUrl}/notifications?category=documents`
-  const actionLabel = 'Open Notifications'
+  const workspaceUrl = buildRecruiterLaunchUrl(issuerUrl)
+  const actionLabel = 'Open Recruiter'
   const introLine = normalizedWorkflowType === 'onboarding'
     ? 'Your onboarding tasks are ready. Please complete them to finish your setup.'
     : `You have ${workflowLabel.toLowerCase()} tasks ready for review and signing.`
@@ -810,9 +810,9 @@ const buildOnboardingEmail = (memberName, orgName, issuerUrl, workflowType = 'on
       <p>Hi ${memberName},</p>
       <p>${introLine}</p>
       <p><a href="${workspaceUrl}" style="display:inline-block;padding:12px 22px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;">${actionLabel}</a></p>
-      <p style="font-size:12px;color:#94a3b8;">Open Notifications to review this task and any other pending actions: ${workspaceUrl}</p>
+      <p style="font-size:12px;color:#94a3b8;">Open Recruiter and go to My Documents to review this task: ${workspaceUrl}</p>
     `,
-    text: `Hi ${memberName},\n\n${introLine}\n\nOpen Notifications to review your pending tasks: ${workspaceUrl}`
+    text: `Hi ${memberName},\n\n${introLine}\n\nOpen Recruiter and go to My Documents to review your pending tasks: ${workspaceUrl}`
   }
 }
 

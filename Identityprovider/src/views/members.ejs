@@ -667,7 +667,6 @@
       </div>
       <div class="header-actions">
         <% if (['owner', 'admin', 'hr_manager'].includes(yourRole)) { %>
-          <a href="/organizations/<%= organization._id %>/onboarding" class="btn btn-secondary">Onboarding</a>
           <a href="/organizations/<%= organization._id %>/invitations" class="btn btn-primary">+ Invite Member</a>
         <% } %>
         <% if (['owner', 'admin'].includes(yourRole)) { %>

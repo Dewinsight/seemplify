@@ -6,7 +6,6 @@ export const LEGACY_DEFAULT_TRIAL_PLAN_SLUG = 'trial'
 export const DEFAULT_TRIAL_PLAN_DAYS = 7
 
 const DEFAULT_TRIAL_CORE_APP_NAMES = [
-  'Document Workspace',
   'Simple Evaluation',
   'Simple LMS'
 ]
