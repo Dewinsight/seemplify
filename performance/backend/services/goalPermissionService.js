@@ -196,6 +196,10 @@ function canRequestGoalChange(req, goal) {
 
 function canEditGoal(req, goal) {
   if (!isGoalInCurrentOrganization(req, goal)) return false;
+  const state = goal?.lifecycle?.state || goal?.status;
+  if (['closed', 'cancelled', 'rejected'].includes(state) || ['closed', 'cancelled', 'rejected'].includes(goal?.status)) {
+    return false;
+  }
   if (isHr(req)) return true;
   if (isOwner(req, goal)) return !goal?.assignment?.assignedBy?.userId;
   if (!hasPermission(resolveRole(req), GOAL_PERMISSION_SCOPES.ASSIGN_DIRECT_REPORTS)) return false;

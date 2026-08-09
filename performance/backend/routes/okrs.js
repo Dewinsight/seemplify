@@ -460,6 +460,7 @@ function normalizeObjectives(body = {}) {
     }];
 
   const objectives = suppliedObjectives.map((objective) => ({
+    ...(objective?._id ? { _id: objective._id } : {}),
     title: String(objective?.title || '').trim(),
     description: String(objective?.description || '').trim(),
     weight: objective?.weight ?? 1,
@@ -479,7 +480,8 @@ function normalizeObjectives(body = {}) {
         direction: keyResult.direction || 'auto',
         dueDate: keyResult.dueDate,
         health: normalizeHealth(keyResult.health),
-        lastUpdated: keyResult.lastUpdated
+        lastUpdated: keyResult.lastUpdated,
+        aiSuggestions: keyResult.aiSuggestions
       };
       if (isPresent(keyResult.currentValue)) normalized.currentValue = keyResult.currentValue;
       return normalized;
@@ -510,6 +512,48 @@ function normalizeObjectives(body = {}) {
     }
   });
   return objectives;
+}
+
+function dateFingerprint(value) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
+}
+
+function idFingerprint(value) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'object') return String(value);
+  if (value._id && value._id !== value) return idFingerprint(value._id);
+  if (typeof value.toHexString === 'function') return value.toHexString();
+  if (value.userId) return String(value.userId);
+  return String(value);
+}
+
+function objectiveFingerprint(objectives = []) {
+  return JSON.stringify((objectives || []).map((objective) => ({
+    id: idFingerprint(objective?._id),
+    title: String(objective?.title || '').trim(),
+    description: String(objective?.description || '').trim(),
+    weight: Number(objective?.weight ?? 1),
+    aiGenerated: Boolean(objective?.aiGenerated),
+    aiConfidence: isPresent(objective?.aiConfidence) ? Number(objective.aiConfidence) : null,
+    keyResults: (objective?.keyResults || []).map((keyResult) => ({
+      id: idFingerprint(keyResult?._id),
+      title: String(keyResult?.title || '').trim(),
+      description: String(keyResult?.description || '').trim(),
+      metricType: keyResult?.metricType || 'percentage',
+      unit: keyResult?.unit || '',
+      weight: Number(keyResult?.weight ?? 1),
+      startValue: Number(keyResult?.startValue ?? 0),
+      targetValue: Number(keyResult?.targetValue ?? 100),
+      currentValue: isPresent(keyResult?.currentValue) ? Number(keyResult.currentValue) : null,
+      direction: keyResult?.direction || 'auto',
+      dueDate: dateFingerprint(keyResult?.dueDate),
+      health: normalizeHealth(keyResult?.health),
+      lastUpdated: dateFingerprint(keyResult?.lastUpdated),
+      aiSuggestions: keyResult?.aiSuggestions || ''
+    }))
+  })));
 }
 
 function serializeGoal(goal, req) {
@@ -1580,20 +1624,35 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     const changes = {};
     if (req.body?.title !== undefined) {
-      goal.title = String(req.body.title).trim();
-      changes.title = goal.title;
+      const nextTitle = String(req.body.title).trim();
+      if (!nextTitle) throw httpError(400, 'Goal title is required', 'INVALID_GOAL_TITLE');
+      if (nextTitle !== String(goal.title || '').trim()) {
+        goal.title = nextTitle;
+        changes.title = nextTitle;
+      }
     }
     if (req.body?.objectives !== undefined || req.body?.keyResults !== undefined || req.body?.objective !== undefined) {
-      goal.objectives = normalizeObjectives(req.body);
-      changes.objectives = true;
+      const nextObjectives = normalizeObjectives(req.body);
+      if (objectiveFingerprint(nextObjectives) !== objectiveFingerprint(goal.objectives)) {
+        goal.objectives = nextObjectives;
+        changes.objectives = true;
+      }
     }
     if (req.body?.periodId !== undefined || req.body?.period !== undefined) {
-      const resolved = await resolvePeriod(req, req.body.periodId, req.body.period || goal.period);
-      goal.periodId = resolved.period?._id;
-      goal.period = resolved.label;
-      changes.period = goal.period;
+      const requestedPeriodId = idFingerprint(req.body.periodId);
+      const currentPeriodId = idFingerprint(goal.periodId);
+      const requestedPeriodLabel = String(req.body.period || goal.period || '');
+      const periodIsUnchanged = requestedPeriodId
+        ? requestedPeriodId === currentPeriodId && requestedPeriodLabel === String(goal.period || '')
+        : requestedPeriodLabel === String(goal.period || '');
+      if (!periodIsUnchanged) {
+        const resolved = await resolvePeriod(req, req.body.periodId, requestedPeriodLabel);
+        goal.periodId = resolved.period?._id;
+        goal.period = resolved.label;
+        changes.period = goal.period;
+      }
     }
-    if (req.body?.status === 'closed') {
+    if (req.body?.status === 'closed' && goal.status !== 'closed') {
       goal.status = 'closed';
       goal.lifecycle.state = 'closed';
       goal.lifecycle.closedAt = new Date();
@@ -1602,24 +1661,44 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     const parentWasProvided = req.body?.parentOKRId !== undefined;
     const oldParentId = goal.alignment?.parentOKRId;
+    let parentChanged = false;
     if (parentWasProvided) {
       const nextParentId = req.body.parentOKRId || null;
-      if (nextParentId) {
-        await validateAlignment(req, goal, nextParentId, req.body?.parentObjectiveIndex ?? 0);
-        goal.alignment = {
-          parentOKRId: nextParentId,
-          parentObjectiveIndex: req.body?.parentObjectiveIndex ?? 0,
-          alignmentType: req.body?.alignmentType || 'cascade',
-          alignmentNotes: req.body?.alignmentNotes
-        };
-      } else {
-        goal.alignment = undefined;
+      const currentParentId = idFingerprint(oldParentId);
+      const currentObjectiveIndex = goal.alignment?.parentObjectiveIndex ?? 0;
+      const currentAlignmentType = goal.alignment?.alignmentType || 'cascade';
+      const currentAlignmentNotes = goal.alignment?.alignmentNotes || '';
+      const nextObjectiveIndex = req.body?.parentObjectiveIndex ?? currentObjectiveIndex;
+      const nextAlignmentType = req.body?.alignmentType || currentAlignmentType;
+      const nextAlignmentNotes = req.body?.alignmentNotes ?? currentAlignmentNotes;
+      parentChanged = idFingerprint(nextParentId) !== currentParentId ||
+        Number(nextObjectiveIndex) !== Number(currentObjectiveIndex) ||
+        nextAlignmentType !== currentAlignmentType ||
+        String(nextAlignmentNotes || '') !== String(currentAlignmentNotes);
+      if (parentChanged) {
+        if (nextParentId) {
+          await validateAlignment(req, goal, nextParentId, nextObjectiveIndex);
+          goal.alignment = {
+            parentOKRId: nextParentId,
+            parentObjectiveIndex: nextObjectiveIndex,
+            alignmentType: nextAlignmentType,
+            alignmentNotes: nextAlignmentNotes
+          };
+        } else {
+          goal.alignment = undefined;
+        }
+        changes.parentOKRId = nextParentId;
       }
-      changes.parentOKRId = nextParentId;
     }
 
+    if (Object.keys(changes).length === 0) {
+      return res.json({ success: true, data: serializeGoal(goal, req), message: 'No goal changes were detected' });
+    }
+
+    const editReason = String(req.body?.editReason || '').trim();
+    if (editReason) changes.editReason = editReason;
     const isStructureChange = Object.keys(changes).some((key) => key !== 'status');
-    if (isStructureChange && goal.lifecycle.state === 'active' && goal.type === 'individual') {
+    if (isStructureChange && ['active', 'pending_acknowledgement'].includes(goal.lifecycle.state) && goal.type === 'individual') {
       if (isOwner(req, goal) && !goal.assignment?.assignedBy?.userId) {
         goal.lifecycle.state = 'pending_approval';
         goal.status = 'pending';
@@ -1630,16 +1709,20 @@ router.put('/:id', requireAuth, async (req, res) => {
         goal.lifecycle.state = 'pending_acknowledgement';
         goal.status = 'draft';
         goal.approvalStatus = 'approved';
-        goal.assignment.assignedBy = actor;
-        goal.assignment.assignedAt = new Date();
+        if (!goal.assignment.assignedBy?.userId) {
+          goal.assignment.assignedBy = actor;
+          goal.assignment.assignedAt = new Date();
+        }
         goal.assignment.acknowledgementStatus = 'pending';
+        goal.assignment.acknowledgedAt = undefined;
+        goal.assignment.acknowledgementComment = undefined;
       }
     }
 
     goal.updatedBy = actor;
     goal.captureVersion('goal_updated', actor, changes);
     await goal.save();
-    if (parentWasProvided) await syncParentChildren(goal, oldParentId, req.body.parentOKRId || null);
+    if (parentChanged) await syncParentChildren(goal, oldParentId, req.body.parentOKRId || null);
     await goalEvent(req, goal, 'goal.updated', { changes });
     return res.json({ success: true, data: serializeGoal(goal, req), message: 'Goal updated successfully' });
   } catch (error) {

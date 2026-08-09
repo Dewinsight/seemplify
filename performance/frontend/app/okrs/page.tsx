@@ -36,6 +36,7 @@ import {
   Add,
   Check,
   Close,
+  Edit,
   EditNote,
   Flag,
   Groups,
@@ -58,11 +59,18 @@ type Decision = 'approve' | 'request_changes' | 'reject';
 interface KeyResult {
   _id?: string;
   title: string;
+  description?: string;
   metricType: MetricType;
+  unit?: string;
+  weight?: number;
   startValue: number;
   targetValue: number;
   currentValue?: number;
+  direction?: 'auto' | 'increase' | 'decrease';
+  dueDate?: string;
+  health?: string;
   lastUpdated?: string;
+  aiSuggestions?: string;
 }
 
 interface Objective {
@@ -70,6 +78,8 @@ interface Objective {
   title: string;
   description?: string;
   weight?: number;
+  aiGenerated?: boolean;
+  aiConfidence?: number;
   keyResults: KeyResult[];
 }
 
@@ -94,6 +104,13 @@ interface Goal {
   owner?: { userId?: string; name?: string; email?: string };
   period: string;
   periodId?: string;
+  teamId?: string | null;
+  teamHierarchy?: {
+    teamId?: string;
+    teamName?: string;
+    departmentId?: string;
+    departmentName?: string;
+  };
   status: 'draft' | 'active' | 'closed' | string;
   approvalStatus?: 'pending' | 'approved' | 'rejected' | 'changes_requested' | string;
   progress?: number;
@@ -308,6 +325,9 @@ export default function OKRWorkspacePage() {
   const [view, setView] = useState<WorkspaceView>('my');
   const [selectedGoalId, setSelectedGoalId] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editReason, setEditReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [alignableGoals, setAlignableGoals] = useState<AlignableGoal[]>([]);
   const [hierarchy, setHierarchy] = useState<HierarchyResponse | null>(null);
@@ -601,6 +621,13 @@ export default function OKRWorkspacePage() {
     setAlignableGoals([]);
   }, [periodDefinitions, selectedPeriod]);
 
+  const closeGoalEditor = useCallback(() => {
+    setCreateOpen(false);
+    setEditingGoal(null);
+    setEditLoading(false);
+    setEditReason('');
+  }, []);
+
   const loadAlignableGoals = async (type: GoalType, period = form.period) => {
     if (type === 'organization') {
       setAlignableGoals([]);
@@ -707,6 +734,129 @@ export default function OKRWorkspacePage() {
       });
     } catch (createError) {
       setMessage({ text: apiError(createError, 'Could not create goal.'), severity: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEditGoal = async (goal: Goal) => {
+    setEditingGoal(goal);
+    setCreateOpen(false);
+    setEditLoading(true);
+    setEditReason('');
+    try {
+      const response = await api.get(`/okrs/${goal._id}`);
+      const fullGoal = unwrapData<Goal>(response, goal);
+      const ownerId = normalizedId(fullGoal.ownerId);
+      const owner = people.find((person) => person.id === ownerId) || {
+        id: ownerId,
+        name: ownerName(fullGoal),
+        email: fullGoal.owner?.email,
+      };
+      const periodId = typeof fullGoal.periodId === 'string'
+        ? fullGoal.periodId
+        : String((fullGoal.periodId as { _id?: string } | undefined)?._id || '');
+      const parentOKRId = normalizedId(fullGoal.alignment?.parentOKRId as Goal['ownerId']);
+      const objectives = (fullGoal.objectives || []).map((objective) => ({
+        ...objective,
+        _id: objective._id,
+        title: objective.title || '',
+        description: objective.description || '',
+        weight: objective.weight ?? 0,
+        keyResults: (objective.keyResults || []).map((keyResult) => ({
+          ...keyResult,
+          _id: keyResult._id,
+          title: keyResult.title || '',
+          description: keyResult.description || '',
+          metricType: keyResult.metricType || 'percentage',
+          startValue: Number(keyResult.startValue ?? 0),
+          targetValue: Number(keyResult.targetValue ?? 100),
+          ...(typeof keyResult.currentValue === 'number' ? { currentValue: keyResult.currentValue } : {}),
+        })),
+      }));
+
+      setEditingGoal(fullGoal);
+      setForm({
+        title: goalTitle(fullGoal),
+        type: fullGoal.type,
+        period: fullGoal.period,
+        periodId,
+        assignees: ownerId ? [owner] : [],
+        teamId: String(fullGoal.teamId || fullGoal.teamHierarchy?.teamId || ''),
+        departmentId: String(fullGoal.teamHierarchy?.departmentId || ''),
+        parentOKRId,
+        objectives: objectives.length ? objectives : [emptyObjective()],
+      });
+      await loadAlignableGoals(fullGoal.type, fullGoal.period);
+    } catch (editError) {
+      closeGoalEditor();
+      setMessage({ text: apiError(editError, 'Could not load this goal for editing.'), severity: 'error' });
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const saveGoalEdit = async () => {
+    if (!editingGoal) return;
+    const validationError = validateGoal();
+    if (validationError) {
+      setMessage({ text: validationError, severity: 'error' });
+      return;
+    }
+    if (!editReason.trim()) {
+      setMessage({ text: 'Add a short reason for this edit.', severity: 'error' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await api.put(`/okrs/${editingGoal._id}`, {
+        title: form.title.trim(),
+        period: form.period,
+        periodId: form.periodId || undefined,
+        parentOKRId: form.parentOKRId || null,
+        editReason: editReason.trim(),
+        objectives: form.objectives.map((objective) => {
+          const keyResultWeightTotal = objective.keyResults.reduce((total, keyResult) => total + Number(keyResult.weight ?? 0), 0);
+          const hasExplicitKeyResultWeights = objective.keyResults.every((keyResult) => typeof keyResult.weight === 'number')
+            && Math.abs(keyResultWeightTotal - 100) <= 0.01;
+          return {
+            ...(objective._id ? { _id: objective._id } : {}),
+            title: objective.title.trim(),
+            description: objective.description?.trim() || '',
+            weight: objective.weight ?? 0,
+            aiGenerated: objective.aiGenerated,
+            aiConfidence: objective.aiConfidence,
+            keyResults: objective.keyResults.map((keyResult) => ({
+              ...(keyResult._id ? { _id: keyResult._id } : {}),
+              title: keyResult.title.trim(),
+              description: keyResult.description?.trim() || '',
+              metricType: keyResult.metricType,
+              unit: keyResult.unit,
+              ...(hasExplicitKeyResultWeights ? { weight: keyResult.weight } : {}),
+              startValue: Number(keyResult.startValue),
+              targetValue: Number(keyResult.targetValue),
+              ...(typeof keyResult.currentValue === 'number' ? { currentValue: keyResult.currentValue } : {}),
+              direction: keyResult.direction,
+              dueDate: keyResult.dueDate,
+              health: keyResult.health,
+              lastUpdated: keyResult.lastUpdated,
+              aiSuggestions: keyResult.aiSuggestions,
+            })),
+          };
+        }),
+      });
+      const updatedGoal = unwrapData<Goal>(response, editingGoal);
+      closeGoalEditor();
+      await loadGoals();
+      setMessage({
+        text: updatedGoal.lifecycle?.state === 'pending_acknowledgement'
+          ? 'Goal updated. The employee must acknowledge the new version.'
+          : 'Goal updated.',
+        severity: 'success',
+      });
+    } catch (editError) {
+      setMessage({ text: apiError(editError, 'Could not update this goal.'), severity: 'error' });
     } finally {
       setSaving(false);
     }
@@ -848,6 +998,7 @@ export default function OKRWorkspacePage() {
     const needsAcknowledgement = goal.permissions?.acknowledge === true;
     const canRequestChange = goal.permissions?.requestChange === true;
     const canDecide = goal.permissions?.decide === true;
+    const canEdit = goal.permissions?.edit === true;
     const progress = goal.scoring?.progress ?? goal.progress;
 
     return (
@@ -915,6 +1066,11 @@ export default function OKRWorkspacePage() {
                 Update progress
               </Button>
             )}
+            {canEdit && (
+              <Button size="small" variant="text" startIcon={<Edit />} onClick={() => openEditGoal(goal)}>
+                Edit goal
+              </Button>
+            )}
             {!approvalMode && canRequestChange && (
               <Button size="small" variant="text" startIcon={<EditNote />} onClick={() => setChangeGoal(goal)}>
                 Suggest a change
@@ -950,7 +1106,7 @@ export default function OKRWorkspacePage() {
         title={emptyTitle}
         description={emptyDescription}
         action={!approvalMode && view === 'my' ? (
-          <Button variant="contained" onClick={() => { resetForm(); setCreateOpen(true); }}>Create goal</Button>
+          <Button variant="contained" onClick={() => { resetForm(); setEditingGoal(null); setCreateOpen(true); }}>Create goal</Button>
         ) : undefined}
       />
     )
@@ -986,7 +1142,7 @@ export default function OKRWorkspacePage() {
         </Box>
         <Stack direction="row" spacing={1} alignItems="center">
           <IconButton aria-label="Refresh goals" onClick={loadGoals} disabled={loading}><Refresh /></IconButton>
-          <Button variant="contained" startIcon={<Add />} onClick={() => { resetForm(); setCreateOpen(true); }}>
+          <Button variant="contained" startIcon={<Add />} onClick={() => { resetForm(); setEditingGoal(null); setCreateOpen(true); }}>
             Create goal
           </Button>
         </Stack>
@@ -1067,9 +1223,20 @@ export default function OKRWorkspacePage() {
         </>
       )}
 
-      <Dialog open={createOpen} onClose={() => !saving && setCreateOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Create goal</DialogTitle>
+      <Dialog open={createOpen || !!editingGoal} onClose={() => !saving && closeGoalEditor()} maxWidth="md" fullWidth>
+        <DialogTitle>{editingGoal ? 'Edit goal' : 'Create goal'}</DialogTitle>
         <DialogContent dividers>
+          {editLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+              <CircularProgress aria-label="Loading goal" />
+            </Box>
+          ) : (
+          <>
+          {editingGoal && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Saving creates an audited goal version. An assigned active goal will need employee acknowledgement again.
+            </Alert>
+          )}
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 8 }}>
               <TextField fullWidth label="Goal title" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} />
@@ -1111,6 +1278,7 @@ export default function OKRWorkspacePage() {
                 <Select
                   value={form.type}
                   label="Scope"
+                  disabled={!!editingGoal}
                   onChange={(event) => {
                     const type = event.target.value as GoalType;
                     setForm({
@@ -1135,6 +1303,7 @@ export default function OKRWorkspacePage() {
               <Grid size={{ xs: 12, md: 6 }}>
                 <Autocomplete
                   multiple
+                  disabled={!!editingGoal}
                   options={people}
                   value={form.assignees}
                   getOptionLabel={(option) => option.name}
@@ -1148,7 +1317,7 @@ export default function OKRWorkspacePage() {
               <Grid size={{ xs: 12, md: 6 }}>
                 <FormControl fullWidth>
                   <InputLabel>Team</InputLabel>
-                  <Select value={form.teamId} label="Team" onChange={(event) => setForm({ ...form, teamId: event.target.value })}>
+                  <Select value={form.teamId} label="Team" disabled={!!editingGoal} onChange={(event) => setForm({ ...form, teamId: event.target.value })}>
                     {(managedTeams?.length ? managedTeams : teams || []).map((team: any) => {
                       const id = String(team.id || team.teamId || team._id || '');
                       return <MenuItem key={id} value={id}>{team.name || team.teamName || 'Team'}</MenuItem>;
@@ -1161,7 +1330,7 @@ export default function OKRWorkspacePage() {
               <Grid size={{ xs: 12, md: 6 }}>
                 <FormControl fullWidth>
                   <InputLabel>Department</InputLabel>
-                  <Select value={form.departmentId} label="Department" onChange={(event) => setForm({ ...form, departmentId: event.target.value })}>
+                  <Select value={form.departmentId} label="Department" disabled={!!editingGoal} onChange={(event) => setForm({ ...form, departmentId: event.target.value })}>
                     {departmentOptions.map((department) => (
                       <MenuItem key={department.id} value={department.id}>{department.name}</MenuItem>
                     ))}
@@ -1262,11 +1431,31 @@ export default function OKRWorkspacePage() {
               Objective weight total: {objectiveWeightTotal}%
             </Typography>
           </Stack>
+          {editingGoal && (
+            <TextField
+              fullWidth
+              required
+              multiline
+              minRows={2}
+              label="Reason for edit"
+              value={editReason}
+              onChange={(event) => setEditReason(event.target.value)}
+              helperText="This is recorded in the goal history for employees, managers, and HR."
+              sx={{ mt: 3 }}
+            />
+          )}
+          </>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateOpen(false)} disabled={saving}>Cancel</Button>
-          <Button variant="contained" onClick={createGoal} disabled={saving} startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <Add />}>
-            Create goal
+          <Button onClick={closeGoalEditor} disabled={saving}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={editingGoal ? saveGoalEdit : createGoal}
+            disabled={saving || editLoading}
+            startIcon={saving ? <CircularProgress size={16} color="inherit" /> : editingGoal ? <Edit /> : <Add />}
+          >
+            {editingGoal ? 'Save changes' : 'Create goal'}
           </Button>
         </DialogActions>
       </Dialog>

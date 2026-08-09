@@ -222,6 +222,88 @@ test('manager assignment requires the employee acknowledgement', async () => {
   expect(acknowledged.body.data.assignment.acknowledgementStatus).toBe('acknowledged');
 });
 
+test('manager edits preserve progress, create one version, and require acknowledgement only after a real change', async () => {
+  const created = await request(app)
+    .post('/api/okrs')
+    .set('x-test-actor', 'manager')
+    .send({
+      title: 'Reduce response time',
+      periodId: String(period._id),
+      ownerId: EMPLOYEE,
+      objectives: [{
+        title: 'Respond faster',
+        weight: 100,
+        keyResults: [{ title: 'Average response time', metricType: 'number', startValue: 10, targetValue: 5 }]
+      }]
+    })
+    .expect(201);
+  const goalId = created.body.data._id;
+
+  await request(app)
+    .post(`/api/okrs/${goalId}/acknowledge`)
+    .set('x-test-actor', 'employee')
+    .send({ comment: 'Agreed' })
+    .expect(200);
+  await request(app)
+    .post(`/api/okrs/${goalId}/check-ins`)
+    .set('x-test-actor', 'employee')
+    .send({
+      idempotencyKey: 'edit-preserves-progress',
+      summary: 'Early progress recorded',
+      health: 'on_track',
+      keyResultUpdates: [{ objectiveIndex: 0, keyResultIndex: 0, currentValue: 8 }]
+    })
+    .expect(201);
+
+  const beforeEdit = await OKR.findById(goalId).lean();
+  const objective = beforeEdit.objectives[0];
+  const keyResult = objective.keyResults[0];
+  const editPayload = {
+    title: 'Reduce first response time',
+    periodId: String(period._id),
+    period: period.name,
+    parentOKRId: null,
+    editReason: 'Quarterly planning review',
+    objectives: [{
+      _id: String(objective._id),
+      title: objective.title,
+      description: objective.description || '',
+      weight: objective.weight,
+      keyResults: [{
+        _id: String(keyResult._id),
+        title: keyResult.title,
+        description: keyResult.description || '',
+        metricType: keyResult.metricType,
+        startValue: keyResult.startValue,
+        targetValue: 4,
+        currentValue: keyResult.currentValue,
+        direction: keyResult.direction,
+        health: keyResult.health,
+        lastUpdated: keyResult.lastUpdated
+      }]
+    }]
+  };
+
+  const edited = await request(app)
+    .put(`/api/okrs/${goalId}`)
+    .set('x-test-actor', 'manager')
+    .send(editPayload)
+    .expect(200);
+  expect(edited.body.data.title).toBe('Reduce first response time');
+  expect(edited.body.data.lifecycle.state).toBe('pending_acknowledgement');
+  expect(edited.body.data.assignment.acknowledgementStatus).toBe('pending');
+  expect(edited.body.data.objectives[0].keyResults[0].currentValue).toBe(8);
+  expect(edited.body.data.version).toBe(beforeEdit.version + 1);
+
+  const replay = await request(app)
+    .put(`/api/okrs/${goalId}`)
+    .set('x-test-actor', 'manager')
+    .send(editPayload)
+    .expect(200);
+  expect(replay.body.message).toBe('No goal changes were detected');
+  expect(replay.body.data.version).toBe(edited.body.data.version);
+});
+
 test('tenant-scoped goal lookup does not disclose another organization', async () => {
   const goal = await OKR.create({
     organizationId: ORG_A,

@@ -3,15 +3,18 @@ import { expect, test, type Locator, type Page, type Request } from '@playwright
 interface GoalRecord {
   _id: string;
   title: string;
-  type: 'individual';
+  type: 'individual' | 'team' | 'department' | 'organization';
   ownerId: string;
   period: string;
   periodId: string;
+  teamId?: string;
+  teamHierarchy?: { teamId?: string; teamName?: string; departmentId?: string; departmentName?: string };
   status: string;
   approvalStatus: string;
   lifecycle: { state: string };
   scoring: { status: string; progress: number | null; ratedKeyResults: number; totalKeyResults: number };
   objectives: Array<{
+    _id?: string;
     title: string;
     weight: number;
     keyResults: Array<Record<string, unknown>>;
@@ -44,6 +47,7 @@ interface MockApiState {
   feedbackItems: Array<Record<string, unknown>>;
   appraisals: Array<Record<string, unknown>>;
   createdGoalBodies: Array<Record<string, unknown>>;
+  updatedGoalBodies: Array<{ id: string; body: Record<string, unknown> }>;
   createdCheckInBodies: Array<Record<string, unknown>>;
   appraisalEvidenceBodies: Array<Record<string, unknown>>;
   notificationPreferenceBodies: Array<Record<string, unknown>>;
@@ -201,6 +205,7 @@ function createState(): MockApiState {
       },
     ],
     createdGoalBodies: [],
+    updatedGoalBodies: [],
     createdCheckInBodies: [],
     appraisalEvidenceBodies: [],
     notificationPreferenceBodies: [],
@@ -455,6 +460,24 @@ async function installMockApi(page: Page, state: MockApiState) {
     if (method === 'GET' && path === '/okrs/alignable/list') {
       return fulfill({ success: true, data: [] });
     }
+    if (method === 'GET' && /^\/okrs\/[^/]+$/.test(path)) {
+      const goal = state.goals.find((item) => item._id === path.split('/')[2]);
+      return goal
+        ? fulfill({ success: true, data: goal })
+        : fulfill({ success: false, error: 'Goal not found' }, 404);
+    }
+    if (method === 'PUT' && /^\/okrs\/[^/]+$/.test(path)) {
+      const id = path.split('/')[2];
+      const body = await jsonBody(request);
+      state.updatedGoalBodies.push({ id, body });
+      const goal = state.goals.find((item) => item._id === id);
+      if (!goal) return fulfill({ success: false, error: 'Goal not found' }, 404);
+      goal.title = String(body.title || goal.title);
+      goal.period = String(body.period || goal.period);
+      goal.periodId = String(body.periodId || goal.periodId);
+      goal.objectives = body.objectives as GoalRecord['objectives'];
+      return fulfill({ success: true, data: goal, message: 'Goal updated successfully' });
+    }
     if (method === 'GET' && path === '/feedback') {
       return fulfill({ success: true, data: state.feedbackItems, count: state.feedbackItems.length });
     }
@@ -598,6 +621,76 @@ test('shows an upcoming unrated goal and creates a milestone without fabricated 
   const objectives = state.createdGoalBodies[0].objectives as Array<{ keyResults: Array<Record<string, unknown>> }>;
   expect(objectives[0].keyResults[0]).toMatchObject({ metricType: 'milestone' });
   expect(objectives[0].keyResults[0]).not.toHaveProperty('currentValue');
+});
+
+test('lets an authorised manager edit a team goal without losing recorded progress', async ({ page }) => {
+  const state = createState();
+  state.managerMode = true;
+  state.goals = [{
+    _id: 'team-goal-1',
+    title: 'Reduce customer response time',
+    type: 'team',
+    ownerId: currentUser.id,
+    period: state.futurePeriod.name,
+    periodId: state.futurePeriod._id,
+    teamId: 'team-1',
+    teamHierarchy: { teamId: 'team-1', teamName: 'Customer Success' },
+    status: 'active',
+    approvalStatus: 'not_required',
+    lifecycle: { state: 'active' },
+    scoring: { status: 'partially_rated', progress: 35, ratedKeyResults: 1, totalKeyResults: 1 },
+    objectives: [{
+      _id: 'objective-1',
+      title: 'Respond faster',
+      weight: 100,
+      keyResults: [{
+        _id: 'team-kr-1',
+        title: 'Average response time',
+        metricType: 'number',
+        startValue: 100,
+        targetValue: 60,
+        currentValue: 75,
+        direction: 'decrease',
+        health: 'on_track',
+      }],
+    }],
+    permissions: { view: true, edit: true, submit: false, decide: false, acknowledge: false, requestChange: false, checkIn: true, align: true },
+  }];
+  await installMockApi(page, state);
+
+  await page.goto('/okrs');
+  await page.getByRole('tab', { name: 'Upcoming' }).click();
+  await page.getByRole('tab', { name: /Team & Department Goals/ }).click();
+  await expect(page.getByText('Reduce customer response time')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit goal' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Edit goal' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Goal title')).toHaveValue('Reduce customer response time');
+  await expect(muiSelect(dialog, 'Scope')).toBeDisabled();
+  await dialog.getByLabel('Goal title').fill('Reduce first response time');
+  await dialog.getByLabel('Target').fill('55');
+  await dialog.getByLabel('Reason for edit').fill('Updated after the quarterly planning review');
+  await dialog.getByRole('button', { name: 'Save changes' }).click();
+
+  await expect(page.getByText('Goal updated.')).toBeVisible();
+  await expect(page.getByText('Reduce first response time')).toBeVisible();
+  expect(state.updatedGoalBodies).toHaveLength(1);
+  const update = state.updatedGoalBodies[0];
+  expect(update.id).toBe('team-goal-1');
+  expect(update.body).toMatchObject({
+    title: 'Reduce first response time',
+    editReason: 'Updated after the quarterly planning review',
+  });
+  const updatedObjectives = update.body.objectives as Array<{ _id: string; keyResults: Array<Record<string, unknown>> }>;
+  expect(updatedObjectives[0]._id).toBe('objective-1');
+  expect(updatedObjectives[0].keyResults[0]).toMatchObject({
+    _id: 'team-kr-1',
+    targetValue: 55,
+    currentValue: 75,
+    direction: 'decrease',
+    health: 'on_track',
+  });
 });
 
 test('initializes canonical goal periods for a manager when a new organization has none', async ({ page }) => {

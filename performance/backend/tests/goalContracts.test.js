@@ -43,6 +43,23 @@ test('goal permissions require the active tenant and relationship scope', () => 
   assert.equal(canViewGoal(req, { ...directReportGoal, organizationId: 'org-2' }), false);
 });
 
+test('completed and rejected goals remain immutable even for HR', () => {
+  const req = requestContext({ userRole: 'hr_admin' });
+  const goal = {
+    organizationId: 'org-1',
+    ownerId: 'employee-1',
+    type: 'individual',
+    status: 'active',
+    lifecycle: { state: 'active' }
+  };
+
+  assert.equal(canEditGoal(req, goal), true);
+  for (const terminalState of ['closed', 'cancelled', 'rejected']) {
+    assert.equal(canEditGoal(req, { ...goal, status: terminalState }), false);
+    assert.equal(canEditGoal(req, { ...goal, lifecycle: { state: terminalState } }), false);
+  }
+});
+
 test('period policy can disable employee change requests', () => {
   const req = requestContext({
     session: { user: { id: 'employee-1', sub: 'employee-1' } },
