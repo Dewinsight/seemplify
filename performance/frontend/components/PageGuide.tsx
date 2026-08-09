@@ -244,16 +244,17 @@ const PAGE_GUIDES: GuideDefinition[] = [
   {
     key: 'goal-setting',
     matcher: /^\/appraisals\/[^/]+\/goal-setting$/,
-    title: 'Goal Setting',
-    summary: 'Use this page when a cycle includes a goal alignment stage before review work begins.',
-    purpose: 'Goal setting establishes what will be evaluated later. It is only relevant when the cycle has this stage enabled.',
+    title: 'Appraisal Goals',
+    summary: 'Review the locked goal evidence captured automatically for this appraisal.',
+    purpose: 'This page explains which approved individual goals were captured at the appraisal cutoff. It is read-only so later goal changes cannot rewrite historical performance evidence.',
     steps: [
-      'Review the goals linked to this appraisal.',
-      'Clarify or confirm the objectives that will be measured.',
-      'Save the agreed goal set so later assessment is based on the same expectations.'
+      'Review the captured goals, versions, and cutoff achievement.',
+      'Use the Goals workspace only when you need to manage the live goal outside this appraisal.',
+      'Continue to self-assessment when you are ready; there is nothing to save on this page.'
     ],
     success: [
-      'Goals are clear, shared, and ready for the rest of the cycle.'
+      'You understand the goal evidence that will support this review.',
+      'The appraisal remains based on an immutable historical snapshot.'
     ]
   },
   {

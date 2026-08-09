@@ -201,7 +201,32 @@ function createState(): MockApiState {
           name: '2026 Annual Review',
           periodStart: '2026-01-01T00:00:00.000Z',
           periodEnd: '2026-12-31T23:59:59.999Z',
+          okrWeight: 40,
         },
+        goalSnapshots: [{
+          _id: 'snapshot-1',
+          sourceGoalId: 'future-goal-1',
+          sourceVersion: 2,
+          scope: 'individual',
+          period: { label: futurePeriod.name },
+          definition: {
+            title: 'Build launch readiness',
+            objectives: [{
+              title: 'Prepare the launch',
+              description: 'Make the release ready for customers.',
+              keyResults: [{
+                title: 'Complete launch checklist',
+                metricType: 'milestone',
+                currentValue: 75,
+                targetValue: 100,
+              }],
+            }],
+          },
+          achievement: { rated: true, score: 75 },
+          capturedAt: '2026-08-01T00:00:00.000Z',
+          cutoffAt: '2026-12-31T23:59:59.999Z',
+        }],
+        goalEvidenceSummary: { rated: true, score: 75, ratedGoals: 1, totalGoals: 1, okrWeight: 40 },
       },
     ],
     createdGoalBodies: [],
@@ -500,6 +525,24 @@ async function installMockApi(page: Page, state: MockApiState) {
     if (method === 'GET' && path === '/appraisals/my') {
       return fulfill({ success: true, data: state.appraisals });
     }
+    if (method === 'GET' && /^\/appraisals\/[^/]+$/.test(path)) {
+      const id = path.split('/')[2];
+      const appraisal = state.appraisals.find((item) => item._id === id);
+      return appraisal
+        ? fulfill({ success: true, data: appraisal })
+        : fulfill({ success: false, error: 'Appraisal not found' }, 404);
+    }
+    if (method === 'GET' && /^\/appraisals\/[^/]+\/conversation\/context$/.test(path)) {
+      return fulfill({
+        success: true,
+        data: {
+          cycle: { settings: { allowSelfRating: true } },
+          conversationState: null,
+          chatThread: [],
+          okrs: [],
+        },
+      });
+    }
     if (method === 'POST' && /^\/feedback\/[^/]+\/appraisal-evidence$/.test(path)) {
       const body = await jsonBody(request);
       state.appraisalEvidenceBodies.push(body);
@@ -736,6 +779,24 @@ test('prefills the current annual review period when creating an appraisal cycle
   await page.getByLabel('Cycle Name').fill('Annual employee review');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Choose Participants' })).toBeVisible();
+});
+
+test('shows immutable appraisal goals with no save step and continues to self-assessment', async ({ page }) => {
+  const state = createState();
+  await installMockApi(page, state);
+
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/goal-setting');
+
+  await expect(page.getByRole('heading', { name: 'Goals in this appraisal' })).toBeVisible();
+  await expect(page.getByText('No save is needed.')).toBeVisible();
+  await expect(page.getByText('Build launch readiness')).toBeVisible();
+  await expect(page.getByText('Version 2')).toBeVisible();
+  await expect(page.getByText('75%').first()).toBeVisible();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Submit OKRs/ })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Continue self-assessment' }).click();
+  await expect(page).toHaveURL(/\/appraisals\/507f1f77bcf86cd799439011\/self-assessment$/);
 });
 
 test('opens an unread Action Centre notification at its goal deep link', async ({ page }) => {
