@@ -533,8 +533,9 @@ async function triggerTitleGeneration(chatSessionId, userInput, assistantRespons
  * @param {string | undefined} chatSessionId - The ID of the current chat session (optional).
  * @param {string | undefined} authToken - The authentication token for API calls.
  * @param {object} streamCallbacks - Callbacks for handling streamed data (onData, onError, onComplete).
+ * @param {string | undefined} activeOrganizationId - Organization selected by request middleware.
  */
-async function streamMessageWithAgent(userInput, userId, chatSessionId, authToken, streamCallbacks) {
+async function streamMessageWithAgent(userInput, userId, chatSessionId, authToken, streamCallbacks, activeOrganizationId) {
   // 🔍 DEBUG: Log session information to track the issue
   console.log('🔍 DEBUG - streamMessageWithAgent called with:');
   console.log('  - userId:', userId);
@@ -572,8 +573,8 @@ async function streamMessageWithAgent(userInput, userId, chatSessionId, authToke
     const loadedChatHistory = memoryVariables[memory.memoryKey] || [];
     
     // Extract organization from auth token for data isolation
-    let organizationId = null;
-    if (authToken) {
+    let organizationId = activeOrganizationId || null;
+    if (!organizationId && authToken) {
       try {
         const jwt = require('jsonwebtoken');
         const token = authToken.replace('Bearer ', '');

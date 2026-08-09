@@ -6,6 +6,7 @@ const Candidate = require('../models/Candidate');
 const emailService = require('./emailService');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const publicFeedbackCapability = require('./publicFeedbackCapabilityService');
 
 class InterviewFeedbackEmailService {
   constructor() {
@@ -202,7 +203,8 @@ class InterviewFeedbackEmailService {
       // Generate public feedback link (same as used in transcript UI)
       // Make sure to use the correct frontend URL for your deployment
       const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://smarthr.aiinnigeria.com';
-      const feedbackUrl = `${frontendUrl}/public/feedback/${interview._id}`;
+      const feedbackUrl = await publicFeedbackCapability.feedbackUrl(interview._id, frontendUrl);
+      if (!feedbackUrl) throw new Error('Unable to issue public feedback capability');
       
       console.log(`🔗 Generated feedback URL: ${feedbackUrl}`);
       const questionsHtml = `

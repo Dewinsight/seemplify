@@ -19,6 +19,7 @@ const Plan = require('../models/Plan');
 const User = require('../models/User');
 const cvQueue = require('../services/cvAnalysisQueueService');
 const publicCapacity = require('../services/publicApplicationCapacityService');
+const publicApplicationCapability = require('../services/publicApplicationCapabilityService');
 const queueUpload = require('../middleware/cvQueueUploadHandler');
 const creditsService = require('../services/creditsService');
 const { deductCredits } = require('../middleware/creditsMiddleware');
@@ -58,13 +59,14 @@ async function uploadFile() {
   };
 }
 
-function uploadRequest({ file, organizationId, actorId, jobId, idempotencyKey, credits = true }) {
+function uploadRequest({ file, organizationId, actorId, jobId, candidateId, applicationToken, idempotencyKey, credits = true }) {
   return {
     method: 'POST',
     path: '/upload-cv',
     file,
     body: {
-      ...(jobId ? { jobId: String(jobId) } : {})
+      ...(jobId ? { jobId: String(jobId) } : {}),
+      ...(candidateId ? { candidateId: String(candidateId) } : {})
     },
     user: organizationId || actorId
       ? {
@@ -76,9 +78,10 @@ function uploadRequest({ file, organizationId, actorId, jobId, idempotencyKey, c
       ? { creditsAction: { action: 'uploadCandidate', cost: 3, entityType: 'candidate' } }
       : {}),
     get(name) {
-      return String(name).toLowerCase() === 'idempotency-key'
-        ? idempotencyKey
-        : undefined;
+      const key = String(name).toLowerCase();
+      if (key === 'idempotency-key') return idempotencyKey;
+      if (key === 'x-public-application-token') return applicationToken;
+      return undefined;
     }
   };
 }
@@ -154,6 +157,49 @@ async function seedPublicJob({
     publicApplicationReservations: []
   });
   return _id;
+}
+
+async function seedCommittedPublicApplicant({ organizationId, jobId, email, requestKey }) {
+  const candidateId = new mongoose.Types.ObjectId();
+  const capability = publicApplicationCapability.issue({
+    organizationId,
+    jobId,
+    candidateId,
+    requestKey
+  });
+  await Candidate.collection.insertOne({
+    _id: candidateId,
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    email,
+    normalizedEmail: email.toLowerCase(),
+    organization: organizationId,
+    jobAppliedFor: jobId,
+    source: 'public',
+    publicApplicationRequestKey: requestKey,
+    publicApplicationCapabilityHash: capability.hash,
+    publicApplicationCapabilityExpiresAt: capability.expiresAt,
+    processingMetadata: { cvIngestionState: 'not_received' }
+  });
+  const applicationReceiptId = new mongoose.Types.ObjectId();
+  await publicCapacity.commit({
+    jobId,
+    organizationId,
+    candidateId,
+    processingJobId: applicationReceiptId,
+    processingJobPublicId: `application_${applicationReceiptId}`
+  });
+  await Candidate.collection.updateOne(
+    { _id: candidateId },
+    {
+      $set: { publicApplicationCommitState: 'committed' },
+      $unset: {
+        publicApplicationProvisionalExpiresAt: '',
+        publicApplicationCommitStartedAt: ''
+      }
+    }
+  );
+  return { candidateId, applicationToken: capability.token };
 }
 
 function processingJob(overrides = {}) {
@@ -576,11 +622,18 @@ test('valid public ingestion persists the job-derived organization and binds rep
   const firstJobId = await seedPublicJob({ organizationId });
   const secondJobId = await seedPublicJob({ organizationId });
   const idempotencyKey = 'public-job-bound-replay';
+  const firstApplicant = await seedCommittedPublicApplicant({
+    organizationId,
+    jobId: firstJobId,
+    email: 'first-public@example.com',
+    requestKey: 'first-public-application'
+  });
 
   const accepted = responseRecorder();
   await queueUpload('public')(uploadRequest({
     file: await uploadFile(),
     jobId: firstJobId,
+    ...firstApplicant,
     idempotencyKey,
     credits: false
   }), accepted);
@@ -591,7 +644,7 @@ test('valid public ingestion persists the job-derived organization and binds rep
   assert.equal(accepted.headers.location, accepted.body.statusUrl);
   assert.equal(accepted.headers['x-cv-status-token'], accepted.body.statusToken);
 
-  const stored = await CVProcessingJob.findOne({ idempotencyKey }).lean();
+  const stored = await CVProcessingJob.findOne({ publicId: accepted.body.jobId }).lean();
   assert.equal(String(stored.organization), String(organizationId));
   assert.equal(String(stored.jobAppliedFor), String(firstJobId));
   assert.equal(durableWrites, 1);
@@ -601,11 +654,12 @@ test('valid public ingestion persists the job-derived organization and binds rep
   await queueUpload('public')(uploadRequest({
     file: await uploadFile(),
     jobId: secondJobId,
+    ...firstApplicant,
     idempotencyKey,
     credits: false
   }), mismatchedReplay);
-  assert.equal(mismatchedReplay.statusCode, 409);
-  assert.equal(mismatchedReplay.body.code, 'CV_IDEMPOTENCY_CONTEXT_MISMATCH');
+  assert.equal(mismatchedReplay.statusCode, 403);
+  assert.equal(mismatchedReplay.body.code, 'PUBLIC_APPLICATION_CAPABILITY_INVALID');
   assert.equal(await CVProcessingJob.countDocuments({}), 1);
   assert.equal(durableWrites, 1);
 });

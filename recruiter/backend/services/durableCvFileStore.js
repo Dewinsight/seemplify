@@ -124,6 +124,13 @@ async function persistPath(filePath, metadata = {}) {
       purpose: 'cv-ingestion',
       organizationId: String(metadata.organizationId || '').slice(0, 100),
       source: String(metadata.source || '').slice(0, 40),
+      // These opaque intake fields let maintenance distinguish a committed
+      // processing file from bytes stranded by a process exit between the
+      // GridFS upload and CVProcessingJob.create(). Never persist the raw
+      // idempotency key here.
+      intakeId: String(metadata.intakeId || '').slice(0, 120),
+      intakeKeyHash: String(metadata.intakeKeyHash || '').slice(0, 64),
+      requestFingerprint: String(metadata.requestFingerprint || '').slice(0, 64),
       createdAt: new Date()
     }
   });
@@ -183,6 +190,96 @@ async function persistPath(filePath, metadata = {}) {
     length: streamedLength,
     persistedAt: new Date()
   };
+}
+
+async function sweepOrphanedIntakes({
+  now = new Date(),
+  graceMs = Number(process.env.CV_INGESTION_ORPHAN_GRACE_MS || 15 * 60 * 1000),
+  legacyGraceMs = Number(process.env.CV_INGESTION_LEGACY_ORPHAN_GRACE_MS || 24 * 60 * 60 * 1000),
+  pageSize = 100,
+  isReferenced
+} = {}) {
+  if (typeof isReferenced !== 'function') {
+    throw new TypeError('A durable CV reference resolver is required');
+  }
+  const name = bucketName();
+  const files = database().collection(`${name}.files`);
+  const safeGraceMs = Math.max(0, Number(graceMs) || 0);
+  const staleBefore = new Date(new Date(now).getTime() - safeGraceMs);
+  // Pre-rollout files did not carry an intake ID. Give every old server/request
+  // a much longer drain window, then match those files only by ObjectId.
+  const legacyStaleBefore = new Date(
+    new Date(now).getTime() - Math.max(safeGraceMs, Number(legacyGraceMs) || 0)
+  );
+  const size = Math.min(Math.max(Number(pageSize) || 100, 1), 500);
+  const baseFilter = {
+    'metadata.purpose': 'cv-ingestion',
+    $or: [
+      {
+        uploadDate: { $lte: staleBefore },
+        'metadata.intakeId': { $type: 'string', $ne: '' }
+      },
+      {
+        uploadDate: { $lte: legacyStaleBefore },
+        $or: [
+          { 'metadata.intakeId': { $exists: false } },
+          { 'metadata.intakeId': null },
+          { 'metadata.intakeId': '' }
+        ]
+      }
+    ]
+  };
+  const tail = await files.find(baseFilter).sort({ _id: -1 }).limit(1).next();
+  if (!tail) return { examined: 0, removed: 0, retained: 0, errors: 0 };
+
+  let cursor;
+  let examined = 0;
+  let removed = 0;
+  let retained = 0;
+  let errors = 0;
+  while (true) {
+    const page = await files.find({
+      ...baseFilter,
+      _id: {
+        ...(cursor ? { $gt: cursor } : {}),
+        $lte: tail._id
+      }
+    }).sort({ _id: 1 }).limit(size).toArray();
+    if (!page.length) break;
+    for (const file of page) {
+      examined += 1;
+      const reference = {
+        provider: 'gridfs',
+        bucket: name,
+        fileId: String(file._id),
+        intakeId: file.metadata?.intakeId,
+        intakeKeyHash: file.metadata?.intakeKeyHash,
+        requestFingerprint: file.metadata?.requestFingerprint,
+        organizationId: file.metadata?.organizationId,
+        sha256: file.metadata?.sha256,
+        length: Number(file.metadata?.sourceLength || file.length || 0),
+        persistedAt: file.uploadDate,
+        originalName: file.filename,
+        fileType: file.contentType,
+        legacy: !file.metadata?.intakeId
+      };
+      try {
+        if (await isReferenced(reference)) {
+          retained += 1;
+          continue;
+        }
+        await bucket(name).delete(file._id);
+        removed += 1;
+      } catch {
+        // A lookup/provider outage is fail-closed: retain bytes for the next
+        // pass rather than risk deleting a live intake.
+        errors += 1;
+      }
+    }
+    cursor = page.at(-1)._id;
+    if (String(cursor) === String(tail._id)) break;
+  }
+  return { examined, removed, retained, errors };
 }
 
 async function materialize(reference, metadata = {}) {
@@ -252,5 +349,6 @@ module.exports = {
   assertWorkerTempDirectory,
   materialize,
   persistPath,
-  remove
+  remove,
+  sweepOrphanedIntakes
 };

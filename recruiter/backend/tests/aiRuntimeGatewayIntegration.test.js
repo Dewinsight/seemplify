@@ -14,6 +14,12 @@ function sign({ body, secret, service = 'ai-interview', timestamp }) {
     .digest('hex');
 }
 
+function signV2({ body, secret, service = 'performance-management', timestamp, nonce }) {
+  return crypto.createHmac('sha256', secret)
+    .update([timestamp, nonce, service, 'POST', PATH, body].join('\n'))
+    .digest('hex');
+}
+
 async function startGateway() {
   const app = express();
   app.use('/api/internal/ai', express.raw({ type: 'application/json', limit: '2mb' }), (req, res, next) => {
@@ -160,5 +166,47 @@ test('signed gateway aborts inference when its client disconnects', async () => 
     else process.env.AI_GATEWAY_HMAC_SECRET = originalSecret;
     if (originalAllowed === undefined) delete process.env.AI_GATEWAY_ALLOWED_SERVICES;
     else process.env.AI_GATEWAY_ALLOWED_SERVICES = originalAllowed;
+  }
+});
+
+test('Performance service signatures cannot invoke Recruiter activities', async () => {
+  const originalSecret = process.env.PERFORMANCE_AI_SHARED_SECRET;
+  const InternalServiceNonce = require('../models/InternalServiceNonce');
+  const originalInit = InternalServiceNonce.init;
+  const originalCreate = InternalServiceNonce.create;
+  const secret = 'performance-bound-proxy-secret';
+  process.env.PERFORMANCE_AI_SHARED_SECRET = secret;
+  InternalServiceNonce.init = async () => InternalServiceNonce;
+  InternalServiceNonce.create = async () => ({ acknowledged: true });
+  const gateway = await startGateway();
+  try {
+    const body = JSON.stringify({
+      activity: 'candidate.cv_parse',
+      messages: [{ role: 'user', content: 'Attempt a cross-product activity' }],
+      identity: { sub: 'idp-user', email: 'person@example.test' }
+    });
+    const timestamp = String(Date.now());
+    const nonce = 'performanceNonce1234';
+    const response = await fetch(gateway.url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-seemplify-service': 'performance-management',
+        'x-seemplify-timestamp': timestamp,
+        'x-seemplify-signature-version': '2',
+        'x-seemplify-nonce': nonce,
+        'x-seemplify-signature': signV2({ body, secret, timestamp, nonce })
+      },
+      body
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, 'SHARED_AI_ACTIVITY_FORBIDDEN');
+  } finally {
+    await gateway.close();
+    InternalServiceNonce.init = originalInit;
+    InternalServiceNonce.create = originalCreate;
+    if (originalSecret === undefined) delete process.env.PERFORMANCE_AI_SHARED_SECRET;
+    else process.env.PERFORMANCE_AI_SHARED_SECRET = originalSecret;
   }
 });

@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -41,7 +41,7 @@ const applicationFormSchema = z.object({
   phone: z.string().min(10, {
     message: "Please enter a valid phone number.",
   }),
-  isOrganizationStaff: z.boolean().default(false),
+  isOrganizationStaff: z.boolean(),
   coverLetter: z.string().optional(),
 })
 
@@ -54,6 +54,48 @@ interface PublicJobApplicationFormProps {
   onSuccess: () => void
 }
 
+type SubmissionStage = 'idle' | 'creating' | 'securing'
+
+type CommittedApplication = {
+  candidateId: string
+  successUrl: string
+}
+
+type PublicApplicationCapability = {
+  token: string
+  expiresAt?: string
+}
+
+type PersistedApplicationAttempt = {
+  idempotencyKey: string
+  fingerprint: string
+}
+
+const PUBLIC_APPLICATION_ATTEMPT_PREFIX = 'seemplify_public_application_attempt_v1:'
+
+async function applicationFingerprint(data: ApplicationFormValues) {
+  const canonical = JSON.stringify({
+    firstName: data.firstName.trim(),
+    lastName: data.lastName.trim(),
+    email: data.email.trim().toLowerCase(),
+    phone: data.phone.trim(),
+    coverLetter: data.coverLetter || '',
+    isOrganizationStaff: Boolean(data.isOrganizationStaff),
+  })
+  if (globalThis.crypto?.subtle) {
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical))
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+  // This value only reconciles a browser retry; the server independently
+  // verifies its own SHA-256 request fingerprint.
+  let hash = 2166136261
+  for (let index = 0; index < canonical.length; index += 1) {
+    hash ^= canonical.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `fallback-${(hash >>> 0).toString(16)}`
+}
+
 export function PublicJobApplicationForm({
   jobId, 
   jobTitle, 
@@ -61,10 +103,63 @@ export function PublicJobApplicationForm({
   onSuccess 
 }: PublicJobApplicationFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submissionStage, setSubmissionStage] = useState<SubmissionStage>('idle')
+  const [committedApplication, setCommittedApplication] = useState<CommittedApplication | null>(null)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [submissionError, setSubmissionError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const applicationAttemptRef = useRef<PersistedApplicationAttempt | null>(null)
+  const submittedDataRef = useRef<ApplicationFormValues | null>(null)
+  // The raw bearer capability deliberately stays in memory. A reload replays
+  // candidate creation with the original idempotency key to rotate it.
+  const applicationCapabilityRef = useRef<PublicApplicationCapability | null>(null)
+
+  const attemptStorageKey = `${PUBLIC_APPLICATION_ATTEMPT_PREFIX}${jobId}`
+
+  const getApplicationAttempt = async (data: ApplicationFormValues) => {
+    const fingerprint = await applicationFingerprint(data)
+    let current = applicationAttemptRef.current
+
+    if (!current && typeof window !== 'undefined') {
+      try {
+        const stored = sessionStorage.getItem(attemptStorageKey)
+        if (stored) current = JSON.parse(stored) as PersistedApplicationAttempt
+      } catch {
+        // Storage can be unavailable in privacy-restricted browser contexts.
+      }
+    }
+
+    if (!current || current.fingerprint !== fingerprint) {
+      current = {
+        idempotencyKey: globalThis.crypto?.randomUUID?.()
+          || `${jobId}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        fingerprint,
+      }
+    }
+
+    applicationAttemptRef.current = current
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(attemptStorageKey, JSON.stringify(current))
+      } catch {
+        // The in-memory attempt still protects retries in this render.
+      }
+    }
+    return current
+  }
+
+  const clearApplicationAttempt = () => {
+    applicationAttemptRef.current = null
+    applicationCapabilityRef.current = null
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(attemptStorageKey)
+      } catch {
+        // Nothing sensitive is left in memory after durable acceptance.
+      }
+    }
+  }
 
   const form = useForm<ApplicationFormValues>({
     resolver: zodResolver(applicationFormSchema),
@@ -87,7 +182,11 @@ export function PublicJobApplicationForm({
     setUploadError(null)
 
     const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-    if (!allowedTypes.includes(file.type)) {
+    const allowedExtensions = ['.pdf', '.doc', '.docx']
+    const lowerName = file.name.toLowerCase()
+    const hasAllowedExtension = allowedExtensions.some((extension) => lowerName.endsWith(extension))
+    const hasGenericType = !file.type || file.type === 'application/octet-stream'
+    if (!allowedTypes.includes(file.type) && !(hasGenericType && hasAllowedExtension)) {
       setUploadError('Please upload a PDF or Word document')
       return
     }
@@ -107,27 +206,36 @@ export function PublicJobApplicationForm({
     }
   }
 
-  // Uploads the CV for background parsing/enrichment. Deliberately not
-  // awaited by the caller and never surfaced to the applicant - if parsing
-  // fails (e.g. a scanned CV), the application has already been submitted
-  // successfully and recruiters simply see an un-enriched candidate.
-  const uploadCvInBackground = (candidateId: string, file: File) => {
+  // Wait only until the server has durably retained the file and returned a
+  // tracked 202 response. Analysis remains asynchronous and can safely
+  // continue after navigation.
+  const secureCvForBackgroundProcessing = async (
+    candidateId: string,
+    file: File,
+    idempotencyKey: string,
+    capabilityToken: string,
+  ) => {
     const formData = new FormData()
     formData.append('resume', file)
     formData.append('jobId', jobId)
     formData.append('candidateId', candidateId)
-    const uploadIdempotencyKey = globalThis.crypto?.randomUUID?.()
-      || `${jobId}-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
-    apiRequest(`/api/candidates/public/upload-cv`, {
+    const response = await apiRequest(`/api/candidates/public/upload-cv`, {
+      skipAuth: true,
       method: 'POST',
       headers: {
-        'Idempotency-Key': uploadIdempotencyKey,
+        'Idempotency-Key': idempotencyKey,
+        'X-Public-Application-Token': capabilityToken,
+        'X-Public-Job-Id': jobId,
+        'X-Public-Candidate-Id': candidateId,
       },
       body: formData,
-    }).catch((error) => {
-      console.error('Background CV upload failed (application already submitted):', error)
     })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok || response.status !== 202 || !payload.jobId) {
+      throw new Error(payload.msg || payload.message || payload.error || 'Your CV could not be secured for background processing')
+    }
+    return payload
   }
 
   const handleSubmit = async (data: ApplicationFormValues) => {
@@ -138,23 +246,35 @@ export function PublicJobApplicationForm({
 
     setSubmissionError(null)
     setIsSubmitting(true)
+    let applicationWasCommitted = Boolean(committedApplication)
 
     try {
-      // Create the candidate immediately from what the applicant typed -
-      // no dependency on CV parsing.
+      const submissionData = committedApplication && submittedDataRef.current
+        ? submittedDataRef.current
+        : data
+      submittedDataRef.current = submissionData
+      const applicationAttempt = await getApplicationAttempt(submissionData)
+      const applicationIdempotencyKey = applicationAttempt.idempotencyKey
+
+      // This is also the recovery handshake after a reload or an uncertain CV
+      // response: the original key converges on the same candidate and rotates
+      // a fresh, short-lived capability without storing that capability.
+      setSubmissionStage('creating')
       const createResponse = await apiRequest(`/api/candidates/public`, {
+        skipAuth: true,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Idempotency-Key': applicationIdempotencyKey,
         },
         body: JSON.stringify({
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
-          phone: data.phone,
+          firstName: submissionData.firstName,
+          lastName: submissionData.lastName,
+          email: submissionData.email,
+          phone: submissionData.phone,
           jobId,
-          isOrganizationStaff: data.isOrganizationStaff,
-          coverLetter: data.coverLetter || '',
+          isOrganizationStaff: submissionData.isOrganizationStaff,
+          coverLetter: submissionData.coverLetter || '',
         }),
       })
 
@@ -163,46 +283,37 @@ export function PublicJobApplicationForm({
         throw new Error(errorData.msg || errorData.error || 'Failed to submit application')
       }
 
-      const { candidate } = await createResponse.json()
-      const candidateId = candidate._id
-
-      // Then, add candidate to job's shortlist - this is the application.
-      const shortlistResponse = await apiRequest(`/api/jobs/public/${jobId}/shortlist`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          candidateId: candidateId,
-          isOrganizationStaff: data.isOrganizationStaff,
-          coverLetter: data.coverLetter || '',
-          notes: data.coverLetter || 'Applied through public job page'
-        }),
-      })
-
-      if (!shortlistResponse.ok) {
-        const errorData = await shortlistResponse.json()
-        throw new Error(errorData.error || 'Failed to submit application')
+      const createPayload = await createResponse.json().catch(() => ({}))
+      const candidateId = createPayload.candidate?._id
+      const capability = createPayload.applicationCapability as PublicApplicationCapability | undefined
+      if (!candidateId || !capability?.token) {
+        throw new Error('This application could not be resumed in this browser session. Please retry from the same browser tab used to begin it.')
       }
-
-      // Fire the CV off for background parsing/enrichment - do not wait on it.
-      uploadCvInBackground(candidateId, uploadedFile)
-
-      toast.success('Application submitted successfully!')
+      applicationCapabilityRef.current = capability
 
       // Redirect to success page with query parameters
       const successUrl = new URL('/public/jobs/application-success', window.location.origin)
       successUrl.searchParams.set('jobTitle', jobTitle)
-      successUrl.searchParams.set('candidateName', `${data.firstName} ${data.lastName}`)
-      successUrl.searchParams.set('email', data.email)
+      successUrl.searchParams.set('candidateName', `${submissionData.firstName} ${submissionData.lastName}`)
+      successUrl.searchParams.set('email', submissionData.email)
 
-      window.location.href = successUrl.toString()
+      const committed = committedApplication || { candidateId, successUrl: successUrl.toString() }
+      applicationWasCommitted = true
+      setCommittedApplication(committed)
+      setSubmissionStage('securing')
+      await secureCvForBackgroundProcessing(candidateId, uploadedFile, applicationIdempotencyKey, capability.token)
+      clearApplicationAttempt()
+
+      toast.success('Application submitted successfully!')
+      window.location.href = committed.successUrl
     } catch (error: any) {
       console.error('Error submitting application:', error)
-      // Display error in form UI instead of toast
-      setSubmissionError(error.message || 'Failed to submit application')
+      setSubmissionError(applicationWasCommitted
+        ? `Your application was submitted, but we could not securely upload your CV. It has not been sent for analysis yet. ${error.message || 'Please retry the CV upload.'}`
+        : error.message || 'Failed to submit application')
     } finally {
       setIsSubmitting(false)
+      setSubmissionStage('idle')
     }
   }
 
@@ -216,30 +327,25 @@ export function PublicJobApplicationForm({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <CardHeader>
+    <Dialog open onOpenChange={(open) => { if (!open && !isSubmitting) onClose() }}>
+      <DialogContent
+        className="max-h-[90vh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto"
+        showCloseButton={!isSubmitting}
+      >
+        <DialogHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2">
+              <DialogTitle className="flex items-center gap-2">
                 <Send className="h-5 w-5" />
                 Apply for {jobTitle}
-              </CardTitle>
-              <CardDescription>
+              </DialogTitle>
+              <DialogDescription>
                 Fill out the form below to submit your application
-              </CardDescription>
+              </DialogDescription>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="h-8 w-8 p-0"
-            >
-              <X className="h-4 w-4" />
-            </Button>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
+        </DialogHeader>
+        <div className="space-y-6">
           {/* CV Upload Section */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -250,7 +356,15 @@ export function PublicJobApplicationForm({
             </div>
             
             {!uploadedFile ? (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  const file = event.dataTransfer.files?.[0]
+                  if (file) handleFileUpload(file)
+                }}
+              >
                 <div className="space-y-2">
                   <Upload className="h-8 w-8 mx-auto text-gray-400" />
                   <div>
@@ -301,7 +415,9 @@ export function PublicJobApplicationForm({
                       variant="ghost"
                       size="sm"
                       onClick={removeFile}
+                      disabled={isSubmitting}
                       className="h-8 w-8 p-0"
+                      aria-label={`Remove ${uploadedFile.name}`}
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -458,20 +574,22 @@ export function PublicJobApplicationForm({
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Submitting...
+                          {submissionStage === 'securing'
+                            ? 'Securing CV for background processing…'
+                            : 'Creating application…'}
                     </>
                   ) : (
                     <>
                       <Send className="h-4 w-4 mr-2" />
-                      Submit Application
+                      {committedApplication ? 'Retry CV upload' : 'Submit Application'}
                     </>
                   )}
                 </Button>
               </div>
             </form>
           </Form>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 } 

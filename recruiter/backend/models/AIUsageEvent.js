@@ -22,7 +22,7 @@ const AIUsageEventSchema = new mongoose.Schema({
   gatewayExecutionId: { type: String, index: true },
   meteringOrigin: {
     type: String,
-    enum: ['local-gateway-at-source', 'backend-response', 'reconciled'],
+    enum: ['local-gateway-at-source', 'chatgpt-gateway-at-source', 'backend-response', 'reconciled'],
     index: true
   },
   atSourceOnly: { type: Boolean, default: false, index: true },

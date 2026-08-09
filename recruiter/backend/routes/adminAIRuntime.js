@@ -5,7 +5,10 @@ const { adminAuth, requirePermission } = require('../middleware/adminAuth');
 const AIRuntimeSettings = require('../models/AIRuntimeSettings');
 const aiRuntimeService = require('../services/aiRuntime/aiRuntimeService');
 const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
-const { adminModelCatalog } = require('../services/aiRuntime/adminModelCatalogService');
+const {
+  adminModelCatalog,
+} = require('../services/aiRuntime/adminModelCatalogService');
+const { updateAdminActivityRoute } = require('../services/aiRuntime/adminRouteSettingsService');
 const { ACTIVITY_DEFINITIONS, normalizeRuntimePolicy } = require('../config/aiRuntimeCatalog');
 
 const router = express.Router();
@@ -87,19 +90,25 @@ router.put('/routes/:activity', ...canManage, async (request, response) => {
   try {
     const activity = String(request.params.activity || '');
     if (!ACTIVITY_DEFINITIONS[activity]) return response.status(404).json({ code: 'AI_ACTIVITY_UNKNOWN', msg: 'Unknown activity' });
-    const current = await aiRuntimeService.getSettings({ force: true });
-    const routes = current.routes.map((route) => route.activity === activity ? {
-      ...route,
-      enabled: request.body?.enabled !== false,
-      reasoningEffort: ['low', 'medium', 'high', 'xhigh'].includes(request.body?.reasoningEffort)
-        ? request.body.reasoningEffort : route.reasoningEffort,
-      codexModel: String(request.body?.codexModel || route.codexModel).slice(0, 100)
-    } : route);
-    await AIRuntimeSettings.updateOne(
-      { key: 'global' },
-      { $setOnInsert: { key: 'global' }, $set: { routes }, $inc: { version: 1 } },
-      { upsert: true }
-    );
+    const changesPreference = Object.prototype.hasOwnProperty.call(request.body || {}, 'codexModel')
+      || Object.prototype.hasOwnProperty.call(request.body || {}, 'reasoningEffort');
+    let models = [];
+    if (changesPreference) {
+      const catalogue = await adminModelCatalog(request.admin);
+      if (!catalogue.available) {
+        const error = new Error(catalogue.message || 'The live ChatGPT model catalogue is unavailable.');
+        error.code = 'CHATGPT_MODEL_CATALOG_UNAVAILABLE';
+        error.statusCode = 409;
+        throw error;
+      }
+      models = catalogue.models;
+    }
+    await updateAdminActivityRoute({
+      settingsModel: AIRuntimeSettings,
+      activity,
+      changes: request.body || {},
+      models
+    });
     aiRuntimeService.invalidateSettingsCache();
     return response.json(await aiRuntimeService.getSettings({ force: true }));
   } catch (error) { return fail(response, error, 'Failed to update ChatGPT activity'); }

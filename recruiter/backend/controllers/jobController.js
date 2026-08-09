@@ -15,6 +15,7 @@ const candidateEmailNotificationService = require('../services/candidateEmailNot
 const pipelineReportExportService = require('../services/pipelineReportExportService');
 const publicJobCreditService = require('../services/publicJobCreditService');
 const publicApplicationCapacityService = require('../services/publicApplicationCapacityService');
+const publicApplicationCapability = require('../services/publicApplicationCapabilityService');
 const { decodeObjectHtmlEntities } = require('../utils/htmlDecode');
 const interviewController = require('./interviewController');
 
@@ -263,6 +264,7 @@ exports.updateJob = async (req, res) => {
       aiMatchCacheService.invalidateJobCache(job._id)
         .then(result => console.log(`🗑️ Auto-invalidated ${result.deletedCount} AI match cache entries for updated job`))
         .catch(err => console.error('Failed to auto-invalidate cache:', err));
+      require('../services/gptAnalysisService').cache.invalidateJob(job._id);
     }
 
     res.json({ msg: 'Job updated successfully', job });
@@ -291,6 +293,9 @@ exports.deleteJob = async (req, res) => {
     } catch (embeddingError) {
       console.warn(`⚠️ Failed to delete job embedding for ${req.params.id}:`, embeddingError.message);
     }
+    const aiMatchCacheService = require('../services/aiMatchCacheService');
+    await aiMatchCacheService.invalidateJobCache(req.params.id);
+    require('../services/gptAnalysisService').cache.invalidateJob(req.params.id);
     console.log(`✅ Job and embedding successfully deleted: ${job.title}`);
     res.json({ msg: 'Job deleted successfully', deletedJob: { id: job._id, title: job.title, embeddingDeleted: true } });
   } catch (error) {
@@ -328,6 +333,10 @@ exports.bulkDeleteJobs = async (req, res) => {
         } catch (embeddingError) {
           console.warn(`⚠️ Failed to delete job embedding for ${id}:`, embeddingError.message);
         }
+
+        const aiMatchCacheService = require('../services/aiMatchCacheService');
+        await aiMatchCacheService.invalidateJobCache(id);
+        require('../services/gptAnalysisService').cache.invalidateJob(id);
 
         results.push({ id, title: job.title, success: true });
       } catch (err) {
@@ -458,7 +467,7 @@ exports.createJobEmbedding = async (req, res) => {
 exports.getMatchingCandidates = async (req, res) => {
   try {
     const organizationId = req.user.currentOrganization;
-    const topK = parseInt(req.query.topK) || 10;
+    const topK = Math.min(Math.max(Number.parseInt(req.query.topK, 10) || 10, 1), 5000);
     const includeExplanations = req.query.includeExplanations !== 'false';
     const job = await Job.findOne({ _id: req.params.id, organization: organizationId });
     if (!job) return res.status(404).json({ msg: 'Job not found' });
@@ -491,7 +500,7 @@ exports.getMatchingCandidates = async (req, res) => {
       fromCache,
       cacheAge,
       cacheAgeMinutes,
-      mode: isLargeScale ? 'vector-ranked' : 'full-analysis',
+      mode: isLargeScale || !includeExplanations ? 'vector-ranked' : 'full-analysis',
       explanationsIncluded: !isLargeScale && includeExplanations,
     });
   } catch (error) {
@@ -535,6 +544,10 @@ exports.getCandidateExplanation = async (req, res) => {
       const result = gptResults[0];
 
       if (result) {
+        const requiredSkills = embeddingService.parseSkills(job.skills);
+        const requiredExperienceYears = embeddingService.extractYearsFromExperience(
+          String(job.experience || '')
+        );
         return res.json({
           candidateId,
           jobId,
@@ -544,14 +557,14 @@ exports.getCandidateExplanation = async (req, res) => {
               missingSkills: result.gptAnalysis.skillGaps || [],
               bonusSkills: result.gptAnalysis.transferableSkills || [],
               matchPercentage: result.gptAnalysis.skillMatchPercentage || 0,
-              totalRequired: (job.skills || []).length,
+              totalRequired: requiredSkills.length,
               totalMatched: (result.gptAnalysis.technicalStrengths || []).length,
             },
             experienceMatch: {
               isMatch: result.gptAnalysis.experienceFit >= 6,
-              required: job.experience || 0,
+              required: requiredExperienceYears,
               candidate: candidateObj.experience,
-              difference: candidateObj.experience - (job.experience || 0),
+              difference: candidateObj.experience - requiredExperienceYears,
               category: result.gptAnalysis.experienceFit >= 8 ? 'Strong' : result.gptAnalysis.experienceFit >= 6 ? 'Good' : 'Below',
             },
             aiInsights: {
@@ -717,12 +730,20 @@ exports.addCandidateToShortlist = async (req, res) => {
 
     // Ensure candidate exists and belongs to the same organization context.
     const candidateQuery = { _id: candidateId };
-    if (organizationId) {
-      candidateQuery.organization = organizationId;
-    } else if (job.organization) {
-      candidateQuery.organization = job.organization;
+    if (organizationId) candidateQuery.organization = organizationId;
+    else if (job.organization) candidateQuery.organization = job.organization;
+    if (isPublicApplication) {
+      candidateQuery.source = 'public';
+      candidateQuery.jobAppliedFor = job._id;
     }
-    const candidate = await Candidate.findOne(candidateQuery);
+    const candidate = isPublicApplication
+      ? await publicApplicationCapability.verify({
+        candidateId,
+        jobId: job._id,
+        organizationId: job.organization,
+        token: req.get?.('X-Public-Application-Token') || req.body?.applicationToken
+      })
+      : await Candidate.findOne(candidateQuery);
     if (!candidate) {
       return res.status(404).json({ msg: 'Candidate not found' });
     }
@@ -1417,11 +1438,15 @@ exports.bulkRemoveFromShortlist = async (req, res) => {
 exports.createInterviewQuestion = async (req, res) => {
   try {
     const { jobId } = req.params;
-    const question = await interviewService.createQuestion({ ...req.body, jobId }, req.user?.id);
+    const question = await interviewService.createQuestion(
+      { ...req.body, jobId },
+      req.user?.id,
+      req.user?.currentOrganization
+    );
     res.status(201).json({ msg: 'Interview question created successfully', question });
   } catch (error) {
     console.error('❌ Error creating interview question:', error);
-    res.status(500).json({ msg: 'Server error creating interview question', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error creating interview question', code: error.code, error: error.message });
   }
 };
 
@@ -1431,17 +1456,17 @@ exports.getInterviewQuestions = async (req, res) => {
     const { type, stage, difficulty } = req.query;
     const options = { type, stage, difficulty };
     for (let key in options) if (!options[key]) delete options[key];
-    const questions = await interviewService.getQuestionsByJob(jobId, options);
+    const questions = await interviewService.getQuestionsByJob(jobId, options, req.user?.currentOrganization);
     res.json({ msg: 'Interview questions retrieved successfully', questions, count: questions.length });
   } catch (error) {
     console.error('❌ Error fetching interview questions:', error);
-    res.status(500).json({ msg: 'Server error fetching interview questions', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error fetching interview questions', code: error.code, error: error.message });
   }
 };
 
 exports.getInterviewQuestion = async (req, res) => {
   try {
-    const question = await interviewService.getQuestionById(req.params.questionId);
+    const question = await interviewService.getQuestionById(req.params.questionId, req.user?.currentOrganization);
     res.json({ msg: 'Interview question retrieved successfully', question });
   } catch (error) {
     console.error('❌ Error fetching interview question:', error);
@@ -1451,21 +1476,26 @@ exports.getInterviewQuestion = async (req, res) => {
 
 exports.updateInterviewQuestion = async (req, res) => {
   try {
-    const question = await interviewService.updateQuestion(req.params.questionId, req.body, req.user?.id);
+    const question = await interviewService.updateQuestion(
+      req.params.questionId,
+      req.body,
+      req.user?.id,
+      req.user?.currentOrganization
+    );
     res.json({ msg: 'Interview question updated successfully', question });
   } catch (error) {
     console.error('❌ Error updating interview question:', error);
-    res.status(500).json({ msg: 'Server error updating interview question', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error updating interview question', code: error.code, error: error.message });
   }
 };
 
 exports.deleteInterviewQuestion = async (req, res) => {
   try {
-    const result = await interviewService.deleteQuestion(req.params.questionId);
+    const result = await interviewService.deleteQuestion(req.params.questionId, req.user?.currentOrganization);
     res.json({ msg: 'Interview question deleted successfully', deletedQuestion: result.deletedQuestion });
   } catch (error) {
     console.error('❌ Error deleting interview question:', error);
-    res.status(500).json({ msg: 'Server error deleting interview question', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error deleting interview question', code: error.code, error: error.message });
   }
 };
 
@@ -1473,10 +1503,21 @@ exports.generateInterviewQuestions = async (req, res) => {
   try {
     const { jobId } = req.params;
     const { questionCount = 10, ...otherOptions } = req.body;
-    const options = { questionCount: parseInt(questionCount), ...otherOptions, userId: req.user?.id };
+    const options = {
+      questionCount: parseInt(questionCount),
+      ...otherOptions,
+      userId: req.user?.id,
+      organizationId: req.user?.currentOrganization
+    };
     console.log(`🤖 Generating ${options.questionCount} interview questions for job ${jobId}`);
     const questions = await interviewService.generateQuestionsWithAI(jobId, options);
-    res.status(201).json({ msg: `Successfully generated ${questions.length} interview questions`, questions, count: questions.length, generationOptions: options });
+    res.status(201).json({
+      msg: `Successfully generated ${questions.length} interview questions`,
+      jobId,
+      questions,
+      count: questions.length,
+      generationOptions: options
+    });
   } catch (error) {
     console.error('❌ Error generating interview questions:', error);
     res.status(error.statusCode || 500).json({
@@ -1492,10 +1533,14 @@ exports.generateInterviewQuestions = async (req, res) => {
 exports.generateOptimizedInterviewQuestions = async (req, res) => {
   try {
     const { jobId } = req.params;
-    const options = { ...req.body, userId: req.user?.id };
+    const options = {
+      ...req.body,
+      userId: req.user?.id,
+      organizationId: req.user?.currentOrganization
+    };
     console.log(`🎯 Generating optimized question suite for job ${jobId}`, options);
     const result = await interviewService.generateOptimizedQuestionSet(jobId, options);
-    res.status(201).json({ msg: 'Successfully generated optimized question suite', ...result });
+    res.status(201).json({ msg: 'Successfully generated optimized question suite', jobId, ...result });
   } catch (error) {
     console.error('❌ Error generating optimized interview questions:', error);
     res.status(error.statusCode || 500).json({ msg: 'Server error generating optimized interview questions', code: error.code, error: error.message });
@@ -1506,7 +1551,7 @@ exports.analyzeInterviewQuestionQuality = async (req, res) => {
   try {
     const { questionId } = req.params;
     console.log(`🔍 Analyzing question quality for question ${questionId}`);
-    const analysis = await interviewService.analyzeQuestionQuality(questionId);
+    const analysis = await interviewService.analyzeQuestionQuality(questionId, req.user?.currentOrganization);
     res.json({ msg: 'Question quality analysis completed', analysis });
   } catch (error) {
     console.error('❌ Error analyzing question quality:', error);
@@ -1519,11 +1564,11 @@ exports.submitInterviewQuestionFeedback = async (req, res) => {
     const { questionId } = req.params;
     const feedback = { ...req.body, submittedBy: req.user?.id, submittedAt: new Date() };
     console.log(`📝 Submitting feedback for question ${questionId}`);
-    await interviewService.submitQuestionFeedback(questionId, feedback);
+    await interviewService.submitQuestionFeedback(questionId, feedback, req.user?.currentOrganization);
     res.json({ msg: 'Feedback submitted successfully' });
   } catch (error) {
     console.error('❌ Error submitting question feedback:', error);
-    res.status(500).json({ msg: 'Server error submitting question feedback', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error submitting question feedback', code: error.code, error: error.message });
   }
 };
 
@@ -1531,11 +1576,11 @@ exports.getInterviewQuestionsPerformanceInsights = async (req, res) => {
   try {
     const { jobId } = req.params;
     console.log(`📊 Getting performance insights for job ${jobId}`);
-    const insights = await interviewService.getPerformanceInsights(jobId);
+    const insights = await interviewService.getPerformanceInsights(jobId, req.user?.currentOrganization);
     res.json({ msg: 'Performance insights retrieved successfully', insights });
   } catch (error) {
     console.error('❌ Error getting performance insights:', error);
-    res.status(500).json({ msg: 'Server error getting performance insights', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error getting performance insights', code: error.code, error: error.message });
   }
 };
 
@@ -1546,22 +1591,26 @@ exports.bulkCreateInterviewQuestions = async (req, res) => {
       return res.status(400).json({ msg: 'Please provide an array of questions' });
     }
     const questionsWithJobId = req.body.questions.map(q => ({ ...q, jobId }));
-    const createdQuestions = await interviewService.bulkCreateQuestions(questionsWithJobId, req.user?.id);
+    const createdQuestions = await interviewService.bulkCreateQuestions(
+      questionsWithJobId,
+      req.user?.id,
+      req.user?.currentOrganization
+    );
     res.status(201).json({ msg: `Successfully created ${createdQuestions.length} interview questions`, questions: createdQuestions, count: createdQuestions.length });
   } catch (error) {
     console.error('❌ Error bulk creating interview questions:', error);
-    res.status(500).json({ msg: 'Server error bulk creating interview questions', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error bulk creating interview questions', code: error.code, error: error.message });
   }
 };
 
 exports.getInterviewQuestionsStats = async (req, res) => {
   try {
     const { jobId } = req.params;
-    const stats = await interviewService.getQuestionStatistics(jobId);
+    const stats = await interviewService.getQuestionStatistics(jobId, req.user?.currentOrganization);
     res.json({ msg: 'Interview questions statistics retrieved successfully', stats });
   } catch (error) {
     console.error('❌ Error fetching interview questions statistics:', error);
-    res.status(500).json({ msg: 'Server error fetching statistics', error: error.message });
+    res.status(error.statusCode || 500).json({ msg: 'Server error fetching statistics', code: error.code, error: error.message });
   }
 };
 
@@ -2630,11 +2679,16 @@ exports.applyTemplate = async (req, res) => {
 exports.invalidateAICache = async (req, res) => {
   try {
     const { jobId } = req.params;
+    const organizationId = req.user.currentOrganization;
     const aiMatchCacheService = require('../services/aiMatchCacheService');
+
+    const job = await Job.findOne({ _id: jobId, organization: organizationId }).select('_id');
+    if (!job) return res.status(404).json({ success: false, error: 'Job not found' });
 
     console.log(`🗑️ Invalidating AI match cache for job ${jobId}`);
     
     const result = await aiMatchCacheService.invalidateJobCache(jobId);
+    require('../services/gptAnalysisService').cache.invalidateJob(jobId);
 
     res.json({
       success: true,
@@ -2656,7 +2710,11 @@ exports.invalidateAICache = async (req, res) => {
 exports.getAICacheStats = async (req, res) => {
   try {
     const { jobId } = req.params;
+    const organizationId = req.user.currentOrganization;
     const aiMatchCacheService = require('../services/aiMatchCacheService');
+
+    const job = await Job.findOne({ _id: jobId, organization: organizationId }).select('_id');
+    if (!job) return res.status(404).json({ success: false, error: 'Job not found' });
 
     const stats = await aiMatchCacheService.getCacheStats(jobId);
 

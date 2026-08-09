@@ -46,9 +46,11 @@ function queueUpload(source, queueService = cvAnalysisQueue, getExtraOptions) {
       });
     } catch (error) {
       console.error('CV queue submission failed:', error);
+      if (error.retryAfterSeconds) res.set('Retry-After', String(error.retryAfterSeconds));
       return res.status(error.statusCode || 500).json({
         code: error.code || 'CV_QUEUE_SUBMISSION_FAILED',
-        msg: error.message || 'CV upload could not be queued'
+        msg: error.message || 'CV upload could not be queued',
+        retryAfterSeconds: error.retryAfterSeconds || undefined
       });
     }
   };

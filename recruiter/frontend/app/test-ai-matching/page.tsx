@@ -64,13 +64,15 @@ export default function TestAIMatchingPage() {
     setLoadingJobs(true)
     try {
       const jobsData = await assistantService.getJobs()
-      const openJobs = jobsData.filter((job: any) => job.status === 'Open')
+      const openJobs = jobsData.filter((job: any) =>
+        ['active', 'open'].includes(String(job.status || '').toLowerCase())
+      )
       setJobs(openJobs)
       
       if (openJobs.length === 0) {
         toast({
-          title: "No Open Jobs",
-          description: "Please create some open job positions first",
+          title: "No Active Jobs",
+          description: "Please create and activate a job position first",
           variant: "default"
         })
       }
@@ -279,7 +281,7 @@ export default function TestAIMatchingPage() {
           AI Matching Test with Embeddings
         </h1>
         <p className="text-gray-600">
-          Test the AI-powered candidate matching using Azure OpenAI embeddings and Weaviate vector search
+          Test candidate matching with provider-neutral AI analysis and Weaviate vector search
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <div className="space-y-1">
@@ -307,9 +309,9 @@ export default function TestAIMatchingPage() {
             <div className="text-center">
               <Briefcase className="h-12 w-12 mx-auto mb-4 text-gray-400" />
               <h3 className="text-lg font-semibold mb-2">Load Available Jobs</h3>
-              <p className="text-gray-600 mb-4">Click below to load open job positions for AI matching</p>
+              <p className="text-gray-600 mb-4">Click below to load active job positions for AI matching</p>
               <Button onClick={loadJobs} disabled={loadingJobs}>
-                {loadingJobs ? "Loading..." : "Load Open Jobs"}
+                {loadingJobs ? "Loading..." : "Load Active Jobs"}
               </Button>
             </div>
           </CardContent>
@@ -367,7 +369,7 @@ export default function TestAIMatchingPage() {
               </div>
               <h3 className="text-lg font-semibold mb-2">Running AI Matching</h3>
               <p className="text-gray-600">
-                Analyzing candidates using Azure OpenAI embeddings...
+                Analyzing candidates with the selected AI runtime and vector embeddings...
               </p>
             </div>
           </CardContent>

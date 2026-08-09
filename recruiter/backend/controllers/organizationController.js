@@ -7,6 +7,10 @@ const emailService = require('../services/emailService');
 const planService = require('../services/planService');
 const idpService = require('../services/idpService');
 const { syncOrganizationNameFromIdp } = require('../utils/organizationIdentitySync');
+const {
+  organizationClaimAllowsRecruiter,
+  recruiterOrganizationAuthorized
+} = require('../services/sharedAIUserSecurity');
 
 // Create organization - REQUIRES IdP as the source of truth
 exports.createOrganization = async (req, res) => {
@@ -196,17 +200,22 @@ exports.getUserOrganizations = async (req, res) => {
         return response.data;
       });
 
+      // The IdP membership list is broader than Recruiter's launch grant. Do
+      // not advertise Performance-only organizations in Recruiter's switcher.
+      const recruiterOrganizations = (Array.isArray(idpOrganizations) ? idpOrganizations : [])
+        .filter(organizationClaimAllowsRecruiter);
+
       console.log('✅ IdP returned', idpOrganizations.length, 'organizations');
 
       // Transform IdP organizations to SmartHR format
       // Find or create local records for plan/subscription data
       const localOrgs = await Organization.find({
-        idpOrganizationId: { $in: idpOrganizations.map(o => o.id) }
+        idpOrganizationId: { $in: recruiterOrganizations.map(o => o.id) }
       });
 
       const organizations = [];
 
-      for (const idpOrg of idpOrganizations) {
+      for (const idpOrg of recruiterOrganizations) {
         // Find local SmartHR org (for plan data)
         let localOrg = localOrgs.find(lo => lo.idpOrganizationId === idpOrg.id);
 
@@ -372,6 +381,14 @@ exports.switchOrganization = async (req, res) => {
       if (!idpOrg) {
         console.log('❌ Access denied - user is not a member in IdP:', localOrg.idpOrganizationId);
         return res.status(403).json({ msg: 'Access denied to this organization' });
+      }
+
+      if (!organizationClaimAllowsRecruiter(idpOrg)
+        || !recruiterOrganizationAuthorized(user, organizationId)) {
+        return res.status(403).json({
+          code: 'RECRUITER_APP_ACCESS_REQUIRED',
+          msg: 'Your organization membership does not include Recruiter access.'
+        });
       }
 
       await syncOrganizationNameFromIdp(localOrg, idpOrg);
@@ -764,24 +781,17 @@ exports.deleteOrganization = async (req, res) => {
     }
 
     // Only owner can delete
-    if (organization.owner.toString() !== userId) {
+    if (String(organization.owner) !== String(userId)) {
       return res.status(403).json({ msg: 'Only organization owner can delete' });
     }
-
-    // TODO: Handle data migration/cleanup for jobs, candidates, etc.
-
-    await Organization.findByIdAndDelete(organizationId);
-
-    // Remove organization from all users
-    await User.updateMany(
-      { 'organizationMemberships.organization': organizationId },
-      {
-        $pull: { organizationMemberships: { organization: organizationId } },
-        $unset: { currentOrganization: 1 }
-      }
-    );
-
-    res.json({ msg: 'Organization deleted successfully' });
+    const erasure = await require('../services/organizationErasureService')
+      .eraseOrganization(organizationId);
+    res.status(erasure.hardDeleted ? 200 : 202).json({
+      msg: erasure.hardDeleted
+        ? 'Organization deleted successfully'
+        : 'Organization deletion accepted; cleanup is pending',
+      erasure
+    });
   } catch (error) {
     console.error('Error deleting organization:', error);
     res.status(500).json({ msg: 'Server error' });
@@ -794,79 +804,23 @@ exports.deleteOrganizationById = async (req, res) => {
     const { organizationId } = req.params;
     const userId = req.user.id;
 
-    console.log('🗑️ Deleting organization by ID:', organizationId, 'for user:', userId);
-
     const organization = await Organization.findById(organizationId);
     if (!organization) {
-      console.log('❌ Organization not found:', organizationId);
       return res.status(404).json({ msg: 'Organization not found' });
     }
 
-    console.log('🏢 Organization found:', organization.name);
-    console.log('👤 Organization owner:', organization.owner);
-    console.log('🔍 Requesting user:', userId);
-
     // Only owner can delete
-    if (organization.owner.toString() !== userId) {
-      console.log('❌ User is not the owner, access denied');
+    if (String(organization.owner) !== String(userId)) {
       return res.status(403).json({ msg: 'Only organization owner can delete' });
     }
-
-    console.log('✅ User is owner, proceeding with deletion...');
-
-    // Clean up all related data
-    console.log('🧹 Starting cleanup of related data...');
-
-    // Get all models that reference the organization
-    const Job = require('../models/Job');
-    const Candidate = require('../models/Candidate');
-    const Interview = require('../models/Interview');
-    const ChatSession = require('../models/ChatSession');
-    const Session = require('../models/Session');
-
-    // Count related data for logging
-    const jobCount = await Job.countDocuments({ organization: organizationId });
-    const candidateCount = await Candidate.countDocuments({ organization: organizationId });
-    const interviewCount = await Interview.countDocuments({ organization: organizationId });
-    const chatSessionCount = await ChatSession.countDocuments({ organization: organizationId });
-    const sessionCount = await Session.countDocuments({ organization: organizationId });
-
-    console.log('📊 Related data to delete:', {
-      jobs: jobCount,
-      candidates: candidateCount,
-      interviews: interviewCount,
-      chatSessions: chatSessionCount,
-      sessions: sessionCount
+    const erasure = await require('../services/organizationErasureService')
+      .eraseOrganization(organizationId);
+    res.status(erasure.hardDeleted ? 200 : 202).json({
+      msg: erasure.hardDeleted
+        ? 'Organization deleted successfully'
+        : 'Organization deletion accepted; cleanup is pending',
+      erasure
     });
-
-    // Delete all related data
-    await Promise.all([
-      Job.deleteMany({ organization: organizationId }),
-      Candidate.deleteMany({ organization: organizationId }),
-      Interview.deleteMany({ organization: organizationId }),
-      ChatSession.deleteMany({ organization: organizationId }),
-      Session.deleteMany({ organization: organizationId }),
-      OrganizationInvite.deleteMany({ organization: organizationId })
-    ]);
-
-    console.log('✅ All related data cleaned up');
-
-    // Finally delete the organization
-    await Organization.findByIdAndDelete(organizationId);
-    console.log('🗑️ Organization deleted from database');
-
-    // Remove organization from all users
-    const updateResult = await User.updateMany(
-      { 'organizationMemberships.organization': organizationId },
-      {
-        $pull: { organizationMemberships: { organization: organizationId } },
-        $unset: { currentOrganization: 1 }
-      }
-    );
-
-    console.log('👥 Updated users:', updateResult.modifiedCount);
-
-    res.json({ msg: 'Organization deleted successfully' });
   } catch (error) {
     console.error('❌ Error deleting organization by ID:', error);
     console.error('Error stack:', error.stack);

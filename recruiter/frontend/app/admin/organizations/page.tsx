@@ -764,7 +764,7 @@ export default function AdminOrganizationsPage() {
                           {job.isPublic ? (
                             <>
                               {job.applicationCount}
-                              {job.candidateApplyLimit > 0 ? ` / ${job.candidateApplyLimit}` : ' / Unlimited'}
+                              {job.candidateApplyLimit > 0 ? ` / ${job.candidateApplyLimit}` : ' / Needs funded limit'}
                             </>
                           ) : '--'}
                         </TableCell>

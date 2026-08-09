@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const { recruiterOrganizationAuthorized } = require('../services/sharedAIUserSecurity');
+const { updateAIRequestContext } = require('../services/aiRuntime/requestContext');
 
 function requestedOrganizationId(req) {
   return (
@@ -10,29 +12,56 @@ function requestedOrganizationId(req) {
 }
 
 function activeMemberships(user) {
-  return (user.organizationMemberships || []).filter((membership) => membership?.isActive);
+  return (user.organizationMemberships || []).filter((membership) => (
+    membership?.isActive
+    && membership.organization?.isActive !== false
+    && membership.organization?.erasureState !== 'tombstoned'
+    && recruiterOrganizationAuthorized(user, membership.organization)
+  ));
 }
 
 function activeMembershipFor(user, organizationId) {
   return activeMemberships(user).find((membership) =>
-    String(membership.organization) === String(organizationId)
+    String(membership.organization?._id || membership.organization) === String(organizationId)
   );
+}
+
+async function findUserWithOrganizations(userId) {
+  const query = User.findById(userId);
+  // Keep middleware easy to exercise with lightweight model doubles while
+  // hydrating canonical IdP organization ids in production.
+  if (typeof query?.populate !== 'function') return query;
+  return query
+    .populate('currentOrganization', 'name idpOrganizationId isActive +erasureState')
+    .populate('organizationMemberships.organization', 'name idpOrganizationId isActive +erasureState');
 }
 
 async function setRequestOrganization(req, user, organizationId, { persist = false } = {}) {
   const membership = activeMembershipFor(user, organizationId);
   if (!membership) return null;
 
-  req.user.currentOrganization = membership.organization;
-  req.activeOrganization = membership.organization;
+  const organization = membership.organization;
+  const localOrganizationId = organization?._id || organization;
 
-  if (persist && String(user.currentOrganization || '') !== String(membership.organization)) {
-    user.currentOrganization = membership.organization;
+  req.user.currentOrganization = localOrganizationId;
+  req.activeOrganization = organization;
+  // authMiddleware runs before this middleware and initially records the
+  // database current organization in AsyncLocalStorage. A valid explicit
+  // X-Organization-Id selection must replace that value so AI authorization,
+  // receipts and metering all use the same active tenant as the request.
+  updateAIRequestContext({
+    organizationId: organization?.idpOrganizationId || localOrganizationId,
+    localOrganizationId,
+    organizationName: organization?.name || null
+  });
+
+  if (persist && String(user.currentOrganization?._id || user.currentOrganization || '') !== String(localOrganizationId)) {
+    user.currentOrganization = localOrganizationId;
     user.hasCompletedOrganizationSetup = true;
     await user.save();
   }
 
-  return membership.organization;
+  return localOrganizationId;
 }
 
 // Ensure user has a current organization.
@@ -40,7 +69,7 @@ exports.requireOrganization = async (req, res, next) => {
   try {
     console.log('Organization middleware - checking user:', req.user?.id);
 
-    const user = await User.findById(req.user.id);
+    const user = await findUserWithOrganizations(req.user.id);
     if (!user) {
       console.error('User not found in database');
       return res.status(404).json({ msg: 'User not found' });
@@ -117,7 +146,7 @@ exports.requireOrganizationMembership = async (req, res, next) => {
     const { organizationId } = req.params;
     const targetOrgId = organizationId || req.user.currentOrganization;
 
-    if (!user.isOrganizationMember(targetOrgId)) {
+    if (!recruiterOrganizationAuthorized(user, targetOrgId)) {
       return res.status(403).json({ msg: 'Access denied to this organization' });
     }
 

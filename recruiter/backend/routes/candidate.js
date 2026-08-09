@@ -3,12 +3,18 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const candidateController = require('../controllers/candidateController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { requireOrganization, requirePermission } = require('../middleware/organizationMiddleware');
 const { requireCredits } = require('../middleware/creditsMiddleware');
 const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
 const queueUpload = require('../middleware/cvQueueUploadHandler');
+const mongoose = require('mongoose');
+const Job = require('../models/Job');
+const publicApplicationCapability = require('../services/publicApplicationCapabilityService');
+const requirePublicFeedbackAccess = require('../middleware/publicFeedbackAccess');
 
 // Ensure uploads directory exists
 const uploadsDir = 'uploads/';
@@ -20,25 +26,16 @@ if (!fs.existsSync(uploadsDir)) {
 // Configure multer for file uploads with detailed logging
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    console.log('📁 Multer destination - File:', file.originalname, 'Field:', file.fieldname);
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = 'resume-' + uniqueSuffix + path.extname(file.originalname);
-    console.log('📝 Multer filename generated:', filename);
     cb(null, filename);
   }
 });
 
 const fileFilter = (req, file, cb) => {
-  console.log('🔍 Multer fileFilter invoked:', {
-    fieldname: file.fieldname,
-    originalname: file.originalname,
-    mimetype: file.mimetype,
-    encoding: file.encoding
-  });
-
   const allowedTypes = [
     'application/pdf',
     'application/msword',
@@ -50,7 +47,6 @@ const fileFilter = (req, file, cb) => {
   ];
 
   if (allowedTypes.includes(file.mimetype)) {
-    console.log('✅ File type accepted:', file.mimetype);
     cb(null, true);
   } else {
     console.error('❌ File type rejected:', file.mimetype);
@@ -67,18 +63,85 @@ const upload = multer({
   fileFilter: fileFilter
 });
 
-// Logging middleware to track multer processing
-const logMulterProcessing = (req, res, next) => {
-  console.log('🎯 Route hit: /api/candidates/upload-cv');
-  console.log('📋 Request info:', {
-    method: req.method,
-    contentType: req.headers['content-type'],
-    hasFile: !!req.file,
-    hasBody: !!req.body,
-    bodyKeys: Object.keys(req.body || {})
-  });
-  next();
-};
+function opaqueRateKey(req, ...parts) {
+  return crypto.createHash('sha256')
+    .update([ipKeyGenerator(req.ip || req.socket?.remoteAddress || ''), ...parts].join('|'))
+    .digest('hex');
+}
+
+// These pre-multipart abuse limits use the process-local store for the current
+// single-instance PM2 deployment. Configure a shared Redis-backed rate-limit
+// store before horizontally scaling the recruiter API.
+const publicApplicationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.PUBLIC_APPLICATION_IP_JOB_LIMIT || 20),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => opaqueRateKey(req, req.body?.jobId || ''),
+  handler: (_req, res) => res.status(429).json({
+    code: 'PUBLIC_APPLICATION_RATE_LIMITED',
+    msg: 'Too many application attempts. Please try again later.'
+  })
+});
+
+const publicCvUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.PUBLIC_CV_UPLOAD_IP_APPLICATION_LIMIT || 8),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => opaqueRateKey(
+    req,
+    req.get('X-Public-Job-Id') || '',
+    req.get('X-Public-Candidate-Id') || ''
+  ),
+  handler: (_req, res) => res.status(429).json({
+    code: 'PUBLIC_CV_UPLOAD_RATE_LIMITED',
+    msg: 'Too many CV upload attempts. Please try again later.'
+  })
+});
+
+async function publicCvPreflight(req, res, next) {
+  try {
+    const contentLength = Number(req.get('Content-Length') || 0);
+    if (contentLength > 11 * 1024 * 1024) {
+      return res.status(413).json({ code: 'CV_FILE_TOO_LARGE', msg: 'CV uploads are limited to 10MB' });
+    }
+    const jobId = req.get('X-Public-Job-Id');
+    const candidateId = req.get('X-Public-Candidate-Id');
+    const token = req.get('X-Public-Application-Token');
+    if (!mongoose.isValidObjectId(jobId) || !mongoose.isValidObjectId(candidateId) || !token) {
+      return res.status(403).json({
+        code: 'PUBLIC_APPLICATION_CAPABILITY_INVALID',
+        msg: 'This public application session is invalid or has expired'
+      });
+    }
+    const job = await Job.findOne({ _id: jobId, isPublic: true, status: 'active' })
+      .select('_id organization shortlist.candidate')
+      .lean();
+    if (!job) {
+      return res.status(403).json({ code: 'PUBLIC_JOB_NOT_PUBLIC', msg: 'This job is not accepting public applications' });
+    }
+    await publicApplicationCapability.verify({
+      candidateId,
+      jobId,
+      organizationId: job.organization,
+      token
+    });
+    if (!(job.shortlist || []).some((entry) => String(entry.candidate) === String(candidateId))) {
+      return res.status(403).json({
+        code: 'PUBLIC_APPLICATION_NOT_COMMITTED',
+        msg: 'Submit the public application before uploading its CV'
+      });
+    }
+    req.publicCvContext = { jobId: String(jobId), candidateId: String(candidateId) };
+    return next();
+  } catch (error) {
+    return res.status(error.statusCode || 403).json({
+      code: error.code || 'PUBLIC_APPLICATION_CAPABILITY_INVALID',
+      msg: error.message || 'This public application session is invalid or has expired'
+    });
+  }
+}
 
 // @route   POST api/candidates/upload-cv
 // @desc    Upload CV, parse, and create candidate
@@ -86,28 +149,9 @@ const logMulterProcessing = (req, res, next) => {
 router.post('/upload-cv',
   authMiddleware,
   requireOrganization,
+  requirePermission('manage_candidates'),
   requireCredits('uploadCandidate', 'candidate'),
-  (req, res, next) => {
-    console.log('🔐 Auth passed, processing file upload...');
-    next();
-  },
   upload.single('resume'),
-  (req, res, next) => {
-    console.log('📦 After multer - req.file:', req.file ? 'EXISTS' : 'MISSING');
-    if (req.file) {
-      console.log('✅ File details:', {
-        fieldname: req.file.fieldname,
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        path: req.file.path
-      });
-    } else {
-      console.error('❌ No file processed by multer!');
-      console.error('Request headers:', req.headers);
-    }
-    next();
-  },
   queueUpload('private')
 );
 
@@ -115,22 +159,27 @@ router.post('/upload-cv',
 // @desc    Upload CV, parse, and create candidate (public access for job applications)
 // @access  Public
 router.post('/public/upload-cv',
+  publicCvUploadLimiter,
+  publicCvPreflight,
   (req, res, next) => {
-    console.log('🌐 Public CV upload route hit');
-    // Set a longer timeout for CV processing
     req.setTimeout(600000); // 10 minutes
     next();
   },
   upload.single('resume'),
   (req, res, next) => {
-    console.log('📦 Public route - After multer - req.file:', req.file ? 'EXISTS' : 'MISSING');
-    if (req.file) {
-      console.log('✅ Public upload file details:', {
-        originalname: req.file.originalname,
-        size: req.file.size,
-        mimetype: req.file.mimetype
+    const context = req.publicCvContext;
+    if (!context) return res.status(403).json({ code: 'PUBLIC_APPLICATION_CAPABILITY_INVALID' });
+    if (
+      (req.body?.jobId && String(req.body.jobId) !== context.jobId)
+      || (req.body?.candidateId && String(req.body.candidateId) !== context.candidateId)
+    ) {
+      if (req.file?.path) fs.unlink(req.file.path, () => {});
+      return res.status(409).json({
+        code: 'PUBLIC_APPLICATION_CONTEXT_MISMATCH',
+        msg: 'The uploaded CV does not match this application session'
       });
     }
+    req.body = { ...(req.body || {}), jobId: context.jobId, candidateId: context.candidateId };
     next();
   },
   // When the applicant already submitted their application (candidateId
@@ -206,16 +255,11 @@ router.get('/:id', authMiddleware, requireOrganization, candidateController.getC
 // @access  Private
 router.put('/:id', authMiddleware, requireOrganization, candidateController.updateCandidate);
 
-// @route   PUT api/candidates/public/:id
-// @desc    Update a candidate (public access for job applications)
-// @access  Public
-router.put('/public/:id', candidateController.updateCandidate);
-
 // @route   POST api/candidates/public
 // @desc    Create a candidate immediately from a public job-application form,
 //          independent of (and before) any CV upload/parsing
 // @access  Public
-router.post('/public', candidateController.createPublicCandidate);
+router.post('/public', publicApplicationLimiter, candidateController.createPublicCandidate);
 
 // @route   DELETE api/candidates/bulk
 // @desc    Bulk delete candidates
@@ -237,10 +281,18 @@ router.delete('/:id', authMiddleware, requireOrganization, candidateController.d
 // @access  Private
 router.get('/:id/accessible-resume-url', authMiddleware, requireOrganization, candidateController.getAccessibleResumeUrl);
 
-// @route   GET api/candidates/public/:id/accessible-resume-url
-// @desc    Get accessible URL for candidate's PDF resume (Public Access)
-// @access  Public
-router.get('/public/:id/accessible-resume-url', candidateController.getAccessibleResumeUrl);
+// Public resume access is an interview capability, not a candidate-ID lookup.
+// The interview must exist and explicitly reference the requested candidate.
+router.get(
+  '/public/interviews/:interviewId/candidates/:id/accessible-resume-url',
+  requirePublicFeedbackAccess,
+  candidateController.getAccessibleResumeUrl
+);
+router.get(
+  '/public/interviews/:interviewId/candidates/:id/resume',
+  requirePublicFeedbackAccess,
+  candidateController.streamPublicFeedbackResume
+);
 
 // @route   GET api/candidates/:id/embedding-status
 // @desc    Check if candidate has embedding in the vector store (Weaviate)

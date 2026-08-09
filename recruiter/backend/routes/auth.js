@@ -16,6 +16,14 @@ const {
   getOidcCallbackTarget,
   normalizeOidcReturnTo
 } = require('../utils/oidcReturnTo');
+const {
+  canUseLocalCredentials,
+  firstRecruiterAuthorizedMembership,
+  organizationClaimAllowsRecruiter,
+  passwordResetQuery,
+  recruiterAuthorizedClaims
+} = require('../services/sharedAIUserSecurity');
+const { materializeRecruiterOrganizations } = require('../services/recruiterOrganizationSync');
 
 const router = express.Router();
 
@@ -173,7 +181,7 @@ router.post('/login', async (req, res) => {
   try {
     // Check for user
     let user = await User.findOne({ email });
-    if (!user) {
+    if (!canUseLocalCredentials(user)) {
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
@@ -269,7 +277,7 @@ router.post('/verify-otp', async (req, res) => {
   try {
     // Find user
     const user = await User.findOne({ email });
-    if (!user) {
+    if (!canUseLocalCredentials(user)) {
       return res.status(400).json({ msg: 'Invalid request' });
     }
 
@@ -372,7 +380,7 @@ router.post('/resend-otp', async (req, res) => {
 
   try {
     const user = await User.findOne({ email });
-    if (!user) {
+    if (!canUseLocalCredentials(user)) {
       return res.status(400).json({ msg: 'Invalid request' });
     }
 
@@ -420,7 +428,7 @@ router.post('/forgot-password', async (req, res) => {
 
   try {
     const user = await User.findOne({ email });
-    if (!user) {
+    if (!canUseLocalCredentials(user)) {
       // We don't want to reveal that the user doesn't exist
       return res.status(200).json({ msg: 'If a user with that email exists, a password reset link has been sent.' });
     }
@@ -451,10 +459,7 @@ router.post('/reset-password', async (req, res) => {
   const { token, password } = req.body;
 
   try {
-    const user = await User.findOne({
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() },
-    });
+    const user = await User.findOne(passwordResetQuery(token));
 
     if (!user) {
       return res.status(400).json({ msg: 'Password reset token is invalid or has expired.' });
@@ -648,48 +653,108 @@ router.get('/oidc/callback', async (req, res) => {
 
     const tokenSet = await client.callback(redirectUri, params, checks);
     const userinfo = await client.userinfo(tokenSet);
-    const email = userinfo.email;
+    const email = String(userinfo.email || '').trim().toLowerCase();
+    const idpSubject = String(userinfo.sub || '').trim();
+    if (!email || !idpSubject) {
+      return res.status(400).json({ msg: 'The identity provider did not return a stable subject and email.' });
+    }
 
     console.log('✅ OIDC tokens received for:', email);
     console.log('📊 Organization claims:', userinfo.organizations ? userinfo.organizations.length : 0, 'organizations');
     console.log('👥 Team claims:', userinfo.teams ? userinfo.teams.length : 0, 'teams');
 
-    let user = await User.findOne({ email });
+    // A stable IdP subject remains authoritative when a person's verified
+    // email changes. Email is also resolved to migrate older Recruiter rows;
+    // resolving both prevents duplicate users and subject/email takeovers.
+    const [userBySubject, userByEmail] = await Promise.all([
+      User.findOne({ idpSubject }),
+      User.findOne({ email })
+    ]);
+    if (userBySubject && userByEmail && String(userBySubject._id) !== String(userByEmail._id)) {
+      return res.status(409).json({
+        code: 'IDP_SUBJECT_CONFLICT',
+        msg: 'This identity is already linked to a different Seemplify account.'
+      });
+    }
+
+    let user = userBySubject || userByEmail;
+    if (user?.idpSubject && user.idpSubject !== idpSubject) {
+      return res.status(409).json({
+        code: 'IDP_SUBJECT_CONFLICT',
+        msg: 'This identity is already linked to a different Seemplify account.'
+      });
+    }
+    const wasSharedAIOnly = user?.sharedAIOnly === true;
+    const recruiterOrganizationClaims = recruiterAuthorizedClaims(userinfo.organizations);
+    const hasOrganizationClaims = Array.isArray(userinfo.organizations) && userinfo.organizations.length > 0;
+    if ((wasSharedAIOnly || hasOrganizationClaims) && recruiterOrganizationClaims.length === 0) {
+      return res.status(403).json({
+        code: 'RECRUITER_APP_ACCESS_REQUIRED',
+        msg: 'Your organization has not granted this identity access to Recruiter.'
+      });
+    }
     if (!user) {
       const salt = await bcrypt.genSalt(10);
       const randomPassword = crypto.randomBytes(12).toString('hex');
       const hash = await bcrypt.hash(randomPassword, salt);
-      user = new User({ email, password: hash });
+      user = new User({ email, password: hash, idpSubject });
       await user.save();
       console.log('👤 Created new user:', email);
     }
 
     let shouldSaveUser = false;
 
+    // Keep the IdP subject as the cross-product identity. Existing users are
+    // backfilled on their next OIDC sign-in; a conflicting subject is never
+    // silently replaced because that could attach another person's shared AI
+    // connection to this account.
+    if (idpSubject && !user.idpSubject) {
+      user.idpSubject = idpSubject;
+      shouldSaveUser = true;
+    } else if (idpSubject && user.idpSubject && user.idpSubject !== idpSubject) {
+      console.error('OIDC subject conflict for:', email);
+      return res.status(409).json({
+        code: 'IDP_SUBJECT_CONFLICT',
+        msg: 'This identity is already linked to a different Seemplify account.'
+      });
+    }
+    if (String(user.email || '').toLowerCase() !== email) {
+      user.email = email;
+      shouldSaveUser = true;
+    }
+
     // ==========================================================================
     // OPTIMIZED: Organization sync with batch lookups and bulk operations
     // ==========================================================================
-    if (userinfo.organizations && userinfo.organizations.length > 0) {
+    if (Array.isArray(userinfo.organizations)) {
       const orgSyncStart = Date.now();
       const Organization = require('../models/Organization');
       const claimedLocalOrgIds = new Set();
+      const recruiterAuthorizedLocalOrgIds = new Set();
+      let sharedAIOnlyMembershipSynced = false;
 
       // OPTIMIZATION: Batch lookup all organizations by IdP IDs in ONE query
-      const orgIdpIds = userinfo.organizations.map(org => org.id);
+      const orgIdpIds = recruiterOrganizationClaims.map(org => org.id);
       const existingOrgs = await Organization.find({
         idpOrganizationId: { $in: orgIdpIds }
       }).lean();
 
       // Create lookup map for O(1) access
-      const orgByIdpId = new Map(existingOrgs.map(org => [org.idpOrganizationId, org]));
+      const orgByIdpId = await materializeRecruiterOrganizations({
+        Organization,
+        user,
+        claims: recruiterOrganizationClaims,
+        existingOrganizations: existingOrgs
+      });
 
       console.log(`⏱️ [PERF] Batch org lookup: ${existingOrgs.length}/${orgIdpIds.length} found in ${Date.now() - orgSyncStart}ms`);
 
       // Track organizations that need to be saved (for bulk write)
       const orgsToUpdate = [];
+      const authoritativeRolesByLocalOrgId = new Map();
 
-      for (const orgClaim of userinfo.organizations) {
-        let organization = orgByIdpId.get(orgClaim.id);
+      for (const orgClaim of recruiterOrganizationClaims) {
+        let organization = orgByIdpId.get(String(orgClaim.id));
 
         if (!organization) {
           // Check if user has an organization (for migration) - only on first org
@@ -778,9 +843,15 @@ router.get('/oidc/callback', async (req, res) => {
 
         // Sync user's org memberships to match IdP claims (source of truth)
         if (organization) {
-          claimedLocalOrgIds.add(organization._id.toString());
+          const localOrganizationId = organization._id.toString();
+          claimedLocalOrgIds.add(localOrganizationId);
+          authoritativeRolesByLocalOrgId.set(localOrganizationId, orgClaim.role);
           user.addOrganizationMembership(organization._id, orgClaim.role, true);
           shouldSaveUser = true;
+          if (organizationClaimAllowsRecruiter(orgClaim)) {
+            recruiterAuthorizedLocalOrgIds.add(organization._id.toString());
+            sharedAIOnlyMembershipSynced = true;
+          }
         }
       }
 
@@ -805,58 +876,55 @@ router.get('/oidc/callback', async (req, res) => {
 
       // Deduplicate memberships (some older flows could create duplicates)
       if (Array.isArray(user.organizationMemberships) && user.organizationMemberships.length > 1) {
-        const byOrg = new Map();
-        for (const membership of user.organizationMemberships) {
-          if (!membership.organization) continue;
-          const orgId = (membership.organization._id || membership.organization).toString();
-          const existing = byOrg.get(orgId);
-          if (!existing) {
-            byOrg.set(orgId, membership);
-            continue;
-          }
-
-          // Merge: keep active if any active, keep latest joinedAt, prefer higher-privilege role
-          existing.isActive = existing.isActive || membership.isActive;
-          if (membership.joinedAt && (!existing.joinedAt || membership.joinedAt > existing.joinedAt)) {
-            existing.joinedAt = membership.joinedAt;
-          }
-          const rolePriority = { owner: 0, admin: 1, hr_manager: 2, recruiter: 3, interviewer: 4, employee: 5 };
-          const existingRank = rolePriority[existing.role] ?? 99;
-          const incomingRank = rolePriority[membership.role] ?? 99;
-          if (incomingRank < existingRank) {
-            existing.role = membership.role;
-          }
-          shouldSaveUser = true;
-        }
-        user.organizationMemberships = Array.from(byOrg.values());
+        const { deduplicateOrganizationMemberships } = require('../services/recruiterOrganizationSync');
+        user.organizationMemberships = deduplicateOrganizationMemberships(
+          user.organizationMemberships,
+          authoritativeRolesByLocalOrgId
+        );
+        shouldSaveUser = true;
       }
 
       // Set current organization from IdP claim if provided
       const currentOrgClaimId = userinfo.current_organization?.id || userinfo.currentOrganization?.id;
-      if (currentOrgClaimId) {
+      const currentOrgAuthorized = currentOrgClaimId
+        && recruiterOrganizationClaims.some((claim) => claim.id === currentOrgClaimId);
+      if (currentOrgAuthorized) {
         // Use cached lookup if available
-        const currentOrgFromCache = orgByIdpId.get(currentOrgClaimId);
+        const currentOrgFromCache = orgByIdpId.get(String(currentOrgClaimId));
         if (currentOrgFromCache) {
           user.currentOrganization = currentOrgFromCache._id;
           user.hasCompletedOrganizationSetup = true;
           shouldSaveUser = true;
-        } else {
-          const currentOrg = await Organization.findOne({ idpOrganizationId: currentOrgClaimId }).select('_id').lean();
-          if (currentOrg) {
-            user.currentOrganization = currentOrg._id;
-            user.hasCompletedOrganizationSetup = true;
-            shouldSaveUser = true;
-          }
         }
-      } else if (!user.currentOrganization) {
-        // Ensure current org is set if user has any active memberships
-        const firstActive = (user.organizationMemberships || []).find(m => m.isActive);
+      } else {
+        // Never retain a Performance-only organization as Recruiter's current
+        // workspace. Choose from the active, Recruiter-authorized memberships.
+        const firstActive = firstRecruiterAuthorizedMembership(
+          user,
+          recruiterAuthorizedLocalOrgIds
+        );
         if (firstActive?.organization) {
           user.currentOrganization = firstActive.organization;
           user.hasCompletedOrganizationSetup = true;
           shouldSaveUser = true;
+        } else if (user.currentOrganization) {
+          user.currentOrganization = null;
+          user.hasCompletedOrganizationSetup = false;
+          shouldSaveUser = true;
         }
       }
+
+      // Only an OIDC membership sync for a Recruiter-authorized organization
+      // can promote an identity-only shared-AI row into a Recruiter account.
+      // Keeping this after the awaited organization writes prevents a partial
+      // sync from accidentally enabling local Recruiter authentication.
+      if (wasSharedAIOnly && sharedAIOnlyMembershipSynced) {
+        user.sharedAIOnly = false;
+        shouldSaveUser = true;
+      }
+      user.recruiterAuthorizedOrganizations = [...recruiterAuthorizedLocalOrgIds];
+      user.recruiterAppAccessSyncedAt = new Date();
+      shouldSaveUser = true;
 
       console.log(`⏱️ [PERF] Total org sync: ${Date.now() - orgSyncStart}ms`);
     }

@@ -3,6 +3,8 @@ const AIInterview = require('../models/AIInterview');
 const AIInterviewSession = require('../models/AIInterviewSession');
 const aiInterviewerService = require('./aiInterviewerService');
 const { runWithAIRequestContext } = require('./aiRuntime/requestContext');
+const { hydrateCanonicalAIContext } = require('./aiRuntime/canonicalAIContext');
+const interviewCodexAccountService = require('./aiRuntime/interviewCodexAccountService');
 
 const MAX_PER_TICK = 10;
 const STALE_PROCESSING_MINUTES = 15;
@@ -48,6 +50,14 @@ class AIInterviewScoringRetryService {
       };
     }
     await session.save();
+    if (session.scoring.status === 'completed') {
+      await interviewCodexAccountService.disconnect(session, {
+        terminal: true,
+        reason: 'scoring_completed'
+      }).catch((error) => {
+        console.warn('Interview ChatGPT credential cleanup could not be scheduled:', error.message);
+      });
+    }
     return session;
   }
 
@@ -80,6 +90,9 @@ class AIInterviewScoringRetryService {
   }
 
   async processQueuedScoring(limit = MAX_PER_TICK) {
+    await interviewCodexAccountService.processPendingCredentialCleanup().catch((error) => {
+      console.warn('Interview ChatGPT credential cleanup retry failed:', error.message);
+    });
     await this.recoverStaleClaims();
     let processed = 0;
     while (processed < limit) {
@@ -103,8 +116,8 @@ class AIInterviewScoringRetryService {
 
       if (!session) break;
       const interview = await AIInterview.findById(session.aiInterview)
-        .populate('organization', 'name')
-        .populate('createdBy', 'email profile');
+        .populate('organization', 'name idpOrganizationId')
+        .populate('createdBy', 'email idpSubject profile');
       if (!interview) {
         session.scoring.status = 'failed';
         session.scoring.error = 'The interview record no longer exists';
@@ -113,13 +126,15 @@ class AIInterviewScoringRetryService {
         continue;
       }
 
+      const identityContext = await hydrateCanonicalAIContext({
+        actor: interview.createdBy,
+        actorId: interview.createdBy?._id || interview.createdBy,
+        organization: interview.organization,
+        organizationId: interview.organization?._id || interview.organization
+      });
       const context = {
         sourceApp: 'recruiter-worker',
-        organizationId: interview.organization?._id || interview.organization,
-        organizationName: interview.organization?.name,
-        actorId: interview.createdBy?._id || interview.createdBy,
-        actorName: interview.createdBy?.profile?.displayName,
-        actorEmail: interview.createdBy?.email,
+        ...identityContext,
         interviewId: interview._id,
         sessionId: session._id,
         jobId: interview.job,

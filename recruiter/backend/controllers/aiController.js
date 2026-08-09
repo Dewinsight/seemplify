@@ -1,5 +1,7 @@
 const Job = require('../models/Job');
 const Candidate = require('../models/Candidate');
+const Department = require('../models/Department');
+const mongoose = require('mongoose');
 const AIModelService = require('../services/aiModelService');
 const gptAnalysisService = require('../services/gptAnalysisService');
 const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
@@ -28,6 +30,27 @@ function sendAIFailure(res, failure, msg) {
   });
 }
 
+async function resolveDepartmentName(department, organizationId) {
+  const rawValue = department && typeof department === 'object'
+    ? (department._id || department.id || department.name)
+    : department;
+  if (!rawValue) return '';
+  if (!mongoose.isValidObjectId(rawValue)) return String(rawValue).trim();
+
+  const scopedDepartment = await Department.findOne({
+    _id: rawValue,
+    organization: organizationId,
+    isActive: { $ne: false }
+  }).select('name');
+  if (!scopedDepartment) {
+    const error = new Error('Department is not available in the active organization');
+    error.code = 'DEPARTMENT_NOT_FOUND';
+    error.statusCode = 400;
+    throw error;
+  }
+  return scopedDepartment.name;
+}
+
 // Generate job description using AI
 exports.generateJobDescription = async (req, res) => {
   try {
@@ -43,9 +66,10 @@ exports.generateJobDescription = async (req, res) => {
 
     console.log(`🤖 Generating job description for: ${title} in ${department}`);
 
+    const departmentName = await resolveDepartmentName(department, req.user.currentOrganization);
     const jobData = {
       title,
-      department,
+      department: departmentName,
       level: level || 'Mid',
       location: location || 'Not specified',
       type: type || 'Full-time',
@@ -91,9 +115,10 @@ exports.generateJobRequirements = async (req, res) => {
 
     console.log(`🤖 Generating job requirements for: ${title} in ${department}`);
 
+    const departmentName = await resolveDepartmentName(department, req.user.currentOrganization);
     const jobData = {
       title,
-      department,
+      department: departmentName,
       level: level || 'Mid',
       type: type || 'Full-time',
       experience: experience || '1-3',
@@ -1155,28 +1180,26 @@ exports.analyzeCandidates = async (req, res) => {
 // Analyze all jobs and provide insights
 exports.analyzeJobs = async (req, res) => {
   try {
-    const jobs = await Job.find();
+    const organizationId = req.user.currentOrganization;
+    const jobs = await Job.find({ organization: organizationId }).populate('department', 'name');
     const totalJobs = jobs.length;
     const activeJobs = jobs.filter(j => j.status === 'active').length;
     
     // Group jobs by various criteria
     const byDepartment = jobs.reduce((acc, job) => {
-      acc[job.department] = (acc[job.department] || 0) + 1;
+      const departmentName = job.department?.name || 'Unassigned';
+      acc[departmentName] = (acc[departmentName] || 0) + 1;
       return acc;
     }, {});
     
     const byType = jobs.reduce((acc, job) => {
-      acc[job.jobType] = (acc[job.jobType] || 0) + 1;
+      const jobType = job.type || 'Unspecified';
+      acc[jobType] = (acc[jobType] || 0) + 1;
       return acc;
     }, {});
-    
-    const avgSalary = jobs.reduce((sum, job) => {
-      const salary = parseInt(job.salaryRange?.replace(/[^0-9]/g, '') || 0);
-      return sum + salary;
-    }, 0) / (totalJobs || 1);
 
     // Calculate time to fill
-    const filledJobs = jobs.filter(j => j.status === 'Filled' && j.createdAt);
+    const filledJobs = jobs.filter(j => j.status === 'closed' && j.createdAt);
     const avgTimeToFill = filledJobs.length > 0 
       ? filledJobs.reduce((sum, job) => {
           const daysToFill = Math.floor((new Date(job.updatedAt) - new Date(job.createdAt)) / (1000 * 60 * 60 * 24));
@@ -1227,11 +1250,12 @@ exports.analyzeJobs = async (req, res) => {
 exports.getMatchingReport = async (req, res) => {
   try {
     const { jobId } = req.params;
+    const organizationId = req.user.currentOrganization;
     const { topK = 10, forceRefresh = 'false' } = req.query;
     const requestedTopK = Math.min(Math.max(parseInt(topK, 10) || 10, 1), 5000);
     const shouldForceRefresh = forceRefresh === 'true' || forceRefresh === true;
     
-    const job = await Job.findById(jobId);
+    const job = await Job.findOne({ _id: jobId, organization: organizationId });
     if (!job) {
       return res.status(404).json({
         msg: 'Job not found',
@@ -1239,13 +1263,28 @@ exports.getMatchingReport = async (req, res) => {
       });
     }
 
+    const {
+      matchingJobFingerprint,
+      resolveMatchingRuntimeIdentity
+    } = require('../services/matchingCacheIdentityService');
+    const reportRuntimeIdentity = await resolveMatchingRuntimeIdentity(
+      'matching.report',
+      'matching-report-v2'
+    );
+    const reportCacheIdentity = {
+      ...reportRuntimeIdentity,
+      inputFingerprint: matchingJobFingerprint(job)
+    };
+
     // Check cache first unless force refresh is requested
     if (!shouldForceRefresh) {
       const aiMatchCacheService = require('../services/aiMatchCacheService');
-      const cachedReport = await aiMatchCacheService.getCachedReport(jobId);
-      const cachedCandidateCount = cachedReport?.data?.topCandidates?.length || 0;
+      const cachedReport = await aiMatchCacheService.getCachedReport(jobId, {
+        topK: requestedTopK,
+        identity: reportCacheIdentity
+      });
       
-      if (cachedReport && cachedReport.data && cachedCandidateCount >= requestedTopK) {
+      if (cachedReport?.data) {
         console.log(`⚡ Returning cached report for job ${jobId} (${cachedReport.cacheAgeMinutes} minutes old)`);
         // Explicitly set fromCache to true and ensure it's the first property to avoid any override issues
         const cachedResponse = {
@@ -1258,8 +1297,6 @@ exports.getMatchingReport = async (req, res) => {
         cachedResponse.fromCache = true;
         console.log(`💾 Cached response fromCache flag: ${cachedResponse.fromCache}`);
         return res.json(cachedResponse);
-      } else if (cachedReport && cachedReport.data) {
-        console.log(`Cached AI matching report has ${cachedCandidateCount} candidates, requested ${requestedTopK}; regenerating`);
       }
     } else {
       console.log(`🔄 Force refresh requested for job ${jobId} - bypassing cache`);
@@ -1312,7 +1349,10 @@ Based on these AI-powered matches, provide:
 4. Recommendations for improving the hiring process
 5. Insights on why these candidates scored high in the AI matching`;
 
-      const aiResult = await aiModelService.generateChatResponse(prompt, '', { activity: 'matching.report' });
+      const aiResult = await aiModelService.generateChatResponse(prompt, '', {
+        activity: 'matching.report',
+        promptVersion: 'matching-report-v2'
+      });
       if (!aiResult.success) {
         return sendAIFailure(res, aiResult, 'The AI matching report is unavailable');
       }
@@ -1363,8 +1403,11 @@ Based on these AI-powered matches, provide:
     const aiMatchCacheService = require('../services/aiMatchCacheService');
     aiMatchCacheService.setCachedReport(jobId, reportData, {
       candidateCount: matches.length,
+      requestedTopK,
+      exhausted: matches.length < requestedTopK,
       generationTime,
-      modelUsed: aiModelService.modelName,
+      modelUsed: reportCacheIdentity.model,
+      identity: reportCacheIdentity,
       version: 1
     }).catch(err => console.error('Failed to cache report:', err));
 
@@ -1385,8 +1428,9 @@ Based on these AI-powered matches, provide:
 // Get comprehensive hiring analytics
 exports.getHiringAnalytics = async (req, res) => {
   try {
-    const candidates = await Candidate.find();
-    const jobs = await Job.find();
+    const organizationId = req.user.currentOrganization;
+    const candidates = await Candidate.find({ organization: organizationId });
+    const jobs = await Job.find({ organization: organizationId }).populate('department', 'name');
     
     // Calculate key metrics
     const totalCandidates = candidates.length;
@@ -1403,16 +1447,17 @@ exports.getHiringAnalytics = async (req, res) => {
     // Department metrics
     const departmentMetrics = {};
     jobs.forEach(job => {
-      if (!departmentMetrics[job.department]) {
-        departmentMetrics[job.department] = {
+      const departmentName = job.department?.name || 'Unassigned';
+      if (!departmentMetrics[departmentName]) {
+        departmentMetrics[departmentName] = {
           totalJobs: 0,
           openJobs: 0,
           candidates: 0
         };
       }
-      departmentMetrics[job.department].totalJobs++;
+      departmentMetrics[departmentName].totalJobs++;
       if (job.status === 'active') {
-        departmentMetrics[job.department].openJobs++;
+        departmentMetrics[departmentName].openJobs++;
       }
     });
 
@@ -2031,7 +2076,14 @@ exports.handleChatStream = async (req, res) => {
 
     // Call the LangChain agent service
     // chatHistoryMessages is now loaded by Mem0ChatMemory inside streamMessageWithAgent
-    langchainAgentService.streamMessageWithAgent(userInput, userId, chatSessionId, authToken, streamCallbacks);
+    langchainAgentService.streamMessageWithAgent(
+      userInput,
+      userId,
+      chatSessionId,
+      authToken,
+      streamCallbacks,
+      req.user.currentOrganization
+    );
 
     // Handle client disconnect
     req.on('close', () => {

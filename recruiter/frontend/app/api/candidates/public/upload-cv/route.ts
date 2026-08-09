@@ -1,73 +1,72 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+export const runtime = 'nodejs'
+
+const MAX_MULTIPART_BYTES = 11 * 1024 * 1024
+
 export async function POST(request: NextRequest) {
-  try {
-    const formData = await request.formData()
-    const file = formData.get('resume') as File
-    const jobId = String(formData.get('jobId') || '').trim()
-    
-    if (!file || !jobId) {
-      return NextResponse.json(
-        { error: !file ? 'No CV file provided' : 'No public job ID provided' },
-        { status: 400 }
-      )
-    }
+  const contentType = request.headers.get('content-type') || ''
+  const contentLength = Number(request.headers.get('content-length') || 0)
+  const idempotencyKey = request.headers.get('idempotency-key')
+  const capability = request.headers.get('x-public-application-token')
+  const jobId = request.headers.get('x-public-job-id')
+  const candidateId = request.headers.get('x-public-candidate-id')
 
-    // Forward the file to the backend candidate upload service
-    const backendFormData = new FormData()
-    backendFormData.append('resume', file)
-    backendFormData.append('jobId', jobId)
-    // The applicant's candidate record must travel too, or the analysis
-    // creates a duplicate candidate instead of enriching theirs.
-    const candidateId = String(formData.get('candidateId') || '').trim()
-    if (candidateId) backendFormData.append('candidateId', candidateId)
-
-    // Increase timeout to 10 minutes for CV processing
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000) // 10 minutes
-
-    try {
-      const backendBaseUrl =
-        process.env.BACKEND_URL ||
-        (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com');
-      const backendResponse = await fetch(`${backendBaseUrl}/api/candidates/public/upload-cv`, {
-        method: 'POST',
-        headers: {
-          ...(request.headers.get('idempotency-key')
-            ? { 'Idempotency-Key': request.headers.get('idempotency-key') as string }
-            : {}),
-        },
-        body: backendFormData,
-        signal: controller.signal,
-      })
-
-      clearTimeout(timeoutId)
-
-      if (!backendResponse.ok) {
-        const errorData = await backendResponse.json()
-        return NextResponse.json(
-          { error: errorData.msg || 'Failed to upload and process CV' },
-          { status: backendResponse.status }
-        )
-      }
-
-      const candidateData = await backendResponse.json()
-      return NextResponse.json(candidateData, { status: backendResponse.status })
-    } catch (error: any) {
-      clearTimeout(timeoutId)
-      if (error.name === 'AbortError') {
-        return NextResponse.json(
-          { error: 'CV processing is taking longer than expected. Please try again or contact support.' },
-          { status: 408 }
-        )
-      }
-      throw error
-    }
-  } catch (error) {
-    console.error('Error uploading CV:', error)
+  // Reject invalid anonymous requests before buffering or forwarding a body.
+  if (!contentType.toLowerCase().startsWith('multipart/form-data;')) {
+    return NextResponse.json({ code: 'CV_MULTIPART_REQUIRED', error: 'A CV file is required' }, { status: 400 })
+  }
+  if (!Number.isFinite(contentLength) || contentLength <= 0 || contentLength > MAX_MULTIPART_BYTES) {
+    return NextResponse.json({ code: 'CV_FILE_TOO_LARGE', error: 'CV uploads are limited to 10MB' }, { status: 413 })
+  }
+  if (!idempotencyKey || !capability || !jobId || !candidateId) {
     return NextResponse.json(
-      { error: 'Internal server error during CV upload' },
-      { status: 500 }
+      { code: 'PUBLIC_APPLICATION_CAPABILITY_INVALID', error: 'This public application session is invalid or has expired' },
+      { status: 403 },
     )
   }
-} 
+  if (!request.body) {
+    return NextResponse.json({ code: 'CV_FILE_REQUIRED', error: 'No CV file provided' }, { status: 400 })
+  }
+
+  const backendBaseUrl = (
+    process.env.BACKEND_URL
+    || (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://api.seemplifyai.com')
+  ).replace(/\/$/, '')
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000)
+
+  try {
+    // Stream the multipart body so the frontend proxy never buffers an
+    // applicant's CV in process memory. Node fetch requires duplex for a
+    // ReadableStream request body.
+    const init: RequestInit & { duplex: 'half' } = {
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': String(contentLength),
+        'Idempotency-Key': idempotencyKey,
+        'X-Public-Application-Token': capability,
+        'X-Public-Job-Id': jobId,
+        'X-Public-Candidate-Id': candidateId,
+      },
+      body: request.body,
+      duplex: 'half',
+      signal: controller.signal,
+    }
+    const backendResponse = await fetch(`${backendBaseUrl}/api/candidates/public/upload-cv`, init)
+    const payload = await backendResponse.json().catch(() => ({}))
+    return NextResponse.json(payload, { status: backendResponse.status })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return NextResponse.json(
+        { code: 'CV_UPLOAD_TIMEOUT', error: 'The CV upload response timed out. Retry to safely recover the same application.' },
+        { status: 408 },
+      )
+    }
+    console.error('Public CV proxy failed before durable acceptance')
+    return NextResponse.json({ error: 'The CV could not be secured. Please retry.' }, { status: 502 })
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}

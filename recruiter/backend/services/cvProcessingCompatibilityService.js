@@ -1,5 +1,7 @@
 const AIUsageEvent = require('../models/AIUsageEvent');
 const CVProcessingJob = require('../models/CVProcessingJob');
+const CVProcessingBatch = require('../models/CVProcessingBatch');
+const CVStorageCleanupTask = require('../models/CVStorageCleanupTask');
 const Candidate = require('../models/Candidate');
 
 const CANDIDATE_JOB_INDEX_NAME = 'uniq_cv_processing_job_candidate';
@@ -12,6 +14,7 @@ const CANDIDATE_JOB_INDEX_OPTIONS = {
     [CANDIDATE_JOB_FIELD]: { $type: 'string' }
   }
 };
+const CLEANUP_TTL_INDEX_NAME = 'expire_completed_cv_cleanup_tasks';
 
 let compatibilityPromise;
 
@@ -162,6 +165,54 @@ async function ensureCandidateJobIndex() {
   return { created: true, name };
 }
 
+async function ensureCleanupTaskRetention() {
+  // Older builds put a 24-hour TTL on held receipts. Those rows can be the
+  // only durable pointer to an asset after a candidate tombstone commits.
+  const protectedReceipts = await CVStorageCleanupTask.collection.updateMany(
+    { state: { $in: ['held', 'pending', 'failed'] }, expiresAt: { $exists: true } },
+    { $unset: { expiresAt: '' } }
+  );
+  const indexes = await CVStorageCleanupTask.collection.indexes();
+  let compatibleIndexName = null;
+  for (const index of indexes) {
+    if (!sameIndexKey(index.key, { expiresAt: 1 })) continue;
+    const compatible = index.expireAfterSeconds === 0
+      && index.partialFilterExpression?.state === 'completed';
+    if (compatible) compatibleIndexName = index.name;
+    else await CVStorageCleanupTask.collection.dropIndex(index.name);
+  }
+  const indexName = compatibleIndexName || await CVStorageCleanupTask.collection.createIndex(
+      { expiresAt: 1 },
+      {
+        expireAfterSeconds: 0,
+        partialFilterExpression: { state: 'completed' },
+        name: CLEANUP_TTL_INDEX_NAME
+      }
+    );
+  return {
+    protectedReceipts: Number(protectedReceipts.modifiedCount || 0),
+    indexName
+  };
+}
+
+async function protectActiveBatchReceipts() {
+  const activeBatchIds = await CVProcessingJob.distinct('batch', {
+    batch: { $exists: true, $ne: null },
+    state: { $in: ['queued', 'waiting_for_chatgpt', 'processing'] }
+  });
+  const result = await CVProcessingBatch.collection.updateMany(
+    {
+      expiresAt: { $exists: true },
+      $or: [
+        { intakeState: 'accepting' },
+        ...(activeBatchIds.length ? [{ _id: { $in: activeBatchIds } }] : [])
+      ]
+    },
+    { $unset: { expiresAt: '' } }
+  );
+  return Number(result.modifiedCount || 0);
+}
+
 async function runCompatibilityMigration() {
   const [stages, usage, blankCandidateJobIds] = await Promise.all([
     backfillCvStages(),
@@ -170,12 +221,16 @@ async function runCompatibilityMigration() {
   ]);
   const duplicateCandidateJobIds = await repairDuplicateCandidateJobIds();
   const candidateJobIndex = await ensureCandidateJobIndex();
+  const cleanupTaskRetention = await ensureCleanupTaskRetention();
+  const protectedActiveBatches = await protectActiveBatchReceipts();
   return {
     stages,
     usage,
     blankCandidateJobIds,
     duplicateCandidateJobIds,
-    candidateJobIndex
+    candidateJobIndex,
+    cleanupTaskRetention,
+    protectedActiveBatches
   };
 }
 
@@ -198,5 +253,7 @@ module.exports = {
   ensureCvProcessingCompatibility,
   resetForTests,
   stageForState,
+  _ensureCleanupTaskRetentionForTests: ensureCleanupTaskRetention,
+  _protectActiveBatchReceiptsForTests: protectActiveBatchReceipts,
   _runCompatibilityMigrationForTests: runCompatibilityMigration
 };

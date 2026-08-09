@@ -15,6 +15,13 @@ export interface AiRuntimeAccount {
   usageLimit: AiPlanUsageLimit | null;
   lastError: string | null;
   runtimePreference: 'default' | 'local' | 'chatgpt';
+  usage?: {
+    source: 'connected_chatgpt_runtime' | string;
+    available: boolean;
+    observedAt: string | null;
+    rateLimits: AiPlanRateLimits | null;
+    usageLimit: AiPlanUsageLimit | null;
+  };
 }
 
 /** One of the plan's usage windows, as Codex last reported it. */
@@ -47,7 +54,66 @@ export interface AiAccountModel {
   id: string;
   displayName: string;
   isDefault?: boolean;
-  defaultReasoningEffort?: string;
+  defaultReasoningEffort?: AiReasoningEffort | null;
+  supportedReasoningEfforts?: Array<AiReasoningEffort | { reasoningEffort: AiReasoningEffort }>;
+}
+
+export type AiReasoningEffort =
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh'
+  | 'max'
+  | 'ultra';
+
+export interface AiActivitySetting {
+  codexModel: string;
+  reasoningEffort: AiReasoningEffort;
+}
+
+export interface AiActivityOverride {
+  codexModel: string | null;
+  reasoningEffort: AiReasoningEffort | null;
+}
+
+export type AiSettingProvenance =
+  | 'activity_override'
+  | 'account_default'
+  | 'admin_default'
+  | 'app_default'
+  | string;
+
+export interface AiFieldProvenance {
+  codexModel: AiSettingProvenance;
+  reasoningEffort: AiSettingProvenance;
+}
+
+export interface AiAccountDefaultPreference {
+  override: AiActivityOverride;
+  /** Null means the concrete value comes from each activity's admin default. */
+  effective: AiActivityOverride | null;
+  provenance: AiFieldProvenance;
+}
+
+export interface AiActivityPreference {
+  activity: string;
+  app: 'recruiter' | 'performance' | string;
+  label: string;
+  group: string;
+  enabled: boolean;
+  adminDefault: AiActivitySetting;
+  accountDefault?: AiActivityOverride;
+  override: AiActivityOverride;
+  effective: AiActivitySetting;
+  provenance: AiFieldProvenance;
+}
+
+export interface AiActivityPreferencesResponse {
+  defaults: AiAccountDefaultPreference;
+  activities: AiActivityPreference[];
+  models: AiAccountModel[];
 }
 
 async function readJson<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -133,6 +199,24 @@ export const aiAccountService = {
   }),
 
   listModels: () => readJson<{ models: AiAccountModel[] }>('/api/ai-account/models'),
+
+  readActivityOverrides: () => readJson<AiActivityPreferencesResponse>(
+    '/api/ai-account/activity-overrides'
+  ),
+
+  saveActivityOverride: (
+    scope: 'default' | 'activity',
+    activity: string | null,
+    override: AiActivityOverride
+  ) => readJson<AiActivityPreferencesResponse>('/api/ai-account/activity-overrides', {
+    method: 'PUT',
+    body: JSON.stringify({ scope, ...(activity ? { activity } : {}), ...override })
+  }),
+
+  deleteActivityOverride: (scope: 'default' | 'activity', activity: string | null = null) => readJson<AiActivityPreferencesResponse>(
+    '/api/ai-account/activity-overrides',
+    { method: 'DELETE', body: JSON.stringify({ scope, ...(activity ? { activity } : {}) }) }
+  ),
 
   disconnect: () => readJson<{ account: AiRuntimeAccount }>('/api/ai-account', { method: 'DELETE' })
 };

@@ -79,10 +79,16 @@ function requireModelContent(result, operation) {
 
 class AIInterviewerService {
   buildTelemetryContext({ interview, session }) {
+    const organization = interview?.organization;
+    const actor = interview?.createdBy;
+    const localOrganizationId = organization?._id || organization || session?.organization;
+    const localActorId = actor?._id || actor;
     return {
-      organizationId: interview?.organization?._id || interview?.organization || session?.organization,
-      organizationName: interview?.organization?.name,
-      actorId: interview?.createdBy?._id || interview?.createdBy,
+      organizationId: organization?.idpOrganizationId || localOrganizationId,
+      localOrganizationId,
+      organizationName: organization?.name,
+      actorId: actor?.idpSubject,
+      runtimeActorId: localActorId,
       interviewId: interview?._id,
       sessionId: session?._id,
       // A live interview turn runs on the candidate's own ChatGPT account.

@@ -115,8 +115,8 @@ async function validateAccessToken(token) {
   }
 
   const user = await User.findById(decoded.user.id)
-    .select('security currentOrganization email profile')
-    .populate('currentOrganization', 'name');
+    .select('security currentOrganization email profile sharedAIOnly idpSubject')
+    .populate('currentOrganization', 'name idpOrganizationId');
   if (!user) {
     throw new Error('user_not_found');
   }

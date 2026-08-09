@@ -21,7 +21,8 @@ import {
   Coins,
   AudioLines,
   Activity,
-  Cpu
+  Cpu,
+  FileClock
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -112,6 +113,12 @@ const AdminSidebar = ({ collapsed = false, onToggle }: AdminSidebarProps) => {
       title: 'AI Runtime',
       icon: Cpu,
       href: '/admin/ai-runtime',
+      permission: 'viewAnalytics' as const
+    },
+    {
+      title: 'CV Processing',
+      icon: FileClock,
+      href: '/admin/cv-processing',
       permission: 'viewAnalytics' as const
     },
     {

@@ -437,6 +437,10 @@ async function enforceDeadlines(session, interview) {
     session.status = 'expired';
     session.lastActivityAt = now;
     await session.save();
+    await interviewCodexAccountService.disconnect(session, {
+      terminal: true,
+      reason: 'interview_expired'
+    }).catch((error) => console.warn('Expired interview credential cleanup failed:', error.message));
     await syncInterviewStats(interview._id);
     return session;
   }
@@ -464,7 +468,7 @@ async function findPublicSession(token) {
       path: 'aiInterview',
       populate: [
         { path: 'job', select: 'title description organization' },
-        { path: 'organization', select: 'name' }
+        { path: 'organization', select: 'name idpOrganizationId' }
       ]
     })
     .populate('job', 'title description')
@@ -922,6 +926,10 @@ exports.cancelAIInterview = async (req, res) => {
       $set: { status: 'cancelled' }
     });
 
+    await interviewCodexAccountService.disconnectInterview(id, {
+      reason: 'interview_cancelled'
+    }).catch((error) => console.warn('Cancelled interview credential cleanup failed:', error.message));
+
     await syncInterviewStats(id);
     res.json({ success: true, message: 'AI interview cancelled' });
   } catch (error) {
@@ -979,11 +987,14 @@ exports.resendAIInterviewSessions = async (req, res) => {
  * no actor to infer this from.
  */
 function withCandidateRuntime(session, run) {
+  const organization = session?.aiInterview?.organization;
+  const localOrganizationId = organization?._id || session?.organization || organization;
   return runWithAIRequestContext({
     sourceApp: 'recruiter-ai-interview',
     interviewSessionId: String(session?._id || ''),
-    organizationId: session?.organization || session?.aiInterview?.organization?._id
-      || session?.aiInterview?.organization || undefined,
+    organizationId: organization?.idpOrganizationId || localOrganizationId || undefined,
+    localOrganizationId: localOrganizationId || undefined,
+    organizationName: organization?.name,
     actorName: 'Interview candidate',
     interviewId: String(session?.aiInterview?._id || session?.aiInterview || '')
   }, run);
@@ -1012,6 +1023,12 @@ exports.startPublicChatgptLogin = async (req, res) => {
   try {
     const session = await findPublicSession(req.params.token);
     if (!session) return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    if (TERMINAL_SESSION_STATUSES.has(session.status)) {
+      return res.status(409).json({
+        error: 'INTERVIEW_ALREADY_ENDED',
+        message: 'This interview has ended, so its ChatGPT connection cannot be reopened.'
+      });
+    }
     const { login, account } = await interviewCodexAccountService.startLogin(session);
     return res.json({ login, account: account.toPublicJSON() });
   } catch (error) {
@@ -1045,6 +1062,12 @@ exports.setPublicChatgptConsent = async (req, res) => {
   try {
     const session = await findPublicSession(req.params.token);
     if (!session) return res.status(404).json({ error: 'NOT_FOUND', message: 'Interview link not found' });
+    if (req.body?.acknowledged === true && TERMINAL_SESSION_STATUSES.has(session.status)) {
+      return res.status(409).json({
+        error: 'INTERVIEW_ALREADY_ENDED',
+        message: 'This interview has ended, so data sharing cannot be enabled again.'
+      });
+    }
     const account = await interviewCodexAccountService.setConsent(session, req.body?.acknowledged === true);
     return res.json({ account: account.toPublicJSON() });
   } catch (error) {
@@ -1465,6 +1488,12 @@ exports.recordPublicProctoringEvent = async (req, res) => {
     });
     session.lastActivityAt = now;
     await session.save();
+    if (action === 'terminated') {
+      await interviewCodexAccountService.disconnect(session, {
+        terminal: true,
+        reason: 'proctor_terminated'
+      }).catch((error) => console.warn('Terminated interview credential cleanup failed:', error.message));
+    }
     await syncInterviewStats(interview._id);
 
     res.json({

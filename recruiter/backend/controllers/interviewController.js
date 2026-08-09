@@ -22,6 +22,7 @@ const { evaluateFormula } = require('../utils/formulaEvaluator');
 const FeedbackFormTemplate = require('../models/FeedbackFormTemplate');
 const CustomField = require('../models/CustomField');
 const CustomFieldResponse = require('../models/CustomFieldResponse');
+const publicFeedbackCapability = require('../services/publicFeedbackCapabilityService');
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -1237,7 +1238,10 @@ const scheduleInterview = async (req, res) => {
             candidateResumeUrl: candidate.cvUrl,
             candidateCurrentRole: candidate.currentRole,
             candidateExperience: candidate.yearsOfExperience,
-            feedbackUrl: `${process.env.FRONTEND_URL || 'https://smarthr.aiinnigeria.com'}/public/feedback/${interview._id}`
+            feedbackUrl: await publicFeedbackCapability.feedbackUrl(
+              interview._id,
+              process.env.FRONTEND_URL || 'https://smarthr.aiinnigeria.com'
+            )
           };
           
           console.log(`🔍 Sending notification to ${participant.email} with template data:`, {
@@ -3756,7 +3760,7 @@ const getInterviewQuestions = async (req, res) => {
     
     // Get interview with candidate, job, and stage information
     const interview = await Interview.findById(interviewId)
-      .populate('candidateId', 'firstName lastName email resumeUrl')
+      .populate('candidateId', 'firstName lastName email cloudinaryPublicId')
       .populate('jobId', 'title description organization')
       .populate('stageId', 'name description')
       .populate('notifications.selectedQuestions');
@@ -3809,7 +3813,7 @@ const getInterviewQuestions = async (req, res) => {
       id: interview.candidateId._id,
       name: `${interview.candidateId.firstName || ''} ${interview.candidateId.lastName || ''}`.trim(),
       email: interview.candidateId.email,
-      resumeUrl: interview.candidateId.resumeUrl
+      resumeAvailable: Boolean(interview.candidateId.cloudinaryPublicId)
     } : null;
 
     // Decode HTML entities helper
@@ -5818,7 +5822,10 @@ const scheduleMultiCandidateInterview = async (req, res) => {
           formattedTime: `${formattedSlotDate} at ${formattedSlotTime}`,
           duration: slot.duration,
           interviewId: interview._id,
-          feedbackUrl: `${process.env.FRONTEND_URL || 'https://smarthr.aiinnigeria.com'}/public/feedback/${interview._id}`,
+          feedbackUrl: await publicFeedbackCapability.feedbackUrl(
+            interview._id,
+            process.env.FRONTEND_URL || 'https://smarthr.aiinnigeria.com'
+          ),
           meetingLink: meetingLink || ''
         };
         

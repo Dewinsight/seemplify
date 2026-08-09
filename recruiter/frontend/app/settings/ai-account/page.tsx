@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Check, Copy, ExternalLink, Loader2, RefreshCw, Unplug } from "lucide-react"
 import { OpenAILogo } from "@/components/ui/openai-logo"
 import { ChatGptPlanLimits } from "@/components/ui/chatgpt-plan-limits"
+import { AiActivityPreferences } from "@/components/settings/AiActivityPreferences"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -16,7 +17,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import {
-  aiAccountService, requiresChatGptSetup, type AiDeviceLogin, type AiRuntimeAccount, type AiRuntimePolicy
+  aiAccountService,
+  requiresChatGptSetup,
+  type AiActivityOverride,
+  type AiActivityPreferencesResponse,
+  type AiDeviceLogin,
+  type AiRuntimeAccount,
+  type AiRuntimePolicy
 } from "@/services/aiAccountService"
 
 const POLL_INTERVAL_MS = 2000
@@ -29,14 +36,28 @@ const statusTone: Record<AiRuntimeAccount["status"], { label: string; variant: "
   error: { label: "Needs attention", variant: "destructive" }
 }
 
+function lastVerifiedLabel(value?: string | null) {
+  if (!value) return "Connection check time unavailable"
+  const checked = new Date(value)
+  if (Number.isNaN(checked.getTime())) return "Connection check time unavailable"
+  return `Last checked ${checked.toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+  })}`
+}
+
 export default function AiAccountPage() {
   const [account, setAccount] = useState<AiRuntimeAccount | null>(null)
   const [policy, setPolicy] = useState<AiRuntimePolicy | null>(null)
+  const [preferences, setPreferences] = useState<AiActivityPreferencesResponse | null>(null)
   const [deviceLogin, setDeviceLogin] = useState<AiDeviceLogin | null>(null)
   const [loading, setLoading] = useState(true)
+  const [preferencesLoading, setPreferencesLoading] = useState(false)
   const [working, setWorking] = useState("")
+  const [savingActivity, setSavingActivity] = useState("")
   const [error, setError] = useState("")
+  const [preferencesError, setPreferencesError] = useState("")
   const [copied, setCopied] = useState(false)
+  const [disconnectOpen, setDisconnectOpen] = useState(false)
   // OpenAI throttles repeated device logins; the wait comes back with the
   // refusal so it can be counted down rather than retried blindly.
   const [cooldownUntil, setCooldownUntil] = useState(0)
@@ -74,28 +95,32 @@ export default function AiAccountPage() {
     } finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { void refresh() }, [refresh])
-  useEffect(() => stopPolling, [stopPolling])
+  const refreshPreferences = useCallback(async () => {
+    setPreferencesLoading(true)
+    setPreferencesError("")
+    try {
+      setPreferences(await aiAccountService.readActivityOverrides())
+    } catch (reason: any) {
+      setPreferencesError(reason?.message || "Your ChatGPT activity preferences could not be loaded.")
+    } finally {
+      setPreferencesLoading(false)
+    }
+  }, [])
 
-  // Connecting is the acknowledgement: the data-sharing notice sits beside the
-  // connection the whole time, so a connected account consents automatically.
-  // Only an explicit withdrawal (unticking the box) is remembered and honoured.
-  const autoConsentRef = useRef(false)
-  const WITHDRAWN_KEY = "seemplify_ai_consent_withdrawn"
+  const refreshAll = useCallback(async () => {
+    const next = await refresh()
+    if (next?.status === "connected") await refreshPreferences()
+  }, [refresh, refreshPreferences])
+
+  useEffect(() => { void refresh() }, [refresh])
   useEffect(() => {
-    if (autoConsentRef.current || !account) return
-    if (account.status !== "connected" || account.dataSharingAcknowledgedAt) return
-    if (localStorage.getItem(WITHDRAWN_KEY) === "true") return
-    autoConsentRef.current = true
-    void (async () => {
-      try {
-        const { account: next } = await aiAccountService.setConsent(true)
-        setAccount(next)
-      } catch {
-        autoConsentRef.current = false
-      }
-    })()
-  }, [account])
+    if (account?.status === "connected") void refreshPreferences()
+    else {
+      setPreferences(null)
+      setPreferencesError("")
+    }
+  }, [account?.status, refreshPreferences])
+  useEffect(() => stopPolling, [stopPolling])
 
   // The runtime-gate dialog deep-links here with ?connect=1 so "Use ChatGPT"
   // flows straight into the device-code sign-in without a second click.
@@ -180,8 +205,6 @@ export default function AiAccountPage() {
     try {
       const { account: next } = await aiAccountService.setConsent(acknowledged)
       setAccount(next)
-      if (acknowledged) localStorage.removeItem(WITHDRAWN_KEY)
-      else localStorage.setItem(WITHDRAWN_KEY, "true")
       toast.success(acknowledged
         ? "ChatGPT may now run your AI tasks."
         : "Consent withdrawn. Your AI tasks will not use ChatGPT.")
@@ -196,11 +219,61 @@ export default function AiAccountPage() {
     try {
       const { account: next } = await aiAccountService.disconnect()
       setAccount(next)
-      toast.success("ChatGPT account disconnected.")
+      setPreferences(null)
+      setDisconnectOpen(false)
+      toast.success("ChatGPT was disconnected from Seemplify.")
     } catch (reason: any) {
       const message = reason?.message || "The ChatGPT account could not be disconnected."
       setError(message); toast.error(message)
     } finally { setWorking("") }
+  }
+
+  async function saveDefaultOverride(override: AiActivityOverride) {
+    setSavingActivity("__default__")
+    setPreferencesError("")
+    try {
+      setPreferences(await aiAccountService.saveActivityOverride("default", null, override))
+      toast.success("Your account defaults were saved.")
+    } catch (reason: any) {
+      const message = reason?.message || "Your account defaults could not be saved."
+      setPreferencesError(message); toast.error(message)
+    } finally { setSavingActivity("") }
+  }
+
+  async function resetDefaultOverride() {
+    setSavingActivity("__default__")
+    setPreferencesError("")
+    try {
+      setPreferences(await aiAccountService.deleteActivityOverride("default"))
+      toast.success("Your account defaults now inherit the administrator settings.")
+    } catch (reason: any) {
+      const message = reason?.message || "Your account defaults could not be reset."
+      setPreferencesError(message); toast.error(message)
+    } finally { setSavingActivity("") }
+  }
+
+  async function saveActivityOverride(activity: string, override: AiActivityOverride) {
+    setSavingActivity(activity)
+    setPreferencesError("")
+    try {
+      setPreferences(await aiAccountService.saveActivityOverride("activity", activity, override))
+      toast.success("Your activity preference was saved.")
+    } catch (reason: any) {
+      const message = reason?.message || "Your activity preference could not be saved."
+      setPreferencesError(message); toast.error(message)
+    } finally { setSavingActivity("") }
+  }
+
+  async function resetActivityOverride(activity: string) {
+    setSavingActivity(activity)
+    setPreferencesError("")
+    try {
+      setPreferences(await aiAccountService.deleteActivityOverride("activity", activity))
+      toast.success("This activity now uses your inherited defaults.")
+    } catch (reason: any) {
+      const message = reason?.message || "Your activity preference could not be reset."
+      setPreferencesError(message); toast.error(message)
+    } finally { setSavingActivity("") }
   }
 
   async function chooseRuntime(runtimePreference: "default" | "local" | "chatgpt") {
@@ -236,9 +309,9 @@ export default function AiAccountPage() {
   return (
     <div className="space-y-6" data-testid="ai-account-page">
       <div>
-        <h3 className="text-lg font-medium">ChatGPT account</h3>
+        <h3 className="text-lg font-medium">AI &amp; ChatGPT</h3>
         <p className="text-sm text-muted-foreground">
-          Connect your own ChatGPT plan so your AI work runs on it instead of shared platform capacity.
+          Manage your ChatGPT connection, runtime choice, usage information, and personal model preferences.
         </p>
       </div>
       <Separator />
@@ -251,12 +324,17 @@ export default function AiAccountPage() {
               Both runtimes are available. Local inference uses the model selected in Control Center.
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
+          <CardContent
+            className="flex flex-wrap gap-2"
+            role="group"
+            aria-label="Preferred AI runtime"
+          >
             {(["default", "local", "chatgpt"] as const).map((runtime) => (
               <Button
                 key={runtime}
                 type="button"
                 variant={account.runtimePreference === runtime ? "default" : "outline"}
+                aria-pressed={account.runtimePreference === runtime}
                 disabled={working === "runtime"}
                 onClick={() => void chooseRuntime(runtime)}
                 data-testid={`ai-runtime-${runtime}`}
@@ -300,8 +378,8 @@ export default function AiAccountPage() {
           </div>
           <CardDescription>
             {connected
-              ? `${account?.connectedEmail || "Your account"}${account?.planType ? ` · ${account.planType}` : ""} is connected. Inference runs on this plan and counts against its limits.`
-              : "Sign in with a one-time code from OpenAI. Your credentials are never stored by Seemplify."}
+              ? `${account?.connectedEmail || "Your account"} is connected. ${lastVerifiedLabel(account?.lastVerifiedAt)}.`
+              : "Sign in with a one-time code from OpenAI. Your credentials are kept in the isolated connection gateway, not the Recruiter database, and are deleted when you disconnect."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -324,7 +402,7 @@ export default function AiAccountPage() {
                   {cooling ? `Try again in ${countdown}` : "Sign in with OpenAI"}
                 </Button>
               )}
-              <Button variant="outline" onClick={() => void refresh()} disabled={Boolean(working)}>
+              <Button variant="outline" onClick={() => void refreshAll()} disabled={Boolean(working)}>
                 <RefreshCw className="mr-2 h-4 w-4" />Refresh
               </Button>
               {!connected && error && (
@@ -341,7 +419,12 @@ export default function AiAccountPage() {
                 </Button>
               )}
               {connected && (
-                <Button variant="outline" onClick={disconnect} disabled={Boolean(working)} data-testid="ai-account-disconnect">
+                <Button
+                  variant="outline"
+                  onClick={() => setDisconnectOpen(true)}
+                  disabled={Boolean(working)}
+                  data-testid="ai-account-disconnect"
+                >
                   {working === "disconnect" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unplug className="mr-2 h-4 w-4" />}
                   Disconnect
                 </Button>
@@ -354,6 +437,7 @@ export default function AiAccountPage() {
               planType={account?.planType}
               rateLimits={account?.rateLimits}
               usageLimit={account?.usageLimit}
+              observedAt={account?.usage?.observedAt}
             />
           )}
 
@@ -369,11 +453,12 @@ export default function AiAccountPage() {
                 />
                 <div className="space-y-1">
                   <Label htmlFor="ai-account-consent" className="text-sm font-medium">
-                    Allow AI task content to be processed by OpenAI on my account
+                    Allow Recruiter AI task content to be processed by OpenAI on my account
                   </Label>
                   <p className="text-xs leading-5 text-muted-foreground">
                     Candidate data, job descriptions, and interview content in the tasks you run will be sent to OpenAI
-                    using this connection. If you withdraw consent, ChatGPT-powered tasks pause until consent is restored.
+                    using this connection. This consent applies only to Recruiter; Performance Management asks separately.
+                    If you withdraw consent, Recruiter&apos;s ChatGPT-powered tasks pause until consent is restored.
                   </p>
                   {!account?.routable && (
                     <p className="text-xs font-medium text-amber-600">
@@ -387,13 +472,63 @@ export default function AiAccountPage() {
         </CardContent>
       </Card>
 
+      {policy?.chatgptEnabled ? (
+        <AiActivityPreferences
+          defaults={preferences?.defaults || null}
+          activities={preferences?.activities || []}
+          models={preferences?.models || []}
+          loading={connected && preferencesLoading}
+          disabled={!connected}
+          savingActivity={savingActivity}
+          error={preferencesError}
+          onRetry={refreshPreferences}
+          onSaveDefault={saveDefaultOverride}
+          onResetDefault={resetDefaultOverride}
+          onSave={saveActivityOverride}
+          onReset={resetActivityOverride}
+        />
+      ) : null}
+
+      <Dialog open={disconnectOpen} onOpenChange={(open) => {
+        if (working !== "disconnect") setDisconnectOpen(open)
+      }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Disconnect ChatGPT from Seemplify?</DialogTitle>
+            <DialogDescription className="leading-relaxed">
+              This is one shared connection. Disconnecting here also stops connected ChatGPT features in
+              Performance Management until you sign in again. Local inference is not affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDisconnectOpen(false)}
+              disabled={working === "disconnect"}
+            >
+              Keep connected
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void disconnect()}
+              disabled={working === "disconnect"}
+            >
+              {working === "disconnect" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Disconnect everywhere
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(deviceLogin)} onOpenChange={(open) => { if (!open) void cancel() }}>
         <DialogContent
           data-testid="ai-account-device-login"
-          className="gap-0 overflow-hidden rounded-2xl border-black/10 p-0 sm:max-w-[440px] dark:border-white/10"
+          className="gap-0 overflow-hidden rounded-lg border-black/10 p-0 sm:max-w-[440px] dark:border-white/10"
         >
           <DialogHeader className="items-center space-y-0 px-7 pb-6 pt-9 text-center">
-            <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0d0d0d] text-white shadow-sm ring-1 ring-black/5 dark:bg-white dark:text-[#0d0d0d] dark:ring-white/10">
+            <span className="mb-5 flex h-12 w-12 items-center justify-center rounded-md bg-[#0d0d0d] text-white dark:bg-white dark:text-[#0d0d0d]">
               <OpenAILogo className="h-8 w-8" />
             </span>
             <DialogTitle className="text-center text-[22px] font-semibold leading-tight tracking-[-0.01em]">
@@ -404,7 +539,7 @@ export default function AiAccountPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="px-7">
-            <div className="rounded-xl border border-black/10 px-3.5 py-4 dark:border-white/10">
+            <div className="rounded-md border border-black/10 px-3.5 py-4 dark:border-white/10">
               <p className="text-center text-[12.5px] text-muted-foreground">
                 Enter this code on the OpenAI page
               </p>
@@ -437,7 +572,7 @@ export default function AiAccountPage() {
             {deviceLogin?.verificationUrl && (
               <Button
                 asChild
-                className="h-11 w-full rounded-xl bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
+                className="h-11 w-full rounded-md bg-[#0d0d0d] text-[15px] font-medium text-white hover:bg-[#2f2f2f] dark:bg-white dark:text-[#0d0d0d] dark:hover:bg-white/90"
               >
                 <a href={deviceLogin.verificationUrl} target="_blank" rel="noreferrer noopener">
                   <OpenAILogo className="mr-2 h-4 w-4" />Open OpenAI

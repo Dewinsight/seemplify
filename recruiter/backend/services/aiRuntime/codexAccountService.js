@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const AIUserRuntimeAccount = require('../../models/AIUserRuntimeAccount');
+const User = require('../../models/User');
+const { recruiterOrganizationAuthorized } = require('../sharedAIUserSecurity');
 const { AIRuntimeError, signGatewayRequest } = require('./aiRuntimeService');
 
 /**
@@ -42,7 +44,10 @@ function subjectKeyForUser(userId) {
       code: 'CHATGPT_SUBJECT_UNRESOLVED', statusCode: 401, retryable: false
     });
   }
-  return crypto.createHash('sha256').update(`${SOURCE_APP}${subjectId}`).digest('hex');
+  // The separator is part of the hosted gateway's canonical subject key. The
+  // key is metadata only; inference continues to send sourceApp + subjectId,
+  // so healing an older row cannot orphan its existing credential directory.
+  return crypto.createHash('sha256').update(`${SOURCE_APP}\x1f${subjectId}`).digest('hex');
 }
 
 async function callGateway(operation, userId, { timeoutMs = 30_000, fetchImpl = fetch } = {}) {
@@ -100,6 +105,11 @@ async function accountForUser(user) {
   const userId = String(user?.id || user?._id || '');
   const existing = await AIUserRuntimeAccount.findOne({ user: userId });
   if (existing) {
+    const expectedSubjectKey = subjectKeyForUser(userId);
+    if (existing.subjectKey !== expectedSubjectKey) {
+      existing.subjectKey = expectedSubjectKey;
+      await existing.save();
+    }
     if (!existing.organization) {
       const organization = await organizationForUser(user, userId);
       if (organization) {
@@ -120,8 +130,12 @@ async function accountForUser(user) {
 function applyStatus(account, status) {
   const connected = status?.connected === true;
   account.status = connected ? 'connected' : status?.pendingLogin ? 'pending' : 'disconnected';
-  account.connectedEmail = connected ? String(status.email || '') : '';
-  account.planType = connected ? String(status.planType || '') : '';
+  account.connectedEmail = connected
+    ? (status?.email === undefined ? account.connectedEmail : String(status.email || ''))
+    : '';
+  account.planType = connected
+    ? (status?.planType === undefined ? account.planType : String(status.planType || ''))
+    : '';
   account.lastVerifiedAt = new Date();
   if (connected && !account.connectedAt) account.connectedAt = new Date();
   if (!connected) account.connectedAt = null;
@@ -164,7 +178,7 @@ async function startLogin(user, options = {}) {
   const account = await accountForUser(user);
   const login = await callGateway('login/start', account.user, options);
   if (login.connected) {
-    applyStatus(account, { connected: true });
+    applyStatus(account, login);
   } else {
     account.status = 'pending';
     account.lastError = '';
@@ -196,9 +210,13 @@ async function resetLogin(user, options = {}) {
  * gateway: an unreachable host must not be able to keep a user's content
  * flowing to OpenAI.
  */
-async function setConsent(user, acknowledged) {
+async function setConsent(user, acknowledged, { app = 'recruiter' } = {}) {
   const account = await accountForUser(user);
-  account.dataSharingAcknowledgedAt = acknowledged ? new Date() : null;
+  if (app === 'performance') {
+    account.performanceDataSharingAcknowledgedAt = acknowledged ? new Date() : null;
+  } else {
+    account.dataSharingAcknowledgedAt = acknowledged ? new Date() : null;
+  }
   await account.save();
   return account;
 }
@@ -208,11 +226,14 @@ async function disconnect(user, options = {}) {
   // Consent and application state are cleared first so a gateway failure cannot leave
   // the account routable.
   account.dataSharingAcknowledgedAt = null;
+  account.performanceDataSharingAcknowledgedAt = null;
   account.status = 'disconnected';
   account.connectedEmail = '';
   account.planType = '';
   account.connectedAt = null;
   account.disconnectedAt = new Date();
+  account.rateLimits = null;
+  account.usageLimit = null;
   await account.save();
   await callGateway('logout', account.user, options);
   return account;
@@ -235,8 +256,27 @@ async function listModels(user, options = {}) {
  * decision in the caller, which owns the failover policy.
  */
 async function resolveRoutableSubject(userId, options = {}) {
+  const consentApp = options.consentApp === 'performance' ? 'performance' : 'recruiter';
+  const organizationId = String(options.organizationId || '').trim();
+  const findUser = options.findUser || ((id) => User.findById(id)
+    .select('sharedAIOnly organizationMemberships recruiterAuthorizedOrganizations recruiterAppAccessSyncedAt')
+    .lean());
+  const gatewayOptions = { ...options };
+  delete gatewayOptions.consentApp;
+  delete gatewayOptions.organizationId;
+  delete gatewayOptions.findUser;
   const subjectId = String(userId || '').trim();
   if (!subjectId) return null;
+  // Identity-only Performance shadows are never valid Recruiter actors, even
+  // if an older record accidentally carries legacy Recruiter consent.
+  if (consentApp === 'recruiter') {
+    const actor = await Promise.resolve(findUser(subjectId)).catch(() => null);
+    if (!actor || actor.sharedAIOnly === true) return null;
+    // Recruiter consent is organization-scoped. Missing tenant context cannot
+    // be interpreted as permission to use whichever sticky organization was
+    // last saved on the account.
+    if (!organizationId || !recruiterOrganizationAuthorized(actor, organizationId)) return null;
+  }
   // An actor id that is not a real user reference is simply "no connected
   // account": it must reach the runtime gate, not surface a database cast
   // error with no machine-readable code for callers to route on.
@@ -247,18 +287,18 @@ async function resolveRoutableSubject(userId, options = {}) {
     console.warn('ChatGPT subject lookup failed:', error.message);
     return null;
   }
-  if (!account?.isRoutable()) {
+  if (!account?.isRoutable(consentApp)) {
     // Background jobs may outlive a rolling deployment or a transient gateway
     // outage that left their durable snapshot stale. Verify the hosted account
     // on demand so queues recover by themselves instead of requiring the user
     // to open Settings and press Refresh before every retry.
     try {
-      account = await readAccount({ id: subjectId }, options);
+      account = await readAccount({ id: subjectId }, gatewayOptions);
     } catch (error) {
       console.warn('ChatGPT subject refresh failed:', error.message);
     }
   }
-  if (!account?.isRoutable()) return null;
+  if (!account?.isRoutable(consentApp)) return null;
   return { subjectId, subjectKey: account.subjectKey, sourceApp: SOURCE_APP };
 }
 

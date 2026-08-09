@@ -130,6 +130,22 @@ export function CandidateChatgptGate({
     }
   }
 
+  async function disconnect() {
+    if (busy) return
+    setWorking("disconnect")
+    setError("")
+    try {
+      const { account: next } = await aiInterviewService.disconnectPublicChatgpt(token)
+      setAccount(next)
+      setLogin(null)
+      readyNotified.current = false
+    } catch (reason: any) {
+      setError(reason?.message || "Your ChatGPT connection could not be removed.")
+    } finally {
+      setWorking("")
+    }
+  }
+
   async function copyCode() {
     if (!login?.userCode) return
     try {
@@ -170,6 +186,7 @@ export function CandidateChatgptGate({
           <span>
             The questions you are asked and the answers you give are processed by OpenAI on your
             account. Voice audio is handled separately by the platform and is not sent to your account.
+            The connection gateway removes your saved ChatGPT credential after scoring finishes or the interview ends.
           </span>
         </p>
 
@@ -200,6 +217,16 @@ export function CandidateChatgptGate({
               />
               <span>I agree that my interview content is processed by OpenAI on my connected account.</span>
             </label>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              className="mt-2 h-8 w-full text-xs font-normal text-muted-foreground hover:text-foreground"
+              onClick={() => void disconnect()}
+            >
+              {working === "disconnect" && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Disconnect ChatGPT
+            </Button>
           </div>
         )}
 

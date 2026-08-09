@@ -168,7 +168,6 @@ app.use((req, res, next) => {
   // Skip JSON parsing for file upload routes (multer will handle these)
   if (req.path.includes('/upload-cv') || 
       req.path.includes('/bulk-upload') || 
-      req.path.includes('/cv/parse') ||
       req.path.includes('/api/internal/ai')) {
     console.log(`⏭️ Skipping JSON parser for file upload route: ${req.path}`);
     return next();
@@ -239,6 +238,7 @@ app.use('/api/users', require('./routes/user')); // User profile routes
 app.use('/api/candidates', require('./routes/candidate')); // File upload handled in route
 app.use('/api/candidate-lists', require('./routes/candidateLists')); // Saved candidate list routes
 app.use('/api/bulk-upload', requireFeature('bulkCvUpload'), require('./routes/bulkUpload')); // Bulk CV upload with BullMQ
+app.use('/api/cv-ingestion', require('./routes/cvIngestion')); // Organization-scoped CV processing operations
 app.use('/api/jobs', require('./routes/job')); // Job routes
 app.use('/api/feedback-forms', require('./routes/feedbackForm')); // Feedback form templates and custom fields
 app.use('/api/embeddings', require('./routes/embeddingRoutes')); // Embedding management routes
@@ -283,6 +283,7 @@ app.use('/api/ai-account', require('./routes/aiAccount')); // Per-user ChatGPT r
 app.use('/api/admin/ai-interviews', require('./routes/adminAIInterviews')); // Platform AI interview monitoring
 app.use('/api/admin/activity', require('./routes/adminActivity')); // Organization and user activity monitoring
 app.use('/api/admin/ai-runtime', require('./routes/adminAIRuntime')); // AI provider configuration and monitoring
+app.use('/api/admin/cv-ingestion', require('./routes/adminCvIngestion')); // Platform-wide CV processing operations
 app.use('/api/admin', require('./routes/admin')); // Admin management routes
 app.use('/api/admin/grants', require('./routes/adminGrants')); // Admin grant management routes (NEW: Nylas grant management)
 app.use('/api/admin/nylas-accounts', require('./routes/nylasAccounts')); // Multi-Nylas account management
@@ -303,14 +304,17 @@ app.get('/api/health', (req, res) => {
   const health = backgroundServiceManager.getHealthCheck();
   const meteringOutbox = usageMeteringOutbox.status();
   const projectionRepair = usageProjectionRepairHealth();
+  const cvIngestion = require('./services/cvAnalysisQueueService').readiness();
   const healthy = health.healthy
     && usageMeteringOutboxReady(meteringOutbox)
-    && projectionRepair.healthy;
+    && projectionRepair.healthy
+    && cvIngestion.healthy;
   res.status(healthy ? 200 : 503).json({
     ...health,
     healthy,
     aiUsageMeteringOutbox: meteringOutbox,
-    aiUsageProjectionRepair: projectionRepair
+    aiUsageProjectionRepair: projectionRepair,
+    cvIngestion
   });
 });
 

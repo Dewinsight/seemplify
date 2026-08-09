@@ -1,6 +1,7 @@
 const { randomUUID } = require('crypto');
 const creditsService = require('../services/creditsService');
 const enrichmentService = require('../services/enrichmentService');
+const matchingEnrichmentInputService = require('../services/matchingEnrichmentInputService');
 
 function getSafeEnrichCount(rawCount, totalMatches) {
   const parsed = parseInt(rawCount, 10);
@@ -50,6 +51,13 @@ exports.getEstimate = async (req, res) => {
     if (Number.isNaN(requested) || requested <= 0) {
       return res.status(400).json({ msg: 'enrichCount must be a positive number' });
     }
+    if (requested > matchingEnrichmentInputService.MAX_ENRICHMENT_CANDIDATES) {
+      return res.status(400).json({
+        msg: `enrichCount cannot exceed ${matchingEnrichmentInputService.MAX_ENRICHMENT_CANDIDATES}`
+      });
+    }
+
+    await matchingEnrichmentInputService.getScopedJob(jobId, organizationId);
 
     const batchCount = Math.ceil(requested / enrichmentService.BATCH_SIZE);
     const estimatedSeconds = batchCount * 8;
@@ -78,7 +86,11 @@ exports.getEstimate = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error getting enrichment estimate:', error);
-    return res.status(500).json({ msg: 'Failed to estimate enrichment', error: error.message });
+    return res.status(error.statusCode || 500).json({
+      msg: error.statusCode ? error.message : 'Failed to estimate enrichment',
+      code: error.code,
+      error: error.message
+    });
   }
 };
 
@@ -89,17 +101,24 @@ exports.startEnrichment = async (req, res) => {
     const { jobId } = req.params;
     const { enrichCount, matches } = req.body;
 
-    if (!Array.isArray(matches) || matches.length === 0) {
-      return res.status(400).json({ msg: 'matches array is required and cannot be empty' });
-    }
-
-    const minCount = matches.length < 10 ? matches.length : 10;
-    const selectedCount = getSafeEnrichCount(enrichCount, matches.length);
+    const submittedIds = matchingEnrichmentInputService.uniqueSubmittedCandidateIds(matches);
+    const minCount = submittedIds.length < 10 ? submittedIds.length : 10;
+    const selectedCount = getSafeEnrichCount(enrichCount, submittedIds.length);
     if (selectedCount < minCount) {
       return res.status(400).json({
-        msg: `enrichCount must be between ${minCount} and ${matches.length}`,
+        msg: `enrichCount must be between ${minCount} and ${submittedIds.length}`,
       });
     }
+
+    // Treat the browser payload as candidate selection only. Job ownership,
+    // candidate ownership, profile fields, and vector scores are reloaded from
+    // scoped server-side sources before credits are checked or work is queued.
+    const authoritativeInput = await matchingEnrichmentInputService.load({
+      jobId,
+      organizationId,
+      matches,
+      enrichCount: selectedCount
+    });
 
     const batchCount = Math.ceil(selectedCount / enrichmentService.BATCH_SIZE);
     const creditCheck = await creditsService.checkSufficientCredits(organizationId, 'aiMatching');
@@ -125,7 +144,7 @@ exports.startEnrichment = async (req, res) => {
       jobId,
       organizationId,
       userId,
-      matches,
+      matches: authoritativeInput.matches,
       enrichCount: selectedCount,
       estimatedCredits: totalCreditsNeeded,
       costPerBatch,

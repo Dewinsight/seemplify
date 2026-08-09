@@ -13,6 +13,7 @@ const interviewFeedbackEmailService = require('./interviewQuestionEmailService')
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 const { requireOrganizationBrand } = require('../utils/organizationBrand');
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
+const publicFeedbackCapability = require('./publicFeedbackCapabilityService');
 
 const RETRY_BACKOFF_MINUTES = [2, 10];
 const MAX_TASKS_PER_TICK = 20;
@@ -567,6 +568,12 @@ class MultiCandidateRetryService {
       dedupedParticipants.push(participant);
     }
 
+    const feedbackUrl = await publicFeedbackCapability.feedbackUrl(
+      interview._id,
+      process.env.FRONTEND_URL || 'https://smarthr.aiinnigeria.com'
+    );
+    if (!feedbackUrl) throw new Error('Unable to issue public feedback capability');
+
     for (const participant of dedupedParticipants) {
       try {
         await emailService.sendUserNotification(
@@ -583,7 +590,7 @@ class MultiCandidateRetryService {
               <p><strong>Time:</strong> ${interviewTime}</p>
               <p><strong>Duration:</strong> ${slot.duration} minutes</p>
               ${meetingLink ? `<p><strong>Meeting Link:</strong> ${meetingLink}</p>` : ''}
-              <p><strong>Feedback Link:</strong> ${(process.env.FRONTEND_URL || 'https://smarthr.aiinnigeria.com')}/public/feedback/${interview._id}</p>
+              <p><strong>Feedback Link:</strong> ${feedbackUrl}</p>
             `
           }
         );

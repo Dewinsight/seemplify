@@ -7,7 +7,7 @@ import { extractAiRuntimeGateError, handleAiRuntimeGateError } from '../utils/ai
 const isBrowser = typeof window !== 'undefined';
 const ACTIVE_ORGANIZATION_STORAGE_KEY = 'seemplify_active_organization_id';
 
-function activeOrganizationHeader() {
+function activeOrganizationHeader(): Record<string, string> {
   if (!isBrowser) return {};
   const activeOrganizationId = localStorage.getItem(ACTIVE_ORGANIZATION_STORAGE_KEY);
   return activeOrganizationId ? { 'X-Organization-Id': activeOrganizationId } : {};
@@ -160,7 +160,7 @@ export const getTimeUntilLogout = (): number => {
 };
 
 // Helper function to get auth headers
-export const getAuthHeaders = () => {
+export const getAuthHeaders = (): Record<string, string> => {
   const token = isBrowser ? tokenManager.getAccessToken() : null;
   return {
     'Content-Type': 'application/json',
@@ -175,10 +175,11 @@ export const getAuthHeaders = () => {
 async function fetchWithTokenRefresh(
   url: string,
   options: RequestInit,
-  hasRetriedAfterRefresh = false
+  hasRetriedAfterRefresh = false,
+  skipAuth = false,
 ): Promise<Response> {
   // Check if token needs refresh before making request
-  if (isBrowser && tokenManager.needsRefresh()) {
+  if (!skipAuth && isBrowser && tokenManager.needsRefresh()) {
     console.log('Token needs refresh before request');
     await tokenManager.refreshTokens();
   }
@@ -187,7 +188,7 @@ async function fetchWithTokenRefresh(
   const response = await fetch(url, options);
 
   // If 401, try to refresh and retry once (avoid custom retry headers that trigger CORS preflight)
-  if (response.status === 401 && !hasRetriedAfterRefresh) {
+  if (!skipAuth && response.status === 401 && !hasRetriedAfterRefresh) {
     console.log('Got 401, attempting token refresh and retry');
 
     const refreshResult = await tokenManager.refreshTokens();
@@ -198,7 +199,7 @@ async function fetchWithTokenRefresh(
       };
 
       // Retry once after refresh
-      return fetchWithTokenRefresh(url, { ...options, headers: newHeaders }, true);
+      return fetchWithTokenRefresh(url, { ...options, headers: newHeaders }, true, false);
     }
   }
 
@@ -206,8 +207,11 @@ async function fetchWithTokenRefresh(
 }
 
 // Centralized API request wrapper with 401 handling and security
-export const apiRequest = async (url: string, options: RequestInit = {}): Promise<Response> => {
-  const incomingHeaders = options.headers as Record<string, string> | undefined;
+type ApiRequestOptions = RequestInit & { skipAuth?: boolean };
+
+export const apiRequest = async (url: string, options: ApiRequestOptions = {}): Promise<Response> => {
+  const { skipAuth = false, ...fetchOptions } = options;
+  const incomingHeaders = fetchOptions.headers as Record<string, string> | undefined;
   const skipBodySanitization =
     incomingHeaders?.['X-Skip-Body-Sanitization'] === 'true' ||
     incomingHeaders?.['x-skip-body-sanitization'] === 'true';
@@ -227,11 +231,11 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   }
   
   // Sanitize request body to prevent injection attacks
-  if (!skipBodySanitization && options.body && typeof options.body === 'string') {
+  if (!skipBodySanitization && fetchOptions.body && typeof fetchOptions.body === 'string') {
     try {
-      const parsed = JSON.parse(options.body);
+      const parsed = JSON.parse(fetchOptions.body);
       const sanitized = sanitizeObject(parsed);
-      options.body = JSON.stringify(sanitized);
+      fetchOptions.body = JSON.stringify(sanitized);
     } catch {
       // Body is not JSON, leave as is
     }
@@ -239,7 +243,7 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
 
   // Log organization API calls for debugging (but don't throttle them)
   if (url.includes('/api/organizations/user')) {
-    const headers = options.headers as any;
+    const headers = fetchOptions.headers as any;
     const hasTraceId = headers && headers['X-Trace-ID'];
     if (!hasTraceId) {
       console.warn(`⚠️ UNTRACED API CALL to ${url}`, new Error().stack);
@@ -251,13 +255,13 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   
   // Reset inactivity timer on API activity (user is actively using the app)
   // But don't reset for organization API calls to avoid feedback loops
-  if (isBrowser && tokenManager.getAccessToken() && !url.includes('/api/organizations/user')) {
+  if (!skipAuth && isBrowser && tokenManager.getAccessToken() && !url.includes('/api/organizations/user')) {
     resetInactivityTimer();
   }
 
   // Check if this is an admin API call
   const isAdminCall = url.includes('/api/admin');
-  const headers = options.headers as any || {};
+  const headers = fetchOptions.headers as any || {};
   const {
     ['X-Skip-Body-Sanitization']: _skipBodySanitizationUpper,
     ['x-skip-body-sanitization']: _skipBodySanitizationLower,
@@ -265,12 +269,14 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   } = headers;
   
   // Check if this is a file upload (FormData in body)
-  const isFileUpload = options.body instanceof FormData;
+  const isFileUpload = fetchOptions.body instanceof FormData;
   
   // For file uploads, DON'T add Content-Type (browser will set multipart/form-data automatically)
   // For admin calls, don't auto-add regular auth headers if admin token is present
   let finalHeaders;
-  if (isFileUpload) {
+  if (skipAuth) {
+    finalHeaders = { ...requestHeaders };
+  } else if (isFileUpload) {
     // For file uploads, only add auth token, NOT Content-Type
     const token = isBrowser ? tokenManager.getAccessToken() : null;
     finalHeaders = {
@@ -296,35 +302,33 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   
   if (shouldUseFallback) {
     console.log('🌐 Sterling deployment detected, using fallback API directly');
-    response = await fetchWithTokenRefresh(buildUrl(FALLBACK_API), { ...options, headers: finalHeaders });
+    response = await fetchWithTokenRefresh(buildUrl(FALLBACK_API), { ...fetchOptions, headers: finalHeaders }, false, skipAuth);
   } else {
     try {
       // First attempt: use the configured/default API base URL
-      response = await fetchWithTokenRefresh(buildUrl(API_BASE_URL), { ...options, headers: finalHeaders });
+      response = await fetchWithTokenRefresh(buildUrl(API_BASE_URL), { ...fetchOptions, headers: finalHeaders }, false, skipAuth);
     
-      // Check if response is HTML or 404 (indicating misconfiguration)
-      if (!response.ok) {
+      // A JSON 404 is an application response (including an expired/revoked
+      // public capability), not evidence that the API base is wrong. Only an
+      // HTML shell may fall back, and capability-bearing calls stay on one host.
+      if (!skipAuth && !response.ok) {
         const ct = response.headers.get('content-type') || '';
         const isHtmlResponse = ct.includes('text/html') || ct.includes('text/plain');
-        const is404 = response.status === 404;
-        
-        if (is404 || isHtmlResponse) {
+        if (isHtmlResponse) {
           // Try to read response to see if it's HTML
           const responseText = await response.clone().text().catch(() => '');
           if (isHtmlResponse && responseText.trim().startsWith('<')) {
             console.warn('🔁 Default API returned HTML, trying fallback...');
-            response = await fetchWithTokenRefresh(buildUrl(FALLBACK_API), { ...options, headers: finalHeaders });
-          } else if (is404) {
-            console.warn('🔁 Default API returned 404, trying fallback...');
-            response = await fetchWithTokenRefresh(buildUrl(FALLBACK_API), { ...options, headers: finalHeaders });
+            response = await fetchWithTokenRefresh(buildUrl(FALLBACK_API), { ...fetchOptions, headers: finalHeaders }, false, skipAuth);
           }
         }
       }
     } catch (err) {
       // Network error (connection refused, DNS failure, etc.)
+      if (skipAuth) throw err;
       console.warn('🌐 Network error with default API, trying fallback...', err);
       try {
-        response = await fetchWithTokenRefresh(buildUrl(FALLBACK_API), { ...options, headers: finalHeaders });
+        response = await fetchWithTokenRefresh(buildUrl(FALLBACK_API), { ...fetchOptions, headers: finalHeaders }, false, skipAuth);
       } catch (fallbackErr) {
         console.error('❌ Both default and fallback APIs failed:', fallbackErr);
         throw err; // Throw the original error
@@ -366,7 +370,7 @@ export const apiRequest = async (url: string, options: RequestInit = {}): Promis
   }
   
   // Handle 401 Unauthorized responses
-  if (response.status === 401 && isBrowser) {
+  if (!skipAuth && response.status === 401 && isBrowser) {
     let errorData: any = {};
     try {
       errorData = await response.clone().json();

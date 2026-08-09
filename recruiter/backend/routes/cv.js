@@ -1,56 +1,15 @@
 const express = require('express');
-const multer = require('multer');
-const path = require('path');
 const cvAnalysisQueue = require('../services/cvAnalysisQueueService');
 
 const router = express.Router();
-const storage = multer.diskStorage({
-  destination: (_req, _file, callback) => callback(null, 'uploads/cvs/'),
-  filename: (_req, file, callback) => {
-    const suffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    callback(null, `cv-${suffix}${path.extname(file.originalname)}`);
-  }
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_req, file, callback) => {
-    const allowedTypes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'image/jpeg',
-      'image/png',
-      'image/tiff'
-    ];
-    callback(
-      allowedTypes.includes(file.mimetype)
-        ? null
-        : new Error('Only PDF, Word documents, and images are allowed'),
-      allowedTypes.includes(file.mimetype)
-    );
-  }
-});
-
-// Public AI-interview uploads require jobId so the durable job has an owning organization.
-router.post('/parse', upload.single('cv'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ success: false, msg: 'No CV file provided' });
-    const result = await cvAnalysisQueue.submitUpload(req, 'ai-interview');
-    return res.status(202).json({
-      ...cvAnalysisQueue.publicState(result.job),
-      statusToken: result.statusToken,
-      statusUrl: `/api/cv/jobs/${result.job.publicId}`,
-      duplicate: result.duplicate
-    });
-  } catch (error) {
-    console.error('AI-interview CV queue submission failed:', error);
-    return res.status(error.statusCode || 500).json({
-      code: error.code || 'CV_QUEUE_SUBMISSION_FAILED',
-      msg: error.message || 'CV upload could not be queued'
-    });
-  }
+// Retired: AI Interview owns its durable intake boundary. Keeping a 410
+// tombstone prevents older clients from silently falling back to a route that
+// bypassed its actor, permission, billing, and idempotency contracts.
+router.post('/parse', (_req, res) => {
+  return res.status(410).json({
+    code: 'CV_PARSE_ENDPOINT_RETIRED',
+    msg: 'This CV parsing endpoint has been retired. Use the product-specific durable CV upload flow.'
+  });
 });
 
 router.get('/jobs/:jobId', async (req, res) => {

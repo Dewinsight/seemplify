@@ -232,6 +232,29 @@ const OrganizationSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  erasureState: {
+    type: String,
+    enum: ['active', 'tombstoned'],
+    default: 'active',
+    select: false,
+    index: true
+  },
+  erasureToken: { type: String, select: false },
+  erasureRequestedAt: { type: Date, select: false },
+  erasureLastError: { type: String, select: false },
+  // Durable cross-collection write fence. Organization deletion tombstones
+  // this document first (blocking new leases) and cannot hard-delete it until
+  // every live writer either releases or its bounded lease expires.
+  cvWriteLeases: {
+    type: [{
+      token: { type: String, required: true },
+      kind: { type: String, required: true },
+      acquiredAt: { type: Date, required: true },
+      expiresAt: { type: Date, required: true }
+    }],
+    default: [],
+    select: false
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -247,6 +270,8 @@ OrganizationSchema.index({ name: 'text' });
 OrganizationSchema.index({ owner: 1 });
 OrganizationSchema.index({ 'members.user': 1 });
 OrganizationSchema.index({ isActive: 1 });
+OrganizationSchema.index({ erasureState: 1, erasureRequestedAt: 1 });
+OrganizationSchema.index({ erasureState: 1, _id: 1 });
 OrganizationSchema.index({ createdAt: -1 });
 
 // Pre-save middleware to update timestamp

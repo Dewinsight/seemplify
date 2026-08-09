@@ -14,7 +14,7 @@ const navItems = [
   { title: "Credits", shortTitle: "Credits", href: "/settings/credits", icon: Coins },
   { title: "Organization", shortTitle: "Org", href: "/settings/organization", icon: Building2 },
   { title: "Currencies", shortTitle: "Currency", href: "/settings/currencies", icon: DollarSign },
-  { title: "ChatGPT account", shortTitle: "ChatGPT", href: "/settings/ai-account", icon: Bot },
+  { title: "AI & ChatGPT", shortTitle: "AI", href: "/settings/ai-account", icon: Bot },
   { title: "Notifications", shortTitle: "Alerts", href: "/settings/notifications", icon: Bell },
   { title: "Invitations", shortTitle: "Invites", href: "/settings/invitations", icon: Mail },
 ]

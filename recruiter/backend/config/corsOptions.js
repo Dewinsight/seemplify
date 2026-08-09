@@ -56,6 +56,10 @@ const corsOptions = {
     'x-organization-id',
     'Idempotency-Key',
     'X-CV-Status-Token',
+    'X-Public-Application-Token',
+    'X-Public-Job-Id',
+    'X-Public-Candidate-Id',
+    'X-Public-Feedback-Token',
     'X-Nylas-Signature',
     'x-admin-auth-token'
   ],

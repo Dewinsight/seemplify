@@ -133,46 +133,18 @@ async function run() {
     });
 
     const docxPath = path.join(__dirname, '../uploads/resume-1761836961115-665108541.docx');
-    const scannedPdfPath = path.join(__dirname, '../uploads/resume-1769596730781-729967738.pdf');
     ensureFileExists(docxPath);
-    ensureFileExists(scannedPdfPath);
 
-    const cvParseTextResponse = await postMultipart({
-      url: `${BASE_URL}/api/cv/parse`,
-      fileFieldName: 'cv',
-      filePath: docxPath
+    const cvParseTextResponse = await axios.post(`${BASE_URL}/api/cv/parse`, null, {
+      validateStatus: () => true
     });
 
     summary.checks.push({
-      check: 'Public CV parse endpoint (text-based DOCX)',
+      check: 'Legacy CV parse endpoint is retired before body parsing',
       statusCode: cvParseTextResponse.status,
-      success:
-        cvParseTextResponse.status === 200 &&
-        cvParseTextResponse.data?.success === true &&
-        cvParseTextResponse.data?.parseSuccess === true &&
-        cvParseTextResponse.data?.aiSuccess === true,
-      details: {
-        success: cvParseTextResponse.data?.success,
-        parseSuccess: cvParseTextResponse.data?.parseSuccess,
-        aiSuccess: cvParseTextResponse.data?.aiSuccess,
-        extractedEmail: cvParseTextResponse.data?.personalInfo?.email,
-        extractedName: `${cvParseTextResponse.data?.personalInfo?.firstName || ''} ${cvParseTextResponse.data?.personalInfo?.lastName || ''}`.trim()
-      }
-    });
-
-    const cvParseImageResponse = await postMultipart({
-      url: `${BASE_URL}/api/cv/parse`,
-      fileFieldName: 'cv',
-      filePath: scannedPdfPath
-    });
-
-    summary.checks.push({
-      check: 'Public CV parse endpoint blocks image-based PDF',
-      statusCode: cvParseImageResponse.status,
-      success:
-        cvParseImageResponse.status >= 400 &&
-        String(cvParseImageResponse.data?.msg || '').includes('IMAGE_BASED_CV'),
-      details: cvParseImageResponse.data
+      success: cvParseTextResponse.status === 410
+        && cvParseTextResponse.data?.code === 'CV_PARSE_ENDPOINT_RETIRED',
+      details: cvParseTextResponse.data
     });
 
     const publicUploadResponse = await postMultipart({

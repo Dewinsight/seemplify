@@ -34,12 +34,26 @@ const activities = {
   'ai_interview.chat.acknowledgement': ['AI Interview acknowledgement', 'AI Interview', 'low'],
   'ai_interview.question_generation': ['AI Interview question generation', 'AI Interview', 'medium'],
   'ai_interview.cv_parse': ['AI Interview CV parsing', 'AI Interview', 'medium'],
-  'ai_interview.scoring': ['AI Interview scoring', 'AI Interview', 'high']
+  'ai_interview.scoring': ['AI Interview scoring', 'AI Interview', 'high'],
+  'performance.general': ['Performance general', 'Performance', 'low', 'performance'],
+  'performance.self_assessment.chat': ['Self-assessment chat', 'Self assessment', 'medium', 'performance'],
+  'performance.self_assessment.report': ['Self-assessment report', 'Self assessment', 'high', 'performance'],
+  'performance.self_assessment.coach': ['Self-assessment coaching', 'Self assessment', 'medium', 'performance'],
+  'performance.document.analysis': ['Performance document analysis', 'Documents', 'high', 'performance'],
+  'performance.manager_review.assist': ['Manager review assistance', 'Manager reviews', 'high', 'performance'],
+  'performance.review.bias': ['Review bias analysis', 'Manager reviews', 'high', 'performance'],
+  'performance.development_plan.suggest': ['Development plan suggestions', 'Development', 'medium', 'performance'],
+  'performance.okr.generate': ['OKR generation', 'Goals and OKRs', 'medium', 'performance'],
+  'performance.feedback.analyze': ['Feedback analysis', 'Feedback', 'medium', 'performance'],
+  'performance.team.insights': ['Team performance insights', 'Team insights', 'high', 'performance'],
+  'performance.meeting.analysis': ['Performance meeting analysis', 'Meetings', 'high', 'performance'],
+  'performance.appraisal.chat': ['Appraisal assistant', 'Appraisals', 'medium', 'performance'],
+  'performance.calibration.insights': ['Calibration insights', 'Calibration', 'high', 'performance']
 };
 
 const ACTIVITY_DEFINITIONS = Object.freeze(Object.fromEntries(
-  Object.entries(activities).map(([id, [label, group, reasoningEffort]]) => [id, {
-    label, group, reasoningEffort, provider: CHATGPT_PROVIDER, model: CHATGPT_MODEL
+  Object.entries(activities).map(([id, [label, group, reasoningEffort, app = 'recruiter']]) => [id, {
+    label, group, app, reasoningEffort, provider: CHATGPT_PROVIDER, model: CHATGPT_MODEL
   }])
 ));
 

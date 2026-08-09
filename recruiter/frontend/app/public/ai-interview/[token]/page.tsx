@@ -414,6 +414,8 @@ function PublicAIInterviewExperience() {
   // The interview runs on the candidate's own ChatGPT account, so it cannot
   // begin until they have connected one and acknowledged the data notice.
   const [chatgptReady, setChatgptReady] = useState(false);
+  const [disconnectingChatgpt, setDisconnectingChatgpt] = useState(false);
+  const [chatgptDisconnected, setChatgptDisconnected] = useState(false);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState("");
@@ -439,6 +441,20 @@ function PublicAIInterviewExperience() {
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  const disconnectChatgpt = useCallback(async () => {
+    if (disconnectingChatgpt) return;
+    setDisconnectingChatgpt(true);
+    try {
+      await aiInterviewService.disconnectPublicChatgpt(token);
+      setChatgptDisconnected(true);
+      toast.success("Your ChatGPT connection has been removed.");
+    } catch (reason: any) {
+      toast.error(reason?.message || "Your ChatGPT connection could not be removed yet.");
+    } finally {
+      setDisconnectingChatgpt(false);
+    }
+  }, [disconnectingChatgpt, token]);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const activeTtsUrlRef = useRef("");
   const speechRequestIdRef = useRef(0);
@@ -1701,6 +1717,20 @@ function PublicAIInterviewExperience() {
           <p className="mt-2 text-sm text-muted-foreground">
             Thank you, {state.candidate?.firstName || state.candidate?.name}. Your responses have been submitted.
           </p>
+          <div className="mx-auto mt-5 max-w-md rounded-xl border bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700">
+            The connection gateway automatically removes your saved ChatGPT credential after scoring finishes.
+            You can also remove it immediately.
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-4"
+            disabled={disconnectingChatgpt || chatgptDisconnected}
+            onClick={() => void disconnectChatgpt()}
+          >
+            {disconnectingChatgpt && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {chatgptDisconnected ? "ChatGPT disconnected" : "Disconnect ChatGPT now"}
+          </Button>
         </div>
       </main>
     );

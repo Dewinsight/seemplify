@@ -363,8 +363,11 @@ export interface CandidateChatgptAccount {
   connectedEmail: string | null;
   planType: string | null;
   dataSharingAcknowledgedAt: string | null;
-  routable: boolean;
-  lastError: string | null;
+    routable: boolean;
+    lastError: string | null;
+    credentialCleanupStatus?: 'idle' | 'pending' | 'processing' | 'completed';
+    credentialCleanupPending?: boolean;
+    disconnectedAt?: string | null;
 }
 
 export interface CandidateChatgptLogin {
@@ -515,6 +518,12 @@ class AIInterviewService {
       method: 'POST',
       body: JSON.stringify({ acknowledged })
     });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
+  async disconnectPublicChatgpt(token: string): Promise<{ account: CandidateChatgptAccount }> {
+    const response = await apiRequest(`/api/ai-interviews/public/${token}/chatgpt`, { method: 'DELETE' });
     if (!response.ok) throw await parseError(response);
     return response.json();
   }

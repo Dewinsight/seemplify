@@ -18,7 +18,7 @@ const sidebarNavItems = [
   { title: "Credits", href: "/settings/credits", icon: Coins },
   { title: "Organization", href: "/settings/organization", icon: Building2 },
   { title: "Currencies", href: "/settings/currencies", icon: DollarSign },
-  { title: "ChatGPT account", href: "/settings/ai-account", icon: Bot },
+  { title: "AI & ChatGPT", href: "/settings/ai-account", icon: Bot },
   { title: "Notifications", href: "/settings/notifications", icon: Bell },
   { title: "Invitations", href: "/settings/invitations", icon: Mail },
 ]

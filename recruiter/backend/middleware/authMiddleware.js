@@ -36,6 +36,16 @@ const authMiddleware = async (req, res, next) => {
     // Verify token and validate session
     const { decoded, session, user } = await sessionService.validateAccessToken(jwtToken);
 
+    // Performance may create a dormant identity row solely to key a shared
+    // ChatGPT account. Such a row is never a Recruiter login grant, including
+    // if a stale or forged local session happens to reference it.
+    if (user?.sharedAIOnly === true) {
+      return res.status(403).json({
+        msg: 'Your organization has not granted this identity access to Recruiter.',
+        code: 'RECRUITER_APP_ACCESS_REQUIRED'
+      });
+    }
+
     const riskResult = await adaptiveRiskService.evaluateRequest({
       req,
       user,
@@ -62,11 +72,18 @@ const authMiddleware = async (req, res, next) => {
     req.user = decoded.user;
     req.session = session;
     const currentOrganization = user.currentOrganization || decoded.user.currentOrganization;
+    const localActorId = decoded.user.id;
+    const localOrganizationId = currentOrganization?._id || currentOrganization;
     updateAIRequestContext({
-      actorId: decoded.user.id,
+      // Metering uses stable IdP dimensions so the same person/workspace does
+      // not split into different identities when switching Local vs ChatGPT.
+      // Runtime account lookup still uses the Recruiter-local ids explicitly.
+      actorId: user.idpSubject || localActorId,
+      runtimeActorId: localActorId,
       actorName: user.profile?.displayName || `${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim(),
       actorEmail: user.email,
-      organizationId: currentOrganization?._id || currentOrganization,
+      organizationId: currentOrganization?.idpOrganizationId || localOrganizationId,
+      localOrganizationId,
       organizationName: currentOrganization?.name,
       sessionId: decoded.jti
     });

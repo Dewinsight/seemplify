@@ -1,319 +1,299 @@
 const AIMatchCache = require('../models/AIMatchCache');
+const Job = require('../models/Job');
+const Candidate = require('../models/Candidate');
+const { fingerprintMatchingInput } = require('./matchingCacheIdentityService');
 
-/**
- * AI Match Cache Service
- * Handles caching of AI matching results to improve performance and reduce costs
- */
+// Existing deployments may still have the historic unique {jobId,candidateId}
+// index. Distinct, deterministic ObjectIds let bulk and report entries coexist
+// safely even before that index is migrated.
+const CACHE_SENTINELS = Object.freeze({
+  bulk: '000000000000000000000001',
+  report: '000000000000000000000002'
+});
+
+function normalizeTopK(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.min(Math.max(parsed, 1), 5000);
+}
+
+function normalizeIdentity(identity = {}) {
+  const normalized = {};
+  for (const key of [
+    'provider', 'model', 'routeVersion', 'promptVersion', 'reasoningEffort', 'inputFingerprint'
+  ]) {
+    if (identity[key] !== undefined && identity[key] !== null && identity[key] !== '') {
+      normalized[key] = String(identity[key]);
+    }
+  }
+  return normalized;
+}
+
+function identityKey(identity = {}) {
+  const normalized = normalizeIdentity(identity);
+  return Object.keys(normalized).length ? fingerprintMatchingInput(normalized) : null;
+}
+
+function cacheIdentityMatches(metadata = {}, expectedIdentity = {}) {
+  const expected = normalizeIdentity(expectedIdentity);
+  if (!Object.keys(expected).length) return true;
+  const stored = normalizeIdentity(metadata.cacheIdentity || {});
+  return Object.entries(expected).every(([key, value]) => stored[key] === value);
+}
+
+function canServeTopK(cache, requestedTopK) {
+  if (!cache || !Array.isArray(cache.matchData)) return false;
+  const requested = normalizeTopK(requestedTopK);
+  if (!requested) return true;
+  if (cache.matchData.length >= requested) return true;
+  return cache.metadata?.exhausted === true;
+}
+
+function sliceBulkPayload(matchData, requestedTopK) {
+  if (!Array.isArray(matchData)) return matchData;
+  const requested = normalizeTopK(requestedTopK);
+  return requested ? matchData.slice(0, requested) : matchData;
+}
+
+function sliceReportPayload(reportData, requestedTopK) {
+  if (!reportData || typeof reportData !== 'object') return reportData;
+  const requested = normalizeTopK(requestedTopK);
+  if (!requested || !Array.isArray(reportData.topCandidates)) return reportData;
+  const topCandidates = reportData.topCandidates.slice(0, requested);
+  return {
+    ...reportData,
+    topCandidates,
+    totalMatches: topCandidates.length
+  };
+}
+
 class AIMatchCacheService {
-  /**
-   * Get cached match for a specific job-candidate pair
-   */
-  async getCachedMatch(jobId, candidateId) {
+  constructor({ CacheModel = AIMatchCache, JobModel = Job, CandidateModel = Candidate } = {}) {
+    this.Cache = CacheModel;
+    this.Job = JobModel;
+    this.Candidate = CandidateModel;
+  }
+
+  async getCachedMatch(jobId, candidateId, options = {}) {
     try {
-      const cache = await AIMatchCache.findOne({
+      const cache = await this.Cache.findOne({
         jobId,
         candidateId,
         cacheType: 'single',
-        expiresAt: { $gt: new Date() } // Only return non-expired caches
-      }).lean();
-
-      if (cache) {
-        console.log(`✅ Cache hit for job ${jobId}, candidate ${candidateId}`);
-        return {
-          data: cache.matchData,
-          fromCache: true,
-          cacheAge: cache.createdAt,
-          cacheAgeMinutes: Math.floor((Date.now() - cache.createdAt.getTime()) / (1000 * 60))
-        };
-      }
-
-      console.log(`❌ Cache miss for job ${jobId}, candidate ${candidateId}`);
-      return null;
-    } catch (error) {
-      console.error('Error getting cached match:', error);
-      return null; // Fail gracefully - just regenerate
-    }
-  }
-
-  /**
-   * Get cached bulk matches for a job
-   */
-  async getCachedBulkMatch(jobId) {
-    try {
-      const cache = await AIMatchCache.findOne({
-        jobId,
-        candidateId: null,
-        cacheType: 'bulk',
         expiresAt: { $gt: new Date() }
       }).lean();
 
-      if (cache) {
-        console.log(`✅ Bulk cache hit for job ${jobId}`);
-        return {
-          data: cache.matchData,
-          fromCache: true,
-          cacheAge: cache.createdAt,
-          cacheAgeMinutes: Math.floor((Date.now() - cache.createdAt.getTime()) / (1000 * 60)),
-          metadata: cache.metadata
-        };
-      }
-
-      console.log(`❌ Bulk cache miss for job ${jobId}`);
+      if (!cache || !cacheIdentityMatches(cache.metadata, options.identity)) return null;
+      return this._response(cache, cache.matchData);
+    } catch (error) {
+      console.error('Error getting cached match:', error);
       return null;
+    }
+  }
+
+  async getCachedBulkMatch(jobId, options = {}) {
+    try {
+      const cache = await this.Cache.findOne({
+        jobId,
+        candidateId: { $in: [CACHE_SENTINELS.bulk, null] },
+        cacheType: 'bulk',
+        expiresAt: { $gt: new Date() }
+      }).sort({ updatedAt: -1 }).lean();
+
+      if (
+        !cache
+        || !cacheIdentityMatches(cache.metadata, options.identity)
+        || !canServeTopK(cache, options.topK)
+      ) return null;
+
+      return this._response(cache, sliceBulkPayload(cache.matchData, options.topK));
     } catch (error) {
       console.error('Error getting cached bulk match:', error);
       return null;
     }
   }
 
-  /**
-   * Set cached match for a specific job-candidate pair
-   */
   async setCachedMatch(jobId, candidateId, matchData, options = {}) {
-    try {
-      const ttl = options.ttl || AIMatchCache.getDefaultTTL();
-      const expiresAt = new Date(Date.now() + ttl);
-
-      await AIMatchCache.findOneAndUpdate(
-        { jobId, candidateId, cacheType: 'single' },
-        {
-          jobId,
-          candidateId,
-          matchData,
-          cacheType: 'single',
-          version: options.version || 1,
-          metadata: {
-            generationTime: options.generationTime,
-            modelUsed: options.modelUsed,
-            tokensUsed: options.tokensUsed
-          },
-          expiresAt
-        },
-        { upsert: true, new: true }
-      );
-
-      console.log(`💾 Cached match for job ${jobId}, candidate ${candidateId} (expires: ${expiresAt})`);
-      return true;
-    } catch (error) {
-      console.error('Error caching match:', error);
-      return false; // Fail gracefully
-    }
+    return this._set({ jobId, candidateId, cacheType: 'single', matchData, options });
   }
 
-  /**
-   * Set cached bulk matches for a job
-   */
   async setCachedBulkMatch(jobId, matchData, options = {}) {
-    try {
-      const ttl = options.ttl || AIMatchCache.getDefaultTTL();
-      const expiresAt = new Date(Date.now() + ttl);
-
-      await AIMatchCache.findOneAndUpdate(
-        { jobId, candidateId: null, cacheType: 'bulk' },
-        {
-          jobId,
-          candidateId: null,
-          matchData,
-          cacheType: 'bulk',
-          version: options.version || 1,
-          metadata: {
-            candidateCount: options.candidateCount,
-            generationTime: options.generationTime,
-            modelUsed: options.modelUsed,
-            tokensUsed: options.tokensUsed
-          },
-          expiresAt
-        },
-        { upsert: true, new: true }
-      );
-
-      console.log(`💾 Cached bulk matches for job ${jobId} (${options.candidateCount} candidates, expires: ${expiresAt})`);
-      return true;
-    } catch (error) {
-      console.error('Error caching bulk matches:', error);
-      return false;
-    }
+    return this._set({
+      jobId,
+      candidateId: CACHE_SENTINELS.bulk,
+      cacheType: 'bulk',
+      matchData,
+      options
+    });
   }
 
-  /**
-   * Invalidate all caches for a specific job
-   */
-  async invalidateJobCache(jobId) {
+  async getCachedReport(jobId, options = {}) {
     try {
-      const result = await AIMatchCache.deleteMany({ jobId });
-      console.log(`🗑️ Invalidated ${result.deletedCount} cache entries for job ${jobId}`);
-      return {
-        success: true,
-        deletedCount: result.deletedCount
-      };
-    } catch (error) {
-      console.error('Error invalidating job cache:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Invalidate all caches involving a specific candidate
-   */
-  async invalidateCandidateCache(candidateId) {
-    try {
-      const result = await AIMatchCache.deleteMany({ candidateId });
-      console.log(`🗑️ Invalidated ${result.deletedCount} cache entries for candidate ${candidateId}`);
-      return {
-        success: true,
-        deletedCount: result.deletedCount
-      };
-    } catch (error) {
-      console.error('Error invalidating candidate cache:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Invalidate specific job-candidate match
-   */
-  async invalidateSpecificMatch(jobId, candidateId) {
-    try {
-      const result = await AIMatchCache.deleteOne({ jobId, candidateId, cacheType: 'single' });
-      console.log(`🗑️ Invalidated cache for job ${jobId}, candidate ${candidateId}`);
-      return {
-        success: true,
-        deletedCount: result.deletedCount
-      };
-    } catch (error) {
-      console.error('Error invalidating specific match:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Clear all AI match caches (admin function)
-   */
-  async clearAllCache() {
-    try {
-      const result = await AIMatchCache.deleteMany({});
-      console.log(`🗑️ Cleared all AI match caches (${result.deletedCount} entries)`);
-      return {
-        success: true,
-        deletedCount: result.deletedCount
-      };
-    } catch (error) {
-      console.error('Error clearing all caches:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get cached report (matches + GPT insights) for a job
-   */
-  async getCachedReport(jobId) {
-    try {
-      const cache = await AIMatchCache.findOne({
+      const cache = await this.Cache.findOne({
         jobId,
-        candidateId: null,
+        candidateId: { $in: [CACHE_SENTINELS.report, null] },
         cacheType: 'report',
         expiresAt: { $gt: new Date() }
-      }).lean();
+      }).sort({ updatedAt: -1 }).lean();
 
-      if (cache) {
-        console.log(`✅ Report cache hit for job ${jobId}`);
-        return {
-          data: cache.matchData,
-          fromCache: true,
-          cacheAge: cache.createdAt,
-          cacheAgeMinutes: Math.floor((Date.now() - cache.createdAt.getTime()) / (1000 * 60)),
-          metadata: cache.metadata
-        };
-      }
+      const topCandidates = cache?.matchData?.topCandidates;
+      const requested = normalizeTopK(options.topK);
+      const enoughResults = !requested
+        || (Array.isArray(topCandidates) && topCandidates.length >= requested)
+        || cache?.metadata?.exhausted === true;
+      if (!cache || !enoughResults || !cacheIdentityMatches(cache.metadata, options.identity)) return null;
 
-      console.log(`❌ Report cache miss for job ${jobId}`);
-      return null;
+      return this._response(cache, sliceReportPayload(cache.matchData, options.topK));
     } catch (error) {
       console.error('Error getting cached report:', error);
       return null;
     }
   }
 
-  /**
-   * Set cached report (matches + GPT insights) for a job
-   */
   async setCachedReport(jobId, reportData, options = {}) {
-    try {
-      const ttl = options.ttl || AIMatchCache.getDefaultTTL();
-      const expiresAt = new Date(Date.now() + ttl);
+    return this._set({
+      jobId,
+      candidateId: CACHE_SENTINELS.report,
+      cacheType: 'report',
+      matchData: reportData,
+      options: { ...options, hasInsights: true }
+    });
+  }
 
-      await AIMatchCache.findOneAndUpdate(
-        { jobId, candidateId: null, cacheType: 'report' },
+  async _set({ jobId, candidateId, cacheType, matchData, options }) {
+    try {
+      const ttl = options.ttl || this.Cache.getDefaultTTL();
+      const expiresAt = new Date(Date.now() + ttl);
+      const requestedTopK = normalizeTopK(options.requestedTopK ?? options.topK);
+      const resultCount = Array.isArray(matchData)
+        ? matchData.length
+        : (matchData?.topCandidates?.length || options.candidateCount || 0);
+      const cacheIdentity = normalizeIdentity(options.identity || {});
+
+      await this.Cache.findOneAndUpdate(
+        { jobId, candidateId, cacheType },
         {
           jobId,
-          candidateId: null,
-          matchData: reportData,
-          cacheType: 'report',
+          candidateId,
+          matchData,
+          cacheType,
           version: options.version || 1,
           metadata: {
-            candidateCount: options.candidateCount || (reportData.matches?.length || reportData.topCandidates?.length || 0),
+            candidateCount: options.candidateCount ?? resultCount,
+            resultCount,
+            requestedTopK,
+            exhausted: options.exhausted === true,
             generationTime: options.generationTime,
-            modelUsed: options.modelUsed,
+            modelUsed: options.modelUsed || cacheIdentity.model,
             tokensUsed: options.tokensUsed,
-            hasInsights: true
+            hasInsights: options.hasInsights === true,
+            cacheIdentity,
+            identityKey: identityKey(cacheIdentity)
           },
           expiresAt
         },
-        { upsert: true, new: true }
+        { upsert: true, new: true, setDefaultsOnInsert: true }
       );
 
-      console.log(`💾 Cached report for job ${jobId} (expires: ${expiresAt})`);
+      if (cacheType !== 'single') {
+        await this.Cache.deleteMany({ jobId, candidateId: null, cacheType }).catch(() => {});
+      }
       return true;
     } catch (error) {
-      console.error('Error caching report:', error);
+      console.error(`Error caching ${cacheType} match data:`, error);
       return false;
     }
   }
 
-  /**
-   * Get cache statistics for a job
-   */
-  async getCacheStats(jobId) {
-    try {
-      const caches = await AIMatchCache.find({
-        jobId,
-        expiresAt: { $gt: new Date() }
-      }).lean();
+  _response(cache, data) {
+    // findOneAndUpdate preserves createdAt when a cache entry is refreshed.
+    // Report the most recent generation time so the UI does not present a
+    // freshly replaced result set as hours or days old.
+    const refreshedAt = cache.updatedAt || cache.createdAt;
+    const cacheTimestamp = refreshedAt instanceof Date ? refreshedAt : new Date(refreshedAt);
+    return {
+      data,
+      fromCache: true,
+      cacheAge: refreshedAt,
+      cacheAgeMinutes: Math.max(0, Math.floor((Date.now() - cacheTimestamp.getTime()) / (1000 * 60))),
+      metadata: cache.metadata
+    };
+  }
 
-      if (caches.length === 0) {
-        return {
-          cachedCount: 0,
-          oldestCache: null,
-          newestCache: null,
-          averageAge: 0
-        };
-      }
+  async invalidateJobCache(jobId) {
+    const result = await this.Cache.deleteMany({ jobId });
+    return { success: true, deletedCount: result.deletedCount || 0 };
+  }
 
-      const now = Date.now();
-      const ages = caches.map(c => now - c.createdAt.getTime());
-      const averageAge = ages.reduce((sum, age) => sum + age, 0) / ages.length;
+  async invalidateOrganizationCaches(organizationId) {
+    if (!organizationId) return { success: true, deletedCount: 0 };
+    const jobIds = await this.Job.distinct('_id', { organization: organizationId });
+    if (!jobIds.length) return { success: true, deletedCount: 0 };
+    const result = await this.Cache.deleteMany({
+      jobId: { $in: jobIds },
+      cacheType: { $in: ['bulk', 'report'] }
+    });
+    return { success: true, deletedCount: result.deletedCount || 0 };
+  }
 
-      return {
-        cachedCount: caches.length,
-        oldestCache: caches.reduce((oldest, c) => 
-          !oldest || c.createdAt < oldest ? c.createdAt : oldest, null
-        ),
-        newestCache: caches.reduce((newest, c) => 
-          !newest || c.createdAt > newest ? c.createdAt : newest, null
-        ),
-        averageAgeMinutes: Math.floor(averageAge / (1000 * 60)),
-        types: {
-          single: caches.filter(c => c.cacheType === 'single').length,
-          bulk: caches.filter(c => c.cacheType === 'bulk').length,
-          report: caches.filter(c => c.cacheType === 'report').length
-        }
-      };
-    } catch (error) {
-      console.error('Error getting cache stats:', error);
-      throw error;
+  async invalidateCandidateCache(candidateId, organizationId = null) {
+    let resolvedOrganizationId = organizationId;
+    if (!resolvedOrganizationId && candidateId) {
+      const candidate = await this.Candidate.findById(candidateId).select('organization').lean();
+      resolvedOrganizationId = candidate?.organization || null;
     }
+
+    const clauses = [{ candidateId }];
+    if (resolvedOrganizationId) {
+      const jobIds = await this.Job.distinct('_id', { organization: resolvedOrganizationId });
+      if (jobIds.length) {
+        clauses.push({ jobId: { $in: jobIds }, cacheType: { $in: ['bulk', 'report'] } });
+      }
+    }
+
+    const result = await this.Cache.deleteMany({ $or: clauses });
+    return { success: true, deletedCount: result.deletedCount || 0 };
+  }
+
+  async invalidateSpecificMatch(jobId, candidateId) {
+    const result = await this.Cache.deleteOne({ jobId, candidateId, cacheType: 'single' });
+    return { success: true, deletedCount: result.deletedCount || 0 };
+  }
+
+  async clearAllCache() {
+    const result = await this.Cache.deleteMany({});
+    return { success: true, deletedCount: result.deletedCount || 0 };
+  }
+
+  async getCacheStats(jobId) {
+    const caches = await this.Cache.find({ jobId, expiresAt: { $gt: new Date() } }).lean();
+    if (!caches.length) {
+      return { cachedCount: 0, oldestCache: null, newestCache: null, averageAgeMinutes: 0 };
+    }
+    const now = Date.now();
+    const ages = caches.map((cache) => now - new Date(cache.createdAt).getTime());
+    return {
+      cachedCount: caches.length,
+      oldestCache: caches.reduce((value, cache) => (!value || cache.createdAt < value ? cache.createdAt : value), null),
+      newestCache: caches.reduce((value, cache) => (!value || cache.createdAt > value ? cache.createdAt : value), null),
+      averageAgeMinutes: Math.floor((ages.reduce((sum, age) => sum + age, 0) / ages.length) / (1000 * 60)),
+      types: {
+        single: caches.filter((cache) => cache.cacheType === 'single').length,
+        bulk: caches.filter((cache) => cache.cacheType === 'bulk').length,
+        report: caches.filter((cache) => cache.cacheType === 'report').length
+      }
+    };
   }
 }
 
-module.exports = new AIMatchCacheService();
+const service = new AIMatchCacheService();
 
+module.exports = service;
+module.exports.AIMatchCacheService = AIMatchCacheService;
+module.exports.CACHE_SENTINELS = CACHE_SENTINELS;
+module.exports.cacheIdentityMatches = cacheIdentityMatches;
+module.exports.canServeTopK = canServeTopK;
+module.exports.normalizeTopK = normalizeTopK;
+module.exports.sliceBulkPayload = sliceBulkPayload;
+module.exports.sliceReportPayload = sliceReportPayload;

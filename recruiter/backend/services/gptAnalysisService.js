@@ -1,6 +1,10 @@
 const crypto = require('crypto');
 const aiRuntimeService = require('./aiRuntime/aiRuntimeService');
 const { CHATGPT_MODEL } = require('../config/aiRuntimeCatalog');
+const {
+  fingerprintMatchingInput,
+  resolveMatchingRuntimeIdentity
+} = require('./matchingCacheIdentityService');
 
 const MATCH_ANALYSIS_SCHEMA = {
   type: 'object',
@@ -51,15 +55,51 @@ class GPTAnalysisCache {
 
   // Cache model analysis for common patterns
   getCacheKey(job, candidate) {
-    const jobHash = this.hashSkills(job.skills || []);
-    const candidateHash = this.hashSkills(candidate.skills || []);
-    return `${this.namespace}-${jobHash}-${candidateHash}-${job.level || 'any'}-${candidate.experience || 0}`;
+    const inputHash = fingerprintMatchingInput({
+      job: this.jobCacheInput(job),
+      candidate: this.candidateCacheInput(candidate)
+    });
+    return `${this.namespace}-single-${inputHash}`;
   }
 
   // Create batch key for job-candidate group analysis
   getBatchKey(job, candidates) {
-    const candidateIds = candidates.map(c => c._id || c.id).sort().join(',');
-    return `${this.namespace}-job-batch-${job._id || job.id}-${candidateIds}`;
+    const jobId = String(job._id || job.id || 'unknown');
+    const inputHash = fingerprintMatchingInput({
+      job: this.jobCacheInput(job),
+      candidates: candidates
+        .map((candidate) => this.candidateCacheInput(candidate))
+        .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+    });
+    return `${this.namespace}-job-batch-${jobId}-${inputHash}`;
+  }
+
+  jobCacheInput(job = {}) {
+    return {
+      id: String(job._id || job.id || ''),
+      title: job.title || '',
+      level: job.level || '',
+      skills: job.skills || [],
+      experience: job.experience || '',
+      location: job.location || '',
+      department: job.department || '',
+      type: job.type || '',
+      requirements: job.requirements || ''
+    };
+  }
+
+  candidateCacheInput(candidate = {}) {
+    return {
+      id: String(candidate._id || candidate.id || ''),
+      name: candidate.name || '',
+      skills: candidate.skills || [],
+      experience: candidate.experience || '',
+      location: candidate.location || '',
+      currentRole: candidate.currentRole || candidate.position || '',
+      education: candidate.education || '',
+      bio: candidate.bio || '',
+      score: candidate.score ?? candidate.relevanceScore ?? 0
+    };
   }
 
   hashSkills(skills) {
@@ -73,6 +113,9 @@ class GPTAnalysisCache {
     
     // Invalidate job-level caches that might miss this new candidate
     this.invalidateJobCaches();
+    Promise.resolve()
+      .then(() => require('./aiMatchCacheService').invalidateCandidateCache(candidateId))
+      .catch((error) => console.error('Failed to invalidate persistent candidate match caches:', error));
     
     console.log(`📋 New candidate ${candidateId} added - cache invalidated for fresh matching`);
   }
@@ -91,6 +134,14 @@ class GPTAnalysisCache {
     keysToDelete.forEach(key => this.cache.delete(key));
     this.stats.invalidations += keysToDelete.length;
     console.log(`🗑️ Invalidated ${keysToDelete.length} job-level caches for new candidates`);
+  }
+
+  invalidateJob(jobId) {
+    const marker = `-job-batch-${String(jobId)}-`;
+    const keysToDelete = [...this.cache.keys()].filter((key) => key.includes(marker));
+    keysToDelete.forEach((key) => this.cache.delete(key));
+    this.stats.invalidations += keysToDelete.length;
+    return keysToDelete.length;
   }
 
   // Check if candidate was added after cache entry
@@ -202,11 +253,16 @@ class GPTAnalysisService {
   }
 
   async refreshCacheNamespace() {
-    const settings = await aiRuntimeService.getSettings();
-    const route = settings.routes.find((item) => item.activity === 'matching.analysis');
-    if (!route) return;
-    this.modelName = route.model;
-    this.cache.namespace = `${route.provider}:${route.model}:route-v${route.routeVersion || 1}:prompt-v3`;
+    const identity = await resolveMatchingRuntimeIdentity('matching.analysis', 'matching-v3');
+    this.modelName = identity.model;
+    this.cache.namespace = [
+      identity.provider,
+      identity.model,
+      `route-${identity.routeVersion}`,
+      identity.promptVersion,
+      identity.reasoningEffort || 'default-reasoning'
+    ].join(':');
+    return identity;
   }
 
   // Batch analyze candidates for a job with rich contextual insights

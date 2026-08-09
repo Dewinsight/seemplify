@@ -117,7 +117,10 @@ test('Admin telemetry no longer computes a collection-wide activity rank sort', 
   assert.match(adminSource, /loadAdminAudits/);
   assert.match(source, /function recentAuditQuery[\s\S]*?\.limit\(limit\)/);
   assert.match(source, /async function listHistory/);
-  assert.match(source, /retainedIndefinitely: true/);
+  assert.match(source, /retainedIndefinitely: false/);
+  assert.match(source, /retentionDays: AUDIT_RETENTION_DAYS/);
+  assert.match(source, /aiInterviewStateSource: 'bounded-audit'/);
+  assert.match(source, /permanentHistory: false/);
 });
 
 test('signed event batches are bounded and each job is ingested in sequence order', async () => {

@@ -4,6 +4,17 @@ const User = require('../../models/User');
 const AIUserRuntimeAccount = require('../../models/AIUserRuntimeAccount');
 const codexAccountService = require('./codexAccountService');
 
+const ADMIN_REASONING_EFFORTS = Object.freeze([
+  'minimal', 'none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'
+]);
+
+function preferenceError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  error.statusCode = 400;
+  return error;
+}
+
 function cleanModels(value) {
   const seen = new Set();
   return (Array.isArray(value) ? value : []).flatMap((candidate) => {
@@ -18,7 +29,7 @@ function cleanModels(value) {
       defaultReasoningEffort: String(candidate?.defaultReasoningEffort || '').trim().slice(0, 20) || null,
       supportedReasoningEfforts: (Array.isArray(candidate?.supportedReasoningEfforts)
         ? candidate.supportedReasoningEfforts : [])
-        .map((item) => String(item?.reasoningEffort || '').trim().slice(0, 20))
+        .map((item) => String(typeof item === 'string' ? item : item?.reasoningEffort || '').trim().slice(0, 20))
         .filter(Boolean)
         .map((reasoningEffort) => ({ reasoningEffort }))
     }];
@@ -78,4 +89,34 @@ async function adminModelCatalog(admin, dependencies = {}) {
   }
 }
 
-module.exports = { adminModelCatalog, cleanModels };
+function validateAdminRoutePreference(currentRoute, input, models) {
+  const hasModel = Object.prototype.hasOwnProperty.call(input || {}, 'codexModel');
+  const hasEffort = Object.prototype.hasOwnProperty.call(input || {}, 'reasoningEffort');
+  const next = {
+    codexModel: hasModel ? String(input.codexModel || '').trim().slice(0, 100) : String(currentRoute?.codexModel || ''),
+    reasoningEffort: hasEffort ? String(input.reasoningEffort || '').trim() : String(currentRoute?.reasoningEffort || '')
+  };
+  if (!hasModel && !hasEffort) return next;
+  if (!next.codexModel) throw preferenceError('Choose an available ChatGPT model.', 'CHATGPT_MODEL_NOT_AVAILABLE');
+  if (!ADMIN_REASONING_EFFORTS.includes(next.reasoningEffort)) {
+    throw preferenceError('Choose a supported reasoning effort.', 'AI_REASONING_EFFORT_INVALID');
+  }
+  const model = (Array.isArray(models) ? models : []).find((candidate) => candidate.id === next.codexModel);
+  if (!model) {
+    throw preferenceError('That model is not available on the connected administrator ChatGPT account.', 'CHATGPT_MODEL_NOT_AVAILABLE');
+  }
+  const supported = (model.supportedReasoningEfforts || []).map((item) => (
+    typeof item === 'string' ? item : item?.reasoningEffort
+  )).filter(Boolean);
+  if (supported.length && !supported.includes(next.reasoningEffort)) {
+    throw preferenceError('That reasoning effort is not supported by the selected model.', 'CHATGPT_REASONING_NOT_SUPPORTED');
+  }
+  return next;
+}
+
+module.exports = {
+  ADMIN_REASONING_EFFORTS,
+  adminModelCatalog,
+  cleanModels,
+  validateAdminRoutePreference
+};

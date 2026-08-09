@@ -1,5 +1,31 @@
 const mongoose = require('mongoose');
 
+// Keep legacy values while exposing the complete ingestion lifecycle. Older
+// jobs using `ingesting`/`finalizing` remain readable during a rolling deploy.
+const CV_PROCESSING_STAGES = [
+  'received',
+  'ingesting',
+  'uploading',
+  'stored',
+  'extracting',
+  'analyzing',
+  'profile_creation',
+  'finalizing',
+  'retry_scheduled',
+  'completed',
+  'failed',
+  'cancelled'
+];
+
+const CV_PROCESSING_STATES = [
+  'queued',
+  'waiting_for_chatgpt',
+  'processing',
+  'completed',
+  'failed',
+  'cancelled'
+];
+
 const CompletionEffectSchema = new mongoose.Schema({
   status: {
     type: String,
@@ -41,12 +67,12 @@ const ProcessingAttemptSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['processing', 'waiting_for_runtime', 'failed', 'completed'],
+    enum: ['processing', 'waiting_for_runtime', 'failed', 'completed', 'cancelled'],
     default: 'processing'
   },
   stage: {
     type: String,
-    enum: ['ingesting', 'uploading', 'extracting', 'analyzing', 'finalizing', 'completed', 'failed']
+    enum: CV_PROCESSING_STAGES
   },
   startedAt: { type: Date, required: true },
   finishedAt: Date,
@@ -59,22 +85,52 @@ const CVProcessingJobSchema = new mongoose.Schema({
   publicId: { type: String, required: true, unique: true, index: true },
   statusTokenHash: { type: String, required: true, select: false },
   idempotencyKey: { type: String, index: true },
+  requestFingerprint: { type: String, select: false },
+  // A short lease owns the request-to-GridFS handoff. The job itself is the
+  // durable intake receipt, so a sweeper can never delete bytes that a later
+  // write will blindly attach to a newly-created job.
+  intakeLeaseId: { type: String, select: false },
+  intakeLeaseAt: Date,
   state: {
     type: String,
-    enum: ['queued', 'waiting_for_chatgpt', 'processing', 'completed', 'failed'],
+    enum: CV_PROCESSING_STATES,
     default: 'queued',
     index: true
   },
   stage: {
     type: String,
-    enum: ['ingesting', 'uploading', 'extracting', 'analyzing', 'finalizing', 'completed', 'failed'],
+    enum: CV_PROCESSING_STAGES,
     index: true
+  },
+  stageStartedAt: Date,
+  stageHistory: {
+    type: [{
+      stage: { type: String, enum: CV_PROCESSING_STAGES, required: true },
+      state: { type: String, enum: CV_PROCESSING_STATES, required: true },
+      progress: { type: Number, min: 0, max: 100, required: true },
+      attempt: { type: Number, min: 0, default: 0 },
+      at: { type: Date, required: true },
+      errorCode: String,
+      errorMessage: String
+    }],
+    default: []
+  },
+  artifacts: {
+    receivedAt: Date,
+    durableStoredAt: Date,
+    cloudinaryStoredAt: Date,
+    textExtractedAt: Date,
+    extractedTextLength: { type: Number, min: 0, default: 0 },
+    analysisCompletedAt: Date,
+    profileCommittedAt: Date
   },
   progress: { type: Number, default: 0, min: 0, max: 100 },
   organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
   actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   jobAppliedFor: { type: mongoose.Schema.Types.ObjectId, ref: 'Job' },
-  source: { type: String, enum: ['private', 'public', 'bulk', 'ai-interview'], required: true },
+  source: { type: String, enum: ['private', 'public', 'bulk', 'replacement', 'ai-interview'], required: true },
+  batch: { type: mongoose.Schema.Types.ObjectId, ref: 'CVProcessingBatch', index: true },
+  batchPublicId: { type: String, index: true },
   billing: {
     required: { type: Boolean, default: false },
     action: String,
@@ -154,9 +210,21 @@ const CVProcessingJobSchema = new mongoose.Schema({
     releasedAt: Date,
     cleanupError: String
   },
+  // Persisted before the external upload begins. If the worker exits after
+  // Cloudinary accepts the bytes but before `cloudinary` metadata commits,
+  // deletion/recovery still has a deterministic provider pointer to erase or
+  // safely overwrite.
+  cloudinaryUploadIntent: {
+    publicId: String,
+    resourceType: String,
+    deliveryType: String,
+    generation: String,
+    preparedAt: Date
+  },
   formData: { type: mongoose.Schema.Types.Mixed, default: {} },
   attempts: { type: Number, default: 0 },
   processingAttempts: { type: Number, default: 0, min: 0 },
+  processingLeaseId: { type: String, select: false },
   boundedFailureAttempts: { type: Number, default: 0, min: 0 },
   retry: {
     pendingTrigger: {
@@ -195,6 +263,11 @@ const CVProcessingJobSchema = new mongoose.Schema({
   startedAt: Date,
   completedAt: Date,
   failedAt: Date,
+  cancelledAt: Date,
+  cancellationReason: String,
+  supersededBy: { type: mongoose.Schema.Types.ObjectId, ref: 'CVProcessingJob' },
+  supersedes: { type: mongoose.Schema.Types.ObjectId, ref: 'CVProcessingJob' },
+  revision: { type: Number, min: 1, default: 1 },
   // The TTL is assigned only after a job reaches a terminal state. Queued,
   // processing, and offline-waiting jobs must survive an arbitrarily long
   // hosted ChatGPT outage.
@@ -204,6 +277,17 @@ const CVProcessingJobSchema = new mongoose.Schema({
 CVProcessingJobSchema.index(
   { organization: 1, idempotencyKey: 1 },
   { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
+);
+CVProcessingJobSchema.index(
+  { organization: 1, source: 1, jobAppliedFor: 1, linkedCandidate: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      source: 'public',
+      linkedCandidate: { $type: 'objectId' }
+    },
+    name: 'uniq_public_candidate_cv_ingestion'
+  }
 );
 CVProcessingJobSchema.index({ state: 1, createdAt: 1 });
 CVProcessingJobSchema.index({ completedAt: -1 });

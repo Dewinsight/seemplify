@@ -13,11 +13,45 @@ class InterviewService {
     this.aiModelService = new AIModelService();
   }
 
+  _notFound(message) {
+    const error = new Error(message);
+    error.code = 'NOT_FOUND';
+    error.statusCode = 404;
+    return error;
+  }
+
+  _requireOrganizationId(organizationId) {
+    if (!organizationId) {
+      const error = new Error('Organization context is required');
+      error.code = 'ORGANIZATION_CONTEXT_REQUIRED';
+      error.statusCode = 400;
+      throw error;
+    }
+    return organizationId;
+  }
+
+  async _getJobForOrganization(jobId, organizationId) {
+    const tenantId = this._requireOrganizationId(organizationId);
+    const job = await Job.findOne({ _id: jobId, organization: tenantId });
+    if (!job) throw this._notFound('Job not found');
+    return job;
+  }
+
+  async _assertQuestionOrganization(question, organizationId) {
+    const tenantId = this._requireOrganizationId(organizationId);
+    const jobId = question?.jobId?._id || question?.jobId;
+    if (!jobId) throw this._notFound('Interview question not found');
+    const jobExists = await Job.exists({ _id: jobId, organization: tenantId });
+    if (!jobExists) throw this._notFound('Interview question not found');
+    return question;
+  }
+
   /**
    * Create a new interview question
    */
-  async createQuestion(questionData, userId) {
+  async createQuestion(questionData, userId, organizationId) {
     try {
+      await this._getJobForOrganization(questionData.jobId, organizationId);
       console.log('🔧 InterviewService: Creating interview question...');
       
       // Decode HTML entities from question text fields before saving
@@ -90,8 +124,9 @@ class InterviewService {
   /**
    * Get all interview questions for a job
    */
-  async getQuestionsByJob(jobId, options = {}) {
+  async getQuestionsByJob(jobId, options = {}, organizationId) {
     try {
+      await this._getJobForOrganization(jobId, organizationId);
       console.log(`🔍 InterviewService: Getting questions for job ${jobId}`);
       
       const questions = await InterviewQuestion.findByJob(jobId, options)
@@ -130,15 +165,16 @@ class InterviewService {
   /**
    * Get a single interview question by ID
    */
-  async getQuestionById(questionId) {
+  async getQuestionById(questionId, organizationId) {
     try {
       const question = await InterviewQuestion.findById(questionId)
         .populate('jobId', 'title department location')
         .populate('createdBy', 'profile.firstName profile.lastName email');
 
       if (!question) {
-        throw new Error('Interview question not found');
+        throw this._notFound('Interview question not found');
       }
+      await this._assertQuestionOrganization(question, organizationId);
 
       // Decode HTML entities in question text fields for display
       const questionObj = question.toObject ? question.toObject() : question;
@@ -167,8 +203,12 @@ class InterviewService {
   /**
    * Update an interview question
    */
-  async updateQuestion(questionId, updateData, userId) {
+  async updateQuestion(questionId, updateData, userId, organizationId) {
     try {
+      const existingQuestion = await InterviewQuestion.findById(questionId).select('jobId');
+      if (!existingQuestion) throw this._notFound('Interview question not found');
+      await this._assertQuestionOrganization(existingQuestion, organizationId);
+
       // Decode HTML entities from question text fields before saving
       const cleanedData = {
         ...updateData,
@@ -189,14 +229,18 @@ class InterviewService {
         })) : updateData.followUpQuestions
       };
 
-      const question = await InterviewQuestion.findByIdAndUpdate(
-        questionId,
+      // Prevent cross-job re-parenting through the update payload.
+      delete cleanedData.jobId;
+      delete cleanedData.organization;
+
+      const question = await InterviewQuestion.findOneAndUpdate(
+        { _id: questionId, jobId: existingQuestion.jobId },
         { ...cleanedData, updatedBy: userId, updatedAt: new Date() },
         { new: true, runValidators: true }
       );
 
       if (!question) {
-        throw new Error('Interview question not found');
+        throw this._notFound('Interview question not found');
       }
 
       // Decode HTML entities in returned question for display
@@ -226,11 +270,17 @@ class InterviewService {
   /**
    * Delete an interview question
    */
-  async deleteQuestion(questionId) {
+  async deleteQuestion(questionId, organizationId) {
     try {
-      const question = await InterviewQuestion.findByIdAndDelete(questionId);
+      const existingQuestion = await InterviewQuestion.findById(questionId).select('jobId');
+      if (!existingQuestion) throw this._notFound('Interview question not found');
+      await this._assertQuestionOrganization(existingQuestion, organizationId);
+      const question = await InterviewQuestion.findOneAndDelete({
+        _id: questionId,
+        jobId: existingQuestion.jobId
+      });
       if (!question) {
-        throw new Error('Interview question not found');
+        throw this._notFound('Interview question not found');
       }
       return { success: true, deletedQuestion: question };
     } catch (error) {
@@ -247,15 +297,12 @@ class InterviewService {
       console.log(`🤖 InterviewService: Generating AI questions for job ${jobId}`);
       
       // Get job details
-      const job = await Job.findById(jobId);
-      if (!job) {
-        throw new Error('Job not found');
-      }
+      const job = await this._getJobForOrganization(jobId, options.organizationId);
 
       const questions = await this._generateAdvancedQuestionsWithAI(job, options);
       
       // Save the generated questions
-      const savedQuestions = await this.bulkCreateQuestions(questions, options.userId);
+      const savedQuestions = await this.bulkCreateQuestions(questions, options.userId, options.organizationId);
       
       return savedQuestions;
     } catch (error) {
@@ -775,8 +822,24 @@ ADDITIONAL CONTEXT:
   /**
    * Bulk create interview questions
    */
-  async bulkCreateQuestions(questionsData, userId) {
+  async bulkCreateQuestions(questionsData, userId, organizationId) {
     try {
+      if (!Array.isArray(questionsData) || questionsData.length === 0) {
+        const error = new Error('At least one interview question is required');
+        error.code = 'INTERVIEW_QUESTIONS_REQUIRED';
+        error.statusCode = 422;
+        throw error;
+      }
+
+      const jobIds = [...new Set(questionsData.map((question) => String(question.jobId || '')))];
+      if (jobIds.includes('')) {
+        const error = new Error('Every interview question must reference a job');
+        error.code = 'JOB_REFERENCE_REQUIRED';
+        error.statusCode = 422;
+        throw error;
+      }
+      await Promise.all(jobIds.map((jobId) => this._getJobForOrganization(jobId, organizationId)));
+
       console.log(`🔧 InterviewService: Bulk creating ${questionsData.length} questions`);
       
       const questionsToCreate = questionsData.map(data => ({
@@ -828,22 +891,24 @@ ADDITIONAL CONTEXT:
   /**
    * Get interview question statistics for a job
    */
-  async getQuestionStatistics(jobId) {
+  async getQuestionStatistics(jobId, organizationId) {
     try {
-      const totalQuestions = await InterviewQuestion.countDocuments({ jobId, isActive: true });
+      const job = await this._getJobForOrganization(jobId, organizationId);
+      const scopedJobId = job._id;
+      const totalQuestions = await InterviewQuestion.countDocuments({ jobId: scopedJobId, isActive: true });
       
       const typeDistribution = await InterviewQuestion.aggregate([
-        { $match: { jobId: jobId, isActive: true } },
+        { $match: { jobId: scopedJobId, isActive: true } },
         { $group: { _id: '$type', count: { $sum: 1 } } }
       ]);
 
       const stageDistribution = await InterviewQuestion.aggregate([
-        { $match: { jobId: jobId, isActive: true } },
+        { $match: { jobId: scopedJobId, isActive: true } },
         { $group: { _id: '$interviewStage', count: { $sum: 1 } } }
       ]);
 
       const qualityMetrics = await InterviewQuestion.aggregate([
-        { $match: { jobId: jobId, isActive: true } },
+        { $match: { jobId: scopedJobId, isActive: true } },
         {
           $group: {
             _id: null,
@@ -904,12 +969,13 @@ ADDITIONAL CONTEXT:
   /**
    * Analyze question quality and provide recommendations
    */
-  async analyzeQuestionQuality(questionId) {
+  async analyzeQuestionQuality(questionId, organizationId) {
     try {
       const question = await InterviewQuestion.findById(questionId).populate('jobId');
       if (!question) {
-        throw new Error('Question not found');
+        throw this._notFound('Question not found');
       }
+      await this._assertQuestionOrganization(question, organizationId);
 
       console.log(`🔍 Analyzing quality for question: ${question._id}`);
 
@@ -1027,12 +1093,13 @@ ADDITIONAL CONTEXT:
   /**
    * Submit feedback for a question
    */
-  async submitQuestionFeedback(questionId, feedback) {
+  async submitQuestionFeedback(questionId, feedback, organizationId) {
     try {
       const question = await InterviewQuestion.findById(questionId);
       if (!question) {
-        throw new Error('Question not found');
+        throw this._notFound('Question not found');
       }
+      await this._assertQuestionOrganization(question, organizationId);
 
       const updateData = {};
 
@@ -1071,8 +1138,9 @@ ADDITIONAL CONTEXT:
   /**
    * Get performance insights for questions in a job
    */
-  async getPerformanceInsights(jobId) {
+  async getPerformanceInsights(jobId, organizationId) {
     try {
+      await this._getJobForOrganization(jobId, organizationId);
       const questions = await InterviewQuestion.find({ jobId, isActive: true });
       
       const insights = {
@@ -1192,20 +1260,37 @@ ADDITIONAL CONTEXT:
 
       console.log('🎯 Generating optimized question set...');
 
-      const job = await Job.findById(jobId);
-      if (!job) {
-        throw new Error('Job not found');
+      const total = Number(totalQuestions);
+      const selectedStages = Array.isArray(stages)
+        ? [...new Set(stages.filter((stage) => typeof stage === 'string' && stage.trim()))]
+        : [];
+      if (!Number.isInteger(total) || total < 1 || total > 50) {
+        const error = new Error('totalQuestions must be an integer between 1 and 50');
+        error.code = 'INVALID_QUESTION_COUNT';
+        error.statusCode = 400;
+        throw error;
       }
+      if (selectedStages.length === 0) {
+        const error = new Error('At least one interview stage is required');
+        error.code = 'INTERVIEW_STAGES_REQUIRED';
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const job = await this._getJobForOrganization(jobId, options.organizationId);
 
       // Generate questions for each stage
       const questionsByStage = {};
-      const questionsPerStage = Math.floor(totalQuestions / stages.length);
+      const questionsPerStage = Math.floor(total / selectedStages.length);
+      const stageRemainder = total % selectedStages.length;
 
-      for (const stage of stages) {
+      for (const [stageIndex, stage] of selectedStages.entries()) {
+        const stageQuestionCount = questionsPerStage + (stageIndex < stageRemainder ? 1 : 0);
+        if (stageQuestionCount === 0) continue;
         const stageOptions = {
           ...options,
           stage,
-          questionCount: questionsPerStage,
+          questionCount: stageQuestionCount,
           includeTypes: this._getOptimalTypesForStage(stage)
         };
 
@@ -1226,8 +1311,22 @@ ADDITIONAL CONTEXT:
         && Number(q.qualityMetrics?.biasScore) <= maxBiasScore
       );
 
+      if (allQuestions.length !== total) {
+        const error = new Error(
+          `AI produced ${allQuestions.length} questions that passed the quality gates; ${total} were requested. No questions were saved.`
+        );
+        error.code = 'AI_QUESTION_QUALITY_FAILED';
+        error.statusCode = 422;
+        error.details = { requested: total, passed: allQuestions.length };
+        throw error;
+      }
+
       // Save optimized questions
-      const savedQuestions = await this.bulkCreateQuestions(allQuestions.slice(0, totalQuestions), options.userId);
+      const savedQuestions = await this.bulkCreateQuestions(
+        allQuestions.slice(0, total),
+        options.userId,
+        options.organizationId
+      );
 
       return {
         questions: savedQuestions,

@@ -13,6 +13,7 @@ const {
   plainTextToEmailHtml,
   htmlToText
 } = require('../utils/emailHtmlSanitizer');
+const publicFeedbackCapability = require('./publicFeedbackCapabilityService');
 
 /** Flattens a provider-shaped recipient list into bare mailboxes. */
 function toMailboxList(value) {
@@ -1064,7 +1065,8 @@ This is an automated email. Please do not reply to this message.
       
       // Generate feedback link for this interviewer
       const frontendUrl = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://smarthr.aiinnigeria.com';
-      const feedbackUrl = `${frontendUrl}/public/feedback/${templateData.interviewId}`;
+      const feedbackUrl = await publicFeedbackCapability.feedbackUrl(templateData.interviewId, frontendUrl);
+      if (!feedbackUrl) throw new Error('Unable to issue public feedback capability');
       
       // Create resume link
       let resumeLink = '';

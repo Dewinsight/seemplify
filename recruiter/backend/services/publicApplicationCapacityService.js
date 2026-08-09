@@ -1,6 +1,16 @@
 const mongoose = require('mongoose');
+const Candidate = require('../models/Candidate');
 const Job = require('../models/Job');
 const publicJobCreditService = require('./publicJobCreditService');
+
+const PROVISIONAL_TTL_MS = Math.max(
+  5 * 60 * 1000,
+  Number(process.env.PUBLIC_APPLICATION_PROVISIONAL_TTL_MS || 60 * 60 * 1000)
+);
+const COMMIT_REPAIR_STALE_MS = Math.max(
+  30 * 1000,
+  Number(process.env.PUBLIC_APPLICATION_COMMIT_REPAIR_STALE_MS || 5 * 60 * 1000)
+);
 
 function businessError(code, message, statusCode = 409) {
   const error = new Error(message);
@@ -449,8 +459,129 @@ async function commit({
   );
 }
 
+/**
+ * Repairs the durable two-document public-application commit protocol.
+ *
+ * A candidate enters `committing` and loses its TTL before the Job capacity
+ * mutation. If the process stops after the Job commit, the shortlist is the
+ * durable receipt and this repair finalizes the candidate. If no receipt
+ * exists, the provisional TTL is restored so abandoned applications expire.
+ * Historical `provisional` rows are also checked to repair the old
+ * Job-committed/Candidate-not-finalized crash window.
+ */
+async function reconcileCandidateCommitStates({
+  candidateId,
+  organizationId,
+  jobId,
+  limit = 500,
+  now = new Date()
+} = {}) {
+  const query = candidateId
+    ? { publicApplicationCommitState: { $in: ['provisional', 'committing'] } }
+    : {
+        $or: [
+          {
+            publicApplicationCommitState: 'provisional',
+            createdAt: { $lte: new Date(now.getTime() - COMMIT_REPAIR_STALE_MS) }
+          },
+          {
+            publicApplicationCommitState: 'committing',
+            publicApplicationCommitStartedAt: {
+              $lte: new Date(now.getTime() - COMMIT_REPAIR_STALE_MS)
+            }
+          },
+          {
+            publicApplicationCommitState: 'committing',
+            publicApplicationCommitStartedAt: { $exists: false },
+            createdAt: { $lte: new Date(now.getTime() - COMMIT_REPAIR_STALE_MS) }
+          }
+        ]
+      };
+  if (candidateId) {
+    if (!mongoose.isValidObjectId(candidateId)) return { examined: 0, committed: 0, restored: 0 };
+    query._id = new mongoose.Types.ObjectId(String(candidateId));
+  }
+  if (organizationId) {
+    if (!mongoose.isValidObjectId(organizationId)) return { examined: 0, committed: 0, restored: 0 };
+    query.organization = new mongoose.Types.ObjectId(String(organizationId));
+  }
+  if (jobId) {
+    if (!mongoose.isValidObjectId(jobId)) return { examined: 0, committed: 0, restored: 0 };
+    query.jobAppliedFor = new mongoose.Types.ObjectId(String(jobId));
+  }
+
+  const pageSize = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+  const snapshotTail = await Candidate.findOne(query).sort({ _id: -1 }).select('_id').lean();
+  if (!snapshotTail) return { examined: 0, committed: 0, restored: 0 };
+
+  let examined = 0;
+  let committed = 0;
+  let restored = 0;
+  let cursor = null;
+  while (true) {
+    const idWindow = {
+      _id: {
+        ...(cursor ? { $gt: cursor } : {}),
+        $lte: snapshotTail._id
+      }
+    };
+    const candidates = await Candidate.find({ $and: [query, idWindow] })
+      .select(
+        '_id organization jobAppliedFor +publicApplicationCommitState '
+        + '+publicApplicationProvisionalExpiresAt +publicApplicationCommitStartedAt'
+      )
+      .sort({ _id: 1 })
+      .limit(pageSize)
+      .lean();
+    if (!candidates.length) break;
+    examined += candidates.length;
+    for (const candidate of candidates) {
+      const hasReceipt = Boolean(await Job.exists({
+        _id: candidate.jobAppliedFor,
+        organization: candidate.organization,
+        'shortlist.candidate': candidate._id
+      }));
+      if (hasReceipt) {
+        const result = await Candidate.updateOne(
+          {
+            _id: candidate._id,
+            publicApplicationCommitState: { $in: ['provisional', 'committing'] }
+          },
+          {
+            $set: { publicApplicationCommitState: 'committed' },
+            $unset: {
+              publicApplicationProvisionalExpiresAt: 1,
+              publicApplicationCommitStartedAt: 1
+            }
+          }
+        );
+        committed += Number(result.modifiedCount || result.nModified || 0);
+        continue;
+      }
+
+      if (candidate.publicApplicationCommitState === 'committing') {
+        const result = await Candidate.updateOne(
+          { _id: candidate._id, publicApplicationCommitState: 'committing' },
+          {
+            $set: {
+              publicApplicationCommitState: 'provisional',
+              publicApplicationProvisionalExpiresAt: new Date(now.getTime() + PROVISIONAL_TTL_MS)
+            },
+            $unset: { publicApplicationCommitStartedAt: 1 }
+          }
+        );
+        restored += Number(result.modifiedCount || result.nModified || 0);
+      }
+    }
+    cursor = candidates.at(-1)._id;
+    if (String(cursor) === String(snapshotTail._id)) break;
+  }
+  return { examined, committed, restored };
+}
+
 module.exports = {
   commit,
+  reconcileCandidateCommitStates,
   reconcileInflatedCount,
   reserve,
   uploadCandidateCost: publicJobCreditService.getCurrentUploadCandidateCost

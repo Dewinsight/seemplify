@@ -81,6 +81,14 @@ test('a subject claim is validated against a closed source-app allowlist', () =>
     [...sessions.allowedSourceApps({ CODEX_SUBJECT_SOURCE_APPS: 'recruiter,experience-management,payroll,crm' })],
     ['recruiter', 'payroll']
   );
+  assert.deepEqual(
+    sessions.resolveSubjectRequest(
+      { sourceApp: 'performance-management', subjectId: 'user-1' },
+      { CODEX_SUBJECT_SOURCE_APPS: 'recruiter' }
+    ).error,
+    { status: 403, code: 'CODEX_SOURCE_APP_NOT_ALLOWED' },
+    'a caller holding no Recruiter proxy grant cannot mint a Performance gateway namespace'
+  );
 
   const accepted = sessions.resolveSubjectRequest({ sourceApp: 'Recruiter', subjectId: 'user-1' });
   assert.equal(accepted.subjectKey, sessions.subjectKeyFor('recruiter', 'user-1'));

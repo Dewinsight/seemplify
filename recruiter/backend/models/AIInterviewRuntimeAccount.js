@@ -31,7 +31,24 @@ const AIInterviewRuntimeAccountSchema = new mongoose.Schema({
   /** The candidate must acknowledge that their interview content is processed
    * by OpenAI on their own account before any turn runs on it. */
   dataSharingAcknowledgedAt: { type: Date, default: null },
-  lastError: { type: String, default: '' }
+  lastError: { type: String, default: '' },
+  credentialCleanup: {
+    status: {
+      type: String,
+      enum: ['idle', 'pending', 'processing', 'completed'],
+      default: 'idle',
+      index: true
+    },
+    attempts: { type: Number, default: 0, min: 0 },
+    requestedAt: { type: Date, default: null },
+    nextAttemptAt: { type: Date, default: null, index: true },
+    completedAt: { type: Date, default: null },
+    reason: { type: String, default: '' },
+    lastError: { type: String, default: '' }
+  },
+  // Terminal connection metadata is retained briefly for audit/recovery, but
+  // the hosted credential is deleted first. Mongo removes the local row later.
+  purgeAfter: { type: Date, default: null, index: { expires: 0 } }
 }, { timestamps: true });
 
 AIInterviewRuntimeAccountSchema.methods.isRoutable = function isRoutable() {
@@ -47,7 +64,10 @@ AIInterviewRuntimeAccountSchema.methods.toPublicJSON = function toPublicJSON() {
     lastVerifiedAt: this.lastVerifiedAt,
     dataSharingAcknowledgedAt: this.dataSharingAcknowledgedAt,
     routable: this.isRoutable(),
-    lastError: this.lastError || null
+    lastError: this.lastError || null,
+    credentialCleanupStatus: this.credentialCleanup?.status || 'idle',
+    credentialCleanupPending: ['pending', 'processing'].includes(this.credentialCleanup?.status),
+    disconnectedAt: this.disconnectedAt || null
   };
 };
 
