@@ -2,26 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { format, isValid, parseISO } from 'date-fns';
+import { CalendarDays, Check, CheckCircle2, ChevronRight, History, Loader2, RotateCcw, Trash2, X } from 'lucide-react';
 import { approvalsApi } from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
-import { formatDuration } from '@/lib/utils';
-import { format, parseISO, isValid } from 'date-fns';
-import {
-    CheckCircle2,
-    XCircle,
-    AlertCircle,
-    Calendar,
-    ChevronRight,
-    Filter,
-    History,
-    Undo2,
-    Trash2,
-    MoreVertical
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatDuration } from '@/lib/utils';
 
-// Safe date formatting helper
-const safeFormatDate = (dateValue: any, formatStr: string, fallback = '--'): string => {
+const safeFormatDate = (dateValue: any, formatStr: string, fallback = '—'): string => {
     if (!dateValue) return fallback;
     try {
         const date = typeof dateValue === 'string' ? parseISO(dateValue) : new Date(dateValue);
@@ -31,6 +18,17 @@ const safeFormatDate = (dateValue: any, formatStr: string, fallback = '--'): str
     }
 };
 
+function initials(name?: string) {
+    return String(name || 'Unknown user').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+}
+
+function itemSummary(item: any) {
+    const hours = Number(item.summary?.totalHours ?? item.totalHours ?? 0);
+    const days = Number(item.summary?.daysWorked ?? item.daysWorked ?? 0);
+    const overtime = Number(item.summary?.overtimeHours ?? item.overtimeHours ?? 0);
+    return { hours, days, overtime };
+}
+
 export default function ApprovalsPage() {
     const [approvals, setApprovals] = useState<any[]>([]);
     const [history, setHistory] = useState<any[]>([]);
@@ -39,95 +37,65 @@ export default function ApprovalsPage() {
     const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
 
     useEffect(() => {
-        if (activeTab === 'pending') {
-            fetchApprovals();
-        } else {
-            fetchHistory();
-        }
+        const load = async () => {
+            setLoading(true);
+            try {
+                if (activeTab === 'pending') setApprovals(await approvalsApi.getPending());
+                else setHistory(await approvalsApi.getHistory());
+            } catch (error) {
+                console.error(`Failed to fetch approval ${activeTab}`, error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        void load();
     }, [activeTab]);
-
-    const fetchApprovals = async () => {
-        try {
-            setLoading(true);
-            const response = await approvalsApi.getPending();
-            setApprovals(response);
-        } catch (error) {
-            console.error('Failed to fetch approvals', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchHistory = async () => {
-        try {
-            setLoading(true);
-            const response = await approvalsApi.getHistory();
-            setHistory(response);
-        } catch (error) {
-            console.error('Failed to fetch history', error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleAction = async (id: string, action: 'approve' | 'reject') => {
         const reason = action === 'reject' ? prompt('Please provide a reason for rejection:') : null;
         if (action === 'reject' && !reason) return;
-
         try {
             setSubmitting(id);
-            if (action === 'approve') {
-                await approvalsApi.approve(id);
-            } else {
-                await approvalsApi.reject(id, reason!);
-            }
-            // Optimistic update
-            setApprovals(prev => prev.filter(t => t._id !== id));
+            if (action === 'approve') await approvalsApi.approve(id);
+            else await approvalsApi.reject(id, reason!);
+            setApprovals(current => current.filter(item => item._id !== id));
         } catch (error) {
-            console.error('Action failed', error);
+            console.error('Approval action failed', error);
             alert('Failed to process request.');
         } finally {
             setSubmitting(null);
         }
     };
 
-    const handleRevert = async (id: string, userName: string, weekNumber: number) => {
-        const reason = prompt(`Revert timesheet for ${userName} (Week ${weekNumber}) back to draft?\n\nPlease provide a reason:`);
+    const handleRevert = async (item: any) => {
+        const reason = prompt(`Reopen ${item.userName}'s Week ${item.weekNumber} timesheet as a draft?\n\nProvide a reason:`);
         if (!reason || reason.trim().length < 5) {
             if (reason !== null) alert('Reason must be at least 5 characters.');
             return;
         }
-
         try {
-            setSubmitting(id);
-            await approvalsApi.revert(id, reason);
-            // Remove from history list
-            setHistory(prev => prev.filter(t => t._id !== id));
-            alert('Timesheet reverted to draft successfully.');
+            setSubmitting(item._id);
+            await approvalsApi.revert(item._id, reason);
+            setHistory(current => current.filter(row => row._id !== item._id));
         } catch (error: any) {
-            console.error('Revert failed', error);
-            alert(error.response?.data?.error || 'Failed to revert timesheet.');
+            console.error('Reopen failed', error);
+            alert(error.response?.data?.error || 'Failed to reopen timesheet.');
         } finally {
             setSubmitting(null);
         }
     };
 
-    const handleDelete = async (id: string, userName: string, weekNumber: number) => {
-        const confirmed = confirm(`Are you sure you want to DELETE the timesheet for ${userName} (Week ${weekNumber})?\n\nThis action cannot be undone!`);
-        if (!confirmed) return;
-
-        const reason = prompt('Please provide a reason for deletion:');
+    const handleDelete = async (item: any) => {
+        if (!confirm(`Delete ${item.userName}'s Week ${item.weekNumber} timesheet permanently?`)) return;
+        const reason = prompt('Provide a reason for deletion:');
         if (!reason || reason.trim().length < 5) {
             if (reason !== null) alert('Reason must be at least 5 characters.');
             return;
         }
-
         try {
-            setSubmitting(id);
-            await approvalsApi.delete(id, reason);
-            // Remove from history list
-            setHistory(prev => prev.filter(t => t._id !== id));
-            alert('Timesheet deleted successfully.');
+            setSubmitting(item._id);
+            await approvalsApi.delete(item._id, reason);
+            setHistory(current => current.filter(row => row._id !== item._id));
         } catch (error: any) {
             console.error('Delete failed', error);
             alert(error.response?.data?.error || 'Failed to delete timesheet.');
@@ -136,235 +104,77 @@ export default function ApprovalsPage() {
         }
     };
 
-    const renderPendingList = () => (
-        <div className="bg-zinc-900/50 border border-white/5 rounded-2xl overflow-hidden">
-            {loading ? (
-                <div className="flex items-center justify-center p-12">
-                    <div className="animate-spin h-8 w-8 border-2 border-teal-500 rounded-full border-t-transparent"></div>
-                </div>
-            ) : approvals.length === 0 ? (
-                <div className="p-12 text-center text-zinc-500">
-                    <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <CheckCircle2 className="h-8 w-8 text-emerald-500/50" />
-                    </div>
-                    <h3 className="text-lg font-medium text-white">All caught up!</h3>
-                    <p>You have no pending approvals at the moment.</p>
-                </div>
-            ) : (
-                <div className="divide-y divide-zinc-800/50">
-                    {approvals.map((item) => (
-                        <div key={item._id} className="p-6 hover:bg-zinc-800/20 transition-colors">
-                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-
-                                {/* User & Timesheet Info */}
-                                <div className="flex items-start gap-4">
-                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-lg font-bold text-white shadow-lg shadow-indigo-500/20 shrink-0">
-                                        {(item.userName || 'U').charAt(0)}
-                                    </div>
-                                    <div className="space-y-1">
-                                        <div className="flex items-center gap-2">
-                                            <h3 className="font-semibold text-white">{item.userName || 'Unknown User'}</h3>
-                                            <div className="px-2 py-0.5 bg-zinc-800 rounded text-[10px] text-zinc-400 uppercase tracking-wider">
-                                                Week {item.weekNumber}
-                                            </div>
-                                        </div>
-                                        <div className="text-sm text-zinc-400 flex items-center gap-2">
-                                            <Calendar className="h-3.5 w-3.5" />
-                                            {safeFormatDate(item.startDate, 'MMM d')} - {safeFormatDate(item.endDate, 'MMM d, yyyy')}
-                                        </div>
-                                        <div className="flex items-center gap-4 text-xs font-medium mt-1">
-                                            <span className="text-emerald-400">{formatDuration((item.totalHours || item.summary?.totalHours || 0) * 60)} Worked</span>
-                                            <span className="text-zinc-600">•</span>
-                                            <span className="text-zinc-400">{item.daysWorked || item.summary?.daysWorked || 0} Days</span>
-                                            {(item.overtimeHours || item.summary?.overtimeHours) > 0 && (
-                                                <>
-                                                    <span className="text-zinc-600">•</span>
-                                                    <span className="text-amber-400">{formatDuration((item.overtimeHours || item.summary?.overtimeHours || 0) * 60)} OT</span>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Actions */}
-                                <div className="flex items-center gap-3">
-                                    <Link
-                                        href={`/timesheets/${item._id}`}
-                                        className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-                                    >
-                                        View Details
-                                    </Link>
-                                    <button
-                                        onClick={() => handleAction(item._id, 'reject')}
-                                        disabled={submitting === item._id}
-                                        className="px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-sm font-medium transition-colors border border-red-500/20 flex items-center gap-2"
-                                    >
-                                        <XCircle className="h-4 w-4" />
-                                        Reject
-                                    </button>
-                                    <button
-                                        onClick={() => handleAction(item._id, 'approve')}
-                                        disabled={submitting === item._id}
-                                        className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium transition-colors shadow-lg shadow-teal-500/20 flex items-center gap-2"
-                                    >
-                                        <CheckCircle2 className="h-4 w-4" />
-                                        Approve
-                                    </button>
-                                </div>
-
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
+    return <div className="mx-auto max-w-6xl space-y-5">
+        <div>
+            <h1 className="text-2xl font-semibold text-white">Approvals</h1>
+            <p className="mt-1 text-sm text-zinc-400">Review submitted timesheets and recent decisions.</p>
         </div>
-    );
 
-    const renderHistoryList = () => (
-        <div className="bg-zinc-900/50 border border-white/5 rounded-2xl overflow-hidden">
-            {loading ? (
-                <div className="flex items-center justify-center p-12">
-                    <div className="animate-spin h-8 w-8 border-2 border-teal-500 rounded-full border-t-transparent"></div>
-                </div>
-            ) : history.length === 0 ? (
-                <div className="p-12 text-center text-zinc-500">
-                    <div className="w-16 h-16 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <History className="h-8 w-8 text-zinc-500/50" />
-                    </div>
-                    <h3 className="text-lg font-medium text-white">No history yet</h3>
-                    <p>Your approval history will appear here.</p>
-                </div>
-            ) : (
-                <div className="divide-y divide-zinc-800/50">
-                    {history.map((item) => {
-                        const actionDate = item.approvedBy?.approvedAt || item.rejectedBy?.rejectedAt || item.revisionRequestedBy?.requestedAt;
-                        const actionBy = item.approvedBy?.userName || item.rejectedBy?.userName || item.revisionRequestedBy?.userName;
-                        
-                        return (
-                            <div key={item._id} className="p-6 hover:bg-zinc-800/20 transition-colors">
-                                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-
-                                    {/* User & Timesheet Info */}
-                                    <div className="flex items-start gap-4">
-                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-lg font-bold text-white shadow-lg shadow-indigo-500/20 shrink-0">
-                                            {(item.userName || 'U').charAt(0)}
-                                        </div>
-                                        <div className="space-y-1">
-                                            <div className="flex items-center gap-2">
-                                                <h3 className="font-semibold text-white">{item.userName || 'Unknown User'}</h3>
-                                                <div className="px-2 py-0.5 bg-zinc-800 rounded text-[10px] text-zinc-400 uppercase tracking-wider">
-                                                    Week {item.weekNumber}
-                                                </div>
-                                                <StatusBadge status={item.status} />
-                                            </div>
-                                            <div className="text-sm text-zinc-400 flex items-center gap-2">
-                                                <Calendar className="h-3.5 w-3.5" />
-                                                {safeFormatDate(item.startDate, 'MMM d')} - {safeFormatDate(item.endDate, 'MMM d, yyyy')}
-                                            </div>
-                                            <div className="flex items-center gap-4 text-xs font-medium mt-1">
-                                                <span className="text-emerald-400">{formatDuration((item.totalHours || item.summary?.totalHours || 0) * 60)} Worked</span>
-                                                <span className="text-zinc-600">•</span>
-                                                <span className="text-zinc-400">{item.daysWorked || item.summary?.daysWorked || 0} Days</span>
-                                            </div>
-                                            {/* Action info */}
-                                            <div className="text-xs text-zinc-500 mt-2">
-                                                {item.status === 'approved' && (
-                                                    <span className="text-emerald-400">Approved by {actionBy} on {safeFormatDate(actionDate, 'MMM d, yyyy HH:mm')}</span>
-                                                )}
-                                                {item.status === 'rejected' && (
-                                                    <>
-                                                        <span className="text-red-400">Rejected by {actionBy} on {safeFormatDate(actionDate, 'MMM d, yyyy HH:mm')}</span>
-                                                        {item.rejectedBy?.reason && (
-                                                            <p className="mt-1 text-zinc-400">Reason: {item.rejectedBy.reason}</p>
-                                                        )}
-                                                    </>
-                                                )}
-                                                {item.status === 'revision_requested' && (
-                                                    <>
-                                                        <span className="text-amber-400">Revision requested by {actionBy} on {safeFormatDate(actionDate, 'MMM d, yyyy HH:mm')}</span>
-                                                        {item.revisionRequestedBy?.reason && (
-                                                            <p className="mt-1 text-zinc-400">Reason: {item.revisionRequestedBy.reason}</p>
-                                                        )}
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Actions */}
-                                    <div className="flex items-center gap-2">
-                                        <Link
-                                            href={`/timesheets/${item._id}`}
-                                            className="px-3 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-                                        >
-                                            View
-                                        </Link>
-                                        <button
-                                            onClick={() => handleRevert(item._id, item.userName, item.weekNumber)}
-                                            disabled={submitting === item._id}
-                                            className="px-3 py-2 rounded-lg text-sm font-medium text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors flex items-center gap-1.5 border border-amber-500/20"
-                                            title="Revert to draft"
-                                        >
-                                            <Undo2 className="h-4 w-4" />
-                                            Undo
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(item._id, item.userName, item.weekNumber)}
-                                            disabled={submitting === item._id}
-                                            className="px-3 py-2 rounded-lg text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors flex items-center gap-1.5 border border-red-500/20"
-                                            title="Delete timesheet"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                            Delete
-                                        </button>
-                                    </div>
-
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
+        <div className="flex border-b border-zinc-800" role="tablist" aria-label="Approval views">
+            <button role="tab" aria-selected={activeTab === 'pending'} onClick={() => setActiveTab('pending')} className={cn('border-b-2 px-1 pb-3 pt-1 text-sm font-medium', activeTab === 'pending' ? 'border-teal-500 text-teal-400' : 'border-transparent text-zinc-500 hover:text-zinc-300')}>Pending <span className="ml-1 text-xs">{approvals.length}</span></button>
+            <button role="tab" aria-selected={activeTab === 'history'} onClick={() => setActiveTab('history')} className={cn('ml-6 flex items-center gap-2 border-b-2 px-1 pb-3 pt-1 text-sm font-medium', activeTab === 'history' ? 'border-teal-500 text-teal-400' : 'border-transparent text-zinc-500 hover:text-zinc-300')}><History className="h-4 w-4" />History</button>
         </div>
-    );
 
-    return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-white">Approvals</h1>
-                    <p className="text-zinc-400">Review and action pending timesheets</p>
+        {loading ? <LoadingState /> : activeTab === 'pending'
+            ? <PendingList items={approvals} submitting={submitting} onAction={handleAction} />
+            : <HistoryList items={history} submitting={submitting} onRevert={handleRevert} onDelete={handleDelete} />}
+    </div>;
+}
+
+function LoadingState() {
+    return <div className="flex min-h-48 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/40 text-sm text-zinc-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading timesheets…</div>;
+}
+
+function EmptyState({ history = false }: { history?: boolean }) {
+    return <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-6 py-12 text-center"><CheckCircle2 className="mx-auto h-7 w-7 text-zinc-600" /><h2 className="mt-3 text-base font-semibold text-white">{history ? 'No approval history' : 'All caught up!'}</h2><p className="mt-1 text-sm text-zinc-500">{history ? 'Completed decisions will appear here.' : 'There are no timesheets waiting for your review.'}</p></div>;
+}
+
+function PendingList({ items, submitting, onAction }: { items: any[]; submitting: string | null; onAction: (id: string, action: 'approve' | 'reject') => void }) {
+    if (!items.length) return <EmptyState />;
+    return <section className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
+        <div className="hidden grid-cols-[minmax(220px,1.25fr)_minmax(180px,1fr)_170px_280px] gap-5 border-b border-zinc-800 px-5 py-3 text-xs font-medium text-zinc-500 md:grid"><span>Employee</span><span>Period</span><span>Recorded</span><span className="text-right">Actions</span></div>
+        <div className="divide-y divide-zinc-800">{items.map(item => {
+            const summary = itemSummary(item);
+            return <div key={item._id} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(220px,1.25fr)_minmax(180px,1fr)_170px_280px] md:items-center md:gap-5">
+                <EmployeeCell item={item} />
+                <PeriodCell item={item} />
+                <div className="text-sm text-zinc-300"><span className="font-medium text-white">{formatDuration(summary.hours * 60)}</span><span className="mx-2 text-zinc-700">·</span>{summary.days} {summary.days === 1 ? 'day' : 'days'}{summary.overtime > 0 && <div className="mt-1 text-xs text-amber-400">{formatDuration(summary.overtime * 60)} overtime</div>}</div>
+                <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+                    <Link href={`/timesheets/${item._id}`} className="inline-flex items-center gap-1 px-2 py-2 text-sm font-medium text-zinc-400 hover:text-white">Review<ChevronRight className="h-4 w-4" /></Link>
+                    <button onClick={() => onAction(item._id, 'reject')} disabled={submitting === item._id} className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"><X className="h-4 w-4" />Reject</button>
+                    <button onClick={() => onAction(item._id, 'approve')} disabled={submitting === item._id} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:opacity-50"><Check className="h-4 w-4" />Approve</button>
                 </div>
-            </div>
+            </div>;
+        })}</div>
+    </section>;
+}
 
-            {/* Tabs / Filters */}
-            <div className="flex items-center gap-2 border-b border-zinc-800 pb-1">
-                <button
-                    onClick={() => setActiveTab('pending')}
-                    className={cn(
-                        "px-4 py-2 text-sm font-medium transition-colors rounded-t-lg",
-                        activeTab === 'pending'
-                            ? "text-teal-400 border-b-2 border-teal-500 bg-teal-950/20"
-                            : "text-zinc-400 hover:text-white"
-                    )}
-                >
-                    Pending ({approvals.length})
-                </button>
-                <button
-                    onClick={() => setActiveTab('history')}
-                    className={cn(
-                        "px-4 py-2 text-sm font-medium transition-colors rounded-t-lg flex items-center gap-2",
-                        activeTab === 'history'
-                            ? "text-teal-400 border-b-2 border-teal-500 bg-teal-950/20"
-                            : "text-zinc-400 hover:text-white"
-                    )}
-                >
-                    <History className="h-4 w-4" />
-                    History
-                </button>
-            </div>
+function HistoryList({ items, submitting, onRevert, onDelete }: { items: any[]; submitting: string | null; onRevert: (item: any) => void; onDelete: (item: any) => void }) {
+    if (!items.length) return <EmptyState history />;
+    return <section className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
+        <div className="hidden grid-cols-[minmax(220px,1.15fr)_minmax(170px,.9fr)_minmax(240px,1.25fr)_230px] gap-5 border-b border-zinc-800 px-5 py-3 text-xs font-medium text-zinc-500 md:grid"><span>Employee</span><span>Period</span><span>Decision</span><span className="text-right">Actions</span></div>
+        <div className="divide-y divide-zinc-800">{items.map(item => {
+            const actionDate = item.approvedBy?.approvedAt || item.rejectedBy?.rejectedAt || item.revisionRequestedBy?.requestedAt;
+            const actionBy = item.approvedBy?.userName || item.rejectedBy?.userName || item.revisionRequestedBy?.userName || 'Unknown reviewer';
+            const reason = item.rejectedBy?.reason || item.revisionRequestedBy?.reason;
+            return <div key={item._id} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(220px,1.15fr)_minmax(170px,.9fr)_minmax(240px,1.25fr)_230px] md:items-center md:gap-5">
+                <EmployeeCell item={item} />
+                <PeriodCell item={item} />
+                <div className="min-w-0"><div className="flex items-center gap-2"><StatusBadge status={item.status} /><span className="truncate text-xs text-zinc-500">by {actionBy}</span></div><p className="mt-1 text-xs text-zinc-500">{safeFormatDate(actionDate, 'MMM d, yyyy · HH:mm')}</p>{reason && <p className="mt-1 truncate text-xs text-zinc-400" title={reason}>{reason}</p>}</div>
+                <div className="flex flex-wrap items-center justify-start gap-1 md:justify-end">
+                    <Link href={`/timesheets/${item._id}`} className="px-3 py-2 text-sm font-medium text-zinc-400 hover:text-white">View</Link>
+                    <button onClick={() => onRevert(item)} disabled={submitting === item._id} className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"><RotateCcw className="h-4 w-4" />Reopen</button>
+                    <button onClick={() => onDelete(item)} disabled={submitting === item._id} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"><Trash2 className="h-4 w-4" />Delete</button>
+                </div>
+            </div>;
+        })}</div>
+    </section>;
+}
 
-            {activeTab === 'pending' ? renderPendingList() : renderHistoryList()}
-        </div>
-    );
+function EmployeeCell({ item }: { item: any }) {
+    return <div className="flex min-w-0 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-xs font-semibold text-zinc-300">{initials(item.userName)}</div><div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{item.userName || 'Unknown user'}</p><p className="mt-0.5 truncate text-xs text-zinc-500">{item.userEmail || `Week ${item.weekNumber}`}</p></div></div>;
+}
+
+function PeriodCell({ item }: { item: any }) {
+    return <div><p className="text-sm font-medium text-zinc-200">Week {item.weekNumber}</p><p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500"><CalendarDays className="h-3.5 w-3.5" />{safeFormatDate(item.startDate, 'MMM d')} – {safeFormatDate(item.endDate, 'MMM d, yyyy')}</p></div>;
 }

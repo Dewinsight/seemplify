@@ -41,7 +41,13 @@ const timesheet = {
     daysWorked: 5,
     overtimeHours: 0,
     entries: [],
-    dailyEntries: [],
+    dailyEntries: [{
+        date: '2026-08-03T00:00:00.000Z', status: 'present', totalHours: 7.5, breakDuration: 30,
+        clockIn: '2026-08-03T08:00:00.000Z', clockOut: '2026-08-03T16:00:00.000Z',
+        clockInLocation: { latitude: 51.5074, longitude: -0.1278, accuracy: 18, verified: true, address: 'London office, Westminster' },
+        clockOutLocation: { latitude: 51.5074, longitude: -0.1278, accuracy: 22, verified: true, address: 'London office, Westminster' },
+        exceptions: [],
+    }],
     summary: { totalHours: 37.5, daysWorked: 5, overtimeHours: 0 },
     approvalWorkflow: { currentLevel: 0, levels: [] },
 };
@@ -408,6 +414,25 @@ test('keeps the team attendance workspace readable at wide and standard desktop 
         }));
         expect(pageWidth.document).toBeLessThanOrEqual(pageWidth.viewport);
     }
+});
+
+test('keeps timesheet detail and approval history compact in light mode', async ({ page, mockState: _mockState }) => {
+    await authenticate(page);
+    await page.addInitScript(() => localStorage.setItem('seemplify-theme', 'light'));
+    await page.setViewportSize({ width: 1573, height: 900 });
+
+    await page.goto('/timesheets/timesheet-1');
+    await expect(page.getByText('Total worked')).toBeVisible();
+    await expect(page.getByText('London office, Westminster').first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'View map' }).first()).toBeVisible();
+
+    await page.goto('/approvals');
+    await page.getByRole('tab', { name: 'History' }).click();
+    await expect(page.getByText('Decision', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reopen' })).toBeVisible();
+
+    const pageWidth = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }));
+    expect(pageWidth.document).toBeLessThanOrEqual(pageWidth.viewport);
 });
 
 test('approves a pending timesheet and runs a rule-pack impact preview', async ({ page, mockState }) => {

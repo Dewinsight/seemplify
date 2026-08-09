@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { timesheetApi } from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
 import { formatDuration } from '@/lib/utils';
-import { format, parseISO, isValid, startOfWeek, endOfWeek, getISOWeek, getYear } from 'date-fns';
+import { format, parseISO, isValid, startOfWeek, endOfWeek, getISOWeek } from 'date-fns';
 import {
     ArrowLeft,
     Clock,
@@ -17,8 +17,7 @@ import {
     CheckCircle2,
     XCircle,
     MapPin,
-    PenLine,
-    AlertCircle
+    PenLine
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -66,20 +65,7 @@ export default function TimesheetDetailPage() {
     const [submitting, setSubmitting] = useState(false);
     const [exporting, setExporting] = useState(false);
 
-    useEffect(() => {
-        if (id) {
-            if (id === 'current') {
-                // Special handle for 'current' ID if we want to link directly to current week
-                // Ideally the API or list page should resolve this ID first, 
-                // but for now let's assume valid ID is passed or handle 'current' by redirecting/fetching current
-                fetchCurrentTimesheet();
-            } else {
-                fetchTimesheet(id as string);
-            }
-        }
-    }, [id]);
-
-    const fetchCurrentTimesheet = async () => {
+    const fetchCurrentTimesheet = useCallback(async () => {
         try {
             const response = await timesheetApi.list();
             // Naive logic: grab the last one or the one with draft status
@@ -94,9 +80,9 @@ export default function TimesheetDetailPage() {
         } catch (err) {
             console.error(err)
         }
-    }
+    }, [router]);
 
-    const fetchTimesheet = async (timesheetId: string) => {
+    const fetchTimesheet = useCallback(async (timesheetId: string) => {
         try {
             setLoading(true);
             const data = await timesheetApi.getById(timesheetId);
@@ -121,7 +107,13 @@ export default function TimesheetDetailPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        if (!id) return;
+        if (id === 'current') void fetchCurrentTimesheet();
+        else void fetchTimesheet(id as string);
+    }, [fetchCurrentTimesheet, fetchTimesheet, id]);
 
     const handleSubmit = async () => {
         if (!confirm('Are you sure you want to submit this timesheet for approval? You won\'t be able to edit entries while it is pending.')) return;
@@ -201,8 +193,16 @@ export default function TimesheetDetailPage() {
 
     if (!timesheet) return null;
 
+    const dailyEntries = Array.isArray(timesheet.dailyEntries) ? timesheet.dailyEntries : [];
+    const calculatedHours = dailyEntries.reduce((total: number, entry: any) => total + Number(entry.totalHours || 0), 0);
+    const storedHours = Number(timesheet.summary?.totalHours ?? timesheet.totalHours ?? 0);
+    const totalHours = storedHours > 0 || calculatedHours === 0 ? storedHours : calculatedHours;
+    const calculatedDays = dailyEntries.filter((entry: any) => Number(entry.totalHours || 0) > 0 || entry.clockIn).length;
+    const storedDays = Number(timesheet.summary?.daysWorked ?? timesheet.daysWorked ?? 0);
+    const daysWorked = storedDays > 0 || calculatedDays === 0 ? storedDays : calculatedDays;
+
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="space-y-6">
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -277,69 +277,36 @@ export default function TimesheetDetailPage() {
                 </div>
             </div>
 
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-5">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 rounded-lg bg-teal-500/10 text-teal-400">
-                            <Clock className="h-4 w-4" />
-                        </div>
-                        <span className="text-sm font-medium text-zinc-400">Total Hours</span>
-                    </div>
-                    <div className="text-2xl font-bold text-white pl-1">
-                        {formatDuration((timesheet.totalHours || 0) * 60)}
-                    </div>
-                </div>
-
-                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-5">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                            <CheckCircle2 className="h-4 w-4" />
-                        </div>
-                        <span className="text-sm font-medium text-zinc-400">Days Worked</span>
-                    </div>
-                    <div className="text-2xl font-bold text-white pl-1">
-                        {timesheet.daysWorked || 0} <span className="text-sm font-normal text-zinc-500">/ 5</span>
-                    </div>
-                </div>
-
-                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-5">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
-                            <FileText className="h-4 w-4" />
-                        </div>
-                        <span className="text-sm font-medium text-zinc-400">Entries</span>
-                    </div>
-                    <div className="text-2xl font-bold text-white pl-1">
-                        {timesheet.dailyEntries?.length || 0}
-                    </div>
-                </div>
-            </div>
+            <dl className="grid overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 sm:grid-cols-3">
+                <div className="border-b border-zinc-800 px-5 py-4 sm:border-b-0"><dt className="flex items-center gap-2 text-sm text-zinc-500"><Clock className="h-4 w-4" />Total worked</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{formatDuration(totalHours * 60)}</dd></div>
+                <div className="border-b border-zinc-800 px-5 py-4 sm:border-b-0"><dt className="flex items-center gap-2 text-sm text-zinc-500"><CheckCircle2 className="h-4 w-4" />Days worked</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{daysWorked}<span className="ml-1 text-sm font-normal text-zinc-500">of {timesheet.expectedWorkDays || 5}</span></dd></div>
+                <div className="px-5 py-4"><dt className="flex items-center gap-2 text-sm text-zinc-500"><FileText className="h-4 w-4" />Period days</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{dailyEntries.length}</dd></div>
+            </dl>
 
             {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
 
                 {/* Daily Entries List */}
-                <div className="lg:col-span-2 space-y-4">
+                <div className="space-y-3">
                     <h2 className="text-lg font-semibold text-white">Daily Breakdown</h2>
-                    <div className="bg-zinc-900/50 border border-white/5 rounded-2xl overflow-hidden">
+                    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
                         {timesheet.dailyEntries?.length === 0 ? (
                             <div className="p-8 text-center text-zinc-500">
                                 No entries recorded for this week.
                             </div>
                         ) : (
                             <div className="divide-y divide-zinc-800/50">
-                                {timesheet.dailyEntries?.map((entry: any, index: number) => {
+                                {dailyEntries.map((entry: any, index: number) => {
                                     const date = safeParseDate(entry.date) || new Date();
                                     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
                                     return (
-                                        <div key={index} className={cn("p-4 transition-colors", isWeekend ? "bg-zinc-900/30" : "hover:bg-zinc-800/30")}>
+                                        <div key={index} className="p-4 transition-colors hover:bg-zinc-800/20">
                                             <div className="flex items-center justify-between mb-3">
                                                 <div className="flex items-center gap-3">
                                                     <div className={cn(
                                                         "w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs font-medium border relative",
-                                                        isWeekend ? "bg-zinc-900 border-zinc-800 text-zinc-600" : "bg-zinc-800 border-zinc-700 text-zinc-300"
+                                                        isWeekend ? "bg-zinc-900/60 border-zinc-800 text-zinc-500" : "bg-zinc-800 border-zinc-700 text-zinc-300"
                                                     )}>
                                                         <span>{format(date, 'EEE')}</span>
                                                         <span className="font-bold">{format(date, 'd')}</span>
@@ -377,14 +344,14 @@ export default function TimesheetDetailPage() {
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <div className="text-lg font-mono font-medium text-white">
-                                                        {formatDuration(entry.totalHours * 60)}
+                                                    <div className="font-mono text-sm font-semibold tabular-nums text-white">
+                                                        {formatDuration(Number(entry.totalHours || 0) * 60)}
                                                     </div>
                                                 </div>
                                             </div>
 
                                             {/* Detailed timeline bar if needed, or simple text for now */}
-                                            <div className="flex gap-4 text-xs text-zinc-400 pl-[3.25rem]">
+                                            <div className="flex flex-wrap gap-x-5 gap-y-2 pl-[3.25rem] text-xs text-zinc-400">
                                                 <div className="flex items-center gap-1.5">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
                                                     In: <span className="text-white font-mono">{safeFormatDate(entry.clockIn, 'HH:mm', '--:--')}</span>
@@ -401,12 +368,12 @@ export default function TimesheetDetailPage() {
 
                                             {/* Location Display */}
                                             {(entry.clockInLocation?.latitude || entry.clockOutLocation?.latitude) && (
-                                                <div className="mt-3 pl-[3.25rem] space-y-3">
+                                                <div className="mt-3 grid gap-4 border-t border-zinc-800 pt-3 pl-[3.25rem] sm:grid-cols-2">
                                                     {entry.clockInLocation?.latitude && entry.clockInLocation?.longitude && (
-                                                        <div className="bg-zinc-800/50 rounded-lg p-2.5 border border-zinc-700/50">
+                                                        <div className="min-w-0">
                                                             <div className="flex items-center gap-2 text-xs mb-1.5">
-                                                                <MapPin className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                                                                <span className="text-emerald-400 font-medium">Clock In Location</span>
+                                                                <MapPin className="h-3.5 w-3.5 shrink-0 text-teal-400" />
+                                                                <span className="font-medium text-zinc-300">Clock in location</span>
                                                                 {entry.clockInLocation.verified !== undefined && (
                                                                     entry.clockInLocation.verified ? (
                                                                         <span className="flex items-center gap-1 text-green-400">
@@ -423,30 +390,30 @@ export default function TimesheetDetailPage() {
                                                             </div>
                                                             <div className="space-y-1 text-xs pl-5">
                                                                 {/* Coordinates */}
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-zinc-500 w-20">Coordinates:</span>
+                                                                <div className="flex flex-wrap items-center gap-2 text-zinc-500">
+                                                                    <span className="sr-only">Coordinates:</span>
                                                                     <a
                                                                         href={`https://www.google.com/maps?q=${entry.clockInLocation.latitude},${entry.clockInLocation.longitude}`}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
-                                                                        className="text-teal-400 hover:text-teal-300 underline font-mono"
+                                                                        className="font-medium text-teal-400 hover:text-teal-300 hover:underline"
                                                                     >
-                                                                        {entry.clockInLocation.latitude.toFixed(6)}, {entry.clockInLocation.longitude.toFixed(6)}
+                                                                        View map
                                                                     </a>
                                                                     {entry.clockInLocation.accuracy && (
-                                                                        <span className="text-zinc-500">(±{Math.round(entry.clockInLocation.accuracy)}m)</span>
+                                                                        <span className="text-zinc-500">±{Math.round(entry.clockInLocation.accuracy)}m accuracy</span>
                                                                     )}
                                                                 </div>
                                                                 {/* Address */}
                                                                 {entry.clockInLocation.address && (
                                                                     <div className="flex items-start gap-2">
-                                                                        <span className="text-zinc-500 w-20 shrink-0">Address:</span>
-                                                                        <span className="text-white">{entry.clockInLocation.address}</span>
+                                                                        <span className="sr-only">Address:</span>
+                                                                        <span className="truncate text-zinc-300" title={entry.clockInLocation.address}>{entry.clockInLocation.address}</span>
                                                                     </div>
                                                                 )}
                                                                 {/* Area/City */}
                                                                 {(entry.clockInLocation.area || entry.clockInLocation.city) && (
-                                                                    <div className="flex items-start gap-2">
+                                                                    <div className="hidden">
                                                                         <span className="text-zinc-500 w-20 shrink-0">Area:</span>
                                                                         <span className="text-zinc-300">
                                                                             {[entry.clockInLocation.area, entry.clockInLocation.city, entry.clockInLocation.state, entry.clockInLocation.country].filter(Boolean).join(', ')}
@@ -457,10 +424,10 @@ export default function TimesheetDetailPage() {
                                                         </div>
                                                     )}
                                                     {entry.clockOutLocation?.latitude && entry.clockOutLocation?.longitude && (
-                                                        <div className="bg-zinc-800/50 rounded-lg p-2.5 border border-zinc-700/50">
+                                                        <div className="min-w-0">
                                                             <div className="flex items-center gap-2 text-xs mb-1.5">
-                                                                <MapPin className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                                                                <span className="text-red-400 font-medium">Clock Out Location</span>
+                                                                <MapPin className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                                                                <span className="font-medium text-zinc-300">Clock out location</span>
                                                                 {entry.clockOutLocation.verified !== undefined && (
                                                                     entry.clockOutLocation.verified ? (
                                                                         <span className="flex items-center gap-1 text-green-400">
@@ -477,30 +444,30 @@ export default function TimesheetDetailPage() {
                                                             </div>
                                                             <div className="space-y-1 text-xs pl-5">
                                                                 {/* Coordinates */}
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-zinc-500 w-20">Coordinates:</span>
+                                                                <div className="flex flex-wrap items-center gap-2 text-zinc-500">
+                                                                    <span className="sr-only">Coordinates:</span>
                                                                     <a
                                                                         href={`https://www.google.com/maps?q=${entry.clockOutLocation.latitude},${entry.clockOutLocation.longitude}`}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
-                                                                        className="text-teal-400 hover:text-teal-300 underline font-mono"
+                                                                        className="font-medium text-teal-400 hover:text-teal-300 hover:underline"
                                                                     >
-                                                                        {entry.clockOutLocation.latitude.toFixed(6)}, {entry.clockOutLocation.longitude.toFixed(6)}
+                                                                        View map
                                                                     </a>
                                                                     {entry.clockOutLocation.accuracy && (
-                                                                        <span className="text-zinc-500">(±{Math.round(entry.clockOutLocation.accuracy)}m)</span>
+                                                                        <span className="text-zinc-500">±{Math.round(entry.clockOutLocation.accuracy)}m accuracy</span>
                                                                     )}
                                                                 </div>
                                                                 {/* Address */}
                                                                 {entry.clockOutLocation.address && (
                                                                     <div className="flex items-start gap-2">
-                                                                        <span className="text-zinc-500 w-20 shrink-0">Address:</span>
-                                                                        <span className="text-white">{entry.clockOutLocation.address}</span>
+                                                                        <span className="sr-only">Address:</span>
+                                                                        <span className="truncate text-zinc-300" title={entry.clockOutLocation.address}>{entry.clockOutLocation.address}</span>
                                                                     </div>
                                                                 )}
                                                                 {/* Area/City */}
                                                                 {(entry.clockOutLocation.area || entry.clockOutLocation.city) && (
-                                                                    <div className="flex items-start gap-2">
+                                                                    <div className="hidden">
                                                                         <span className="text-zinc-500 w-20 shrink-0">Area:</span>
                                                                         <span className="text-zinc-300">
                                                                             {[entry.clockOutLocation.area, entry.clockOutLocation.city, entry.clockOutLocation.state, entry.clockOutLocation.country].filter(Boolean).join(', ')}
@@ -536,38 +503,24 @@ export default function TimesheetDetailPage() {
                 </div>
 
                 {/* Sidebar Info */}
-                <div className="space-y-6">
-                    <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-6">
-                        <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-4">Approval Chain</h3>
-                        <div className="relative pl-4 border-l border-zinc-800 space-y-6">
-                            {/* Submitter */}
-                            <div className="relative">
-                                <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-teal-500 ring-4 ring-zinc-900" />
-                                <div className="text-sm font-medium text-white">You</div>
-                                <div className="text-xs text-zinc-500">Submitted on {timesheet.submittedAt ? safeFormatDate(timesheet.submittedAt, 'MMM d, HH:mm') : 'Not yet submitted'}</div>
+                <div className="space-y-4">
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+                        <h3 className="text-sm font-semibold text-white">Approval</h3>
+                        <div className="mt-4 space-y-4">
+                            <div className="grid grid-cols-[16px_1fr] gap-3">
+                                <CheckCircle2 className={cn('mt-0.5 h-4 w-4', timesheet.submittedAt ? 'text-teal-400' : 'text-zinc-700')} />
+                                <div><p className="text-sm font-medium text-zinc-200">Submitted</p><p className="mt-0.5 text-xs text-zinc-500">{timesheet.submittedAt ? safeFormatDate(timesheet.submittedAt, 'MMM d, yyyy · HH:mm') : 'Not submitted yet'}</p></div>
                             </div>
-
-                            {/* Approver */}
-                            <div className="relative">
-                                <div className={cn(
-                                    "absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-zinc-900",
-                                    timesheet.status === 'approved' ? 'bg-emerald-500' :
-                                        timesheet.status === 'rejected' ? 'bg-red-500' :
-                                            'bg-zinc-700'
-                                )} />
-                                <div className="text-sm font-medium text-white">Line Manager</div>
-                                <div className="text-xs text-zinc-500">
-                                    {timesheet.status === 'approved' ? `Approved on ${safeFormatDate(timesheet.updatedAt, 'MMM d')}` :
-                                        timesheet.status === 'pending' ? 'Pending Review' :
-                                            'Waiting for submission'}
-                                </div>
+                            <div className="grid grid-cols-[16px_1fr] gap-3 border-t border-zinc-800 pt-4">
+                                {timesheet.status === 'rejected' ? <XCircle className="mt-0.5 h-4 w-4 text-red-400" /> : <CheckCircle2 className={cn('mt-0.5 h-4 w-4', timesheet.status === 'approved' ? 'text-emerald-400' : 'text-zinc-700')} />}
+                                <div><p className="text-sm font-medium text-zinc-200">{timesheet.approvedBy?.userName || 'Line manager'}</p><p className="mt-0.5 text-xs text-zinc-500">{timesheet.status === 'approved' ? `Approved ${safeFormatDate(timesheet.approvedBy?.approvedAt || timesheet.updatedAt, 'MMM d, yyyy')}` : timesheet.status === 'rejected' ? `Rejected ${safeFormatDate(timesheet.rejectedBy?.rejectedAt || timesheet.updatedAt, 'MMM d, yyyy')}` : ['submitted', 'pending'].includes(timesheet.status) ? 'Awaiting review' : 'Waiting for submission'}</p></div>
                             </div>
                         </div>
                     </div>
 
                     {/* Rejection Note if applicable */}
                     {timesheet.rejectionReason && (
-                        <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6">
+                        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-5">
                             <div className="flex items-start gap-3">
                                 <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
                                 <div>
