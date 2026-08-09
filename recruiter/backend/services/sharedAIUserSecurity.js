@@ -40,11 +40,12 @@ function recruiterOrganizationAuthorized(user, organizationId) {
     && String(membership?.organization?._id || membership?.organization || '') === target
   ));
   if (!activeMember) return false;
-  // App access was not represented on legacy Recruiter rows. Treating an
-  // unknown entitlement as "all" would let a pre-rollout session enter an
-  // organization after its IdP membership became Performance-only. A normal
-  // OIDC launch backfills the authoritative set; until then, fail closed.
-  if (!user?.recruiterAppAccessSyncedAt) return false;
+  // App access was not represented on legacy Recruiter rows. Permit only an
+  // established IdP-linked Recruiter identity with an active local membership
+  // during that migration window. Identity-only shadows are rejected above,
+  // and the moment an OIDC/webhook sync stamp exists the authoritative
+  // organization allow-list below becomes mandatory (including revocations).
+  if (!user?.recruiterAppAccessSyncedAt) return Boolean(user?.idpSubject);
   return (user.recruiterAuthorizedOrganizations || []).some((organization) => (
     String(organization?._id || organization || '') === target
   ));
