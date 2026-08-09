@@ -51,6 +51,13 @@ import {
   memberCanAccessApp,
   normalizeAppAccess
 } from './utils/appAccess.js'
+import {
+  EXTERNAL_HUB_PINNED_APP_IDS,
+  buildKnownHubPinAppIdSet,
+  resolveHubPinnedAppIds,
+  sanitizeHubPinnedAppIds,
+  validateHubPinsPayload
+} from './utils/hubPins.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 import { startCampaignWorker } from './jobs/campaignWorker.js'
 import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
@@ -3279,6 +3286,55 @@ function getHubAppMetadata() {
   }
 }
 
+function getPinEligibleHubApps(req) {
+  const hubBrand = getIdpBrand(req)
+  const isAkwaIbomHub = hubBrand.name === 'Akwa Ibom State'
+
+  return getHubApps({ isAkwaIbom: isAkwaIbomHub })
+    .filter(app => app.appId !== 'lms')
+}
+
+function getKnownHubPinAppIdSet(req) {
+  return buildKnownHubPinAppIdSet(getPinEligibleHubApps(req))
+}
+
+async function getVisibleHubPinAppIdSet(req, account, organization) {
+  const currentOrgId = account?.currentOrganization?._id?.toString()
+    || account?.currentOrganization?.toString()
+    || ''
+  if (!currentOrgId || !organization) return new Set()
+
+  const pinEligibleApps = getPinEligibleHubApps(req)
+  const validAppIds = buildValidAppIdSet(pinEligibleApps)
+  const member = organization.members?.find(item =>
+    item?.status === 'active' && item?.account?.toString() === account._id.toString()
+  )
+  if (!member) return new Set()
+
+  const memberAppAccess = normalizeAppAccess(member.appAccess, validAppIds)
+  let visibleApps = pinEligibleApps
+  if (memberAppAccess.mode === APP_ACCESS_MODE_SELECTED) {
+    const allowedAppIds = new Set(memberAppAccess.appIds)
+    visibleApps = visibleApps.filter(app => allowedAppIds.has(app.appId))
+  }
+
+  const subscriptionAccess = await getCurrentOrganizationSubscriptionAccessState(account)
+  if (!subscriptionAccess || subscriptionAccess.isLocked) return new Set()
+
+  const subscription = await subscriptionService.getSubscriptionForOrg(currentOrgId)
+  const hiddenAppIds = new Set(
+    (Array.isArray(subscription?.plan?.hideHubCards) ? subscription.plan.hideHubCards : [])
+      .map(appId => String(appId || '').trim())
+      .filter(Boolean)
+  )
+  visibleApps = visibleApps.filter(app => !hiddenAppIds.has(app.appId))
+
+  return new Set([
+    ...visibleApps.map(app => app.appId),
+    ...EXTERNAL_HUB_PINNED_APP_IDS
+  ])
+}
+
 function getMemberAppAccessForOrganization(organizations, currentOrgId, accountId, validAppIds) {
   if (!currentOrgId || !Array.isArray(organizations)) {
     return normalizeAppAccess(null, validAppIds)
@@ -3687,10 +3743,7 @@ app.get('/', async (req, res) => {
       appIdSet
     )
 
-    const hubBrand = getIdpBrand(req)
-    const isAkwaIbomHub = hubBrand.name === 'Akwa Ibom State'
-    let apps = getHubApps({ isAkwaIbom: isAkwaIbomHub })
-      .filter(app => app.appId !== 'lms')
+    let apps = getPinEligibleHubApps(req)
       .map(app => ({
         ...app,
         iconSvg: getAppIcon(app.icon)
@@ -3753,6 +3806,21 @@ app.get('/', async (req, res) => {
       comingSoonCards = []
     }
 
+    const visibleHubPinAppIds = new Set([
+      ...apps.map(app => app.appId),
+      ...(
+        hasOrganizations && !currentSubscriptionAccess?.isLocked
+          ? EXTERNAL_HUB_PINNED_APP_IDS
+          : []
+      )
+    ])
+    const pinnedAppIds = resolveHubPinnedAppIds({
+      account,
+      organizationId: currentOrgId,
+      knownAppIds: getKnownHubPinAppIdSet(req),
+      visibleAppIds: visibleHubPinAppIds
+    })
+
     const notificationSummary = await buildNotificationCenterData(account, {
       maxTasks: 12
     })
@@ -3766,6 +3834,7 @@ app.get('/', async (req, res) => {
     res.render('home', {
       user: account,
       apps,
+      pinnedAppIds,
       comingSoonCards,
       attendanceHubEnabled: apps.some(app => app.appId === 'time-attendance'),
       organizations,
@@ -4548,6 +4617,85 @@ const getSessionUser = async (req, res, next) => {
   await attachProfileCompletionLocals(account)
   next()
 }
+
+app.put('/api/hub/pins', getSessionUser, async (req, res) => {
+  try {
+    const payloadValidation = validateHubPinsPayload(req.body)
+    if (!payloadValidation.valid) {
+      return res.status(400).json({ error: payloadValidation.error })
+    }
+
+    const currentOrgId = req.user?.currentOrganization?._id?.toString()
+      || req.user?.currentOrganization?.toString()
+      || ''
+    if (!currentOrgId) {
+      return res.status(409).json({ error: 'Select an organization first' })
+    }
+
+    const hasActiveAccountMembership = req.user.organizations?.some(item =>
+      item?.isActive !== false
+      && (item?.organization?._id || item?.organization)?.toString() === currentOrgId
+    )
+    if (!hasActiveAccountMembership) {
+      return res.status(403).json({ error: 'Organization membership is not active' })
+    }
+
+    const organization = await Organization.findOne({
+      _id: currentOrgId,
+      members: {
+        $elemMatch: {
+          account: req.user._id,
+          status: 'active'
+        }
+      }
+    }).select('members')
+    if (!organization) {
+      return res.status(403).json({ error: 'Organization membership is not active' })
+    }
+
+    const knownAppIds = getKnownHubPinAppIdSet(req)
+    const visibleAppIds = await getVisibleHubPinAppIdSet(req, req.user, organization)
+    const pinnedAppIds = sanitizeHubPinnedAppIds(payloadValidation.pinnedAppIds, {
+      knownAppIds,
+      visibleAppIds
+    })
+
+    const preferencePath = `hubPreferences.pinnedAppsByOrganization.${currentOrgId}`
+    const updateResult = await Account.updateOne(
+      {
+        _id: req.user._id,
+        currentOrganization: currentOrgId,
+        organizations: {
+          $elemMatch: {
+            organization: currentOrgId,
+            isActive: { $ne: false }
+          }
+        }
+      },
+      {
+        $set: {
+          [preferencePath]: {
+            pinnedAppIds,
+            updatedAt: new Date()
+          }
+        }
+      },
+      { runValidators: true }
+    )
+    if (updateResult.matchedCount !== 1) {
+      return res.status(409).json({ error: 'Organization context changed; reload and try again' })
+    }
+
+    res.setHeader('Cache-Control', 'no-store')
+    return res.json({
+      success: true,
+      pinnedAppIds
+    })
+  } catch (error) {
+    console.error('Hub pin update error:', error)
+    return res.status(500).json({ error: 'Failed to update pinned applications' })
+  }
+})
 
 const getCurrentOrganizationContext = async (user) => {
   const organizationId =

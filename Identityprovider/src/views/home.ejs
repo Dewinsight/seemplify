@@ -2167,10 +2167,16 @@
       text-transform: uppercase;
     }
     [data-theme="light"] body .app-card__badge { color: #b45309; }
-    .app-card__pin { width: 32px; height: 32px; display: grid; flex: none; place-items: center; margin: -4px -4px 0 0; padding: 8px; border: 0; border-radius: 999px; background: transparent; color: var(--hub-ink-faint); cursor: pointer; }
+    .app-card__pin { width: 32px; height: 32px; display: grid; flex: none; place-items: center; margin: -4px -4px 0 0; padding: 8px; border: 0; border-radius: 999px; background: transparent; color: var(--hub-ink-faint); cursor: pointer; transition: background-color .15s ease, color .15s ease, opacity .15s ease; }
     .app-card__pin svg { width: 16px; height: 16px; fill: transparent; stroke: currentColor; stroke-width: 1.35; stroke-linejoin: round; }
+    .app-card__pin:hover:not(:disabled) { background: color-mix(in srgb, var(--hub-brand) 10%, transparent); color: var(--hub-ink); }
+    .app-card__pin:focus-visible { outline: 2px solid var(--hub-brand); outline-offset: 2px; }
     .app-card__pin[aria-pressed="true"] { color: var(--hub-brand); }
     .app-card__pin[aria-pressed="true"] svg { fill: currentColor; stroke: currentColor; }
+    .app-card__pin[aria-disabled="true"] { opacity: .5; cursor: progress; }
+    .app-pin-status { margin: 10px 0 0; color: var(--hub-ink-faint); font-size: 12px; line-height: 1.5; }
+    .app-pin-status[data-tone="error"] { color: var(--error); }
+    .app-pin-status[hidden] { display: none; }
     body .app-card__desc,
     [data-theme="light"] body .app-card__desc { width: 100%; margin: 14px 0 0; color: var(--hub-ink-soft); font-size: 14px; line-height: 1.625; }
     .app-card__footer { display: flex; width: 100%; align-items: flex-end; justify-content: space-between; gap: 16px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hub-line); }
@@ -2609,6 +2615,16 @@
             { appId: 'experience-management', name: 'Experience Management', description: 'Research, listening, journeys, and action in one evidence-led workspace.', color: '#7048e8', external: true },
             ...orderedHubApps.slice(2)
           ]; %>
+          <% const availableDashboardAppIds = new Set(dashboardCards.map(app => String(app.appId))); %>
+          <% const initialPinnedAppIds = (typeof pinnedAppIds !== 'undefined' && Array.isArray(pinnedAppIds) ? pinnedAppIds : [])
+            .map(String)
+            .filter((appId, index, values) => availableDashboardAppIds.has(appId) && values.indexOf(appId) === index); %>
+          <% const initialPinnedAppIdSet = new Set(initialPinnedAppIds); %>
+          <% const dashboardCardOrderById = new Map(dashboardCards.map((app, index) => [String(app.appId), index])); %>
+          <% const renderedDashboardCards = [
+            ...dashboardCards.filter(app => initialPinnedAppIdSet.has(String(app.appId))),
+            ...dashboardCards.filter(app => !initialPinnedAppIdSet.has(String(app.appId)))
+          ]; %>
 
           <div class="apps-heading-row">
             <div>
@@ -2627,7 +2643,7 @@
               <button type="button" class="app-filter" data-app-filter="finance" aria-pressed="false">Finance</button>
               <button type="button" class="app-filter app-filter--pinned" data-app-filter="pinned" aria-pressed="false">
                 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2 2.1 4.4 4.9.7-3.5 3.4.8 4.8-4.3-2.3-4.3 2.3.8-4.8L3 7.1l4.9-.7L10 2Z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg>
-                Pinned <span id="pinnedAppCount">2</span>
+                Pinned <span id="pinnedAppCount"><%= initialPinnedAppIds.length %></span>
               </button>
             </div>
             <label class="app-search">
@@ -2635,12 +2651,13 @@
               <input id="appSearchInput" type="search" placeholder="Search applications" autocomplete="off" aria-label="Search applications">
             </label>
           </div>
+          <p id="appPinStatus" class="app-pin-status" role="status" aria-live="polite" aria-atomic="true" hidden></p>
 
           <div class="app-grid" id="hubAppGrid">
-          <% dashboardCards.forEach(app => { %>
+          <% renderedDashboardCards.forEach(app => { %>
             <% const presentation = appPresentation[app.appId] || { subtitle: 'Listen, learn, act', category: 'insights', metricLabel: 'Launch', metricValue: 'External' }; %>
-            <% const startsPinned = app.appId === 'smarthr' || app.appId === 'leave-management'; %>
-            <article class="app-card" data-app-card data-app-id="<%= app.appId %>" data-app-category="<%= presentation.category %>" data-app-title="<%= app.name.toLowerCase() %>" data-pinned="<%= startsPinned ? 'true' : 'false' %>" style="--app-color: <%= app.color || '#7048e8' %>">
+            <% const startsPinned = initialPinnedAppIdSet.has(String(app.appId)); %>
+            <article class="app-card" data-app-card data-app-id="<%= app.appId %>" data-app-order="<%= dashboardCardOrderById.get(String(app.appId)) %>" data-app-category="<%= presentation.category %>" data-app-title="<%= app.name.toLowerCase() %>" data-pinned="<%= startsPinned ? 'true' : 'false' %>" style="--app-color: <%= app.color || '#7048e8' %>">
               <div class="app-card__header">
                 <div class="app-card__identity">
                   <div class="app-card__icon">
@@ -3088,20 +3105,68 @@
       const search = document.getElementById('appSearchInput');
       const resultCount = document.getElementById('appsResultCount');
       const pinnedCount = document.getElementById('pinnedAppCount');
-      const storageKey = 'seemplify-hub-pinned-apps-v1';
+      const pinStatus = document.getElementById('appPinStatus');
+      const pinnedFilter = filters.find((button) => button.dataset.appFilter === 'pinned');
+      const availableAppIds = new Set(cards.map((card) => card.dataset.appId));
+      const originalOrder = new Map(cards.map((card, index) => [card.dataset.appId, Number(card.dataset.appOrder ?? index)]));
       let activeFilter = 'all';
-      let pinned = new Set(['smarthr', 'leave-management']);
+      let pinned = new Set(cards.filter((card) => card.dataset.pinned === 'true').map((card) => card.dataset.appId));
+      let saving = false;
+      let statusTimer = null;
 
-      try {
-        const stored = JSON.parse(localStorage.getItem(storageKey) || 'null');
-        if (Array.isArray(stored)) pinned = new Set(stored.map(String));
-      } catch (_) {}
-
-      function persistPins() {
-        localStorage.setItem(storageKey, JSON.stringify(Array.from(pinned)));
+      function getPinnedIds() {
+        return cards
+          .slice()
+          .sort((a, b) => originalOrder.get(a.dataset.appId) - originalOrder.get(b.dataset.appId))
+          .filter((card) => pinned.has(card.dataset.appId))
+          .map((card) => card.dataset.appId);
       }
 
-      function updatePins() {
+      function setSaving(nextSaving) {
+        saving = nextSaving;
+        grid.setAttribute('aria-busy', String(nextSaving));
+        cards.forEach((card) => {
+          const button = card.querySelector('[data-pin-app]');
+          if (!button) return;
+          if (nextSaving) {
+            button.setAttribute('aria-disabled', 'true');
+            button.setAttribute('aria-busy', 'true');
+          } else {
+            button.removeAttribute('aria-disabled');
+            button.removeAttribute('aria-busy');
+          }
+        });
+      }
+
+      function announcePinStatus(message, tone = 'neutral', clearAfterMs = 0) {
+        if (!pinStatus) return;
+        clearTimeout(statusTimer);
+        pinStatus.textContent = message;
+        pinStatus.dataset.tone = tone;
+        pinStatus.hidden = !message;
+        if (message && clearAfterMs > 0) {
+          statusTimer = setTimeout(() => {
+            pinStatus.textContent = '';
+            pinStatus.hidden = true;
+            delete pinStatus.dataset.tone;
+          }, clearAfterMs);
+        }
+      }
+
+      function reorderCards() {
+        const orderedCards = cards
+          .slice()
+          .sort((a, b) => {
+            const pinDifference = Number(pinned.has(b.dataset.appId)) - Number(pinned.has(a.dataset.appId));
+            return pinDifference || originalOrder.get(a.dataset.appId) - originalOrder.get(b.dataset.appId);
+          });
+        const currentCards = Array.from(grid.querySelectorAll('[data-app-card]'));
+        const orderChanged = orderedCards.some((card, index) => currentCards[index] !== card);
+        if (orderChanged) orderedCards.forEach((card) => grid.appendChild(card));
+        return orderChanged;
+      }
+
+      function updatePins({ focusAfterReorder = null } = {}) {
         cards.forEach((card) => {
           const appId = card.dataset.appId;
           const isPinned = pinned.has(appId);
@@ -3113,7 +3178,9 @@
             button.setAttribute('aria-label', `${isPinned ? 'Unpin' : 'Pin'} ${title}`);
           }
         });
-        if (pinnedCount) pinnedCount.textContent = String(pinned.size);
+        reorderCards();
+        if (pinnedCount) pinnedCount.textContent = String(getPinnedIds().length);
+        if (focusAfterReorder) focusAfterReorder.focus();
       }
 
       function applyFilters() {
@@ -3140,12 +3207,51 @@
         applyFilters();
       }));
 
-      cards.forEach((card) => card.querySelector('[data-pin-app]')?.addEventListener('click', () => {
+      cards.forEach((card) => card.querySelector('[data-pin-app]')?.addEventListener('click', async (event) => {
+        if (saving) return;
+        const clickedPinButton = event.currentTarget;
         const appId = card.dataset.appId;
-        pinned.has(appId) ? pinned.delete(appId) : pinned.add(appId);
-        persistPins();
-        updatePins();
+        const title = card.querySelector('.app-card__title')?.textContent?.trim() || 'Application';
+        const wasPinned = pinned.has(appId);
+        const previousPinned = new Set(pinned);
+        wasPinned ? pinned.delete(appId) : pinned.add(appId);
+
+        const focusAfterReorder = wasPinned && activeFilter === 'pinned' ? pinnedFilter : clickedPinButton;
+        updatePins({ focusAfterReorder });
         applyFilters();
+        setSaving(true);
+        announcePinStatus(`${wasPinned ? 'Unpinning' : 'Pinning'} ${title}\u2026`);
+
+        try {
+          const response = await fetch('/api/hub/pins', {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ pinnedAppIds: getPinnedIds() })
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !Array.isArray(payload.pinnedAppIds)) {
+            throw new Error(payload.error || 'Could not save pinned applications.');
+          }
+
+          pinned = new Set(payload.pinnedAppIds.map(String).filter((pinnedAppId) => availableAppIds.has(pinnedAppId)));
+          updatePins({ focusAfterReorder: clickedPinButton });
+          applyFilters();
+          const savedPinned = pinned.has(appId);
+          announcePinStatus(`${title} ${savedPinned ? 'pinned' : 'unpinned'}.`, 'neutral', 2200);
+        } catch (error) {
+          pinned = previousPinned;
+          updatePins({ focusAfterReorder: clickedPinButton });
+          applyFilters();
+          announcePinStatus('Could not save pinned apps. Try again.', 'error');
+          requestAnimationFrame(() => card.querySelector('[data-pin-app]')?.focus());
+          console.error('Failed to save pinned apps:', error);
+        } finally {
+          setSaving(false);
+        }
       }));
       search?.addEventListener('input', applyFilters);
       updatePins();

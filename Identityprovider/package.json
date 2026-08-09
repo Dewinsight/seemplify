@@ -13,6 +13,7 @@
     "test:mail": "node --test test/mail-client.test.mjs",
     "test:auth-redirects": "node --test test/auth-redirects.test.mjs",
     "test:oidc-recovery": "node --test test/oidc-recovery-page.test.mjs",
+    "test:hub-pins": "node --test test/hub-pins.test.mjs",
     "test:profile-completion": "node --test test/profile-completion.test.mjs",
     "test:surface-retirement": "node --test test/legacy-ui-redirects.test.mjs",
     "seed-admin": "node src/seeds/seedAdminSimple.js",

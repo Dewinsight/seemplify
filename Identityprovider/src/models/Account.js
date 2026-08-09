@@ -1,5 +1,18 @@
 import mongoose from 'mongoose'
 
+const HubAppPinPreferenceSchema = new mongoose.Schema({
+  pinnedAppIds: {
+    type: [String],
+    default: []
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  _id: false
+})
+
 const AccountSchema = new mongoose.Schema({
   sub: { type: String, unique: true, index: true },
   email: { type: String, unique: true, lowercase: true },
@@ -136,6 +149,16 @@ const AccountSchema = new mongoose.Schema({
   currentOrganization: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'AiinOrganization'
+  },
+
+  // Personal hub preferences, isolated by organization. A present entry with
+  // an empty pinnedAppIds array intentionally means "no pinned apps".
+  hubPreferences: {
+    pinnedAppsByOrganization: {
+      type: Map,
+      of: HubAppPinPreferenceSchema,
+      default: () => new Map()
+    }
   },
 
   // Team memberships across organizations
