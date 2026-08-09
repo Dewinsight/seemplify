@@ -1,4 +1,5 @@
 const aiGatewayService = require('./aiGatewayService');
+const { PerformanceAIRuntimeError } = require('./aiGatewayService');
 
 // Conversation phases in order
 const CONVERSATION_PHASES = [
@@ -49,10 +50,17 @@ class AppraisalAIService {
   /**
    * Analyze document content for appraisal relevance
    */
-  async analyzeDocument(documentText, context = {}) {
+  async analyzeDocument(documentText, context = {}, options = {}) {
     await this.initialize();
+    const requireChatGpt = options.requireChatGpt === true;
 
     if (!this.client) {
+      if (requireChatGpt) {
+        throw new PerformanceAIRuntimeError(
+          'ChatGPT is required to analyze conversation evidence.',
+          'CHATGPT_UNAVAILABLE'
+        );
+      }
       return this.getFallbackDocumentAnalysis(documentText);
     }
 
@@ -99,13 +107,15 @@ Respond in JSON format:
         ],
         temperature: 0.3,
         max_tokens: 2000,
-        response_format: { type: 'json_object' }
+        response_format: { type: 'json_object' },
+        ...(requireChatGpt ? { runtimePreference: 'chatgpt' } : {})
       });
 
       const content = response.choices[0]?.message?.content;
       return this.parseJsonResponse(content);
     } catch (error) {
       console.error('Document analysis error:', error);
+      if (requireChatGpt) throw error;
       return this.getFallbackDocumentAnalysis(documentText);
     }
   }
@@ -569,8 +579,9 @@ Suggest SMART goals that are:
    * @param {Object} employee - Employee info
    * @returns {Object} Initial greeting and conversation state
    */
-  async startSelfAssessmentConversation(appraisal, okrs, employee) {
+  async startSelfAssessmentConversation(appraisal, okrs, employee, options = {}) {
     await this.initialize();
+    const requireChatGpt = options.requireChatGpt === true;
 
     const okrSummary = okrs.map(okr => {
       const avgProgress = okr.objectives?.reduce((sum, obj) => {
@@ -600,6 +611,12 @@ Suggest SMART goals that are:
     });
 
     if (!this.client) {
+      if (requireChatGpt) {
+        throw new PerformanceAIRuntimeError(
+          'ChatGPT is required to start this self-assessment conversation.',
+          'CHATGPT_UNAVAILABLE'
+        );
+      }
       return this.getFallbackConversationStart(employee, okrSummary);
     }
 
@@ -636,7 +653,8 @@ Format your response as natural conversation text (not JSON).`;
           { role: 'user', content: prompt }
         ],
         temperature: 0.7,
-        max_tokens: 600
+        max_tokens: 600,
+        ...(requireChatGpt ? { runtimePreference: 'chatgpt' } : {})
       });
 
       const greeting = response.choices[0]?.message?.content;
@@ -652,6 +670,7 @@ Format your response as natural conversation text (not JSON).`;
       };
     } catch (error) {
       console.error('Conversation start error:', error);
+      if (requireChatGpt) throw error;
       return this.getFallbackConversationStart(employee, okrSummary);
     }
   }
@@ -664,8 +683,9 @@ Format your response as natural conversation text (not JSON).`;
    * @param {Object} documentContext - Optional context from uploaded documents
    * @returns {Object} AI response and updated state
    */
-  async continueConversation(appraisal, userMessage, okrs, documentContext = null) {
+  async continueConversation(appraisal, userMessage, okrs, documentContext = null, options = {}) {
     await this.initialize();
+    const requireChatGpt = options.requireChatGpt === true;
 
     const convState = appraisal.conversationAssessment || {};
     const currentPhase = convState.currentPhase || 'okr_reflection';
@@ -697,6 +717,12 @@ Format your response as natural conversation text (not JSON).`;
     const phaseContext = this.buildPhaseContext(currentPhase, currentOkr, extractedData);
 
     if (!this.client) {
+      if (requireChatGpt) {
+        throw new PerformanceAIRuntimeError(
+          'ChatGPT is required to continue this self-assessment conversation.',
+          'CHATGPT_UNAVAILABLE'
+        );
+      }
       return this.getFallbackConversationResponse(currentPhase, userMessage, {
         currentOkrIndex,
         okrCount: okrs?.length || 0
@@ -766,7 +792,8 @@ Respond to them and continue the conversation. If appropriate, extract any struc
         ],
         temperature: 0.6,
         max_tokens: 800,
-        response_format: { type: 'json_object' }
+        response_format: { type: 'json_object' },
+        ...(requireChatGpt ? { runtimePreference: 'chatgpt' } : {})
       });
 
       const content = response.choices[0]?.message?.content;
@@ -822,6 +849,7 @@ Respond to them and continue the conversation. If appropriate, extract any struc
       };
     } catch (error) {
       console.error('Conversation continue error:', error);
+      if (requireChatGpt) throw error;
       return this.getFallbackConversationResponse(currentPhase, userMessage, {
         currentOkrIndex,
         okrCount: okrs?.length || 0
@@ -835,13 +863,20 @@ Respond to them and continue the conversation. If appropriate, extract any struc
    * @param {Object} appraisal - The appraisal document
    * @returns {Object} Summary message and extracted insights
    */
-  async incorporateDocumentIntoConversation(document, appraisal) {
+  async incorporateDocumentIntoConversation(document, appraisal, options = {}) {
     await this.initialize();
+    const requireChatGpt = options.requireChatGpt === true;
 
     const analysis = document.aiAnalysis || {};
     const currentPhase = appraisal.conversationAssessment?.currentPhase || 'achievements';
 
     if (!this.client || !analysis.summary) {
+      if (requireChatGpt) {
+        throw new PerformanceAIRuntimeError(
+          'ChatGPT could not analyze this conversation evidence.',
+          'CHATGPT_UNAVAILABLE'
+        );
+      }
       return {
         message: `I've received your document "${document.originalName}". Let me know how this relates to your work this period.`,
         insights: analysis,
@@ -873,7 +908,8 @@ Keep it to 2-3 sentences.`;
           { role: 'user', content: prompt }
         ],
         temperature: 0.7,
-        max_tokens: 300
+        max_tokens: 300,
+        ...(requireChatGpt ? { runtimePreference: 'chatgpt' } : {})
       });
 
       return {
@@ -884,6 +920,7 @@ Keep it to 2-3 sentences.`;
       };
     } catch (error) {
       console.error('Document incorporation error:', error);
+      if (requireChatGpt) throw error;
       return {
         message: `I've reviewed "${document.originalName}". ${analysis.summary || 'How would you like to incorporate this into your self-assessment?'}`,
         insights: analysis,
@@ -899,8 +936,16 @@ Keep it to 2-3 sentences.`;
    * @param {Array} documents - Uploaded documents with analysis
    * @returns {Object} Generated report matching selfAssessment schema
    */
-  async generateSelfAssessmentReport(appraisal, okrs, documents = []) {
+  async generateSelfAssessmentReport(appraisal, okrs, documents = [], options = {}) {
     await this.initialize();
+    const requireChatGpt = options.requireChatGpt === true;
+
+    if (requireChatGpt && !this.client) {
+      throw new PerformanceAIRuntimeError(
+        'ChatGPT is required to generate this self-assessment report.',
+        'CHATGPT_UNAVAILABLE'
+      );
+    }
 
     const convState = appraisal.conversationAssessment || {};
     const extractedData = convState.extractedData || {};
@@ -949,6 +994,7 @@ Keep it to 2-3 sentences.`;
           lowSignalInsights = await this.analyzeSelfAssessment(draftSelfAssessment, baseReport.okrAssessment || [], []);
         } catch (error) {
           console.error('Low-signal AI insights generation error:', error);
+          if (requireChatGpt) throw error;
         }
       }
 
@@ -966,7 +1012,7 @@ Keep it to 2-3 sentences.`;
         missingInfo,
         tokensUsed: 0,
         success: true,
-        fallback: true
+        fallback: !requireChatGpt
       };
     }
 
@@ -1021,6 +1067,7 @@ Keep it to 2-3 sentences.`;
       };
     } catch (error) {
       console.error('Report generation error:', error);
+      if (requireChatGpt) throw error;
       return baseReport;
     }
   }

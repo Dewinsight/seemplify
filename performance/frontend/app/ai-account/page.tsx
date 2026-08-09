@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Alert,
   Box,
@@ -59,6 +60,7 @@ function errorMessage(reason: unknown) {
 }
 
 export default function AiAccountPage() {
+  const router = useRouter();
   const [account, setAccount] = useState<ChatGptAccount | null>(null);
   const [policy, setPolicy] = useState<RuntimePolicy | null>(null);
   const [login, setLogin] = useState<DeviceLogin | null>(null);
@@ -66,6 +68,17 @@ export default function AiAccountPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [copied, setCopied] = useState(false);
+  const [entryRequest, setEntryRequest] = useState({ connect: false, returnTo: '' });
+  const autoConnectStarted = useRef(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedReturn = params.get('returnTo') || '';
+    const returnTo = requestedReturn.startsWith('/') && !requestedReturn.startsWith('//')
+      ? requestedReturn
+      : '';
+    setEntryRequest({ connect: params.get('connect') === '1', returnTo });
+  }, []);
 
   const refresh = useCallback(async (quiet = false) => {
     if (!quiet) setWorking('refresh');
@@ -92,7 +105,7 @@ export default function AiAccountPage() {
     return () => window.clearInterval(timer);
   }, [account?.status, login, refresh]);
 
-  async function connect() {
+  const connect = useCallback(async () => {
     setWorking('connect');
     setError('');
     setNotice('');
@@ -100,13 +113,13 @@ export default function AiAccountPage() {
       const result = dataOf<{ login: DeviceLogin; account: ChatGptAccount }>(await api.post('/ai-account/login'));
       setAccount(result.account);
       setLogin(result.login);
-      if (result.login.connected) await enableChatGpt();
+      if (result.login.connected) await refresh(true);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
       setWorking('');
     }
-  }
+  }, [refresh]);
 
   async function resetLogin() {
     setWorking('reset');
@@ -122,7 +135,7 @@ export default function AiAccountPage() {
     }
   }
 
-  async function enableChatGpt() {
+  const enableChatGpt = useCallback(async () => {
     setWorking('enable');
     setError('');
     try {
@@ -130,12 +143,28 @@ export default function AiAccountPage() {
       await api.put('/ai-runtime/preference', { runtimePreference: 'chatgpt' });
       setAccount(result.account);
       setNotice('ChatGPT is now the AI runtime for your Performance Management work.');
+      if (entryRequest.returnTo) router.replace(entryRequest.returnTo);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
       setWorking('');
     }
-  }
+  }, [entryRequest.returnTo, router]);
+
+  useEffect(() => {
+    if (!entryRequest.connect || autoConnectStarted.current || working || !policy || !account) return;
+
+    if (account.routable && entryRequest.returnTo) {
+      autoConnectStarted.current = true;
+      router.replace(entryRequest.returnTo);
+      return;
+    }
+
+    if (account.status === 'disconnected' && !login && policy.chatgptEnabled) {
+      autoConnectStarted.current = true;
+      void connect();
+    }
+  }, [account, connect, entryRequest, login, policy, router, working]);
 
   async function disconnect() {
     setWorking('disconnect');

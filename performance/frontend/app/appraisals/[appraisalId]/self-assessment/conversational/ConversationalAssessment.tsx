@@ -92,9 +92,27 @@ interface ReportData {
 interface ConversationalAssessmentProps {
   appraisalId: string;
   onComplete?: () => void;
+  onChatGptUnavailable?: (message?: string) => void;
 }
 
-export default function ConversationalAssessment({ appraisalId, onComplete }: ConversationalAssessmentProps) {
+const CHATGPT_GATE_CODES = new Set([
+  'AI_GATEWAY_UNAVAILABLE',
+  'AI_REQUEST_FAILED',
+  'AI_RUNTIME_ACCOUNT_REQUIRED',
+  'CHATGPT_CONNECTION_REQUIRED',
+  'CHATGPT_GATEWAY_NOT_CONFIGURED',
+  'CHATGPT_GATEWAY_UNAVAILABLE',
+  'CHATGPT_UNAVAILABLE',
+]);
+
+function chatGptGateFailure(reason: unknown) {
+  const error = reason as { response?: { data?: { code?: string; error?: string } }; message?: string };
+  const code = error.response?.data?.code || '';
+  if (!CHATGPT_GATE_CODES.has(code)) return null;
+  return error.response?.data?.error || error.message || 'ChatGPT is required to continue this conversation.';
+}
+
+export default function ConversationalAssessment({ appraisalId, onComplete, onChatGptUnavailable }: ConversationalAssessmentProps) {
   const theme = useTheme();
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -109,7 +127,6 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
   const [requireSelfRating, setRequireSelfRating] = useState(true);
   const [allowReviewConversation, setAllowReviewConversation] = useState(false);
   const [reviewAutoGenerateAttempted, setReviewAutoGenerateAttempted] = useState(false);
-  const [guidedFallbackActive, setGuidedFallbackActive] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
   const findLatestReportInThread = useCallback((thread: Message[] = []) => {
@@ -134,7 +151,6 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
         // Resume existing conversation
         setConversationState(data.conversationState);
         setMessages(data.chatThread);
-        setGuidedFallbackActive(data.chatThread.some((message: Message) => message.aiContext?.modelUsed === 'guided-fallback'));
         setOkrSummary(data.okrs?.map((okr: any) => ({
           id: okr._id,
           title: okr.title || okr.objectives?.[0]?.title || 'Untitled OKR',
@@ -172,13 +188,22 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       const response = await api.post(`/appraisals/${appraisalId}/conversation/start`);
       const data = response.data.data;
 
+      if (data.fallback === true || data.aiAvailable === false) {
+        onChatGptUnavailable?.('ChatGPT could not be reached, so the conversation has been locked.');
+        return;
+      }
+
       setConversationState(data.conversationState);
       setMessages(data.chatThread || []);
       setOkrSummary(data.okrSummary || []);
-      setGuidedFallbackActive(data.fallback === true);
       setSnackbar({ open: true, message: 'Conversation started!', severity: 'success' });
     } catch (err: any) {
       console.error('Start conversation error:', err);
+      const gateMessage = chatGptGateFailure(err);
+      if (gateMessage) {
+        onChatGptUnavailable?.(gateMessage);
+        return;
+      }
       setError(err.response?.data?.error || 'Failed to start conversation');
       setSnackbar({ open: true, message: 'Failed to start conversation', severity: 'error' });
     } finally {
@@ -212,10 +237,15 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       const response = await api.post(`/appraisals/${appraisalId}/conversation/message`, { message });
       const data = response.data.data;
 
+      if (data.fallback === true || data.aiAvailable === false) {
+        onChatGptUnavailable?.('ChatGPT could not be reached, so the conversation has been locked.');
+        setMessages(prev => prev.slice(0, -1));
+        return;
+      }
+
       // Update with AI response
       setMessages(data.chatThread || []);
       setConversationState(data.conversationState);
-      if (data.fallback === true) setGuidedFallbackActive(true);
 
       // Check if we should transition to report generation
       if (data.currentPhase === 'report_generation') {
@@ -223,6 +253,12 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       }
     } catch (err: any) {
       console.error('Send message error:', err);
+      const gateMessage = chatGptGateFailure(err);
+      if (gateMessage) {
+        onChatGptUnavailable?.(gateMessage);
+        setMessages(prev => prev.slice(0, -1));
+        return;
+      }
       setError(err.response?.data?.error || 'Failed to send message');
       // Remove optimistic message on error
       setMessages(prev => prev.slice(0, -1));
@@ -249,6 +285,11 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       setSnackbar({ open: true, message: `Document "${file.name}" uploaded and analyzed`, severity: 'success' });
     } catch (err: any) {
       console.error('Upload error:', err);
+      const gateMessage = chatGptGateFailure(err);
+      if (gateMessage) {
+        onChatGptUnavailable?.(gateMessage);
+        return;
+      }
       setError(err.response?.data?.error || 'Failed to upload document');
       setSnackbar({ open: true, message: 'Failed to upload document', severity: 'error' });
     } finally {
@@ -265,6 +306,11 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       const response = await api.post(`/appraisals/${appraisalId}/conversation/generate-report`);
       const data = response.data.data;
 
+      if (data.aiAvailable === false) {
+        onChatGptUnavailable?.('ChatGPT could not generate the report, so the conversation has been locked.');
+        return;
+      }
+
       setReport(data.report);
       setConversationState(data.conversationState);
       setMessages(prev => [...prev, ...data.chatThread.slice(-2)]);
@@ -273,11 +319,16 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       setAllowReviewConversation(false);
     } catch (err: any) {
       console.error('Generate report error:', err);
+      const gateMessage = chatGptGateFailure(err);
+      if (gateMessage) {
+        onChatGptUnavailable?.(gateMessage);
+        return;
+      }
       setError(err.response?.data?.error || 'Failed to generate report');
     } finally {
       setIsRegenerating(false);
     }
-  }, [appraisalId, isRegenerating]);
+  }, [appraisalId, isRegenerating, onChatGptUnavailable]);
 
   const openReportPreview = useCallback(async () => {
     if (report) {
@@ -478,16 +529,6 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
           />
         </Box>
       </Paper>
-
-      {guidedFallbackActive && (
-        <Alert
-          severity="warning"
-          sx={{ mb: 2 }}
-          action={<Button color="inherit" size="small" href="/ai-account">Connect ChatGPT</Button>}
-        >
-          Live ChatGPT assistance is temporarily unavailable. Guided mode is saving your responses and will still let you review and submit a complete self-assessment.
-        </Alert>
-      )}
 
       <Box
         sx={{

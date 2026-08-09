@@ -52,6 +52,7 @@ interface MockApiState {
   appraisalEvidenceBodies: Array<Record<string, unknown>>;
   notificationPreferenceBodies: Array<Record<string, unknown>>;
   aiRuntimePreferenceBodies: Array<Record<string, unknown>>;
+  conversationContextCalls: number;
   readNotificationIds: string[];
   chatGptAccount: {
     status: 'disconnected' | 'pending' | 'connected';
@@ -235,6 +236,7 @@ function createState(): MockApiState {
     appraisalEvidenceBodies: [],
     notificationPreferenceBodies: [],
     aiRuntimePreferenceBodies: [],
+    conversationContextCalls: 0,
     readNotificationIds: [],
     chatGptAccount: {
       status: 'disconnected',
@@ -533,6 +535,7 @@ async function installMockApi(page: Page, state: MockApiState) {
         : fulfill({ success: false, error: 'Appraisal not found' }, 404);
     }
     if (method === 'GET' && /^\/appraisals\/[^/]+\/conversation\/context$/.test(path)) {
+      state.conversationContextCalls += 1;
       return fulfill({
         success: true,
         data: {
@@ -991,4 +994,44 @@ test('connects an employee ChatGPT account and records explicit consent before r
   await expect(page.getByText('Ready')).toBeVisible();
   expect(state.chatGptAccount.routable).toBe(true);
   expect(state.aiRuntimePreferenceBodies).toEqual([{ runtimePreference: 'chatgpt' }]);
+});
+
+test('locks conversational self-assessment until ChatGPT is connected', async ({ page }) => {
+  const state = createState();
+  await installMockApi(page, state);
+
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/self-assessment');
+
+  const dialog = page.getByRole('dialog', { name: 'ChatGPT is required' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('The conversation cannot begin or continue without it.')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Go back' })).toBeVisible();
+  await expect(page.getByText('Start Your Self-Assessment')).toHaveCount(0);
+  expect(state.conversationContextCalls).toBe(0);
+
+  await dialog.getByRole('button', { name: 'Connect ChatGPT' }).click();
+  await expect(page).toHaveURL(/\/ai-account\?connect=1&returnTo=/);
+  await expect(page.getByText('ABCD-EFGH')).toBeVisible();
+});
+
+test('opens conversational self-assessment only for a routable ChatGPT account', async ({ page }) => {
+  const state = createState();
+  state.chatGptAccount = {
+    status: 'connected',
+    connectedEmail: 'alex@example.com',
+    planType: 'Plus',
+    connectedAt: new Date().toISOString(),
+    lastVerifiedAt: new Date().toISOString(),
+    dataSharingAcknowledgedAt: new Date().toISOString(),
+    routable: true,
+    lastError: null,
+  };
+  await installMockApi(page, state);
+
+  await page.goto('/appraisals/507f1f77bcf86cd799439011/self-assessment');
+
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Start Your Self-Assessment' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Begin Conversation' })).toBeVisible();
+  expect(state.conversationContextCalls).toBeGreaterThanOrEqual(1);
 });

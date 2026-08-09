@@ -113,12 +113,15 @@ function applyStatus(account, state) {
 
 async function readAccount(user, options = {}) {
   const account = await accountForUser(user);
+  let verificationError = null;
   try {
     applyStatus(account, await callGateway('account', account.userId, options));
   } catch (error) {
     account.lastError = String(error.message || '').slice(0, 500);
+    verificationError = error;
   }
   await account.save();
+  if (verificationError && options.strict === true) throw verificationError;
   return account;
 }
 

@@ -13,6 +13,9 @@ const DevelopmentPlan = require('../models/DevelopmentPlan');
 const { requireAuth, requireHRAdmin, requireManager } = require('../middleware/rbac');
 const documentExtractionService = require('../services/documentExtractionService');
 const appraisalAIService = require('../services/appraisalAIService');
+const aiGatewayService = require('../services/aiGatewayService');
+const chatGptAccountService = require('../services/chatGptAccountService');
+const { withAIRequestContext } = require('../services/aiRequestContext');
 const {
   getStatusAfterManagerReview,
   getStatusAfterDiscussion,
@@ -4078,6 +4081,54 @@ router.post('/:appraisalId/check-bias', requireAuth, requireManager, async (req,
 // CONVERSATIONAL SELF-ASSESSMENT ENDPOINTS
 // =============================================
 
+function conversationActorId(req) {
+  return String(req.session?.user?.sub || req.session?.user?.id || '').trim();
+}
+
+function sendConversationRuntimeError(res, error, fallbackMessage) {
+  const code = String(error?.code || '');
+  const isRuntimeError = code.startsWith('CHATGPT_') || code.startsWith('AI_');
+  if (!isRuntimeError) {
+    return res.status(500).json({ success: false, error: fallbackMessage });
+  }
+  return res.status(Number(error?.statusCode) || 503).json({
+    success: false,
+    code,
+    error: error?.message || 'ChatGPT is unavailable. Reconnect or try again before continuing.'
+  });
+}
+
+async function requireChatGptConversation(req, res) {
+  const policy = await aiGatewayService.policy();
+  if (!policy.chatgptEnabled) {
+    res.status(503).json({
+      success: false,
+      code: 'CHATGPT_UNAVAILABLE',
+      error: 'ChatGPT is not enabled for this workspace. The conversation cannot continue.'
+    });
+    return null;
+  }
+
+  let account;
+  try {
+    account = await chatGptAccountService.readAccount(req.session?.user || {}, { strict: true });
+  } catch (error) {
+    sendConversationRuntimeError(res, error, 'ChatGPT availability could not be verified.');
+    return null;
+  }
+
+  if (!account?.isRoutable?.()) {
+    res.status(409).json({
+      success: false,
+      code: 'CHATGPT_CONNECTION_REQUIRED',
+      error: 'Connect ChatGPT and complete the data-sharing step before continuing this conversation.'
+    });
+    return null;
+  }
+
+  return { actorId: conversationActorId(req) };
+}
+
 /**
  * POST /api/appraisals/:appraisalId/conversation/start
  * Initialize the conversational self-assessment session
@@ -4109,6 +4160,9 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
         error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
       });
     }
+
+    const chatGpt = await requireChatGptConversation(req, res);
+    if (!chatGpt) return;
 
     // Get employee's OKRs
     const okrs = await OKR.find({
@@ -4143,10 +4197,14 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
     }
 
     // Start conversation via AI service
-    const result = await appraisalAIService.startSelfAssessmentConversation(
-      appraisal,
-      okrs,
-      appraisal.employee
+    const result = await withAIRequestContext(
+      { runtimePreference: 'chatgpt', actorId: chatGpt.actorId },
+      () => appraisalAIService.startSelfAssessmentConversation(
+        appraisal,
+        okrs,
+        appraisal.employee,
+        { requireChatGpt: true }
+      )
     );
 
     // Initialize conversation state
@@ -4202,7 +4260,7 @@ router.post('/:appraisalId/conversation/start', requireAuth, async (req, res) =>
     });
   } catch (error) {
     console.error('Start conversation error:', error);
-    res.status(500).json({ success: false, error: 'Failed to start conversation' });
+    sendConversationRuntimeError(res, error, 'Failed to start conversation');
   }
 });
 
@@ -4239,6 +4297,9 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
       });
     }
 
+    const chatGpt = await requireChatGptConversation(req, res);
+    if (!chatGpt) return;
+
     ensureConversationAssessmentState(appraisal);
 
     if (!appraisal.conversationAssessment?.startedAt || (appraisal.chatThread || []).length === 0) {
@@ -4269,11 +4330,15 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
     });
 
     // Get AI response
-    const result = await appraisalAIService.continueConversation(
-      appraisal,
-      message.trim(),
-      okrs,
-      null // documentContext - can be added later
+    const result = await withAIRequestContext(
+      { runtimePreference: 'chatgpt', actorId: chatGpt.actorId },
+      () => appraisalAIService.continueConversation(
+        appraisal,
+        message.trim(),
+        okrs,
+        null,
+        { requireChatGpt: true }
+      )
     );
 
     // Add AI response to chat thread
@@ -4371,7 +4436,7 @@ router.post('/:appraisalId/conversation/message', requireAuth, async (req, res) 
     });
   } catch (error) {
     console.error('Conversation message error:', error);
-    res.status(500).json({ success: false, error: 'Failed to process message' });
+    sendConversationRuntimeError(res, error, 'Failed to process message');
   }
 });
 
@@ -4417,6 +4482,12 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
         success: false,
         error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
       });
+    }
+
+    const chatGpt = await requireChatGptConversation(req, res);
+    if (!chatGpt) {
+      removeRejectedUpload(req.file);
+      return;
     }
 
     ensureConversationAssessmentState(appraisal);
@@ -4466,10 +4537,13 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
         // AI analysis
         if (extraction.text && extraction.text.length > 100) {
           document.aiAnalysis.status = 'processing';
-          const analysis = await appraisalAIService.analyzeDocument(extraction.text, {
-            employeeName: appraisal.employee.name,
-            department: appraisal.employee.department
-          });
+          const analysis = await withAIRequestContext(
+            { runtimePreference: 'chatgpt', actorId: chatGpt.actorId },
+            () => appraisalAIService.analyzeDocument(extraction.text, {
+              employeeName: appraisal.employee.name,
+              department: appraisal.employee.department
+            }, { requireChatGpt: true })
+          );
 
           document.aiAnalysis = {
             status: 'completed',
@@ -4484,13 +4558,20 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
       }
     }
 
+    // Incorporate into conversation
+    const incorporationResult = await withAIRequestContext(
+      { runtimePreference: 'chatgpt', actorId: chatGpt.actorId },
+      () => appraisalAIService.incorporateDocumentIntoConversation(
+        document,
+        appraisal,
+        { requireChatGpt: true }
+      )
+    );
+
     await document.save();
 
-    // Link to appraisal
+    // Link to appraisal only after ChatGPT has processed the evidence.
     appraisal.documents.push(document._id);
-
-    // Incorporate into conversation
-    const incorporationResult = await appraisalAIService.incorporateDocumentIntoConversation(document, appraisal);
 
     // Add system message about document
     appraisal.chatThread.push({
@@ -4543,7 +4624,7 @@ router.post('/:appraisalId/conversation/upload', requireAuth, upload.single('fil
   } catch (error) {
     removeRejectedUpload(req.file);
     console.error('Conversation upload error:', error);
-    res.status(500).json({ success: false, error: 'Failed to upload document' });
+    sendConversationRuntimeError(res, error, 'Failed to upload document');
   }
 });
 
@@ -4578,6 +4659,8 @@ router.post('/:appraisalId/conversation/advance', requireAuth, async (req, res) 
         error: 'AI assistance is disabled for this appraisal cycle. Use the manual self-assessment form.'
       });
     }
+
+    if (!await requireChatGptConversation(req, res)) return;
 
     ensureConversationAssessmentState(appraisal);
 
@@ -4723,6 +4806,9 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       });
     }
 
+    const chatGpt = await requireChatGptConversation(req, res);
+    if (!chatGpt) return;
+
     ensureConversationAssessmentState(appraisal);
 
     if (!appraisal.conversationAssessment?.startedAt || (appraisal.chatThread || []).length === 0) {
@@ -4737,10 +4823,14 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
     });
 
     // Generate report
-    const report = await appraisalAIService.generateSelfAssessmentReport(
-      appraisal,
-      okrs,
-      appraisal.documents
+    const report = await withAIRequestContext(
+      { runtimePreference: 'chatgpt', actorId: chatGpt.actorId },
+      () => appraisalAIService.generateSelfAssessmentReport(
+        appraisal,
+        okrs,
+        appraisal.documents,
+        { requireChatGpt: true }
+      )
     );
 
     ensureConversationAssessmentState(appraisal);
@@ -4782,12 +4872,13 @@ router.post('/:appraisalId/conversation/generate-report', requireAuth, async (re
       data: {
         report,
         conversationState: appraisal.conversationAssessment,
-        chatThread: appraisal.chatThread.slice(-5)
+        chatThread: appraisal.chatThread.slice(-5),
+        aiAvailable: true
       }
     });
   } catch (error) {
     console.error('Generate report error:', error);
-    res.status(500).json({ success: false, error: 'Failed to generate report' });
+    sendConversationRuntimeError(res, error, 'Failed to generate report');
   }
 });
 

@@ -14,4 +14,12 @@ function aiRequestContext(req, _res, next) {
   }, next);
 }
 
-module.exports = { aiRequestContext, getAIRequestContext: () => storage.getStore() || {} };
+function withAIRequestContext(overrides, callback) {
+  return storage.run({ ...(storage.getStore() || {}), ...(overrides || {}) }, callback);
+}
+
+module.exports = {
+  aiRequestContext,
+  getAIRequestContext: () => storage.getStore() || {},
+  withAIRequestContext
+};

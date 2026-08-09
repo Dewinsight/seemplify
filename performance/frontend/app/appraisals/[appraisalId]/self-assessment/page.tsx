@@ -23,6 +23,7 @@ import {
 import { ArrowBack, AutoAwesome, EditNote, Save, Send } from '@mui/icons-material';
 import { alpha, useTheme } from '@mui/material/styles';
 import ConversationalAssessment from './conversational/ConversationalAssessment';
+import ChatGptConversationGate from './conversational/ChatGptConversationGate';
 
 type ManualSelfAssessmentForm = {
   overallSummary: {
@@ -304,10 +305,15 @@ export default function SelfAssessmentPage() {
       {aiAssistEnabled ? (
         <Fade in>
           <Box>
-            <ConversationalAssessment
-              appraisalId={appraisalId}
-              onComplete={handleConversationComplete}
-            />
+            <ChatGptConversationGate appraisalId={appraisalId}>
+              {({ requireChatGptConnection }) => (
+                <ConversationalAssessment
+                  appraisalId={appraisalId}
+                  onComplete={handleConversationComplete}
+                  onChatGptUnavailable={requireChatGptConnection}
+                />
+              )}
+            </ChatGptConversationGate>
           </Box>
         </Fade>
       ) : (

@@ -24,6 +24,7 @@ const ScheduledReminder = require('../models/ScheduledReminder');
 const { buildGoalSnapshots } = require('../services/appraisalGoalSnapshotService');
 const { publishDomainEvent, recordEvent } = require('../services/outboxService');
 const { runNotificationWorkerOnce } = require('../services/notificationWorker');
+const chatGptAccountService = require('../services/chatGptAccountService');
 const {
   processReminder,
   scheduleReminderSequence
@@ -866,6 +867,46 @@ test('AI appraisal suggestions retain evidence and require an audited human deci
     .set('x-test-actor', 'manager')
     .send({ decision: 'reject', comment: 'Cannot reverse the prior review' })
     .expect(409);
+});
+
+test('conversational appraisal cannot start without a routable ChatGPT account', async () => {
+  const now = new Date();
+  const cycle = await AppraisalCycle.create({
+    organizationId: ORG_A,
+    name: 'ChatGPT-gated conversation cycle',
+    periodStart: new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000)),
+    periodEnd: new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000)),
+    status: 'active',
+    settings: { enableAiAssist: true }
+  });
+  const appraisal = await Appraisal.create({
+    organizationId: ORG_A,
+    cycleId: cycle._id,
+    employee: { userId: EMPLOYEE, name: 'Employee One', email: 'employee@example.com' },
+    manager: { userId: MANAGER, name: 'Manager One', email: 'manager@example.com' },
+    status: 'self_assessment_pending'
+  });
+
+  const originalReadAccount = chatGptAccountService.readAccount;
+  chatGptAccountService.readAccount = async () => ({ isRoutable: () => false });
+  try {
+    const response = await request(app)
+      .post(`/api/appraisals/${appraisal._id}/conversation/start`)
+      .set('x-test-actor', 'employee')
+      .send({})
+      .expect(409);
+
+    expect(response.body).toMatchObject({
+      success: false,
+      code: 'CHATGPT_CONNECTION_REQUIRED'
+    });
+    const unchanged = await Appraisal.findById(appraisal._id).lean();
+    expect(unchanged.status).toBe('self_assessment_pending');
+    expect(unchanged.conversationAssessment?.startedAt).toBeFalsy();
+    expect(unchanged.chatThread || []).toHaveLength(0);
+  } finally {
+    chatGptAccountService.readAccount = originalReadAccount;
+  }
 });
 
 test('retired appraisal goal-setting backdoors authenticate and return 410 without mutation', async () => {
