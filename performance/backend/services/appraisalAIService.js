@@ -697,7 +697,10 @@ Format your response as natural conversation text (not JSON).`;
     const phaseContext = this.buildPhaseContext(currentPhase, currentOkr, extractedData);
 
     if (!this.client) {
-      return this.getFallbackConversationResponse(currentPhase, userMessage);
+      return this.getFallbackConversationResponse(currentPhase, userMessage, {
+        currentOkrIndex,
+        okrCount: okrs?.length || 0
+      });
     }
 
     const okrListForPrompt = (okrs || []).map((okr, idx) => {
@@ -819,7 +822,10 @@ Respond to them and continue the conversation. If appropriate, extract any struc
       };
     } catch (error) {
       console.error('Conversation continue error:', error);
-      return this.getFallbackConversationResponse(currentPhase, userMessage);
+      return this.getFallbackConversationResponse(currentPhase, userMessage, {
+        currentOkrIndex,
+        okrCount: okrs?.length || 0
+      });
     }
   }
 
@@ -1711,22 +1717,73 @@ Provide a recommendation in JSON format:
     };
   }
 
-  getFallbackConversationResponse(phase, userMessage) {
-    const responses = {
-      okr_reflection: "Thank you for sharing that. Can you tell me more about the specific results or metrics you achieved?",
-      achievements: "That's great progress. Were there any other notable accomplishments you'd like to mention?",
-      challenges: "I appreciate you sharing that challenge. How did you address it, and what did you learn from the experience?",
-      learnings: "Those are valuable insights. What skills would you like to develop further?",
-      future_goals: "Good goals. Can you make them more specific with measurable outcomes and timeframes?",
-      competencies: "Thank you for that self-assessment. Are there any competencies you'd like to focus on improving?",
-      report_generation: "I have enough information to generate your self-assessment report. Would you like me to proceed?"
-    };
+  getFallbackConversationResponse(phase, userMessage, { currentOkrIndex = 0, okrCount = 0 } = {}) {
+    const text = this.truncateText(this.normalizeText(userMessage), 1200);
+    const selectedOkrMatch = phase === 'okr_reflection' ? text.match(/^#?(\d+)$/) : null;
+
+    if (selectedOkrMatch) {
+      const selectedIndex = Number(selectedOkrMatch[1]) - 1;
+      if (selectedIndex >= 0 && selectedIndex < okrCount) {
+        return {
+          response: `OKR ${selectedIndex + 1} selected. Describe the outcome, the measurable result, and what you would improve.`,
+          extractedData: null,
+          currentPhase: 'okr_reflection',
+          currentOkrIndex: selectedIndex,
+          confidence: 1,
+          tokensUsed: 0,
+          success: true,
+          fallback: true
+        };
+      }
+    }
+
+    let response = 'Your response has been saved. Please continue with the next guided question.';
+    let currentPhase = phase;
+    let nextOkrIndex = Math.max(0, Number(currentOkrIndex) || 0);
+    let extractedData = null;
+
+    if (phase === 'okr_reflection') {
+      extractedData = { type: 'achievement', data: { text, context: 'OKR reflection' } };
+      if (okrCount > 0 && nextOkrIndex < okrCount - 1) {
+        nextOkrIndex += 1;
+        response = `That OKR evidence has been saved. Now describe the outcome and measurable result for OKR ${nextOkrIndex + 1}.`;
+      } else {
+        currentPhase = 'achievements';
+        response = 'Your OKR evidence has been saved. What is one additional achievement you are most proud of, and what impact did it have?';
+      }
+    } else if (phase === 'achievements') {
+      extractedData = { type: 'achievement', data: { text, context: 'Key achievement' } };
+      currentPhase = 'challenges';
+      response = 'Achievement saved. Describe one meaningful challenge, how you handled it, and the result.';
+    } else if (phase === 'challenges') {
+      extractedData = { type: 'challenge', data: { text, resolution: text, learnings: '' } };
+      currentPhase = 'learnings';
+      response = 'Challenge saved. What did you learn or which skill did you strengthen, and how have you applied it?';
+    } else if (phase === 'learnings') {
+      extractedData = { type: 'learning', data: { text, context: 'Employee reflection' } };
+      currentPhase = 'future_goals';
+      response = 'Learning saved. State one goal for the next period, including a measurable outcome and target date.';
+    } else if (phase === 'future_goals') {
+      extractedData = {
+        type: 'goal',
+        data: {
+          text,
+          measurable: /\d|percent|percentage|by\s+(?:q[1-4]|\w+\s+\d{4})/i.test(text),
+          timeframe: text.match(/(?:by|before)\s+([^.,;]+)/i)?.[1] || ''
+        }
+      };
+      currentPhase = 'report_generation';
+      response = 'Future goal saved. I have enough evidence to prepare your self-assessment report for review.';
+    } else if (phase === 'report_generation') {
+      response = 'Your evidence is ready for report generation.';
+    }
 
     return {
-      response: responses[phase] || "Thank you for sharing. Please continue with your thoughts.",
-      extractedData: null,
-      currentPhase: phase,
-      confidence: 0.5,
+      response,
+      extractedData,
+      currentPhase,
+      currentOkrIndex: nextOkrIndex,
+      confidence: 1,
       tokensUsed: 0,
       success: true,
       fallback: true

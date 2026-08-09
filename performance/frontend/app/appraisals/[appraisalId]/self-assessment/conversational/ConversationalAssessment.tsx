@@ -109,6 +109,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
   const [requireSelfRating, setRequireSelfRating] = useState(true);
   const [allowReviewConversation, setAllowReviewConversation] = useState(false);
   const [reviewAutoGenerateAttempted, setReviewAutoGenerateAttempted] = useState(false);
+  const [guidedFallbackActive, setGuidedFallbackActive] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
   const findLatestReportInThread = useCallback((thread: Message[] = []) => {
@@ -133,6 +134,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
         // Resume existing conversation
         setConversationState(data.conversationState);
         setMessages(data.chatThread);
+        setGuidedFallbackActive(data.chatThread.some((message: Message) => message.aiContext?.modelUsed === 'guided-fallback'));
         setOkrSummary(data.okrs?.map((okr: any) => ({
           id: okr._id,
           title: okr.title || okr.objectives?.[0]?.title || 'Untitled OKR',
@@ -173,6 +175,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       setConversationState(data.conversationState);
       setMessages(data.chatThread || []);
       setOkrSummary(data.okrSummary || []);
+      setGuidedFallbackActive(data.fallback === true);
       setSnackbar({ open: true, message: 'Conversation started!', severity: 'success' });
     } catch (err: any) {
       console.error('Start conversation error:', err);
@@ -212,6 +215,7 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
       // Update with AI response
       setMessages(data.chatThread || []);
       setConversationState(data.conversationState);
+      if (data.fallback === true) setGuidedFallbackActive(true);
 
       // Check if we should transition to report generation
       if (data.currentPhase === 'report_generation') {
@@ -474,6 +478,12 @@ export default function ConversationalAssessment({ appraisalId, onComplete }: Co
           />
         </Box>
       </Paper>
+
+      {guidedFallbackActive && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Live ChatGPT assistance is temporarily unavailable. Guided mode is saving your responses and will still let you review and submit a complete self-assessment.
+        </Alert>
+      )}
 
       <Box
         sx={{
