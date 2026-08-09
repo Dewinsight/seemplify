@@ -174,28 +174,28 @@
         <a href="#remaining">Remaining</a>
         <a href="#method">Method</a>
       </nav>
-      <small>Prepared from the signed-in production Edge session, focused automated suites, source review, and parallel feature workstreams.</small>
+      <small>Prepared from signed-in production Edge and Codex browser sessions, focused automated suites, source review, and parallel feature workstreams.</small>
     </aside>
 
     <main>
       <header>
         <p class="eyebrow">Seemplify Recruiter · production + release evidence</p>
         <h2>The application is published and materially stronger. Live generative acceptance is externally quota-blocked.</h2>
-        <p>The connected ChatGPT identity, runtime routing, cached AI matching, shortlist scores, CV processing history, detailed stages, artifacts, failures, retries, and release health were verified. Fresh ChatGPT generation cannot be truthfully marked 100% today because the connected account has reached its provider usage limit. A new CV attachment is separately blocked by one browser-extension permission.</p>
+        <p>The connected ChatGPT identity, runtime routing, cached AI matching, shortlist scores, CV processing history, detailed stages, artifacts, failures, retries, and release health were verified. A new synthetic CV was accepted through secure storage, Cloudinary, and text extraction in the Codex browser. Fresh ChatGPT generation cannot be truthfully marked 100% today because the connected account has reached its provider usage limit.</p>
         <div class="chips" aria-label="Outcome summary">
           <span class="status published">Published</span>
           <span class="status pass">Connection verified</span>
           <span class="status pass">Matching verified</span>
           <span class="status pass">CV history verified</span>
           <span class="status blocked">Fresh generation quota-blocked</span>
-          <span class="status blocked">New file attachment blocked</span>
+          <span class="status pass">New CV intake verified</span>
         </div>
       </header>
 
       <section id="verdict">
         <div class="section-head">
           <h3>Executive verdict</h3>
-          <p>This release passes its code, tenant-isolation, queue, cache, build, and deployed health gates. It does not yet pass every fresh production model call because external provider quota and browser file-access permission are prerequisites the application cannot override.</p>
+          <p>This release passes its code, tenant-isolation, queue, cache, build, deployed health, and fresh CV intake gates. It does not yet pass every fresh production model call because external provider quota is a prerequisite the application cannot override.</p>
         </div>
         <div class="verdict">
           <article class="verdict-copy">
@@ -207,9 +207,9 @@
             </div>
           </article>
           <div class="summary-box" aria-label="Audit outcome counts">
-            <div class="metric"><strong>7</strong><span>Production journeys passed</span></div>
+            <div class="metric"><strong>8</strong><span>Production journeys passed</span></div>
             <div class="metric"><strong>4</strong><span>Fresh AI calls quota-blocked</span></div>
-            <div class="metric"><strong>1</strong><span>Browser permission block</span></div>
+            <div class="metric"><strong>0</strong><span>Browser permission blocks</span></div>
             <div class="metric"><strong>0</strong><span>Open P0 tenant leaks in tested scope</span></div>
           </div>
         </div>
@@ -218,7 +218,7 @@
       <section id="matrix">
         <div class="section-head">
           <h3>Signed-in browser matrix</h3>
-          <p>All live observations used the user’s existing authenticated Edge session and active AIIN workspace. No real applicant was contacted and no live interview invitation was sent.</p>
+          <p>Live observations used the user’s authenticated Edge session plus a separately authenticated Codex in-app browser in the active AIIN workspace. No real applicant was contacted and no live interview invitation was sent.</p>
         </div>
         <table class="matrix">
           <thead><tr><th>Journey</th><th>Status</th><th>Observed production result</th><th>Interpretation</th></tr></thead>
@@ -233,8 +233,8 @@
             <tr><td>Interview questions</td><td><span class="status partial">Quota + UX</span></td><td>Three historic AI-generated questions loaded. A fresh one-question advanced request failed under quota; the modal did not retain a strong inline diagnostic.</td><td>Existing data passes; fresh generation and error presentation need a post-quota recheck.</td></tr>
             <tr><td>Recruiter Assistant</td><td><span class="status pass">Degraded pass</span></td><td>PR #35 fixed the actor/workspace 409: the deployed socket authenticates and receives <code>chat_start</code>. PR #36 releases the input after two minutes when the quota-constrained provider sends no terminal event.</td><td>Live browser acceptance passed: the pending bubble became an actionable quota/busy-provider message and the textbox was re-enabled.</td></tr>
             <tr><td>Bulk upload page</td><td><span class="status pass">UI pass</span></td><td>The page explains durable background processing, return-later recovery, file selection, and upload state.</td><td>The requested workflow exists and is understandable.</td></tr>
-            <tr><td>New CV attachment</td><td><span class="status blocked">Browser permission</span></td><td>Edge’s ChatGPT extension denied programmatic file attachment because “Allow access to file URLs” is disabled.</td><td>Enable that extension setting, then rerun the supplied fictional PDF.</td></tr>
-            <tr><td>CV processing history</td><td><span class="status pass">Pass</span></td><td>Production retained ten bulk/public records with completed and failed outcomes across 180-day history.</td><td>The recruiter can leave, return, filter, and inspect durable processing.</td></tr>
+            <tr><td>New CV attachment</td><td><span class="status pass">Pass to AI gate</span></td><td>The Codex browser uploaded the 3.3 KB synthetic PDF. Job <code>cv_72e11293-0d30-4ab5-ab7e-48fcd1e07ce2</code> completed receipt, secure storage, Cloudinary, and extraction of 1,922 characters.</td><td>AI analysis paused truthfully at 50% with <code>CODEX_TURN_FAILED</code> because the connected account has no remaining usage quota.</td></tr>
+            <tr><td>CV processing history</td><td><span class="status pass">Pass</span></td><td>The new queue record survived leaving and returning. History showed Waiting · 50%, exact job ID, failed stage, timestamps, artifacts, and two attempts alongside older completed/failed records.</td><td>The recruiter can leave, return, filter, and inspect durable processing without losing the CV.</td></tr>
             <tr><td>CV detail / retry</td><td><span class="status pass">Pass</span></td><td>Detail showed all seven stages, artifacts, 10,573 extracted characters, five failed attempts, successful manual retry, exact codes/timestamps, and Retry action.</td><td>The original visibility/recovery requirement is implemented and live.</td></tr>
           </tbody>
         </table>
@@ -275,8 +275,8 @@
             <figcaption><strong>Detailed CV history works.</strong> Stage-by-stage execution, artifacts, failures, retry attempts, and the final completed result are visible after returning later.</figcaption>
           </figure>
           <figure>
-            <img src="assets/recruiter-ai-e2e-2026-08-09/bulk-upload-ready-file-permission-blocked.png" alt="Bulk CV upload page ready for files">
-            <figcaption><strong>Bulk workflow is ready.</strong> The only attachment block was the local Edge extension setting, not a missing product control.</figcaption>
+            <img src="assets/recruiter-ai-e2e-2026-08-09/codex-browser-cv-live.jpg" alt="New synthetic CV processing detail showing durable storage, Cloudinary, extracted text, attempts, and the quota error">
+            <figcaption><strong>Fresh Codex-browser upload verified.</strong> The new CV reached secure storage, Cloudinary, and 1,922 extracted characters. History preserved the exact AI-stage quota failure and both attempts.</figcaption>
           </figure>
           <figure>
             <img src="assets/recruiter-ai-e2e-2026-08-09/assistant-chat-database-failure.png" alt="Earlier Recruiter Assistant terminal error evidence">
@@ -353,7 +353,7 @@ scoped syntax and diff checks                  → PASS</div>
         </div>
         <div class="risk-list">
           <article class="item"><span class="status blocked">Required</span><div><h4>Restore ChatGPT quota</h4><p>Purchase additional credits or wait until the provider reset, then rerun job description, requirements, one interview-question generation, Assistant read-only chat, and one CV analysis.</p></div></article>
-          <article class="item"><span class="status blocked">Required</span><div><h4>Enable Edge extension file URL access</h4><p>Open <code>edge://extensions</code>, choose Details for the ChatGPT browser extension, and enable “Allow access to file URLs.” Then upload the supplied fictional PDF.</p></div></article>
+          <article class="item"><span class="status blocked">Required</span><div><h4>Retry the retained synthetic CV after quota returns</h4><p>Use job <code>cv_72e11293-0d30-4ab5-ab7e-48fcd1e07ce2</code>. Its durable file, Cloudinary asset, and extracted text are already retained, so the retry should continue from AI analysis without re-uploading.</p></div></article>
           <article class="item"><span class="status partial">Observe</span><div><h4>Reconcile the quota display</h4><p>The provider says the account is at its limit while Recruiter displays “55% used · 45% remaining” and a different reset time. Treat the provider error as authoritative until usage ingestion is reconciled.</p></div></article>
           <article class="item"><span class="status partial">Operations</span><div><h4>Configure a Dokploy backup destination</h4><p>The live gateway is serving, but its upgrade workflow correctly refuses to replace the volume without an S3-compatible backup destination.</p></div></article>
           <article class="item"><span class="status partial">Operations</span><div><h4>Review historical AI usage dead letters</h4><p>Health reports two old validation dead-letter events while current processing has no active error. Resolve or archive them so operational health is fully clean.</p></div></article>
@@ -381,10 +381,10 @@ scoped syntax and diff checks                  → PASS</div>
           <p>The audit separates direct production observation, automated proof, and blocked acceptance so the report does not overstate certainty.</p>
         </div>
         <div class="method-grid">
-          <article class="method-card"><h4>Live production</h4><p>Existing signed-in Edge session, semantic browser controls, direct screenshots, existing active job, existing non-sensitive processing history, and read-only matching/shortlist inspection.</p></article>
+          <article class="method-card"><h4>Live production</h4><p>Signed-in Edge and Codex browser sessions, semantic controls, direct screenshots, a fresh synthetic CV upload, existing active job, processing history, and read-only matching/shortlist inspection.</p></article>
           <article class="method-card"><h4>Parallel workstreams</h4><p>CV/queue, jobs/questions/Assistant, and matching/cache/enrichment were independently owned, tested, and then reconciled in one release branch.</p></article>
           <article class="method-card"><h4>Safe test-data policy</h4><p>No real applicant was contacted, no interview invitation was created, no account was disconnected, and no high-cost large-candidate rerank was forced while quota was constrained.</p></article>
-          <article class="method-card"><h4>Acceptance boundary</h4><p>A feature is marked passed only where production evidence or focused automated proof exists. Quota-blocked or permission-blocked steps remain explicitly blocked.</p></article>
+          <article class="method-card"><h4>Acceptance boundary</h4><p>A feature is marked passed only where production evidence or focused automated proof exists. Provider-quota-blocked steps remain explicitly blocked.</p></article>
         </div>
       </section>
 
