@@ -313,6 +313,23 @@ async function installMockApi(page: Page, state: MockApiState) {
         },
       });
     }
+    if (method === 'GET' && (path === '/user/employees-for-appraisal' || path === '/user/all-employees')) {
+      return fulfill({
+        success: true,
+        data: [{
+          userId: 'member-1',
+          name: 'Jordan Lee',
+          email: 'jordan@example.com',
+          teamId: 'team-1',
+          teamIds: ['team-1'],
+          teamName: 'Customer Success',
+          managerId: currentUser.id,
+          managerName: currentUser.name,
+          managerEmail: currentUser.email,
+          isSelectableForAppraisal: true,
+        }],
+      });
+    }
     if (method === 'GET' && path === '/user/member-1/stats') {
       return fulfill({
         success: true,
@@ -533,6 +550,21 @@ test('initializes canonical goal periods for a manager when a new organization h
   await page.getByRole('button', { name: 'Create goal' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Create goal' });
   await expect(muiSelect(dialog, 'Period')).toHaveText(state.futurePeriod.name);
+});
+
+test('prefills the current annual review period when creating an appraisal cycle', async ({ page }) => {
+  const state = createState();
+  state.managerMode = true;
+  await installMockApi(page, state);
+
+  const currentYear = new Date().getUTCFullYear();
+  await page.goto('/admin/appraisal-cycles/new');
+
+  await expect(page.getByLabel('Period Start')).toHaveValue(`${currentYear}-01-01`);
+  await expect(page.getByLabel('Period End')).toHaveValue(`${currentYear}-12-31`);
+  await page.getByLabel('Cycle Name').fill('Annual employee review');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Choose Participants' })).toBeVisible();
 });
 
 test('opens an unread Action Centre notification at its goal deep link', async ({ page }) => {

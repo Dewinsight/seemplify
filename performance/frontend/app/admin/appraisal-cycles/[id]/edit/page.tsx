@@ -87,34 +87,38 @@ const phaseLabels: Record<string, string> = {
     finalReview: 'Final Review'
 };
 
-const defaultFormData = {
-    name: '',
-    description: '',
-    cycleType: 'annual',
-    periodStart: '',
-    periodEnd: '',
-    okrWeight: 40,
-    scope: {
-        type: 'organization',
-        targetIds: [] as string[]
-    },
-    phases: {
-        selfAssessment: { startDate: '', endDate: '' },
-        managerReview: { startDate: '', endDate: '' },
-        calibration: { startDate: '', endDate: '' },
-        finalReview: { startDate: '', endDate: '' }
-    },
-    settings: {
-        allowSelfRating: true,
-        requireDocumentUpload: false,
-        requireOkrAlignment: true,
-        enablePeerFeedback: true,
-        enable360Feedback: false,
-        enableAiAssist: true,
-        enableChat: true,
-        requireSignOff: true
-    }
-};
+function createDefaultFormData() {
+    const currentYear = new Date().getUTCFullYear();
+
+    return {
+        name: '',
+        description: '',
+        cycleType: 'annual',
+        periodStart: `${currentYear}-01-01`,
+        periodEnd: `${currentYear}-12-31`,
+        okrWeight: 40,
+        scope: {
+            type: 'organization',
+            targetIds: [] as string[]
+        },
+        phases: {
+            selfAssessment: { startDate: '', endDate: '' },
+            managerReview: { startDate: '', endDate: '' },
+            calibration: { startDate: '', endDate: '' },
+            finalReview: { startDate: '', endDate: '' }
+        },
+        settings: {
+            allowSelfRating: true,
+            requireDocumentUpload: false,
+            requireOkrAlignment: true,
+            enablePeerFeedback: true,
+            enable360Feedback: false,
+            enableAiAssist: true,
+            enableChat: true,
+            requireSignOff: true
+        }
+    };
+}
 
 function formatDateForInput(dateString: string) {
     if (!dateString) return '';
@@ -181,7 +185,7 @@ export default function EditAppraisalCyclePage() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [saveError, setSaveError] = useState('');
-    const [formData, setFormData] = useState(defaultFormData);
+    const [formData, setFormData] = useState(createDefaultFormData);
 
     const [assignableEmployees, setAssignableEmployees] = useState<AssignableEmployee[]>([]);
     const [loadingEmployees, setLoadingEmployees] = useState(false);
