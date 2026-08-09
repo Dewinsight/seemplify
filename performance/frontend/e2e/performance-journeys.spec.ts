@@ -72,6 +72,7 @@ interface MockApiState {
     continuousPerformance: boolean;
   };
   managerMode: boolean;
+  hrAdminMode: boolean;
 }
 
 function nextQuarter() {
@@ -228,6 +229,7 @@ function createState(): MockApiState {
       continuousPerformance: true,
     },
     managerMode: false,
+    hrAdminMode: false,
   };
 }
 
@@ -303,9 +305,11 @@ async function installMockApi(page: Page, state: MockApiState) {
       });
     }
     if (method === 'GET' && path === '/user/context') {
-      const role = state.managerMode
-        ? { name: 'line_manager', displayName: 'Line Manager', isManager: true, isHRAdmin: false, isTeamLead: true }
-        : { name: 'employee', displayName: 'Employee', isManager: false, isHRAdmin: false, isTeamLead: false };
+      const role = state.hrAdminMode
+        ? { name: 'hr_admin', displayName: 'HR Administrator', isManager: false, isHRAdmin: true, isTeamLead: false }
+        : state.managerMode
+          ? { name: 'line_manager', displayName: 'Line Manager', isManager: true, isHRAdmin: false, isTeamLead: true }
+          : { name: 'employee', displayName: 'Employee', isManager: false, isHRAdmin: false, isTeamLead: false };
       return fulfill({
         success: true,
         data: {
@@ -764,6 +768,34 @@ test('hides organization features that are explicitly disabled', async ({ page }
   await expect(page.getByRole('link', { name: 'Appraisals' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Growth' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /unread notifications/ })).toHaveCount(0);
+});
+
+test('keeps the HR navigation on one line and renders page help as a compact utility row', async ({ page }) => {
+  const state = createState();
+  state.hrAdminMode = true;
+  await page.setViewportSize({ width: 1536, height: 768 });
+  await installMockApi(page, state);
+
+  await page.goto('/dashboard');
+
+  const header = page.getByRole('navigation');
+  const guide = page.getByTestId('page-guide-banner');
+  await expect(header).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Admin Panel' })).toBeVisible();
+  await expect(guide).toBeVisible();
+
+  const headerBox = await header.boundingBox();
+  const guideBox = await guide.boundingBox();
+  expect(headerBox?.height).toBeLessThanOrEqual(65);
+  expect(guideBox?.height).toBeLessThanOrEqual(58);
+  expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+  for (const name of ['Dashboard', 'My OKRs', 'Appraisals', 'Cycles']) {
+    const item = page.getByRole('link', { name, exact: true });
+    await expect(item).toBeVisible();
+    expect(await item.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('nowrap');
+    expect((await item.boundingBox())?.height).toBeLessThanOrEqual(42);
+  }
 });
 
 test('connects an employee ChatGPT account and records explicit consent before routing AI work', async ({ page }) => {

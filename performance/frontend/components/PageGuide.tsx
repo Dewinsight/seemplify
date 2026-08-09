@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Box,
   Button,
@@ -626,47 +626,53 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
   const pathname = pathnameOverride || livePathname || '';
   const guide = useMemo(() => resolveGuide(pathname), [pathname]);
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [bannerVisible, setBannerVisible] = useState(showBanner);
-
-  useEffect(() => {
-    setDrawerOpen(false);
-    setBannerVisible(showBanner);
-  }, [guide.key, showBanner]);
+  const [drawerState, setDrawerState] = useState({ guideKey: '', open: false });
+  const [dismissedGuideKey, setDismissedGuideKey] = useState<string | null>(null);
+  const drawerOpen = drawerState.guideKey === guide.key && drawerState.open;
+  const bannerVisible = showBanner && dismissedGuideKey !== guide.key;
+  const openDrawer = () => setDrawerState({ guideKey: guide.key, open: true });
+  const closeDrawer = () => setDrawerState({ guideKey: guide.key, open: false });
 
   return (
     <>
       {showBanner && bannerVisible && (
         <Paper
+          data-testid="page-guide-banner"
           elevation={0}
           sx={{
             display: { xs: 'none', sm: 'block' },
             mb: 2,
-            p: 1.5,
-            borderRadius: 3,
+            px: 1.5,
+            py: 1,
+            borderRadius: 2,
             border: '1px solid',
             borderColor: 'divider',
-            background: 'linear-gradient(135deg, rgba(20,184,166,0.08) 0%, rgba(14,165,233,0.08) 100%)'
+            bgcolor: 'background.paper'
           }}
         >
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
-            <Box>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                <Chip size="small" color="info" icon={<HelpOutline />} label="Page Guide" />
-                <Typography variant="subtitle1" fontWeight={700}>{guide.title}</Typography>
-              </Stack>
-              <Typography variant="body2" color="text.secondary">
+          <Stack direction="row" spacing={1.5} justifyContent="space-between" alignItems="center" sx={{ minHeight: 38 }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+              <HelpOutline color="primary" sx={{ fontSize: 19, flexShrink: 0 }} />
+              <Typography variant="body2" fontWeight={700} whiteSpace="nowrap">
+                {guide.title} guide
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                noWrap
+                sx={{ display: { sm: 'none', md: 'block' }, minWidth: 0 }}
+              >
                 {guide.summary}
               </Typography>
-            </Box>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Button variant="contained" onClick={() => setDrawerOpen(true)}>
-                Open Guide
+            </Stack>
+            <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+              <Button size="small" variant="contained" onClick={openDrawer}>
+                Open guide
               </Button>
-              <Button component={Link} href="/tutorial" variant="outlined" startIcon={<MenuBookOutlined />}>
-                Full Tutorial
+              <Button component={Link} href="/tutorial" size="small" variant="text" startIcon={<MenuBookOutlined />}>
+                Tutorial
               </Button>
-              <IconButton size="small" onClick={() => setBannerVisible(false)} aria-label="Hide page guide banner">
+              <IconButton size="small" onClick={() => setDismissedGuideKey(guide.key)} aria-label="Hide page guide banner">
                 <Close fontSize="small" />
               </IconButton>
             </Stack>
@@ -678,29 +684,29 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
         variant="contained"
         color="info"
         startIcon={<HelpOutline />}
-        onClick={() => setDrawerOpen(true)}
+        onClick={openDrawer}
         sx={{
           display: { xs: 'inline-flex', sm: showBanner && bannerVisible ? 'none' : 'inline-flex' },
           position: 'fixed',
           right: 24,
           bottom: 24,
           zIndex: 1200,
-          borderRadius: 999,
-          px: 2.25,
-          boxShadow: 6
+          borderRadius: 2,
+          px: 2,
+          boxShadow: 2
         }}
       >
         Guide
       </Button>
 
-      <Drawer anchor="right" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+      <Drawer anchor="right" open={drawerOpen} onClose={closeDrawer}>
         <Box sx={{ width: { xs: '100vw', sm: 420 }, maxWidth: '100vw', p: 3 }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
             <Box>
-              <Typography variant="overline" color="text.secondary">Context Help</Typography>
-              <Typography variant="h5" fontWeight={800}>{guide.title}</Typography>
+              <Typography variant="body2" color="text.secondary">Page guide</Typography>
+              <Typography variant="h5" fontWeight={700}>{guide.title}</Typography>
             </Box>
-            <IconButton onClick={() => setDrawerOpen(false)} aria-label="Close guide">
+            <IconButton onClick={closeDrawer} aria-label="Close guide">
               <Close />
             </IconButton>
           </Stack>
@@ -709,7 +715,7 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
             {guide.summary}
           </Typography>
 
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, mb: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
               What This Page Is For
             </Typography>
@@ -718,7 +724,7 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
             </Typography>
           </Paper>
 
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, mb: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
               How To Use It
             </Typography>
@@ -734,7 +740,7 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
             </List>
           </Paper>
 
-          <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, mb: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
               What Success Looks Like
             </Typography>
@@ -750,7 +756,7 @@ export default function PageGuide({ pathnameOverride, showBanner = true }: { pat
             </List>
           </Paper>
           {guide.tips && guide.tips.length > 0 && (
-            <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, mb: 2 }}>
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, mb: 2 }}>
               <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
                 Practical Tips
               </Typography>

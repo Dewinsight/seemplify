@@ -226,27 +226,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ? "border-[#312d39] bg-[#0f0e13]"
           : "border-[#cbc6bc] bg-[#f1efe9]"
       )}>
-        <div className="mx-auto max-w-7xl px-4 lg:px-8">
-          <div className="flex h-[4.25rem] items-center justify-between">
+        <div className="mx-auto max-w-[100rem] px-4 lg:px-6">
+          <div className="flex h-16 items-center justify-between gap-4">
             {/* Logo */}
-            <Link href="https://seemplifyai.com" className="flex items-center gap-3 group">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-teal-500/25 bg-teal-500/10 text-teal-700 dark:text-teal-300">
+            <Link href="https://seemplifyai.com" className="flex shrink-0 items-center gap-2.5 group">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-teal-500/25 bg-teal-500/10 text-teal-700 dark:text-teal-300">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div className="hidden sm:block">
                 <div className={cn(
-                  "text-sm font-semibold transition-colors",
+                  "whitespace-nowrap text-sm font-semibold leading-tight transition-colors",
                   isDarkMode ? "text-white" : "text-gray-900"
                 )}>Performance Management</div>
                 <div className={cn(
-                  "text-xs transition-colors",
+                  "text-xs leading-tight transition-colors",
                   isDarkMode ? "text-zinc-400" : "text-gray-500"
                 )}>by Seemplify</div>
               </div>
             </Link>
 
             {/* Desktop Navigation */}
-            <div className="hidden lg:flex items-center gap-2">
+            <div className="hidden min-w-0 items-center gap-1 lg:flex" aria-label="Primary navigation">
               {navigation.filter(n => n.section === 'main').map((item) => {
                 const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`));
                 return (
@@ -254,7 +254,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                      'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-medium transition-colors duration-150',
                       active
                         ? isDarkMode
                           ? 'bg-zinc-800/80 text-white'
@@ -280,7 +280,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     type="button"
                     onClick={() => setGrowthDropdownOpen((open) => !open)}
                     className={cn(
-                      'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                      'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
                       navigation.filter((item) => item.section === 'analytics').some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
                         ? isDarkMode ? 'bg-zinc-800/80 text-white' : 'bg-gray-100 text-gray-900'
                         : isDarkMode ? 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -324,7 +324,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Right Side Actions */}
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2">
               {rolloutVisibilityReady && features.notifications !== false && <ActionCentreBell />}
               <ThemePreferenceMenu />
 
@@ -332,10 +332,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <Link
                   href="/admin"
                   className={cn(
-                    "hidden lg:inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                    "hidden items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-semibold transition-colors xl:inline-flex",
                     isDarkMode
-                      ? "bg-gradient-to-r from-teal-500/80 to-cyan-500/80 text-white hover:from-teal-400 hover:to-cyan-400"
-                      : "bg-gradient-to-r from-teal-600 to-cyan-600 text-white hover:from-teal-500 hover:to-cyan-500"
+                      ? "bg-teal-600 text-white hover:bg-teal-500"
+                      : "bg-teal-700 text-white hover:bg-teal-600"
                   )}
                 >
                   <Settings className="h-4 w-4" />
@@ -344,11 +344,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               )}
 
               {/* Organization & Team Switcher */}
-              <div className="hidden md:block relative">
+              <div className="relative hidden xl:block">
                 <button
                   onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
                   className={cn(
-                    "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                    "flex items-center gap-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-sm transition-colors",
                     isDarkMode
                       ? "border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-800/70"
                       : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
@@ -356,9 +356,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 >
                   <Building2 className="h-4 w-4" />
                   <div className="flex flex-col items-start">
-                    <span className="max-w-[120px] truncate text-xs font-medium">{currentOrganization?.name || 'Organization'}</span>
+                    <span className="max-w-[108px] truncate text-xs font-medium">{currentOrganization?.name || 'Organization'}</span>
                     {activeCurrentTeam && (
-                      <span className={cn("max-w-[120px] truncate text-[10px]", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
+                      <span className={cn("max-w-[108px] truncate text-[10px]", isDarkMode ? "text-zinc-500" : "text-gray-500")}>
                         {activeCurrentTeam.name || 'Team'}
                       </span>
                     )}
@@ -485,7 +485,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <button
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                   className={cn(
-                    "flex items-center gap-2 rounded-lg p-2 transition-colors",
+                    "flex min-w-0 items-center gap-2 rounded-lg p-1.5 transition-colors",
                     isDarkMode ? "hover:bg-zinc-800/50" : "hover:bg-gray-100"
                   )}
                 >
@@ -495,13 +495,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   )}>
                     <span className="text-sm font-semibold text-white">{user?.name?.charAt(0) || 'U'}</span>
                   </div>
-                  <div className="hidden lg:block text-left">
+                  <div className="hidden max-w-[132px] text-left 2xl:block">
                     <div className={cn(
-                      "text-sm font-medium truncate max-w-[120px]",
+                      "truncate text-sm font-medium",
                       isDarkMode ? "text-white" : "text-gray-900"
                     )}>{user?.name || 'User'}</div>
                     <div className={cn(
-                      "text-xs truncate max-w-[120px]",
+                      "truncate text-xs",
                       isDarkMode ? "text-zinc-500" : "text-gray-500"
                     )}>{user?.email}</div>
                   </div>
@@ -755,7 +755,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className={cn(
-        "min-h-screen bg-[var(--suite-canvas)] pt-[4.25rem] transition-colors duration-150"
+        "min-h-screen bg-[var(--suite-canvas)] pt-16 transition-colors duration-150"
       )}>
         <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
           <PageGuide />
