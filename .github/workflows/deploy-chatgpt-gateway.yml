@@ -19,6 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure durable ChatGPT session-volume backups
+        run: node tools/chatgpt-gateway/dokploy-ensure-volume-backup.cjs
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          CHATGPT_GATEWAY_APP_ID: ${{ secrets.CHATGPT_GATEWAY_APP_ID }}
+          DOKPLOY_BACKUP_DESTINATION_ID: ${{ secrets.DOKPLOY_BACKUP_DESTINATION_ID }}
       - name: Configure shared Seemplify AI gateway and consumers
         run: node tools/chatgpt-gateway/dokploy-configure.cjs
         env:
