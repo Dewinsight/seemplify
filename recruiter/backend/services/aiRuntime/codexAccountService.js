@@ -259,7 +259,7 @@ async function resolveRoutableSubject(userId, options = {}) {
   const consentApp = options.consentApp === 'performance' ? 'performance' : 'recruiter';
   const organizationId = String(options.organizationId || '').trim();
   const findUser = options.findUser || ((id) => User.findById(id)
-    .select('sharedAIOnly organizationMemberships recruiterAuthorizedOrganizations recruiterAppAccessSyncedAt')
+    .select('idpSubject sharedAIOnly organizationMemberships recruiterAuthorizedOrganizations recruiterAppAccessSyncedAt')
     .lean());
   const gatewayOptions = { ...options };
   delete gatewayOptions.consentApp;

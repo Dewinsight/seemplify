@@ -34,15 +34,26 @@ test('selected app claims grant only organizations containing Recruiter', () => 
   assert.deepEqual(recruiterAuthorizedClaims([all, recruiter, performance]).map((item) => item.id), ['all', 'a']);
 });
 
-test('legacy unsynced organization entitlement fails closed until OIDC backfills app access', () => {
+test('legacy unsynced Recruiter identity is bounded to an active membership until OIDC backfills app access', () => {
   const membership = { organization: 'org-a', isActive: true };
   assert.equal(recruiterOrganizationAuthorized({
     sharedAIOnly: false,
+    idpSubject: 'established-recruiter-subject',
     organizationMemberships: [membership],
     recruiterAuthorizedOrganizations: ['org-a']
+  }, 'org-a'), true);
+  assert.equal(recruiterOrganizationAuthorized({
+    sharedAIOnly: false,
+    organizationMemberships: [membership]
+  }, 'org-a'), false);
+  assert.equal(recruiterOrganizationAuthorized({
+    sharedAIOnly: true,
+    idpSubject: 'identity-shadow',
+    organizationMemberships: [membership]
   }, 'org-a'), false);
   assert.equal(recruiterOrganizationAuthorized({
     sharedAIOnly: false,
+    idpSubject: 'established-recruiter-subject',
     organizationMemberships: [membership],
     recruiterAuthorizedOrganizations: ['org-a'],
     recruiterAppAccessSyncedAt: new Date()
