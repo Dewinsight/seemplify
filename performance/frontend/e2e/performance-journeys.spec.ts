@@ -37,6 +37,8 @@ interface CheckInRecord {
 
 interface MockApiState {
   futurePeriod: { _id: string; name: string; code: string; startDate: string; endDate: string; status: string };
+  goalPeriods: Array<{ _id: string; name: string; code: string; startDate: string; endDate: string; status: string }>;
+  generatedGoalPeriodCalls: number;
   goals: GoalRecord[];
   checkIns: CheckInRecord[];
   feedbackItems: Array<Record<string, unknown>>;
@@ -86,6 +88,8 @@ function createState(): MockApiState {
   const futurePeriod = nextQuarter();
   return {
     futurePeriod,
+    goalPeriods: [futurePeriod],
+    generatedGoalPeriodCalls: 0,
     goals: [
       {
         _id: 'future-goal-1',
@@ -336,7 +340,12 @@ async function installMockApi(page: Page, state: MockApiState) {
       });
     }
     if (method === 'GET' && path === '/goal-periods') {
-      return fulfill({ success: true, data: [state.futurePeriod] });
+      return fulfill({ success: true, data: state.goalPeriods });
+    }
+    if (method === 'POST' && path === '/goal-periods/generate-fiscal') {
+      state.generatedGoalPeriodCalls += 1;
+      if (state.goalPeriods.length === 0) state.goalPeriods = [state.futurePeriod];
+      return fulfill({ success: true, data: state.goalPeriods }, 201);
     }
     if (method === 'GET' && path === '/okrs') {
       return fulfill({ success: true, data: state.goals, count: state.goals.length });
@@ -507,6 +516,23 @@ test('shows an upcoming unrated goal and creates a milestone without fabricated 
   const objectives = state.createdGoalBodies[0].objectives as Array<{ keyResults: Array<Record<string, unknown>> }>;
   expect(objectives[0].keyResults[0]).toMatchObject({ metricType: 'milestone' });
   expect(objectives[0].keyResults[0]).not.toHaveProperty('currentValue');
+});
+
+test('initializes canonical goal periods for a manager when a new organization has none', async ({ page }) => {
+  const state = createState();
+  state.managerMode = true;
+  state.goals = [];
+  state.goalPeriods = [];
+  await installMockApi(page, state);
+
+  await page.goto('/okrs');
+  await page.getByRole('tab', { name: 'Upcoming' }).click();
+  await expect(page.getByText(state.futurePeriod.name).first()).toBeVisible();
+  expect(state.generatedGoalPeriodCalls).toBe(1);
+
+  await page.getByRole('button', { name: 'Create goal' }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Create goal' });
+  await expect(muiSelect(dialog, 'Period')).toHaveText(state.futurePeriod.name);
 });
 
 test('opens an unread Action Centre notification at its goal deep link', async ({ page }) => {

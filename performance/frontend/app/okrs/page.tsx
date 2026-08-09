@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Alert,
@@ -333,6 +333,7 @@ export default function OKRWorkspacePage() {
     parentOKRId: '',
     objectives: [emptyObjective()],
   });
+  const periodInitializationRef = useRef<Promise<GoalPeriod[]> | null>(null);
 
   const currentUserIds = useMemo(
     () => new Set([user?.id, user?.sub].filter(Boolean).map(String)),
@@ -433,7 +434,21 @@ export default function OKRWorkspacePage() {
       const data = unwrapData<any>(response, []);
       const records = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
       setGoals(records);
-      const periods = periodResponse ? unwrapData<GoalPeriod[]>(periodResponse, []) : [];
+      let periods = periodResponse ? unwrapData<GoalPeriod[]>(periodResponse, []) : [];
+      if ((!Array.isArray(periods) || periods.length === 0) && canManageGoalWorkspace) {
+        if (!periodInitializationRef.current) {
+          periodInitializationRef.current = api.post('/goal-periods/generate-fiscal', {
+            startMonth: 1,
+            years: 2,
+            includeQuarters: true,
+          }).then((generatedResponse) => unwrapData<GoalPeriod[]>(generatedResponse, []))
+            .catch((initializationError) => {
+              periodInitializationRef.current = null;
+              throw initializationError;
+            });
+        }
+        periods = await periodInitializationRef.current;
+      }
       setPeriodDefinitions(Array.isArray(periods) ? periods : []);
     } catch (loadError) {
       setGoals([]);
@@ -441,7 +456,7 @@ export default function OKRWorkspacePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canManageGoalWorkspace]);
 
   useEffect(() => {
     if (!contextLoading) loadGoals();
@@ -475,9 +490,11 @@ export default function OKRWorkspacePage() {
   const periodsByBand = useMemo(() => {
     const allPeriods = new Set(goals.map((goal) => goal.period).filter(Boolean));
     periodDefinitions.forEach((period) => allPeriods.add(period.name || period.code || ''));
-    allPeriods.add(currentQuarterLabel());
-    allPeriods.add(adjacentQuarterLabel(1));
-    allPeriods.add(adjacentQuarterLabel(-1));
+    if (periodDefinitions.length === 0) {
+      allPeriods.add(currentQuarterLabel());
+      allPeriods.add(adjacentQuarterLabel(1));
+      allPeriods.add(adjacentQuarterLabel(-1));
+    }
     const grouped: Record<PeriodBand, string[]> = { upcoming: [], current: [], past: [] };
     allPeriods.forEach((period) => {
       if (!period) return;
