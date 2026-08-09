@@ -191,6 +191,18 @@ router.post('/:id/submit', async (req, res) => {
             });
         }
 
+        // Reject an open period before recalculating or mutating workflow state.
+        // Previously the route saved the timesheet as submitted and only then
+        // returned PERIOD_STILL_OPEN, leaving the persisted status inconsistent
+        // with the response shown to the employee.
+        if (new Date(timesheet.endDate) >= new Date()) {
+            return res.status(409).json({
+                error: 'The attendance period is still open and cannot be submitted yet',
+                code: 'PERIOD_STILL_OPEN',
+                periodEndsAt: timesheet.endDate,
+            });
+        }
+
         // Refresh entries and calculate summary
         const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
         await refreshTimesheetEntries(timesheet, policy);
@@ -282,14 +294,6 @@ router.post('/:id/submit', async (req, res) => {
                 priority: 'normal',
                 eventKey: `timesheet-submitted:${timesheet._id}:v${timesheet.version || 1}`,
                 channels: { email: policy?.notifications?.emailOnSubmission === true },
-            });
-        }
-
-        if (new Date(timesheet.endDate) >= new Date()) {
-            return res.status(409).json({
-                error: 'The attendance period is still open and cannot be submitted yet',
-                code: 'PERIOD_STILL_OPEN',
-                periodEndsAt: timesheet.endDate,
             });
         }
 
@@ -401,7 +405,7 @@ async function refreshTimesheetEntries(timesheet, suppliedPolicy = null, options
             userId: timesheet.userId,
             organizationId: timesheet.organizationId,
             timestamp: { $gte: timesheet.startDate, $lte: timesheet.endDate },
-        }).sort({ timestamp: 1 }),
+        }).sort({ timestamp: 1 }).lean(),
         EmployeeRoster.findOne({ organizationId: timesheet.organizationId, userId: timesheet.userId }).lean(),
     ]);
 

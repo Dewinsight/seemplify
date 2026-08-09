@@ -11,7 +11,8 @@
         "rules:seed": "node scripts/seedRulePacks.js --apply",
         "indexes:modernize:dry-run": "node scripts/syncModernizationIndexes.js",
         "indexes:modernize": "node scripts/syncModernizationIndexes.js --apply",
-        "calculations:shadow": "node scripts/compareShadowCalculations.js"
+        "calculations:shadow": "node scripts/compareShadowCalculations.js",
+        "test:e2e:seed": "node scripts/seedLiveE2E.js"
     },
     "dependencies": {
         "connect-mongo": "^5.1.0",

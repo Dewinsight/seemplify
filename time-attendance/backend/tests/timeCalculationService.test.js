@@ -75,6 +75,27 @@ describe('timeCalculationService', () => {
         expect(result.sessions[0].exceptions[0].type).toBe('duplicate_session');
     });
 
+    test('normalizes empty Mongoose-style locations without corrupting timesheet entries', () => {
+        const emptyLocation = { toObject: () => ({}) };
+        const populatedLocation = {
+            toObject: () => ({ latitude: 51.5074, longitude: -0.1278, verified: true }),
+        };
+        const result = calculatePeriod([
+            entry('clock_in', '2026-08-03T08:00:00Z', { location: emptyLocation }),
+            entry('clock_out', '2026-08-03T17:00:00Z', { location: populatedLocation }),
+        ], {
+            start: new Date('2026-08-03T00:00:00Z'),
+            end: new Date('2026-08-03T23:59:59Z'),
+        }, policy);
+
+        expect(result.dailyEntries[0].clockInLocation).toBeNull();
+        expect(result.dailyEntries[0].clockOutLocation).toEqual({
+            latitude: 51.5074,
+            longitude: -0.1278,
+            verified: true,
+        });
+    });
+
     test('builds configured fortnightly and semi-monthly periods', () => {
         const fortnight = getPeriodBounds(new Date('2026-08-05T12:00:00Z'), 'fortnightly', 'UTC');
         expect(fortnight.start.toISOString()).toBe('2026-08-03T00:00:00.000Z');

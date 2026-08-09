@@ -9,6 +9,7 @@
         "start": "next start -p 5011",
         "lint": "eslint app components context lib services",
         "test:e2e": "npm run build && playwright test",
+        "test:e2e:live": "playwright test --config=playwright.live.config.ts",
         "test:e2e:headed": "npm run build && playwright test --headed",
         "validate:production": "node scripts/validate-production-build.js"
     },

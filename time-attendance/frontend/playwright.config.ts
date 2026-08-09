@@ -5,6 +5,7 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`;
 
 export default defineConfig({
     testDir: './e2e',
+    testIgnore: 'live-attendance.spec.ts',
     outputDir: 'test-results',
     fullyParallel: false,
     workers: 1,

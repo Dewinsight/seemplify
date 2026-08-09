@@ -11,6 +11,26 @@ const { formatInTimeZone, utcToZonedTime, zonedTimeToUtc } = require('date-fns-t
 
 const EDITABLE_TIMESHEET_STATUSES = new Set(['draft', 'rejected', 'revision_requested', 'adjusted']);
 const LOCKED_TIMESHEET_STATUSES = new Set(['approved', 'locked', 'payroll_pending', 'payroll_exported']);
+const LOCATION_FIELDS = [
+    'latitude', 'longitude', 'address', 'area', 'city', 'state', 'country',
+    'displayName', 'accuracy', 'verified',
+];
+
+function normalizeLocationSnapshot(location) {
+    let value = location;
+    if (value && typeof value.toObject === 'function') {
+        value = value.toObject({ depopulate: true });
+    }
+    if (!value || typeof value !== 'object') return null;
+
+    const snapshot = {};
+    for (const field of LOCATION_FIELDS) {
+        if (value[field] !== undefined && value[field] !== null && value[field] !== '') {
+            snapshot[field] = value[field];
+        }
+    }
+    return Object.keys(snapshot).length ? snapshot : null;
+}
 
 function normalizePeriodType(periodType) {
     if (periodType === 'bi-weekly') return 'fortnightly';
@@ -227,8 +247,10 @@ function calculatePeriod(entries, period, policy = {}, calendarContext = {}) {
         if (session.clockOut && (!day.clockOut || new Date(session.clockOut.timestamp) > new Date(day.clockOut))) {
             day.clockOut = session.clockOut.timestamp;
         }
-        day.clockInLocation ||= session.clockIn.location || null;
-        if (session.clockOut?.location) day.clockOutLocation = session.clockOut.location;
+        const clockInLocation = normalizeLocationSnapshot(session.clockIn.location);
+        const clockOutLocation = normalizeLocationSnapshot(session.clockOut?.location);
+        if (!day.clockInLocation && clockInLocation) day.clockInLocation = clockInLocation;
+        if (clockOutLocation) day.clockOutLocation = clockOutLocation;
         day.breakDuration += Math.round(breakMinutes);
         day.totalMinutes += Math.round(netMinutes);
         day.timeEntryIds.push(...session.entries.map(entry => entry._id).filter(Boolean));
@@ -388,6 +410,7 @@ module.exports = {
     enumerateLocalDates,
     getPeriodBounds,
     localDayBounds,
+    normalizeLocationSnapshot,
     normalizePeriodType,
     normalizeTimeZone,
     roundMinutes,
