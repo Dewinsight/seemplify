@@ -326,3 +326,36 @@ test('renders navigation and core workflows at a mobile viewport', async ({ page
     await page.getByRole('link', { name: 'Schedule' }).last().click();
     await expect(page.getByRole('heading', { name: 'Schedule' })).toBeVisible();
 });
+
+test('keeps desktop navigation clear of account controls at the reported viewport', async ({ page, mockState: _mockState }) => {
+    await page.setViewportSize({ width: 1573, height: 900 });
+    await authenticate(page);
+    await page.goto('/dashboard');
+
+    const moreButton = page.getByRole('button', { name: 'More management pages' });
+    const headerActions = page.getByTestId('header-actions');
+    await expect(moreButton).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden();
+
+    const [moreBox, actionsBox] = await Promise.all([
+        moreButton.boundingBox(),
+        headerActions.boundingBox(),
+    ]);
+    expect(moreBox).not.toBeNull();
+    expect(actionsBox).not.toBeNull();
+    expect(moreBox!.x + moreBox!.width).toBeLessThanOrEqual(actionsBox!.x);
+
+    await moreButton.click();
+    await expect(page.getByRole('menuitem', { name: 'Reports' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Rule Packs' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Settings' })).toBeVisible();
+});
+
+test('uses the navigation menu before the desktop header becomes crowded', async ({ page, mockState: _mockState }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await authenticate(page);
+    await page.goto('/dashboard');
+
+    await expect(page.getByTestId('desktop-navigation')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();
+});

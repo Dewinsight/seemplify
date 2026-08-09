@@ -14,6 +14,7 @@ import {
     Clock,
     LayoutGrid,
     Menu,
+    MoreHorizontal,
     Settings,
     Users,
     X,
@@ -50,11 +51,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const [mobileOpen, setMobileOpen] = useState(false);
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [orgMenuOpen, setOrgMenuOpen] = useState(false);
+    const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
     useEffect(() => {
         setMobileOpen(false);
         setUserMenuOpen(false);
         setOrgMenuOpen(false);
+        setMoreMenuOpen(false);
     }, [pathname]);
 
     const publicRoutes = ['/login', '/oidc/callback'];
@@ -79,20 +82,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const isAdmin = ['owner', 'admin', 'hr_manager'].includes(currentOrgRole);
     const showManagement = isAdmin || isManager;
 
-    const managementNavigation: NavItem[] = [
+    const primaryManagementNavigation: NavItem[] = [
         { name: 'Approvals', label: 'Approvals', href: '/approvals', icon: CheckCircle2 },
         { name: 'Team Attendance', label: 'Team', href: '/team', icon: Users },
-        ...(isAdmin
-            ? [
-                { name: 'Reports', label: 'Reports', href: '/reports', icon: BarChart3 },
-                { name: 'Rule Packs', label: 'Rules', href: '/admin/rule-packs', icon: Scale },
-                { name: 'Settings', label: 'Settings', href: '/admin/settings', icon: Settings },
-            ]
-            : []),
+    ];
+
+    const secondaryManagementNavigation: NavItem[] = isAdmin
+        ? [
+            { name: 'Reports', label: 'Reports', href: '/reports', icon: BarChart3 },
+            { name: 'Rule Packs', label: 'Rules', href: '/admin/rule-packs', icon: Scale },
+            { name: 'Settings', label: 'Settings', href: '/admin/settings', icon: Settings },
+        ]
+        : [];
+
+    const managementNavigation = [
+        ...primaryManagementNavigation,
+        ...secondaryManagementNavigation,
     ];
 
     const desktopNavigation = showManagement
-        ? [...personalNavigation, ...managementNavigation]
+        ? [...personalNavigation, ...primaryManagementNavigation]
         : personalNavigation;
 
     const isActive = (item: NavItem) =>
@@ -102,11 +111,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const toggleOrganizationMenu = () => {
         setOrgMenuOpen(open => !open);
         setUserMenuOpen(false);
+        setMoreMenuOpen(false);
     };
 
     const toggleUserMenu = () => {
         setUserMenuOpen(open => !open);
         setOrgMenuOpen(false);
+        setMoreMenuOpen(false);
+    };
+
+    const toggleMoreMenu = () => {
+        setMoreMenuOpen(open => !open);
+        setOrgMenuOpen(false);
+        setUserMenuOpen(false);
     };
 
     const selectOrganization = (organizationId: string) => {
@@ -128,7 +145,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 className={cn(
                     mobile
                         ? 'flex min-h-12 items-center gap-3 border px-3 text-sm font-medium transition-colors'
-                        : 'relative flex h-16 items-center gap-2 px-3 text-[13px] font-medium transition-colors after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-transparent after:content-[\'\']',
+                        : 'relative flex h-16 items-center gap-2 px-2.5 text-[13px] font-medium transition-colors after:absolute after:inset-x-2.5 after:bottom-0 after:h-0.5 after:bg-transparent after:content-[\'\']',
                     active
                         ? mobile
                             ? 'border-zinc-700 bg-zinc-900 text-white'
@@ -150,7 +167,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <div className="bg-noise" />
 
             <nav className="fixed inset-x-0 top-0 z-[60] border-b border-white/[0.08] bg-zinc-950" aria-label="Primary navigation">
-                <div className="mx-auto flex h-16 max-w-[1440px] items-center px-4 lg:px-6">
+                <div className="mx-auto flex h-16 max-w-[1600px] items-center px-4 lg:px-6">
                     <Link href="/dashboard" className="mr-5 flex min-w-0 shrink-0 items-center gap-3" aria-label="Time and Attendance dashboard">
                         <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-teal-400/25 bg-teal-400/10 text-teal-300">
                             <Clock className="h-[18px] w-[18px]" strokeWidth={2} />
@@ -161,11 +178,63 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         </div>
                     </Link>
 
-                    <div className="hidden h-16 min-w-0 flex-1 items-center min-[1180px]:flex">
+                    <div className="relative hidden h-16 min-w-0 flex-1 items-center min-[1450px]:flex" data-testid="desktop-navigation">
                         {desktopNavigation.map(item => renderNavigationLink(item))}
+
+                        {secondaryManagementNavigation.length > 0 && (
+                            <div className="relative flex h-16 items-center">
+                                <button
+                                    type="button"
+                                    onClick={toggleMoreMenu}
+                                    aria-label="More management pages"
+                                    aria-expanded={moreMenuOpen}
+                                    aria-haspopup="menu"
+                                    className={cn(
+                                        'flex h-16 items-center gap-2 px-2.5 text-[13px] font-medium transition-colors',
+                                        secondaryManagementNavigation.some(isActive) || moreMenuOpen
+                                            ? 'text-white'
+                                            : 'text-zinc-400 hover:text-zinc-100'
+                                    )}
+                                >
+                                    <MoreHorizontal className={cn('h-4 w-4', secondaryManagementNavigation.some(isActive) && 'text-teal-400')} />
+                                    <span>More</span>
+                                    <ChevronDown className={cn('h-3.5 w-3.5 text-zinc-500 transition-transform', moreMenuOpen && 'rotate-180')} />
+                                </button>
+
+                                {moreMenuOpen && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className="fixed inset-x-0 bottom-0 top-16 z-40 cursor-default"
+                                            aria-label="Close more navigation menu"
+                                            onClick={() => setMoreMenuOpen(false)}
+                                        />
+                                        <div className="absolute right-0 top-14 z-50 w-52 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 p-1 shadow-lg shadow-black/30" role="menu">
+                                            {secondaryManagementNavigation.map(item => (
+                                                <Link
+                                                    key={item.href}
+                                                    href={item.href}
+                                                    role="menuitem"
+                                                    onClick={() => setMoreMenuOpen(false)}
+                                                    className={cn(
+                                                        'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors',
+                                                        isActive(item)
+                                                            ? 'bg-zinc-900 text-white'
+                                                            : 'text-zinc-300 hover:bg-zinc-900/70 hover:text-white'
+                                                    )}
+                                                >
+                                                    <item.icon className={cn('h-4 w-4', isActive(item) ? 'text-teal-400' : 'text-zinc-500')} />
+                                                    {item.name}
+                                                </Link>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </div>
 
-                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                    <div className="ml-auto flex shrink-0 items-center gap-2" data-testid="header-actions">
                         <ThemePreferenceMenu />
                         <div className="relative hidden md:block">
                             <button
@@ -264,13 +333,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
                         <button
                             type="button"
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 text-zinc-400 transition-colors hover:border-zinc-700 hover:bg-zinc-900 hover:text-white min-[1180px]:hidden"
                             onClick={() => {
                                 setMobileOpen(true);
                                 setOrgMenuOpen(false);
                                 setUserMenuOpen(false);
+                                setMoreMenuOpen(false);
                             }}
                             aria-label="Open navigation"
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 text-zinc-400 transition-colors hover:border-zinc-700 hover:bg-zinc-900 hover:text-white min-[1450px]:hidden"
                         >
                             <Menu className="h-5 w-5" />
                         </button>
@@ -283,7 +353,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </main>
 
             {mobileOpen && (
-                <div className="fixed inset-0 z-[70] min-[1180px]:hidden">
+                <div className="fixed inset-0 z-[70] min-[1450px]:hidden">
                     <button className="absolute inset-0 bg-black/70" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
                     <div className="absolute inset-x-0 top-0 max-h-screen overflow-y-auto border-b border-zinc-800 bg-zinc-950 shadow-lg shadow-black/30">
                         <div className="mx-auto max-w-3xl px-4 pb-6">
