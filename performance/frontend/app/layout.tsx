@@ -35,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en" data-scroll-behavior="smooth" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head>
-      <body className={`${bodyFont.variable} ${displayFont.variable}`} suppressHydrationWarning>
+      <body className={`${bodyFont.variable} ${displayFont.variable}`}>
         <Providers>
           <ThemeRegistry>
             <ConditionalLayout>{children}</ConditionalLayout>

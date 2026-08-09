@@ -394,6 +394,8 @@ p {
   cursor: pointer;
   color: var(--muted);
   transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .theme-toggle:hover {
@@ -466,6 +468,13 @@ p {
   cursor: pointer;
   text-align: left;
   transition: all 0.15s;
+  min-height: 44px;
+}
+
+.theme-toggle:focus-visible,
+.theme-option:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .theme-option:hover {

@@ -1,11 +1,9 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Moon, Sun } from 'lucide-react'
-import { useTheme } from 'next-themes'
 import { useBrandConfig } from '@/context/BrandContext'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { getIdpBaseUrl } from '@/utils/env'
 import styles from './IdentityHandoff.module.css'
 
@@ -31,11 +29,7 @@ export function IdentityHandoff({
   footer,
 }: IdentityHandoffProps) {
   const brand = useBrandConfig()
-  const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
   const isGovernment = brand.id === 'jetstone'
-
-  useEffect(() => setMounted(true), [])
 
   return (
     <div className={styles.page}>
@@ -49,14 +43,7 @@ export function IdentityHandoff({
             )}
             <span className={styles.productName}>Recruiter</span>
           </a>
-          <button
-            className={styles.themeButton}
-            type="button"
-            aria-label={mounted && resolvedTheme === 'dark' ? 'Use light theme' : 'Use dark theme'}
-            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-          >
-            {mounted && resolvedTheme === 'dark' ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-          </button>
+          <ThemeToggle className={styles.themeButton} />
         </div>
       </header>
 

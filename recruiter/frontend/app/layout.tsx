@@ -59,7 +59,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head suppressHydrationWarning>
+      <head>
         {/* Load runtime configuration before any other scripts */}
         <Script src="/__runtime_config__.js" strategy="beforeInteractive" />
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { SectionTutorial } from '@/components/tutorials/SectionTutorial';
 import { OpenAiAttribution } from '@/components/brand/OpenAiAttribution';
 import { ChatGptConnectionGate } from '@/components/settings/ChatGptConnectionGate';
+import { ThemePreferenceMenu } from '@/components/ThemePreferenceMenu';
 import {
   AI_PROVIDER_CHANGED_EVENT,
   requiresChatGptSetup,
@@ -339,7 +340,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     }}
     onRetry={() => void loadProviderState()}
   />;
-  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex min-h-[52px] items-center justify-between gap-3 border-b bg-card px-4 py-2"><Link to="/agreements" className="flex min-w-0 items-center gap-2"><div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="truncate text-sm font-semibold">Seemplify Experience</span></Link><div className="flex shrink-0 items-center gap-2"><span className="hidden text-xs font-medium text-muted-foreground sm:inline">Agreement field editor</span>{providerExperienceReady && <SectionTutorial tutorial={tutorial} />}</div></header><main>{sessionChildren}</main>{providerGate}</div>;
+  if (editorMode) return <div className="min-h-screen bg-background"><header className="flex min-h-[52px] items-center justify-between gap-3 border-b bg-card px-4 py-2"><Link to="/agreements" className="flex min-w-0 items-center gap-2"><div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">S</div><span className="truncate text-sm font-semibold">Seemplify Experience</span></Link><div className="flex shrink-0 items-center gap-2"><span className="hidden text-xs font-medium text-muted-foreground sm:inline">Agreement field editor</span><ThemePreferenceMenu />{providerExperienceReady && <SectionTutorial tutorial={tutorial} />}</div></header><main>{sessionChildren}</main>{providerGate}</div>;
   return <div className="min-h-screen bg-background">
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col overflow-hidden border-r bg-card md:flex"><SidebarContent selectorId="active-space-desktop" runtimeState={runtimeState} runtimeLabel={runtimeLabel} session={session} switching={switching} onSwitch={switchSpace} /></aside>
     {mobileOpen && <div className="fixed inset-0 z-50 md:hidden">
@@ -350,6 +351,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 flex h-16 min-w-0 items-center justify-between gap-2 overflow-hidden border-b bg-background/95 px-4 backdrop-blur sm:gap-3 sm:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3"><Button className="shrink-0 md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</div></div>
         <div className="flex shrink-0 items-center gap-2">
+          <ThemePreferenceMenu />
           {providerExperienceReady && <SectionTutorial tutorial={tutorial} />}
           <div className="hidden min-w-0 items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 sm:flex" title={runtimeLabel}>
             <OpenAiAttribution compact showModel model={runtime?.ai?.codex?.selectedModel || undefined} />

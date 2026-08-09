@@ -30,7 +30,7 @@ export default function RootLayout({
           <ThemeProvider
             attribute="class"
             defaultTheme="system"
-            storageKey="seemplify-theme"
+            storageKey="seemplify_theme"
             enableSystem
             disableTransitionOnChange
           >

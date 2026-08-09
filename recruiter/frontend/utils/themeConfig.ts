@@ -32,9 +32,9 @@ export function getThemeConfig(): ThemeConfig {
 export function getAvailableThemeOptions(): Array<{value: string; label: string}> {
   const config = getThemeConfig();
   const allThemes = [
+    { value: 'system', label: 'System' },
     { value: 'light', label: 'Light' },
-    { value: 'dark', label: 'Dark' },
-    { value: 'system', label: 'System' }
+    { value: 'dark', label: 'Dark' }
   ];
 
   return allThemes.filter(theme => 

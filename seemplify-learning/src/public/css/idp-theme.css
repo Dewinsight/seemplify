@@ -61,6 +61,57 @@
   color-scheme: light;
 }
 
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f0e13;
+  --panel: #18161f;
+  --panel-solid: #18161f;
+  --panel-strong: #211e29;
+  --border: #312d39;
+  --text: #f7f5fa;
+  --text-secondary: #bbb5c2;
+  --muted: #a59eac;
+  --disabled-text: #71717a;
+  --placeholder-text: rgba(161, 161, 170, 0.58);
+  --brand: #8b63ff;
+  --brand-2: #a982ff;
+  --accent: #8b63ff;
+  --success: #8b5cf6;
+  --error: #ef4444;
+  --warning: #f59e0b;
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.16);
+  --halo-opacity: 0.12;
+  --noise-opacity: 0.05;
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --field-bg: rgba(10, 13, 20, 0.76);
+  --field-border: rgba(255, 255, 255, 0.12);
+  --field-focus-bg: rgba(11, 15, 24, 0.9);
+  --field-focus-border: rgba(139, 99, 255, 0.45);
+  --field-focus-ring: rgba(139, 99, 255, 0.14);
+  --hover-bg: #24212c;
+  --card-bg: #18161f;
+  --surface-soft: #1d1a24;
+  --surface-muted: #211e29;
+  --surface-elevated: #25212e;
+  --link: #b69cff;
+  --aurora-violet: rgba(124, 58, 237, 0.2);
+  --aurora-cyan: rgba(139, 99, 255, 0.12);
+  --aurora-emerald: rgba(169, 130, 255, 0.1);
+  --grid-line: rgba(255, 255, 255, 0.07);
+  --badge-owner-bg: rgba(192, 132, 252, 0.18);
+  --badge-owner-text: #e9d5ff;
+  --badge-admin-bg: rgba(129, 140, 248, 0.18);
+  --badge-admin-text: #c7d2fe;
+  --badge-success-bg: rgba(139, 92, 246, 0.16);
+  --badge-success-text: #ede9fe;
+  --badge-warning-bg: rgba(245, 158, 11, 0.16);
+  --badge-warning-text: #fed7aa;
+  --badge-neutral-bg: rgba(148, 163, 184, 0.16);
+  --badge-neutral-text: #e5e7eb;
+  --badge-error-bg: rgba(239, 68, 68, 0.14);
+  --badge-error-text: #fecaca;
+}
+
 /* Light mode specific overrides — matches marketing-site HeroBackground radials */
 [data-theme="light"] body::before {
   background: radial-gradient(circle at 12% 8%, rgba(124, 58, 237, 0.18), transparent 52%),
@@ -238,8 +289,8 @@ p {
   background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -303,6 +354,13 @@ p {
   cursor: pointer;
   text-align: left;
   transition: all 0.15s;
+  min-height: 44px;
+}
+
+.theme-toggle:focus-visible,
+.theme-option:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .theme-option:hover {

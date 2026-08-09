@@ -13,8 +13,8 @@ import {
   Menu,
   LayoutGrid,
   User,
-  Sun,
-  Moon,
+  Monitor,
+  Check,
   Shield,
   GraduationCap,
   FileSignature,
@@ -184,7 +184,7 @@ const NavDropdown = ({ item, pathname, isMobile = false, onItemClick }: NavDropd
 
 const TopNavbar = () => {
   const pathname = usePathname();
-  const { setTheme } = useTheme();
+  const { setTheme, theme = "system" } = useTheme();
   const { state, getUserDisplayName, getUserAvatar } = useUser();
   const { user } = state;
   const { currentOrganization } = useOrganization();
@@ -335,9 +335,8 @@ const TopNavbar = () => {
               <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
-                  <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                  <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                  <span className="ml-2">Toggle Theme</span>
+                  <Monitor className="h-[1.2rem] w-[1.2rem]" />
+                  <span className="ml-2">Appearance</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuPortal>
                   <DropdownMenuSubContent>
@@ -346,7 +345,8 @@ const TopNavbar = () => {
                         key={themeOption.value}
                         onClick={() => setTheme(themeOption.value)}
                       >
-                        {themeOption.label}
+                        <span className="flex-1">{themeOption.label}</span>
+                        {theme === themeOption.value && <Check className="ml-2 h-4 w-4" />}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuSubContent>

@@ -29,25 +29,19 @@ interface ThemeProviderWrapperProps {
 }
 
 export function ThemeProviderWrapper({ children }: ThemeProviderWrapperProps) {
-  const [mode, setModeState] = useState<PaletteMode>('dark');
+  const [mode, setModeState] = useState<PaletteMode>('light');
   const [preference, setPreferenceState] = useState<ThemePreference>('system');
-  const [mounted, setMounted] = useState(false);
 
-  // Load saved preference on mount
+  // The inline head bootstrap sets the root palette before this provider hydrates.
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      const savedPreference = readThemePreference();
-      setPreferenceState(savedPreference);
-      applyThemePreference(savedPreference);
-      setModeState(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
-      setMounted(true);
-    });
-    return () => window.cancelAnimationFrame(frame);
+    const savedPreference = readThemePreference();
+    setPreferenceState(savedPreference);
+    applyThemePreference(savedPreference);
+    setModeState(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
   }, []);
 
   // Keep system changes and updates made in another Seemplify app in sync.
   useEffect(() => {
-    if (!mounted) return;
     const sync = () => {
       const next = readThemePreference();
       setPreferenceState(next);
@@ -66,15 +60,18 @@ export function ThemeProviderWrapper({ children }: ThemeProviderWrapperProps) {
     window.addEventListener('focus', sync);
     window.addEventListener('storage', sync);
     document.addEventListener('visibilitychange', sync);
-    media.addEventListener('change', sync);
+    const syncSystem = () => {
+      if (readThemePreference() === 'system') sync();
+    };
+    media.addEventListener('change', syncSystem);
     return () => {
       observer.disconnect();
       window.removeEventListener('focus', sync);
       window.removeEventListener('storage', sync);
       document.removeEventListener('visibilitychange', sync);
-      media.removeEventListener('change', sync);
+      media.removeEventListener('change', syncSystem);
     };
-  }, [mounted]);
+  }, []);
 
   const updatePreference = (next: ThemePreference) => {
     writeThemePreference(next);
@@ -94,18 +91,6 @@ export function ThemeProviderWrapper({ children }: ThemeProviderWrapperProps) {
   );
 
   const theme = useMemo(() => createTheme(getDesignTokens(mode)), [mode]);
-
-  // Prevent flash of wrong theme
-  if (!mounted) {
-    return (
-      <ThemeContext.Provider value={colorMode}>
-        <ThemeProvider theme={createTheme(getDesignTokens('dark'))}>
-          <CssBaseline />
-          <div style={{ visibility: 'hidden' }}>{children}</div>
-        </ThemeProvider>
-      </ThemeContext.Provider>
-    );
-  }
 
   return (
     <ThemeContext.Provider value={colorMode}>

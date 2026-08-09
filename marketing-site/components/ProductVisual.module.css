@@ -1,0 +1,597 @@
+.visual {
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 10px;
+  background: var(--marketing-surface);
+  overflow: hidden;
+}
+
+.visual figcaption {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--marketing-line-strong);
+  padding: 16px 20px;
+}
+
+.visual figcaption span {
+  color: var(--marketing-muted);
+  font-size: 13px;
+}
+
+.visual figcaption strong {
+  font-family: var(--marketing-heading);
+  font-size: 15px;
+}
+
+.visualBody {
+  display: grid;
+  min-height: 390px;
+  align-items: center;
+  padding: clamp(24px, 5vw, 48px);
+}
+
+.pipeline {
+  display: grid;
+  align-items: center;
+  gap: 16px;
+  grid-template-columns: minmax(112px, .8fr) auto minmax(150px, 1.2fr) auto minmax(112px, .8fr);
+}
+
+.pipelineRole,
+.pipelineDecision,
+.personNode {
+  display: grid;
+  min-height: 122px;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 8px;
+  background: var(--marketing-surface-soft);
+  padding: 16px;
+  text-align: center;
+}
+
+.pipelineRole svg,
+.pipelineDecision svg,
+.personNode svg {
+  color: var(--marketing-brand);
+}
+
+.pipelineRole strong,
+.pipelineRole span,
+.pipelineDecision strong,
+.pipelineDecision span {
+  display: block;
+}
+
+.pipelineRole span,
+.pipelineDecision span {
+  margin-top: 4px;
+  color: var(--marketing-muted);
+  font-size: 12px;
+}
+
+.flowArrow {
+  color: var(--marketing-brand);
+  flex: 0 0 auto;
+}
+
+.pipelineStack {
+  display: grid;
+  border-top: 1px solid var(--marketing-line-strong);
+}
+
+.pipelineStack span {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--marketing-line-strong);
+  font-size: 13px;
+}
+
+.pipelineStack svg {
+  color: var(--marketing-brand);
+}
+
+.orgFlow {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+}
+
+.personNode {
+  min-height: auto;
+  min-width: 150px;
+}
+
+.orgFlow > svg {
+  color: var(--marketing-brand);
+}
+
+.orgRow {
+  display: grid;
+  width: min(100%, 430px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 8px;
+}
+
+.orgRow span {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 12px;
+}
+
+.orgRow span + span {
+  border-left: 1px solid var(--marketing-line-strong);
+}
+
+.orgRow svg {
+  color: var(--marketing-brand);
+}
+
+.workspaceStrip {
+  display: grid;
+  width: min(100%, 500px);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--marketing-line-strong);
+  border-left: 1px solid var(--marketing-line-strong);
+}
+
+.workspaceStrip span {
+  display: grid;
+  min-height: 48px;
+  place-items: center;
+  border-right: 1px solid var(--marketing-line-strong);
+  border-bottom: 1px solid var(--marketing-line-strong);
+  color: var(--marketing-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.leaveVisual {
+  display: grid;
+  align-items: center;
+  gap: 22px;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, .9fr);
+}
+
+.calendar,
+.requestReview,
+.timeLedger,
+.payrollRun,
+.courseOutline {
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 8px;
+  background: var(--marketing-canvas);
+}
+
+.calendarHeader,
+.calendarDays {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.calendarHeader span {
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--marketing-line-strong);
+  color: var(--marketing-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.calendarDays span {
+  display: grid;
+  min-height: 110px;
+  place-items: start center;
+  padding-top: 16px;
+  border-right: 1px solid var(--marketing-line-strong);
+  font-size: 13px;
+}
+
+.calendarDays span:last-child {
+  border-right: 0;
+}
+
+.calendarDays .calendarSelected {
+  background: color-mix(in srgb, var(--marketing-brand) 12%, transparent);
+  color: var(--marketing-brand);
+  font-weight: 700;
+}
+
+.requestReview {
+  padding: 20px;
+}
+
+.requestReview > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--marketing-line-strong);
+}
+
+.requestReview svg {
+  color: var(--marketing-brand);
+}
+
+.requestReview dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 11px;
+  border-bottom: 1px solid var(--marketing-line);
+  font-size: 12px;
+}
+
+.requestReview dt {
+  color: var(--marketing-muted);
+}
+
+.requestReview dd {
+  font-weight: 700;
+}
+
+.reviewState {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 18px;
+  color: var(--marketing-brand);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.performanceCycle {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--marketing-line-strong);
+  border-left: 1px solid var(--marketing-line-strong);
+}
+
+.performanceStage {
+  position: relative;
+  display: grid;
+  min-height: 164px;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  border-right: 1px solid var(--marketing-line-strong);
+  border-bottom: 1px solid var(--marketing-line-strong);
+  background: var(--marketing-canvas);
+  text-align: center;
+}
+
+.performanceStage > span {
+  color: var(--marketing-muted);
+  font-size: 11px;
+}
+
+.performanceStage > svg:not(:last-child) {
+  color: var(--marketing-brand);
+}
+
+.performanceStage > svg:last-child {
+  position: absolute;
+  right: -10px;
+  z-index: 1;
+  border-radius: 50%;
+  background: var(--marketing-surface);
+  color: var(--marketing-brand);
+  padding: 3px;
+  box-sizing: content-box;
+}
+
+.timeLedger {
+  width: min(100%, 500px);
+  margin-inline: auto;
+  overflow: hidden;
+}
+
+.timeHeader,
+.payrollHeader,
+.courseHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--marketing-line-strong);
+  padding: 16px 18px;
+}
+
+.timeHeader svg,
+.payrollHeader svg,
+.courseHeader svg {
+  color: var(--marketing-brand);
+}
+
+.timeHeader > span {
+  margin-left: auto;
+  color: var(--marketing-muted);
+  font-size: 12px;
+}
+
+.timeLedger ol,
+.courseOutline ol {
+  list-style: none;
+}
+
+.timeLedger li,
+.courseOutline li {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  grid-template-columns: 48px 1fr 20px;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--marketing-line);
+}
+
+.timeLedger time,
+.courseOutline li > span {
+  color: var(--marketing-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.timeLedger li span strong,
+.timeLedger li span small,
+.courseOutline li div strong,
+.courseOutline li div small {
+  display: block;
+}
+
+.timeLedger li span small,
+.courseOutline li div small {
+  margin-top: 3px;
+  color: var(--marketing-muted);
+  font-size: 11px;
+}
+
+.timeLedger li > svg,
+.courseOutline li > svg {
+  color: var(--marketing-brand);
+}
+
+.ruleLine,
+.evidenceLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  color: var(--marketing-muted);
+  font-size: 11px;
+}
+
+.ruleLine svg,
+.evidenceLine svg {
+  color: var(--marketing-brand);
+  flex: 0 0 auto;
+}
+
+.payrollRun {
+  width: min(100%, 540px);
+  margin-inline: auto;
+  overflow: hidden;
+}
+
+.payrollHeader > div strong,
+.payrollHeader > div span,
+.courseHeader > div strong,
+.courseHeader > div span {
+  display: block;
+}
+
+.payrollHeader > div span,
+.courseHeader > div span {
+  margin-top: 3px;
+  color: var(--marketing-muted);
+  font-size: 11px;
+}
+
+.pendingState {
+  margin-left: auto;
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 5px;
+  padding: 5px 7px;
+  color: var(--marketing-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.payrollInputs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--marketing-line-strong);
+}
+
+.payrollInputs span {
+  display: grid;
+  min-height: 94px;
+  align-content: center;
+  justify-items: center;
+  gap: 9px;
+  padding: 12px;
+  border-right: 1px solid var(--marketing-line-strong);
+  font-size: 11px;
+  text-align: center;
+}
+
+.payrollInputs span:last-child {
+  border-right: 0;
+}
+
+.payrollInputs svg {
+  color: var(--marketing-brand);
+}
+
+.payrollChecks > div {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(110px, .7fr) minmax(0, 1.3fr);
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--marketing-line);
+  font-size: 12px;
+}
+
+.payrollChecks > div:last-child {
+  border-bottom: 0;
+}
+
+.payrollChecks span {
+  color: var(--marketing-muted);
+}
+
+.experienceFlow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--marketing-line-strong);
+  border-left: 1px solid var(--marketing-line-strong);
+}
+
+.experienceStep {
+  position: relative;
+  display: grid;
+  min-height: 150px;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  border-right: 1px solid var(--marketing-line-strong);
+  border-bottom: 1px solid var(--marketing-line-strong);
+  background: var(--marketing-canvas);
+}
+
+.experienceStep > span {
+  color: var(--marketing-muted);
+  font-size: 11px;
+}
+
+.experienceStep > svg:not(.flowArrow) {
+  color: var(--marketing-brand);
+}
+
+.experienceStep .flowArrow {
+  position: absolute;
+  right: -10px;
+  z-index: 1;
+  border-radius: 50%;
+  background: var(--marketing-surface);
+  padding: 3px;
+  box-sizing: content-box;
+}
+
+.evidenceLine {
+  grid-column: 1 / -1;
+  border-right: 1px solid var(--marketing-line-strong);
+  border-bottom: 1px solid var(--marketing-line-strong);
+  background: var(--marketing-surface-soft);
+}
+
+.courseOutline {
+  width: min(100%, 480px);
+  margin-inline: auto;
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .visual figcaption {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .visualBody {
+    min-height: 0;
+    padding: 24px 18px;
+  }
+
+  .pipeline {
+    justify-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .pipeline > .flowArrow {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+
+  .pipelineRole,
+  .pipelineDecision {
+    min-height: 96px;
+  }
+
+  .orgRow,
+  .workspaceStrip,
+  .leaveVisual,
+  .performanceCycle,
+  .experienceFlow {
+    grid-template-columns: 1fr;
+  }
+
+  .orgRow span + span {
+    border-top: 1px solid var(--marketing-line-strong);
+    border-left: 0;
+  }
+
+  .workspaceStrip span {
+    min-height: 42px;
+  }
+
+  .calendarDays span {
+    min-height: 70px;
+  }
+
+  .performanceStage,
+  .experienceStep {
+    min-height: 104px;
+  }
+
+  .performanceStage > svg:last-child,
+  .experienceStep .flowArrow {
+    right: 50%;
+    bottom: -11px;
+    transform: translateX(50%) rotate(90deg);
+  }
+
+  .evidenceLine {
+    grid-column: auto;
+  }
+
+  .payrollInputs {
+    grid-template-columns: 1fr;
+  }
+
+  .payrollInputs span {
+    min-height: 62px;
+    border-right: 0;
+    border-bottom: 1px solid var(--marketing-line-strong);
+  }
+
+  .payrollInputs span:last-child {
+    border-bottom: 0;
+  }
+
+  .payrollChecks > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .pendingState {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visual *,
+  .visual *::before,
+  .visual *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

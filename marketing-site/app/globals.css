@@ -310,8 +310,8 @@ a {
 .marketing-theme-toggle,
 .marketing-header__menu-toggle {
   display: inline-flex;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--marketing-line-strong);
@@ -319,6 +319,62 @@ a {
   background: transparent;
   color: var(--marketing-muted);
   cursor: pointer;
+}
+
+.marketing-theme-picker {
+  position: relative;
+}
+
+.marketing-theme-menu {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 156px;
+  padding: 5px;
+  border: 1px solid var(--marketing-line-strong);
+  border-radius: 10px;
+  background: var(--marketing-surface);
+  box-shadow: 0 6px 18px rgba(15, 14, 19, 0.16);
+}
+
+.marketing-theme-menu__option {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: 18px 1fr 18px;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--marketing-muted);
+  padding: 8px 9px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.marketing-theme-menu__option:hover,
+.marketing-theme-menu__option:focus-visible,
+.marketing-theme-menu__option[aria-checked='true'] {
+  background: var(--marketing-surface-soft);
+  color: var(--marketing-text);
+}
+
+.marketing-theme-menu__option:focus-visible {
+  outline: 2px solid var(--marketing-brand);
+  outline-offset: -2px;
+}
+
+.marketing-theme-menu__option svg {
+  width: 16px;
+  height: 16px;
+}
+
+.marketing-theme-menu__check {
+  color: var(--marketing-brand);
 }
 
 .marketing-theme-toggle:hover,
@@ -2111,8 +2167,8 @@ a {
 
   .marketing-theme-toggle,
   .marketing-header__menu-toggle {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
 
   .marketing-header__mobile-list {
@@ -2359,6 +2415,17 @@ a {
   backdrop-filter: blur(10px);
 }
 
+.marketing-theme-toggle:focus-visible {
+  outline: 2px solid var(--marketing-brand);
+  outline-offset: 2px;
+}
+
+.marketing-people-hero__handoff {
+  margin-top: 26px;
+  border-top: 1px solid var(--marketing-line-strong);
+  padding-top: 6px;
+}
+
 .marketing-section {
   border-bottom: 1px solid var(--marketing-line);
   padding-block: var(--marketing-home-section-space);
@@ -2408,10 +2475,25 @@ a {
 }
 
 .marketing-suite-card {
+  display: flex;
+  flex-direction: column;
   min-height: 248px;
   border-right: 1px solid var(--marketing-line-strong);
   border-bottom: 1px solid var(--marketing-line-strong);
+  color: inherit;
   padding: 24px;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.marketing-suite-card:hover {
+  background: var(--marketing-surface-soft);
+}
+
+.marketing-suite-card:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--marketing-brand);
+  outline-offset: -3px;
 }
 
 .marketing-suite-card__topline {
@@ -2444,6 +2526,17 @@ a {
   color: var(--marketing-muted);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.marketing-suite-card__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 22px;
+  color: var(--marketing-brand);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .marketing-ai-section {
@@ -2692,6 +2785,22 @@ a {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.marketing-regions-layout {
+  display: grid;
+  align-items: start;
+  gap: 28px;
+  grid-template-columns: minmax(0, 1.08fr) minmax(390px, 0.92fr);
+}
+
+.marketing-regions-layout .marketing-regions-list {
+  grid-template-columns: 1fr;
+}
+
+.marketing-regions-layout .marketing-regions-list > a,
+.marketing-regions-layout .marketing-regions-list > a:nth-child(even) {
+  border-right: 0;
+}
+
 .marketing-regions-list > a {
   display: grid;
   min-height: 88px;
@@ -2811,7 +2920,8 @@ a {
 @media (max-width: 1060px) {
   .marketing-people-hero__layout,
   .marketing-ai-section__layout,
-  .marketing-platform-story__layout {
+  .marketing-platform-story__layout,
+  .marketing-regions-layout {
     grid-template-columns: 1fr;
   }
 
@@ -2859,6 +2969,10 @@ a {
 
   .marketing-people-hero__media {
     min-height: 460px;
+  }
+
+  .marketing-people-hero__handoff {
+    margin-top: 18px;
   }
 
   .marketing-heading-row,

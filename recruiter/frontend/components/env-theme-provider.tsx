@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { ThemeProvider as NextThemesProvider, useTheme } from 'next-themes';
 import { readThemePreference, syncThemeToCookie } from '@/lib/theme-sync';
-import { getEffectiveTheme, getThemeConfig } from '@/utils/themeConfig';
+import { getEffectiveTheme } from '@/utils/themeConfig';
 
 interface ConfigThemeProviderProps {
   children: React.ReactNode;
@@ -68,13 +68,11 @@ export function ConfigThemeProvider({
   enableSystem = true,
   disableTransitionOnChange = true,
 }: ConfigThemeProviderProps) {
-  const themeConfig = getThemeConfig();
-
   return (
     <NextThemesProvider
       attribute={attribute as 'class'}
-      defaultTheme={themeConfig.defaultTheme}
-      storageKey="seemplify-theme"
+      defaultTheme="system"
+      storageKey="seemplify_theme"
       enableSystem={enableSystem}
       disableTransitionOnChange={disableTransitionOnChange}
     >

@@ -1,42 +1,50 @@
 "use client"
 
 import * as React from "react"
-import { Moon, Sun, Monitor } from "lucide-react"
+import { Monitor, Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
     DropdownMenu,
     DropdownMenuContent,
-    DropdownMenuItem,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-export function ThemeToggle() {
-    const { setTheme, theme } = useTheme()
+const options = [
+    { value: "system", label: "System", icon: Monitor },
+    { value: "light", label: "Light", icon: Sun },
+    { value: "dark", label: "Dark", icon: Moon },
+] as const
+
+export function ThemeToggle({ className }: { className?: string }) {
+    const { theme = "system", setTheme } = useTheme()
+    const CurrentIcon = options.find((option) => option.value === theme)?.icon || Monitor
 
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="h-9 w-9 rounded-full border-border bg-background hover:bg-muted transition-all duration-300">
-                    <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0 text-orange-500" />
-                    <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100 text-blue-400" />
-                    <span className="sr-only">Toggle theme</span>
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className={cn("h-9 w-9 rounded-lg border-border bg-background transition-colors hover:bg-muted", className)}
+                    aria-label={`Appearance: ${theme}. Choose a theme`}
+                >
+                    <CurrentIcon className="h-[1.1rem] w-[1.1rem]" aria-hidden="true" />
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="glass-card">
-                <DropdownMenuItem onClick={() => setTheme("light")} className="cursor-pointer gap-2">
-                    <Sun className="h-4 w-4" />
-                    Light
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("dark")} className="cursor-pointer gap-2">
-                    <Moon className="h-4 w-4" />
-                    Dark
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme("system")} className="cursor-pointer gap-2">
-                    <Monitor className="h-4 w-4" />
-                    System
-                </DropdownMenuItem>
+            <DropdownMenuContent align="end" aria-label="Appearance">
+                <DropdownMenuRadioGroup value={theme} onValueChange={setTheme}>
+                    {options.map(({ value, label, icon: Icon }) => (
+                        <DropdownMenuRadioItem key={value} value={value}>
+                            <Icon className="mr-2 h-4 w-4" aria-hidden="true" />
+                            {label}
+                        </DropdownMenuRadioItem>
+                    ))}
+                </DropdownMenuRadioGroup>
             </DropdownMenuContent>
         </DropdownMenu>
     )

@@ -1,168 +1,248 @@
 /**
- * Theme Manager for Identity Provider
- * Handles persistence to localStorage/Cookies, system preference syncing,
- * and cross-tab synchronization.
+ * Shared browser theme contract for the Identity Provider.
+ * The non-sensitive preference is shared by first-party Seemplify subdomains.
  */
 (function () {
-    const STORAGE_KEY = 'seemplify-theme';
-    const COOKIE_KEY = 'seemplify_theme';
-    const VALID_THEMES = ['light', 'dark', 'system'];
+  const STORAGE_KEY = 'seemplify_theme'
+  const LEGACY_STORAGE_KEY = 'seemplify-theme'
+  const COOKIE_KEY = 'seemplify_theme'
+  const VALID_THEMES = ['system', 'light', 'dark']
+  const THEME_MENU_SELECTOR = '.theme-menu, .admin-theme-menu'
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
 
-    function getCookie(name) {
-        const nameEQ = name + "=";
-        const ca = document.cookie.split(';');
-        for (let i = 0; i < ca.length; i++) {
-            let c = ca[i];
-            while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-            if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length, c.length));
-        }
-        return null;
+  function isTheme(value) {
+    return VALID_THEMES.indexOf(value) >= 0
+  }
+
+  function getCookie(name) {
+    try {
+      const prefix = name + '='
+      const entries = String(document.cookie || '').split(';')
+      for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index].trim()
+        if (entry.indexOf(prefix) === 0) return decodeURIComponent(entry.slice(prefix.length))
+      }
+    } catch (_) {}
+    return null
+  }
+
+  function setSharedCookie(value) {
+    try {
+      const hostname = location.hostname
+      const sharedDomain =
+        hostname === 'seemplifyai.com' || hostname.endsWith('.seemplifyai.com')
+      document.cookie =
+        COOKIE_KEY + '=' + encodeURIComponent(value) +
+        '; Max-Age=31536000; Path=/; SameSite=Lax' +
+        (sharedDomain ? '; Domain=.seemplifyai.com' : '') +
+        (location.protocol === 'https:' ? '; Secure' : '')
+    } catch (_) {}
+  }
+
+  function readStorage(key) {
+    try {
+      return localStorage.getItem(key)
+    } catch (_) {
+      return null
+    }
+  }
+
+  function writeStorage(value) {
+    try {
+      localStorage.setItem(STORAGE_KEY, value)
+    } catch (_) {}
+  }
+
+  function getTheme() {
+    const cookieTheme = getCookie(COOKIE_KEY)
+    if (isTheme(cookieTheme)) {
+      writeStorage(cookieTheme)
+      return cookieTheme
     }
 
-    function setCookie(name, value, days) {
-        let expires = "";
-        if (days) {
-            const date = new Date();
-            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-            expires = "; expires=" + date.toUTCString();
-        }
-        const sharedDomain = location.hostname === 'seemplifyai.com' || location.hostname.endsWith('.seemplifyai.com');
-        const domain = sharedDomain ? '; Domain=.seemplifyai.com' : '';
-        const secure = location.protocol === 'https:' ? '; Secure' : '';
-        document.cookie = name + "=" + encodeURIComponent(value || "") + expires + "; path=/; SameSite=Lax" + domain + secure;
+    const candidates = [
+      readStorage(STORAGE_KEY),
+      readStorage(LEGACY_STORAGE_KEY),
+      getCookie('theme'),
+      readStorage('theme'),
+      readStorage('themeMode')
+    ]
+    let preference = 'system'
+    for (let index = 0; index < candidates.length; index += 1) {
+      if (isTheme(candidates[index])) {
+        preference = candidates[index]
+        break
+      }
     }
 
-    function getTheme() {
-        // 1. Check cookie (shared preference)
-        const cookieTheme = getCookie(COOKIE_KEY);
-        if (cookieTheme && VALID_THEMES.includes(cookieTheme)) {
-            return cookieTheme;
-        }
-        // 2. Check local storage (fallback)
-        try {
-            const local = localStorage.getItem(STORAGE_KEY);
-            if (local && VALID_THEMES.includes(local)) {
-                return local;
-            }
-            const legacy = getCookie('theme') || localStorage.getItem('theme') || localStorage.getItem('themeMode');
-            if (legacy && VALID_THEMES.includes(legacy)) return legacy;
-        } catch (e) { }
-        // 3. Default to system
-        return 'system';
+    writeStorage(preference)
+    setSharedCookie(preference)
+    return preference
+  }
+
+  function resolveTheme(preference) {
+    if (preference !== 'system') return preference
+    return mediaQuery.matches ? 'dark' : 'light'
+  }
+
+  function applyTheme(preference) {
+    const safePreference = isTheme(preference) ? preference : 'system'
+    const resolved = resolveTheme(safePreference)
+    const root = document.documentElement
+
+    root.classList.remove('light', 'dark')
+    root.classList.add(resolved)
+    root.setAttribute('data-theme-preference', safePreference)
+    root.setAttribute('data-theme', resolved)
+    root.style.colorScheme = resolved
+
+    if (document.body) {
+      document.body.classList.remove('light', 'dark')
+      document.body.classList.add(resolved)
     }
 
-    function getSystemTheme() {
-        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    window.dispatchEvent(new CustomEvent('seemplify-theme-change', {
+      detail: { preference: safePreference, resolved: resolved }
+    }))
+    window.dispatchEvent(new CustomEvent('theme-change', { detail: resolved }))
+    return resolved
+  }
+
+  function updateToggleUI(preference) {
+    const resolved = resolveTheme(preference)
+    document.querySelectorAll('.theme-option').forEach(function (item) {
+      const selected = item.dataset.value === preference
+      item.classList.toggle('active', selected)
+      item.setAttribute('role', 'menuitemradio')
+      item.setAttribute('aria-checked', selected ? 'true' : 'false')
+    })
+
+    document.querySelectorAll('.theme-toggle, .admin-theme-toggle').forEach(function (toggle) {
+      toggle.setAttribute('aria-label', 'Appearance: ' + preference + '. Choose a theme')
+      toggle.setAttribute('aria-haspopup', 'menu')
+      const menu = toggle.closest('.theme-dropdown') && toggle.closest('.theme-dropdown').querySelector(THEME_MENU_SELECTOR)
+      toggle.setAttribute('aria-expanded', menu && menu.classList.contains('show') ? 'true' : 'false')
+    })
+
+    document.querySelectorAll('.theme-toggle-icon-light').forEach(function (icon) {
+      icon.style.display = resolved === 'dark' ? 'block' : 'none'
+    })
+    document.querySelectorAll('.theme-toggle-icon-dark').forEach(function (icon) {
+      icon.style.display = resolved === 'light' ? 'block' : 'none'
+    })
+  }
+
+  function syncSharedPreference() {
+    const preference = getTheme()
+    applyTheme(preference)
+    updateToggleUI(preference)
+  }
+
+  // Apply before the document paints; templates load this script in <head>.
+  syncSharedPreference()
+
+  function initUI() {
+    syncSharedPreference()
+    document.querySelectorAll(THEME_MENU_SELECTOR).forEach(function (menu) {
+      menu.setAttribute('role', 'menu')
+      menu.setAttribute('aria-label', 'Appearance')
+    })
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initUI)
+  } else {
+    initUI()
+  }
+
+  window.ThemeManager = {
+    setTheme: function (preference) {
+      if (!isTheme(preference)) return
+      const activeItem = document.activeElement && document.activeElement.matches && document.activeElement.matches('.theme-option')
+        ? document.activeElement
+        : null
+      const activeDropdown = activeItem && activeItem.closest('.theme-dropdown')
+      const activeTrigger = activeDropdown && activeDropdown.querySelector('.theme-toggle, .admin-theme-toggle')
+      writeStorage(preference)
+      setSharedCookie(preference)
+      applyTheme(preference)
+      updateToggleUI(preference)
+      document.querySelectorAll('.theme-menu.show, .admin-theme-menu.show').forEach(function (menu) {
+        menu.classList.remove('show')
+      })
+      updateToggleUI(preference)
+      if (activeTrigger) activeTrigger.focus()
+    },
+    toggleDropdown: function (event) {
+      if (event) {
+        event.stopPropagation()
+        event.preventDefault()
+      }
+      const trigger = event && event.currentTarget
+      const dropdown = trigger && trigger.closest('.theme-dropdown')
+      const menu = dropdown && dropdown.querySelector(THEME_MENU_SELECTOR)
+      if (!menu) return
+      const willOpen = !menu.classList.contains('show')
+      document.querySelectorAll('.theme-menu.show, .admin-theme-menu.show').forEach(function (openMenu) {
+        openMenu.classList.remove('show')
+      })
+      menu.classList.toggle('show', willOpen)
+      trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false')
+      if (willOpen) {
+        const selected = menu.querySelector('[aria-checked="true"]')
+        if (selected) selected.focus()
+      }
+    },
+    getTheme: getTheme
+  }
+
+  document.addEventListener('click', function (event) {
+    const target = event.target instanceof Element ? event.target : null
+    if (!target || !target.closest('.theme-dropdown')) {
+      document.querySelectorAll('.theme-menu.show, .admin-theme-menu.show').forEach(function (menu) {
+        menu.classList.remove('show')
+      })
+      updateToggleUI(getTheme())
     }
+  })
 
-    function applyTheme(theme) {
-        const root = document.documentElement;
-        const resolvedTheme = theme === 'system' ? getSystemTheme() : theme;
-
-        // Apply data attribute for CSS
-        if (root.getAttribute('data-theme') !== resolvedTheme) {
-            root.setAttribute('data-theme', resolvedTheme);
-        }
-
-        // Also toggle a class if needed (optional, using data-theme mainly)
-        if (document.body) {
-            if (resolvedTheme === 'light') {
-                document.body.classList.add('light');
-                document.body.classList.remove('dark');
-            } else {
-                document.body.classList.add('dark');
-                document.body.classList.remove('light');
-            }
-        }
-
-        // Dispatch event for other listeners
-        window.dispatchEvent(new CustomEvent('theme-change', { detail: resolvedTheme }));
+  document.addEventListener('keydown', function (event) {
+    const target = event.target instanceof Element ? event.target : null
+    const activeMenu = target && target.closest('.theme-menu.show, .admin-theme-menu.show')
+    if (activeMenu && ['ArrowDown', 'ArrowUp', 'Home', 'End'].indexOf(event.key) >= 0) {
+      const items = Array.from(activeMenu.querySelectorAll('[role="menuitemradio"]'))
+      const currentIndex = items.indexOf(document.activeElement)
+      let nextIndex = currentIndex
+      if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % items.length
+      if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + items.length) % items.length
+      if (event.key === 'Home') nextIndex = 0
+      if (event.key === 'End') nextIndex = items.length - 1
+      if (items[nextIndex]) items[nextIndex].focus()
+      event.preventDefault()
+      return
     }
+    if (event.key !== 'Escape') return
+    const openMenu = document.querySelector('.theme-menu.show, .admin-theme-menu.show')
+    if (!openMenu) return
+    openMenu.classList.remove('show')
+    const trigger = openMenu.closest('.theme-dropdown') && openMenu.closest('.theme-dropdown').querySelector('.theme-toggle, .admin-theme-toggle')
+    if (trigger) trigger.focus()
+    updateToggleUI(getTheme())
+  })
 
-    // Run immediately to prevent flash
-    const current = getTheme();
-    applyTheme(current);
-
-    // Initialize UI when DOM is ready
-    function initUI() {
-        applyTheme(current); // Ensure body classes are set once DOM is waiting
-        updateToggleUI(current);
-
-        // Setup dropdown listeners
-        document.addEventListener('click', (e) => {
-            const dropdown = document.querySelector('.theme-dropdown');
-            if (dropdown && !dropdown.contains(e.target)) {
-                const menu = document.getElementById('theme-menu');
-                if (menu) menu.classList.remove('show');
-            }
-        });
-
-        // Listen for View Transitions (smooth nav)
-        if (document.startViewTransition) {
-            // This is handled by the browser for MPA if we opt-in via CSS or meta
-        }
+  window.addEventListener('storage', function (event) {
+    if ([STORAGE_KEY, LEGACY_STORAGE_KEY, 'theme', 'themeMode'].indexOf(event.key) >= 0) {
+      syncSharedPreference()
     }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initUI);
-    } else {
-        initUI();
+  })
+  window.addEventListener('focus', syncSharedPreference)
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') syncSharedPreference()
+  })
+  mediaQuery.addEventListener('change', function () {
+    if (getTheme() === 'system') {
+      applyTheme('system')
+      updateToggleUI('system')
     }
-
-    // Public API
-    window.ThemeManager = {
-        setTheme: function (theme) {
-            if (!VALID_THEMES.includes(theme)) return;
-            setCookie(COOKIE_KEY, theme, 365);
-            localStorage.setItem(STORAGE_KEY, theme);
-            applyTheme(theme);
-            updateToggleUI(theme);
-            const menu = document.getElementById('theme-menu');
-            if (menu) menu.classList.remove('show');
-        },
-        toggleDropdown: function (event) {
-            if (event) {
-                event.stopPropagation();
-                event.preventDefault();
-            }
-            const menu = document.getElementById('theme-menu');
-            if (menu) menu.classList.toggle('show');
-        },
-        getTheme: getTheme
-    };
-
-    function updateToggleUI(currentTheme) {
-        const activeItems = document.querySelectorAll('.theme-option');
-        activeItems.forEach(item => {
-            if (item.dataset.value === currentTheme) {
-                item.classList.add('active');
-            } else {
-                item.classList.remove('active');
-            }
-        });
-
-        const lightIcon = document.querySelector('.theme-toggle-icon-light');
-        const darkIcon = document.querySelector('.theme-toggle-icon-dark');
-        const resolved = currentTheme === 'system' ? getSystemTheme() : currentTheme;
-
-        if (lightIcon && darkIcon) {
-            if (resolved === 'light') {
-                lightIcon.style.display = 'none';
-                darkIcon.style.display = 'block';
-            } else {
-                lightIcon.style.display = 'block';
-                darkIcon.style.display = 'none';
-            }
-        }
-    }
-
-    // Re-read the parent-domain preference after returning from another product.
-    function syncSharedPreference() {
-        const sharedTheme = getTheme();
-        applyTheme(sharedTheme);
-        updateToggleUI(sharedTheme);
-    }
-    window.addEventListener('focus', syncSharedPreference);
-    document.addEventListener('visibilitychange', syncSharedPreference);
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncSharedPreference);
-})();
+  })
+})()

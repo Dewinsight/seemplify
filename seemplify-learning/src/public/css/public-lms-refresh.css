@@ -252,8 +252,8 @@ body.public-site .theme-toggle {
   border: 1px solid transparent;
   background: transparent;
   color: var(--lmsv-text-muted);
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
 }
 
 body.public-site .theme-toggle:hover {
@@ -3283,8 +3283,8 @@ body.public-site.lmsv-auth-page .lmsv-shell {
   }
 
   body.public-site .top-nav-actions .theme-toggle {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
 
   body.public-site .mobile-nav-toggle {

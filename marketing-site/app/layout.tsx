@@ -3,8 +3,7 @@ import { headers } from 'next/headers'
 import './globals.css'
 import { Providers } from './providers'
 import { akwaIbomConfig, getSiteConfig } from './site-config'
-
-const themeInitScript = `(function(){try{var valid=function(value){return value==='light'||value==='dark'||value==='system'};var cookie=function(name){var prefix=name+'=',parts=document.cookie.split(';');for(var i=0;i<parts.length;i++){var item=parts[i].trim();if(item.indexOf(prefix)===0)return decodeURIComponent(item.slice(prefix.length))}return null};var preference=cookie('seemplify_theme');if(!valid(preference)){try{preference=localStorage.getItem('seemplify-theme')}catch(_){}}if(!valid(preference))preference='system';var resolved=preference==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):preference;document.documentElement.classList.add(resolved);document.documentElement.setAttribute('data-theme',resolved);document.documentElement.style.colorScheme=resolved}catch(_){document.documentElement.setAttribute('data-theme','light')}})();`
+import { themeInitScript } from '@/lib/theme-sync'
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()

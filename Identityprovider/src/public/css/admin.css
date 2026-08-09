@@ -518,6 +518,13 @@
   cursor: pointer;
   text-align: left;
   transition: all 0.15s;
+  min-height: 44px;
+}
+
+.admin-theme-dropdown .admin-theme-toggle:focus-visible,
+.admin-theme-menu .theme-option:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .admin-theme-menu .theme-option:hover {

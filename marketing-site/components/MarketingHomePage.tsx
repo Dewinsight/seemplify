@@ -26,55 +26,66 @@ import { BookDemoButton } from '@/components/BookDemoModal'
 import JsonLd from '@/components/JsonLd'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingHeader from '@/components/MarketingHeader'
+import { PageProgress, SuiteHandoffGraphic } from '@/components/MarketingMotion'
+import { DistributedWorkIllustration, PeopleJourneyStory } from '@/components/MarketingVisualStories'
 
 type SuiteApp = {
   name: string
   description: string
   icon: LucideIcon
+  slug: string
   status?: 'Beta' | 'New'
 }
 
 const suiteApps: SuiteApp[] = [
   {
     name: 'Recruiter',
+    slug: 'recruiter',
     description: 'Source, screen and interview candidates, analyse CVs and keep every hiring decision in one place.',
     icon: BriefcaseBusiness,
   },
   {
     name: 'Core HR & onboarding',
+    slug: 'core-hr-onboarding',
     description: 'Manage people, teams, branches, role access, documents and structured onboarding journeys.',
     icon: UsersRound,
   },
   {
     name: 'Leave Management',
+    slug: 'leave',
     description: 'Give employees a clear request flow while managers keep policies, balances and approvals in view.',
     icon: CalendarDays,
   },
   {
     name: 'Performance Management',
+    slug: 'performance',
     description: 'Run OKRs, review cycles, feedback and manager actions with the right organisational context.',
     icon: Target,
     status: 'Beta',
   },
   {
     name: 'Time & Attendance',
+    slug: 'time-attendance',
     description: 'Track clock-ins, breaks, geofenced attendance, timesheets, exceptions, approvals and reports.',
     icon: Clock3,
     status: 'New',
   },
   {
     name: 'Payroll',
+    slug: 'payroll',
     description: 'Prepare pay runs, salaries, adjustments, approvals, reports and exports with jurisdiction-aware controls.',
     icon: WalletCards,
     status: 'Beta',
   },
   {
     name: 'Experience Management',
+    slug: 'experience-management',
     description: 'Bring research, listening, journeys and evidence together to understand the employee experience.',
     icon: BarChart3,
   },
   {
     name: 'Learning',
+    slug: 'learning',
     description: 'Assign courses, track development and keep training connected to the people and teams it supports.',
     icon: GraduationCap,
   },
@@ -97,13 +108,6 @@ const aiCapabilities = [
     description: 'Ask questions about jobs and candidates, then move directly to the record or action that needs attention.',
   },
 ]
-
-const journeySteps = [
-  ['01', 'Hire', 'Move from application and CV analysis to a documented hiring decision.'],
-  ['02', 'Welcome', 'Carry the person into team setup, access, documents and onboarding.'],
-  ['03', 'Support', 'Manage leave, attendance, goals, feedback and development.'],
-  ['04', 'Pay', 'Prepare pay runs with review gates, reports and jurisdiction coverage made visible.'],
-] as const
 
 function getHomeStructuredData(config: ReturnType<typeof getSiteConfig>, hostname: string) {
   return {
@@ -197,6 +201,7 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
   return (
     <div className="marketing-site marketing-site--people-first">
       <JsonLd data={getHomeStructuredData(config, initialHostname)} />
+      <PageProgress />
       <MarketingHeader />
 
       <main>
@@ -236,6 +241,9 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
               <figcaption>People work is connected when the context moves with the person.</figcaption>
             </figure>
           </div>
+          <div className="marketing-container marketing-people-hero__handoff">
+            <SuiteHandoffGraphic />
+          </div>
         </section>
 
         <section id="modules" className="marketing-section marketing-suite-section">
@@ -251,14 +259,15 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
               {suiteApps.map((app) => {
                 const Icon = app.icon
                 return (
-                  <article className="marketing-suite-card" key={app.name}>
+                  <Link className="marketing-suite-card" href={`/products/${app.slug}`} key={app.name}>
                     <div className="marketing-suite-card__topline">
                       <Icon aria-hidden="true" size={20} />
                       {app.status ? <span>{app.status}</span> : null}
                     </div>
                     <h3>{app.name}</h3>
                     <p>{app.description}</p>
-                  </article>
+                    <span className="marketing-suite-card__link">Explore {app.name} <ArrowRight aria-hidden="true" size={15} /></span>
+                  </Link>
                 )
               })}
             </div>
@@ -290,34 +299,7 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
           </div>
         </section>
 
-        <section id="how-it-works" className="marketing-section marketing-journey-section">
-          <div className="marketing-container">
-            <div className="marketing-heading-row">
-              <div>
-                <h2>From candidate to colleague without losing the thread.</h2>
-                <p>Each workspace has a focused job. The person, organisation and decision history provide the common context.</p>
-              </div>
-            </div>
-            <div className="marketing-journey-grid">
-              <div className="marketing-journey-steps">
-                {journeySteps.map(([number, title, description]) => (
-                  <article key={number}>
-                    <span>{number}</span>
-                    <div><h3>{title}</h3><p>{description}</p></div>
-                  </article>
-                ))}
-              </div>
-              <Image
-                className="marketing-journey-image"
-                src="/images/seemplify-payroll-review.png"
-                alt="HR and finance colleagues reviewing people operations together"
-                width={1536}
-                height={1024}
-                sizes="(max-width: 920px) 100vw, 48vw"
-              />
-            </div>
-          </div>
-        </section>
+        <PeopleJourneyStory />
 
         <section id="platform" className="marketing-section marketing-platform-story">
           <div className="marketing-container marketing-platform-story__layout">
@@ -341,7 +323,7 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
                 <li><Check aria-hidden="true" size={17} /> Single sign-on across enabled applications</li>
                 <li><Check aria-hidden="true" size={17} /> Organisation-aware roles and permissions</li>
                 <li><Check aria-hidden="true" size={17} /> Clear workflow histories and approval ownership</li>
-                <li><Check aria-hidden="true" size={17} /> AI activity controls and visible processing states</li>
+                <li><Check aria-hidden="true" size={17} /> AI activity controls and visible CV-processing states in supported Recruiter workflows</li>
               </ul>
             </div>
           </div>
@@ -359,14 +341,17 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
               </div>
               <Link href="/africa" className="marketing-inline-link">Review regional coverage <ArrowRight aria-hidden="true" size={16} /></Link>
             </div>
-            <div className="marketing-regions-list">
-              {primaryMarkets.map((market) => (
-                <Link href={`/africa/${market.slug}`} key={market.slug}>
-                  <MapPin aria-hidden="true" size={18} />
-                  <div><strong>{market.country}</strong><span>{market.cities.join(' / ')}</span></div>
-                  <ArrowRight aria-hidden="true" size={17} />
-                </Link>
-              ))}
+            <div className="marketing-regions-layout">
+              <DistributedWorkIllustration />
+              <div className="marketing-regions-list">
+                {primaryMarkets.map((market) => (
+                  <Link href={`/africa/${market.slug}`} key={market.slug}>
+                    <MapPin aria-hidden="true" size={18} />
+                    <div><strong>{market.country}</strong><span>{market.cities.join(' / ')}</span></div>
+                    <ArrowRight aria-hidden="true" size={17} />
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         </section>

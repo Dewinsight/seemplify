@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
+import { productPages } from './products/product-data'
 import { primaryMarkets } from './seo-markets'
 import { akwaIbomConfig, getSiteConfig } from './site-config'
 
@@ -31,6 +32,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'weekly',
       priority: 0.9,
     },
+    ...productPages.map((product) => ({
+      url: `${config.url}/products/${product.slug}`,
+      lastModified: now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.9,
+    })),
     ...primaryMarkets.map((market) => ({
       url: `${config.url}/africa/${market.slug}`,
       lastModified: now,
