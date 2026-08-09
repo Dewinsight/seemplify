@@ -258,6 +258,16 @@ async function listModels(user, options = {}) {
 async function resolveRoutableSubject(userId, options = {}) {
   const consentApp = options.consentApp === 'performance' ? 'performance' : 'recruiter';
   const organizationId = String(options.organizationId || '').trim();
+  const explainUnavailable = options.explainUnavailable === true;
+  const unavailable = (reason, message) => {
+    if (!explainUnavailable) return null;
+    throw new AIRuntimeError(message, {
+      code: 'AI_RUNTIME_ACCOUNT_REQUIRED',
+      statusCode: 409,
+      retryable: false,
+      details: { reason }
+    });
+  };
   const findUser = options.findUser || ((id) => User.findById(id)
     .select('idpSubject sharedAIOnly organizationMemberships recruiterAuthorizedOrganizations recruiterAppAccessSyncedAt')
     .lean());
@@ -265,17 +275,39 @@ async function resolveRoutableSubject(userId, options = {}) {
   delete gatewayOptions.consentApp;
   delete gatewayOptions.organizationId;
   delete gatewayOptions.findUser;
+  delete gatewayOptions.explainUnavailable;
   const subjectId = String(userId || '').trim();
-  if (!subjectId) return null;
+  if (!subjectId) {
+    return unavailable(
+      'actor_missing',
+      'Your signed-in Recruiter identity was not available to the AI runtime. Sign in again and retry.'
+    );
+  }
   // Identity-only Performance shadows are never valid Recruiter actors, even
   // if an older record accidentally carries legacy Recruiter consent.
   if (consentApp === 'recruiter') {
     const actor = await Promise.resolve(findUser(subjectId)).catch(() => null);
-    if (!actor || actor.sharedAIOnly === true) return null;
+    if (!actor || actor.sharedAIOnly === true) {
+      return unavailable(
+        'actor_not_eligible',
+        'This identity is not an active Recruiter account. Sign in through Recruiter and retry.'
+      );
+    }
     // Recruiter consent is organization-scoped. Missing tenant context cannot
     // be interpreted as permission to use whichever sticky organization was
     // last saved on the account.
-    if (!organizationId || !recruiterOrganizationAuthorized(actor, organizationId)) return null;
+    if (!organizationId) {
+      return unavailable(
+        'organization_missing',
+        'Select an active Recruiter workspace before using ChatGPT.'
+      );
+    }
+    if (!recruiterOrganizationAuthorized(actor, organizationId)) {
+      return unavailable(
+        'organization_not_authorized',
+        'Your ChatGPT connection is not authorized for the selected Recruiter workspace. Sign in to Recruiter again to refresh workspace access.'
+      );
+    }
   }
   // An actor id that is not a real user reference is simply "no connected
   // account": it must reach the runtime gate, not surface a database cast
@@ -285,7 +317,10 @@ async function resolveRoutableSubject(userId, options = {}) {
     account = await AIUserRuntimeAccount.findOne({ user: subjectId });
   } catch (error) {
     console.warn('ChatGPT subject lookup failed:', error.message);
-    return null;
+    return unavailable(
+      'account_lookup_failed',
+      'Your ChatGPT connection could not be verified right now. Retry in a moment.'
+    );
   }
   if (!account?.isRoutable(consentApp)) {
     // Background jobs may outlive a rolling deployment or a transient gateway
@@ -298,7 +333,12 @@ async function resolveRoutableSubject(userId, options = {}) {
       console.warn('ChatGPT subject refresh failed:', error.message);
     }
   }
-  if (!account?.isRoutable(consentApp)) return null;
+  if (!account?.isRoutable(consentApp)) {
+    return unavailable(
+      account ? 'account_not_routable' : 'account_missing',
+      'Refresh your ChatGPT connection and confirm data-sharing consent before retrying.'
+    );
+  }
   return { subjectId, subjectKey: account.subjectKey, sourceApp: SOURCE_APP };
 }
 

@@ -321,7 +321,8 @@ class AIRuntimeService {
       ? (interviewSessionId ? await this.resolveInterviewSubject(interviewSessionId) : null)
       : await this.resolveSubject(runtimeActorId, {
         consentApp,
-        organizationId: context.localOrganizationId || context.organizationId
+        organizationId: context.localOrganizationId || context.organizationId,
+        explainUnavailable: true
       });
     if (!subject) {
       throw new AIRuntimeError(

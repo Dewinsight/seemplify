@@ -193,3 +193,28 @@ test('foreground subject resolution rechecks exact Recruiter organization author
     AIUserRuntimeAccount.findOne = originalFindOne;
   }
 });
+
+test('foreground subject resolution explains a denied workspace without exposing account data', async () => {
+  const actorId = '507f191e810c19729de860f6';
+  const allowedOrg = '507f191e810c19729de860f7';
+  const deniedOrg = '507f191e810c19729de860f8';
+
+  await assert.rejects(
+    codexAccountService.resolveRoutableSubject(actorId, {
+      organizationId: deniedOrg,
+      explainUnavailable: true,
+      findUser: async () => ({
+        sharedAIOnly: false,
+        recruiterAppAccessSyncedAt: new Date(),
+        recruiterAuthorizedOrganizations: [allowedOrg],
+        organizationMemberships: [{ organization: allowedOrg, isActive: true }]
+      })
+    }),
+    (error) => (
+      error.code === 'AI_RUNTIME_ACCOUNT_REQUIRED'
+      && error.statusCode === 409
+      && error.details?.reason === 'organization_not_authorized'
+      && /selected Recruiter workspace/i.test(error.message)
+    )
+  );
+});

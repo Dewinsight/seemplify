@@ -172,7 +172,11 @@ test('trusted Performance completion bypasses only Recruiter runtime policy and 
     assert.notEqual(captured[0].metering.eventId, captured[1].metering.eventId);
     assert.equal(captured[0].metering.eventId, captured[2].metering.eventId);
     assert.equal(subjectActors[0], 'canonical-recruiter-user');
-    assert.deepEqual(subjectOptions[0], { consentApp: 'performance', organizationId: 'local-active-org' });
+    assert.deepEqual(subjectOptions[0], {
+      consentApp: 'performance',
+      organizationId: 'local-active-org',
+      explainUnavailable: true
+    });
   } finally {
     if (priorUrl === undefined) delete process.env.CHATGPT_GATEWAY_BASE_URL;
     else process.env.CHATGPT_GATEWAY_BASE_URL = priorUrl;
