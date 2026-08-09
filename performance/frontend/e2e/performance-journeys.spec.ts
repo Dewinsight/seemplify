@@ -344,6 +344,19 @@ async function installMockApi(page: Page, state: MockApiState) {
         },
       });
     }
+    if (method === 'GET' && path === '/dashboard/summary') {
+      return fulfill({
+        okrProgress: 35,
+        totalOkrs: state.goals.length,
+        completedOkrs: 0,
+        upcomingDeadlines: 1,
+        pendingReviews: 0,
+        recentFeedback: state.feedbackItems.length,
+      });
+    }
+    if (method === 'GET' && path === '/appraisals/notifications/manager') {
+      return fulfill({ success: true, data: { notifications: [] } });
+    }
     if (method === 'GET' && path === '/ai-account') {
       return fulfill({
         success: true,
@@ -866,21 +879,25 @@ test('hides organization features that are explicitly disabled', async ({ page }
 test('keeps the HR navigation on one line and renders page help as a compact utility row', async ({ page }) => {
   const state = createState();
   state.hrAdminMode = true;
-  await page.setViewportSize({ width: 1536, height: 768 });
+  await page.setViewportSize({ width: 1796, height: 768 });
   await installMockApi(page, state);
 
   await page.goto('/dashboard');
 
   const header = page.getByRole('navigation');
   const guide = page.getByTestId('page-guide-banner');
+  const dashboardHeader = page.locator('.suite-dashboard-header');
   await expect(header).toBeVisible();
   await expect(page.getByRole('link', { name: 'Admin Panel' })).toBeVisible();
   await expect(guide).toBeVisible();
+  await expect(dashboardHeader).toBeVisible();
 
   const headerBox = await header.boundingBox();
   const guideBox = await guide.boundingBox();
+  const dashboardHeaderBox = await dashboardHeader.boundingBox();
   expect(headerBox?.height).toBeLessThanOrEqual(65);
   expect(guideBox?.height).toBeLessThanOrEqual(58);
+  expect(dashboardHeaderBox!.y).toBeGreaterThanOrEqual(guideBox!.y + guideBox!.height);
   expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
   for (const name of ['Dashboard', 'My OKRs', 'Appraisals', 'Cycles']) {
