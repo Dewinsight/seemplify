@@ -1,4 +1,5 @@
 import axios from 'axios';
+import crypto from 'crypto';
 
 /**
  * CrossModuleApiService
@@ -97,12 +98,20 @@ class CrossModuleApiService {
                 return null;
             }
 
+            const timestamp = new Date().toISOString();
+            const secret = process.env.INTERNAL_SERVICE_SECRET || process.env.IDP_PERFORMANCE_SERVICE_SECRET || '';
+            const signature = secret
+                ? crypto.createHmac('sha256', secret).update(`${timestamp}.${JSON.stringify({})}`).digest('hex')
+                : '';
             const response = await axios.get(
                 `${this.endpoints.performance}/employees/${userId}/performance-summary`,
                 {
                     headers: {
                         'x-organization-id': orgId,
-                        'x-internal-request': 'true'
+                        'x-internal-request': 'true',
+                        'x-service-id': 'identity-provider',
+                        'x-service-timestamp': timestamp,
+                        'x-service-signature': signature ? `sha256=${signature}` : ''
                     },
                     timeout: this.timeout
                 }

@@ -17,8 +17,14 @@ import {
     LogOut,
     BarChart3,
     Users,
+    Bell,
+    CalendarClock,
+    AlertCircle as CircleAlert,
+    MonitorCheck,
+    Scale,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import PresenceReporter from '@/components/PresenceReporter';
 
 interface NavItem {
     name: string;
@@ -69,6 +75,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         { name: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
         { name: 'My Timesheets', href: '/timesheets', icon: Calendar },
         { name: 'Punch Log', href: '/entries', icon: Clock },
+        { name: 'Schedule', href: '/schedule', icon: CalendarClock },
+        { name: 'Exceptions', href: '/exceptions', icon: CircleAlert },
+        { name: 'Presence', href: '/presence', icon: MonitorCheck },
+        { name: 'Notifications', href: '/notifications', icon: Bell },
     ];
 
     const adminNavigation: NavItem[] = [
@@ -79,6 +89,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (isAdmin) {
         adminNavigation.push(
             { name: 'Reports', href: '/reports', icon: BarChart3 },
+            { name: 'Rule Packs', href: '/admin/rule-packs', icon: Scale },
             { name: 'Settings', href: '/admin/settings', icon: Settings }
         );
     }
@@ -93,6 +104,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-teal-500/30">
+            <PresenceReporter />
             <div className="bg-noise" />
 
             {/* Navbar */}
@@ -189,6 +201,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                             <div className="relative">
                                 <button
                                     onClick={() => setUserMenuOpen(!userMenuOpen)}
+                                    aria-label="Open user menu"
+                                    aria-expanded={userMenuOpen}
                                     className="flex items-center gap-2 rounded-full hover:bg-zinc-800/50 p-1 transition-colors"
                                 >
                                     <div className="h-9 w-9 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center ring-2 ring-zinc-950 shadow-lg shadow-teal-500/10">
@@ -220,6 +234,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
                             {/* Mobile Menu Button */}
                             <button
+                                type="button"
+                                aria-label="Open navigation menu"
+                                aria-expanded={mobileOpen}
                                 className="lg:hidden p-2 rounded-lg hover:bg-zinc-800/50 text-zinc-400 hover:text-white"
                                 onClick={() => setMobileOpen(true)}
                             >
@@ -242,7 +259,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     <div className="fixed inset-y-0 right-0 w-full max-w-xs bg-zinc-950 border-l border-zinc-800 shadow-2xl p-6">
                         <div className="flex items-center justify-between mb-8">
                             <span className="text-lg font-semibold text-white">Menu</span>
-                            <button onClick={() => setMobileOpen(false)}>
+                            <button type="button" aria-label="Close navigation menu" onClick={() => setMobileOpen(false)}>
                                 <X className="h-5 w-5 text-zinc-400" />
                             </button>
                         </div>

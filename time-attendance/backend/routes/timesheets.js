@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, isHRAdmin, isLineManager, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
-const { Timesheet, TimeEntry, AttendancePolicy } = require('../models');
+const { Timesheet, TimeEntry, AttendancePolicy, EmployeeRoster, LeaveSnapshot, PublicHolidaySnapshot } = require('../models');
 const { startOfWeek, endOfWeek, getISOWeek, getYear, format, parseISO, eachDayOfInterval } = require('date-fns');
-const emailService = require('../services/emailService');
 const { generateTimesheetExcelReport } = require('../services/timesheetExportService');
+const { calculatePeriod, canRecalculateTimesheet } = require('../services/timeCalculationService');
+const { createNotification } = require('../services/notificationService');
+const { syncTimesheetExceptions } = require('../services/exceptionService');
+const { resolveCalculationPolicy } = require('../services/rulePackService');
 
 // Apply auth middleware
 router.use(requireAuth);
@@ -52,16 +55,20 @@ router.get('/current', async (req, res) => {
         const organizationId = req.organizationId;
         const userTeam = req.user.teams?.find(t => t.organizationId === organizationId);
 
-        const timesheet = await Timesheet.findOrCreateCurrentWeek(userId, organizationId, {
+        const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+        const timesheet = await Timesheet.findOrCreateCurrentPeriod(userId, organizationId, {
             email: req.user.email,
             name: req.user.name,
             organizationName: req.organizationName,
             teamId: userTeam?.id,
             teamName: userTeam?.name,
-        });
+            timezone: req.user.userinfo?.zoneinfo || 'UTC',
+        }, policy);
 
         // Refresh daily entries with actual time data
-        await refreshTimesheetEntries(timesheet);
+        if (canRecalculateTimesheet(timesheet)) {
+            await refreshTimesheetEntries(timesheet, policy);
+        }
 
         res.json({ timesheet });
     } catch (error) {
@@ -129,7 +136,10 @@ router.get('/:id/export', async (req, res) => {
         }
 
         // Refresh timesheet to ensure latest computed totals before export.
-        await refreshTimesheetEntries(timesheet);
+        if (canRecalculateTimesheet(timesheet)) {
+            const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+            await refreshTimesheetEntries(timesheet, policy);
+        }
 
         const entries = await TimeEntry.find({
             userId: timesheet.userId,
@@ -159,7 +169,7 @@ router.post('/:id/submit', async (req, res) => {
     try {
         const userId = req.user.id;
         const organizationId = req.organizationId;
-        const { note } = req.body;
+        const { note, attested = true, statementVersion = 'v1' } = req.body;
 
         const timesheet = await Timesheet.findOne({
             _id: req.params.id,
@@ -173,7 +183,7 @@ router.post('/:id/submit', async (req, res) => {
 
         // Treat undefined/null status as 'draft'
         const currentStatus = timesheet.status || 'draft';
-        if (currentStatus !== 'draft' && currentStatus !== 'revision_requested') {
+        if (!['draft', 'rejected', 'revision_requested', 'adjusted'].includes(currentStatus)) {
             return res.status(400).json({
                 error: 'Timesheet cannot be submitted',
                 code: 'INVALID_STATUS',
@@ -182,7 +192,8 @@ router.post('/:id/submit', async (req, res) => {
         }
 
         // Refresh entries and calculate summary
-        await refreshTimesheetEntries(timesheet);
+        const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+        await refreshTimesheetEntries(timesheet, policy);
         timesheet.calculateSummary();
 
         // Find line manager for approval
@@ -199,27 +210,93 @@ router.post('/:id/submit', async (req, res) => {
             };
         }
 
+        const configuredLevels = policy.timesheetSettings?.approvalLevels?.length
+            ? policy.timesheetSettings.approvalLevels
+            : [{ name: 'Line manager', approverType: 'line_manager' }];
+        timesheet.approvalWorkflow = {
+            currentLevel: 0,
+            levels: configuredLevels.map((level, order) => ({
+                order,
+                name: level.name || `Approval level ${order + 1}`,
+                approverType: level.approverType || 'line_manager',
+                approverId: level.approverType === 'line_manager' ? userTeam?.managerId : level.approverId,
+                approverName: level.approverType === 'line_manager' ? userTeam?.managerName : level.approverName,
+                approverEmail: level.approverType === 'line_manager' ? userTeam?.managerEmail : level.approverEmail,
+                status: 'pending',
+            })),
+        };
+        const firstLevel = timesheet.approvalWorkflow.levels[0];
+        timesheet.assignedApprover = {
+            userId: firstLevel.approverId,
+            userName: firstLevel.approverName || firstLevel.name,
+            userEmail: firstLevel.approverEmail,
+            teamId: userTeam?.id,
+            assignedAt: new Date(),
+        };
+
         timesheet.status = 'submitted';
         timesheet.submittedAt = new Date();
         timesheet.submittedNote = note;
+        timesheet.employeeAttestation = {
+            accepted: Boolean(attested),
+            acceptedAt: attested ? new Date() : null,
+            statementVersion,
+        };
         timesheet.addAuditLog('submitted', userId, req.user.name, note);
+
+        if (policy.timesheetSettings?.autoApprove && Number(timesheet.summary?.incompleteEntries || 0) === 0) {
+            for (const level of timesheet.approvalWorkflow.levels) {
+                level.status = 'approved';
+                level.decidedBy = 'system';
+                level.decidedByName = 'Attendance policy';
+                level.decidedAt = new Date();
+                level.comment = 'Automatically approved by organization policy';
+            }
+            timesheet.approvalWorkflow.completedAt = new Date();
+            timesheet.status = 'payroll_pending';
+            timesheet.approvedBy = {
+                userId: 'system',
+                userName: 'Attendance policy',
+                approvedAt: new Date(),
+                comment: 'Automatically approved by organization policy',
+            };
+            timesheet.lockedAt = new Date();
+            timesheet.lockedBy = 'system';
+            timesheet.payrollIntegration.state = 'pending';
+            timesheet.payrollIntegration.idempotencyKey = `timesheet:${timesheet._id}:v${timesheet.version || 1}`;
+            timesheet.addAuditLog('auto_approved', 'system', 'Attendance policy');
+        }
 
         await timesheet.save();
 
         // Notify assigned manager on submission (if policy allows and manager email is available)
-        const policy = await AttendancePolicy.findOne({ organizationId });
-        if (policy?.notifications?.emailOnSubmission && timesheet.assignedApprover?.userEmail) {
-            await emailService.sendTimesheetSubmitted(
-                timesheet,
-                timesheet.assignedApprover.userEmail,
-                timesheet.assignedApprover.userName
-            );
+        if (timesheet.status === 'submitted' && timesheet.assignedApprover?.userId) {
+            await createNotification({
+                organizationId,
+                userId: timesheet.assignedApprover.userId,
+                userEmail: timesheet.assignedApprover.userEmail,
+                type: 'timesheet_status',
+                title: 'Timesheet awaiting approval',
+                message: `${timesheet.userName || timesheet.userEmail} submitted a timesheet for your review.`,
+                actionUrl: `/approvals`,
+                priority: 'normal',
+                eventKey: `timesheet-submitted:${timesheet._id}:v${timesheet.version || 1}`,
+                channels: { email: policy?.notifications?.emailOnSubmission === true },
+            });
+        }
+
+        if (new Date(timesheet.endDate) >= new Date()) {
+            return res.status(409).json({
+                error: 'The attendance period is still open and cannot be submitted yet',
+                code: 'PERIOD_STILL_OPEN',
+                periodEndsAt: timesheet.endDate,
+            });
         }
 
         res.json({
             success: true,
             timesheet,
-            message: 'Timesheet submitted for approval',
+            message: timesheet.status === 'payroll_pending' ? 'Timesheet submitted and approved by policy' : 'Timesheet submitted for approval',
         });
     } catch (error) {
         console.error('Submit timesheet error:', error);
@@ -309,134 +386,58 @@ router.patch('/:id/daily/:date', async (req, res) => {
 });
 
 // Helper function to refresh timesheet with actual time entries
-async function refreshTimesheetEntries(timesheet) {
-    const entries = await TimeEntry.find({
-        userId: timesheet.userId,
+async function refreshTimesheetEntries(timesheet, suppliedPolicy = null, options = {}) {
+    if (!options.allowLocked && !canRecalculateTimesheet(timesheet)) {
+        return timesheet;
+    }
+
+    const policy = suppliedPolicy || await AttendancePolicy.getOrCreateDefault(
+        timesheet.organizationId,
+        timesheet.organizationName,
+        timesheet.userId
+    );
+    const [entries, roster] = await Promise.all([
+        TimeEntry.find({
+            userId: timesheet.userId,
+            organizationId: timesheet.organizationId,
+            timestamp: { $gte: timesheet.startDate, $lte: timesheet.endDate },
+        }).sort({ timestamp: 1 }),
+        EmployeeRoster.findOne({ organizationId: timesheet.organizationId, userId: timesheet.userId }).lean(),
+    ]);
+
+    const [leaves, holidays] = await Promise.all([
+        LeaveSnapshot.find({ organizationId: timesheet.organizationId, userId: timesheet.userId, status: 'approved', startAt: { $lte: timesheet.endDate }, endAt: { $gte: timesheet.startDate } }).lean(),
+        PublicHolidaySnapshot.find({ organizationId: timesheet.organizationId, status: 'active', $or: [{ date: { $gte: timesheet.startDate, $lte: timesheet.endDate } }, { isRecurring: true }] }).lean(),
+    ]);
+    const effective = await resolveCalculationPolicy({
+        policy,
         organizationId: timesheet.organizationId,
-        timestamp: { $gte: timesheet.startDate, $lte: timesheet.endDate },
-    }).sort({ timestamp: 1 });
-
-    // Group entries by date
-    const entriesByDate = {};
-    for (const entry of entries) {
-        const dateKey = format(entry.timestamp, 'yyyy-MM-dd');
-        if (!entriesByDate[dateKey]) {
-            entriesByDate[dateKey] = [];
-        }
-        entriesByDate[dateKey].push(entry);
-    }
-
-    // Update daily entries
-    for (const dailyEntry of timesheet.dailyEntries) {
-        const dateKey = format(dailyEntry.date, 'yyyy-MM-dd');
-        const dayEntries = entriesByDate[dateKey] || [];
-
-        if (dayEntries.length === 0) {
-            // No entries for this day
-            const dayOfWeek = dailyEntry.date.getDay();
-            dailyEntry.status = (dayOfWeek === 0 || dayOfWeek === 6) ? 'weekend' : 'absent';
-            dailyEntry.clockIn = null;
-            dailyEntry.clockOut = null;
-            dailyEntry.totalMinutes = 0;
-            dailyEntry.totalHours = 0;
-            continue;
-        }
-
-        // Find clock in/out
-        const clockIn = dayEntries.find(e => e.entryType === 'clock_in');
-        const clockOut = [...dayEntries].reverse().find(e => e.entryType === 'clock_out');
-
-        dailyEntry.clockIn = clockIn?.timestamp;
-        dailyEntry.clockOut = clockOut?.timestamp;
-        dailyEntry.timeEntryIds = dayEntries.map(e => e._id);
-
-        // Copy geolocation data from time entries to daily entry
-        if (clockIn?.location) {
-            dailyEntry.clockInLocation = {
-                latitude: clockIn.location.latitude,
-                longitude: clockIn.location.longitude,
-                address: clockIn.location.address,
-                area: clockIn.location.area,
-                city: clockIn.location.city,
-                state: clockIn.location.state,
-                country: clockIn.location.country,
-                displayName: clockIn.location.displayName,
-                accuracy: clockIn.location.accuracy,
-                verified: clockIn.location.verified,
-            };
-        } else {
-            dailyEntry.clockInLocation = null;
-        }
-
-        if (clockOut?.location) {
-            dailyEntry.clockOutLocation = {
-                latitude: clockOut.location.latitude,
-                longitude: clockOut.location.longitude,
-                address: clockOut.location.address,
-                area: clockOut.location.area,
-                city: clockOut.location.city,
-                state: clockOut.location.state,
-                country: clockOut.location.country,
-                displayName: clockOut.location.displayName,
-                accuracy: clockOut.location.accuracy,
-                verified: clockOut.location.verified,
-            };
-        } else {
-            dailyEntry.clockOutLocation = null;
-        }
-
-        // Calculate break duration
-        let breakMinutes = 0;
-        for (let i = 0; i < dayEntries.length; i++) {
-            if (dayEntries[i].entryType === 'break_start') {
-                const breakEnd = dayEntries.slice(i + 1).find(e => e.entryType === 'break_end');
-                if (breakEnd) {
-                    breakMinutes += (breakEnd.timestamp - dayEntries[i].timestamp) / (1000 * 60);
-                }
-            }
-        }
-        dailyEntry.breakDuration = Math.round(breakMinutes);
-
-        // Check if any manual entries exist for this day
-        const hasManualEntries = dayEntries.some(e => e.isManualEntry || e.source === 'manual');
-        if (hasManualEntries) {
-            dailyEntry.exceptions = dailyEntry.exceptions || [];
-            if (!dailyEntry.exceptions.some(e => e.type === 'manual_entry')) {
-                const manualEntry = dayEntries.find(e => e.isManualEntry || e.source === 'manual');
-                dailyEntry.exceptions.push({ 
-                    type: 'manual_entry', 
-                    description: manualEntry?.note || 'Contains manual time entries'
-                });
-            }
-        }
-
-        // Calculate total time
-        if (clockIn && clockOut) {
-            const totalMinutes = (clockOut.timestamp - clockIn.timestamp) / (1000 * 60) - breakMinutes;
-            dailyEntry.totalMinutes = Math.round(Math.max(0, totalMinutes));
-            dailyEntry.totalHours = parseFloat((dailyEntry.totalMinutes / 60).toFixed(2));
-            dailyEntry.status = 'present';
-
-            // Calculate regular vs overtime (assuming 8 hour threshold)
-            if (dailyEntry.totalHours > 8) {
-                dailyEntry.regularHours = 8;
-                dailyEntry.overtimeHours = parseFloat((dailyEntry.totalHours - 8).toFixed(2));
-            } else {
-                dailyEntry.regularHours = dailyEntry.totalHours;
-                dailyEntry.overtimeHours = 0;
-            }
-        } else if (clockIn && !clockOut) {
-            // Clocked in but not out
-            dailyEntry.status = 'partial';
-            dailyEntry.exceptions = dailyEntry.exceptions || [];
-            if (!dailyEntry.exceptions.some(e => e.type === 'no_clock_out')) {
-                dailyEntry.exceptions.push({ type: 'no_clock_out', description: 'Missing clock out' });
-            }
-        }
-    }
-
-    timesheet.calculateSummary();
+        userId: timesheet.userId,
+        teamId: timesheet.teamId || roster?.teamIds?.[0],
+        countryCode: roster?.jurisdiction?.countryCode,
+        subdivisionCode: roster?.jurisdiction?.subdivisionCode,
+        at: timesheet.endDate,
+    });
+    const calculationPolicy = effective.policy;
+    const calculation = calculatePeriod(entries, {
+        start: timesheet.startDate,
+        end: timesheet.endDate,
+    }, calculationPolicy, { leaves, holidays });
+    timesheet.dailyEntries = calculation.dailyEntries;
+    timesheet.summary = calculation.summary;
+    timesheet.policySnapshot = {
+        rulePackId: policy.activeRulePack?.rulePackId?.toString(),
+        rulePackVersion: policy.activeRulePack?.version,
+        appliedRulePacks: effective.applied.map(item => ({ id: item.id?.toString(), key: item.key, version: item.version, precedence: item.score })),
+        timezone: calculation.timeZone,
+        standardHoursPerDay: calculationPolicy.workSchedule?.standardHoursPerDay,
+        standardHoursPerWeek: calculationPolicy.workSchedule?.standardHoursPerWeek,
+        dailyOvertimeThreshold: calculationPolicy.overtime?.dailyThreshold,
+        weeklyOvertimeThreshold: calculationPolicy.overtime?.weeklyThreshold,
+        calculatedAt: new Date(),
+    };
     await timesheet.save();
+    await syncTimesheetExceptions(timesheet);
 
     return timesheet;
 }

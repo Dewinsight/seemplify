@@ -16,7 +16,6 @@ const OnboardingHandoffSchema = new mongoose.Schema({
   candidate: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Candidate',
-    required: true,
     index: true
   },
   workflowItem: {

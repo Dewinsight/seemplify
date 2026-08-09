@@ -14,6 +14,7 @@ require('./models/SalaryGrade');
 require('./models/ExchangeRate');
 require('./models/CurrencySyncSettings');
 require('./models/TaxJurisdictionConfig');
+require('./models/TimeAttendanceImport');
 
 // Now we can safely import services that depend on models
 const MonthlyPayrollScheduler = require('./jobs/MonthlyPayrollScheduler');
@@ -99,6 +100,8 @@ app.use('/api/payroll/currencies', require('./routes/currencies'));
 app.use('/api/currencies', require('./routes/currencies'));
 app.use('/api/payroll/tax', require('./routes/tax'));
 app.use('/api/webhooks', webhooksRouter);
+app.use('/api/presence', require('./routes/presenceReporter'));
+app.use('/api/integrations/v1/time-attendance', require('./routes/timeAttendanceIntegration'));
 
 // Initialize Payroll Scheduler
 const payrollScheduler = new MonthlyPayrollScheduler();

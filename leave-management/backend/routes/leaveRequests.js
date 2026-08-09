@@ -25,6 +25,7 @@ const {
   logLeaveRequestCancelled,
 } = require('../services/auditService');
 const emailService = require('../services/emailService');
+const { queueLeaveEvent } = require('../services/attendanceIntegrationService');
 
 // Apply auth and org middleware to all routes
 router.use(requireAuth);
@@ -458,6 +459,7 @@ router.post('/',
 
     // Log audit
     await logLeaveRequestCreated(leaveRequest, req.user, req);
+    if (leaveRequest.status === 'approved') await queueLeaveEvent(leaveRequest, 'leave.approved');
 
     // Email notifications
     if (policy.notifyApproversOnRequest) {
@@ -592,6 +594,7 @@ router.post('/:id/approve',
 
     // Log audit
     await logLeaveRequestApproved(leaveRequest, req.user, req, comment);
+    await queueLeaveEvent(leaveRequest, 'leave.updated');
 
     // Email notifications
     const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);
@@ -755,6 +758,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 
   // Log audit
   await logLeaveRequestCancelled(leaveRequest, req.user, req, reason);
+  await queueLeaveEvent(leaveRequest, 'leave.cancelled');
 
   // Email notifications
   const policy = await LeavePolicy.findOrCreate(req.organizationId, req.organizationName);

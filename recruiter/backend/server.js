@@ -254,6 +254,7 @@ app.use('/api/ai-interviews', requireFeature('aiInterviews'), require('./routes/
 app.use('/api/interview-status', require('./routes/interviewStatus')); // Interview status management routes
 app.use('/api/interview-stages', require('./routes/interviewStages')); // Interview stages management routes
 app.use('/api/ai-analysis', require('./routes/aiAnalysis')); // AI interview analysis routes
+app.use('/api/webhooks/idp-lifecycle', require('./routes/idpLifecycleWebhook'));
 app.use('/api/webhooks', require('./routes/webhooks')); // Webhook routes for Nylas
 app.use('/api/grant', require('./routes/grant')); // Grant verification and re-authentication routes
 app.use('/api/nylas-grants', require('./routes/nylasGrants')); // Nylas grant permissions management routes
@@ -264,6 +265,7 @@ app.use('/api/organizations', require('./routes/stageTemplate')); // Stage templ
 app.use('/api/departments', require('./routes/departments')); // Department management routes
 app.use('/api/currencies', require('./routes/currencies')); // Currency management routes
 app.use('/api/notifications', require('./routes/notifications')); // Notification system routes
+app.use('/api/presence', require('./routes/presenceReporter')); // Signed staff-console presence reporter
 app.use('/api/pipeline', require('./routes/pipelineBatch')); // Pipeline batch operations routes
 app.use('/api/candidate-emails', require('./routes/candidateEmails')); // Candidate email notification routes
 app.use('/api/candidate-shortlists', require('./routes/candidateShortlists')); // Candidate shortlist information routes
@@ -287,6 +289,7 @@ app.use('/api/admin/grants', require('./routes/adminGrants')); // Admin grant ma
 app.use('/api/admin/nylas-accounts', require('./routes/nylasAccounts')); // Multi-Nylas account management
 app.use('/api/internal/ai', require('./routes/internalAI')); // Signed service-to-service AI gateway
 app.use('/api/internal/local-cv-queue', require('./routes/internalLocalCvQueue')); // Signed local Control Center history
+app.use('/api/internal/v1/people-transitions', require('./routes/internalPeopleTransitions'));
 
 // Serve static files from the "uploads" directory (if needed for direct access, though Cloudinary is primary)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

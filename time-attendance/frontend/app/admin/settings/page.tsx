@@ -13,7 +13,8 @@ import {
     Trash2,
     Edit2,
     CheckCircle2,
-    XCircle
+    XCircle,
+    Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -41,6 +42,31 @@ export default function SettingsPage() {
             if (data?.policy) {
                 const normalizedPolicy = {
                     ...data.policy,
+                    workSchedule: {
+                        ...(data.policy.workSchedule || {}),
+                        defaultShift: {
+                            name: data.policy.workSchedule?.defaultShift?.name || 'Standard Shift',
+                            startTime: data.policy.workSchedule?.defaultShift?.startTime || data.policy.workSchedule?.startTime || '09:00',
+                            endTime: data.policy.workSchedule?.defaultShift?.endTime || data.policy.workSchedule?.endTime || '17:00',
+                            breakDuration: data.policy.workSchedule?.defaultShift?.breakDuration ?? 60,
+                        },
+                    },
+                    overtime: {
+                        ...(data.policy.overtime || {}),
+                        dailyThreshold: data.policy.overtime?.dailyThreshold ?? 8,
+                        weeklyThreshold: data.policy.overtime?.weeklyThreshold ?? 40,
+                    },
+                    timesheetSettings: {
+                        ...(data.policy.timesheetSettings || {}),
+                        periodType: data.policy.timesheetSettings?.periodType || 'weekly',
+                        autoSubmit: data.policy.timesheetSettings?.autoSubmit === true,
+                        autoApprove: data.policy.timesheetSettings?.autoApprove === true,
+                        submissionDeadline: data.policy.timesheetSettings?.submissionDeadline ?? 2,
+                        approvalDeadline: data.policy.timesheetSettings?.approvalDeadline ?? 3,
+                        approvalLevels: data.policy.timesheetSettings?.approvalLevels?.length
+                            ? data.policy.timesheetSettings.approvalLevels
+                            : [{ name: 'Line manager', approverType: 'line_manager' }],
+                    },
                     notifications: {
                         ...(data.policy.notifications || {}),
                         managerReports: {
@@ -51,6 +77,11 @@ export default function SettingsPage() {
                                 : 9,
                             includeExcel: data.policy.notifications?.managerReports?.includeExcel !== false,
                         },
+                    },
+                    presence: {
+                        enabled: data.policy.presence?.enabled !== false,
+                        rawEventRetentionDays: data.policy.presence?.rawEventRetentionDays ?? 90,
+                        dailySummaryRetentionDays: data.policy.presence?.dailySummaryRetentionDays ?? 730,
                     },
                 };
                 setPolicy(normalizedPolicy);
@@ -183,8 +214,14 @@ export default function SettingsPage() {
                                 <label className="block text-sm font-medium text-zinc-400 mb-2">Default Start Time</label>
                                 <input
                                     type="time"
-                                    value={policy.workSchedule.startTime}
-                                    onChange={(e) => setPolicy({ ...policy, workSchedule: { ...policy.workSchedule, startTime: e.target.value } })}
+                                    value={policy.workSchedule.defaultShift.startTime}
+                                    onChange={(e) => setPolicy({
+                                        ...policy,
+                                        workSchedule: {
+                                            ...policy.workSchedule,
+                                            defaultShift: { ...policy.workSchedule.defaultShift, startTime: e.target.value },
+                                        },
+                                    })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                                 />
                             </div>
@@ -192,8 +229,14 @@ export default function SettingsPage() {
                                 <label className="block text-sm font-medium text-zinc-400 mb-2">Default End Time</label>
                                 <input
                                     type="time"
-                                    value={policy.workSchedule.endTime}
-                                    onChange={(e) => setPolicy({ ...policy, workSchedule: { ...policy.workSchedule, endTime: e.target.value } })}
+                                    value={policy.workSchedule.defaultShift.endTime}
+                                    onChange={(e) => setPolicy({
+                                        ...policy,
+                                        workSchedule: {
+                                            ...policy.workSchedule,
+                                            defaultShift: { ...policy.workSchedule.defaultShift, endTime: e.target.value },
+                                        },
+                                    })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                                 />
                             </div>
@@ -250,27 +293,149 @@ export default function SettingsPage() {
                     {policy.overtime.enabled && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-top-4">
                             <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-2">Threshold (Minutes)</label>
+                                <label className="block text-sm font-medium text-zinc-400 mb-2">Daily threshold (hours)</label>
                                 <input
                                     type="number"
-                                    value={policy.overtime.thresholdMinutes}
-                                    onChange={(e) => setPolicy({ ...policy, overtime: { ...policy.overtime, thresholdMinutes: parseInt(e.target.value) } })}
+                                    min="0"
+                                    step="0.25"
+                                    value={policy.overtime.dailyThreshold}
+                                    onChange={(e) => setPolicy({ ...policy, overtime: { ...policy.overtime, dailyThreshold: Number(e.target.value) } })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                                 />
-                                <p className="text-xs text-zinc-500 mt-1">Minimum extra time to count as OT</p>
+                                <p className="text-xs text-zinc-500 mt-1">Time above this daily total is overtime.</p>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-zinc-400 mb-2">Daily Limit (Minutes)</label>
+                                <label className="block text-sm font-medium text-zinc-400 mb-2">Weekly threshold (hours)</label>
                                 <input
                                     type="number"
-                                    value={policy.overtime.dailyLimitMinutes}
-                                    onChange={(e) => setPolicy({ ...policy, overtime: { ...policy.overtime, dailyLimitMinutes: parseInt(e.target.value) } })}
+                                    min="0"
+                                    step="0.25"
+                                    value={policy.overtime.weeklyThreshold}
+                                    onChange={(e) => setPolicy({ ...policy, overtime: { ...policy.overtime, weeklyThreshold: Number(e.target.value) } })}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                                 />
-                                <p className="text-xs text-zinc-500 mt-1">Maximum allowed OT per day</p>
+                                <p className="text-xs text-zinc-500 mt-1">Regular hours above this period total become overtime.</p>
                             </div>
                         </div>
                     )}
+                </section>
+
+                <section className="bg-zinc-900/50 border border-white/5 rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-6">
+                        <Clock className="h-5 w-5 text-teal-400" />
+                        <h2 className="text-lg font-semibold text-white">Timesheet workflow</h2>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-400 mb-2">Period</label>
+                            <select
+                                value={policy.timesheetSettings.periodType}
+                                onChange={(e) => setPolicy({
+                                    ...policy,
+                                    timesheetSettings: { ...policy.timesheetSettings, periodType: e.target.value },
+                                })}
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white"
+                            >
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="fortnightly">Fortnightly</option>
+                                <option value="semi-monthly">Semi-monthly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                        </div>
+                        <label className="flex items-center gap-3 text-sm text-zinc-300">
+                            <input
+                                type="checkbox"
+                                checked={policy.timesheetSettings.autoSubmit}
+                                onChange={(e) => setPolicy({
+                                    ...policy,
+                                    timesheetSettings: { ...policy.timesheetSettings, autoSubmit: e.target.checked },
+                                })}
+                            />
+                            Submit completed periods automatically
+                        </label>
+                        <label className="flex items-center gap-3 text-sm text-zinc-300">
+                            <input
+                                type="checkbox"
+                                checked={policy.timesheetSettings.autoApprove}
+                                onChange={(e) => setPolicy({
+                                    ...policy,
+                                    timesheetSettings: { ...policy.timesheetSettings, autoApprove: e.target.checked },
+                                })}
+                            />
+                            Approve valid submissions automatically
+                        </label>
+                    </div>
+                    <div className="mt-7 border-t border-zinc-800 pt-6">
+                        <div className="flex items-center justify-between gap-4 mb-4">
+                            <div>
+                                <h3 className="text-sm font-medium text-white">Approval levels</h3>
+                                <p className="text-xs text-zinc-500 mt-1">Levels run in order. Payroll is queued only after the final decision.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPolicy({
+                                    ...policy,
+                                    timesheetSettings: {
+                                        ...policy.timesheetSettings,
+                                        approvalLevels: [
+                                            ...(policy.timesheetSettings.approvalLevels || []),
+                                            { name: `Approval level ${(policy.timesheetSettings.approvalLevels || []).length + 1}`, approverType: 'hr' },
+                                        ],
+                                    },
+                                })}
+                                className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800"
+                            >
+                                <Plus className="h-4 w-4" /> Add level
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            {(policy.timesheetSettings.approvalLevels || []).map((level: any, index: number) => (
+                                <div key={index} className="grid grid-cols-[2rem_1fr_1fr_auto] items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+                                    <span className="text-sm text-zinc-500">{index + 1}</span>
+                                    <input
+                                        aria-label={`Approval level ${index + 1} name`}
+                                        value={level.name || ''}
+                                        onChange={(event) => {
+                                            const levels = [...policy.timesheetSettings.approvalLevels];
+                                            levels[index] = { ...level, name: event.target.value };
+                                            setPolicy({ ...policy, timesheetSettings: { ...policy.timesheetSettings, approvalLevels: levels } });
+                                        }}
+                                        className="min-w-0 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                                    />
+                                    <select
+                                        aria-label={`Approval level ${index + 1} approver type`}
+                                        value={level.approverType || 'line_manager'}
+                                        onChange={(event) => {
+                                            const levels = [...policy.timesheetSettings.approvalLevels];
+                                            levels[index] = { ...level, approverType: event.target.value };
+                                            setPolicy({ ...policy, timesheetSettings: { ...policy.timesheetSettings, approvalLevels: levels } });
+                                        }}
+                                        className="min-w-0 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-white"
+                                    >
+                                        <option value="line_manager">Line manager</option>
+                                        <option value="department_head">Department head</option>
+                                        <option value="hr">HR administrator</option>
+                                    </select>
+                                    <button
+                                        type="button"
+                                        aria-label={`Remove approval level ${index + 1}`}
+                                        disabled={policy.timesheetSettings.approvalLevels.length === 1}
+                                        onClick={() => setPolicy({
+                                            ...policy,
+                                            timesheetSettings: {
+                                                ...policy.timesheetSettings,
+                                                approvalLevels: policy.timesheetSettings.approvalLevels.filter((_: any, levelIndex: number) => levelIndex !== index),
+                                            },
+                                        })}
+                                        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-800 hover:text-red-300 disabled:opacity-30"
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </section>
 
                 {/* Manager Reports */}
@@ -393,6 +558,87 @@ export default function SettingsPage() {
                             </div>
                         </div>
                     )}
+                </section>
+
+                <section className="bg-zinc-900/50 border border-white/5 rounded-2xl p-6">
+                    <div className="flex items-center justify-between gap-4 mb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400">
+                                <Eye className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-semibold text-white">Application presence evidence</h2>
+                                <p className="text-sm text-zinc-500">Transparent session evidence from approved work applications</p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            aria-pressed={policy.presence.enabled}
+                            onClick={() => setPolicy({
+                                ...policy,
+                                presence: { ...policy.presence, enabled: !policy.presence.enabled },
+                            })}
+                            className={cn(
+                                "w-12 h-6 rounded-full p-1 transition-colors shrink-0",
+                                policy.presence.enabled ? "bg-teal-500" : "bg-zinc-700"
+                            )}
+                        >
+                            <span className={cn(
+                                "block w-4 h-4 rounded-full bg-white transition-transform",
+                                policy.presence.enabled ? "translate-x-6" : "translate-x-0"
+                            )} />
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-300 mb-2">Raw event retention</label>
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={90}
+                                    value={policy.presence.rawEventRetentionDays}
+                                    onChange={(e) => setPolicy({
+                                        ...policy,
+                                        presence: {
+                                            ...policy.presence,
+                                            rawEventRetentionDays: Math.max(1, Math.min(90, Number(e.target.value) || 1)),
+                                        },
+                                    })}
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 pr-14 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+                                />
+                                <span className="absolute right-3 top-2.5 text-xs text-zinc-500">days</span>
+                            </div>
+                            <p className="text-xs text-zinc-500 mt-1">Maximum 90 days. Set lower where local policy requires it.</p>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-zinc-300 mb-2">Daily summary retention</label>
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    min={30}
+                                    max={2555}
+                                    value={policy.presence.dailySummaryRetentionDays}
+                                    onChange={(e) => setPolicy({
+                                        ...policy,
+                                        presence: {
+                                            ...policy.presence,
+                                            dailySummaryRetentionDays: Math.max(30, Math.min(2555, Number(e.target.value) || 30)),
+                                        },
+                                    })}
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 pr-14 text-white focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+                                />
+                                <span className="absolute right-3 top-2.5 text-xs text-zinc-500">days</span>
+                            </div>
+                            <p className="text-xs text-zinc-500 mt-1">Aggregated counts only; detailed navigation evidence is not retained here.</p>
+                        </div>
+                    </div>
+
+                    <div className="mt-5 border-l-2 border-sky-500/50 pl-4 text-sm text-zinc-400">
+                        Presence is supporting evidence, not a productivity score. It cannot reduce pay, reject a timesheet,
+                        create discipline, or change a performance rating. Complete the impact assessment before enabling it.
+                    </div>
                 </section>
 
                 {/* Geofencing */}

@@ -14,6 +14,7 @@ const appraisalAIService = require('../services/appraisalAIService');
 const notificationService = require('../services/notificationService');
 const { findManagerForEmployee } = require('../services/idpService');
 const User = require('../models/User');
+const { fetchAttendanceContext } = require('../services/attendanceContextService');
 const {
   canAppraiseEmployee,
   canManageAppraisal,
@@ -2073,6 +2074,32 @@ router.get('/notifications/manager', requireAuth, requireManager, async (req, re
   } catch (error) {
     console.error('Get manager notifications error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch manager notifications' });
+  }
+});
+
+router.get('/:appraisalId/attendance-context', requireAuth, async (req, res) => {
+  try {
+    const appraisal = await Appraisal.findById(req.params.appraisalId).populate('cycleId', 'periodStart periodEnd name');
+    if (!appraisal) return res.status(404).json({ success: false, error: 'Appraisal not found' });
+    const isEmployee = isAppraisalEmployee(req, appraisal);
+    const hasManagerAccess = await canManageAppraisal(req, appraisal);
+    const isHR = req.userRole === 'hr_admin';
+    if (!isEmployee && !hasManagerAccess && !isHR) return res.status(403).json({ success: false, error: 'Access denied' });
+    const viewerId = req.session?.user?.id || req.session?.user?.sub;
+    const summary = await fetchAttendanceContext({
+      organizationId: appraisal.organizationId,
+      employeeId: appraisal.employee.userId,
+      periodStart: appraisal.cycleId?.periodStart,
+      periodEnd: appraisal.cycleId?.periodEnd,
+      viewerId,
+      viewerRole: isHR ? 'hr' : hasManagerAccess ? 'manager' : 'employee',
+      reviewId: appraisal._id.toString(),
+      correlationId: `appraisal:${appraisal._id}:attendance-context`,
+    });
+    res.json({ success: true, data: summary, affectsRating: false });
+  } catch (error) {
+    console.error('Get attendance context error:', error);
+    res.status(error.statusCode || 500).json({ success: false, error: error.message || 'Attendance context is unavailable' });
   }
 });
 

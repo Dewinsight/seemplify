@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
+  idpSubject: {
+    type: String,
+    trim: true,
+    sparse: true,
+    index: true,
+  },
   email: {
     type: String,
     required: true,

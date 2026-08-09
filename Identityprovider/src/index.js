@@ -25,6 +25,7 @@ import { dirname, join } from 'path'
 import crypto from 'crypto'
 import { SignJWT, jwtVerify } from 'jose'
 import { emailService } from './services/emailService.js'
+import { notifyOrgMemberAdded, startWebhookDeliveryWorker } from './services/webhookService.js'
 import { otpService } from './services/otpService.js'
 import MarketingVisit from './models/MarketingVisit.js'
 import { buildOrganizationClaims } from './utils/permissions.js'
@@ -474,6 +475,8 @@ import publicRoutesRouter from './routes/publicRoutes.js'
 import organizationSubscriptionRouter from './routes/organizationSubscription.js'
 import adminUsersRouter from './routes/adminUsers.js'
 import profileRouter from './routes/profile.js'
+import internalMembershipsRouter from './routes/internalMemberships.js'
+import { startScheduledMembershipWorker } from './routes/internalMemberships.js'
 
 dotenv.config()
 
@@ -3677,6 +3680,25 @@ app.get('/', async (req, res) => {
     const notificationSummary = await buildNotificationCenterData(account, {
       maxTasks: 12
     })
+    const recruiterTransitionResult = peopleTransitionCutoverEnabled(currentOrgId) && currentOrgId
+      ? await fetchRecruiterTransitionSummaries({ idpOrganizationId: currentOrgId, subjectIds: [account.sub] })
+      : { summaries: [] }
+    const recruiterTransitionSummary = recruiterTransitionResult.summaries?.[0] || null
+    if (recruiterTransitionSummary) {
+      notificationSummary.counts.documents = recruiterTransitionSummary.pendingTaskCount || 0
+      notificationSummary.pendingSignatureCount = recruiterTransitionSummary.pendingSignatureCount || 0
+      notificationSummary.pendingSignatureDocuments = (recruiterTransitionSummary.transitions || []).slice(0, 3).map(transition => ({
+        title: transition.title,
+        organizationName: account.currentOrganization?.name || 'Organization'
+      }))
+      notificationSummary.tasks = (notificationSummary.tasks || []).filter(task => task.category !== 'documents')
+      if (recruiterTransitionSummary.pendingTaskCount > 0) notificationSummary.tasks.unshift({
+        category: 'documents',
+        actionUrl: recruiterTransitionSummary.deepLink,
+        title: 'People Transition work'
+      })
+      notificationSummary.totalUnread = (notificationSummary.counts.simplePerformance || 0) + (recruiterTransitionSummary.pendingTaskCount || 0)
+    }
     const unreadPendingOnboardingAssignments = notificationSummary.unreadDocumentAssignments || []
     const latestReceivedEvaluationsWithMetrics = (notificationSummary.unreadPerformanceEvaluations || []).slice(0, 3)
     const receivedEvaluationCount = notificationSummary.counts?.simplePerformance || 0
@@ -3697,8 +3719,9 @@ app.get('/', async (req, res) => {
       accessError: req.query?.error === 'app_not_assigned'
         ? `${req.query?.app || 'This app'} is not assigned to your account for the current organization.`
         : null,
-      pendingOnboardingCount: notificationSummary.counts?.documents || unreadPendingOnboardingAssignments.length,
+      pendingOnboardingCount: recruiterTransitionSummary?.pendingTaskCount ?? notificationSummary.counts?.documents ?? unreadPendingOnboardingAssignments.length,
       pendingOnboardingAssignments: unreadPendingOnboardingAssignments,
+      peopleTransitionDeepLink: recruiterTransitionSummary?.deepLink || '/documents',
       receivedEvaluationCount,
       latestReceivedEvaluations: latestReceivedEvaluationsWithMetrics,
       notificationSummary,
@@ -4486,6 +4509,98 @@ const getCurrentOrganizationContext = async (user) => {
     memberRole: memberRecord.role
   }
 }
+
+const forwardIdpPresence = async (req, endpoint, payload = {}) => {
+  const context = await getCurrentOrganizationContext(req.user)
+  if (context.error) return { status: 400, body: { error: context.error } }
+  const body = {
+    ...payload,
+    appId: 'idp',
+    organizationId: context.organizationId,
+    userId: req.user.sub
+  }
+  const timestamp = new Date().toISOString()
+  const secret = process.env.INTERNAL_SERVICE_SECRET || process.env.PRESENCE_REPORTER_SERVICE_SECRET || ''
+  const signature = secret
+    ? crypto.createHmac('sha256', secret).update(`${timestamp}.${JSON.stringify(body)}`).digest('hex')
+    : ''
+  const configured = String(process.env.TIME_ATTENDANCE_API_URL || 'http://localhost:5010').replace(/\/$/, '')
+  const baseUrl = configured.endsWith('/api') ? configured : `${configured}/api`
+  try {
+    const response = await fetch(`${baseUrl}/internal/v1/presence${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-service-id': 'idp',
+        'x-service-timestamp': timestamp,
+        'x-service-signature': signature ? `sha256=${signature}` : ''
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(Number(process.env.PRESENCE_REPORTER_TIMEOUT_MS || 5000))
+    })
+    const responseBody = await response.json().catch(() => ({ error: 'Presence service returned an invalid response' }))
+    return { status: response.status, body: responseBody }
+  } catch (error) {
+    return { status: 502, body: { error: 'Presence evidence is temporarily unavailable' } }
+  }
+}
+
+app.post('/api/presence/sessions', getSessionUser, async (req, res) => {
+  const clientSessionId = String(req.body?.clientSessionId || '')
+  if (!/^[a-zA-Z0-9_-]{12,128}$/.test(clientSessionId)) return res.status(400).json({ error: 'Invalid browser session identifier' })
+  const result = await forwardIdpPresence(req, '/sessions', {
+    clientSessionId,
+    visible: req.body?.visible !== false,
+    appVersion: String(process.env.APP_VERSION || 'web').slice(0, 80)
+  })
+  res.status(result.status).json(result.body)
+})
+
+app.post('/api/presence/sessions/:id/:action', getSessionUser, async (req, res) => {
+  if (!/^[a-f0-9]{24}$/i.test(req.params.id) || !['heartbeat', 'activity', 'end'].includes(req.params.action)) return res.status(400).json({ error: 'Invalid presence request' })
+  const payload = req.params.action === 'activity'
+    ? { activityKind: req.body?.activityKind, featureCode: req.body?.featureCode }
+    : req.params.action === 'heartbeat'
+      ? { visible: req.body?.visible !== false }
+      : { reason: String(req.body?.reason || 'client_end').slice(0, 80) }
+  const result = await forwardIdpPresence(req, `/sessions/${req.params.id}/${req.params.action}`, payload)
+  res.status(result.status).json(result.body)
+})
+
+const peopleTransitionCutoverEnabled = (organizationId = null) => {
+  if (process.env.RECRUITER_PEOPLE_TRANSITIONS_CUTOVER !== 'true') return false
+  const allowlist = String(process.env.RECRUITER_PEOPLE_TRANSITIONS_ORGANIZATION_IDS || '')
+    .split(',').map(value => value.trim()).filter(Boolean)
+  return allowlist.length === 0 || (organizationId && allowlist.includes(String(organizationId)))
+}
+
+const fetchRecruiterTransitionSummaries = async ({ idpOrganizationId, subjectIds }) => {
+  if (!idpOrganizationId || !subjectIds?.length) return { summaries: [] }
+  const body = { idpOrganizationId: String(idpOrganizationId), subjectIds: subjectIds.map(String) }
+  const timestamp = new Date().toISOString()
+  const secret = process.env.INTERNAL_SERVICE_SECRET || process.env.IDP_RECRUITER_SERVICE_SECRET || ''
+  const signature = secret ? crypto.createHmac('sha256', secret).update(`${timestamp}.${JSON.stringify(body)}`).digest('hex') : ''
+  const baseUrl = String(process.env.RECRUITER_API_URL || 'http://localhost:5001/api').replace(/\/$/, '').replace(/\/api$/, '')
+  try {
+    const response = await fetch(`${baseUrl}/api/internal/v1/people-transitions/summary`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-service-id': 'idp', 'x-service-timestamp': timestamp, 'x-service-signature': signature ? `sha256=${signature}` : '' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(Number(process.env.RECRUITER_TRANSITION_TIMEOUT_MS || 5000))
+    })
+    if (!response.ok) throw new Error(`Recruiter returned ${response.status}`)
+    return response.json()
+  } catch (error) {
+    console.error('Recruiter transition summary unavailable:', error.message)
+    return { summaries: [], unavailable: true }
+  }
+}
+
+app.post('/api/people-transitions/summary', getSessionUser, async (req, res) => {
+  const context = await getCurrentOrganizationContext(req.user)
+  if (context.error) return res.status(400).json({ error: context.error })
+  res.json(await fetchRecruiterTransitionSummaries({ idpOrganizationId: context.organizationId, subjectIds: [req.user.sub] }))
+})
 
 const DASHBOARD_NOTIFICATION_VIEW_PATHS = Object.freeze({
   documents: 'notificationViews.documentsByOrganization',
@@ -5588,7 +5703,30 @@ app.use('/api/organizations', invitationsRouter) // Mount for /api/organizations
 app.use('/api/invitations', invitationsRouter) // Mount for /api/invitations/:invitationId routes (delete, resend, accept, reject, pending)
 app.use('/api/organizations', membersRouter)
 app.use('/api/organizations', notificationsRouter) // Notification routes for /api/organizations/:orgId/notifications
-app.use('/api', onboardingRouter)
+app.use('/api', (req, res, next) => {
+  const routeOrganizationId = req.path.match(/^\/organizations\/([^/]+)\//)?.[1] || null
+  const isLegacyOnboardingApi = req.path === '/onboarding'
+    || req.path.startsWith('/onboarding/')
+    || /^\/organizations\/[^/]+\/onboarding(?:\/|$)/.test(req.path)
+  if (!peopleTransitionCutoverEnabled(routeOrganizationId) || !isLegacyOnboardingApi) return next()
+  return res.status(410).json({
+    error: 'IDP onboarding has moved to Recruiter People Transitions',
+    code: 'PEOPLE_TRANSITIONS_MOVED',
+    successor: `${String(process.env.RECRUITER_FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '')}/people-transitions`
+  })
+}, onboardingRouter)
+app.use('/api/internal/v1/memberships', internalMembershipsRouter)
+
+app.use((req, res, next) => {
+  const routeOrganizationId = req.path.match(/^\/organizations\/([^/]+)\//)?.[1] || null
+  if (!peopleTransitionCutoverEnabled(routeOrganizationId) || req.method !== 'GET') return next()
+  const isLegacyTransitionView = req.path === '/onboarding'
+    || req.path.startsWith('/onboarding/')
+    || /^\/organizations\/[^/]+\/onboarding(?:\/|$)/.test(req.path)
+  if (!isLegacyTransitionView) return next()
+  const recruiter = String(process.env.RECRUITER_FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '')
+  return res.redirect(307, `${recruiter}/people-transitions/tasks?migratedFrom=idp`)
+})
 
 // Subscription Management API Routes
 app.use('/api/admin', adminCampaignApiRouter)
@@ -6091,7 +6229,7 @@ app.post('/organizations/:orgId/switch', getSessionUser, async (req, res) => {
 app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
   try {
     const organization = await Organization.findById(req.params.orgId)
-      .populate('members.account', 'email profile.name profile.preferred_username emailVerified createdAt')
+      .populate('members.account', 'sub email profile.name profile.preferred_username emailVerified createdAt')
       .populate('members.invitedBy', 'email profile.name')
 
     if (!organization) {
@@ -6137,6 +6275,13 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       assignments,
       workflowType: 'onboarding'
     })
+    const recruiterStateResult = peopleTransitionCutoverEnabled(req.params.orgId)
+      ? await fetchRecruiterTransitionSummaries({
+          idpOrganizationId: req.params.orgId,
+          subjectIds: organization.members.filter(m => m.status === 'active').map(m => m.account?.sub).filter(Boolean)
+        })
+      : { summaries: [] }
+    const recruiterStateBySubject = new Map((recruiterStateResult.summaries || []).map(summary => [String(summary.subjectId), summary]))
     const memberEntryById = new Map(
       organization.members
         .filter((m) => m.status === 'active')
@@ -6148,7 +6293,9 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
       .map((m) => {
         const accountId = (m.account?._id || m.account).toString()
         const structure = getMemberStructure(memberStructure, accountId, organization)
-        const onboardingState = getMemberOnboardingState(accountId, onboardingStateByMember)
+        const onboardingState = peopleTransitionCutoverEnabled(req.params.orgId)
+          ? recruiterStateBySubject.get(String(m.account?.sub)) || { status: 'not_started', source: 'recruiter' }
+          : getMemberOnboardingState(accountId, onboardingStateByMember)
         return {
           id: m.account?._id || m.account,
           name: m.account?.profile?.name || m.account?.profile?.preferred_username || m.account?.email?.split('@')[0] || 'Unknown',
@@ -6163,7 +6310,7 @@ app.get('/organizations/:orgId/members', getSessionUser, async (req, res) => {
           joinedAt: m.joinedAt,
           isOwner: m.role === 'owner',
           onboardingStatus: onboardingState.status,
-          onboardingStatusSource: onboardingState.source
+          onboardingStatusSource: peopleTransitionCutoverEnabled(req.params.orgId) ? 'recruiter' : onboardingState.source
         }
       })
 
@@ -8487,6 +8634,12 @@ app.post('/invitations/accept/do', getSessionUser, async (req, res) => {
       matchedInvite.invitedBy,
       normalizeAppAccess(matchedInvite.appAccess)
     )
+    await notifyOrgMemberAdded(
+      req.user.sub,
+      organization._id.toString(),
+      { id: organization._id.toString(), name: organization.name },
+      matchedInvite.role
+    )
 
     invalidateClaimsCache(req.user.sub)
 
@@ -9712,6 +9865,8 @@ app.use((err, req, res, next) => {
 })
 
 app.listen(PORT, async () => {
+  startWebhookDeliveryWorker()
+  startScheduledMembershipWorker()
   const baseUrl = isProduction ? process.env.ISSUER_URL : `http://localhost:${PORT}`
   console.log(`🚀 AIIN Identity Provider running on ${baseUrl}`)
   console.log(`🔐 OIDC discovery: ${baseUrl}/.well-known/openid-configuration`)

@@ -7,7 +7,9 @@
         "build": "next build",
         "build:validate": "next build && node scripts/validate-production-build.js",
         "start": "next start -p 5011",
-        "lint": "next lint",
+        "lint": "eslint app components context lib services",
+        "test:e2e": "npm run build && playwright test",
+        "test:e2e:headed": "npm run build && playwright test --headed",
         "validate:production": "node scripts/validate-production-build.js"
     },
     "dependencies": {
@@ -17,13 +19,13 @@
         "@radix-ui/react-popover": "^1.0.7",
         "@radix-ui/react-slot": "^1.0.2",
         "@radix-ui/react-toast": "^1.1.5",
-        "axios": "^1.14.0",
+        "axios": "^1.18.0",
         "class-variance-authority": "^0.7.0",
         "clsx": "^2.0.0",
         "date-fns": "^2.30.0",
         "framer-motion": "^12.29.2",
         "lucide-react": "^0.294.0",
-        "next": "14.0.3",
+        "next": "16.3.0",
         "react": "^18.2.0",
         "react-day-picker": "^8.9.1",
         "react-dom": "^18.2.0",
@@ -31,9 +33,11 @@
         "tailwindcss-animate": "^1.0.7"
     },
     "overrides": {
-        "axios": "^1.14.0"
+        "axios": "^1.18.0",
+        "typescript-eslint": "8.46.0"
     },
     "devDependencies": {
+        "@playwright/test": "^1.62.1",
         "@types/lodash": "^4.17.23",
         "@types/node": "^20.10.0",
         "@types/qrcode": "^1.5.6",
@@ -41,9 +45,9 @@
         "@types/react": "^18.2.39",
         "@types/react-dom": "^18.2.17",
         "autoprefixer": "^10.4.16",
-        "eslint": "^8.54.0",
-        "eslint-config-next": "14.0.3",
-        "postcss": "^8.4.31",
+        "eslint": "^9.39.2",
+        "eslint-config-next": "16.3.0",
+        "postcss": "^8.5.23",
         "tailwindcss": "^3.3.5",
         "typescript": "^5.3.2"
     }

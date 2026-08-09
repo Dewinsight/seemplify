@@ -16,7 +16,7 @@ import {
 import { format } from 'date-fns';
 
 export default function ReportsPage() {
-    const [activeTab, setActiveTab] = useState<'attendance' | 'overtime' | 'lateness' | 'geofence-violations' | 'location-accuracy' | 'location-history'>('attendance');
+    const [activeTab, setActiveTab] = useState<'attendance' | 'overtime' | 'lateness' | 'geofence-violations' | 'location-accuracy' | 'location-history' | 'analytics' | 'capacity'>('attendance');
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [month, setMonth] = useState(new Date());
@@ -56,6 +56,12 @@ export default function ReportsPage() {
                     }
                     response = await reportsApi.getLocationHistory(selectedUserId, start, end);
                     break;
+                case 'analytics':
+                    response = await reportsApi.getAnalytics(start, end);
+                    break;
+                case 'capacity':
+                    response = await reportsApi.getCapacityForecast(start, end);
+                    break;
             }
             setData(response);
         } catch (error) {
@@ -65,9 +71,17 @@ export default function ReportsPage() {
         }
     };
 
-    const handleExport = () => {
-        // In a real app, this would trigger a CSV/PDF download
-        alert('Report export started...');
+    const handleExport = async () => {
+        try {
+            const start = new Date(month.getFullYear(), month.getMonth(), 1).toISOString();
+            const end = new Date(month.getFullYear(), month.getMonth() + 1, 0).toISOString();
+            const { blob, filename } = await reportsApi.exportAttendance(start, end);
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to export attendance report', error);
+            alert('Attendance export could not be generated.');
+        }
     };
 
     return (
@@ -90,12 +104,14 @@ export default function ReportsPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-zinc-900/50 border border-white/5 p-2 rounded-xl">
                 <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800 w-full sm:w-auto overflow-x-auto">
                     {([
-                        { key: 'attendance', label: 'Attendance' },
-                        { key: 'overtime', label: 'Overtime' },
-                        { key: 'lateness', label: 'Lateness' },
+                        { key: 'attendance', label: 'Attendance', icon: undefined },
+                        { key: 'overtime', label: 'Overtime', icon: undefined },
+                        { key: 'lateness', label: 'Lateness', icon: undefined },
                         { key: 'geofence-violations', label: 'Geofence Violations', icon: Shield },
                         { key: 'location-accuracy', label: 'Location Accuracy', icon: TrendingUp },
                         { key: 'location-history', label: 'Location History', icon: MapPin },
+                        { key: 'analytics', label: 'Operations', icon: BarChart3 },
+                        { key: 'capacity', label: 'Capacity', icon: TrendingUp },
                     ] as const).map(({ key, label, icon: Icon }) => (
                         <button
                             key={key}
@@ -166,12 +182,12 @@ export default function ReportsPage() {
                                     <tbody className="divide-y divide-zinc-800/50">
                                         {(data.report || data || []).map((row: any, i: number) => (
                                             <tr key={i} className="hover:bg-zinc-800/30">
-                                                <td className="px-4 py-3 font-medium text-white">{row.user?.name || 'Unknown'}</td>
-                                                <td className="px-4 py-3 text-zinc-400">{row.user?.department || 'N/A'}</td>
-                                                <td className="px-4 py-3 text-right text-emerald-400">{row.presentDays}</td>
+                                                <td className="px-4 py-3 font-medium text-white">{row.userName || row.user?.name || 'Unknown'}</td>
+                                                <td className="px-4 py-3 text-zinc-400">{row.teamName || row.user?.department || 'N/A'}</td>
+                                                <td className="px-4 py-3 text-right text-emerald-400">{row.daysWorked ?? row.presentDays ?? 0}</td>
                                                 <td className="px-4 py-3 text-right text-zinc-300">{row.avgStartTime || '--:--'}</td>
                                                 <td className="px-4 py-3 text-right text-zinc-300">{row.avgEndTime || '--:--'}</td>
-                                                <td className="px-4 py-3 text-right font-mono text-white">{Math.round(row.totalMinutes / 60)}h</td>
+                                                <td className="px-4 py-3 text-right font-mono text-white">{Number(row.totalHours ?? Number(row.totalMinutes || 0) / 60).toFixed(2)}h</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -193,10 +209,10 @@ export default function ReportsPage() {
                                     <tbody className="divide-y divide-zinc-800/50">
                                         {(data.report || data || []).map((row: any, i: number) => (
                                             <tr key={i} className="hover:bg-zinc-800/30">
-                                                <td className="px-4 py-3 font-medium text-white">{row.user?.name}</td>
-                                                <td className="px-4 py-3 text-right text-amber-400 font-bold">{Math.round(row.totalOvertimeMinutes / 60)}h</td>
-                                                <td className="px-4 py-3 text-right text-zinc-300">{row.overtimeDays}</td>
-                                                <td className="px-4 py-3 text-right text-zinc-300">{Math.round(row.maxOvertimeMinutes / 60)}h</td>
+                                                <td className="px-4 py-3 font-medium text-white">{row.userName || row.user?.name || 'Unknown'}</td>
+                                                <td className="px-4 py-3 text-right text-amber-400 font-bold">{Number(row.totalOvertimeHours ?? Number(row.totalOvertimeMinutes || 0) / 60).toFixed(2)}h</td>
+                                                <td className="px-4 py-3 text-right text-zinc-300">{row.occurrences ?? row.overtimeDays ?? 0}</td>
+                                                <td className="px-4 py-3 text-right text-zinc-300">—</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -213,13 +229,13 @@ export default function ReportsPage() {
                                                 <Clock className="h-5 w-5" />
                                             </div>
                                             <div>
-                                                <div className="font-medium text-white">{row.user?.name}</div>
+                                                <div className="font-medium text-white">{row.userName || row.user?.name || 'Unknown'}</div>
                                                 <div className="text-xs text-zinc-500">{row.lateDays} Late Arrivals</div>
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <div className="text-lg font-bold text-red-400">{row.totalLateMinutes}m</div>
-                                            <div className="text-xs text-zinc-500">Total Delay</div>
+                                            <div className="text-lg font-bold text-red-400">{row.lateDays || 0}</div>
+                                            <div className="text-xs text-zinc-500">Late days</div>
                                         </div>
                                     </div>
                                 ))}
@@ -354,6 +370,19 @@ export default function ReportsPage() {
                                     ))}
                                 </div>
                             </div>
+                        )}
+
+                        {activeTab === 'analytics' && data && (
+                            <div className="grid gap-6 lg:grid-cols-2">
+                                <div><h3 className="text-sm font-semibold text-white">Exception queue</h3><div className="mt-3 space-y-2">{data.exceptions?.map((row: any) => <div key={`${row._id.type}-${row._id.status}`} className="flex justify-between rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-sm"><span className="capitalize text-zinc-300">{row._id.type.replaceAll('_', ' ')} · {row._id.status.replaceAll('_', ' ')}</span><span className="text-zinc-500">{row.count}</span></div>)}</div></div>
+                                <div><h3 className="text-sm font-semibold text-white">Timesheet aging</h3><div className="mt-3 space-y-2">{data.timesheetAging?.slice(0, 12).map((row: any) => <div key={row._id} className="flex justify-between rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 text-sm"><span className="text-zinc-300">{row.userName || row.userId} · {row.status}</span><span className={row.ageDays > 7 ? 'text-amber-400' : 'text-zinc-500'}>{row.ageDays} days</span></div>)}</div></div>
+                                <div><h3 className="text-sm font-semibold text-white">Payroll transfer</h3><div className="mt-3 flex flex-wrap gap-3">{data.payrollTransfers?.map((row: any) => <div key={row._id || 'unknown'} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3"><div className="text-xs text-zinc-500">{row._id || 'not queued'}</div><div className="mt-1 text-lg font-semibold text-white">{row.count}</div></div>)}</div></div>
+                                <div><h3 className="text-sm font-semibold text-white">Presence evidence health</h3><p className="mt-1 text-xs text-zinc-500">Availability only—never productivity scoring.</p><div className="mt-3 space-y-2">{data.presenceEvidenceHealth?.map((row: any) => <div key={`${row._id.appId}-${row._id.status}`} className="flex justify-between text-sm"><span className="text-zinc-300">{row._id.appId} · {row._id.status}</span><span className="text-zinc-500">{row.sessions} sessions</span></div>)}</div></div>
+                            </div>
+                        )}
+
+                        {activeTab === 'capacity' && data && (
+                            <div><div className="mb-4 rounded-lg border border-zinc-800 bg-zinc-950/50 p-4 text-sm text-zinc-400">{data.explanation}</div><div className="space-y-2">{data.rows?.map((row: any) => <div key={row._id} className="flex items-center justify-between rounded-lg border border-zinc-800 px-4 py-3"><div><div className="text-sm font-medium text-white">{row._id}</div><div className="mt-1 text-xs text-zinc-500">{row.shiftCount} shifts · threshold {Number(data.thresholdHours).toFixed(1)}h</div></div><div className={`text-sm font-semibold ${row.warning ? 'text-amber-400' : 'text-teal-400'}`}>{Number(row.scheduledHours).toFixed(1)}h{row.warning ? ` (+${Number(row.excessHours).toFixed(1)}h)` : ''}</div></div>)}</div></div>
                         )}
 
                     </div>

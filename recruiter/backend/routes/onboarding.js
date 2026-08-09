@@ -47,6 +47,7 @@ const {
   updateProgress
 } = require('../services/onboardingWorkflowService');
 const { serializeSubmission } = require('../services/onboardingSecurityService');
+const { performIdentityAction } = require('../services/idpMembershipLifecycleService');
 
 const cloudinaryUploadService = new CloudinaryUploadService();
 const ACTIVE_SIGNING_ENVELOPE_STATUSES = ['sent', 'viewed', 'partially_signed'];
@@ -893,6 +894,20 @@ async function getCurrentUser(req) {
   return User.findById(req.user.id);
 }
 
+async function requireTransitionAdministrator(req, res, next) {
+  try {
+    const user = await getCurrentUser(req);
+    const role = user?.getOrganizationRole(organizationId(req));
+    if (!['owner', 'admin', 'hr_manager'].includes(role)) {
+      return res.status(403).json({ msg: 'Owner, administrator or HR manager access is required' });
+    }
+    req.transitionAdministratorRole = role;
+    next();
+  } catch (error) {
+    res.status(500).json({ msg: 'Could not verify transition permissions' });
+  }
+}
+
 async function findDocumentForOrg(req, id, { includeArchived = false } = {}) {
   const query = { _id: id, organization: organizationId(req) };
   if (!includeArchived) query.status = { $ne: 'archived' };
@@ -1369,6 +1384,181 @@ router.post('/candidates/:candidateId/start', async (req, res) => {
     console.error('Start onboarding failed:', error);
     res.status(500).json({ msg: 'Failed to start onboarding', error: error.message });
   }
+});
+
+router.post('/members/:idpAccountId/start', requireTransitionAdministrator, async (req, res) => {
+  try {
+    const processType = processTypeFromRequest(req);
+    const copy = processCopy(processType);
+    const organization = await getOrganization(req);
+    if (!organization) return res.status(404).json({ msg: 'Organization not found' });
+    if (!organization.idpOrganizationId) return res.status(409).json({ msg: 'Organization must be linked to IDP before assigning member transitions' });
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const name = String(req.body.name || email || req.params.idpAccountId).trim();
+    const isExit = ['exit', 'retirement'].includes(processType);
+    const mode = isExit ? (req.body.deactivationMode || 'scheduled_at') : 'manual';
+    if (isExit && !['scheduled_at', 'on_workflow_completion', 'manual'].includes(mode)) {
+      return res.status(400).json({ msg: 'deactivationMode must be scheduled_at, on_workflow_completion or manual' });
+    }
+    const lastWorkingAt = req.body.lastWorkingAt ? new Date(req.body.lastWorkingAt) : undefined;
+    if (mode === 'scheduled_at' && (!lastWorkingAt || Number.isNaN(lastWorkingAt.getTime()))) {
+      return res.status(400).json({ msg: 'A valid lastWorkingAt is required for scheduled deactivation' });
+    }
+    const packetTemplate = req.body.templateId
+      ? await OnboardingTemplate.findOne({ _id: req.body.templateId, organization: organizationId(req), ...processTypeFilter(processType), status: 'active' })
+      : null;
+    const transition = await CandidateOnboarding.create({
+      organization: organizationId(req),
+      subject: {
+        type: 'idp_member',
+        idpAccountId: req.params.idpAccountId,
+        email,
+        name,
+        employeeId: req.body.employeeId,
+        snapshot: req.body.memberSnapshot || {}
+      },
+      processType,
+      template: packetTemplate?._id,
+      templateSnapshot: packetTemplate ? {
+        _id: packetTemplate._id,
+        name: packetTemplate.name,
+        processType,
+        version: packetTemplate.version,
+        documents: packetTemplate.documents,
+        formTemplates: packetTemplate.formTemplates,
+        workflowItems: packetTemplate.workflowItems,
+        capturedAt: new Date()
+      } : undefined,
+      title: req.body.title || `${name} ${copy.label.toLowerCase()}`,
+      notes: req.body.notes || '',
+      startedBy: req.user.id,
+      identityAction: {
+        mode,
+        effectiveAt: lastWorkingAt,
+        action: isExit ? 'deactivate' : (req.body.identityAction || undefined),
+        status: isExit && mode === 'scheduled_at' ? 'pending' : 'not_ready'
+      },
+      employment: {
+        role: req.body.role || 'staff',
+        managerId: req.body.managerId,
+        departmentId: req.body.departmentId,
+        employeeId: req.body.employeeId,
+        appAccess: req.body.appAccess || { mode: 'all', appIds: [] },
+        jurisdiction: req.body.jurisdiction,
+        startAt: req.body.startAt,
+        lastWorkingAt
+      }
+    });
+    const memberSubject = {
+      email,
+      firstName: name.split(/\s+/)[0] || name,
+      lastName: name.split(/\s+/).slice(1).join(' '),
+      phone: req.body.phone,
+      position: req.body.position
+    };
+    await initializeDefaultWorkflow({
+      onboarding: transition,
+      candidate: memberSubject,
+      userId: req.user.id,
+      req,
+      packetTemplate,
+      candidateForm: req.body.memberForm || req.body.candidateForm
+    });
+    if (isExit && mode === 'scheduled_at') {
+      await performIdentityAction({ transition, organization, action: 'deactivate', actorId: req.user.id, reason: `${processType}_scheduled` });
+    }
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      onboarding: transition._id,
+      actorType: 'user',
+      actorUser: req.user.id,
+      actorEmail: req.user.email,
+      action: `${processType}_started`,
+      metadata: { subjectType: 'idp_member', idpAccountId: req.params.idpAccountId, deactivationMode: mode }
+    });
+    res.status(201).json({ data: await serializeOnboarding(transition), idpDeepLink: `/people-transitions/${transition._id}` });
+  } catch (error) {
+    console.error('Start member transition failed:', error);
+    res.status(error.statusCode || 500).json({ msg: 'Failed to start member transition', error: error.message });
+  }
+});
+
+router.post('/:onboardingId/identity-actions/:action', requireTransitionAdministrator, async (req, res) => {
+  try {
+    const actionParam = String(req.params.action || '');
+    const emergency = actionParam === 'emergency-revoke';
+    const action = emergency ? 'deactivate' : actionParam;
+    if (!['provision', 'deactivate', 'reactivate'].includes(action)) return res.status(400).json({ msg: 'Unsupported identity action' });
+    const transition = await CandidateOnboarding.findOne({ _id: req.params.onboardingId, organization: organizationId(req) }).populate('candidate');
+    if (!transition) return res.status(404).json({ msg: 'People transition not found' });
+    if (action === 'provision' && transition.status !== 'ready_to_provision' && req.body.confirmOverride !== true) {
+      return res.status(409).json({ msg: 'Required workflow and approvals must be complete before provisioning' });
+    }
+    if (req.body.employment && typeof req.body.employment === 'object') {
+      for (const field of ['role', 'managerId', 'departmentId', 'employeeId', 'appAccess', 'jurisdiction', 'startAt', 'lastWorkingAt']) {
+        if (req.body.employment[field] !== undefined) transition.employment[field] = req.body.employment[field];
+      }
+    }
+    if (req.body.effectiveAt) transition.identityAction.effectiveAt = new Date(req.body.effectiveAt);
+    const organization = await getOrganization(req);
+    const result = await performIdentityAction({
+      transition,
+      organization,
+      action,
+      actorId: req.user.id,
+      emergency,
+      reason: req.body.reason || (emergency ? 'emergency_immediate_revoke' : `hr_confirmed_${action}`)
+    });
+    if (result.status !== 'scheduled') {
+      transition.status = action === 'provision' ? 'provisioned' : 'completed';
+      transition.completedAt = transition.completedAt || new Date();
+      await transition.save();
+      await OnboardingHandoff.updateMany(
+        { onboarding: transition._id, status: { $ne: 'completed' } },
+        { $set: { status: 'completed', completedAt: new Date(), lastError: '' } }
+      );
+      await OnboardingWorkflowItem.updateMany(
+        { onboarding: transition._id, type: 'handoff' },
+        { $set: { status: 'completed', completedAt: new Date(), completedBy: req.user.id } }
+      );
+      if (action === 'provision' && transition.candidate) {
+        await Candidate.findByIdAndUpdate(transition.candidate._id, { status: 'Hired', hireDate: transition.employment?.startAt || new Date() });
+      }
+    }
+    await logOnboardingEvent({
+      req,
+      organization: organizationId(req),
+      onboarding: transition._id,
+      candidate: transition.candidate?._id,
+      actorType: 'user',
+      actorUser: req.user.id,
+      actorEmail: req.user.email,
+      action: emergency ? 'emergency_identity_revoke' : `identity_${action}`,
+      metadata: { result, reason: req.body.reason, emergency }
+    });
+    res.json({ data: await serializeOnboarding(transition), integration: result });
+  } catch (error) {
+    console.error('Identity action failed:', error);
+    res.status(error.statusCode || 500).json({ msg: 'Identity action failed', error: error.message, details: error.response });
+  }
+});
+
+router.post('/:onboardingId/cancel', requireTransitionAdministrator, async (req, res) => {
+  const transition = await CandidateOnboarding.findOne({ _id: req.params.onboardingId, organization: organizationId(req) });
+  if (!transition) return res.status(404).json({ msg: 'People transition not found' });
+  if (['completed', 'provisioned'].includes(transition.status)) return res.status(409).json({ msg: 'Completed transitions cannot be cancelled' });
+  if (transition.identityAction?.mode === 'scheduled_at' && transition.identityAction?.status === 'pending') {
+    const organization = await getOrganization(req);
+    await performIdentityAction({ transition, organization, action: 'reactivate', actorId: req.user.id, reason: 'scheduled_transition_cancelled' });
+  }
+  transition.status = 'cancelled';
+  transition.cancelledAt = new Date();
+  if (transition.identityAction.status !== 'completed') transition.identityAction.status = 'cancelled';
+  await transition.save();
+  await OnboardingWorkflowItem.updateMany({ onboarding: transition._id, status: { $nin: ['completed', 'skipped'] } }, { $set: { status: 'skipped' } });
+  await logOnboardingEvent({ req, organization: organizationId(req), onboarding: transition._id, actorType: 'user', actorUser: req.user.id, actorEmail: req.user.email, action: 'transition_cancelled', metadata: { reason: req.body.reason } });
+  res.json({ data: transition });
 });
 
 router.get('/templates', async (req, res) => {
@@ -2854,6 +3044,10 @@ router.patch('/:onboardingId/workflow-items/:itemId', async (req, res) => {
     const previousStatus = item.status;
     const allowedStatuses = ['not_started', 'pending', 'in_progress', 'completed', 'blocked', 'skipped', 'failed'];
     const allowedOwnerTypes = ['candidate', 'user', 'system'];
+    const protectedSystemHandoffs = new Set(['identity_provider', 'internal_employee_profile', 'exit_closeout', 'retirement_closeout']);
+    if (req.body.status === 'completed' && item.metadata?.handoffTarget && protectedSystemHandoffs.has(item.metadata.handoffTarget)) {
+      return res.status(409).json({ msg: 'This system handoff can only be completed by the confirmed IDP identity action' });
+    }
 
     if (allowedOwnerTypes.includes(req.body.ownerType)) item.ownerType = req.body.ownerType;
     if (Object.prototype.hasOwnProperty.call(req.body, 'ownerUser')) {
@@ -2901,15 +3095,15 @@ router.patch('/:onboardingId/workflow-items/:itemId', async (req, res) => {
         handoff = await OnboardingHandoff.create({
           organization: onboarding.organization,
           onboarding: onboarding._id,
-          candidate: onboarding.candidate._id,
+          candidate: onboarding.candidate?._id,
           workflowItem: item._id,
           target: item.metadata.handoffTarget,
           status: 'completed',
           payload: {
             processType: normalizeProcessType(onboarding.processType),
             target: item.metadata.handoffTarget,
-            candidateId: onboarding.candidate._id,
-            candidateEmail: onboarding.candidate.email,
+            candidateId: onboarding.candidate?._id,
+            candidateEmail: onboarding.candidate?.email || onboarding.subject?.email,
             candidateName: candidateDisplayName(onboarding.candidate),
             completedBy: req.user.id,
             completedAt: new Date()
@@ -2933,7 +3127,7 @@ router.patch('/:onboardingId/workflow-items/:itemId', async (req, res) => {
       req,
       organization: organizationId(req),
       onboarding: onboarding._id,
-      candidate: onboarding.candidate._id,
+      candidate: onboarding.candidate?._id,
       actorType: 'user',
       actorUser: req.user.id,
       actorEmail: req.user.email,

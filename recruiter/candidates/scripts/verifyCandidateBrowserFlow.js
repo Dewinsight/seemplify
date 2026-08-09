@@ -214,10 +214,10 @@ function createTransitionRecord(state) {
     }
   } else {
     nextAction = {
-      type: "complete",
-      label: "Transition complete",
+      type: "waiting",
+      label: "Waiting for HR provisioning",
       href: "/transitions/transition1",
-      status: "completed",
+      status: "ready_to_provision",
       processType: "onboarding",
       recordId: "transition1",
     }
@@ -227,13 +227,13 @@ function createTransitionRecord(state) {
     _id: "transition1",
     title: "Ava Stone onboarding",
     processType: "onboarding",
-    status: allDone ? "completed" : "in_progress",
+    status: allDone ? "ready_to_provision" : "in_progress",
     candidate: {
       _id: "candidate1",
       firstName: "Ava",
       lastName: "Stone",
       email: "ava@example.com",
-      status: allDone ? "Hired" : "Onboarding",
+      status: "Onboarding",
     },
     organization: {
       _id: "org1",

@@ -49,7 +49,7 @@ export default function PunchLogPage() {
             setLoading(true);
             const now = new Date();
             let startDate: string;
-            let endDate: string = now.toISOString();
+            const endDate: string = now.toISOString();
 
             switch (dateFilter) {
                 case 'today':
@@ -251,9 +251,9 @@ export default function PunchLogPage() {
                                                             </a>
                                                             {entry.location.verified !== undefined && (
                                                                 entry.location.verified ? (
-                                                                    <CheckCircle2 className="h-3.5 w-3.5 text-green-400" title="Location verified within geofence" />
+                                                                    <span title="Location verified within geofence"><CheckCircle2 className="h-3.5 w-3.5 text-green-400" /></span>
                                                                 ) : (
-                                                                    <XCircle className="h-3.5 w-3.5 text-amber-400" title="Location outside geofence" />
+                                                                    <span title="Location outside geofence"><XCircle className="h-3.5 w-3.5 text-amber-400" /></span>
                                                                 )
                                                             )}
                                                             {entry.location.accuracy && (

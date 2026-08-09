@@ -2,6 +2,7 @@ const Payslip = require('../models/Payslip');
 const PayrollRun = require('../models/PayrollRun');
 const PayrollProfile = require('../models/PayrollProfile');
 const CompensationRequest = require('../models/CompensationRequest');
+const TimeAttendanceImport = require('../models/TimeAttendanceImport');
 const taxService = require('./TaxCalculationService');
 const LeaveIntegrationService = require('./LeaveIntegrationService');
 const currencyService = require('./CurrencyService');
@@ -337,7 +338,7 @@ class PayrollEngineService {
     const profileQuery = {
       organizationId,
       isActive: true,
-      basicSalary: { $gt: 0 },
+      $or: [{ basicSalary: { $gt: 0 } }, { compensationBasis: 'hourly', hourlyRate: { $gt: 0 } }],
       'payrollFlags.includeInNextRun': true,
     };
 
@@ -442,6 +443,13 @@ class PayrollEngineService {
     if (payslips.length > 0) {
       await Payslip.insertMany(payslips);
     }
+    const appliedImportIds = payslips.flatMap(payslip => payslip.timeAttendance?.importIds || []);
+    if (appliedImportIds.length > 0) {
+      await TimeAttendanceImport.updateMany(
+        { _id: { $in: appliedImportIds }, $or: [{ status: 'accepted' }, { status: 'applied', appliedPayrollRunId: run._id }] },
+        { $set: { status: 'applied', appliedPayrollRunId: run._id } }
+      );
+    }
 
     // Totals & status
     run.updateTotalsFromPayslips(payslips);
@@ -529,6 +537,28 @@ class PayrollEngineService {
       employerContributions: [],
     });
 
+    const attendanceImports = await TimeAttendanceImport.find({
+      organizationId: run.organizationId,
+      userId: profile.userId,
+      $or: [
+        { status: 'accepted', eventType: 'adjustment' },
+        { status: 'accepted', 'period.endAt': { $gte: payStart, $lte: payEnd } },
+        { status: 'applied', appliedPayrollRunId: run._id },
+      ],
+    }).sort({ acceptedAt: 1 });
+    const attendanceLines = attendanceImports.flatMap(item => (item.payCodeLines || []).map(line => ({
+      line,
+      importId: item._id,
+    })));
+    payslip.timeAttendance = {
+      importIds: attendanceImports.map(item => item._id),
+      sourceTimesheets: attendanceImports.map(item => ({ sourceTimesheetId: item.sourceTimesheetId, sourceVersion: item.sourceVersion, eventType: item.eventType })),
+      payCodeLines: attendanceLines.map(item => item.line),
+      regularHours: attendanceLines.reduce((sum, item) => sum + (item.line.category === 'regular' || item.line.metadata?.adjustmentCategory === 'regular' ? Number(item.line.quantity || 0) : 0), 0),
+      overtimeHours: attendanceLines.reduce((sum, item) => sum + (item.line.category === 'overtime' || item.line.metadata?.adjustmentCategory === 'overtime' ? Number(item.line.quantity || 0) : 0), 0),
+      disclaimer: 'Imported approved attendance; payroll remains the owner of financial calculation.',
+    };
+
     // =====================================================
     // 1) Earnings
     // =====================================================
@@ -551,13 +581,43 @@ class PayrollEngineService {
       }
     }
 
-    const proratedBasic = roundMoney(basicSalary * prorationFactor);
-    payslip.addEarning(
-      'basic',
-      prorationFactor < 1 ? `Basic Salary (Prorated ${(prorationFactor * 100).toFixed(1)}%)` : 'Basic Salary',
-      proratedBasic,
-      { taxable: true, isRecurring: true }
-    );
+    const proratedBasic = profile.compensationBasis === 'hourly' ? 0 : roundMoney(basicSalary * prorationFactor);
+    if (proratedBasic > 0) {
+      payslip.addEarning(
+        'basic',
+        prorationFactor < 1 ? `Basic Salary (Prorated ${(prorationFactor * 100).toFixed(1)}%)` : 'Basic Salary',
+        proratedBasic,
+        { taxable: true, isRecurring: true }
+      );
+    }
+
+    const standardHours = Number(profile.standardHoursPerMonth || 176);
+    const hourlyRate = Number(profile.hourlyRate || (basicSalary > 0 ? basicSalary / standardHours : 0));
+    const addAttendanceAmount = (line, importId, amount, earningType = 'other') => {
+      const rounded = roundMoney(amount);
+      if (rounded > 0) {
+        payslip.addEarning(earningType, `${line.payCode} (${Number(line.quantity || 0)} ${line.unit || 'hours'})`, rounded, {
+          linkedRequestId: `time-attendance:${importId}`,
+          isRecurring: false,
+          taxable: true,
+        });
+      } else if (rounded < 0) {
+        payslip.addDeduction('other', `${line.payCode} adjustment`, Math.abs(rounded), { isRecurring: false, metadata: { source: 'time-attendance', payCode: line.payCode } });
+      }
+    };
+    for (const attendanceLine of attendanceLines) {
+      const { line, importId } = attendanceLine;
+      const category = line.category === 'adjustment' ? line.metadata?.adjustmentCategory : line.category;
+      const quantity = Number(line.quantity || 0);
+      const multiplier = Number(line.rateMultiplier ?? 1);
+      const unitAmount = line.unit === 'amount' ? quantity : quantity * hourlyRate * multiplier;
+      if (category === 'regular' && profile.compensationBasis === 'hourly') addAttendanceAmount(line, importId, unitAmount, 'basic');
+      else if (category === 'overtime' && settings.includeOvertime !== false) addAttendanceAmount(line, importId, unitAmount, 'overtime');
+      else if (category === 'holiday') {
+        const holidayAmount = profile.compensationBasis === 'hourly' ? unitAmount : quantity * hourlyRate * Math.max(0, multiplier - 1);
+        addAttendanceAmount(line, importId, holidayAmount, 'other');
+      } else if (['allowance', 'differential'].includes(category)) addAttendanceAmount(line, importId, unitAmount, 'other');
+    }
 
     // Recurring allowances
     if (settings.includeAllowances !== false && Array.isArray(profile.allowances)) {

@@ -40,6 +40,12 @@ const TimeEntrySchema = new Schema({
         type: String
     },
 
+    workMode: { type: String, enum: ['office', 'remote', 'client_site', 'other'], default: 'office' },
+    locationId: String,
+    jobCode: String,
+    activityCode: String,
+    costCentreCode: String,
+
     // Entry Type
     entryType: {
         type: String,
@@ -82,7 +88,7 @@ const TimeEntrySchema = new Schema({
     // Source of the entry
     source: {
         type: String,
-        enum: ['web', 'mobile', 'kiosk', 'manual', 'import', 'auto'],
+        enum: ['web', 'manual', 'import', 'auto'],
         default: 'web',
     },
 
@@ -162,12 +168,8 @@ TimeEntrySchema.methods.getPairedEntryType = function () {
 
 // Static method to get today's entries for a user
 TimeEntrySchema.statics.getTodayEntries = async function (userId, organizationId, timezone = 'UTC') {
-    const { startOfDay, endOfDay } = require('date-fns');
-    const { zonedTimeToUtc } = require('date-fns-tz');
-
-    const now = new Date();
-    const todayStart = zonedTimeToUtc(startOfDay(now), timezone);
-    const todayEnd = zonedTimeToUtc(endOfDay(now), timezone);
+    const { localDayBounds } = require('../services/timeCalculationService');
+    const { start: todayStart, end: todayEnd } = localDayBounds(new Date(), timezone);
 
     return this.find({
         userId,

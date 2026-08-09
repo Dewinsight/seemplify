@@ -11,6 +11,7 @@
  */
 
 import crypto from 'crypto'
+import { WebhookDelivery } from '../models/WebhookDelivery.js'
 
 // Registered webhook endpoints for each backend
 const WEBHOOK_ENDPOINTS = {
@@ -19,15 +20,18 @@ const WEBHOOK_ENDPOINTS = {
   leaveManagement: process.env.LEAVE_WEBHOOK_URL || 'http://localhost:5002/api/webhooks/idp',
   payroll: process.env.PAYROLL_WEBHOOK_URL || 'http://localhost:5006/api/webhooks/idp',
   performance: process.env.PERFORMANCE_WEBHOOK_URL || 'http://localhost:5004/api/webhooks/idp',
+  timeAttendance: process.env.TIME_ATTENDANCE_WEBHOOK_URL || 'http://localhost:5010/api/webhooks/idp',
+  recruiter: process.env.RECRUITER_WEBHOOK_URL || 'http://localhost:5001/api/webhooks/idp-lifecycle',
 }
 
-const WEBHOOK_SECRET = process.env.IDP_WEBHOOK_SECRET || 'your-webhook-secret-key'
+const WEBHOOK_SECRET = process.env.IDP_WEBHOOK_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'development-webhook-secret')
 const WEBHOOK_TIMEOUT = 5000 // 5 second timeout
 
 /**
  * Generate HMAC signature for webhook payload
  */
 function generateSignature(payload) {
+  if (!WEBHOOK_SECRET) throw new Error('IDP_WEBHOOK_SECRET is required in production')
   const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET)
   hmac.update(JSON.stringify(payload))
   return hmac.digest('hex')
@@ -36,47 +40,110 @@ function generateSignature(payload) {
 /**
  * Send webhook to all registered backends
  */
-async function sendWebhook(event, data) {
+export async function sendWebhook(event, data) {
+  return queueWebhook(event, data)
+}
+
+async function queueWebhook(event, data) {
+  const eventId = crypto.randomUUID()
   const payload = {
+    schemaVersion: '1.0',
+    eventId,
     event,
     data,
+    organizationId: data.organizationId,
+    subjectId: data.idpSubject || data.userId || data.memberId || data.teamId,
+    occurredAt: new Date().toISOString(),
+    correlationId: data.correlationId || eventId,
+    idempotencyKey: data.idempotencyKey || eventId,
     timestamp: new Date().toISOString(),
     idpVersion: '1.0',
   }
-
   const signature = generateSignature(payload)
+  const deliveries = await Promise.all(Object.entries(WEBHOOK_ENDPOINTS)
+    .filter(([, endpointUrl]) => Boolean(endpointUrl))
+    .map(([endpointName, endpointUrl]) => WebhookDelivery.create({
+      eventId,
+      event,
+      endpointName,
+      endpointUrl,
+      payload,
+      signature,
+    })))
+  deliverPendingWebhooks().catch(error => console.error('Webhook delivery error:', error))
+  return deliveries.map(delivery => ({ name: delivery.endpointName, queued: true, eventId }))
+}
 
-  const results = await Promise.allSettled(
-    Object.entries(WEBHOOK_ENDPOINTS).map(async ([name, url]) => {
-      if (!url) return { name, skipped: true }
-
-      try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT)
-
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-IDP-Signature': signature,
-            'X-IDP-Event': event,
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        })
-
-        clearTimeout(timeoutId)
-
-        console.log(`✅ Webhook sent to ${name}:`, response.status)
-        return { name, success: true, status: response.status }
-      } catch (error) {
-        console.error(`❌ Webhook failed for ${name}:`, error.message)
-        return { name, success: false, error: error.message }
-      }
-    })
+async function claimDelivery() {
+  const now = new Date()
+  return WebhookDelivery.findOneAndUpdate(
+    {
+      $or: [
+        { status: { $in: ['pending', 'failed'] }, nextAttemptAt: { $lte: now }, $or: [{ leaseUntil: null }, { leaseUntil: { $exists: false } }, { leaseUntil: { $lt: now } }] },
+        { status: 'delivering', leaseUntil: { $lt: now } }
+      ]
+    },
+    {
+      $set: { status: 'delivering', leaseUntil: new Date(now.getTime() + 60000) },
+      $inc: { attempts: 1 }
+    },
+    { sort: { nextAttemptAt: 1 }, new: true }
   )
+}
 
-  return results
+async function deliverOne(delivery) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT)
+  try {
+    const response = await fetch(delivery.endpointUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-IDP-Signature': delivery.signature,
+        'X-IDP-Event': delivery.event,
+      },
+      body: JSON.stringify(delivery.payload),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    delivery.status = 'delivered'
+    delivery.responseStatus = response.status
+    delivery.deliveredAt = new Date()
+    delivery.lastError = ''
+  } catch (error) {
+    delivery.status = delivery.attempts >= delivery.maxAttempts ? 'dead' : 'failed'
+    delivery.lastError = String(error.message || error).slice(0, 4000)
+    delivery.nextAttemptAt = new Date(Date.now() + Math.min(60 * 60 * 1000, 15000 * (2 ** Math.max(0, delivery.attempts - 1))))
+  } finally {
+    clearTimeout(timeoutId)
+    delivery.leaseUntil = undefined
+    await delivery.save()
+  }
+}
+
+let delivering = false
+export async function deliverPendingWebhooks(limit = 25) {
+  if (delivering) return { skipped: true }
+  delivering = true
+  let processed = 0
+  try {
+    for (; processed < limit; processed += 1) {
+      const delivery = await claimDelivery()
+      if (!delivery) break
+      await deliverOne(delivery)
+    }
+    return { processed }
+  } finally {
+    delivering = false
+  }
+}
+
+let deliveryTimer = null
+export function startWebhookDeliveryWorker() {
+  if (deliveryTimer) return
+  deliveryTimer = setInterval(() => deliverPendingWebhooks().catch(error => console.error('Webhook worker error:', error)), 15000)
+  deliveryTimer.unref?.()
+  deliverPendingWebhooks().catch(error => console.error('Webhook worker startup error:', error))
 }
 
 /**
@@ -96,12 +163,13 @@ export async function notifyTeamMemberAdded(userId, teamId, teamData, organizati
 /**
  * Notify backends when user is removed from a team
  */
-export async function notifyTeamMemberRemoved(userId, teamId, organizationId) {
+export async function notifyTeamMemberRemoved(userId, teamId, organizationId, role) {
   console.log(`📤 [WEBHOOK] team.member.removed: user=${userId}, team=${teamId}`)
   return sendWebhook('team.member.removed', {
     userId,
     teamId,
     organizationId,
+    role,
     action: 'removed',
   })
 }

@@ -19,6 +19,7 @@ import { buildOnboardingStateMap, getMemberOnboardingState } from '../utils/onbo
 import { buildPayrollProfileSyncData, getProfileCompletionForAccount } from '../utils/profileCompletion.js'
 import { sendProfileCompletionRemindersForAccounts } from '../jobs/profileCompletionReminders.js'
 import { emailService } from '../services/emailService.js'
+import { notifyOrgMemberRemoved, sendWebhook } from '../services/webhookService.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -865,6 +866,23 @@ router.put('/:orgId/members/:memberId',
         designation: hasDesignation ? String(designation || '').trim() : undefined,
         employeeId: hasEmployeeId ? normalizedEmployeeId : undefined
       })
+      const updatedMemberEntry = req.organization.members.find(
+        member => member.account.toString() === req.params.memberId
+      )
+      const updatedAccount = await Account.findById(req.params.memberId).select('sub email profile').lean()
+      await sendWebhook('organization.member.updated', {
+        eventId: `member-update:${req.organization._id}:${req.params.memberId}:${Date.now()}`,
+        userId: req.params.memberId,
+        idpSubject: updatedAccount?.sub,
+        email: updatedAccount?.email,
+        name: updatedAccount?.profile?.name,
+        organizationId: req.organization._id.toString(),
+        role: updatedMemberEntry?.role,
+        employeeId: updatedMemberEntry?.employeeId,
+        departmentId: updatedMemberEntry?.department?.toString?.() || updatedMemberEntry?.department,
+        appAccess: updatedMemberEntry?.appAccess,
+        effectiveAt: new Date().toISOString()
+      })
 
       res.json({
         message: 'Member updated successfully',
@@ -912,6 +930,8 @@ router.delete('/:orgId/members/:memberId',
       } catch (err) {
         return res.status(400).json({ error: err.message })
       }
+      const removedAccount = await Account.findById(memberId).select('sub').lean()
+      await notifyOrgMemberRemoved(removedAccount?.sub || memberId, req.organization._id.toString())
 
       console.log('Member removed from', req.organization.name, 'by', req.user.email)
 
@@ -957,6 +977,7 @@ router.post('/:orgId/leave',
       }
 
       console.log('User left organization:', req.organization.name, 'by', req.user.email)
+      await notifyOrgMemberRemoved(req.user.sub || memberId, req.organization._id.toString())
 
       res.json({
         message: 'Successfully left the organization',

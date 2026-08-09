@@ -427,7 +427,10 @@ OrganizationSchema.methods.syncMemberDepartmentsFromTeams = async function(accou
 // Add member to organization
 OrganizationSchema.methods.addMember = async function(accountId, role = 'recruiter', invitedBy = null, appAccess = null, options = {}) {
   const normalizedAppAccess = normalizeAppAccess(appAccess)
-  const departmentId = null
+  const requestedDepartmentId = options.departmentId || null
+  const departmentId = requestedDepartmentId && this.departments.id(requestedDepartmentId)
+    ? requestedDepartmentId
+    : null
   const designation = String(options.designation || '').trim() || undefined
   const employeeId = normalizeEmployeeId(options.employeeId) || undefined
 
@@ -455,7 +458,19 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
 
     // Update Account's organizations array
     const Account = mongoose.model('AiinAccount')
-    await Account.updateOne(
+    const accountMembershipUpdate = await Account.updateOne(
+      { _id: accountId, 'organizations.organization': this._id },
+      {
+        $set: {
+          'organizations.$.role': role,
+          'organizations.$.department': departmentId,
+          'organizations.$.appAccess': normalizedAppAccess,
+          'organizations.$.joinedAt': new Date(),
+          'organizations.$.isActive': true
+        }
+      }
+    )
+    if (!accountMembershipUpdate.matchedCount) await Account.updateOne(
       { _id: accountId },
       {
         $push: {
@@ -558,17 +573,24 @@ OrganizationSchema.methods.removeMember = async function(accountId) {
     }
   }
 
-  this.members = this.members.filter(
-    m => m.account.toString() !== accountId.toString()
-  )
+  member.status = 'inactive'
+  member.updatedAt = new Date()
 
   await this.save()
 
-  // Also remove from Account's organizations array
+  // Preserve the membership history on the account while revoking access.
   const Account = mongoose.model('AiinAccount')
   await Account.updateOne(
-    { _id: accountId },
-    { $pull: { organizations: { organization: this._id } } }
+    { _id: accountId, 'organizations.organization': this._id },
+    {
+      $set: {
+        'organizations.$.isActive': false
+      }
+    }
+  )
+  await Account.updateOne(
+    { _id: accountId, currentOrganization: this._id },
+    { $set: { currentOrganization: null } }
   )
 
   return this

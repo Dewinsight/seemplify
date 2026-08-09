@@ -49,6 +49,18 @@ const OvertimeSchema = new Schema({
         type: Boolean,
         default: true
     },
+    minimumIncrementMinutes: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 240,
+    },
+    dailyLimitHours: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 24,
+    },
 }, { _id: false });
 
 // Grace period configuration
@@ -77,6 +89,25 @@ const GeofenceLocationSchema = new Schema({
         type: Boolean,
         default: true
     },
+}, { _id: false });
+
+const ApprovalLevelSchema = new Schema({
+    name: { type: String, required: true },
+    approverType: {
+        type: String,
+        enum: ['line_manager', 'department_head', 'hr', 'explicit'],
+        default: 'line_manager',
+    },
+    approverId: String,
+    approverName: String,
+    approverEmail: String,
+}, { _id: false });
+
+const ApprovalDelegationSchema = new Schema({
+    fromUserId: { type: String, required: true },
+    toUserId: { type: String, required: true },
+    startsAt: { type: Date, required: true },
+    endsAt: { type: Date, required: true },
 }, { _id: false });
 
 const AttendancePolicySchema = new Schema({
@@ -119,11 +150,21 @@ const AttendancePolicySchema = new Schema({
     // Grace Periods
     gracePeriod: GracePeriodSchema,
 
+    restRules: {
+        minimumMinutesBetweenShifts: { type: Number, default: 660, min: 0, max: 1440 },
+    },
+
+    breakRules: {
+        requiredAfterMinutes: { type: Number, default: 360, min: 0, max: 1440 },
+        minimumBreakMinutes: { type: Number, default: 30, min: 0, max: 1440 },
+        paid: { type: Boolean, default: false },
+    },
+
     // Timesheet Settings
     timesheetSettings: {
         periodType: {
             type: String,
-            enum: ['weekly', 'bi-weekly', 'monthly'],
+            enum: ['daily', 'weekly', 'fortnightly', 'bi-weekly', 'semi-monthly', 'monthly'],
             default: 'weekly'
         },
         autoSubmit: {
@@ -141,6 +182,24 @@ const AttendancePolicySchema = new Schema({
         approvalDeadline: {
             type: Number,
             default: 3  // Days after submission
+        },
+        approvalLevels: {
+            type: [ApprovalLevelSchema],
+            default: () => [{ name: 'Line manager', approverType: 'line_manager' }],
+            validate: {
+                validator: levels => Array.isArray(levels) && levels.length > 0 && levels.length <= 10,
+                message: 'Between one and ten approval levels are required',
+            },
+        },
+        approvalDelegations: {
+            type: [ApprovalDelegationSchema],
+            default: () => [],
+            validate: {
+                validator: delegations => Array.isArray(delegations)
+                    && delegations.length <= 100
+                    && delegations.every(item => new Date(item.endsAt) >= new Date(item.startsAt)),
+                message: 'Approval delegation dates are invalid',
+            },
         },
     },
 
@@ -162,6 +221,21 @@ const AttendancePolicySchema = new Schema({
             enabled: { type: Boolean, default: false },
             afterHours: { type: Number, default: 10 },  // Auto clock out after 10 hours
             warningMinutesBefore: { type: Number, default: 30 }, // Warning email before auto clock-out
+        },
+        rounding: {
+            enabled: { type: Boolean, default: false },
+            incrementMinutes: { type: Number, default: 5, min: 1, max: 60 },
+            mode: {
+                type: String,
+                enum: ['nearest', 'up', 'down'],
+                default: 'nearest',
+            },
+        },
+        maximumLocationAccuracyMeters: {
+            type: Number,
+            default: 250,
+            min: 1,
+            max: 10000,
         },
     },
 
@@ -195,6 +269,41 @@ const AttendancePolicySchema = new Schema({
             sendHourUtc: { type: Number, default: 9 }, // 0-23
             includeExcel: { type: Boolean, default: true },
         },
+    },
+
+    payroll: {
+        enabled: { type: Boolean, default: true },
+        holidayRateMultiplier: { type: Number, default: 1, min: 0, max: 10 },
+        payCodes: {
+            regular: { type: String, default: 'REGULAR' },
+            overtime: { type: String, default: 'OVERTIME' },
+            unpaidBreak: { type: String, default: 'UNPAID_BREAK' },
+            holiday: { type: String, default: 'HOLIDAY' },
+            allowance: { type: String, default: 'ALLOWANCE' },
+            differential: { type: String, default: 'DIFFERENTIAL' },
+        },
+    },
+
+    presence: {
+        enabled: { type: Boolean, default: true },
+        rawEventRetentionDays: { type: Number, default: 90, min: 1, max: 90 },
+        dailySummaryRetentionDays: { type: Number, default: 730, min: 30, max: 2555 },
+    },
+
+    // Organization defaults used by calculations and rule selection.
+    timezone: {
+        type: String,
+        default: 'UTC',
+        trim: true,
+    },
+    jurisdiction: {
+        countryCode: { type: String, default: 'NG', uppercase: true, trim: true },
+        subdivisionCode: { type: String, trim: true },
+    },
+    activeRulePack: {
+        rulePackId: { type: Schema.Types.ObjectId, ref: 'AttendanceRulePack' },
+        version: Number,
+        appliedAt: Date,
     },
 
     // Created/Updated by

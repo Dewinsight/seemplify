@@ -1,6 +1,8 @@
 # Time & Attendance Management System
 
-Enterprise-grade time and attendance tracking system with clock in/out, timesheet management, approval workflows, and advanced features like geofencing and auto clock-out.
+Connected time and attendance platform with scheduling, rule-driven calculations, immutable timesheets, lifecycle/leave/payroll integrations, transparent application-presence evidence, notifications, exceptions and analytics.
+
+See the [operating documentation](docs/README.md) for rule-pack governance, integration boundaries, migration, and privacy controls.
 
 ---
 
@@ -13,10 +15,12 @@ Enterprise-grade time and attendance tracking system with clock in/out, timeshee
 - **Daily Time Entries** - Complete log of all clock events
 
 ### Timesheet Management
-- **Weekly Timesheets** - Automated aggregation of daily entries
+- **Configurable periods** - Daily, weekly, fortnightly, semi-monthly and monthly aggregation
 - **Approval Workflow** - Submit → Review → Approve/Reject flow
 - **Manager Dashboard** - Pending approvals queue
-- **Audit Trail** - Complete history of all timesheet actions
+- **Multi-level decisions** - Configurable approval levels, delegation, rejection and bulk actions
+- **Immutable versions** - Approved and payroll-exported periods use audited adjustments
+- **Audit Trail** - Complete history of calculations, decisions, reminders and integrations
 
 ### Advanced Features (NEW)
 
@@ -130,7 +134,7 @@ geofencing: {
 - **Database:** MongoDB (Mongoose ORM)
 - **Authentication:** OIDC (OpenID Connect)
 - **Email:** Nodemailer
-- **Scheduled Jobs:** setInterval (auto clock-out, reminders)
+- **Scheduled Jobs:** Mongo-backed leased jobs (auto clock-out, reminders, reports, retries, reconciliation and retention)
 
 ### Frontend
 - **Framework:** Next.js 14 (App Router)
@@ -210,6 +214,10 @@ OIDC_CLIENT_ID=time-attendance
 OIDC_CLIENT_SECRET=your-client-secret
 OIDC_REDIRECT_URI=http://localhost:5010/api/auth/oidc/callback
 FRONTEND_URL=http://localhost:5011
+INTERNAL_SERVICE_SECRET=replace-with-a-shared-service-secret
+IDP_WEBHOOK_SECRET=replace-with-the-idp-webhook-secret
+LEAVE_WEBHOOK_SECRET=replace-with-the-leave-webhook-secret
+PAYROLL_API_URL=http://localhost:5006
 ```
 
 ### Backend Optional (Email Features)

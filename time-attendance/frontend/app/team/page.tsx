@@ -249,7 +249,7 @@ export default function TeamPage() {
         <div className="space-y-6 animate-in fade-in duration-500" onClick={() => setIsTeamMenuOpen(false)}>
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-white">Team Attendance Table</h1>
+                    <h1 className="text-2xl font-bold text-white">Team Attendance</h1>
                     <p className="text-zinc-400">Line manager view of clock-in, clock-out, location, and current status.</p>
                     {lastUpdatedAt && (
                         <p className="text-xs text-zinc-500 mt-1">Last updated: {format(lastUpdatedAt, 'MMM d, h:mm:ss a')}</p>

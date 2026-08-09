@@ -44,7 +44,6 @@ const OnboardingFormSubmissionSchema = new mongoose.Schema({
   candidate: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Candidate',
-    required: true,
     index: true
   },
   candidateAccount: {

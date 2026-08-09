@@ -1,13 +1,111 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireOrganization, requireManager, isHRAdmin, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
+const { requireAuth, requireOrganization, isHRAdmin, isLineManager, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
 const { Timesheet, AttendancePolicy } = require('../models');
-const emailService = require('../services/emailService');
+const { createNotification } = require('../services/notificationService');
+const { refreshTimesheetEntries } = require('./timesheets');
 
 // Apply auth middleware
 router.use(requireAuth);
 router.use(requireOrganization);
-router.use(requireManager);
+router.use(async (req, res, next) => {
+    try {
+        if (isHRAdmin(req) || isLineManager(req) || isDepartmentHead(req)) return next();
+        const policy = await AttendancePolicy.findOne({ organizationId: req.organizationId }).lean();
+        const delegated = (policy?.timesheetSettings?.approvalDelegations || []).some(delegation => (
+            String(delegation.toUserId) === String(req.user.id)
+            && new Date(delegation.startsAt) <= new Date()
+            && new Date(delegation.endsAt) >= new Date()
+        ));
+        if (delegated) return next();
+        return res.status(403).json({ error: 'Manager or active approval-delegate access required' });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+function activeApprovalLevel(timesheet) {
+    const levels = timesheet.approvalWorkflow?.levels || [];
+    return levels[Number(timesheet.approvalWorkflow?.currentLevel || 0)] || null;
+}
+
+function hasActiveDelegation(policy, fromUserId, toUserId, now = new Date()) {
+    if (!fromUserId || !toUserId) return false;
+    return (policy?.timesheetSettings?.approvalDelegations || []).some(delegation => (
+        String(delegation.fromUserId) === String(fromUserId)
+        && String(delegation.toUserId) === String(toUserId)
+        && new Date(delegation.startsAt) <= now
+        && new Date(delegation.endsAt) >= now
+    ));
+}
+
+function approvalScopeQuery(req, policy) {
+    const userId = String(req.user.id);
+    const delegatedFrom = (policy?.timesheetSettings?.approvalDelegations || [])
+        .filter(delegation => hasActiveDelegation(policy, delegation.fromUserId, userId))
+        .map(delegation => String(delegation.fromUserId));
+    const scope = [
+        { 'assignedApprover.userId': userId },
+        ...(delegatedFrom.length ? [{ 'assignedApprover.userId': { $in: delegatedFrom } }] : []),
+    ];
+    if (isDepartmentHead(req)) scope.push({ userId: { $in: getDepartmentHeadScope(req).directReports } });
+    return { $or: scope };
+}
+
+function canApproveTimesheet(req, timesheet, policy) {
+    if (isHRAdmin(req)) return true;
+    const userId = String(req.user.id);
+    const level = activeApprovalLevel(timesheet);
+    if (level?.approverType === 'department_head') {
+        return isDepartmentHead(req) && getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId));
+    }
+    const expectedApprover = level?.approverId || timesheet.assignedApprover?.userId;
+    return String(expectedApprover || '') === userId || hasActiveDelegation(policy, expectedApprover, userId);
+}
+
+function advanceApproval(timesheet, actor, comment) {
+    if (!timesheet.approvalWorkflow) timesheet.approvalWorkflow = { currentLevel: 0, levels: [] };
+    const levels = timesheet.approvalWorkflow?.levels || [];
+    const currentIndex = Number(timesheet.approvalWorkflow?.currentLevel || 0);
+    const level = levels[currentIndex];
+    if (level) {
+        level.status = 'approved';
+        level.decidedBy = actor.userId;
+        level.decidedByName = actor.userName;
+        level.decidedAt = new Date();
+        level.comment = comment;
+        timesheet.addAuditLog('approved', actor.userId, actor.userName, comment, `Approval level ${currentIndex + 1}: ${level.name}`);
+    }
+    const nextIndex = levels.findIndex((candidate, index) => index > currentIndex && candidate.status === 'pending');
+    if (nextIndex >= 0) {
+        const next = levels[nextIndex];
+        timesheet.approvalWorkflow.currentLevel = nextIndex;
+        timesheet.assignedApprover = {
+            userId: next.approverId,
+            userName: next.approverName || next.name,
+            userEmail: next.approverEmail,
+            assignedAt: new Date(),
+        };
+        return { completed: false, next };
+    }
+
+    timesheet.status = 'payroll_pending';
+    timesheet.approvalWorkflow.completedAt = new Date();
+    timesheet.approvedBy = {
+        userId: actor.userId,
+        userName: actor.userName,
+        userEmail: actor.userEmail,
+        approvedAt: new Date(),
+        comment,
+    };
+    if (!level) timesheet.addAuditLog('approved', actor.userId, actor.userName, comment);
+    timesheet.lockedAt = new Date();
+    timesheet.lockedBy = actor.userId;
+    timesheet.payrollIntegration.state = 'pending';
+    timesheet.payrollIntegration.idempotencyKey = `timesheet:${timesheet._id}:v${timesheet.version || 1}`;
+    timesheet.addAuditLog('payroll_queued', actor.userId, actor.userName, null, 'Queued for automatic Payroll transfer');
+    return { completed: true, next: null };
+}
 
 // Get pending approvals
 router.get('/', async (req, res) => {
@@ -21,18 +119,19 @@ router.get('/', async (req, res) => {
             status,
         };
 
-        // If not HR admin, only show timesheets assigned to this manager
+        const policy = await AttendancePolicy.findOne({ organizationId }).lean();
+        // If not HR admin, include direct assignments, active delegations and
+        // department-head scope, then enforce the current level in memory.
         if (!isHRAdmin(req)) {
-            if (isDepartmentHead(req)) {
-                query.userId = { $in: getDepartmentHeadScope(req).directReports };
-            } else {
-                query['assignedApprover.userId'] = userId;
-            }
+            Object.assign(query, approvalScopeQuery(req, policy));
         }
 
-        const timesheets = await Timesheet.find(query)
+        const candidates = await Timesheet.find(query)
             .sort({ submittedAt: -1 })
-            .limit(parseInt(limit));
+            .limit(Math.min(500, Math.max(parseInt(limit) * 5, 50)));
+        const timesheets = (status === 'submitted' && !isHRAdmin(req)
+            ? candidates.filter(timesheet => canApproveTimesheet(req, timesheet, policy))
+            : candidates).slice(0, parseInt(limit));
 
         res.json({
             timesheets,
@@ -53,7 +152,7 @@ router.get('/history', async (req, res) => {
 
         const query = {
             organizationId,
-            status: { $in: ['approved', 'rejected', 'revision_requested'] },
+            status: { $in: ['approved', 'payroll_pending', 'payroll_exported', 'locked', 'rejected', 'revision_requested'] },
         };
 
         // If not HR admin, only show timesheets this manager processed
@@ -65,6 +164,7 @@ router.get('/history', async (req, res) => {
                 { 'approvedBy.userId': userId },
                 { 'rejectedBy.userId': userId },
                 { 'revisionRequestedBy.userId': userId },
+                { 'approvalWorkflow.levels.decidedBy': userId },
             ];
             }
         }
@@ -91,11 +191,8 @@ router.get('/counts', async (req, res) => {
 
         const matchQuery = { organizationId };
         if (!isHRAdmin(req)) {
-            if (isDepartmentHead(req)) {
-                matchQuery.userId = { $in: getDepartmentHeadScope(req).directReports };
-            } else {
-                matchQuery['assignedApprover.userId'] = userId;
-            }
+            const policy = await AttendancePolicy.findOne({ organizationId }).lean();
+            Object.assign(matchQuery, approvalScopeQuery(req, policy));
         }
 
         const counts = await Timesheet.aggregate([
@@ -138,33 +235,53 @@ router.post('/:id/approve', async (req, res) => {
             return res.status(404).json({ error: 'Timesheet not found or already processed' });
         }
 
-        // Verify approver access
-        if (!isHRAdmin(req) && timesheet.assignedApprover?.userId !== userId && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
+        const policy = await AttendancePolicy.findOne({ organizationId });
+        await refreshTimesheetEntries(timesheet, policy, { allowLocked: true });
+
+        if (Number(timesheet.summary?.incompleteEntries || 0) > 0) {
+            return res.status(409).json({
+                error: 'Incomplete or unpaired attendance entries must be corrected before approval',
+                code: 'INCOMPLETE_ATTENDANCE',
+                incompleteEntries: timesheet.summary.incompleteEntries,
+            });
+        }
+
+        if (!canApproveTimesheet(req, timesheet, policy)) {
             return res.status(403).json({ error: 'Not authorized to approve this timesheet' });
         }
 
-        timesheet.status = 'approved';
-        timesheet.approvedBy = {
+        const outcome = advanceApproval(timesheet, {
             userId,
             userName: req.user.name,
             userEmail: req.user.email,
-            approvedAt: new Date(),
-            comment,
-        };
-        timesheet.addAuditLog('approved', userId, req.user.name, comment);
+        }, comment);
 
         await timesheet.save();
 
-        // Send email notification to employee
-        const policy = await AttendancePolicy.findOne({ organizationId });
-        if (policy?.notifications?.emailOnApproval && timesheet.userEmail) {
-            await emailService.sendTimesheetApproved(timesheet, timesheet.userEmail);
+        if (outcome.completed) {
+            await createNotification({
+                organizationId, userId: timesheet.userId, userEmail: timesheet.userEmail,
+                type: 'timesheet_status', title: 'Timesheet approved',
+                message: `${req.user.name || 'Your manager'} completed approval of your timesheet.`,
+                actionUrl: `/timesheets/${timesheet._id}`, priority: 'normal',
+                eventKey: `timesheet-approved:${timesheet._id}:v${timesheet.version || 1}`,
+                channels: { email: policy?.notifications?.emailOnApproval === true },
+            });
+        } else if (outcome.next?.approverId) {
+            await createNotification({
+                organizationId, userId: outcome.next.approverId, userEmail: outcome.next.approverEmail,
+                type: 'timesheet_status', title: 'Timesheet awaiting your approval',
+                message: `${timesheet.userName || timesheet.userEmail} reached ${outcome.next.name}.`,
+                actionUrl: '/approvals', priority: 'normal',
+                eventKey: `timesheet-approval-level:${timesheet._id}:v${timesheet.version || 1}:${timesheet.approvalWorkflow.currentLevel}`,
+                channels: { email: policy?.notifications?.emailOnSubmission === true },
+            });
         }
 
         res.json({
             success: true,
             timesheet,
-            message: 'Timesheet approved',
+            message: outcome.completed ? 'Timesheet approved' : `Approval recorded; ${outcome.next.name} is next`,
         });
     } catch (error) {
         console.error('Approve timesheet error:', error);
@@ -193,12 +310,20 @@ router.post('/:id/reject', async (req, res) => {
             return res.status(404).json({ error: 'Timesheet not found or already processed' });
         }
 
-        // Verify approver access
-        if (!isHRAdmin(req) && timesheet.assignedApprover?.userId !== userId && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
+        const policy = await AttendancePolicy.findOne({ organizationId });
+        if (!canApproveTimesheet(req, timesheet, policy)) {
             return res.status(403).json({ error: 'Not authorized to reject this timesheet' });
         }
 
         timesheet.status = 'rejected';
+        const level = activeApprovalLevel(timesheet);
+        if (level) {
+            level.status = 'rejected';
+            level.decidedBy = userId;
+            level.decidedByName = req.user.name;
+            level.decidedAt = new Date();
+            level.comment = reason;
+        }
         timesheet.rejectedBy = {
             userId,
             userName: req.user.name,
@@ -211,10 +336,13 @@ router.post('/:id/reject', async (req, res) => {
         await timesheet.save();
 
         // Send email notification to employee
-        const policy = await AttendancePolicy.findOne({ organizationId });
-        if (policy?.notifications?.emailOnRejection && timesheet.userEmail) {
-            await emailService.sendTimesheetRejected(timesheet, timesheet.userEmail);
-        }
+        await createNotification({
+            organizationId, userId: timesheet.userId, userEmail: timesheet.userEmail,
+            type: 'timesheet_status', title: 'Timesheet rejected', message: reason,
+            actionUrl: `/timesheets/${timesheet._id}`, priority: 'high',
+            eventKey: `timesheet-rejected:${timesheet._id}:v${timesheet.version || 1}:${timesheet.updatedAt?.getTime?.() || Date.now()}`,
+            channels: { email: policy?.notifications?.emailOnRejection === true },
+        });
 
         res.json({
             success: true,
@@ -298,8 +426,8 @@ router.post('/:id/revert', async (req, res) => {
             return res.status(404).json({ error: 'Timesheet not found' });
         }
 
-        // Only allow reverting approved, rejected, or revision_requested timesheets
-        if (!['approved', 'rejected', 'revision_requested'].includes(timesheet.status)) {
+        // Only allow a correction workflow for processed records.
+        if (!['approved', 'locked', 'payroll_pending', 'payroll_exported', 'rejected', 'revision_requested'].includes(timesheet.status)) {
             return res.status(400).json({
                 error: 'Can only revert approved, rejected, or revision-requested timesheets',
                 code: 'INVALID_STATUS',
@@ -316,33 +444,57 @@ router.post('/:id/revert', async (req, res) => {
         }
 
         const previousStatus = timesheet.status;
+        const protectedStatus = ['approved', 'locked', 'payroll_pending', 'payroll_exported'].includes(previousStatus)
+            || Boolean(timesheet.lockedAt)
+            || timesheet.payrollIntegration?.exported;
+        let resultTimesheet = timesheet;
 
-        // Reset to draft status
-        timesheet.status = 'draft';
-        timesheet.submittedAt = null;
-        timesheet.submittedNote = null;
-        
-        // Clear approval/rejection data but keep in audit log
-        timesheet.approvedBy = null;
-        timesheet.rejectedBy = null;
-        timesheet.revisionRequestedBy = null;
-
-        // Add audit log entry
-        timesheet.addAuditLog(
-            'updated', 
-            userId, 
-            req.user.name, 
-            reason,
-            `Reverted from ${previousStatus} to draft`
-        );
-
-        await timesheet.save();
+        if (protectedStatus) {
+            const source = timesheet.toObject();
+            delete source._id;
+            delete source.createdAt;
+            delete source.updatedAt;
+            delete source.__v;
+            resultTimesheet = new Timesheet({
+                ...source,
+                status: 'adjusted',
+                version: (timesheet.version || 1) + 1,
+                supersedesTimesheetId: timesheet._id,
+                adjustmentReason: reason,
+                lockedAt: null,
+                lockedBy: null,
+                submittedAt: null,
+                submittedNote: null,
+                approvedBy: null,
+                rejectedBy: null,
+                revisionRequestedBy: null,
+                payrollIntegration: {
+                    exported: false,
+                    state: timesheet.payrollIntegration?.exported ? 'adjustment_pending' : 'not_ready',
+                },
+                auditLog: [],
+            });
+            resultTimesheet.addAuditLog('adjustment_created', userId, req.user.name, reason, `Correction for immutable version ${timesheet.version || 1}`);
+            timesheet.addAuditLog('adjustment_created', userId, req.user.name, reason, `Correction version ${resultTimesheet.version} created`);
+            await timesheet.save();
+            await resultTimesheet.save();
+        } else {
+            timesheet.status = 'draft';
+            timesheet.submittedAt = null;
+            timesheet.submittedNote = null;
+            timesheet.approvedBy = null;
+            timesheet.rejectedBy = null;
+            timesheet.revisionRequestedBy = null;
+            timesheet.addAuditLog('updated', userId, req.user.name, reason, `Returned from ${previousStatus} to draft`);
+            await timesheet.save();
+        }
 
         res.json({
             success: true,
-            timesheet,
-            message: `Timesheet reverted from ${previousStatus} to draft`,
+            timesheet: resultTimesheet,
+            message: protectedStatus ? 'A correction version was created; the approved record remains immutable' : `Timesheet returned from ${previousStatus} to draft`,
             previousStatus,
+            correctionCreated: protectedStatus,
         });
     } catch (error) {
         console.error('Revert timesheet error:', error);
@@ -379,6 +531,13 @@ router.delete('/:id', async (req, res) => {
 
         if (!timesheet) {
             return res.status(404).json({ error: 'Timesheet not found' });
+        }
+
+        if (timesheet.lockedAt || ['approved', 'locked', 'payroll_pending', 'payroll_exported'].includes(timesheet.status) || timesheet.payrollIntegration?.exported) {
+            return res.status(409).json({
+                error: 'Approved or payroll-linked timesheets cannot be deleted. Create an adjustment instead.',
+                code: 'TIMESHEET_IMMUTABLE',
+            });
         }
 
         // Store info for response before deletion
@@ -430,40 +589,48 @@ router.post('/bulk-approve', async (req, res) => {
             status: 'submitted',
         };
 
-        if (!isHRAdmin(req)) {
-            if (isDepartmentHead(req)) {
-                query.userId = { $in: getDepartmentHeadScope(req).directReports };
+        const policy = await AttendancePolicy.findOne({ organizationId });
+        const timesheets = await Timesheet.find(query).limit(100);
+        let completedCount = 0;
+        let advancedCount = 0;
+        let skippedCount = 0;
+        for (const timesheet of timesheets) {
+            await refreshTimesheetEntries(timesheet, policy, { allowLocked: true });
+            if (Number(timesheet.summary?.incompleteEntries || 0) > 0) {
+                skippedCount += 1;
+                continue;
+            }
+            if (!canApproveTimesheet(req, timesheet, policy)) {
+                skippedCount += 1;
+                continue;
+            }
+            const outcome = advanceApproval(timesheet, {
+                userId,
+                userName: req.user.name,
+                userEmail: req.user.email,
+            }, comment || 'Bulk approved');
+            await timesheet.save();
+            if (outcome.completed) {
+                completedCount += 1;
+                await createNotification({
+                    organizationId, userId: timesheet.userId, userEmail: timesheet.userEmail,
+                    type: 'timesheet_status', title: 'Timesheet approved',
+                    message: `${req.user.name || 'Your manager'} completed approval of your timesheet.`,
+                    actionUrl: `/timesheets/${timesheet._id}`, priority: 'normal',
+                    eventKey: `timesheet-approved:${timesheet._id}:v${timesheet.version || 1}`,
+                    channels: { email: policy?.notifications?.emailOnApproval === true },
+                });
             } else {
-                query['assignedApprover.userId'] = userId;
+                advancedCount += 1;
             }
         }
 
-        const result = await Timesheet.updateMany(query, {
-            $set: {
-                status: 'approved',
-                approvedBy: {
-                    userId,
-                    userName: req.user.name,
-                    userEmail: req.user.email,
-                    approvedAt: new Date(),
-                    comment: comment || 'Bulk approved',
-                },
-            },
-            $push: {
-                auditLog: {
-                    action: 'approved',
-                    performedBy: userId,
-                    performedByName: req.user.name,
-                    performedAt: new Date(),
-                    comment: comment || 'Bulk approved',
-                },
-            },
-        });
-
         res.json({
             success: true,
-            approvedCount: result.modifiedCount,
-            message: `${result.modifiedCount} timesheet(s) approved`,
+            approvedCount: completedCount,
+            advancedCount,
+            skippedCount,
+            message: `${completedCount} completed and ${advancedCount} advanced to the next approval level`,
         });
     } catch (error) {
         console.error('Bulk approve error:', error);
@@ -472,3 +639,6 @@ router.post('/bulk-approve', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.activeApprovalLevel = activeApprovalLevel;
+module.exports.advanceApproval = advanceApproval;
+module.exports.hasActiveDelegation = hasActiveDelegation;

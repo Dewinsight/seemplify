@@ -3,6 +3,37 @@ const router = express.Router();
 const { requireAuth, requireOrganization, requireHRAdmin } = require('../middleware/auth');
 const { AttendancePolicy } = require('../models');
 
+function sanitizePolicyUpdate(input = {}) {
+    const allowed = [
+        'workSchedule', 'overtime', 'gracePeriod', 'restRules', 'timesheetSettings', 'clockSettings',
+        'geofencing', 'notifications', 'payroll', 'presence', 'timezone', 'jurisdiction', 'activeRulePack',
+    ];
+    const output = {};
+    for (const key of allowed) {
+        if (input[key] !== undefined) output[key] = input[key];
+    }
+
+    // Migrate values produced by the old settings screen without persisting duplicate fields.
+    if (output.workSchedule?.startTime || output.workSchedule?.endTime) {
+        output.workSchedule.defaultShift = {
+            ...(output.workSchedule.defaultShift || {}),
+            startTime: output.workSchedule.startTime || output.workSchedule.defaultShift?.startTime,
+            endTime: output.workSchedule.endTime || output.workSchedule.defaultShift?.endTime,
+        };
+        delete output.workSchedule.startTime;
+        delete output.workSchedule.endTime;
+    }
+    if (output.overtime?.thresholdMinutes !== undefined && output.overtime.dailyThreshold === undefined) {
+        output.overtime.dailyThreshold = Number(output.overtime.thresholdMinutes) / 60;
+        delete output.overtime.thresholdMinutes;
+    }
+    if (output.overtime?.dailyLimitMinutes !== undefined && output.overtime.dailyLimitHours === undefined) {
+        output.overtime.dailyLimitHours = Number(output.overtime.dailyLimitMinutes) / 60;
+        delete output.overtime.dailyLimitMinutes;
+    }
+    return output;
+}
+
 // Apply auth middleware
 router.use(requireAuth);
 router.use(requireOrganization);
@@ -34,14 +65,7 @@ router.get('/attendance-policy', getPolicyHandler);
 router.put('/attendance-policy', async (req, res) => {
     try {
         const organizationId = req.organizationId;
-        const updates = req.body;
-
-        // Prevent overwriting read-only fields
-        delete updates.organizationId;
-        delete updates.organizationName;
-        delete updates.createdAt;
-        delete updates.updatedAt;
-        delete updates._id;
+        const updates = sanitizePolicyUpdate(req.body);
 
         updates.updatedBy = req.user.id;
         updates.updatedAt = new Date();
@@ -49,7 +73,7 @@ router.put('/attendance-policy', async (req, res) => {
         const policy = await AttendancePolicy.findOneAndUpdate(
             { organizationId },
             { $set: updates },
-            { new: true, upsert: true }
+            { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
         );
 
         res.json({
@@ -70,7 +94,7 @@ router.post('/geofence-locations', async (req, res) => {
         const { name, address, latitude, longitude, radius } = req.body;
 
         // Validation
-        if (!name || !latitude || !longitude) {
+        if (!name || !Number.isFinite(Number(latitude)) || !Number.isFinite(Number(longitude))) {
             return res.status(400).json({ error: 'Name, latitude, and longitude are required' });
         }
 

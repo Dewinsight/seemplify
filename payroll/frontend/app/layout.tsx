@@ -8,6 +8,7 @@ import { authApi, handleAuthCallback } from '@/lib/api';
 import { resolveIdpUrl } from '@/lib/runtimeConfig';
 import { PayrollViewModeProvider, PayrollViewMode } from '@/context/PayrollViewModeContext';
 import PageGuide from '@/components/PageGuide';
+import AttendancePresenceReporter from '@/components/AttendancePresenceReporter';
 import './globals.css';
 import {
   LayoutGrid,
@@ -261,6 +262,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="bg-noise" />
 
         <PayrollViewModeProvider value={providerValue}>
+          <AttendancePresenceReporter />
           <div className="min-h-screen">
             <nav className="fixed top-0 left-0 right-0 z-50 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-xl">
               <div className="mx-auto px-4 lg:px-8">

@@ -412,7 +412,8 @@ async function main() {
     });
     assert.equal(signAgreement.response.status, 200, `sign failed: ${JSON.stringify(signAgreement.payload)}`);
     assert.equal(signAgreement.payload.nextDocumentId, null);
-    assert.equal(signAgreement.payload.transition.nextAction.type, 'complete');
+    assert.equal(signAgreement.payload.transition.status, 'ready_to_provision');
+    assert.equal(signAgreement.payload.transition.nextAction.type, 'waiting');
 
     envelope = await OnboardingEnvelope.findById(seeded.envelope._id);
     assert.equal(envelope.status, 'completed');
@@ -422,14 +423,14 @@ async function main() {
     assert.ok(envelope.documents.id(seeded.agreementDocumentId).signedPdf?.url, 'signed document should store a stamped PDF');
 
     const refreshedCandidate = await Candidate.findById(seeded.candidate._id);
-    assert.equal(refreshedCandidate.status, 'Hired');
+    assert.equal(refreshedCandidate.status, 'New', 'candidate must not be marked hired before HR provisions the IDP membership');
 
     const finalTransition = await request(app.baseUrl, `/api/candidate-portal/transitions/${seeded.onboarding._id}`, { token });
     assert.equal(finalTransition.response.status, 200);
-    assert.equal(finalTransition.payload.data.status, 'completed');
-    assert.equal(finalTransition.payload.data.nextAction.type, 'complete');
+    assert.equal(finalTransition.payload.data.status, 'ready_to_provision');
+    assert.equal(finalTransition.payload.data.nextAction.type, 'waiting');
 
-    console.log('Candidate portal integration verified: real auth, form submit, fill-only completion, ordered signing, PDF stamping, and completion.');
+    console.log('Candidate portal integration verified: real auth, form submit, fill-only completion, ordered signing, PDF stamping, and HR-controlled provisioning readiness.');
   } finally {
     await closeServer(appServer);
     await mongoose.disconnect();
