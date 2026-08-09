@@ -1,5 +1,6 @@
 const { deepMerge, validateRulePack } = require('../services/rulePackService');
-const { EU_COUNTRIES, definitions } = require('../scripts/seedRulePacks');
+const { AttendanceRulePack } = require('../models');
+const { EU_COUNTRIES, definitions, seedDefaultRulePacks } = require('../services/rulePackSeedService');
 
 describe('rule-pack governance', () => {
     test('seeds Nigeria, UK, EU baseline and all 27 national overlays as reviewable drafts', () => {
@@ -9,6 +10,19 @@ describe('rule-pack governance', () => {
         expect(packs.map(pack => pack.key)).toEqual(expect.arrayContaining(['global-fallback', 'ng-default', 'gb-default', 'eu-baseline']));
         expect(packs.filter(pack => pack.parent?.key === 'eu-baseline')).toHaveLength(27);
         expect(packs.every(pack => pack.status === 'draft' && pack.reviewRequired === true)).toBe(true);
+    });
+
+    test('adds missing templates idempotently without overwriting existing packs', async () => {
+        const update = jest.spyOn(AttendanceRulePack, 'updateOne').mockResolvedValue({ upsertedCount: 1 });
+        await expect(seedDefaultRulePacks({ actorId: 'admin-1' })).resolves.toEqual({ total: 31, inserted: 31, existing: 0 });
+        expect(update).toHaveBeenCalledTimes(31);
+        expect(update.mock.calls[0][1]).toHaveProperty('$setOnInsert');
+
+        update.mockClear();
+        update.mockResolvedValue({ upsertedCount: 0 });
+        await expect(seedDefaultRulePacks({ actorId: 'admin-1' })).resolves.toEqual({ total: 31, inserted: 0, existing: 31 });
+        expect(update).toHaveBeenCalledTimes(31);
+        update.mockRestore();
     });
 
     test('rejects incomplete jurisdiction data and unsafe raw-presence retention', () => {

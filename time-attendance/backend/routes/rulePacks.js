@@ -3,6 +3,7 @@ const router = express.Router();
 const { requireAuth, requireOrganization, requireHRAdmin } = require('../middleware/auth');
 const { AttendanceRulePack, AttendancePolicy } = require('../models');
 const { resolvePack, validateRulePack } = require('../services/rulePackService');
+const { seedDefaultRulePacks } = require('../services/rulePackSeedService');
 const { calculatePeriod } = require('../services/timeCalculationService');
 
 router.use(requireAuth, requireOrganization, requireHRAdmin);
@@ -37,6 +38,15 @@ router.get('/', async (req, res) => {
         return res.json({ packs });
     } catch (error) {
         return res.status(500).json({ error: 'Failed to load rule packs' });
+    }
+});
+
+router.post('/seed-defaults', async (req, res) => {
+    try {
+        const result = await seedDefaultRulePacks({ actorId: req.user.id });
+        return res.status(result.inserted ? 201 : 200).json(result);
+    } catch (error) {
+        return res.status(500).json({ error: error.message || 'Failed to add baseline rule-pack templates' });
     }
 });
 

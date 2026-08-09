@@ -14,6 +14,7 @@ type MockState = {
     notificationRead: boolean;
     exceptionStatus: string;
     shiftAcknowledged: boolean;
+    rulePacks: any[];
 };
 
 const organization = { id: 'org-1', name: 'Seemplify Test Org', role: 'admin' };
@@ -192,8 +193,20 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'PUT' && path === '/api/admin/attendance-policy') return json(route, { policy });
         if (path.startsWith('/api/admin/geofence-locations')) return json(route, { policy });
 
-        if (method === 'GET' && path === '/api/v1/rule-packs') return json(route, { packs: [rulePack] });
-        if (method === 'GET' && path === '/api/v1/rule-packs/rule-pack-1') return json(route, { pack: rulePack, resolved: { rules: rulePack.rules } });
+        if (method === 'GET' && path === '/api/v1/rule-packs') return json(route, { packs: state.rulePacks });
+        if (method === 'POST' && path === '/api/v1/rule-packs/seed-defaults') {
+            const inserted = state.rulePacks.length ? 0 : 31;
+            if (!state.rulePacks.length) state.rulePacks = [rulePack];
+            return json(route, { total: 31, inserted, existing: 31 - inserted }, inserted ? 201 : 200);
+        }
+        if (method === 'POST' && path === '/api/v1/rule-packs') {
+            const body = request.postDataJSON();
+            const pack = { ...body, _id: 'rule-pack-custom', version: 1, status: 'draft', scope: { organizationId: 'org-1' } };
+            state.rulePacks.push(pack);
+            return json(route, { pack, validation: { valid: true, errors: [] } }, 201);
+        }
+        const requestedRulePack = state.rulePacks.find(pack => path === `/api/v1/rule-packs/${pack._id}`);
+        if (method === 'GET' && requestedRulePack) return json(route, { pack: requestedRulePack, resolved: { rules: requestedRulePack.rules } });
         if (method === 'POST' && path === '/api/v1/rule-packs/rule-pack-1/simulate') return json(route, { result: { totals: { regularHours: 8, overtimeHours: 0, exceptionCount: 0 }, dailyEntries: [] } });
         if (method === 'POST' && path === '/api/v1/rule-packs/rule-pack-1/clone') return json(route, { pack: { ...rulePack, _id: 'rule-pack-org', name: 'Nigeria default — organization copy', status: 'draft', scope: { organizationId: 'org-1' } } });
 
@@ -217,7 +230,7 @@ const test = base.extend<{ mockState: MockState }>({
         const state: MockState = {
             calls: [], unhandled: [], browserErrors: [], clockedIn: false, onBreak: false,
             lockedClockOut: false,
-            notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false,
+            notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false, rulePacks: [rulePack],
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
         page.on('console', message => {
@@ -381,6 +394,24 @@ test('approves a pending timesheet and runs a rule-pack impact preview', async (
     await page.goto('/admin/rule-packs');
     await page.getByRole('button', { name: 'Run simulation' }).click();
     await expect(page.getByText('Regular: 8h')).toBeVisible();
+});
+
+test('recovers an empty rule-pack catalog and creates a custom draft', async ({ page, mockState }) => {
+    mockState.rulePacks = [];
+    await authenticate(page);
+    await page.goto('/admin/rule-packs');
+
+    await expect(page.getByRole('button', { name: 'Nigeria default' })).toBeVisible();
+    expect(mockState.calls).toContain('POST /api/v1/rule-packs/seed-defaults');
+
+    await page.getByRole('button', { name: 'New custom pack' }).click();
+    await page.getByLabel('Name').fill('London operations rules');
+    await page.getByLabel('ISO country code').fill('GB');
+    await page.getByLabel('Authoritative source title').fill('Working Time Regulations 1998');
+    await page.getByRole('button', { name: 'Create draft' }).click();
+
+    await expect(page.getByRole('heading', { name: 'London operations rules' })).toBeVisible();
+    expect(mockState.calls).toContain('POST /api/v1/rule-packs');
 });
 
 test('renders navigation and core workflows at a mobile viewport', async ({ page, mockState: _mockState }, testInfo) => {
