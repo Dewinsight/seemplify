@@ -71,6 +71,7 @@ import ThinkingProcess from "@/components/ThinkingProcess"
 import MessageRenderer from "@/components/MessageRenderer"
 import { GuideRenderer } from "@/components/ai-assistant/GuideRenderer"
 import { useFeatureFlags } from "@/context/FeatureFlagsContext"
+import { settleAssistantWebSocketError } from "@/utils/assistantWebSocketState"
 
 // Chat Session Interface
 interface ChatSession {
@@ -474,8 +475,10 @@ export default function AssistantPage() {
   // Handle WebSocket errors
   useEffect(() => {
     if (wsError) {
+      setIsAssistantTyping(false)
+      setMessages((previous) => settleAssistantWebSocketError(previous, wsError))
       toast({
-        title: "Connection Error",
+        title: "Assistant Error",
         description: wsError,
         variant: "destructive"
       })
@@ -799,7 +802,8 @@ export default function AssistantPage() {
       messageContent,
       user?._id,
       sessionToUse?.sessionId,
-      localStorage.getItem('jwt') || undefined
+      localStorage.getItem('jwt') || undefined,
+      localStorage.getItem('seemplify_active_organization_id') || undefined
     );
 
     // Clear file attachment after sending

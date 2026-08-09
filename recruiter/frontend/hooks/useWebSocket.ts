@@ -27,6 +27,11 @@ export interface WebSocketMessage {
   userInput?: string;
   userId?: string;
   sessionId?: string;
+  organizationId?: string;
+  requestId?: string;
+  code?: string;
+  status?: number;
+  details?: Record<string, unknown>;
 }
 
 export interface ChatMessage {
@@ -35,6 +40,8 @@ export interface ChatMessage {
   userId?: string;
   sessionId?: string;
   authToken?: string;
+  organizationId?: string;
+  requestId?: string;
 }
 
 export interface ThinkingChunk {
@@ -57,7 +64,7 @@ export interface WebSocketHookReturn {
   isConnected: boolean;
   isConnecting: boolean;
   sendMessage: (message: WebSocketMessage) => void;
-  sendChat: (userInput: string, userId?: string, sessionId?: string, authToken?: string) => void;
+  sendChat: (userInput: string, userId?: string, sessionId?: string, authToken?: string, organizationId?: string) => void;
   lastMessage: WebSocketMessage | null;
   thinkingMessages: ThinkingChunk[];
   finalResult: string | null;
@@ -163,6 +170,7 @@ const useWebSocket = (url?: string): WebSocketHookReturn => {
         } catch (err) {
           console.error('❌ Failed to parse WebSocket message:', err);
           setError('Failed to parse server message');
+          setIsProcessing(false);
         }
       };
 
@@ -170,6 +178,7 @@ const useWebSocket = (url?: string): WebSocketHookReturn => {
         console.log('🔌 WebSocket disconnected:', event.code, event.reason);
         setIsConnected(false);
         setIsConnecting(false);
+        setIsProcessing(false);
         
         // Attempt to reconnect if not a manual disconnect
         if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
@@ -187,6 +196,7 @@ const useWebSocket = (url?: string): WebSocketHookReturn => {
         console.error('❌ WebSocket error:', error);
         setError('WebSocket connection error');
         setIsConnecting(false);
+        setIsProcessing(false);
       };
 
       setIsConnected(true);
@@ -219,10 +229,11 @@ const useWebSocket = (url?: string): WebSocketHookReturn => {
     } else {
       console.warn('⚠️ WebSocket not connected, cannot send message');
       setError('WebSocket not connected');
+      setIsProcessing(false);
     }
   }, []);
 
-  const sendChat = useCallback((userInput: string, userId?: string, sessionId?: string, authToken?: string) => {
+  const sendChat = useCallback((userInput: string, userId?: string, sessionId?: string, authToken?: string, organizationId?: string) => {
     // Clear previous state
     setThinkingMessages([]);
     setFinalResult(null);
@@ -234,7 +245,11 @@ const useWebSocket = (url?: string): WebSocketHookReturn => {
       userInput,
       userId,
       sessionId,
-      authToken
+      authToken,
+      organizationId,
+      requestId: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `assistant-${Date.now()}`
     };
 
     sendMessage(chatMessage);
