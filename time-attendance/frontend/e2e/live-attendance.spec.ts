@@ -302,7 +302,9 @@ test('lets a worker stop a live session after the current period is protected', 
         organizationId: 'org-live-e2e',
         organizationName: 'Seemplify Live E2E',
         entryType: 'clock_in',
-        timestamp: new Date(Date.now() - (30 * 60 * 1000)),
+        // This event must be newer than the clock-out created by the earlier
+        // lifecycle test; otherwise current-status correctly remains clocked out.
+        timestamp: new Date(),
         timezone: 'Europe/London',
         source: 'web',
         workMode: 'remote',

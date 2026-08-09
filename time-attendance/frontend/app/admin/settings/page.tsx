@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { adminApi } from '@/lib/api';
 import {
-    Building2,
     MapPin,
     Clock,
     Save,
@@ -11,7 +10,6 @@ import {
     Mail,
     Plus,
     Trash2,
-    Edit2,
     CheckCircle2,
     XCircle,
     Eye
@@ -564,19 +562,26 @@ export default function SettingsPage() {
                             </div>
                             <div>
                                 <h2 className="text-lg font-semibold text-white">Geofencing</h2>
-                                <p className="text-sm text-zinc-500">Restrict clock-in to specific locations</p>
+                                <p className="text-sm text-zinc-500">Check clock-in and clock-out against configured locations</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
                             <span className="text-sm text-zinc-400">Enabled</span>
                             <button
-                                onClick={() => setPolicy({ 
-                                    ...policy, 
-                                    geofencing: { 
-                                        ...policy.geofencing, 
-                                        enabled: !policy.geofencing?.enabled 
-                                    } 
-                                })}
+                                type="button"
+                                aria-label="Enable geofencing"
+                                aria-pressed={Boolean(policy.geofencing?.enabled)}
+                                onClick={() => {
+                                    const enabled = !policy.geofencing?.enabled;
+                                    setPolicy({
+                                        ...policy,
+                                        geofencing: {
+                                            ...policy.geofencing,
+                                            enabled,
+                                            enforced: enabled ? policy.geofencing?.enforced : false,
+                                        }
+                                    });
+                                }}
                                 className={cn(
                                     "w-12 h-6 rounded-full p-1 transition-colors relative",
                                     policy.geofencing?.enabled ? "bg-purple-500" : "bg-zinc-700"
@@ -592,30 +597,52 @@ export default function SettingsPage() {
 
                     {policy.geofencing?.enabled && (
                         <div className="space-y-4 animate-in fade-in slide-in-from-top-4">
-                            {/* Enforce Toggle */}
-                            <div className="flex items-center justify-between p-4 bg-zinc-800/50 rounded-lg">
-                                <div>
-                                    <p className="font-medium text-white">Enforce Geofencing</p>
-                                    <p className="text-sm text-zinc-400">Block clock-in if outside allowed locations</p>
+                            <div className="grid gap-4 rounded-lg bg-zinc-800/50 p-4 md:grid-cols-[1fr_240px]">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <p className="font-medium text-white">Enforce geofencing</p>
+                                        <p className="text-sm text-zinc-400">Block clock actions when location is missing, inaccurate, or outside an allowed location.</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        aria-label="Enforce geofencing"
+                                        aria-pressed={Boolean(policy.geofencing?.enforced)}
+                                        onClick={() => setPolicy({
+                                            ...policy,
+                                            geofencing: {
+                                                ...policy.geofencing,
+                                                enforced: !policy.geofencing?.enforced
+                                            }
+                                        })}
+                                        className={cn(
+                                            "relative h-6 w-12 shrink-0 rounded-full p-1 transition-colors",
+                                            policy.geofencing?.enforced ? "bg-red-500" : "bg-zinc-700"
+                                        )}
+                                    >
+                                        <div className={cn(
+                                            "h-4 w-4 rounded-full bg-white transition-transform",
+                                            policy.geofencing?.enforced ? "translate-x-6" : "translate-x-0"
+                                        )} />
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => setPolicy({ 
-                                        ...policy, 
-                                        geofencing: { 
-                                            ...policy.geofencing, 
-                                            enforced: !policy.geofencing?.enforced 
-                                        } 
-                                    })}
-                                    className={cn(
-                                        "w-12 h-6 rounded-full p-1 transition-colors relative",
-                                        policy.geofencing?.enforced ? "bg-red-500" : "bg-zinc-700"
-                                    )}
-                                >
-                                    <div className={cn(
-                                        "w-4 h-4 rounded-full bg-white transition-transform",
-                                        policy.geofencing?.enforced ? "translate-x-6" : "translate-x-0"
-                                    )} />
-                                </button>
+                                <label className="text-sm text-zinc-300">
+                                    Maximum location uncertainty (metres)
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={10000}
+                                        value={policy.clockSettings?.maximumLocationAccuracyMeters ?? 250}
+                                        onChange={(event) => setPolicy({
+                                            ...policy,
+                                            clockSettings: {
+                                                ...policy.clockSettings,
+                                                maximumLocationAccuracyMeters: Number(event.target.value)
+                                            }
+                                        })}
+                                        className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-white"
+                                    />
+                                    <span className="mt-1 block text-xs leading-5 text-zinc-500">Only evaluated while geofencing is enabled.</span>
+                                </label>
                             </div>
 
                             {/* Locations List */}

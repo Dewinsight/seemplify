@@ -9,7 +9,7 @@ interface ClockStatus {
     isOnBreak: boolean;
     lastEntry?: any;
     timeWorked?: { hours: number; minutes: number; seconds?: number };
-    policy?: { requireNote?: boolean };
+    policy?: { requireNote?: boolean; locationEnabled?: boolean; locationRequired?: boolean; maximumLocationAccuracyMeters?: number };
     _receivedAt?: number;
 }
 
@@ -82,7 +82,8 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
             setLoading(true);
             setError(null);
             setMessage(label);
-            const location = await getLocation();
+            const shouldCollectLocation = Boolean(status.policy?.locationEnabled || status.policy?.locationRequired);
+            const location = shouldCollectLocation ? await getLocation() : null;
             await action(location);
             await refreshStatus();
             setMessage(success);
@@ -100,6 +101,7 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
     };
 
     const noteRequired = Boolean(status.policy?.requireNote);
+    const locationEnabled = Boolean(status.policy?.locationEnabled || status.policy?.locationRequired);
     const clockIn = async () => {
         const note = clockInNote.trim();
         if (noteRequired && !note) {
@@ -109,13 +111,13 @@ export default function ClockWidget({ initialStatus, onStatusChange }: ClockWidg
         }
 
         const succeeded = await run(
-            'Confirming your location…',
+            locationEnabled ? 'Confirming your location…' : 'Clocking you in…',
             (location) => clockApi.clockIn(note || undefined, location),
             'You are clocked in.',
         );
         if (succeeded) setClockInNote('');
     };
-    const clockOut = () => run('Closing today’s session…', (location) => clockApi.clockOut(undefined, location), 'You are clocked out.');
+    const clockOut = () => run(locationEnabled ? 'Confirming your location…' : 'Clocking you out…', (location) => clockApi.clockOut(undefined, location), 'You are clocked out.');
     const toggleBreak = async () => {
         try {
             setLoading(true);

@@ -1,4 +1,4 @@
-const { evaluateClockIn, buildPolicySummary, calculateDailyDurations, getPolicyDayBounds, inferDayStartState } = require('../services/attendanceRulesService');
+const { evaluateClockIn, evaluateLocationPolicy, buildPolicySummary, calculateDailyDurations, getPolicyDayBounds, inferDayStartState } = require('../services/attendanceRulesService');
 
 const policy = {
     timezone: 'Europe/London',
@@ -19,7 +19,9 @@ test('policy summary makes explicit clock-in behavior clear', () => {
     expect(buildPolicySummary(policy)).toMatchObject({
         explicitClockInRequired: true,
         autoClockOnLogin: false,
+        locationEnabled: true,
         locationRequired: true,
+        maximumLocationAccuracyMeters: 250,
         timezone: 'Europe/London',
         workDays: [1, 2, 3, 4, 5],
         scheduleType: 'fixed',
@@ -29,6 +31,36 @@ test('policy summary makes explicit clock-in behavior clear', () => {
         shiftBreakMinutes: 30,
         clockInReminderMinutesAfter: 20,
         clockOutReminderMinutesAfter: 10,
+    });
+});
+
+test('location accuracy has no effect when geofencing is disabled', () => {
+    expect(evaluateLocationPolicy({
+        geofencing: { enabled: false, enforced: true },
+        clockSettings: { maximumLocationAccuracyMeters: 50 },
+    }, { hasLocation: true, accuracy: 5000 })).toMatchObject({
+        allowed: true,
+        enabled: false,
+        enforced: false,
+        shouldValidate: false,
+        warnings: [],
+    });
+});
+
+test('location accuracy warns in evidence mode and blocks only in enforcement mode', () => {
+    const evidencePolicy = {
+        geofencing: { enabled: true, enforced: false },
+        clockSettings: { maximumLocationAccuracyMeters: 100 },
+    };
+    const evidenceResult = evaluateLocationPolicy(evidencePolicy, { hasLocation: true, accuracy: 600 });
+    expect(evidenceResult.allowed).toBe(true);
+    expect(evidenceResult.shouldValidate).toBe(false);
+    expect(evidenceResult.warnings[0]).toContain('100m');
+
+    expect(evaluateLocationPolicy({ ...evidencePolicy, geofencing: { enabled: true, enforced: true } }, { hasLocation: true, accuracy: 600 })).toMatchObject({
+        allowed: false,
+        code: 'LOCATION_ACCURACY_TOO_LOW',
+        maximumAccuracyMeters: 100,
     });
 });
 

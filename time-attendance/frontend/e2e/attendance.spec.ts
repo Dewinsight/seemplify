@@ -15,6 +15,8 @@ type MockState = {
     exceptionStatus: string;
     shiftAcknowledged: boolean;
     rulePacks: any[];
+    locationEnabled: boolean;
+    clockBodies: any[];
 };
 
 const organization = { id: 'org-1', name: 'Seemplify Test Org', role: 'admin' };
@@ -57,7 +59,7 @@ const policy = {
     },
     notifications: { managerReports: { enabled: true, frequency: 'weekly', sendHourUtc: 9, includeExcel: true } },
     presence: { enabled: true, rawEventRetentionDays: 90, dailySummaryRetentionDays: 730 },
-    geofencing: { enabled: true, enforceGeofence: true, requireLocation: true, locations: [] },
+    geofencing: { enabled: false, enforced: false, locations: [] },
 };
 
 const rulePack = {
@@ -114,11 +116,13 @@ async function installApiMock(page: Page, state: MockState) {
                 isClockedIn: state.clockedIn, isOnBreak: state.onBreak,
                 lastClockEntry: state.clockedIn ? { timestamp: NOW } : null,
                 timeWorked: { hours: 2, minutes: 120 },
+                policy: { locationEnabled: state.locationEnabled, locationRequired: state.locationEnabled, maximumLocationAccuracyMeters: 250 },
             });
         }
         if (method === 'GET' && path === '/api/clock/events') return route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'event: ready\ndata: {"connected":true}\n\n' });
-        if (method === 'POST' && path === '/api/clock/in') { state.clockedIn = true; return json(route, { success: true }); }
+        if (method === 'POST' && path === '/api/clock/in') { state.clockBodies.push(request.postDataJSON()); state.clockedIn = true; return json(route, { success: true }); }
         if (method === 'POST' && path === '/api/clock/out') {
+            state.clockBodies.push(request.postDataJSON());
             state.clockedIn = false;
             state.onBreak = false;
             return json(route, {
@@ -231,6 +235,7 @@ const test = base.extend<{ mockState: MockState }>({
             calls: [], unhandled: [], browserErrors: [], clockedIn: false, onBreak: false,
             lockedClockOut: false,
             notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false, rulePacks: [rulePack],
+            locationEnabled: false, clockBodies: [],
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
         page.on('console', message => {
@@ -261,6 +266,27 @@ test('clocks in from the dashboard and refreshes attendance state', async ({ pag
     await page.getByRole('button', { name: 'Clock In' }).click();
     await expect(page.getByRole('button', { name: 'Clock Out' })).toBeVisible();
     expect(mockState.calls).toContain('POST /api/clock/in');
+    expect(mockState.clockBodies[0].location).toBeNull();
+});
+
+test('collects location for clocking only when geofencing is enabled', async ({ page, mockState }) => {
+    mockState.locationEnabled = true;
+    await authenticate(page);
+    await page.goto('/dashboard');
+    await page.getByRole('button', { name: 'Clock In' }).click();
+    await expect(page.getByRole('button', { name: 'Clock Out' })).toBeVisible();
+    expect(mockState.clockBodies[0].location).toMatchObject({ latitude: 51.5074, longitude: -0.1278 });
+});
+
+test('shows location accuracy controls only when geofencing is enabled', async ({ page, mockState: _mockState }) => {
+    await authenticate(page);
+    await page.goto('/admin/settings');
+
+    const accuracyInput = page.getByLabel('Maximum location uncertainty (metres)');
+    await expect(accuracyInput).toBeHidden();
+    await page.getByRole('button', { name: 'Enable geofencing' }).click();
+    await expect(accuracyInput).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Enforce geofencing' })).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('allows an employee to clock out when the current timesheet is protected', async ({ page, mockState }) => {

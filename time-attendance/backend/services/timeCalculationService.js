@@ -308,7 +308,7 @@ function calculatePeriod(entries, period, policy = {}, calendarContext = {}) {
     }
     for (const day of dailyEntries) {
         const sourceEntries = entries.filter(entry => day.timeEntryIds.some(id => String(id) === String(entry._id)));
-        if (sourceEntries.some(entry => entry.location && entry.location.verified === false)) {
+        if (policy.geofencing?.enabled && sourceEntries.some(entry => entry.location && entry.location.verified === false)) {
             day.exceptions.push({ type: 'geofence_failure', description: 'One or more attendance events were outside an allowed location' });
         }
     }

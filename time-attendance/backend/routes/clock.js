@@ -12,7 +12,7 @@ const { TimeEntry, Timesheet, AttendancePolicy, EmployeeRoster } = require('../m
 const geofenceService = require('../services/geofenceService');
 const { enrichLocationWithAddress } = require('../services/geocodingService');
 const { startOfWeek, endOfWeek, getISOWeek, getYear } = require('date-fns');
-const { evaluateClockIn, buildPolicySummary } = require('../services/attendanceRulesService');
+const { evaluateClockIn, evaluateLocationPolicy, buildPolicySummary } = require('../services/attendanceRulesService');
 const attendanceEvents = require('../services/attendanceEventService');
 const { buildSessions, localDayBounds } = require('../services/timeCalculationService');
 const {
@@ -43,22 +43,31 @@ function hasCoordinates(location) {
     return Number.isFinite(Number(location?.latitude)) && Number.isFinite(Number(location?.longitude));
 }
 
-async function validateClockLocation(location, organizationId, action) {
-    const policy = await AttendancePolicy.getOrCreateDefault(organizationId);
-    const enforced = Boolean(policy.geofencing?.enabled && policy.geofencing?.enforced);
-    if (!hasCoordinates(location)) {
-        return enforced
-            ? { ok: false, status: 400, error: 'Location is required by your organization attendance policy', code: 'LOCATION_REQUIRED' }
-            : { ok: true, verified: false, policy };
+async function validateClockLocation(location, organizationId, action, suppliedPolicy = null) {
+    const policy = suppliedPolicy || await AttendancePolicy.getOrCreateDefault(organizationId);
+    const rule = evaluateLocationPolicy(policy, {
+        hasLocation: hasCoordinates(location),
+        accuracy: location?.accuracy,
+    });
+    if (!rule.allowed) {
+        const accuracyError = rule.code === 'LOCATION_ACCURACY_TOO_LOW';
+        return {
+            ok: false,
+            status: 400,
+            error: accuracyError
+                ? `Location accuracy must be within ${rule.maximumAccuracyMeters}m to record attendance`
+                : 'Location is required by your organization attendance policy',
+            code: rule.code,
+        };
     }
-    if (Number(location.accuracy || 0) > Number(policy.clockSettings?.maximumLocationAccuracyMeters || 250)) {
-        return { ok: false, status: 400, error: 'Location accuracy is not sufficient to record attendance', code: 'LOCATION_ACCURACY_TOO_LOW' };
-    }
+    if (!rule.shouldValidate) return { ok: true, verified: rule.enabled ? false : undefined, policy, warnings: rule.warnings };
+
     const validation = await geofenceService.validateLocation(Number(location.latitude), Number(location.longitude), organizationId);
-    if (!validation.isValid && enforced) {
+    if (!validation.isValid && rule.enforced) {
         return { ok: false, status: 403, error: `${action} is not allowed from this location`, code: 'OUTSIDE_GEOFENCE', details: validation };
     }
-    return { ok: true, verified: validation.isValid, validation, policy };
+    const warnings = validation.isValid ? rule.warnings : [...rule.warnings, validation.reason || 'Location was outside the configured geofence.'];
+    return { ok: true, verified: validation.isValid, validation, policy, warnings };
 }
 
 async function ensureAttendanceEligible(userId, organizationId) {
@@ -256,40 +265,10 @@ router.post('/in', async (req, res) => {
             });
         }
 
-        const locationCheck = await validateClockLocation(location, organizationId, 'Clock-in');
+        const locationCheck = await validateClockLocation(location, organizationId, 'Clock-in', policy);
         if (!locationCheck.ok) return res.status(locationCheck.status).json(locationCheck);
 
-        // Validate geofencing if location provided
-        let locationVerified = locationCheck.verified;
-        if (hasCoordinates(location)) {
-            const validation = await geofenceService.validateLocation(
-                location.latitude,
-                location.longitude,
-                organizationId
-            );
-
-            // Check if geofencing is enforced
-            const isEnforced = policy?.geofencing?.enabled && policy?.geofencing?.enforced;
-
-            if (!validation.isValid) {
-                if (isEnforced) {
-                    // Enforcement enabled - reject clock-in
-                    console.warn('❌ Clock-in blocked (outside geofence):', validation);
-                    return res.status(403).json({
-                        error: 'Clock-in not allowed from this location',
-                        code: 'OUTSIDE_GEOFENCE',
-                        details: validation,
-                    });
-                } else {
-                    // Warning only - allow but log
-                    console.warn('⚠️  Clock-in outside geofence (warning only):', validation);
-                }
-            } else {
-                console.log('✅ Location verified:', validation.message);
-            }
-
-            locationVerified = validation.isValid;
-        }
+        const locationVerified = locationCheck.verified;
 
         // Get user's team info
         const userTeam = req.user.teams?.find(t => t.organizationId === organizationId);
@@ -342,7 +321,7 @@ router.post('/in', async (req, res) => {
             success: true,
             entry,
             message: 'Clocked in successfully',
-            warnings: ruleResult.warnings,
+            warnings: [...ruleResult.warnings, ...(locationCheck.warnings || [])],
         });
     } catch (error) {
         console.error('Clock in error:', error);
@@ -394,20 +373,7 @@ router.post('/out', async (req, res) => {
             attendanceEvents.publish(userId, organizationId, { type: 'break_end', entryId: breakEndEntry._id, at: breakEndEntry.timestamp });
         }
 
-        // Validate geofencing if location provided
-        let locationVerified = locationCheck.verified;
-        if (hasCoordinates(location)) {
-            const validation = await geofenceService.validateLocation(
-                location.latitude,
-                location.longitude,
-                organizationId
-            );
-            locationVerified = validation.isValid;
-            
-            if (!validation.isValid) {
-                console.warn('⚠️  Clock-out outside geofence:', validation);
-            }
-        }
+        const locationVerified = locationCheck.verified;
 
         // Enrich location with address (reverse geocoding)
         let enrichedLocation = null;
@@ -461,6 +427,7 @@ router.post('/out', async (req, res) => {
             entry,
             hoursWorked: parseFloat(hoursWorked.toFixed(2)),
             adjustment,
+            warnings: locationCheck.warnings || [],
             message: adjustment
                 ? 'Clocked out successfully. A correction version was created without changing the protected timesheet.'
                 : 'Clocked out successfully',

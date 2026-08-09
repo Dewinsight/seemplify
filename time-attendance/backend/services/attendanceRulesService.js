@@ -93,6 +93,40 @@ function evaluateClockIn(policy, { now = new Date(), hasLocation = false } = {})
     return result;
 }
 
+function evaluateLocationPolicy(policy, { hasLocation = false, accuracy = null } = {}) {
+    const enabled = policy?.geofencing?.enabled === true;
+    const enforced = enabled && policy?.geofencing?.enforced === true;
+    const maximumAccuracyMeters = Number(policy?.clockSettings?.maximumLocationAccuracyMeters || 250);
+    const result = {
+        allowed: true,
+        enabled,
+        enforced,
+        locationRequired: enforced,
+        shouldValidate: false,
+        maximumAccuracyMeters,
+        warnings: [],
+        code: null,
+    };
+
+    if (!enabled) return result;
+
+    if (!hasLocation) {
+        if (enforced) return { ...result, allowed: false, code: 'LOCATION_REQUIRED' };
+        result.warnings.push('Location was unavailable, so this attendance event was not checked against a geofence.');
+        return result;
+    }
+
+    const numericAccuracy = accuracy == null ? null : Number(accuracy);
+    if (Number.isFinite(numericAccuracy) && numericAccuracy > maximumAccuracyMeters) {
+        if (enforced) return { ...result, allowed: false, code: 'LOCATION_ACCURACY_TOO_LOW' };
+        result.warnings.push(`Location accuracy exceeded the configured ${maximumAccuracyMeters}m limit, so the event was recorded without geofence verification.`);
+        return result;
+    }
+
+    result.shouldValidate = true;
+    return result;
+}
+
 function buildPolicySummary(policy) {
     const settings = policy?.clockSettings || {};
     const breaks = policy?.breakRules || {};
@@ -102,7 +136,9 @@ function buildPolicySummary(policy) {
     return {
         explicitClockInRequired: true,
         autoClockOnLogin: false,
+        locationEnabled: !!policy?.geofencing?.enabled,
         locationRequired: !!(policy?.geofencing?.enabled && policy?.geofencing?.enforced),
+        maximumLocationAccuracyMeters: Number(settings.maximumLocationAccuracyMeters || 250),
         enforceClockInWindow: !!settings.enforceClockInWindow,
         earliestClockInMinutes: Number(settings.earliestClockInMinutes || 0),
         latestClockInMinutes: Number(settings.latestClockInMinutes || 0),
@@ -177,4 +213,4 @@ function calculateDailyDurations(entries, {
     };
 }
 
-module.exports = { evaluateClockIn, buildPolicySummary, calculateDailyDurations, getPolicyDayBounds, inferDayStartState, parseTime };
+module.exports = { evaluateClockIn, evaluateLocationPolicy, buildPolicySummary, calculateDailyDurations, getPolicyDayBounds, inferDayStartState, parseTime };

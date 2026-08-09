@@ -96,6 +96,19 @@ describe('timeCalculationService', () => {
         });
     });
 
+    test('creates geofence exceptions only while geofencing is enabled', () => {
+        const entries = [
+            entry('clock_in', '2026-08-03T08:00:00Z', { _id: 'in-1', location: { latitude: 1, longitude: 1, verified: false } }),
+            entry('clock_out', '2026-08-03T17:00:00Z', { _id: 'out-1', location: { latitude: 1, longitude: 1, verified: false } }),
+        ];
+        const period = { start: new Date('2026-08-03T00:00:00Z'), end: new Date('2026-08-03T23:59:59Z') };
+        const disabled = calculatePeriod(entries, period, { ...policy, geofencing: { enabled: false } });
+        const enabled = calculatePeriod(entries, period, { ...policy, geofencing: { enabled: true } });
+
+        expect(disabled.dailyEntries[0].exceptions.map(item => item.type)).not.toContain('geofence_failure');
+        expect(enabled.dailyEntries[0].exceptions.map(item => item.type)).toContain('geofence_failure');
+    });
+
     test('builds configured fortnightly and semi-monthly periods', () => {
         const fortnight = getPeriodBounds(new Date('2026-08-05T12:00:00Z'), 'fortnightly', 'UTC');
         expect(fortnight.start.toISOString()).toBe('2026-08-03T00:00:00.000Z');

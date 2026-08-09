@@ -86,7 +86,9 @@ function analyzeDay(entries, policy, timezone) {
     const longShiftMinutes = Math.max(0, workMinutes - maximumMinutes);
     const continuousWorkOverage = Math.max(0, maximumContinuousMinutes - Number(breakRules.maximumContinuousWorkMinutes || 360));
     const manualEntries = sorted.filter(entry => entry.isManualEntry || entry.source === 'manual').length;
-    const unverifiedLocations = sorted.filter(entry => entry.location?.latitude != null && entry.location?.verified === false).length;
+    const unverifiedLocations = policy?.geofencing?.enabled
+        ? sorted.filter(entry => entry.location?.latitude != null && entry.location?.verified === false).length
+        : 0;
     const sources = Array.from(new Set(sorted.map(entry => entry.source || 'web')));
 
     const exceptions = [];

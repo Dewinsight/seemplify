@@ -16,3 +16,17 @@ test('exception register identifies lateness, short breaks, manual changes and c
     expect(types).toEqual(expect.arrayContaining(['late_arrival', 'break_shortfall', 'manual_entry']));
     expect(report.summary.sourceCounts).toMatchObject({ hub: 1, web: 2, manual: 1 });
 });
+
+test('does not create location exceptions while geofencing is disabled', () => {
+    const entries = [
+        { userId: 'u1', timestamp: new Date('2026-08-03T09:00:00Z'), entryType: 'clock_in', location: { latitude: 1, longitude: 1, verified: false } },
+        { userId: 'u1', timestamp: new Date('2026-08-03T17:00:00Z'), entryType: 'clock_out', location: { latitude: 1, longitude: 1, verified: false } },
+    ];
+    const report = buildAttendanceExceptions(entries, {
+        timezone: 'UTC', geofencing: { enabled: false, enforced: false },
+        workSchedule: { defaultShift: { startTime: '09:00', endTime: '17:00' } },
+        breakRules: { requiredAfterMinutes: 999, minimumBreakMinutes: 0 },
+        clockSettings: { autoClockOut: { afterHours: 12 } },
+    });
+    expect(report.rows[0].exceptions.map(item => item.type)).not.toContain('unverified_location');
+});
