@@ -110,7 +110,7 @@ export default function ApprovalsPage() {
         <div className="relative">
           <div className="absolute inset-0 bg-gradient-to-r from-green-500/20 via-emerald-500/20 to-teal-500/20 rounded-2xl blur-3xl"></div>
           <div className="relative bg-card dark:bg-zinc-900/80 backdrop-blur-xl rounded-2xl border border-border dark:border-zinc-700/50 p-8 shadow-2xl shadow-green-500/10">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground via-foreground/80 to-muted-foreground dark:from-white dark:via-zinc-100 dark:to-zinc-200 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-semibold tracking-tight text-card-foreground">
               Pending Approvals
             </h1>
             <p className="text-muted-foreground mt-2">

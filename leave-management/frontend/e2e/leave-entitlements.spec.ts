@@ -121,3 +121,45 @@ test('employee requests a newly configured leave type', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Leave request submitted' })).toBeVisible();
   expect(requestPayload).toMatchObject({ leaveType: 'study', startDate: '2026-09-14', endDate: '2026-09-15', reason: 'Professional certification exams' });
 });
+
+test('leave request page title remains readable in light mode', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('accessToken', 'e2e-token');
+    localStorage.setItem('seemplify_theme', 'light');
+  });
+  await page.route('**/api/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith('/auth/me')) return json(route, { user, currentOrganizationId: 'org-1' });
+    if (path.endsWith('/leave-policies')) return json(route, { policy: { organizationId: 'org-1', timezone: 'Europe/London', leaveTypes: baseTypes } });
+    if (path.endsWith('/leave-requests') && request.method() === 'GET') {
+      return json(route, { requests: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } });
+    }
+    return json(route, {});
+  });
+
+  await page.goto('/leave-requests');
+  await expect(page.locator('html')).toHaveClass(/light/);
+  const heading = page.getByRole('heading', { name: 'My Leave Requests' });
+  await expect(heading).toBeVisible();
+
+  const appearance = await heading.evaluate((element) => {
+    const parseRgb = (value: string) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    const luminance = (rgb: number[]) => rgb.map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    }).reduce((total, channel, index) => total + channel * [0.2126, 0.7152, 0.0722][index], 0);
+    const titleColor = getComputedStyle(element).color;
+    const surface = element.closest('.bg-card') || element.parentElement || document.body;
+    const surfaceColor = getComputedStyle(surface).backgroundColor;
+    const foreground = luminance(parseRgb(titleColor));
+    const background = luminance(parseRgb(surfaceColor));
+    return {
+      titleColor,
+      contrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
+    };
+  });
+
+  expect(appearance.titleColor).not.toBe('rgba(0, 0, 0, 0)');
+  expect(appearance.contrast).toBeGreaterThanOrEqual(4.5);
+});

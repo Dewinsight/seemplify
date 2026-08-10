@@ -199,7 +199,7 @@ export default function LeaveRequestDetailPage() {
             </Link>
             <div className="flex justify-between items-start gap-4 flex-wrap">
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground via-foreground/90 to-muted-foreground dark:from-slate-100 dark:via-slate-200 dark:to-slate-300 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-semibold tracking-tight text-card-foreground">
                   Leave Request
                 </h1>
                 <p className="text-muted-foreground dark:text-slate-400 mt-2">
