@@ -20,6 +20,8 @@ type MockState = {
     coverRequested: boolean;
     requestReviewed: boolean;
     approvalConflict: boolean;
+    timesheetCorrectionRequested: boolean;
+    managerExceptionFlagged: boolean;
     rulePacks: any[];
     locationEnabled: boolean;
     clockBodies: any[];
@@ -115,7 +117,10 @@ async function installApiMock(page: Page, state: MockState) {
         }
 
         if (method === 'GET' && path === '/api/auth/oidc/start') return route.fulfill({ status: 200, contentType: 'text/html', body: '<main><h1>Mock Identity Provider sign-in</h1></main>' });
-        if (method === 'GET' && path === '/api/auth/me') return json(route, { user, currentOrganization: organization });
+        if (method === 'GET' && path === '/api/auth/me') {
+            const authenticatedUser = state.approvalConflict ? { ...user, id: 'manager-1', email: 'manager@example.com', name: 'Morgan Manager' } : user;
+            return json(route, { user: authenticatedUser, currentOrganization: organization });
+        }
         if (method === 'POST' && path === '/api/auth/logout') return json(route, { success: true });
 
         if (method === 'POST' && path === '/api/v1/presence/sessions') return json(route, { session: { _id: 'presence-session-1' } });
@@ -162,7 +167,11 @@ async function installApiMock(page: Page, state: MockState) {
 
         if (method === 'GET' && path === '/api/timesheets') return json(route, { timesheets: [timesheet] });
         if (method === 'GET' && path === '/api/timesheets/current') return json(route, { timesheet });
-        if (method === 'GET' && path === '/api/timesheets/timesheet-1') return json(route, { timesheet });
+        if (method === 'GET' && path === '/api/timesheets/timesheet-1') return json(route, { timesheet: {
+            ...timesheet,
+            status: state.approvalConflict ? 'submitted' : timesheet.status,
+            summary: { ...timesheet.summary, incompleteEntries: state.approvalConflict ? 2 : 0 },
+        } });
         if (method === 'POST' && /^\/api\/timesheets\/timesheet-1\/(submit|recall)$/.test(path)) return json(route, { timesheet: { ...timesheet, status: path.endsWith('/submit') ? 'submitted' : 'draft' } });
         if (method === 'GET' && path === '/api/timesheets/timesheet-1/export') return route.fulfill({ status: 200, headers: { ...corsHeaders(route), 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'content-disposition': 'attachment; filename="timesheet-1.xlsx"' }, body: 'mock workbook' });
 
@@ -174,7 +183,7 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'POST' && path === '/api/approvals/timesheet-1/approve' && state.approvalConflict) {
             return json(route, { error: 'Incomplete or unpaired attendance entries must be corrected before approval', code: 'INCOMPLETE_ATTENDANCE', incompleteEntries: 2 }, 409);
         }
-        if (/^\/api\/approvals\/timesheet-1\/(approve|reject|revert)$/.test(path)) return json(route, { success: true });
+        if (/^\/api\/approvals\/timesheet-1\/(approve|reject|revert|request-revision)$/.test(path)) return json(route, { success: true });
         if (method === 'DELETE' && path === '/api/approvals/timesheet-1') return json(route, { success: true });
 
         if (method === 'GET' && path === '/api/attendance/team') {
@@ -219,17 +228,25 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'POST' && path === '/api/v1/scheduling/requests/request-1/review') { state.requestReviewed = true; return json(route, { success: true }); }
 
         if (method === 'GET' && path === '/api/v1/exceptions') {
+            const period = {
+                timesheetId: 'timesheet-1', userId: 'employee-1', userName: 'Alex Morgan', userEmail: 'alex@example.com', teamName: 'Operations',
+                weekNumber: 32, year: 2026, startDate: timesheet.startDate, endDate: timesheet.endDate, timezone: 'UTC', status: state.approvalConflict ? 'submitted' : 'draft',
+            };
             return json(route, {
                 disclaimer: 'Exceptions are review flags only and never automatic decisions.',
+                context: url.searchParams.get('timesheetId') ? period : null,
                 exceptions: [
-                    { _id: 'exception-1', type: 'late_arrival', severity: 'medium', occurrenceDate: NOW, status: state.exceptionStatus, rule: { code: 'LATE-01' }, explanation: { message: 'Arrival was outside the configured grace period.' }, correctionRequest: state.exceptionStatus === 'correction_requested' ? { explanation: 'Train cancellation delayed arrival.' } : undefined },
-                    { _id: 'exception-2', type: 'insufficient_rest', severity: 'high', occurrenceDate: NOW, status: 'resolved', rule: { code: 'REST-01' }, explanation: { message: 'Rest between work sessions was below the configured minimum.' } },
-                    { _id: 'exception-3', type: 'absence', severity: 'medium', occurrenceDate: '2026-08-08T09:00:00.000Z', status: 'correction_requested', rule: { code: 'ABSENCE-01' }, explanation: { message: 'No attendance or approved leave was recorded.' }, correctionRequest: { explanation: 'Approved leave was not synced yet.' } },
+                    { _id: 'exception-1', userId: 'employee-1', userName: 'Alex Morgan', userEmail: 'alex@example.com', timesheetId: 'timesheet-1', employee: { userId: 'employee-1', name: 'Alex Morgan', email: 'alex@example.com', teamName: 'Operations' }, period, type: 'late_arrival', severity: 'medium', occurrenceDate: NOW, status: state.exceptionStatus, rule: { code: 'LATE-01' }, explanation: { message: 'Arrival was outside the configured grace period.' }, correctionRequest: state.exceptionStatus === 'correction_requested' ? { explanation: 'Train cancellation delayed arrival.', decision: 'pending' } : undefined },
+                    { _id: 'exception-2', userId: 'employee-1', userName: 'Alex Morgan', userEmail: 'alex@example.com', timesheetId: 'timesheet-1', employee: { userId: 'employee-1', name: 'Alex Morgan', email: 'alex@example.com', teamName: 'Operations' }, period, type: 'insufficient_rest', severity: 'high', occurrenceDate: NOW, status: 'resolved', rule: { code: 'REST-01' }, explanation: { message: 'Rest between work sessions was below the configured minimum.' } },
+                    { _id: 'exception-3', userId: 'employee-1', userName: 'Alex Morgan', userEmail: 'alex@example.com', timesheetId: 'timesheet-1', employee: { userId: 'employee-1', name: 'Alex Morgan', email: 'alex@example.com', teamName: 'Operations' }, period, type: 'absence', severity: 'medium', occurrenceDate: '2026-08-08T09:00:00.000Z', status: 'correction_requested', approvalBlocking: true, rule: { code: 'ABSENCE-01' }, explanation: { message: 'No attendance or approved leave was recorded.' }, correctionRequest: { explanation: 'Approved leave was not synced yet.', decision: 'pending' } },
                 ],
             });
         }
         if (method === 'POST' && path === '/api/v1/exceptions/exception-1/correction-requests') { state.exceptionStatus = 'correction_requested'; return json(route, { success: true }); }
         if (method === 'POST' && path === '/api/v1/exceptions/exception-1/review') return json(route, { success: true });
+        if (method === 'POST' && path === '/api/v1/exceptions/exception-3/review') return json(route, { success: true });
+        if (method === 'POST' && path === '/api/v1/exceptions/timesheets/timesheet-1/correction-requests') { state.timesheetCorrectionRequested = true; return json(route, { success: true }); }
+        if (method === 'POST' && path === '/api/v1/exceptions/timesheets/timesheet-1/flags') { state.managerExceptionFlagged = true; return json(route, { success: true }); }
 
         if (method === 'GET' && path === '/api/v1/presence/notice') return json(route, { purpose: 'Shows transparent application-session evidence alongside attendance.', rawRetentionDays: 90, dailySummaryRetentionDays: 365, captured: ['session start and end', 'visible-tab heartbeat'], excluded: ['keystrokes', 'screenshots', 'field values'] });
         if (method === 'GET' && path === '/api/v1/presence/me') return json(route, { comparison: { state: 'matched', sessionsDuringAttendance: 1, appsSeen: ['time-attendance'], missingExpectedApps: [] }, sessions: [{ _id: 'evidence-1', appId: 'time-attendance', startedAt: NOW, status: 'active', lastActivityAt: NOW }] });
@@ -287,6 +304,7 @@ const test = base.extend<{ mockState: MockState }>({
             notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false, rulePacks: [rulePack],
             rosterSynced: false, rosterSyncCount: 0, coverRequested: false, requestReviewed: false,
             approvalConflict: false,
+            timesheetCorrectionRequested: false, managerExceptionFlagged: false,
             locationEnabled: false, clockBodies: [], shiftBodies: [],
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
@@ -408,7 +426,7 @@ test('submits an explainable correction request', async ({ page, mockState }) =>
     await expect(page.getByRole('tab', { name: 'All 3' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '9 August 2026' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '8 August 2026' })).toBeVisible();
-    await page.getByPlaceholder('Search exceptions').fill('rest');
+    await page.getByPlaceholder('Search employee or exception').fill('rest');
     await expect(page.getByRole('heading', { name: 'Insufficient Rest' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Late Arrival' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Clear search' }).click();
@@ -417,7 +435,7 @@ test('submits an explainable correction request', async ({ page, mockState }) =>
     await page.getByLabel('Employee explanation').fill('Train cancellation delayed my arrival.');
     await page.getByRole('button', { name: 'Submit request' }).click();
     await expect(page.getByText('Correction request submitted with a full audit trail.')).toBeVisible();
-    await expect(page.getByText('Correction awaiting review').first()).toBeVisible();
+    await expect(page.getByText(/Employee correction request · Awaiting review/).first()).toBeVisible();
     const explanation = page.getByTestId('employee-explanation').filter({ hasText: 'Train cancellation delayed arrival.' });
     await expect(explanation).toBeVisible();
     const hasReadableContrast = await explanation.evaluate(element => {
@@ -606,11 +624,58 @@ test('explains an incomplete-attendance approval conflict without losing the req
 
     await expect(page.getByText('Approval blocked')).toBeVisible();
     await expect(page.getByText(/2 incomplete or unpaired attendance entries/)).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Review timesheet' })).toHaveAttribute('href', '/timesheets/timesheet-1');
-    await expect(page.getByRole('link', { name: 'View exceptions' })).toHaveAttribute('href', '/exceptions?userId=employee-1');
+    await expect(page.getByRole('link', { name: 'Review timesheet' })).toHaveAttribute('href', '/timesheets/timesheet-1?review=1');
+    await expect(page.getByRole('link', { name: 'View exceptions' })).toHaveAttribute('href', /userId=employee-1.*timesheetId=timesheet-1.*start=.*end=.*returnTo=/);
     await expect(page.getByRole('button', { name: 'Approve' })).toBeDisabled();
     await expect(page.getByText('Alex Morgan')).toBeVisible();
     expect(mockState.calls).not.toContain('POST /api/approvals/timesheet-1/approve');
+});
+
+test('keeps employee and period context through timesheet review and exception decisions', async ({ page, mockState }) => {
+    mockState.approvalConflict = true;
+    await authenticate(page);
+    await page.goto('/approvals');
+
+    await page.getByRole('link', { name: 'Review timesheet' }).click();
+    await expect(page).toHaveURL(/\/timesheets\/timesheet-1\?review=1/);
+    await expect(page.getByRole('heading', { name: /Review Alex Morgan’s Week 32 timesheet/ })).toBeVisible();
+    await expect(page.getByText('What is blocking approval')).toBeVisible();
+    await expect(page.getByText(/2 incomplete or unpaired attendance entries/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Approve timesheet' })).toBeDisabled();
+
+    await page.getByRole('button', { name: 'Flag an issue for this day' }).first().click();
+    await page.getByLabel('Issue type').selectOption('late_arrival');
+    await page.getByLabel('Reason and required action').fill('Please confirm the delayed arrival and correct the start time.');
+    await page.getByRole('button', { name: 'Flag issue' }).click();
+    await expect(page.getByText('The issue was flagged for this employee and added to the audit history.')).toBeVisible();
+    expect(mockState.managerExceptionFlagged).toBe(true);
+
+    await page.goto('/approvals');
+    await page.getByRole('link', { name: 'View exceptions' }).click();
+    await expect(page.getByLabel('Selected timesheet context')).toContainText('Alex Morgan · Week 32');
+    await expect(page.getByLabel('Selected timesheet context')).toContainText('3 Aug 2026 – 9 Aug 2026');
+    await expect(page.getByTestId('exception-row').first()).toContainText('Alex Morgan');
+    await expect(page.getByTestId('exception-row').first()).toContainText('alex@example.com');
+    await expect(page.getByTestId('exception-row').first()).toContainText('Week 32');
+
+    const correction = page.getByTestId('exception-row').filter({ hasText: 'Approved leave was not synced yet.' });
+    await correction.getByRole('button', { name: 'Accept', exact: true }).click();
+    await page.getByLabel('Decision reason').fill('Approved leave evidence was verified for this date.');
+    await page.getByRole('button', { name: 'Save decision' }).click();
+    await expect(page.getByText('The correction was accepted and the reason was recorded.')).toBeVisible();
+    expect(mockState.calls).toContain('POST /api/v1/exceptions/exception-3/review');
+});
+
+test('lets an employee request a correction from the exact timesheet day', async ({ page, mockState }) => {
+    await authenticate(page);
+    await page.goto('/timesheets/timesheet-1');
+
+    await page.getByRole('button', { name: 'Request a correction for this day' }).first().click();
+    await expect(page.getByRole('dialog')).toContainText('Monday, August 3, 2026');
+    await page.getByLabel('What happened and what should be corrected').fill('My clock-in was recorded ten minutes later than the actual arrival.');
+    await page.getByRole('button', { name: 'Send request' }).click();
+    await expect(page.getByText('Your correction request was sent to your reviewer with this date attached.')).toBeVisible();
+    expect(mockState.timesheetCorrectionRequested).toBe(true);
 });
 
 test('recovers an empty rule-pack catalog and creates a custom draft', async ({ page, mockState }) => {

@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { timesheetApi } from '@/lib/api';
+import Link from 'next/link';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { approvalsApi, exceptionsApi, timesheetApi } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { StatusBadge } from '@/components/StatusBadge';
 import { formatDuration } from '@/lib/utils';
 import { format, parseISO, isValid, startOfWeek, endOfWeek, getISOWeek } from 'date-fns';
@@ -70,10 +72,19 @@ const getWeekDatesFromWeekNumber = (weekNumber: number, year: number): { startDa
 export default function TimesheetDetailPage() {
     const { id } = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const { user } = useAuth();
     const [timesheet, setTimesheet] = useState<any>(null);
+    const [attendanceExceptions, setAttendanceExceptions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [exporting, setExporting] = useState(false);
+    const [actionMessage, setActionMessage] = useState('');
+    const [actionError, setActionError] = useState('');
+    const [dayAction, setDayAction] = useState<{ mode: 'employee' | 'manager'; date: string; exceptionId?: string } | null>(null);
+    const [dayActionType, setDayActionType] = useState('absence');
+    const [dayActionReason, setDayActionReason] = useState('');
+    const reviewMode = searchParams.get('review') === '1';
 
     const fetchCurrentTimesheet = useCallback(async () => {
         try {
@@ -111,6 +122,12 @@ export default function TimesheetDetailPage() {
             }
             
             setTimesheet(timesheetData);
+            try {
+                const exceptionData = await exceptionsApi.list({ timesheetId });
+                setAttendanceExceptions(exceptionData.exceptions || []);
+            } catch {
+                setAttendanceExceptions([]);
+            }
         } catch (error) {
             console.error('Failed to fetch timesheet details', error);
             // router.push('/timesheets'); // Redirect on error?
@@ -193,6 +210,75 @@ export default function TimesheetDetailPage() {
         }
     }
 
+    const scopedExceptionHref = () => {
+        const timesheetId = String(timesheet?._id || id);
+        const params = new URLSearchParams({
+            userId: String(timesheet.userId),
+            timesheetId,
+            start: new Date(timesheet.startDate).toISOString(),
+            end: new Date(timesheet.endDate).toISOString(),
+            returnTo: `/timesheets/${timesheetId}?review=1`,
+        });
+        return `/exceptions?${params.toString()}`;
+    };
+
+    const handleReviewDecision = async (action: 'approve' | 'reject' | 'revision') => {
+        const timesheetId = String(timesheet._id || id);
+        let reason = '';
+        if (action !== 'approve') {
+            reason = window.prompt(action === 'revision'
+                ? 'Tell the employee exactly what must be corrected before resubmitting.'
+                : 'Record the reason this timesheet is being rejected.')?.trim() || '';
+            if (reason.length < 5) return;
+        }
+        try {
+            setSubmitting(true);
+            setActionError('');
+            if (action === 'approve') await approvalsApi.approve(timesheetId);
+            else if (action === 'reject') await approvalsApi.reject(timesheetId, reason);
+            else await approvalsApi.requestRevision(timesheetId, reason);
+            router.push('/approvals');
+        } catch (error: any) {
+            setActionError(error?.response?.data?.error || 'The review decision could not be saved.');
+            if (error?.response?.data?.approvalReadiness?.blockingExceptions) {
+                setAttendanceExceptions(error.response.data.approvalReadiness.blockingExceptions);
+            }
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const submitDayAction = async () => {
+        if (!dayAction || dayActionReason.trim().length < 5) return;
+        const timesheetId = String(timesheet._id || id);
+        try {
+            setSubmitting(true);
+            setActionError('');
+            if (dayAction.mode === 'manager') {
+                await exceptionsApi.flagTimesheetDay(timesheetId, {
+                    date: dayAction.date,
+                    type: dayActionType,
+                    explanation: dayActionReason.trim(),
+                });
+                setActionMessage('The issue was flagged for this employee and added to the audit history.');
+            } else {
+                await exceptionsApi.requestTimesheetCorrection(timesheetId, {
+                    date: dayAction.date,
+                    exceptionId: dayAction.exceptionId,
+                    explanation: dayActionReason.trim(),
+                });
+                setActionMessage('Your correction request was sent to your reviewer with this date attached.');
+            }
+            setDayAction(null);
+            setDayActionReason('');
+            await fetchTimesheet(timesheetId);
+        } catch (error: any) {
+            setActionError(error?.response?.data?.error || 'The attendance issue could not be submitted.');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
@@ -211,9 +297,35 @@ export default function TimesheetDetailPage() {
     const storedDays = Number(timesheet.summary?.daysWorked ?? timesheet.daysWorked ?? 0);
     const daysWorked = storedDays > 0 || calculatedDays === 0 ? storedDays : calculatedDays;
     const daysOnLeave = Number(timesheet.summary?.daysOnLeave || 0);
+    const organizationRole = user?.currentOrganization?.role;
+    const hasManagerRole = ['owner', 'admin', 'hr_manager'].includes(String(organizationRole)) || (user?.teams || []).some((team: any) => ['line_manager', 'team_lead'].includes(team.role));
+    const isReviewer = reviewMode && hasManagerRole;
+    const incompleteEntries = Number(timesheet.summary?.incompleteEntries || 0);
+    const blockingExceptions = attendanceExceptions.filter(item => item.approvalBlocking && ['open', 'correction_requested'].includes(item.status));
+    const canApprove = incompleteEntries === 0 && blockingExceptions.length === 0;
+    const rejectionReason = timesheet.rejectedBy?.reason || timesheet.rejectionReason;
 
     return (
         <div className="timesheet-detail space-y-6">
+            {isReviewer && <section aria-labelledby="review-heading" className="rounded-xl border border-amber-500/30 bg-amber-500/[0.07] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Manager review</p>
+                        <h1 id="review-heading" className="mt-1 text-lg font-semibold text-white">Review {timesheet.userName || 'employee'}’s Week {timesheet.weekNumber} timesheet</h1>
+                        <p className="mt-1 text-sm text-zinc-400">{timesheet.userEmail}{timesheet.teamName ? ` · ${timesheet.teamName}` : ''}</p>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300">Check the daily records and the exceptions tied to this exact period. Approve when the record is complete, request changes when the employee must correct it, or reject it with a recorded reason.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <Link href={scopedExceptionHref()} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800">View period exceptions ({attendanceExceptions.length})</Link>
+                        <button type="button" onClick={() => handleReviewDecision('revision')} disabled={submitting} className="rounded-lg border border-amber-600/50 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-amber-500/10 disabled:opacity-50">Request changes</button>
+                        <button type="button" onClick={() => handleReviewDecision('reject')} disabled={submitting} className="rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50">Reject</button>
+                        <button type="button" onClick={() => handleReviewDecision('approve')} disabled={submitting || !canApprove} title={!canApprove ? 'Resolve the listed blockers before approval' : undefined} className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50">Approve timesheet</button>
+                    </div>
+                </div>
+                {!canApprove && <div className="mt-4 border-t border-amber-500/20 pt-4"><p className="text-sm font-semibold text-amber-200">What is blocking approval</p><ul className="mt-2 space-y-1 text-sm text-amber-100/80">{incompleteEntries > 0 && <li>{incompleteEntries} incomplete or unpaired attendance {incompleteEntries === 1 ? 'entry' : 'entries'} must be corrected.</li>}{blockingExceptions.map(issue => <li key={issue._id || issue.id}>{safeFormatDate(issue.occurrenceDate, 'EEE, MMM d')} · {String(issue.type).replaceAll('_', ' ')} · {String(issue.status).replaceAll('_', ' ')}</li>)}</ul></div>}
+            </section>}
+
+            {(actionMessage || actionError) && <div role={actionError ? 'alert' : 'status'} className={`rounded-lg border px-4 py-3 text-sm ${actionError ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>{actionError || actionMessage}</div>}
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -264,7 +376,7 @@ export default function TimesheetDetailPage() {
                         {exporting ? 'Exporting...' : 'Export Excel'}
                     </button>
 
-                    {(!timesheet.status || timesheet.status === 'draft') && (
+                    {!isReviewer && (!timesheet.status || ['draft', 'rejected', 'revision_requested', 'adjusted'].includes(timesheet.status)) && (
                         <button
                             onClick={handleSubmit}
                             disabled={submitting}
@@ -275,7 +387,7 @@ export default function TimesheetDetailPage() {
                         </button>
                     )}
 
-                    {(timesheet.status === 'submitted' || timesheet.status === 'pending') && (
+                    {!isReviewer && (timesheet.status === 'submitted' || timesheet.status === 'pending') && (
                         <button
                             onClick={handleRecall}
                             disabled={submitting}
@@ -311,6 +423,9 @@ export default function TimesheetDetailPage() {
                                 {dailyEntries.map((entry: any, index: number) => {
                                     const date = safeParseDate(entry.date) || new Date();
                                     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                                    const dateId = date.toISOString();
+                                    const dayExceptions = attendanceExceptions.filter(item => safeFormatDate(item.occurrenceDate, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd'));
+                                    const openDayException = dayExceptions.find(item => item.status === 'open');
 
                                     return (
                                         <div key={index} data-day-status={entry.status} className={cn('timesheet-day p-4 transition-colors', entry.status === 'leave' && 'bg-teal-500/[0.04]')}>
@@ -499,6 +614,13 @@ export default function TimesheetDetailPage() {
                                                 </div>
                                             )}
 
+                                            {!isWeekend && <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-zinc-800/70 pt-3 pl-[3.25rem]">
+                                                {isReviewer ? <>
+                                                    <button type="button" onClick={() => { setDayAction({ mode: 'manager', date: dateId }); setDayActionType(entry.status === 'absent' ? 'absence' : 'manual_review'); setDayActionReason(''); }} className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-300 hover:text-amber-200"><AlertTriangle className="h-3.5 w-3.5" />Flag an issue for this day</button>
+                                                    {!!dayExceptions.length && <Link href={`${scopedExceptionHref()}&exceptionId=${encodeURIComponent(dayExceptions[0]._id)}`} className="text-xs font-medium text-teal-300 hover:underline">Review {dayExceptions.length} {dayExceptions.length === 1 ? 'exception' : 'exceptions'}</Link>}
+                                                </> : <button type="button" onClick={() => { setDayAction({ mode: 'employee', date: dateId, exceptionId: openDayException?._id }); setDayActionReason(''); }} className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-300 hover:text-teal-200"><PenLine className="h-3.5 w-3.5" />Request a correction for this day</button>}
+                                            </div>}
+
                                             {/* Manual Entry Note */}
                                             {entry.exceptions?.some((e: any) => e.type === 'manual_entry') && (
                                                 <div className="mt-3 pl-[3.25rem]">
@@ -532,28 +654,36 @@ export default function TimesheetDetailPage() {
                             </div>
                             <div className="grid grid-cols-[16px_1fr] gap-3 border-t border-zinc-800 pt-4">
                                 {timesheet.status === 'rejected' ? <XCircle className="mt-0.5 h-4 w-4 text-red-400" /> : <CheckCircle2 className={cn('mt-0.5 h-4 w-4', timesheet.status === 'approved' ? 'text-emerald-400' : 'text-zinc-700')} />}
-                                <div><p className="text-sm font-medium text-zinc-200">{timesheet.approvedBy?.userName || 'Line manager'}</p><p className="mt-0.5 text-xs text-zinc-500">{timesheet.status === 'approved' ? `Approved ${safeFormatDate(timesheet.approvedBy?.approvedAt || timesheet.updatedAt, 'MMM d, yyyy')}` : timesheet.status === 'rejected' ? `Rejected ${safeFormatDate(timesheet.rejectedBy?.rejectedAt || timesheet.updatedAt, 'MMM d, yyyy')}` : ['submitted', 'pending'].includes(timesheet.status) ? 'Awaiting review' : 'Waiting for submission'}</p></div>
+                                <div><p className="text-sm font-medium text-zinc-200">{timesheet.approvedBy?.userName || timesheet.revisionRequestedBy?.userName || 'Line manager'}</p><p className="mt-0.5 text-xs text-zinc-500">{['approved', 'payroll_pending', 'payroll_exported', 'locked'].includes(timesheet.status) ? `Approved ${safeFormatDate(timesheet.approvedBy?.approvedAt || timesheet.updatedAt, 'MMM d, yyyy')}` : timesheet.status === 'rejected' ? `Rejected ${safeFormatDate(timesheet.rejectedBy?.rejectedAt || timesheet.updatedAt, 'MMM d, yyyy')}` : timesheet.status === 'revision_requested' ? 'Changes requested' : ['submitted', 'pending'].includes(timesheet.status) ? 'Awaiting review' : 'Waiting for submission'}</p></div>
                             </div>
                         </div>
                     </div>
 
                     {/* Rejection Note if applicable */}
-                    {timesheet.rejectionReason && (
+                    {rejectionReason && (
                         <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-5">
                             <div className="flex items-start gap-3">
                                 <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
                                 <div>
                                     <h3 className="text-sm font-bold text-red-500 mb-1">Rejection Reason</h3>
                                     <p className="text-sm text-red-200/80 leading-relaxed">
-                                        {timesheet.rejectionReason}
+                                        {rejectionReason}
                                     </p>
                                 </div>
                             </div>
                         </div>
                     )}
+                    {timesheet.revisionRequestedBy?.reason && (
+                        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-5">
+                            <div className="flex items-start gap-3"><AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" /><div><h3 className="text-sm font-semibold text-amber-200">Changes requested by {timesheet.revisionRequestedBy.userName || 'your reviewer'}</h3><p className="mt-1 text-sm leading-6 text-amber-100/80">{timesheet.revisionRequestedBy.reason}</p><p className="mt-2 text-xs text-amber-200/70">Correct the relevant days, then resubmit this timesheet.</p></div></div>
+                        </div>
+                    )}
+                    {!!timesheet.auditLog?.length && <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5"><h3 className="text-sm font-semibold text-white">Decision history</h3><ol className="mt-4 space-y-3 border-l border-zinc-700 pl-4">{timesheet.auditLog.slice().reverse().map((entry: any, index: number) => <li key={`${entry.action}-${index}`} className="text-xs text-zinc-400"><p className="font-medium text-zinc-200">{String(entry.action).replaceAll('_', ' ')}{entry.performedByName ? ` by ${entry.performedByName}` : ''}</p><p className="mt-0.5">{safeFormatDate(entry.performedAt, 'MMM d, yyyy · HH:mm')}</p>{(entry.comment || entry.details) && <p className="mt-1 leading-5 text-zinc-300">{entry.comment || entry.details}</p>}</li>)}</ol></div>}
                 </div>
 
             </div>
+
+            {dayAction && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-labelledby="day-action-title" className="w-full max-w-lg rounded-xl border border-zinc-700 bg-zinc-900 p-6 shadow-xl"><h2 id="day-action-title" className="text-lg font-semibold text-white">{dayAction.mode === 'manager' ? 'Flag an attendance issue' : 'Request a correction'}</h2><p className="mt-2 text-sm leading-6 text-zinc-400">{safeFormatDate(dayAction.date, 'EEEE, MMMM d, yyyy')}. {dayAction.mode === 'manager' ? 'The employee will see the issue and your reason. This will block approval until it is reviewed.' : 'Explain what is wrong and what should change. Your reviewer’s decision and reason will be recorded.'}</p>{dayAction.mode === 'manager' && <label className="mt-4 block text-sm font-medium text-zinc-200" htmlFor="day-issue-type">Issue type<select id="day-issue-type" value={dayActionType} onChange={event => setDayActionType(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm text-white outline-none focus:border-teal-500"><option value="absence">Absence</option><option value="no_clock_out">Missing clock out</option><option value="late_arrival">Late arrival</option><option value="early_departure">Early departure</option><option value="missed_break">Missed break</option><option value="leave_conflict">Leave conflict</option><option value="manual_review">Other review issue</option></select></label>}<label className="mt-4 block text-sm font-medium text-zinc-200" htmlFor="day-action-reason">{dayAction.mode === 'manager' ? 'Reason and required action' : 'What happened and what should be corrected'}</label><textarea id="day-action-reason" autoFocus value={dayActionReason} onChange={event => setDayActionReason(event.target.value)} rows={5} className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm text-white outline-none focus:border-teal-500" /><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => { setDayAction(null); setDayActionReason(''); }} className="rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 hover:bg-zinc-800">Cancel</button><button type="button" onClick={submitDayAction} disabled={submitting || dayActionReason.trim().length < 5} className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50">{dayAction.mode === 'manager' ? 'Flag issue' : 'Send request'}</button></div></div></div>}
         </div>
     );
 }

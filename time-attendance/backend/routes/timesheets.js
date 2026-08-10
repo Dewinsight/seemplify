@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireOrganization, isHRAdmin, isLineManager, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
+const { requireAuth, requireOrganization, isHRAdmin, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
 const { Timesheet, TimeEntry, AttendancePolicy, EmployeeRoster, LeaveSnapshot, PublicHolidaySnapshot } = require('../models');
 const { startOfWeek, endOfWeek, getISOWeek, getYear, format, parseISO, eachDayOfInterval } = require('date-fns');
 const { generateTimesheetExcelReport } = require('../services/timesheetExportService');
@@ -13,6 +13,32 @@ const { resolveCalculationPolicy } = require('../services/rulePackService');
 router.use(requireAuth);
 router.use(requireOrganization);
 
+function canManageUser(req, userId) {
+    if (isHRAdmin(req)) return true;
+    const target = String(userId);
+    if (isDepartmentHead(req) && getDepartmentHeadScope(req).directReports.includes(target)) return true;
+    return (req.user.teams || []).some(team => (
+        team.organizationId === req.organizationId
+        && ['line_manager', 'team_lead'].includes(team.role)
+        && [...(team.directReports || []), ...(team.directReportAccountIds || [])].map(String).includes(target)
+    ));
+}
+
+async function canAccessTimesheet(req, timesheet) {
+    if (String(timesheet.userId) === String(req.user.id) || canManageUser(req, timesheet.userId)) return true;
+    const currentLevel = timesheet.approvalWorkflow?.levels?.[Number(timesheet.approvalWorkflow?.currentLevel || 0)];
+    const expectedApprover = currentLevel?.approverId || timesheet.assignedApprover?.userId;
+    if (String(expectedApprover || '') === String(req.user.id)) return true;
+    const policy = await AttendancePolicy.findOne({ organizationId: req.organizationId }).lean();
+    const now = new Date();
+    return (policy?.timesheetSettings?.approvalDelegations || []).some(delegation => (
+        String(delegation.fromUserId) === String(expectedApprover)
+        && String(delegation.toUserId) === String(req.user.id)
+        && new Date(delegation.startsAt) <= now
+        && new Date(delegation.endsAt) >= now
+    ));
+}
+
 // Get current user's timesheets (or specific user for managers)
 router.get('/', async (req, res) => {
     try {
@@ -23,13 +49,7 @@ router.get('/', async (req, res) => {
         let targetUserId = req.user.id;
 
         if (userId && userId !== req.user.id) {
-            // Permission check: HR or Manager can view others
-            if (!isHRAdmin(req) && !isLineManager(req) && !isDepartmentHead(req)) {
-                return res.status(403).json({ error: 'Access denied' });
-            }
-            if (isDepartmentHead(req) && !getDepartmentHeadScope(req).directReports.includes(String(userId))) {
-                return res.status(403).json({ error: 'Access denied' });
-            }
+            if (!canManageUser(req, userId)) return res.status(403).json({ error: 'Access denied' });
             targetUserId = userId;
         }
 
@@ -93,15 +113,7 @@ router.get('/:id', async (req, res) => {
         }
 
         // Check access - user can view own, managers can view team's, HR can view all
-        if (timesheet.userId !== userId && !isHRAdmin(req)) {
-            // Check if user is manager of this employee's team
-            if (!isLineManager(req) && !isDepartmentHead(req)) {
-                return res.status(403).json({ error: 'Access denied' });
-            }
-            if (isDepartmentHead(req) && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
-                return res.status(403).json({ error: 'Access denied' });
-            }
-        }
+        if (!await canAccessTimesheet(req, timesheet)) return res.status(403).json({ error: 'Access denied' });
 
         // Draft and revision timesheets are live views of attendance. Refresh
         // them before returning details so punches, breaks and locations never
@@ -134,14 +146,7 @@ router.get('/:id/export', async (req, res) => {
         }
 
         // Check access - user can export own, managers can export team's, HR can export all
-        if (timesheet.userId !== userId && !isHRAdmin(req)) {
-            if (!isLineManager(req) && !isDepartmentHead(req)) {
-                return res.status(403).json({ error: 'Access denied' });
-            }
-            if (isDepartmentHead(req) && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
-                return res.status(403).json({ error: 'Access denied' });
-            }
-        }
+        if (!await canAccessTimesheet(req, timesheet)) return res.status(403).json({ error: 'Access denied' });
 
         // Refresh timesheet to ensure latest computed totals before export.
         if (canRecalculateTimesheet(timesheet)) {

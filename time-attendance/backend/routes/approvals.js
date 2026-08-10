@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, isHRAdmin, isLineManager, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
-const { Timesheet, AttendancePolicy } = require('../models');
+const { Timesheet, AttendancePolicy, AttendanceException } = require('../models');
 const { createNotification } = require('../services/notificationService');
 const { refreshTimesheetEntries } = require('./timesheets');
 
@@ -107,6 +107,26 @@ function advanceApproval(timesheet, actor, comment) {
     return { completed: true, next: null };
 }
 
+function approvalReadiness(timesheet, exceptionRows = []) {
+    const incompleteEntries = Number(timesheet.summary?.incompleteEntries || 0);
+    const blockingExceptions = exceptionRows
+        .filter(item => item.approvalBlocking && ['open', 'correction_requested'].includes(item.status))
+        .map(item => ({
+            id: String(item._id),
+            type: item.type,
+            status: item.status,
+            occurrenceDate: item.occurrenceDate,
+            description: item.description,
+            employeeExplanation: item.correctionRequest?.explanation,
+        }));
+    return {
+        canApprove: incompleteEntries === 0 && blockingExceptions.length === 0,
+        incompleteEntries,
+        blockingExceptions,
+        openExceptionCount: exceptionRows.filter(item => ['open', 'correction_requested'].includes(item.status)).length,
+    };
+}
+
 // Get pending approvals
 router.get('/', async (req, res) => {
     try {
@@ -143,9 +163,27 @@ router.get('/', async (req, res) => {
             }
         }
 
+        const exceptionRows = timesheets.length
+            ? await AttendanceException.find({
+                organizationId,
+                timesheetId: { $in: timesheets.map(item => item._id) },
+                status: { $in: ['open', 'correction_requested'] },
+            }).lean()
+            : [];
+        const exceptionsByTimesheet = exceptionRows.reduce((map, item) => {
+            const key = String(item.timesheetId);
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push(item);
+            return map;
+        }, new Map());
+        const responseTimesheets = timesheets.map(item => ({
+            ...item.toObject(),
+            approvalReadiness: approvalReadiness(item, exceptionsByTimesheet.get(String(item._id)) || []),
+        }));
+
         res.json({
-            timesheets,
-            count: timesheets.length,
+            timesheets: responseTimesheets,
+            count: responseTimesheets.length,
         });
     } catch (error) {
         console.error('Get approvals error:', error);
@@ -248,11 +286,19 @@ router.post('/:id/approve', async (req, res) => {
         const policy = await AttendancePolicy.findOne({ organizationId });
         await refreshTimesheetEntries(timesheet, policy, { allowLocked: true });
 
-        if (Number(timesheet.summary?.incompleteEntries || 0) > 0) {
+        const activeExceptions = await AttendanceException.find({
+            organizationId,
+            timesheetId: timesheet._id,
+            status: { $in: ['open', 'correction_requested'] },
+        }).lean();
+        const readiness = approvalReadiness(timesheet, activeExceptions);
+
+        if (!readiness.canApprove) {
             return res.status(409).json({
-                error: 'Incomplete or unpaired attendance entries must be corrected before approval',
+                error: 'Attendance issues must be reviewed or corrected before approval',
                 code: 'INCOMPLETE_ATTENDANCE',
-                incompleteEntries: timesheet.summary.incompleteEntries,
+                incompleteEntries: readiness.incompleteEntries,
+                approvalReadiness: readiness,
             });
         }
 
@@ -386,10 +432,8 @@ router.post('/:id/request-revision', async (req, res) => {
             return res.status(404).json({ error: 'Timesheet not found or already processed' });
         }
 
-        // Verify approver access
-        if (!isHRAdmin(req) && timesheet.assignedApprover?.userId !== userId && !getDepartmentHeadScope(req).directReports.includes(String(timesheet.userId))) {
-            return res.status(403).json({ error: 'Not authorized' });
-        }
+        const policy = await AttendancePolicy.findOne({ organizationId });
+        if (!canApproveTimesheet(req, timesheet, policy)) return res.status(403).json({ error: 'Not authorized' });
 
         timesheet.status = 'revision_requested';
         timesheet.revisionRequestedBy = {
@@ -401,6 +445,19 @@ router.post('/:id/request-revision', async (req, res) => {
         timesheet.addAuditLog('revision_requested', userId, req.user.name, reason);
 
         await timesheet.save();
+
+        await createNotification({
+            organizationId,
+            userId: timesheet.userId,
+            userEmail: timesheet.userEmail,
+            type: 'timesheet_status',
+            title: 'Timesheet changes requested',
+            message: reason,
+            actionUrl: `/timesheets/${timesheet._id}`,
+            priority: 'high',
+            eventKey: `timesheet-revision:${timesheet._id}:v${timesheet.version || 1}:${timesheet.revisionRequestedBy.requestedAt.toISOString()}`,
+            channels: { email: policy?.notifications?.emailOnRejection === true },
+        });
 
         res.json({
             success: true,
@@ -652,3 +709,4 @@ module.exports = router;
 module.exports.activeApprovalLevel = activeApprovalLevel;
 module.exports.advanceApproval = advanceApproval;
 module.exports.hasActiveDelegation = hasActiveDelegation;
+module.exports.approvalReadiness = approvalReadiness;

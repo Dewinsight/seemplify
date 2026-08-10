@@ -295,6 +295,10 @@ export const approvalsApi = {
         const response = await api.post(`/approvals/${id}/reject`, { reason });
         return response.data;
     },
+    requestRevision: async (id: string, reason: string) => {
+        const response = await api.post(`/approvals/${id}/request-revision`, { reason });
+        return response.data;
+    },
     revert: async (id: string, reason: string) => {
         const response = await api.post(`/approvals/${id}/revert`, { reason });
         return response.data;
@@ -324,6 +328,8 @@ export const schedulingApi = {
 export const exceptionsApi = {
     list: async (params?: any) => (await api.get('/v1/exceptions', { params })).data,
     requestCorrection: async (id: string, data: any) => (await api.post(`/v1/exceptions/${id}/correction-requests`, data)).data,
+    requestTimesheetCorrection: async (timesheetId: string, data: any) => (await api.post(`/v1/exceptions/timesheets/${timesheetId}/correction-requests`, data)).data,
+    flagTimesheetDay: async (timesheetId: string, data: any) => (await api.post(`/v1/exceptions/timesheets/${timesheetId}/flags`, data)).data,
     review: async (id: string, accepted: boolean, note = '') => (await api.post(`/v1/exceptions/${id}/review`, { accepted, note })).data,
 };
 

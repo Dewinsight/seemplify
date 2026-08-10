@@ -29,6 +29,17 @@ function itemSummary(item: any) {
     return { hours, days, overtime };
 }
 
+function exceptionHref(item: any) {
+    const params = new URLSearchParams({
+        userId: String(item.userId),
+        timesheetId: String(item._id),
+    });
+    if (item.startDate) params.set('start', new Date(item.startDate).toISOString());
+    if (item.endDate) params.set('end', new Date(item.endDate).toISOString());
+    params.set('returnTo', `/timesheets/${item._id}?review=1`);
+    return `/exceptions?${params.toString()}`;
+}
+
 export default function ApprovalsPage() {
     const [approvals, setApprovals] = useState<any[]>([]);
     const [history, setHistory] = useState<any[]>([]);
@@ -67,7 +78,11 @@ export default function ApprovalsPage() {
             if (status === 409 && data.code === 'INCOMPLETE_ATTENDANCE') {
                 const count = Number(data.incompleteEntries || 0);
                 setApprovals(current => current.map(item => item._id === id
-                    ? { ...item, summary: { ...(item.summary || {}), incompleteEntries: count } }
+                    ? {
+                        ...item,
+                        summary: { ...(item.summary || {}), incompleteEntries: count },
+                        approvalReadiness: data.approvalReadiness || item.approvalReadiness,
+                    }
                     : item));
                 setActionError({
                     id,
@@ -156,23 +171,29 @@ function PendingList({ items, submitting, actionError, onAction }: { items: any[
         <div className="hidden grid-cols-[minmax(220px,1.25fr)_minmax(180px,1fr)_170px_280px] gap-5 border-b border-zinc-800 px-5 py-3 text-xs font-medium text-zinc-500 md:grid"><span>Employee</span><span>Period</span><span>Recorded</span><span className="text-right">Actions</span></div>
         <div className="divide-y divide-zinc-800">{items.map(item => {
             const summary = itemSummary(item);
-            const incompleteEntries = Number(item.summary?.incompleteEntries || 0);
+            const readiness = item.approvalReadiness || {};
+            const incompleteEntries = Number(readiness.incompleteEntries ?? item.summary?.incompleteEntries ?? 0);
+            const blockingExceptions = Array.isArray(readiness.blockingExceptions) ? readiness.blockingExceptions : [];
+            const approvalBlocked = readiness.canApprove === false || incompleteEntries > 0;
             const blocker = actionError?.id === item._id ? actionError : incompleteEntries > 0 ? {
                 code: 'INCOMPLETE_ATTENDANCE',
                 message: `${incompleteEntries} incomplete or unpaired attendance ${incompleteEntries === 1 ? 'entry must' : 'entries must'} be corrected before this timesheet can be approved.`,
+            } : blockingExceptions.length ? {
+                code: 'ATTENDANCE_REVIEW_REQUIRED',
+                message: `${blockingExceptions.length} attendance ${blockingExceptions.length === 1 ? 'issue requires' : 'issues require'} a decision or correction before approval.`,
             } : null;
             return <div key={item._id} data-testid="approval-row" data-timesheet-id={item._id} className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(220px,1.25fr)_minmax(180px,1fr)_170px_280px] md:items-center md:gap-5">
                 <EmployeeCell item={item} />
                 <PeriodCell item={item} />
                 <div className="text-sm text-zinc-300"><span className="font-medium text-white">{formatDuration(summary.hours * 60)}</span><span className="mx-2 text-zinc-700">·</span>{summary.days} {summary.days === 1 ? 'day' : 'days'}{summary.overtime > 0 && <div className="mt-1 text-xs text-amber-400">{formatDuration(summary.overtime * 60)} overtime</div>}</div>
                 <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
-                    <Link href={`/timesheets/${item._id}`} className="inline-flex items-center gap-1 px-2 py-2 text-sm font-medium text-zinc-400 hover:text-white">Review<ChevronRight className="h-4 w-4" /></Link>
+                    <Link href={`/timesheets/${item._id}?review=1`} className="inline-flex items-center gap-1 px-2 py-2 text-sm font-medium text-zinc-400 hover:text-white">Review<ChevronRight className="h-4 w-4" /></Link>
                     <button onClick={() => onAction(item._id, 'reject')} disabled={submitting === item._id} className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"><X className="h-4 w-4" />Reject</button>
-                    <button onClick={() => onAction(item._id, 'approve')} disabled={submitting === item._id || incompleteEntries > 0} title={incompleteEntries > 0 ? 'Correct incomplete attendance before approving' : undefined} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" />Approve</button>
+                    <button onClick={() => onAction(item._id, 'approve')} disabled={submitting === item._id || approvalBlocked} title={approvalBlocked ? 'Review and resolve the attendance issues before approving' : undefined} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-4 w-4" />Approve</button>
                 </div>
                 {blocker && <div role="alert" className="flex flex-col gap-3 rounded-md border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 md:col-span-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 items-start gap-2.5"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" /><div><p className="text-sm font-medium text-amber-900 dark:text-amber-200">Approval blocked</p><p className="mt-0.5 text-sm text-amber-800 dark:text-amber-300">{blocker.message}</p></div></div>
-                    <div className="flex shrink-0 gap-3 pl-6 sm:pl-0"><Link href={`/timesheets/${item._id}`} className="text-sm font-semibold text-[var(--suite-ink)] hover:underline">Review timesheet</Link><Link href={`/exceptions?userId=${encodeURIComponent(item.userId)}`} className="text-sm font-semibold text-[var(--suite-ink)] hover:underline">View exceptions</Link></div>
+                    <div className="flex min-w-0 items-start gap-2.5"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" /><div><p className="text-sm font-medium text-amber-900 dark:text-amber-200">Approval blocked</p><p className="mt-0.5 text-sm text-amber-800 dark:text-amber-300">{blocker.message}</p>{blockingExceptions.slice(0, 3).map((issue: any) => <p key={issue.id} className="mt-1 text-xs text-amber-800/90 dark:text-amber-300/90">{safeFormatDate(issue.occurrenceDate, 'EEE, MMM d')} · {String(issue.type || 'attendance issue').replaceAll('_', ' ')}</p>)}</div></div>
+                    <div className="flex shrink-0 gap-3 pl-6 sm:pl-0"><Link href={`/timesheets/${item._id}?review=1`} className="text-sm font-semibold text-[var(--suite-ink)] hover:underline">Review timesheet</Link><Link href={exceptionHref(item)} className="text-sm font-semibold text-[var(--suite-ink)] hover:underline">View exceptions{readiness.openExceptionCount ? ` (${readiness.openExceptionCount})` : ''}</Link></div>
                 </div>}
             </div>;
         })}</div>
