@@ -1,4 +1,9 @@
 const { consolidateExactInstantDuplicates } = require('../ExchangeRateIndexMigrationService');
+const currencyService = require('../CurrencyService');
+const {
+  markExchangeRatesReady,
+  markExchangeRatesBlocked,
+} = require('../ExchangeRateRuntimeState');
 
 function fakeCollection(groups, rows) {
   return {
@@ -23,6 +28,7 @@ const duplicateKey = {
 };
 
 describe('ExchangeRate exact-instant index migration', () => {
+  afterEach(() => markExchangeRatesReady());
   test('keeps one deterministic provenance row when duplicate calculations are identical', async () => {
     const groups = [{ _id: duplicateKey, rowIds: ['api-row', 'manual-row'], count: 2 }];
     const collection = fakeCollection(groups, [
@@ -80,5 +86,22 @@ describe('ExchangeRate exact-instant index migration', () => {
     });
     expect(collection.find).not.toHaveBeenCalled();
     expect(collection.deleteMany).not.toHaveBeenCalled();
+  });
+
+  test('blocks ambiguous FX operations without blocking same-currency payroll', async () => {
+    markExchangeRatesBlocked();
+
+    await expect(currencyService.convert('org-1', 125000, 'NGN', 'NGN')).resolves.toMatchObject({
+      convertedAmount: 125000,
+      rate: 1,
+    });
+    await expect(currencyService.convert('org-1', 100, 'USD', 'NGN')).rejects.toMatchObject({
+      code: 'EXCHANGE_RATE_HISTORY_REVIEW_REQUIRED',
+      statusCode: 503,
+    });
+    await expect(currencyService.getActiveRates('org-1')).rejects.toMatchObject({
+      code: 'EXCHANGE_RATE_HISTORY_REVIEW_REQUIRED',
+      statusCode: 503,
+    });
   });
 });

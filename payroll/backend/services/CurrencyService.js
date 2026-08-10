@@ -1,5 +1,6 @@
 const ExchangeRate = require('../models/ExchangeRate');
 const Payslip = require('../models/Payslip');
+const { assertExchangeRatesReady } = require('./ExchangeRateRuntimeState');
 
 const REPORT_LOCKED_PAYSLIP_STATUSES = Object.freeze(['approved', 'exported', 'paid']);
 
@@ -218,6 +219,7 @@ class CurrencyService {
       };
     }
 
+    assertExchangeRatesReady();
     return ExchangeRate.convert(organizationId, amount, normalizedFrom, normalizedTo, date);
   }
 
@@ -225,10 +227,13 @@ class CurrencyService {
    * Get current exchange rate
    */
   async getRate(organizationId, fromCurrency, toCurrency, date = new Date()) {
+    const normalizedFrom = normalizeCurrencyCode(fromCurrency);
+    const normalizedTo = normalizeCurrencyCode(toCurrency);
+    if (normalizedFrom !== normalizedTo) assertExchangeRatesReady();
     return ExchangeRate.getCurrentRate(
       organizationId,
-      normalizeCurrencyCode(fromCurrency),
-      normalizeCurrencyCode(toCurrency),
+      normalizedFrom,
+      normalizedTo,
       date
     );
   }
@@ -237,6 +242,7 @@ class CurrencyService {
    * Get all active rates for organization
    */
   async getActiveRates(organizationId, baseCurrency = null) {
+    assertExchangeRatesReady();
     return ExchangeRate.getActiveRates(
       organizationId,
       baseCurrency ? normalizeCurrencyCode(baseCurrency) : null
@@ -247,6 +253,7 @@ class CurrencyService {
    * Set exchange rate
    */
   async setRate(organizationId, baseCurrency, targetCurrency, rate, options = {}) {
+    assertExchangeRatesReady();
     const normalizedBase = normalizeCurrencyCode(baseCurrency);
     const normalizedTarget = normalizeCurrencyCode(targetCurrency);
 

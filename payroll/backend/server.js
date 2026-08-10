@@ -24,6 +24,11 @@ const Payslip = require('./models/Payslip');
 const PayrollSequence = require('./models/PayrollSequence');
 const ExchangeRate = require('./models/ExchangeRate');
 const { consolidateExactInstantDuplicates } = require('./services/ExchangeRateIndexMigrationService');
+const {
+  markExchangeRatesReady,
+  markExchangeRatesBlocked,
+  getExchangeRateRuntimeState,
+} = require('./services/ExchangeRateRuntimeState');
 
 // Now we can safely import services that depend on models
 const MonthlyPayrollScheduler = require('./jobs/MonthlyPayrollScheduler');
@@ -132,6 +137,7 @@ app.get('/health', (req, res) => {
     database: mongoose.connection.readyState === 1 ? 'connected' : 'unavailable',
     integrations: {
       leaveSigning: getPayrollLeaveSigningReadiness(),
+      exchangeRates: getExchangeRateRuntimeState(),
     },
     error: startupError ? startupError.message : undefined,
   });
@@ -180,11 +186,22 @@ async function migratePayrollIndexes() {
   // Consolidate only calculation-identical rows before enforcing the new
   // immutable timeline. Conflicting rates deliberately fail startup rather
   // than silently restating a historical payroll conversion.
-  const exchangeRateMigration = await consolidateExactInstantDuplicates(ExchangeRate.collection);
-  if (exchangeRateMigration.removedCount > 0) {
-    console.log(`Consolidated ${exchangeRateMigration.removedCount} duplicate exchange-rate record(s)`);
+  try {
+    const exchangeRateMigration = await consolidateExactInstantDuplicates(ExchangeRate.collection);
+    if (exchangeRateMigration.removedCount > 0) {
+      console.log(`Consolidated ${exchangeRateMigration.removedCount} duplicate exchange-rate record(s)`);
+    }
+    await ExchangeRate.createIndexes();
+    markExchangeRatesReady();
+  } catch (error) {
+    if (error?.code !== 'EXCHANGE_RATE_DUPLICATE_CONFLICT' && error?.code !== 11000) {
+      throw error;
+    }
+    markExchangeRatesBlocked({ code: 'EXCHANGE_RATE_HISTORY_REVIEW_REQUIRED' });
+    console.error(
+      'Exchange-rate history requires review; cross-currency payroll is disabled while core payroll remains available.'
+    );
   }
-  await ExchangeRate.init();
   await payrollSequenceMigrationService.seedCounters();
 }
 
@@ -201,8 +218,10 @@ async function startServer() {
 
     const payrollScheduler = new MonthlyPayrollScheduler();
     payrollScheduler.initializeScheduler();
-    const exchangeRateScheduler = new ExchangeRateScheduler();
-    exchangeRateScheduler.initializeScheduler();
+    if (getExchangeRateRuntimeState().ready) {
+      const exchangeRateScheduler = new ExchangeRateScheduler();
+      exchangeRateScheduler.initializeScheduler();
+    }
     serviceReady = true;
 
     return app.listen(PORT, () => {

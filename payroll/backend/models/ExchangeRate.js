@@ -63,7 +63,11 @@ const ExchangeRateSchema = new Schema({
     createdBy: String,
     createdByName: String
 }, {
-    timestamps: true
+    timestamps: true,
+    // Startup performs a guarded migration before installing this model's
+    // exact-instant unique index. Automatic index creation would race that
+    // migration on legacy databases.
+    autoIndex: false
 });
 
 // A currency pair may have only one immutable value for an exact effective

@@ -5,6 +5,10 @@ const exchangeRateSyncService = require('../services/ExchangeRateSyncService');
 const ExchangeRate = require('../models/ExchangeRate');
 const organizationCurrencyService = require('../services/OrganizationCurrencyService');
 const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
+const {
+    assertExchangeRatesReady,
+    getExchangeRateRuntimeState,
+} = require('../services/ExchangeRateRuntimeState');
 
 // Helper to get user info
 const getUserInfo = (req) => ({
@@ -89,7 +93,8 @@ router.get('/settings', requireHRAdmin, async (req, res) => {
         res.json({
             settings,
             provider: exchangeRateSyncService.getProviderInfo(),
-            activeRateCount
+            activeRateCount,
+            runtime: getExchangeRateRuntimeState()
         });
     } catch (err) {
         console.error('Get Currency Settings Error:', err);
@@ -139,7 +144,7 @@ router.get('/rates', requireAuth, async (req, res) => {
         });
     } catch (err) {
         console.error('Get Rates Error:', err);
-        res.status(500).json({ error: 'Failed to fetch exchange rates' });
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch exchange rates', code: err.code });
     }
 });
 
@@ -192,6 +197,7 @@ router.post('/rates', requireHRAdmin, async (req, res) => {
  */
 router.post('/rates/sync', requireHRAdmin, async (req, res) => {
     try {
+        assertExchangeRatesReady();
         const { organizationId, userId, name } = getUserInfo(req);
         const { baseCurrency, preserveManualOverrides } = req.body || {};
 
@@ -211,9 +217,9 @@ router.post('/rates/sync', requireHRAdmin, async (req, res) => {
         });
     } catch (err) {
         console.error('Sync Rates Error:', err);
-        res.status(500).json({
-            error: 'Failed to sync live exchange rates',
-            details: err.message
+        res.status(err.statusCode || 500).json({
+            error: err.message || 'Failed to sync live exchange rates',
+            code: err.code
         });
     }
 });
@@ -224,6 +230,7 @@ router.post('/rates/sync', requireHRAdmin, async (req, res) => {
  */
 router.post('/rates/seed', requireHRAdmin, async (req, res) => {
     try {
+        assertExchangeRatesReady();
         const { organizationId, userId, name } = getUserInfo(req);
         const result = await exchangeRateSyncService.syncIfEmpty(organizationId, {
             ...req.body,
@@ -237,9 +244,9 @@ router.post('/rates/seed', requireHRAdmin, async (req, res) => {
         });
     } catch (err) {
         console.error('Seed Rates Error:', err);
-        res.status(500).json({
-            error: 'Failed to seed live exchange rates',
-            details: err.message
+        res.status(err.statusCode || 500).json({
+            error: err.message || 'Failed to seed live exchange rates',
+            code: err.code
         });
     }
 });
@@ -311,7 +318,7 @@ router.get('/convert', requireAuth, async (req, res) => {
         });
     } catch (err) {
         console.error('Convert Error:', err);
-        res.status(500).json({ error: err.message || 'Failed to convert currency' });
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to convert currency', code: err.code });
     }
 });
 
@@ -321,6 +328,7 @@ router.get('/convert', requireAuth, async (req, res) => {
  */
 router.delete('/rates/:id', requireHRAdmin, async (req, res) => {
     try {
+        assertExchangeRatesReady();
         const { organizationId } = getUserInfo(req);
 
         const existing = await ExchangeRate.findOne({ _id: req.params.id, organizationId });
@@ -355,6 +363,7 @@ router.delete('/rates/:id', requireHRAdmin, async (req, res) => {
  */
 router.get('/history', requireAuth, async (req, res) => {
     try {
+        assertExchangeRatesReady();
         const { organizationId } = getUserInfo(req);
         const { baseCurrency, targetCurrency, limit = 30 } = req.query;
 
