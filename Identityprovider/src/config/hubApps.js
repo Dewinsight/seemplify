@@ -365,6 +365,14 @@ const COMING_SOON_CARDS = [
     icon: 'chart-bar',
     color: '#94a3b8',
     order: 3
+  },
+  {
+    cardId: 'hmo-plans',
+    name: 'HMO Plans',
+    description: 'Employee health plans, family coverage, enrolment, and payroll contributions',
+    icon: 'users',
+    color: '#94a3b8',
+    order: 4
   }
 ]
 
