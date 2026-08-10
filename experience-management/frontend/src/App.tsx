@@ -16,12 +16,6 @@ const IntelligencePage = lazy(() => import('@/pages/IntelligencePage').then((mod
 const PersonalAssistantPage = lazy(() => import('@/pages/PersonalAssistantPage').then((module) => ({ default: module.PersonalAssistantPage })));
 const KnowledgeBasesPage = lazy(() => import('@/pages/KnowledgeBasesPage').then((module) => ({ default: module.KnowledgeBasesPage })));
 const KnowledgeBaseWorkspacePage = lazy(() => import('@/pages/KnowledgeBaseWorkspacePage').then((module) => ({ default: module.KnowledgeBaseWorkspacePage })));
-const JourneysPage = lazy(() => import('@/pages/JourneysPage').then((module) => ({ default: module.JourneysPage })));
-const JourneyMapsPage = lazy(() => import('@/pages/JourneyMapsPage').then((module) => ({ default: module.JourneyMapsPage })));
-const JourneySuggestionReviewPage = lazy(() => import('@/pages/JourneySuggestionReviewPage').then((module) => ({ default: module.JourneySuggestionReviewPage })));
-const JourneyResearchHubPage = lazy(() => import('@/pages/JourneyResearchHubPage').then((module) => ({ default: module.JourneyResearchHubPage })));
-const JourneyMetricsPage = lazy(() => import('@/pages/JourneyMetricsPage').then((module) => ({ default: module.JourneyMetricsPage })));
-const JourneyPersonasPage = lazy(() => import('@/pages/JourneyPersonasPage').then((module) => ({ default: module.JourneyPersonasPage })));
 const CampaignsPage = lazy(() => import('@/pages/CampaignsPage').then((module) => ({ default: module.CampaignsPage })));
 const CampaignWorkspacePage = lazy(() => import('@/pages/CampaignWorkspacePage').then((module) => ({ default: module.CampaignWorkspacePage })));
 const AgreementsPage = lazy(() => import('@/pages/AgreementsPage').then((module) => ({ default: module.AgreementsPage })));
@@ -41,7 +35,6 @@ const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage').then((m
 const LegalPage = lazy(() => import('@/pages/LegalPage').then((module) => ({ default: module.LegalPage })));
 const JoinSpacePage = lazy(() => import('@/pages/JoinSpacePage').then((module) => ({ default: module.JoinSpacePage })));
 const SpaceSettingsPage = lazy(() => import('@/pages/SpaceSettingsPage').then((module) => ({ default: module.SpaceSettingsPage })));
-const JourneyEventSourcesPage = lazy(() => import('@/pages/JourneyEventSourcesPage').then((module) => ({ default: module.JourneyEventSourcesPage })));
 const PlatformAdminOverviewPage = lazy(() => import('@/pages/platform-admin/OverviewPage').then((module) => ({ default: module.PlatformAdminOverviewPage })));
 const PlatformAdminUsersPage = lazy(() => import('@/pages/platform-admin/UsersPage').then((module) => ({ default: module.PlatformAdminUsersPage })));
 const PlatformAdminUserDetailPage = lazy(() => import('@/pages/platform-admin/UserDetailPage').then((module) => ({ default: module.PlatformAdminUserDetailPage })));
@@ -58,7 +51,6 @@ const PlatformAdminActivityPage = lazy(() => import('@/pages/platform-admin/Acti
 const PlatformAdminRolesPage = lazy(() => import('@/pages/platform-admin/RolesPage').then((module) => ({ default: module.PlatformAdminRolesPage })));
 const PlatformAdminAiDefaultsPage = lazy(() => import('@/pages/platform-admin/AiDefaultsPage').then((module) => ({ default: module.PlatformAdminAiDefaultsPage })));
 const PlatformAdminEmailDeliveryPage = lazy(() => import('@/pages/platform-admin/EmailDeliveryPage').then((module) => ({ default: module.PlatformAdminEmailDeliveryPage })));
-const PlatformAdminJourneyTemplatesPage = lazy(() => import('@/pages/platform-admin/JourneyTemplatesPage').then((module) => ({ default: module.PlatformAdminJourneyTemplatesPage })));
 const PlatformAdminAuditPage = lazy(() => import('@/pages/platform-admin/AuditPage').then((module) => ({ default: module.PlatformAdminAuditPage })));
 const PlatformAdminAuditDetailPage = lazy(() => import('@/pages/platform-admin/AuditDetailPage').then((module) => ({ default: module.PlatformAdminAuditDetailPage })));
 
@@ -83,7 +75,6 @@ function PlatformAdminRoutes() {
     <Route path="/admin/roles"><PlatformAdminRolesPage /></Route>
     <Route path="/admin/ai-defaults"><PlatformAdminAiDefaultsPage /></Route>
     <Route path="/admin/email-delivery"><PlatformAdminEmailDeliveryPage /></Route>
-    <Route path="/admin/journey-templates"><PlatformAdminJourneyTemplatesPage /></Route>
     <Route path="/admin/audit/:id"><PlatformAdminAuditDetailPage /></Route>
     <Route path="/admin/audit"><PlatformAdminAuditPage /></Route>
     <Route path="/admin"><PlatformAdminOverviewPage /></Route>
@@ -113,15 +104,8 @@ function ExperienceRoutes() {
     <Route path="/assistant"><PersonalAssistantPage /></Route>
     <Route path="/knowledge-bases/:id"><KnowledgeBaseWorkspacePage /></Route>
     <Route path="/knowledge-bases"><KnowledgeBasesPage /></Route>
-    <Route path="/journey-maps/suggestions/:runId"><JourneySuggestionReviewPage /></Route>
-    <Route path="/journey-maps"><JourneyMapsPage /></Route>
-    <Route path="/journey-research"><JourneyResearchHubPage /></Route>
-    <Route path="/journey-metrics"><JourneyMetricsPage /></Route>
-    <Route path="/journey-personas"><JourneyPersonasPage /></Route>
-    <Route path="/journeys"><JourneysPage /></Route>
     <Route path="/ai-queue"><AiQueuePage /></Route>
     <Route path="/tickets"><TicketsPage /></Route>
-    <Route path="/settings/developer"><JourneyEventSourcesPage /></Route>
     <Route path="/settings/space"><SpaceSettingsPage /></Route>
     <Route path="/settings/profile"><ProfilePage /></Route>
     <Route path="/"><DashboardPage /></Route>
