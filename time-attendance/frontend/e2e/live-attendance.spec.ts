@@ -119,6 +119,46 @@ test('protects an open timesheet from partial submission and submits a closed pe
     expect(openTimesheet).toBeTruthy();
     expect(closedTimesheet).toBeTruthy();
 
+    const mongoUri = process.env.LIVE_MONGODB_URI || 'mongodb://127.0.0.1:27017/time-attendance-live-e2e';
+    expect(mongoUri).toMatch(/live-e2e|ta-e2e/i);
+    const { TimeEntry } = require('../../backend/models');
+    const mongoose = TimeEntry.db.base;
+    await mongoose.connect(mongoUri);
+    let latestClockIn = await TimeEntry.findOne({
+        organizationId: 'org-live-e2e', userId: 'employee-live-1', entryType: 'clock_in',
+    }).sort({ timestamp: -1 });
+    if (!latestClockIn) latestClockIn = await TimeEntry.create({
+        organizationId: 'org-live-e2e', organizationName: 'Seemplify Live E2E',
+        userId: 'employee-live-1', userEmail: 'alex.live@example.test', userName: 'Alex Live',
+        entryType: 'clock_in', timestamp: new Date(Date.now() - 60 * 60 * 1000), timezone: 'Europe/London', source: 'web', workMode: 'office',
+    });
+    latestClockIn.location = {
+        latitude: 51.5074, longitude: -0.1278, accuracy: 18, verified: true,
+        address: 'Live draft location, London',
+    };
+    await latestClockIn.save();
+    let latestClockOut = await TimeEntry.findOne({
+        organizationId: 'org-live-e2e', userId: 'employee-live-1', entryType: 'clock_out', timestamp: { $gt: latestClockIn.timestamp },
+    }).sort({ timestamp: -1 });
+    if (!latestClockOut) latestClockOut = await TimeEntry.create({
+        organizationId: 'org-live-e2e', organizationName: 'Seemplify Live E2E',
+        userId: 'employee-live-1', userEmail: 'alex.live@example.test', userName: 'Alex Live',
+        entryType: 'clock_out', timestamp: new Date(), timezone: 'Europe/London', source: 'web', workMode: 'office',
+    });
+    latestClockOut.location = {
+        latitude: 51.5075, longitude: -0.1277, accuracy: 22, verified: true,
+        address: 'Live draft clock-out, London',
+    };
+    await latestClockOut.save();
+    await mongoose.disconnect();
+
+    const draftDetailsResponse = await request.get(`${API_ORIGIN}/api/timesheets/${openTimesheet._id}`, { headers: apiHeaders() });
+    expect(draftDetailsResponse.ok(), await draftDetailsResponse.text()).toBeTruthy();
+    const draftDetails = (await draftDetailsResponse.json()).timesheet;
+    expect(draftDetails.status).toBe('draft');
+    expect(draftDetails.dailyEntries.some((entry: any) => entry.clockInLocation?.address === 'Live draft location, London')).toBe(true);
+    expect(draftDetails.dailyEntries.some((entry: any) => entry.clockOutLocation?.address === 'Live draft clock-out, London')).toBe(true);
+
     const rejected = await request.post(`${API_ORIGIN}/api/timesheets/${openTimesheet._id}/submit`, {
         headers: apiHeaders(),
         data: {},
@@ -129,6 +169,10 @@ test('protects an open timesheet from partial submission and submits a closed pe
     expect((await openAfterResponse.json()).timesheet.status).toBe('draft');
 
     await authenticate(page);
+    await page.goto(`/timesheets/${openTimesheet._id}`);
+    await expect(page.getByRole('button', { name: 'Submit for Approval' })).toBeVisible();
+    await expect(page.getByText('Live draft location, London')).toBeVisible();
+    await expect(page.getByText('Live draft clock-out, London')).toBeVisible();
     await page.goto('/timesheets');
     await expect(page.getByRole('heading', { name: 'My Timesheets' })).toBeVisible();
     await expect(page.locator(`a[href="/timesheets/${closedTimesheet._id}"]`)).toBeVisible();

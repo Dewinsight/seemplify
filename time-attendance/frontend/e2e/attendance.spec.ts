@@ -450,9 +450,14 @@ test('keeps timesheet detail and approval history compact in light mode', async 
     await page.setViewportSize({ width: 1573, height: 900 });
 
     await page.goto('/timesheets/timesheet-1');
+    await expect(page.getByRole('button', { name: 'Submit for Approval' })).toBeVisible();
     await expect(page.getByText('Total worked')).toBeVisible();
+    await expect(page.locator('.timesheet-day').first()).toContainText(/In:\s*\d{2}:\d{2}/);
+    await expect(page.locator('.timesheet-day').first()).toContainText(/Out:\s*\d{2}:\d{2}/);
     await expect(page.getByText('London office, Westminster').first()).toBeVisible();
     await expect(page.getByRole('link', { name: 'View map' }).first()).toBeVisible();
+    const dayBackground = await page.locator('.timesheet-day').first().evaluate(element => getComputedStyle(element).backgroundColor);
+    expect(dayBackground).not.toBe('rgb(228, 225, 218)');
 
     await page.goto('/approvals');
     await page.getByRole('tab', { name: 'History' }).click();

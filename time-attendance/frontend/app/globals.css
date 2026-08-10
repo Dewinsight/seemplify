@@ -158,6 +158,61 @@ html.light [class*="bg-gradient-to-"] .text-white,
 html.light :is(.bg-amber-500, .bg-orange-500, .bg-red-500, .bg-rose-500, .bg-teal-500, .bg-emerald-500, .bg-blue-500, .bg-indigo-500, .bg-purple-500).text-white,
 html.light :is(.bg-amber-500, .bg-orange-500, .bg-red-500, .bg-rose-500, .bg-teal-500, .bg-emerald-500, .bg-blue-500, .bg-indigo-500, .bg-purple-500) .text-white { color: #fff !important; }
 
+/* Timesheet detail uses explicit surfaces so light mode does not inherit dark
+   zinc overlays. Dark mode continues to use the established attendance theme. */
+.timesheet-detail :is(.timesheet-summary, .timesheet-days, .timesheet-approval) {
+  background: var(--suite-surface);
+  border-color: var(--suite-line);
+  box-shadow: var(--suite-shadow);
+}
+.timesheet-detail .timesheet-day {
+  background: var(--suite-surface);
+  border-color: var(--suite-line);
+}
+.timesheet-detail .timesheet-day:hover { background: var(--suite-surface-muted); }
+.timesheet-detail .timesheet-date {
+  background: var(--suite-surface-muted);
+  border-color: var(--suite-line-strong);
+  color: var(--suite-ink);
+}
+.timesheet-detail .timesheet-location-grid { border-color: var(--suite-line); }
+html.light .timesheet-detail .timesheet-location-grid {
+  margin-inline-start: 3.25rem;
+  padding: .75rem;
+  padding-left: .75rem;
+  border: 1px solid var(--suite-line);
+  border-radius: .5rem;
+  background: #f8f6f1;
+}
+html.light .timesheet-detail .timesheet-exception {
+  background: #ece9e2 !important;
+  color: #4f4a43 !important;
+}
+html.light .timesheet-detail .timesheet-exception[data-exception="manual_entry"] {
+  background: #fff3d6 !important;
+  color: #7a4a05 !important;
+}
+html.light .timesheet-detail .timesheet-exception[data-exception="no_clock_out"] {
+  background: #fde8e8 !important;
+  color: #9f2f2f !important;
+}
+html.light .timesheet-detail .timesheet-exception[data-exception="late_arrival"] {
+  background: #ffeddc !important;
+  color: #914b12 !important;
+}
+html.light .timesheet-detail .timesheet-manual-note {
+  border-color: #e7c986;
+  background: #fff8e6 !important;
+}
+html.light .timesheet-detail .timesheet-manual-note :is(.text-amber-400, .text-amber-200\/80) {
+  color: #76480a !important;
+}
+@media (max-width: 639px) {
+  html.light .timesheet-detail .timesheet-location-grid {
+    margin-inline-start: 0;
+  }
+}
+
 /* Seemplify suite dashboard system */
 :root { --suite-canvas:#efede7; --suite-surface:#fffdfa; --suite-surface-muted:#f5f2ec; --suite-ink:#191816; --suite-muted:#6d675f; --suite-subtle:#918a80; --suite-line:#d7d2c8; --suite-line-strong:#c7c0b5; --suite-accent:#7047eb; --suite-accent-soft:#f1edff; --suite-positive:#16826f; --suite-warning:#a86212; --suite-danger:#b84040; --suite-action:#171613; --suite-action-ink:#fff; --suite-shadow:0 1px 2px rgba(35,31,26,.05),0 4px 8px rgba(35,31,26,.05); }
 html.dark { --suite-canvas:#0f0e13; --suite-surface:#19171f; --suite-surface-muted:#141219; --suite-ink:#f7f5fa; --suite-muted:#aaa3b2; --suite-subtle:#7f7888; --suite-line:#302d38; --suite-line-strong:#403b49; --suite-accent:#8b6cff; --suite-accent-soft:#241d3b; --suite-positive:#36c69e; --suite-warning:#e1a34e; --suite-danger:#ef7777; --suite-action:#faf9fb; --suite-action-ink:#17151b; --suite-shadow:0 1px 2px rgba(0,0,0,.28); }

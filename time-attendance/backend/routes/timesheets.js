@@ -103,6 +103,14 @@ router.get('/:id', async (req, res) => {
             }
         }
 
+        // Draft and revision timesheets are live views of attendance. Refresh
+        // them before returning details so punches, breaks and locations never
+        // appear only as a side effect of submission.
+        if (canRecalculateTimesheet(timesheet)) {
+            const policy = await AttendancePolicy.getOrCreateDefault(organizationId, req.organizationName, userId);
+            await refreshTimesheetEntries(timesheet, policy);
+        }
+
         res.json({ timesheet });
     } catch (error) {
         console.error('Get timesheet error:', error);

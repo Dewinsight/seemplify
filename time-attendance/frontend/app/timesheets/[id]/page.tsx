@@ -202,7 +202,7 @@ export default function TimesheetDetailPage() {
     const daysWorked = storedDays > 0 || calculatedDays === 0 ? storedDays : calculatedDays;
 
     return (
-        <div className="space-y-6">
+        <div className="timesheet-detail space-y-6">
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -277,7 +277,7 @@ export default function TimesheetDetailPage() {
                 </div>
             </div>
 
-            <dl className="grid overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 sm:grid-cols-3">
+            <dl className="timesheet-summary grid overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 sm:grid-cols-3">
                 <div className="border-b border-zinc-800 px-5 py-4 sm:border-b-0"><dt className="flex items-center gap-2 text-sm text-zinc-500"><Clock className="h-4 w-4" />Total worked</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{formatDuration(totalHours * 60)}</dd></div>
                 <div className="border-b border-zinc-800 px-5 py-4 sm:border-b-0"><dt className="flex items-center gap-2 text-sm text-zinc-500"><CheckCircle2 className="h-4 w-4" />Days worked</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{daysWorked}<span className="ml-1 text-sm font-normal text-zinc-500">of {timesheet.expectedWorkDays || 5}</span></dd></div>
                 <div className="px-5 py-4"><dt className="flex items-center gap-2 text-sm text-zinc-500"><FileText className="h-4 w-4" />Period days</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{dailyEntries.length}</dd></div>
@@ -289,7 +289,7 @@ export default function TimesheetDetailPage() {
                 {/* Daily Entries List */}
                 <div className="space-y-3">
                     <h2 className="text-lg font-semibold text-white">Daily Breakdown</h2>
-                    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
+                    <div className="timesheet-days overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
                         {timesheet.dailyEntries?.length === 0 ? (
                             <div className="p-8 text-center text-zinc-500">
                                 No entries recorded for this week.
@@ -301,10 +301,11 @@ export default function TimesheetDetailPage() {
                                     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
                                     return (
-                                        <div key={index} className="p-4 transition-colors hover:bg-zinc-800/20">
+                                        <div key={index} className="timesheet-day p-4 transition-colors">
                                             <div className="flex items-center justify-between mb-3">
                                                 <div className="flex items-center gap-3">
                                                     <div className={cn(
+                                                        "timesheet-date",
                                                         "w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs font-medium border relative",
                                                         isWeekend ? "bg-zinc-900/60 border-zinc-800 text-zinc-500" : "bg-zinc-800 border-zinc-700 text-zinc-300"
                                                     )}>
@@ -324,8 +325,9 @@ export default function TimesheetDetailPage() {
                                                             {entry.exceptions?.map((exc: any, i: number) => (
                                                                 <span
                                                                     key={i}
+                                                                    data-exception={exc.type}
                                                                     className={cn(
-                                                                        "px-1.5 py-0.5 text-[10px] font-medium rounded",
+                                                                        "timesheet-exception px-1.5 py-0.5 text-[10px] font-medium rounded",
                                                                         exc.type === 'manual_entry' ? "bg-amber-500/20 text-amber-400" :
                                                                         exc.type === 'no_clock_out' ? "bg-red-500/20 text-red-400" :
                                                                         exc.type === 'late_arrival' ? "bg-orange-500/20 text-orange-400" :
@@ -368,7 +370,7 @@ export default function TimesheetDetailPage() {
 
                                             {/* Location Display */}
                                             {(entry.clockInLocation?.latitude || entry.clockOutLocation?.latitude) && (
-                                                <div className="mt-3 grid gap-4 border-t border-zinc-800 pt-3 pl-[3.25rem] sm:grid-cols-2">
+                                                <div className="timesheet-location-grid mt-3 grid gap-4 border-t border-zinc-800 pt-3 pl-[3.25rem] sm:grid-cols-2">
                                                     {entry.clockInLocation?.latitude && entry.clockInLocation?.longitude && (
                                                         <div className="min-w-0">
                                                             <div className="flex items-center gap-2 text-xs mb-1.5">
@@ -483,7 +485,7 @@ export default function TimesheetDetailPage() {
                                             {/* Manual Entry Note */}
                                             {entry.exceptions?.some((e: any) => e.type === 'manual_entry') && (
                                                 <div className="mt-3 pl-[3.25rem]">
-                                                    <div className="flex items-start gap-2 text-xs bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+                                                    <div className="timesheet-manual-note flex items-start gap-2 text-xs bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
                                                         <PenLine className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" />
                                                         <div>
                                                             <span className="text-amber-400 font-medium">Manual Entry: </span>
@@ -504,7 +506,7 @@ export default function TimesheetDetailPage() {
 
                 {/* Sidebar Info */}
                 <div className="space-y-4">
-                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+                    <div className="timesheet-approval rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
                         <h3 className="text-sm font-semibold text-white">Approval</h3>
                         <div className="mt-4 space-y-4">
                             <div className="grid grid-cols-[16px_1fr] gap-3">
