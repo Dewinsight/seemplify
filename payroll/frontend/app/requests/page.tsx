@@ -9,15 +9,41 @@ import {
     FileText,
     Plus,
     Clock,
-    Briefcase,
     CheckCircle,
     XCircle,
-    AlertCircle,
     Loader2,
     Calendar,
     DollarSign,
     ArrowLeft
 } from 'lucide-react';
+
+const overtimeActivityLabels: Record<string, string> = {
+    external_meeting: 'External meeting',
+    field_sales: 'Field sales',
+    client_site: 'Client-site work',
+    travel: 'Work-related travel',
+    event_support: 'Event support',
+    after_hours_support: 'After-hours support',
+    weekend_work: 'Weekend work',
+    other: 'Other off-system work',
+};
+
+const emptyRequest = () => ({
+    type: 'overtime',
+    amount: '',
+    currency: 'USD',
+    overtimeHours: '',
+    overtimeMultiplier: '1.5',
+    reason: '',
+    effectiveDate: new Date().toISOString().split('T')[0],
+    activityType: 'external_meeting',
+    startedAt: '',
+    endedAt: '',
+    workLocation: '',
+    clientOrProject: '',
+    evidenceReference: '',
+    confirmedNotInTimesheet: false,
+});
 
 /* 
   Request Status Badge Component 
@@ -60,17 +86,10 @@ export default function MyRequestsPage() {
     const [requests, setRequests] = useState<any[]>([]);
     const [showNewModal, setShowNewModal] = useState(false);
     const [user, setUser] = useState<any>(null);
+    const [submitError, setSubmitError] = useState('');
 
     // New Request Form State
-    const [formData, setFormData] = useState({
-        type: 'overtime',
-        amount: '',
-        currency: 'USD',
-        overtimeHours: '',
-        overtimeMultiplier: '1.5',
-        reason: '',
-        effectiveDate: new Date().toISOString().split('T')[0]
-    });
+    const [formData, setFormData] = useState(emptyRequest);
 
     useEffect(() => {
         if (currencies.length > 0 && !currencies.some((currency) => currency.code === formData.currency)) {
@@ -105,12 +124,36 @@ export default function MyRequestsPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubmitting(true);
+        setSubmitError('');
 
         try {
+            const isOvertime = formData.type === 'overtime';
+            const startedAt = isOvertime && formData.startedAt
+                ? new Date(`${formData.effectiveDate}T${formData.startedAt}:00`).toISOString()
+                : undefined;
+            const endedAt = isOvertime && formData.endedAt
+                ? new Date(`${formData.effectiveDate}T${formData.endedAt}:00`).toISOString()
+                : undefined;
             await api.post('/compensation/request', {
                 userId: user.id, // Requesting for self
                 userName: user.name,
-                ...formData
+                type: formData.type,
+                amount: formData.amount,
+                currency: formData.currency,
+                overtimeHours: formData.overtimeHours,
+                overtimeMultiplier: formData.overtimeMultiplier,
+                reason: formData.reason,
+                effectiveDate: formData.effectiveDate,
+                overtimeContext: isOvertime ? {
+                    captureMethod: 'manual_external_work',
+                    activityType: formData.activityType,
+                    startedAt,
+                    endedAt,
+                    workLocation: formData.workLocation,
+                    clientOrProject: formData.clientOrProject,
+                    evidenceReference: formData.evidenceReference,
+                    confirmedNotInTimesheet: formData.confirmedNotInTimesheet,
+                } : undefined,
             });
 
             // Refresh list
@@ -118,20 +161,25 @@ export default function MyRequestsPage() {
             setRequests(res.data);
 
             setShowNewModal(false);
-            setFormData({
-                type: 'overtime',
-                amount: '',
-                currency: 'USD',
-                overtimeHours: '',
-                overtimeMultiplier: '1.5',
-                reason: '',
-                effectiveDate: new Date().toISOString().split('T')[0]
-            });
-        } catch (error) {
-            alert('Failed to submit request');
+            setFormData(emptyRequest());
+        } catch (error: any) {
+            setSubmitError(error?.response?.data?.error || 'Failed to submit request.');
         } finally {
             setSubmitting(false);
         }
+    };
+
+    const updateOvertimeTime = (field: 'startedAt' | 'endedAt', value: string) => {
+        setFormData((current) => {
+            const next = { ...current, [field]: value };
+            if (next.startedAt && next.endedAt) {
+                const start = new Date(`${next.effectiveDate}T${next.startedAt}:00`);
+                const end = new Date(`${next.effectiveDate}T${next.endedAt}:00`);
+                const elapsed = (end.getTime() - start.getTime()) / 3600000;
+                if (elapsed > 0) next.overtimeHours = String(Math.round(elapsed * 4) / 4);
+            }
+            return next;
+        });
     };
 
     if (loading) {
@@ -203,6 +251,12 @@ export default function MyRequestsPage() {
                                         <span className="w-1 h-1 bg-zinc-700 rounded-full" />
                                         <span>{req.reason}</span>
                                     </p>
+                                    {req.overtimeContext?.activityType && (
+                                        <p className="mt-1 text-xs text-zinc-500">
+                                            {overtimeActivityLabels[req.overtimeContext.activityType] || 'Off-system work'}
+                                            {req.overtimeContext.clientOrProject ? ` · ${req.overtimeContext.clientOrProject}` : ''}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                             <div className="text-right">
@@ -221,7 +275,7 @@ export default function MyRequestsPage() {
             {/* New Request Modal */}
             {showNewModal && (
                 <div className="payroll-dialog-shell" role="presentation">
-                    <div className="payroll-dialog max-w-md p-6" role="dialog" aria-modal="true" aria-labelledby="new-request-title">
+                    <div className="payroll-dialog max-h-[90vh] max-w-2xl overflow-y-auto p-6" role="dialog" aria-modal="true" aria-labelledby="new-request-title">
                         <button
                             onClick={() => setShowNewModal(false)}
                             className="payroll-dialog-close absolute right-4 top-4"
@@ -248,14 +302,14 @@ export default function MyRequestsPage() {
                                 </select>
                             </div>
 
-                            <div>
+                            {formData.type !== 'overtime' && <div>
                                 <label className="payroll-field-label">
-                                    {formData.type === 'overtime' ? 'Amount (Optional)' : 'Amount'}
+                                    Amount
                                 </label>
                                 <div className="grid grid-cols-3 gap-3">
                                     <input
                                         type="number"
-                                        required={formData.type === 'reimbursement'}
+                                        required
                                         min="0"
                                         step="0.01"
                                         value={formData.amount}
@@ -275,31 +329,50 @@ export default function MyRequestsPage() {
                                         ))}
                                     </select>
                                 </div>
-                                {formData.type === 'overtime' && (
-                                    <p className="payroll-field-help mt-1.5 text-xs">
-                                        Recommended: fill hours below and leave amount blank. Payroll will calculate from salary rate.
-                                    </p>
-                                )}
-                            </div>
+                            </div>}
 
                             {formData.type === 'overtime' && (
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-4 border-t border-[var(--suite-line)] pt-4">
                                     <div>
-                                        <label className="payroll-field-label">Hours</label>
+                                        <label htmlFor="overtime-activity" className="payroll-field-label">Work activity</label>
+                                        <select id="overtime-activity" value={formData.activityType} onChange={(e) => setFormData({ ...formData, activityType: e.target.value })} className="payroll-field">
+                                            {Object.entries(overtimeActivityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="grid gap-3 sm:grid-cols-3">
+                                        <div>
+                                            <label htmlFor="overtime-date" className="payroll-field-label">Date</label>
+                                            <input id="overtime-date" type="date" required max={new Date().toISOString().split('T')[0]} value={formData.effectiveDate} onChange={(e) => setFormData({ ...formData, effectiveDate: e.target.value })} className="payroll-field" />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="overtime-start" className="payroll-field-label">Started</label>
+                                            <input id="overtime-start" type="time" required value={formData.startedAt} onChange={(e) => updateOvertimeTime('startedAt', e.target.value)} className="payroll-field" />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="overtime-end" className="payroll-field-label">Ended</label>
+                                            <input id="overtime-end" type="time" required value={formData.endedAt} onChange={(e) => updateOvertimeTime('endedAt', e.target.value)} className="payroll-field" />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label htmlFor="overtime-hours" className="payroll-field-label">Payable hours</label>
                                         <input
+                                            id="overtime-hours"
                                             type="number"
                                             required
-                                            min="0"
-                                            step="0.5"
+                                            min="0.25"
+                                            max="24"
+                                            step="0.25"
                                             value={formData.overtimeHours}
                                             onChange={(e) => setFormData({ ...formData, overtimeHours: e.target.value })}
                                             className="payroll-field"
-                                            placeholder="e.g. 6"
+                                            placeholder="e.g. 2"
                                         />
                                     </div>
                                     <div>
-                                        <label className="payroll-field-label">Multiplier</label>
+                                        <label htmlFor="overtime-multiplier" className="payroll-field-label">Multiplier</label>
                                         <select
+                                            id="overtime-multiplier"
                                             value={formData.overtimeMultiplier}
                                             onChange={(e) => setFormData({ ...formData, overtimeMultiplier: e.target.value })}
                                             className="payroll-field"
@@ -309,10 +382,30 @@ export default function MyRequestsPage() {
                                             <option value="2">2.0x</option>
                                         </select>
                                     </div>
+                                    </div>
+                                    <p className="payroll-field-help text-xs">Payroll calculates the amount from the worker&apos;s configured rate and the approved multiplier.</p>
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <div>
+                                            <label htmlFor="overtime-project" className="payroll-field-label">Client or project</label>
+                                            <input id="overtime-project" value={formData.clientOrProject} onChange={(e) => setFormData({ ...formData, clientOrProject: e.target.value })} className="payroll-field" placeholder="Client, opportunity, or project" maxLength={200} />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="overtime-location" className="payroll-field-label">Work location</label>
+                                            <input id="overtime-location" value={formData.workLocation} onChange={(e) => setFormData({ ...formData, workLocation: e.target.value })} className="payroll-field" placeholder="Customer office, venue, or area" maxLength={200} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label htmlFor="overtime-evidence" className="payroll-field-label">Supporting reference</label>
+                                        <input id="overtime-evidence" value={formData.evidenceReference} onChange={(e) => setFormData({ ...formData, evidenceReference: e.target.value })} className="payroll-field" placeholder="Calendar event, CRM activity, ticket, or document reference" maxLength={500} />
+                                    </div>
+                                    <label className="flex items-start gap-3 rounded-md border border-[var(--suite-line)] p-3 text-sm text-[var(--suite-muted)]">
+                                        <input type="checkbox" required checked={formData.confirmedNotInTimesheet} onChange={(e) => setFormData({ ...formData, confirmedNotInTimesheet: e.target.checked })} className="mt-0.5 h-4 w-4" />
+                                        <span>I confirm these hours are not already included in an approved timesheet. If they are, the timesheet should be corrected instead.</span>
+                                    </label>
                                 </div>
                             )}
 
-                            <div>
+                            {formData.type !== 'overtime' && <div>
                                 <label className="payroll-field-label">Date</label>
                                 <input
                                     type="date"
@@ -321,7 +414,7 @@ export default function MyRequestsPage() {
                                     onChange={(e) => setFormData({ ...formData, effectiveDate: e.target.value })}
                                     className="payroll-field"
                                 />
-                            </div>
+                            </div>}
 
                             <div>
                                 <label className="payroll-field-label">Reason / Description</label>
@@ -331,9 +424,12 @@ export default function MyRequestsPage() {
                                     value={formData.reason}
                                     onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
                                     className="payroll-field"
-                                    placeholder="e.g. Weekend support for deployment..."
+                                    minLength={10}
+                                    placeholder={formData.type === 'overtime' ? 'Describe the meeting, field activity, outcome, and why it occurred outside normal hours.' : 'Describe the expense and business purpose.'}
                                 />
                             </div>
+
+                            {submitError && <p role="alert" className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{submitError}</p>}
 
                             <div className="pt-4 flex gap-3">
                                 <button
@@ -345,10 +441,10 @@ export default function MyRequestsPage() {
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={submitting}
+                                    disabled={submitting || (formData.type === 'overtime' && !formData.confirmedNotInTimesheet)}
                                     className="payroll-button-primary flex-1"
                                 >
-                                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit Request'}
+                                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : formData.type === 'overtime' ? 'Submit overtime' : 'Submit request'}
                                 </button>
                             </div>
                         </form>

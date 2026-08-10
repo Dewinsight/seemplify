@@ -120,6 +120,45 @@ test('configures an existing IDP member without creating a second employee', asy
   expect(logged.some((entry) => entry.method === 'POST' && entry.path === '/payroll/profiles')).toBe(false);
 });
 
+test('captures off-system overtime with business context before payroll approval', async ({ page, request }) => {
+  await page.goto('/requests');
+  await dismissPageGuide(page);
+
+  await expect(page.getByRole('heading', { name: 'My Requests' })).toBeVisible();
+  await page.getByRole('button', { name: 'New Request' }).click();
+  await page.getByLabel('Work activity').selectOption('field_sales');
+  await page.getByLabel('Date').fill('2026-08-10');
+  await page.getByLabel('Started').fill('17:00');
+  await page.getByLabel('Ended').fill('19:00');
+  await expect(page.getByLabel('Payable hours')).toHaveValue('2');
+  await page.getByLabel('Client or project').fill('Northwest field-sales visit');
+  await page.getByLabel('Work location').fill('Manchester customer site');
+  await page.getByLabel('Supporting reference').fill('CRM-ACTIVITY-421');
+  await page.getByPlaceholder(/Describe the meeting, field activity/).fill('Customer renewal meeting completed after normal working hours.');
+  await page.getByLabel(/I confirm these hours are not already included/).check();
+  await page.getByRole('button', { name: 'Submit overtime' }).click();
+
+  await expect(page.getByText('2h @ 1.5x')).toBeVisible();
+  await expect(page.getByText(/Field sales · Northwest field-sales visit/)).toBeVisible();
+
+  const logged = await requests(request);
+  const create = logged.find((entry) => entry.method === 'POST' && entry.path === '/compensation/request');
+  expect(create?.body).toMatchObject({
+    userId: 'owner-e2e',
+    type: 'overtime',
+    overtimeHours: '2',
+    overtimeMultiplier: '1.5',
+    overtimeContext: {
+      captureMethod: 'manual_external_work',
+      activityType: 'field_sales',
+      workLocation: 'Manchester customer site',
+      clientOrProject: 'Northwest field-sales visit',
+      evidenceReference: 'CRM-ACTIVITY-421',
+      confirmedNotInTimesheet: true,
+    },
+  });
+});
+
 test('runs Nigeria and UK payroll separately and blocks preview finalization', async ({ page, request }, testInfo) => {
   await page.goto('/admin/run');
   await dismissPageGuide(page);

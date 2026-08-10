@@ -46,6 +46,32 @@ const CompensationRequestSchema = new Schema({
   // Overtime-specific fields
   overtimeHours: { type: Number, min: 0 },
   overtimeMultiplier: { type: Number, min: 0, default: 1.5 },
+  overtimeContext: {
+    captureMethod: {
+      type: String,
+      enum: ['timesheet', 'manual_external_work', 'legacy_manual'],
+      default: 'legacy_manual',
+    },
+    activityType: {
+      type: String,
+      enum: [
+        'external_meeting',
+        'field_sales',
+        'client_site',
+        'travel',
+        'event_support',
+        'after_hours_support',
+        'weekend_work',
+        'other',
+      ],
+    },
+    startedAt: Date,
+    endedAt: Date,
+    workLocation: { type: String, maxlength: 200 },
+    clientOrProject: { type: String, maxlength: 200 },
+    evidenceReference: { type: String, maxlength: 500 },
+    confirmedNotInTimesheet: { type: Boolean, default: false },
+  },
 
   reason: String,
   effectiveDate: { type: Date, required: true },

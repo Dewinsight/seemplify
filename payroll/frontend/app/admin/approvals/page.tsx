@@ -15,6 +15,16 @@ interface ApprovalRequest {
     currency?: string;
     overtimeHours?: number;
     overtimeMultiplier?: number;
+    overtimeContext?: {
+        captureMethod?: string;
+        activityType?: string;
+        startedAt?: string;
+        endedAt?: string;
+        workLocation?: string;
+        clientOrProject?: string;
+        evidenceReference?: string;
+        confirmedNotInTimesheet?: boolean;
+    };
     reason: string;
     status: string;
     createdAt: string;
@@ -26,6 +36,17 @@ interface ApprovalRequest {
         approvedAt: string;
     }>;
 }
+
+const overtimeActivityLabels: Record<string, string> = {
+    external_meeting: 'External meeting',
+    field_sales: 'Field sales',
+    client_site: 'Client-site work',
+    travel: 'Work-related travel',
+    event_support: 'Event support',
+    after_hours_support: 'After-hours support',
+    weekend_work: 'Weekend work',
+    other: 'Other off-system work',
+};
 
 const getTypeIcon = (type: string) => {
     switch (type) {
@@ -220,6 +241,16 @@ export default function ApprovalsPage() {
                                                 Requested by <span className="text-zinc-300">{request.userName || 'Unknown'}</span>
                                             </p>
                                             <p className="text-zinc-500 text-sm mt-1">{request.reason}</p>
+                                            {request.type === 'overtime' && request.overtimeContext?.captureMethod === 'manual_external_work' && (
+                                                <dl className="mt-3 grid gap-x-6 gap-y-2 border-t border-zinc-800 pt-3 text-xs sm:grid-cols-2">
+                                                    <div><dt className="text-zinc-500">Activity</dt><dd className="mt-0.5 text-zinc-300">{overtimeActivityLabels[request.overtimeContext.activityType || ''] || 'Off-system work'}</dd></div>
+                                                    <div><dt className="text-zinc-500">Time</dt><dd className="mt-0.5 text-zinc-300">{request.overtimeContext.startedAt && request.overtimeContext.endedAt ? `${new Date(request.overtimeContext.startedAt).toLocaleString()} – ${new Date(request.overtimeContext.endedAt).toLocaleTimeString()}` : 'Not supplied'}</dd></div>
+                                                    {request.overtimeContext.clientOrProject && <div><dt className="text-zinc-500">Client / project</dt><dd className="mt-0.5 text-zinc-300">{request.overtimeContext.clientOrProject}</dd></div>}
+                                                    {request.overtimeContext.workLocation && <div><dt className="text-zinc-500">Location</dt><dd className="mt-0.5 text-zinc-300">{request.overtimeContext.workLocation}</dd></div>}
+                                                    {request.overtimeContext.evidenceReference && <div className="sm:col-span-2"><dt className="text-zinc-500">Supporting reference</dt><dd className="mt-0.5 break-words text-zinc-300">{request.overtimeContext.evidenceReference}</dd></div>}
+                                                    <div className="sm:col-span-2"><dt className="text-zinc-500">Timesheet check</dt><dd className="mt-0.5 text-zinc-300">{request.overtimeContext.confirmedNotInTimesheet ? 'Employee confirmed these hours are not already in an approved timesheet.' : 'Confirmation missing—verify before approval.'}</dd></div>
+                                                </dl>
+                                            )}
                                             <p className="text-zinc-500 text-xs mt-2">
                                                 {new Date(request.createdAt).toLocaleDateString('en-US', {
                                                     year: 'numeric',

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const CompensationRequest = require('../models/CompensationRequest');
+const { normalizeManualOvertimeCapture } = require('../services/overtimeCaptureService');
 const PayrollProfile = require('../models/PayrollProfile');
 
 // RBAC
@@ -109,6 +110,7 @@ router.post('/request', requireAuth, async (req, res) => {
       taxable,
       overtimeHours,
       overtimeMultiplier,
+      overtimeContext,
       reason,
       effectiveDate,
       okrId,
@@ -139,6 +141,17 @@ router.post('/request', requireAuth, async (req, res) => {
 
     const defaultTaxable = type === 'reimbursement' ? false : true;
 
+    const normalizedOvertime = type === 'overtime'
+      ? normalizeManualOvertimeCapture({
+        overtimeHours,
+        overtimeMultiplier,
+        amount,
+        reason,
+        effectiveDate,
+        overtimeContext,
+      })
+      : null;
+
     const request = new CompensationRequest({
       type,
       userId,
@@ -150,10 +163,11 @@ router.post('/request', requireAuth, async (req, res) => {
       amount: amount !== undefined && amount !== null && amount !== '' ? Number(amount) : undefined,
       currency: finalCurrency,
       taxable: taxable !== undefined ? !!taxable : defaultTaxable,
-      overtimeHours: overtimeHours !== undefined && overtimeHours !== null && overtimeHours !== '' ? Number(overtimeHours) : undefined,
-      overtimeMultiplier: overtimeMultiplier !== undefined && overtimeMultiplier !== null && overtimeMultiplier !== '' ? Number(overtimeMultiplier) : undefined,
-      reason: reason || '',
-      effectiveDate: new Date(effectiveDate),
+      overtimeHours: normalizedOvertime?.overtimeHours,
+      overtimeMultiplier: normalizedOvertime?.overtimeMultiplier,
+      overtimeContext: normalizedOvertime?.overtimeContext,
+      reason: normalizedOvertime?.reason || reason || '',
+      effectiveDate: normalizedOvertime?.effectiveDate || new Date(effectiveDate),
       okrReference: okrId ? { okrId, score: okrScore } : undefined,
       metadata,
       status: 'pending',
@@ -164,7 +178,10 @@ router.post('/request', requireAuth, async (req, res) => {
     res.status(201).json(request);
   } catch (err) {
     console.error('Create Compensation Request Error:', err);
-    res.status(500).json({ error: 'Failed to create request' });
+    res.status(err.statusCode || 500).json({
+      error: err.statusCode ? err.message : 'Failed to create request',
+      code: err.code,
+    });
   }
 });
 

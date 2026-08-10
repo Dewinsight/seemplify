@@ -2,6 +2,7 @@ import http from 'node:http';
 
 const port = 5006;
 const requests = [];
+const compensationRequests = [];
 
 const readiness = (mode, issues) => ({
   payrollRunnable: mode === 'runnable',
@@ -249,6 +250,7 @@ const server = http.createServer(async (request, response) => {
   if (path === '/__e2e__/requests') {
     if (request.method === 'DELETE') {
       requests.splice(0, requests.length);
+      compensationRequests.splice(0, compensationRequests.length);
       entities.splice(2);
       for (const key of Object.keys(profiles)) delete profiles[key];
       Object.assign(profiles, structuredClone(baselineProfiles));
@@ -319,6 +321,22 @@ const server = http.createServer(async (request, response) => {
   }
   if (path === '/payroll/profiles' && request.method === 'GET') {
     return json(response, 200, { profiles: Object.values(profiles), total: Object.keys(profiles).length });
+  }
+  if (path === '/compensation/team' && request.method === 'GET') {
+    return json(response, 200, compensationRequests);
+  }
+  if (path === '/compensation/request' && request.method === 'POST') {
+    const record = {
+      _id: `compensation-${compensationRequests.length + 1}`,
+      ...body,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    compensationRequests.push(record);
+    return json(response, 201, record);
+  }
+  if (path === '/compensation/approvals' && request.method === 'GET') {
+    return json(response, 200, compensationRequests);
   }
   if (path === '/payroll/profiles/sync-from-idp' && request.method === 'POST') {
     const member = idpMembers.find((row) => row.sub === body?.userId || row.id === body?.userId);
