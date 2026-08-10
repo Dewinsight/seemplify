@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAdmin } from '@/context/AdminContext';
+import { BrandedLoadingScreen } from '@/components/BrandedLoadingScreen';
+import { ShieldCheck } from 'lucide-react';
 
 interface AdminProtectedRouteProps {
   children: ReactNode;
@@ -50,9 +52,10 @@ export default function AdminProtectedRoute({ children }: AdminProtectedRoutePro
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <div className="text-white">Loading...</div>
-      </div>
+      <BrandedLoadingScreen
+        message="Loading Recruiter administration…"
+        stages={[{ label: 'Checking administrator access', icon: ShieldCheck }]}
+      />
     );
   }
 

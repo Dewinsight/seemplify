@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { getIdpBaseUrl } from '@/utils/env';
 import { Building2, ExternalLink, LogOut, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { BrandedLoadingScreen } from '@/components/BrandedLoadingScreen';
 
 export default function OrganizationSetupPage() {
   const { currentOrganization, isLoading, organizations } = useOrganization();
@@ -40,12 +41,11 @@ export default function OrganizationSetupPage() {
   
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-300">Loading...</p>
-        </div>
-      </div>
+      <BrandedLoadingScreen
+        inAppShell
+        message="Checking whether your Recruiter workspace is ready…"
+        stages={[{ label: 'Loading organization setup', icon: Building2 }]}
+      />
     );
   }
 

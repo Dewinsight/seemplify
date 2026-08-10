@@ -4,6 +4,8 @@ import React, { ReactNode } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { BrandedLoadingScreen } from '@/components/BrandedLoadingScreen';
+import { ShieldCheck } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -47,8 +49,12 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps): React.ReactElement |
   }, [isAuthenticated, isLoading, pathname, router]);
 
   if (isLoading) {
-    // You can return a loading spinner or a similar component here
-    return <div>Loading...</div>;
+    return (
+      <BrandedLoadingScreen
+        message="Loading your secure Recruiter session…"
+        stages={[{ label: 'Checking your session', icon: ShieldCheck }]}
+      />
+    );
   }
 
   const isAuthPage = pathname === '/login' || pathname === '/signup';

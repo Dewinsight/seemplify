@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils"
 import { Loader2, Users, Briefcase, Settings, Upload } from "lucide-react"
 import { Skeleton } from "./skeleton"
+import { BrandedLoadingScreen } from "@/components/BrandedLoadingScreen"
 
 // Basic spinner component
 export function Spinner({ className, size = "default" }: { 
@@ -54,29 +55,20 @@ export function PageLoader({
 }) {
   const getIcon = () => {
     switch (variant) {
-      case "candidates": return <Users className="h-12 w-12 text-blue-500 dark:text-blue-400" />
-      case "jobs": return <Briefcase className="h-12 w-12 text-blue-500 dark:text-blue-400" />
-      case "settings": return <Settings className="h-12 w-12 text-blue-500 dark:text-blue-400" />
-      case "upload": return <Upload className="h-12 w-12 text-blue-500 dark:text-blue-400" />
-      default: return <Loader2 className="h-12 w-12 text-blue-500 dark:text-blue-400 animate-spin" />
+      case "candidates": return Users
+      case "jobs": return Briefcase
+      case "settings": return Settings
+      case "upload": return Upload
+      default: return Loader2
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50/30 dark:from-gray-950 dark:via-gray-900 dark:to-blue-950/30 flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center mx-auto mb-6 shadow-lg">
-          {getIcon()}
-        </div>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">{message}</h2>
-        <p className="text-gray-600 dark:text-gray-400">Please wait while we load your content</p>
-        <div className="mt-4">
-          <div className="w-48 h-1 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full animate-pulse"></div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <BrandedLoadingScreen
+      inAppShell
+      message="Please wait while Recruiter prepares this page."
+      stages={[{ label: message.replace(/\.+$/, ''), icon: getIcon() }]}
+    />
   )
 }
 

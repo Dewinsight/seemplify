@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Building, ArrowRight, Loader2, Sparkles, Users, Zap, Shield } from "lucide-react";
+import { CheckCircle2, Building, ArrowRight, Sparkles, Users, Zap, Shield, ShieldCheck } from "lucide-react";
 import { motion } from "framer-motion";
+import { BrandedLoadingScreen } from '@/components/BrandedLoadingScreen';
 
 export default function SignupSuccessPage() {
   const router = useRouter();
@@ -42,7 +43,7 @@ export default function SignupSuccessPage() {
       // Consider valid if either:
       // 1. We have the signupSuccess flag from the signup flow OR
       // 2. We have auth tokens AND we're coming directly from the signup page
-      const isValid = (
+      const isValid = Boolean(
         (signupSuccess === 'true' && hasJwtToken) || 
         (hasJwtToken && document.referrer.includes('/signup'))
       );
@@ -138,27 +139,10 @@ export default function SignupSuccessPage() {
   if ((isValidSignupSuccess === null && isLoading) || 
       (isValidSignupSuccess !== false && isLoading)) {
     return (
-      <div className="h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden flex items-center justify-center">
-        <div 
-          className="absolute inset-0 opacity-30"
-          style={{
-            background: `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.15), transparent 40%)`
-          }}
-        />
-        <div className="relative z-10 text-center">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5 }}
-          >
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Loader2 className="h-10 w-10 animate-spin text-white" />
-            </div>
-            <p className="text-xl text-white font-medium">Loading your account...</p>
-            <p className="mt-2 text-sm text-gray-300">Please wait while we prepare your success page</p>
-          </motion.div>
-        </div>
-      </div>
+      <BrandedLoadingScreen
+        message="Preparing your new Recruiter account…"
+        stages={[{ label: 'Verifying account setup', icon: ShieldCheck }]}
+      />
     );
   }
   
@@ -166,27 +150,10 @@ export default function SignupSuccessPage() {
   if (isValidSignupSuccess === false && !isLoading) {
     // Let the redirect effect handle this
     return (
-      <div className="h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden flex items-center justify-center">
-        <div 
-          className="absolute inset-0 opacity-30"
-          style={{
-            background: `radial-gradient(600px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(59, 130, 246, 0.15), transparent 40%)`
-          }}
-        />
-        <div className="relative z-10 text-center">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5 }}
-          >
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Loader2 className="h-10 w-10 animate-spin text-white" />
-            </div>
-            <p className="text-xl text-white font-medium">Redirecting...</p>
-            <p className="mt-2 text-sm text-gray-300">Taking you to login page</p>
-          </motion.div>
-        </div>
-      </div>
+      <BrandedLoadingScreen
+        message="Taking you to the secure sign-in page…"
+        stages={[{ label: 'Redirecting to sign in', icon: ShieldCheck }]}
+      />
     );
   }
   
