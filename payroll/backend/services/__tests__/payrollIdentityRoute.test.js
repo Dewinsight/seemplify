@@ -153,4 +153,33 @@ describe('payroll identity ownership routes', () => {
     });
     expect(payload.profile.employeeInfo.name).not.toBe('Forged Browser Name');
   });
+
+  test('uses the live IDP host for roster sync when production has no explicit issuer environment', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const environmentKeys = ['IDP_URL', 'IDP_ISSUER_URL', 'OIDC_ISSUER_URL', 'OIDC_ISSUER'];
+    const originalEnvironment = Object.fromEntries(environmentKeys.map((key) => [key, process.env[key]]));
+    process.env.NODE_ENV = 'production';
+    environmentKeys.forEach((key) => delete process.env[key]);
+    axios.get.mockResolvedValueOnce({
+      data: { organizationId: 'org-idp', members: [] },
+    });
+
+    try {
+      const response = await fetch(`${baseUrl}/api/payroll/idp/members`);
+
+      expect(response.status).toBe(200);
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://auth.seemplifyai.com/api/organizations/org-idp/members',
+        expect.objectContaining({
+          headers: { Authorization: 'Bearer verified-session-token' },
+        })
+      );
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+      environmentKeys.forEach((key) => {
+        if (originalEnvironment[key] === undefined) delete process.env[key];
+        else process.env[key] = originalEnvironment[key];
+      });
+    }
+  });
 });

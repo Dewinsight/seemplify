@@ -17,6 +17,7 @@ const employerEntityService = require('../services/PayrollEmployerEntityService'
 const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
 const { createPayslipPdf } = require('../services/payslipPdfService');
 const { hasPayConfiguration } = require('../services/contractPayService');
+const { getIdentityProviderIssuerUrl } = require('../config/identityProvider');
 const payrollEngineService = new PayrollEngineService();
 const PAY_FREQUENCIES = new Set(['monthly', 'semi-monthly', 'bi-weekly', 'weekly']);
 
@@ -133,12 +134,10 @@ function requireOrganizationAdminOnly(req, res, next) {
   });
 }
 
-const getIdpBaseUrl = () =>
-  process.env.IDP_URL ||
-  process.env.IDP_ISSUER_URL ||
-  process.env.OIDC_ISSUER_URL ||
-  process.env.OIDC_ISSUER ||
-  'http://localhost:4000';
+// Use the same production-safe issuer resolution as OIDC itself. Falling back
+// independently here previously sent roster/payroll-sync calls to localhost
+// inside the production container even though login used the live IDP.
+const getIdpBaseUrl = () => getIdentityProviderIssuerUrl('http://localhost:4000').replace(/\/$/, '');
 
 function getBearerAccessToken(req) {
   const authHeader = String(req.headers?.authorization || '').trim();
