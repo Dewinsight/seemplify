@@ -44,8 +44,6 @@ export function resolveWebhookSecret(source = process.env) {
   return value || INSECURE_WEBHOOK_SECRET
 }
 
-const WEBHOOK_SECRET = resolveWebhookSecret()
-
 export function resolveWebhookSecretForTarget(targetName, source = process.env) {
   const environmentName = WEBHOOK_TARGET_SECRET_ENV[targetName]
   const explicit = String(environmentName ? source[environmentName] || '' : '').trim()
@@ -96,14 +94,14 @@ export function createWebhookPayload(event, data) {
 /**
  * Generate HMAC signature for webhook payload
  */
-function generateSignature(payload, secret = WEBHOOK_SECRET) {
-  const hmac = crypto.createHmac('sha256', secret)
+function generateSignature(payload, secret) {
+  const hmac = crypto.createHmac('sha256', secret || resolveWebhookSecret())
   hmac.update(JSON.stringify(payload))
   return hmac.digest('hex')
 }
 
-function generateDeliverySignature(payload, deliveryTimestamp, secret = WEBHOOK_SECRET) {
-  return crypto.createHmac('sha256', secret)
+function generateDeliverySignature(payload, deliveryTimestamp, secret) {
+  return crypto.createHmac('sha256', secret || resolveWebhookSecret())
     .update(`${deliveryTimestamp}\n${JSON.stringify(payload)}`)
     .digest('hex')
 }
