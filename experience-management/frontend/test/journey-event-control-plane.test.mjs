@@ -21,9 +21,9 @@ const backendRoot = path.resolve(root, '..', '..', 'backend', 'src');
 const backendRoutes = fs.readFileSync(path.join(backendRoot, 'journeyEventControlPlaneRoutes.ts'), 'utf8');
 const backendRepository = fs.readFileSync(path.join(backendRoot, 'journeyEventControlPlaneRepository.ts'), 'utf8');
 
-test('the developer workspace is routed and hidden behind journeyConnected', () => {
-  assert.match(app, /path="\/settings\/developer"[^\n]*<JourneyEventSourcesPage/u);
-  assert.match(shell, /to: '\/settings\/developer'[^}]*feature: 'journeyConnected'/u);
+test('the developer workspace remains implemented but is not published', () => {
+  assert.doesNotMatch(app, /path="\/settings\/developer"/u);
+  assert.doesNotMatch(shell, /to: '\/settings\/developer'/u);
   assert.match(page, /useSessionFeature\('journeyConnected'\)/u);
   assert.match(page, /if \(!connectedJourneysEnabled\) return null/u);
   assert.match(page, /if \(!connectedJourneysEnabled\) return;[\s\S]*void load\(\)/u);

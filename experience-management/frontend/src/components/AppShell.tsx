@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { BarChart3, BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Code2, Cpu, FileCheck2, FileSearch, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, UsersRound, X } from 'lucide-react';
+import { BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Cpu, FileCheck2, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Settings2, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { Link, Navigate, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
@@ -29,14 +29,8 @@ const navigation: Array<{ to: string; label: string; icon: typeof Gauge; end?: b
   { to: '/intelligence', label: 'Intelligence', icon: BrainCircuit, feature: 'terra' },
   { to: '/assistant', label: 'Personal assistant', icon: MailCheck, feature: 'terra' },
   { to: '/knowledge-bases', label: 'Knowledge bases', icon: BookOpenText, feature: 'knowledgeBases' },
-  { to: '/journey-maps', label: 'Journey maps', icon: Route, feature: 'journeyDesign' },
-  { to: '/journey-personas', label: 'Personas', icon: UsersRound, feature: 'journeyPersonas' },
-  { to: '/journey-research', label: 'Journey research', icon: FileSearch, feature: 'journeyEvidence' },
-  { to: '/journey-metrics', label: 'Journey metrics', icon: BarChart3, feature: 'journeyMetrics' },
-  { to: '/journeys', label: 'Journey maps (classic)', icon: Route, feature: 'terra' },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles, feature: 'terra' },
   { to: '/tickets', label: 'Service recovery', icon: Inbox, feature: 'serviceRecovery' },
-  { to: '/settings/developer', label: 'Developer', icon: Code2, feature: 'journeyConnected' },
   { to: '/settings/space', label: 'Space settings', icon: Settings2 }
 ];
 

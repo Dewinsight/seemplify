@@ -10,9 +10,9 @@ const shell = read('components', 'AppShell.tsx');
 const page = read('pages', 'JourneyResearchHubPage.tsx');
 const client = read('lib', 'journeyResearch.ts');
 
-test('the Research Hub is routed and disappears when journey evidence is disabled', () => {
-  assert.match(app, /path="\/journey-research"[^\n]*<JourneyResearchHubPage/u);
-  assert.match(shell, /to: '\/journey-research'[^}]*feature: 'journeyEvidence'/u);
+test('the Research Hub remains implemented but is not published', () => {
+  assert.doesNotMatch(app, /path="\/journey-research"/u);
+  assert.doesNotMatch(shell, /to: '\/journey-research'/u);
   assert.match(page, /useSessionFeature\('journeyEvidence'\)/u);
   assert.match(page, /if \(!enabled\) return null/u);
 });

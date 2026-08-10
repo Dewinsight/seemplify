@@ -13,14 +13,13 @@ const cardSurface = fs.readFileSync(path.join(frontend, 'components', 'journeys'
 const comparisonLogic = fs.readFileSync(path.join(frontend, 'lib', 'journeyMapComparison.ts'), 'utf8');
 const templateEditor = fs.readFileSync(path.join(frontend, 'components', 'journeys', 'JourneyTemplateContentEditor.tsx'), 'utf8');
 
-test('the journey workspace is registered behind its own plan feature', () => {
+test('the journey workspace remains implemented but is not published', () => {
   const app = fs.readFileSync(path.join(frontend, 'App.tsx'), 'utf8');
   const shell = fs.readFileSync(path.join(frontend, 'components', 'AppShell.tsx'), 'utf8');
-  assert.match(app, /path="\/journey-maps"/);
-  assert.match(app, /JourneyMapsPage/);
-  // Journey design must not inherit the AI-runtime feature: a space with AI
-  // switched off still owns its maps.
-  assert.match(shell, /to: '\/journey-maps'[^}]*feature: 'journeyDesign'/);
+  assert.doesNotMatch(app, /path="\/journey-maps"/);
+  assert.doesNotMatch(app, /JourneyMapsPage/);
+  assert.doesNotMatch(shell, /to: '\/journey-maps'/);
+  assert.ok(fs.existsSync(path.join(frontend, 'pages', 'JourneyMapsPage.tsx')));
 });
 
 test('every evidence state is presented with an explanation rather than a bare verdict', () => {

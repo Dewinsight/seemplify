@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from 'react';
-import { Activity, ArrowLeft, BarChart3, BookCopy, Building2, ClipboardCheck, CreditCard, FileClock, LayoutDashboard, ListTodo, LogOut, Mail, Menu, Package, Shield, ShieldCheck, SlidersHorizontal, Users, X, type LucideIcon } from 'lucide-react';
+import { Activity, ArrowLeft, BarChart3, Building2, ClipboardCheck, CreditCard, FileClock, LayoutDashboard, ListTodo, LogOut, Mail, Menu, Package, Shield, ShieldCheck, SlidersHorizontal, Users, X, type LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
@@ -26,7 +26,6 @@ const navigation: Array<{ to: string; label: string; icon: LucideIcon; end: bool
   { to: '/admin/activity', label: 'Activity', icon: Activity, end: false, capability: 'activity.read' },
   { to: '/admin/ai-defaults', label: 'AI defaults', icon: SlidersHorizontal, end: false, capability: 'ai_defaults.read' },
   { to: '/admin/email-delivery', label: 'Email delivery', icon: Mail, end: false, capability: 'audit.read' },
-  { to: '/admin/journey-templates', label: 'Journey templates', icon: BookCopy, end: false, capability: 'journey_templates.read' },
   { to: '/admin/audit', label: 'Audit log', icon: FileClock, end: false, capability: 'audit.read' }
 ];
 
@@ -145,8 +144,6 @@ export function PlatformAdminShell({ children }: { children: ReactNode }) {
                 ? 'ai_defaults.read'
               : location.pathname.startsWith('/admin/email-delivery')
                 ? 'audit.read'
-              : location.pathname.startsWith('/admin/journey-templates')
-                ? 'journey_templates.read'
           : location.pathname.startsWith('/admin/audit')
             ? 'audit.read'
             : null;

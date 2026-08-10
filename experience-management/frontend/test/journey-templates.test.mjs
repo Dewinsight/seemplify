@@ -88,14 +88,14 @@ test('authoring validates stable stage keys, unique lanes, and accessible struct
   assert.match(editor, /Service-blueprint lane only/u);
 });
 
-test('platform administration registers capability-scoped system template governance', () => {
+test('platform Journey templates remain implemented but are not published', () => {
   const app = read('App.tsx');
   const shell = read('components', 'platform-admin', 'PlatformAdminShell.tsx');
   const types = read('pages', 'platform-admin', 'types.ts');
   const page = read('pages', 'platform-admin', 'JourneyTemplatesPage.tsx');
-  assert.match(app, /path="\/admin\/journey-templates"/u);
-  assert.match(shell, /to: '\/admin\/journey-templates'/u);
-  assert.match(shell, /capability: 'journey_templates\.read'/u);
+  assert.doesNotMatch(app, /path="\/admin\/journey-templates"/u);
+  assert.doesNotMatch(shell, /to: '\/admin\/journey-templates'/u);
+  assert.doesNotMatch(shell, /capability: 'journey_templates\.read'/u);
   assert.match(types, /'journey_templates\.manage'/u);
   assert.match(page, /platformAdminHasPermission\(access, 'journey_templates\.manage'\)/u);
   assert.match(page, /scope="system"/u);
