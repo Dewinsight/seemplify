@@ -116,6 +116,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const setViewMode = (mode: PayrollViewMode) => {
     if (!isHRAdmin) return;
 
+    setOpenDropdown(null);
+    setOrgMenuOpen(false);
+    setUserMenuOpen(false);
     setViewModeState(mode);
 
     if (typeof window !== 'undefined') {
@@ -299,7 +302,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           return (
                             <div key={dropdown.name} className="relative">
                               <button
-                                onClick={() => setOpenDropdown(isOpen ? null : dropdown.name)}
+                                onClick={() => {
+                                  setOrgMenuOpen(false);
+                                  setUserMenuOpen(false);
+                                  setOpenDropdown(isOpen ? null : dropdown.name);
+                                }}
                                 className={cn(
                                   'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
                                   isActive || isOpen
@@ -317,7 +324,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                               {isOpen && (
                                 <>
                                   <div
-                                    className="fixed inset-0 z-40"
+                                    className="fixed inset-x-0 bottom-0 top-16 z-40"
                                     onClick={() => setOpenDropdown(null)}
                                   />
                                   <div className="payroll-popover absolute left-0 top-11 z-50 w-52">
@@ -399,7 +406,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     {showOrgSwitcher && (
                       <div className="hidden md:block relative">
                         <button
-                          onClick={() => setOrgMenuOpen(!orgMenuOpen)}
+                          onClick={() => {
+                            setOpenDropdown(null);
+                            setUserMenuOpen(false);
+                            setOrgMenuOpen(!orgMenuOpen);
+                          }}
                           className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800/70 transition-colors"
                         >
                           <Building2 className="h-4 w-4" />
@@ -409,7 +420,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         {orgMenuOpen && (
                           <>
                             <div
-                              className="fixed inset-0 z-40"
+                              className="fixed inset-x-0 bottom-0 top-16 z-40"
                               onClick={() => setOrgMenuOpen(false)}
                             />
                             <div className="payroll-popover absolute right-0 top-12 z-50 w-64">
@@ -437,10 +448,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
                     <div className="relative">
                       <button
-                        onClick={() => setUserMenuOpen(!userMenuOpen)}
+                        onClick={() => {
+                          setOpenDropdown(null);
+                          setOrgMenuOpen(false);
+                          setUserMenuOpen(!userMenuOpen);
+                        }}
                         className="flex items-center gap-2 rounded-lg hover:bg-zinc-800/50 p-2 transition-colors"
                       >
-                        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-500 flex items-center justify-center ring-2 ring-zinc-800">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-600 ring-2 ring-zinc-800">
                           <span className="text-sm font-semibold text-white">{userName.charAt(0)}</span>
                         </div>
                         <div className="hidden lg:block text-left">
@@ -452,7 +467,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       {userMenuOpen && (
                         <>
                           <div
-                            className="fixed inset-0 z-40"
+                            className="fixed inset-x-0 bottom-0 top-16 z-40"
                             onClick={() => setUserMenuOpen(false)}
                           />
                           <div className="payroll-popover absolute right-0 top-14 z-50 w-56">

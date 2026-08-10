@@ -1,30 +1,27 @@
 const PDFDocument = require('pdfkit');
 
 const COLORS = {
-  page: '#f4f4f5',
-  ink: '#111827',
-  text: '#374151',
-  muted: '#6b7280',
-  line: '#e5e7eb',
-  panel: '#ffffff',
-  panelAlt: '#f8fafc',
-  hero: '#18181b',
-  heroSoft: '#27272a',
-  brand: '#f59e0b',
-  brandSoft: '#fef3c7',
-  success: '#059669',
-  successSoft: '#d1fae5',
-  danger: '#dc2626',
-  dangerSoft: '#fee2e2',
-  info: '#0369a1',
-  infoSoft: '#e0f2fe',
-  purple: '#7c3aed',
-  purpleSoft: '#ede9fe',
+  brand: '#d97706',
+  brandSoft: '#fff7ed',
+  ink: '#172033',
+  text: '#344054',
+  muted: '#667085',
+  faint: '#98a2b3',
+  line: '#d0d5dd',
+  lineSoft: '#e4e7ec',
+  surface: '#f8fafc',
+  white: '#ffffff',
+  success: '#067647',
+  successSoft: '#ecfdf3',
+  danger: '#b42318',
 };
 
-const PAGE = {
-  margin: 40,
-  footerReserve: 36,
+const LAYOUT = {
+  margin: 36,
+  contentWidth: 523.28,
+  footerY: 808,
+  mainItemLimit: 8,
+  detailPageItemLimit: 18,
 };
 
 function pickFirst(source, candidates = []) {
@@ -37,28 +34,43 @@ function pickFirst(source, candidates = []) {
       return value;
     }
   }
-
   return '';
 }
 
 function safeText(value, fallback = 'N/A') {
-  const text = String(value || '').trim();
+  if (value === undefined || value === null) return fallback;
+  const text = String(value).trim();
   return text || fallback;
 }
 
-function formatMoney(currency, amount) {
-  const numericAmount = Number(amount || 0);
-  const code = String(currency || 'USD').trim().toUpperCase() || 'USD';
+function toAmount(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
 
+function sumAmounts(rows = []) {
+  return rows.reduce((total, row) => total + toAmount(row.amount), 0);
+}
+
+function summaryOrLineTotal(summaryValue, rows = []) {
+  const summary = Number(summaryValue);
+  const lineTotal = sumAmounts(rows);
+  if (Number.isFinite(summary) && (summary !== 0 || lineTotal === 0)) return summary;
+  return lineTotal;
+}
+
+function formatMoney(currency, amount) {
+  const code = safeText(currency, 'USD').toUpperCase().slice(0, 3);
   try {
     return new Intl.NumberFormat('en-GB', {
       style: 'currency',
       currency: code,
+      currencyDisplay: 'code',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(numericAmount);
-  } catch (error) {
-    return `${code} ${numericAmount.toLocaleString('en-GB', {
+    }).format(toAmount(amount)).replace(/\u00a0/g, ' ');
+  } catch (_error) {
+    return `${code} ${toAmount(amount).toLocaleString('en-GB', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
@@ -73,633 +85,656 @@ function formatDate(value) {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-  }).format(date);
-}
-
-function formatDateTime(value) {
-  if (!value) return 'N/A';
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return 'N/A';
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    timeZone: 'UTC',
   }).format(date);
 }
 
 function humanizeValue(value) {
   return String(value || '')
     .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function getStatusPalette(status) {
-  const normalized = String(status || '').trim().toLowerCase();
-  if (['paid', 'approved', 'exported'].includes(normalized)) {
-    return { fill: COLORS.successSoft, text: COLORS.success };
+function getPeriodLabel(payPeriod = {}) {
+  const year = Number(payPeriod.year);
+  const month = Number(payPeriod.month);
+  if (year && month >= 1 && month <= 12) {
+    return new Intl.DateTimeFormat('en-GB', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(year, month - 1, 1)));
   }
-  if (['disputed', 'cancelled'].includes(normalized)) {
-    return { fill: COLORS.dangerSoft, text: COLORS.danger };
-  }
-  return { fill: COLORS.brandSoft, text: '#92400e' };
-}
-
-function getOrganizationName(organization = {}) {
-  return safeText(organization?.name || organization?.organizationName || organization?.displayName, 'Seemplify');
-}
-
-function getOrganizationId(organization = {}) {
-  return safeText(organization?.id || organization?._id || organization?.organizationId, 'N/A');
+  return `${formatDate(payPeriod.startDate)} - ${formatDate(payPeriod.endDate)}`;
 }
 
 function getOrganizationAddress(organization = {}) {
   const formatted = pickFirst(organization, [
     'address.formatted',
     'registeredAddress.formatted',
+    'companyAddress.formatted',
     'location.formatted',
   ]);
-  if (formatted) return formatted;
+  if (formatted) return safeText(formatted, '');
 
-  const address = pickFirst(organization, ['address', 'registeredAddress', 'location']);
+  const address = pickFirst(organization, ['address', 'registeredAddress', 'companyAddress', 'location']);
   if (address && typeof address === 'object') {
-    const parts = [
+    return [
       address.line1,
       address.line2,
       address.street,
       address.city,
       address.state,
       address.postalCode || address.zipCode,
-      address.country,
-    ].filter((part) => part && String(part).trim());
-
-    if (parts.length > 0) {
-      return parts.join(', ');
-    }
+      address.country || address.countryCode,
+    ].filter((part) => part && String(part).trim()).join(', ');
   }
 
-  return 'N/A';
+  return typeof address === 'string' ? address : '';
 }
 
 function getOrganizationDetails(organization = {}) {
   return {
-    name: getOrganizationName(organization),
-    id: getOrganizationId(organization),
-    email: safeText(pickFirst(organization, ['email', 'contactEmail', 'supportEmail', 'primaryEmail']), 'N/A'),
-    phone: safeText(pickFirst(organization, ['phone', 'phoneNumber', 'contactPhone', 'supportPhone']), 'N/A'),
-    website: safeText(pickFirst(organization, ['website', 'websiteUrl', 'portalUrl', 'domain']), 'N/A'),
-    registration: safeText(pickFirst(organization, ['registrationNumber', 'registrationId', 'companyNumber']), 'N/A'),
-    taxReference: safeText(pickFirst(organization, ['taxId', 'taxNumber', 'tin', 'vatNumber']), 'N/A'),
+    name: safeText(
+      organization.name || organization.organizationName || organization.displayName,
+      'Seemplify'
+    ),
     address: getOrganizationAddress(organization),
+    registration: safeText(pickFirst(organization, [
+      'registrationNumber',
+      'companyRegistrationNumber',
+      'businessRegistrationNumber',
+      'registrationId',
+      'companyNumber',
+    ]), ''),
+    taxReference: safeText(pickFirst(organization, [
+      'taxReference',
+      'taxId',
+      'taxNumber',
+      'tin',
+      'vatNumber',
+      'taxIdentificationNumber',
+      'payrollTaxReference',
+    ]), ''),
+    email: safeText(pickFirst(organization, ['email', 'contactEmail', 'supportEmail', 'primaryEmail']), ''),
+    phone: safeText(pickFirst(organization, ['phone', 'phoneNumber', 'contactPhone', 'supportPhone']), ''),
   };
 }
 
 function getAccountPreview(bankAccount = {}) {
-  const accountNumber = String(bankAccount?.accountNumber || '').trim();
-  if (!accountNumber) return 'On file';
-  if (accountNumber.includes('*')) return accountNumber;
-  return `****${accountNumber.slice(-4)}`;
+  const raw = safeText(bankAccount.accountNumber, 'On file');
+  if (raw === 'On file' || /[*xX]/.test(raw)) return raw;
+  const compact = raw.replace(/\s/g, '');
+  if (compact.length <= 4) return compact;
+  return `**** ${compact.slice(-4)}`;
 }
 
-function ensureSpace(doc, state, height) {
-  const bottomBoundary = doc.page.height - PAGE.margin - PAGE.footerReserve;
-  if (doc.y + height <= bottomBoundary) return;
-  doc.addPage();
-  state.pageCount += 1;
-  doc.y = PAGE.margin;
+function normalizeRows(items = [], kind) {
+  return (Array.isArray(items) ? items : []).map((item) => {
+    let treatment = '';
+    if (kind === 'earnings') {
+      if (item.cashPayable === false) treatment = 'Non-cash';
+      else treatment = item.taxable === false ? 'Non-taxable' : 'Taxable';
+    } else if (kind === 'deductions') {
+      treatment = item.isPreTax ? 'Pre-tax' : 'Post-tax';
+    } else {
+      treatment = 'Employer paid';
+    }
+
+    return {
+      label: safeText(item.name, humanizeValue(item.type) || 'Payroll item'),
+      category: humanizeValue(item.type) || humanizeValue(kind),
+      treatment,
+      amount: toAmount(item.amount),
+    };
+  });
 }
 
-function drawChip(doc, x, y, text, palette, width = null) {
-  const label = String(text || '').trim();
-  if (!label) return;
+function buildEarningRows(payslip) {
+  const lineRows = normalizeRows(payslip.earnings, 'earnings');
+  if (lineRows.length > 0) return lineRows;
 
-  const chipWidth = width || Math.max(80, doc.widthOfString(label) + 24);
-  doc.save();
-  doc.roundedRect(x, y, chipWidth, 24, 12).fill(palette.fill);
-  doc.restore();
-  doc.fillColor(palette.text).font('Helvetica-Bold').fontSize(9).text(label, x, y + 8, {
-    width: chipWidth,
+  const summary = payslip.earningsSummary || {};
+  const fallbackRows = [
+    ['Basic salary', 'Basic', summary.basicSalary],
+    ['Allowances', 'Allowance', summary.totalAllowances],
+    ['Overtime', 'Overtime', summary.overtimePay],
+    ['Bonuses', 'Bonus', summary.totalBonuses],
+    ['Other earnings', 'Other', summary.otherEarnings],
+    ['Taxable benefits', 'Benefit In Kind', summary.taxableBenefits],
+  ].filter(([, , amount]) => toAmount(amount) !== 0)
+    .map(([label, category, amount]) => ({ label, category, treatment: 'Taxable', amount: toAmount(amount) }));
+
+  if (fallbackRows.length > 0) return fallbackRows;
+  const grossPay = toAmount(summary.grossPay);
+  return grossPay === 0 ? [] : [{ label: 'Gross earnings', category: 'Earnings', treatment: 'Taxable', amount: grossPay }];
+}
+
+function buildDeductionRows(payslip) {
+  const lineRows = normalizeRows(payslip.deductions, 'deductions');
+  if (lineRows.length > 0) return lineRows;
+
+  const summary = payslip.deductionsSummary || {};
+  const taxAmount = toAmount(summary.taxDeductions || payslip.taxBreakdown?.taxAmount);
+  const fallbackRows = [
+    ['Income tax', 'Income Tax', taxAmount],
+    ['Statutory deductions', 'Statutory', summary.statutoryDeductions],
+    ['Voluntary deductions', 'Voluntary', summary.voluntaryDeductions],
+    ['Loan deductions', 'Loan', summary.loanDeductions],
+    ['Other deductions', 'Other', summary.otherDeductions],
+  ].filter(([, , amount]) => toAmount(amount) !== 0)
+    .map(([label, category, amount]) => ({ label, category, treatment: 'Post-tax', amount: toAmount(amount) }));
+
+  if (fallbackRows.length > 0) return fallbackRows;
+  const total = toAmount(summary.totalDeductions);
+  return total === 0 ? [] : [{ label: 'Payroll deductions', category: 'Deduction', treatment: 'Post-tax', amount: total }];
+}
+
+function fitText(doc, value, x, y, width, options = {}) {
+  const text = safeText(value, options.fallback ?? 'N/A');
+  const font = options.font || 'Helvetica';
+  const minimumSize = options.minimumSize || 6.5;
+  let size = options.size || 9;
+
+  doc.font(font);
+  while (size > minimumSize && doc.fontSize(size).widthOfString(text) > width) {
+    size -= 0.25;
+  }
+
+  doc.fillColor(options.color || COLORS.text)
+    .font(font)
+    .fontSize(size)
+    .text(text, x, y, {
+      width,
+      align: options.align || 'left',
+      lineBreak: false,
+    });
+}
+
+function drawStatus(doc, payslip) {
+  const status = humanizeValue(payslip.status || 'issued');
+  const isFinal = ['Paid', 'Approved', 'Exported'].includes(status);
+  const width = Math.max(52, Math.min(92, doc.font('Helvetica-Bold').fontSize(7.5).widthOfString(status) + 22));
+  const x = doc.page.width - LAYOUT.margin - width;
+
+  doc.roundedRect(x, 89, width, 20, 10).fill(isFinal ? COLORS.successSoft : COLORS.brandSoft);
+  fitText(doc, status.toUpperCase(), x + 8, 95, width - 16, {
+    font: 'Helvetica-Bold',
+    size: 7.5,
+    minimumSize: 6,
+    color: isFinal ? COLORS.success : COLORS.brand,
     align: 'center',
   });
 }
 
-function drawSectionHeading(doc, state, title, subtitle = '') {
-  ensureSpace(doc, state, subtitle ? 40 : 26);
-  const y = doc.y;
+function drawHeader(doc, context, continuation = false) {
+  const { org, payslip, periodLabel } = context;
+  const left = LAYOUT.margin;
+  const rightColumnX = 390;
 
-  doc.save();
-  doc.roundedRect(PAGE.margin, y + 2, 4, subtitle ? 28 : 18, 2).fill(COLORS.brand);
-  doc.restore();
+  doc.rect(0, 0, doc.page.width, 6).fill(COLORS.brand);
+  doc.rect(left, 37, 42, 4).fill(COLORS.brand);
 
-  doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(13).text(title, PAGE.margin + 12, y);
-  if (subtitle) {
-    doc.fillColor(COLORS.muted).font('Helvetica').fontSize(9).text(subtitle, PAGE.margin + 12, y + 17);
-  }
-
-  doc.y = y + (subtitle ? 34 : 22);
-}
-
-function drawInfoCard(doc, x, y, width, title, items = []) {
-  const validItems = items.filter((item) => item && item.value !== undefined && item.value !== null);
-  const rowGap = 24;
-  const padding = 14;
-  const bodyHeight = validItems.reduce((sum, item) => {
-    const valueHeight = Math.max(12, doc.heightOfString(String(item.value), { width: width - (padding * 2) }));
-    return sum + 10 + valueHeight + 8;
-  }, 0);
-  const height = Math.max(80, padding + 18 + bodyHeight + 8);
-
-  doc.save();
-  doc.roundedRect(x, y, width, height, 14).fillAndStroke(COLORS.panel, COLORS.line);
-  doc.roundedRect(x, y, 5, height, 14).fill(COLORS.brandSoft);
-  doc.restore();
-
-  doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(11).text(title, x + padding, y + padding, {
-    width: width - (padding * 2),
+  fitText(doc, org.name, left, 49, 320, {
+    font: 'Helvetica-Bold', size: 17, minimumSize: 12, color: COLORS.ink,
   });
 
-  let cursorY = y + padding + 22;
-  validItems.forEach((item, index) => {
-    doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8).text(item.label, x + padding, cursorY, {
-      width: width - (padding * 2),
+  const companyReferences = [
+    org.registration ? `Company no. ${org.registration}` : '',
+    org.taxReference ? `Tax ref. ${org.taxReference}` : '',
+  ].filter(Boolean).join('  |  ');
+  fitText(doc, org.address || [org.email, org.phone].filter(Boolean).join('  |  '), left, 73, 320, {
+    size: 8, minimumSize: 6.5, color: COLORS.muted, fallback: '',
+  });
+  fitText(doc, companyReferences, left, 88, 320, {
+    size: 7.5, minimumSize: 6.5, color: COLORS.faint, fallback: '',
+  });
+
+  fitText(doc, continuation ? 'PAYSLIP DETAILS' : 'PAYSLIP', rightColumnX, 42, 169, {
+    font: 'Helvetica-Bold', size: continuation ? 16 : 22, minimumSize: 13, color: COLORS.ink, align: 'right',
+  });
+  fitText(doc, periodLabel, rightColumnX, 69, 169, {
+    font: 'Helvetica-Bold', size: 9, color: COLORS.text, align: 'right',
+  });
+  fitText(doc, safeText(payslip.payslipNumber), rightColumnX, 82, 169, {
+    size: 8, color: COLORS.muted, align: 'right',
+  });
+
+  if (!continuation) drawStatus(doc, payslip);
+  else {
+    fitText(doc, `${safeText(payslip.employeeSnapshot?.name)}  |  continued`, rightColumnX, 98, 169, {
+      size: 7.5, minimumSize: 6, color: COLORS.faint, align: 'right',
     });
-    doc.fillColor(COLORS.text).font('Helvetica-Bold').fontSize(10).text(String(item.value), x + padding, cursorY + 9, {
-      width: width - (padding * 2),
-    });
-    cursorY = doc.y + (index === validItems.length - 1 ? 0 : 6);
+  }
+
+  doc.moveTo(left, 118).lineTo(doc.page.width - left, 118).lineWidth(0.7).stroke(COLORS.line);
+}
+
+function drawMetaCell(doc, label, value, x, y, width) {
+  fitText(doc, String(label).toUpperCase(), x, y, width, {
+    font: 'Helvetica-Bold', size: 6.8, minimumSize: 6, color: COLORS.muted,
+  });
+  fitText(doc, value, x, y + 13, width, {
+    font: 'Helvetica-Bold', size: 9.5, minimumSize: 7, color: COLORS.ink,
+  });
+}
+
+function drawEmployeePanel(doc, context) {
+  const { payslip } = context;
+  const snapshot = payslip.employeeSnapshot || {};
+  const x = LAYOUT.margin;
+  const y = 134;
+  const width = LAYOUT.contentWidth;
+  const height = 100;
+  const padding = 14;
+  const gap = 12;
+  const cellWidth = (width - (padding * 2) - (gap * 2)) / 3;
+  const periodRange = `${formatDate(payslip.payPeriod?.startDate)} - ${formatDate(payslip.payPeriod?.endDate)}`;
+
+  doc.roundedRect(x, y, width, height, 8).fillAndStroke(COLORS.surface, COLORS.lineSoft);
+
+  const cells = [
+    ['Employee', safeText(snapshot.name)],
+    ['Employee number', safeText(snapshot.employeeId || payslip.userId)],
+    ['Department', safeText(snapshot.department, 'Unassigned')],
+    ['Job title', safeText(snapshot.designation, 'Not specified')],
+    ['Pay period', periodRange],
+    ['Payment date', formatDate(payslip.payPeriod?.paymentDate || payslip.paymentDetails?.paymentDate)],
+  ];
+
+  cells.forEach(([label, value], index) => {
+    const column = index % 3;
+    const row = Math.floor(index / 3);
+    drawMetaCell(doc, label, value, x + padding + (column * (cellWidth + gap)), y + 15 + (row * 42), cellWidth);
+  });
+}
+
+function drawMainTable(doc, config) {
+  const {
+    x, y, width, title, rows, rowCount, totalLabel, totalAmount, currency, remaining,
+  } = config;
+  const headerHeight = 34;
+  const rowHeight = 25;
+  const totalHeight = 34;
+  const height = headerHeight + (rowCount * rowHeight) + totalHeight;
+  const amountWidth = 86;
+
+  doc.roundedRect(x, y, width, height, 8).fillAndStroke(COLORS.white, COLORS.line);
+  doc.save();
+  doc.roundedRect(x, y, width, headerHeight, 8).fill(COLORS.surface);
+  doc.rect(x, y + headerHeight - 8, width, 8).fill(COLORS.surface);
+  doc.restore();
+  doc.rect(x, y, 4, headerHeight).fill(COLORS.brand);
+
+  fitText(doc, title.toUpperCase(), x + 13, y + 11, width - amountWidth - 22, {
+    font: 'Helvetica-Bold', size: 8.5, color: COLORS.ink,
+  });
+  fitText(doc, `AMOUNT (${safeText(currency)})`, x + width - amountWidth - 10, y + 11, amountWidth, {
+    font: 'Helvetica-Bold', size: 7, minimumSize: 6, color: COLORS.muted, align: 'right',
+  });
+
+  for (let index = 0; index < rowCount; index += 1) {
+    const rowY = y + headerHeight + (index * rowHeight);
+    const row = rows[index];
+    if (index > 0) {
+      doc.moveTo(x + 10, rowY).lineTo(x + width - 10, rowY).lineWidth(0.45).stroke(COLORS.lineSoft);
+    }
+
+    if (row) {
+      fitText(doc, row.label, x + 13, rowY + 8, width - amountWidth - 28, {
+        size: 8.2, minimumSize: 6.4, color: COLORS.text,
+      });
+      fitText(doc, formatMoney(currency, row.amount), x + width - amountWidth - 10, rowY + 8, amountWidth, {
+        font: 'Helvetica-Bold', size: 8.2, minimumSize: 6.2, color: COLORS.ink, align: 'right',
+      });
+    } else if (index === 0) {
+      fitText(doc, title === 'Earnings' ? 'No earnings recorded' : 'No deductions recorded', x + 13, rowY + 8, width - 26, {
+        size: 8, color: COLORS.faint,
+      });
+    }
+  }
+
+  const totalY = y + headerHeight + (rowCount * rowHeight);
+  doc.rect(x, totalY, width, totalHeight).fill(COLORS.surface);
+  fitText(doc, remaining > 0 ? `${totalLabel}  (+${remaining} on next page)` : totalLabel, x + 13, totalY + 12, width - amountWidth - 26, {
+    font: 'Helvetica-Bold', size: remaining > 0 ? 6.8 : 7.5, minimumSize: 6, color: COLORS.muted,
+  });
+  fitText(doc, formatMoney(currency, totalAmount), x + width - amountWidth - 10, totalY + 10, amountWidth, {
+    font: 'Helvetica-Bold', size: 9.2, minimumSize: 6.5, color: COLORS.ink, align: 'right',
   });
 
   return height;
 }
 
-function drawSummaryCards(doc, state, metrics = []) {
-  const gap = 14;
-  const width = doc.page.width - (PAGE.margin * 2);
-  const cardWidth = (width - (gap * (metrics.length - 1))) / metrics.length;
-  const height = 88;
+function drawPaySummary(doc, context, y) {
+  const { payslip, grossPay, totalDeductions, netPay } = context;
+  const x = LAYOUT.margin;
+  const width = LAYOUT.contentWidth;
+  const height = 64;
+  const segment = width / 3;
 
-  ensureSpace(doc, state, height + 10);
-  const y = doc.y;
+  doc.roundedRect(x, y, width, height, 8).fill(COLORS.ink);
+  doc.roundedRect(x + (segment * 2), y, segment, height, 8).fill(COLORS.success);
+  doc.rect(x + (segment * 2), y, 8, height).fill(COLORS.success);
+  doc.moveTo(x + segment, y + 14).lineTo(x + segment, y + height - 14).lineWidth(0.5).stroke('#475467');
 
-  metrics.forEach((metric, index) => {
-    const x = PAGE.margin + index * (cardWidth + gap);
-    const border = metric.accent || COLORS.line;
-    const fill = metric.emphasis ? COLORS.panel : COLORS.panelAlt;
+  const metrics = [
+    ['Gross pay', grossPay, COLORS.white],
+    ['Total deductions', totalDeductions, COLORS.white],
+    ['Net pay', netPay, COLORS.white],
+  ];
 
-    doc.save();
-    doc.roundedRect(x, y, cardWidth, height, 16).fillAndStroke(fill, border);
-    doc.roundedRect(x, y, cardWidth, 8, 16).fill(border);
-    doc.restore();
-
-    doc.fillColor(COLORS.muted).font('Helvetica-Bold').fontSize(8).text(metric.label.toUpperCase(), x + 14, y + 18, {
-      width: cardWidth - 28,
+  metrics.forEach(([label, amount, color], index) => {
+    const segmentX = x + (segment * index) + 15;
+    fitText(doc, String(label).toUpperCase(), segmentX, y + 13, segment - 30, {
+      font: 'Helvetica-Bold', size: 6.8, color: index === 2 ? '#d1fadf' : '#d0d5dd',
     });
-    doc.fillColor(metric.accent || COLORS.ink).font('Helvetica-Bold').fontSize(metric.emphasis ? 20 : 17).text(metric.value, x + 14, y + 36, {
-      width: cardWidth - 28,
+    fitText(doc, formatMoney(payslip.currency, amount), segmentX, y + 31, segment - 30, {
+      font: 'Helvetica-Bold', size: 12.5, minimumSize: 8.5, color,
     });
-    if (metric.subtext) {
-      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8).text(metric.subtext, x + 14, y + 62, {
-        width: cardWidth - 28,
-      });
-    }
+  });
+}
+
+function drawSmallDetail(doc, label, value, x, y, width) {
+  fitText(doc, String(label).toUpperCase(), x, y, width, {
+    font: 'Helvetica-Bold', size: 6.2, minimumSize: 5.8, color: COLORS.faint,
+  });
+  fitText(doc, value, x, y + 11, width, {
+    font: 'Helvetica-Bold', size: 8.2, minimumSize: 6.2, color: COLORS.text,
+  });
+}
+
+function drawDetailsPanel(doc, context, y) {
+  const { payslip, org, employerContributionTotal } = context;
+  const x = LAYOUT.margin;
+  const width = LAYOUT.contentWidth;
+  const height = 168;
+  const rightWidth = 174;
+  const leftWidth = width - rightWidth - 12;
+  const rightX = x + leftWidth + 12;
+  const innerPadding = 14;
+  const detailGap = 12;
+  const detailWidth = (leftWidth - (innerPadding * 2) - detailGap) / 2;
+  const bank = payslip.employeeSnapshot?.bankAccount || {};
+  const tax = payslip.taxBreakdown || {};
+  const paymentMethod = humanizeValue(payslip.paymentDetails?.method || 'bank_transfer');
+  const jurisdiction = safeText(tax.jurisdictionName || tax.jurisdictionCode, 'Not specified');
+  const taxablePay = toAmount(tax.netTaxableIncome || payslip.earningsSummary?.taxableGrossPay || context.grossPay);
+
+  doc.roundedRect(x, y, leftWidth, height, 8).fillAndStroke(COLORS.white, COLORS.lineSoft);
+  fitText(doc, 'PAYMENT & STATUTORY DETAILS', x + innerPadding, y + 15, leftWidth - (innerPadding * 2), {
+    font: 'Helvetica-Bold', size: 7.5, color: COLORS.ink,
   });
 
-  doc.y = y + height + 18;
-}
+  const detailRows = [
+    ['Taxable pay', formatMoney(payslip.currency, taxablePay)],
+    ['Income tax', formatMoney(payslip.currency, tax.taxAmount || payslip.deductionsSummary?.taxDeductions || 0)],
+    ['Payment method', paymentMethod],
+    ['Bank account', `${safeText(bank.bankName, 'Bank on file')}  ${getAccountPreview(bank)}`],
+    ['Tax jurisdiction', jurisdiction],
+    ['Employer paid (not deducted)', formatMoney(payslip.currency, employerContributionTotal)],
+  ];
 
-function drawTable(doc, state, config) {
-  const {
-    title,
-    subtitle,
-    columns,
-    rows,
-    emptyMessage,
-    accentColor = COLORS.brand,
-    totalLabel,
-    totalValue,
-  } = config;
+  detailRows.forEach(([label, value], index) => {
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    drawSmallDetail(
+      doc,
+      label,
+      value,
+      x + innerPadding + (column * (detailWidth + detailGap)),
+      y + 38 + (row * 31),
+      detailWidth
+    );
+  });
 
-  drawSectionHeading(doc, state, title, subtitle);
-
-  const tableWidth = doc.page.width - (PAGE.margin * 2);
-  const headerHeight = 24;
-  const rowPadding = 8;
-
-  const drawHeader = () => {
-    ensureSpace(doc, state, headerHeight + 4);
-    const y = doc.y;
-    doc.save();
-    doc.roundedRect(PAGE.margin, y, tableWidth, headerHeight, 10).fill(accentColor);
-    doc.restore();
-
-    let cursorX = PAGE.margin;
-    columns.forEach((column) => {
-      doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9).text(column.label, cursorX + 8, y + 8, {
-        width: column.width - 16,
-        align: column.align || 'left',
-      });
-      cursorX += column.width;
+  const employeeNote = safeText(payslip.employeeNotes, '');
+  if (employeeNote) {
+    doc.moveTo(x + innerPadding, y + 130).lineTo(x + leftWidth - innerPadding, y + 130)
+      .lineWidth(0.45).stroke(COLORS.lineSoft);
+    fitText(doc, 'NOTE', x + innerPadding, y + 140, 30, {
+      font: 'Helvetica-Bold', size: 6.2, color: COLORS.brand,
     });
-
-    doc.y = y + headerHeight + 8;
-  };
-
-  drawHeader();
-
-  if (!Array.isArray(rows) || rows.length === 0) {
-    ensureSpace(doc, state, 48);
-    const y = doc.y;
-    doc.save();
-    doc.roundedRect(PAGE.margin, y, tableWidth, 42, 12).fillAndStroke(COLORS.panel, COLORS.line);
-    doc.restore();
-    doc.fillColor(COLORS.muted).font('Helvetica').fontSize(10).text(emptyMessage || 'No items available for this section.', PAGE.margin + 12, y + 15, {
-      width: tableWidth - 24,
-      align: 'center',
+    fitText(doc, employeeNote, x + 48, y + 138, leftWidth - 62, {
+      size: 7.3, minimumSize: 5.8, color: COLORS.muted,
     });
-    doc.y = y + 56;
   } else {
-    rows.forEach((row, index) => {
-      const rowHeight = Math.max(28, ...columns.map((column) => {
-        doc.font(column.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9);
-        return doc.heightOfString(String(row[column.key] || ''), {
-          width: column.width - 16,
-          align: column.align || 'left',
-        }) + rowPadding;
-      }));
-
-      ensureSpace(doc, state, rowHeight + 2);
-      if (doc.y + rowHeight > doc.page.height - PAGE.margin - PAGE.footerReserve) {
-        doc.addPage();
-        state.pageCount += 1;
-        doc.y = PAGE.margin;
-        drawHeader();
-      }
-
-      const y = doc.y;
-      doc.save();
-      doc.roundedRect(PAGE.margin, y, tableWidth, rowHeight, 10).fillAndStroke(index % 2 === 0 ? COLORS.panel : COLORS.panelAlt, COLORS.line);
-      doc.restore();
-
-      let cursorX = PAGE.margin;
-      columns.forEach((column) => {
-        doc.fillColor(column.color || COLORS.text).font(column.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).text(String(row[column.key] || ''), cursorX + 8, y + 8, {
-          width: column.width - 16,
-          align: column.align || 'left',
-        });
-        cursorX += column.width;
-      });
-
-      doc.y = y + rowHeight + 6;
+    fitText(doc, [org.email, org.phone].filter(Boolean).join('  |  '), x + innerPadding, y + 143, leftWidth - (innerPadding * 2), {
+      size: 7, minimumSize: 6, color: COLORS.faint, fallback: '',
     });
   }
 
-  if (totalLabel) {
-    ensureSpace(doc, state, 28);
-    const y = doc.y;
-    doc.fillColor(COLORS.muted).font('Helvetica-Bold').fontSize(9).text(totalLabel.toUpperCase(), PAGE.margin, y);
-    doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(12).text(totalValue, PAGE.margin, y - 2, {
-      width: tableWidth,
+  doc.roundedRect(rightX, y, rightWidth, height, 8).fillAndStroke(COLORS.surface, COLORS.lineSoft);
+  fitText(doc, 'YEAR TO DATE', rightX + 14, y + 15, rightWidth - 28, {
+    font: 'Helvetica-Bold', size: 7.5, color: COLORS.ink,
+  });
+
+  const ytd = payslip.ytdSummary || {};
+  const ytdRows = [
+    ['Gross earnings', ytd.grossEarnings],
+    ['Deductions', ytd.totalDeductions],
+    ['Income tax', ytd.totalTax],
+    ['Net pay', ytd.netPay],
+  ];
+
+  ytdRows.forEach(([label, amount], index) => {
+    const rowY = y + 40 + (index * 29);
+    fitText(doc, label, rightX + 14, rowY, 74, {
+      size: 7.1, minimumSize: 6, color: COLORS.muted,
+    });
+    fitText(doc, formatMoney(payslip.currency, amount || 0), rightX + 88, rowY, rightWidth - 102, {
+      font: 'Helvetica-Bold', size: 7.8, minimumSize: 5.8,
+      color: index === ytdRows.length - 1 ? COLORS.success : COLORS.text,
       align: 'right',
     });
-    doc.y = y + 24;
-  }
-
-  doc.y += 6;
+  });
 }
 
-function drawTaxSummary(doc, state, payslip) {
-  const taxBreakdown = payslip.taxBreakdown || {};
-  const statutoryRows = (Array.isArray(payslip.deductions) ? payslip.deductions : [])
-    .filter((item) => ['social_security', 'pension'].includes(item.type))
-    .map((item) => ({
-      label: item.name || humanizeValue(item.type),
-      value: formatMoney(payslip.currency, item.amount || 0),
-    }));
+function drawMainPage(doc, context) {
+  drawHeader(doc, context);
+  drawEmployeePanel(doc, context);
 
-  const notes = Array.isArray(taxBreakdown.notes) ? taxBreakdown.notes.filter(Boolean) : [];
-  drawSectionHeading(doc, state, 'Tax & Statutory Overview', 'Built from the finalized payroll calculation used for this payslip.');
-
-  const width = doc.page.width - (PAGE.margin * 2);
+  const earnings = context.earningRows.slice(0, LAYOUT.mainItemLimit);
+  const deductions = context.deductionRows.slice(0, LAYOUT.mainItemLimit);
+  const rowCount = Math.max(earnings.length, deductions.length, 1);
   const gap = 14;
-  const cardWidth = (width - gap) / 2;
-  const leftItems = [
-    { label: 'Jurisdiction', value: safeText(taxBreakdown.jurisdictionName || taxBreakdown.jurisdictionCode) },
-    { label: 'Taxable Income', value: formatMoney(payslip.currency, taxBreakdown.netTaxableIncome || 0) },
-    { label: 'Income Tax', value: formatMoney(payslip.currency, taxBreakdown.taxAmount || 0) },
-    { label: 'Effective Tax Rate', value: `${Number(taxBreakdown.taxRate || 0).toFixed(2)}%` },
-    { label: 'Tax Year', value: safeText(taxBreakdown.taxYearLabel, 'Current period') },
+  const tableWidth = (LAYOUT.contentWidth - gap) / 2;
+  const tableY = 252;
+
+  const tableHeight = drawMainTable(doc, {
+    x: LAYOUT.margin,
+    y: tableY,
+    width: tableWidth,
+    title: 'Earnings',
+    rows: earnings,
+    rowCount,
+    totalLabel: 'Total earnings',
+    totalAmount: context.grossPay,
+    currency: context.payslip.currency,
+    remaining: Math.max(0, context.earningRows.length - LAYOUT.mainItemLimit),
+  });
+  drawMainTable(doc, {
+    x: LAYOUT.margin + tableWidth + gap,
+    y: tableY,
+    width: tableWidth,
+    title: 'Deductions',
+    rows: deductions,
+    rowCount,
+    totalLabel: 'Total deductions',
+    totalAmount: context.totalDeductions,
+    currency: context.payslip.currency,
+    remaining: Math.max(0, context.deductionRows.length - LAYOUT.mainItemLimit),
+  });
+
+  const summaryY = tableY + tableHeight + 16;
+  drawPaySummary(doc, context, summaryY);
+  drawDetailsPanel(doc, context, summaryY + 80);
+}
+
+function drawDetailTablePage(doc, context, config) {
+  doc.addPage();
+  drawHeader(doc, context, true);
+
+  const x = LAYOUT.margin;
+  const width = LAYOUT.contentWidth;
+  const titleY = 145;
+  const tableY = 180;
+  const headerHeight = 30;
+  const rowHeight = 28;
+  const amountWidth = 100;
+  const treatmentWidth = 88;
+  const categoryWidth = 120;
+  const labelWidth = width - amountWidth - treatmentWidth - categoryWidth - 44;
+
+  fitText(doc, config.title, x, titleY, 350, {
+    font: 'Helvetica-Bold', size: 14, color: COLORS.ink,
+  });
+  fitText(doc, `Items ${config.startIndex}-${config.startIndex + config.rows.length - 1} of ${config.totalItems}`, x + 355, titleY + 3, width - 355, {
+    size: 7.5, color: COLORS.muted, align: 'right',
+  });
+
+  doc.roundedRect(x, tableY, width, headerHeight, 6).fill(COLORS.ink);
+  const columns = [
+    { label: 'DESCRIPTION', x: x + 12, width: labelWidth },
+    { label: 'CATEGORY', x: x + 20 + labelWidth, width: categoryWidth },
+    { label: 'TREATMENT', x: x + 28 + labelWidth + categoryWidth, width: treatmentWidth },
+    { label: `AMOUNT (${safeText(context.payslip.currency)})`, x: x + width - amountWidth - 12, width: amountWidth, align: 'right' },
   ];
-  const rightItems = statutoryRows.length > 0
-    ? statutoryRows
-    : [{ label: 'Statutory Deductions', value: formatMoney(payslip.currency, payslip.deductionsSummary?.statutoryDeductions || 0) }];
+  columns.forEach((column) => fitText(doc, column.label, column.x, tableY + 11, column.width, {
+    font: 'Helvetica-Bold', size: 6.8, minimumSize: 5.8, color: COLORS.white, align: column.align,
+  }));
 
-  ensureSpace(doc, state, 180);
-  const y = doc.y;
-  const leftHeight = drawInfoCard(doc, PAGE.margin, y, cardWidth, 'Tax Snapshot', leftItems);
-  const rightHeight = drawInfoCard(doc, PAGE.margin + cardWidth + gap, y, cardWidth, 'Statutory Contributions', rightItems);
-  doc.y = y + Math.max(leftHeight, rightHeight) + 14;
-
-  if (notes.length > 0) {
-    ensureSpace(doc, state, 70);
-    const noteHeight = 28 + (notes.length * 14);
-    const noteY = doc.y;
-
-    doc.save();
-    doc.roundedRect(PAGE.margin, noteY, width, noteHeight, 14).fillAndStroke(COLORS.brandSoft, '#fcd34d');
-    doc.restore();
-
-    doc.fillColor('#92400e').font('Helvetica-Bold').fontSize(10).text('Calculation Notes', PAGE.margin + 14, noteY + 12);
-    doc.fillColor('#78350f').font('Helvetica').fontSize(9);
-    notes.forEach((note, index) => {
-      doc.text(`- ${note}`, PAGE.margin + 14, noteY + 28 + (index * 14), {
-        width: width - 28,
-      });
+  config.rows.forEach((row, index) => {
+    const rowY = tableY + headerHeight + (index * rowHeight);
+    if (index % 2 === 1) doc.rect(x, rowY, width, rowHeight).fill(COLORS.surface);
+    doc.moveTo(x, rowY + rowHeight).lineTo(x + width, rowY + rowHeight).lineWidth(0.4).stroke(COLORS.lineSoft);
+    fitText(doc, row.label, x + 12, rowY + 10, labelWidth, { size: 8, minimumSize: 6.2 });
+    fitText(doc, row.category, x + 20 + labelWidth, rowY + 10, categoryWidth, { size: 7.5, minimumSize: 6, color: COLORS.muted });
+    fitText(doc, row.treatment, x + 28 + labelWidth + categoryWidth, rowY + 10, treatmentWidth, { size: 7.2, minimumSize: 6, color: COLORS.muted });
+    fitText(doc, formatMoney(context.payslip.currency, row.amount), x + width - amountWidth - 12, rowY + 9, amountWidth, {
+      font: 'Helvetica-Bold', size: 8, minimumSize: 6.2, color: COLORS.ink, align: 'right',
     });
+  });
 
-    doc.y = noteY + noteHeight + 12;
+  const tableBottom = tableY + headerHeight + (config.rows.length * rowHeight);
+  if (config.isFinalChunk) {
+    doc.rect(x, tableBottom, width, 36).fill(COLORS.surface);
+    fitText(doc, config.totalLabel.toUpperCase(), x + 12, tableBottom + 13, width - amountWidth - 34, {
+      font: 'Helvetica-Bold', size: 7.5, color: COLORS.muted,
+    });
+    fitText(doc, formatMoney(context.payslip.currency, config.totalAmount), x + width - amountWidth - 12, tableBottom + 11, amountWidth, {
+      font: 'Helvetica-Bold', size: 9, minimumSize: 6.5, color: COLORS.ink, align: 'right',
+    });
+  } else {
+    fitText(doc, 'Continued on the next page', x, tableBottom + 14, width, {
+      size: 7.5, color: COLORS.muted, align: 'right',
+    });
+  }
+}
+
+function appendDetailPages(doc, context, config) {
+  if (config.rows.length === 0) return;
+  for (let index = 0; index < config.rows.length; index += LAYOUT.detailPageItemLimit) {
+    const chunk = config.rows.slice(index, index + LAYOUT.detailPageItemLimit);
+    drawDetailTablePage(doc, context, {
+      ...config,
+      rows: chunk,
+      startIndex: config.startIndex + index,
+      totalItems: config.totalItems,
+      isFinalChunk: index + chunk.length >= config.rows.length,
+    });
   }
 }
 
 function addFooters(doc, organizationName) {
   const range = doc.bufferedPageRange();
-  for (let i = 0; i < range.count; i += 1) {
-    doc.switchToPage(range.start + i);
-    const footerY = doc.page.height - 26;
-
-    doc.save();
-    doc.moveTo(PAGE.margin, footerY - 8).lineTo(doc.page.width - PAGE.margin, footerY - 8).strokeColor(COLORS.line).stroke();
-    doc.restore();
-
-    doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8).text(
-      `${organizationName} payroll document. This is a computer-generated file and does not require a signature.`,
-      PAGE.margin,
-      footerY,
-      { width: 320 }
-    );
-    doc.text(
-      `Generated ${formatDateTime(new Date())} | Page ${i + 1} of ${range.count}`,
-      doc.page.width - PAGE.margin - 220,
-      footerY,
-      { width: 220, align: 'right' }
-    );
+  for (let offset = 0; offset < range.count; offset += 1) {
+    doc.switchToPage(range.start + offset);
+    const left = LAYOUT.margin;
+    const width = LAYOUT.contentWidth;
+    doc.moveTo(left, LAYOUT.footerY).lineTo(left + width, LAYOUT.footerY).lineWidth(0.5).stroke(COLORS.lineSoft);
+    fitText(doc, `${organizationName}  |  Confidential payroll document`, left, LAYOUT.footerY + 10, 360, {
+      size: 6.8, minimumSize: 6, color: COLORS.faint,
+    });
+    fitText(doc, `Page ${offset + 1} of ${range.count}`, left + 400, LAYOUT.footerY + 10, width - 400, {
+      font: 'Helvetica-Bold', size: 6.8, color: COLORS.faint, align: 'right',
+    });
   }
-}
-
-function buildRows(items = [], currency) {
-  return (Array.isArray(items) ? items : []).map((item) => ({
-    item: safeText(item.name || humanizeValue(item.type)),
-    type: humanizeValue(item.type || 'other'),
-    details: item.description || (item.taxable === false ? 'Non-taxable' : item.isPreTax ? 'Pre-tax' : 'Standard'),
-    amount: formatMoney(currency, item.amount || 0),
-  }));
 }
 
 function createPayslipPdf({ payslip, organization = {} }) {
+  if (!payslip) throw new Error('A payslip is required to generate a PDF.');
+
+  const organizationDetails = getOrganizationDetails(organization);
+  const legalEmployerName = safeText(payslip.employerEntitySnapshot?.legalName, '');
+  if (legalEmployerName) organizationDetails.name = legalEmployerName;
+
   const doc = new PDFDocument({
     size: 'A4',
-    margin: PAGE.margin,
+    margins: { top: 0, right: 0, bottom: 0, left: 0 },
     bufferPages: true,
-  });
-
-  const state = { pageCount: 1 };
-  const org = getOrganizationDetails(organization);
-  const statusPalette = getStatusPalette(payslip.status);
-  const pageWidth = doc.page.width - (PAGE.margin * 2);
-  const periodLabel = safeText(payslip.periodDisplay, `${payslip.payPeriod?.month}/${payslip.payPeriod?.year}`);
-  const paymentMethod = safeText(
-    payslip.paymentDetails?.method ? humanizeValue(payslip.paymentDetails.method) : 'Bank transfer',
-    'Bank transfer'
-  );
-  const companyMeta = [org.email, org.phone, org.website].filter((value) => value && value !== 'N/A').join(' | ');
-
-  doc.rect(0, 0, doc.page.width, doc.page.height).fill(COLORS.page);
-  doc.fillColor(COLORS.text);
-
-  doc.save();
-  doc.roundedRect(PAGE.margin, PAGE.margin, pageWidth, 142, 22).fill(COLORS.hero);
-  doc.roundedRect(PAGE.margin + 16, PAGE.margin + 18, pageWidth - 32, 106, 18).fill(COLORS.heroSoft);
-  doc.roundedRect(PAGE.margin, PAGE.margin, 8, 142, 22).fill(COLORS.brand);
-  doc.restore();
-
-  doc.save();
-  doc.roundedRect(PAGE.margin + 30, PAGE.margin + 35, 48, 48, 16).fill(COLORS.brand);
-  doc.restore();
-  doc.fillColor('#111827').font('Helvetica-Bold').fontSize(22).text('S', PAGE.margin + 46, PAGE.margin + 49, {
-    width: 16,
-    align: 'center',
-  });
-
-  doc.fillColor(COLORS.brandSoft).font('Helvetica-Bold').fontSize(9).text('PAYROLL STATEMENT', PAGE.margin + 96, PAGE.margin + 28);
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(22).text(org.name, PAGE.margin + 96, PAGE.margin + 43, {
-    width: 270,
-  });
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(24).text('Payslip', PAGE.margin + 96, PAGE.margin + 70);
-  doc.fillColor('#d4d4d8').font('Helvetica').fontSize(10).text(
-    `${periodLabel} | Payslip ${safeText(payslip.payslipNumber)}`,
-    PAGE.margin + 96,
-    PAGE.margin + 100
-  );
-  doc.text(`Payment Date ${formatDate(payslip.payPeriod?.paymentDate)}`, PAGE.margin + 96, PAGE.margin + 114);
-
-  if (companyMeta) {
-    doc.fillColor('#cbd5e1').font('Helvetica').fontSize(8).text(companyMeta, PAGE.margin + 96, PAGE.margin + 16, {
-      width: 320,
-    });
-  }
-
-  drawChip(doc, doc.page.width - PAGE.margin - 116, PAGE.margin + 24, humanizeValue(payslip.status), statusPalette, 116);
-  doc.fillColor('#d1d5db').font('Helvetica-Bold').fontSize(9).text('Net Pay', doc.page.width - PAGE.margin - 186, PAGE.margin + 60, {
-    width: 156,
-    align: 'right',
-  });
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(20).text(
-    formatMoney(payslip.currency, payslip.netPay || 0),
-    doc.page.width - PAGE.margin - 186,
-    PAGE.margin + 74,
-    { width: 156, align: 'right' }
-  );
-  doc.fillColor('#d4d4d8').font('Helvetica').fontSize(9).text(
-    `${paymentMethod} | ${safeText(payslip.currency)}`,
-    doc.page.width - PAGE.margin - 186,
-    PAGE.margin + 100,
-    { width: 156, align: 'right' }
-  );
-
-  doc.y = PAGE.margin + 162;
-
-  drawSummaryCards(doc, state, [
-    {
-      label: 'Gross Pay',
-      value: formatMoney(payslip.currency, payslip.earningsSummary?.grossPay || 0),
-      subtext: `${(payslip.earnings || []).length} earning item${(payslip.earnings || []).length === 1 ? '' : 's'}`,
-      accent: COLORS.ink,
+    compress: true,
+    info: {
+      Title: `Payslip ${safeText(payslip.payslipNumber, '')}`,
+      Author: organizationDetails.name,
+      Subject: `Payslip for ${safeText(payslip.employeeSnapshot?.name, 'employee')}`,
+      Creator: 'Seemplify Payroll',
     },
-    {
-      label: 'Total Deductions',
-      value: formatMoney(payslip.currency, payslip.deductionsSummary?.totalDeductions || 0),
-      subtext: `${(payslip.deductions || []).length} deduction item${(payslip.deductions || []).length === 1 ? '' : 's'}`,
-      accent: COLORS.danger,
-    },
-    {
-      label: 'Net Pay',
-      value: formatMoney(payslip.currency, payslip.netPay || 0),
-      subtext: paymentMethod,
-      accent: COLORS.success,
-      emphasis: true,
-    },
-  ]);
+  });
 
-  drawSectionHeading(doc, state, 'Company & Employee', 'Snapshot details captured when this payslip was generated.');
-  ensureSpace(doc, state, 240);
-  const gap = 14;
-  const cardWidth = (pageWidth - gap) / 2;
-  const topY = doc.y;
+  const earningRows = buildEarningRows(payslip);
+  const deductionRows = buildDeductionRows(payslip);
+  const employerRows = normalizeRows(payslip.employerContributions, 'employer');
+  const grossPay = summaryOrLineTotal(payslip.earningsSummary?.grossPay, earningRows);
+  const totalDeductions = summaryOrLineTotal(payslip.deductionsSummary?.totalDeductions, deductionRows);
+  const storedNetPay = Number(payslip.netPay);
+  const netPay = Number.isFinite(storedNetPay) ? storedNetPay : grossPay - totalDeductions;
+  const employerContributionTotal = summaryOrLineTotal(payslip.totalEmployerContributions, employerRows);
 
-  const companyHeight = drawInfoCard(doc, PAGE.margin, topY, cardWidth, 'Company', [
-    { label: 'Organization', value: org.name },
-    { label: 'Organization ID', value: org.id },
-    { label: 'Registration', value: org.registration },
-    { label: 'Tax Reference', value: org.taxReference },
-    { label: 'Email', value: org.email },
-    { label: 'Phone', value: org.phone },
-    { label: 'Website', value: org.website },
-    { label: 'Address', value: org.address },
-    { label: 'Payroll Run', value: safeText(payslip.payrollRunId?.runNumber, 'N/A') },
-    { label: 'Currency', value: safeText(payslip.currency) },
-  ]);
+  const context = {
+    payslip,
+    org: organizationDetails,
+    periodLabel: getPeriodLabel(payslip.payPeriod),
+    earningRows,
+    deductionRows,
+    employerRows,
+    grossPay,
+    totalDeductions,
+    netPay,
+    employerContributionTotal,
+  };
 
-  const employeeHeight = drawInfoCard(doc, PAGE.margin + cardWidth + gap, topY, cardWidth, 'Employee', [
-    { label: 'Name', value: safeText(payslip.employeeSnapshot?.name) },
-    { label: 'Email', value: safeText(payslip.employeeSnapshot?.email) },
-    { label: 'Employee ID', value: safeText(payslip.employeeSnapshot?.employeeId) },
-    { label: 'Department', value: safeText(payslip.employeeSnapshot?.department) },
-    { label: 'Designation', value: safeText(payslip.employeeSnapshot?.designation) },
-    { label: 'Team', value: safeText(payslip.employeeSnapshot?.teamName, 'Unassigned') },
-    { label: 'Employment Type', value: humanizeValue(payslip.employeeSnapshot?.employmentType || 'full_time') },
-    { label: 'Location', value: safeText(payslip.employeeSnapshot?.location) },
-    { label: 'Cost Center', value: safeText(payslip.employeeSnapshot?.costCenter) },
-    { label: 'Manager', value: safeText(payslip.employeeSnapshot?.managerName, 'N/A') },
-  ]);
+  drawMainPage(doc, context);
 
-  doc.y = topY + Math.max(companyHeight, employeeHeight) + 14;
-
-  ensureSpace(doc, state, 180);
-  const paymentY = doc.y;
-  const paymentHeight = drawInfoCard(doc, PAGE.margin, paymentY, cardWidth, 'Payment', [
-    { label: 'Pay Period', value: periodLabel },
-    { label: 'Period Start', value: formatDate(payslip.payPeriod?.startDate) },
-    { label: 'Period End', value: formatDate(payslip.payPeriod?.endDate) },
-    { label: 'Payment Date', value: formatDate(payslip.payPeriod?.paymentDate) },
-    { label: 'Method', value: paymentMethod },
-    { label: 'Transaction ID', value: safeText(payslip.paymentDetails?.transactionId) },
-    { label: 'Bank Reference', value: safeText(payslip.paymentDetails?.bankReference) },
-  ]);
-
-  const bankHeight = drawInfoCard(doc, PAGE.margin + cardWidth + gap, paymentY, cardWidth, 'Bank on File', [
-    { label: 'Bank Name', value: safeText(payslip.employeeSnapshot?.bankAccount?.bankName, 'On file') },
-    { label: 'Account', value: getAccountPreview(payslip.employeeSnapshot?.bankAccount) },
-    { label: 'Routing / Branch', value: safeText(payslip.employeeSnapshot?.bankAccount?.routingNumber, 'On file') },
-    { label: 'Manager', value: safeText(payslip.employeeSnapshot?.managerName, 'N/A') },
-  ]);
-
-  doc.y = paymentY + Math.max(paymentHeight, bankHeight) + 14;
-
-  drawTable(doc, state, {
-    title: 'Earnings',
-    subtitle: 'Recurring pay, allowances, bonuses, overtime, and approved additions included in this period.',
-    columns: [
-      { key: 'item', label: 'Item', width: 220, bold: true },
-      { key: 'type', label: 'Type', width: 105 },
-      { key: 'details', label: 'Tax / Notes', width: 135 },
-      { key: 'amount', label: 'Amount', width: 100, align: 'right', bold: true },
-    ],
-    rows: buildRows(payslip.earnings, payslip.currency),
-    emptyMessage: 'No earnings items were recorded for this payslip.',
+  appendDetailPages(doc, context, {
+    title: 'Additional earnings',
+    rows: earningRows.slice(LAYOUT.mainItemLimit),
+    startIndex: LAYOUT.mainItemLimit + 1,
+    totalItems: earningRows.length,
     totalLabel: 'Total earnings',
-    totalValue: formatMoney(payslip.currency, payslip.earningsSummary?.grossPay || 0),
-    accentColor: COLORS.brand,
+    totalAmount: grossPay,
   });
-
-  drawTable(doc, state, {
-    title: 'Deductions',
-    subtitle: 'Taxes, statutory deductions, loans, insurance, and other payroll recoveries.',
-    columns: [
-      { key: 'item', label: 'Item', width: 220, bold: true },
-      { key: 'type', label: 'Type', width: 105 },
-      { key: 'details', label: 'Treatment', width: 135 },
-      { key: 'amount', label: 'Amount', width: 100, align: 'right', bold: true },
-    ],
-    rows: buildRows(payslip.deductions, payslip.currency),
-    emptyMessage: 'No deductions were recorded for this payslip.',
+  appendDetailPages(doc, context, {
+    title: 'Additional deductions',
+    rows: deductionRows.slice(LAYOUT.mainItemLimit),
+    startIndex: LAYOUT.mainItemLimit + 1,
+    totalItems: deductionRows.length,
     totalLabel: 'Total deductions',
-    totalValue: formatMoney(payslip.currency, payslip.deductionsSummary?.totalDeductions || 0),
-    accentColor: COLORS.purple,
+    totalAmount: totalDeductions,
   });
 
-  drawTaxSummary(doc, state, payslip);
-
-  if (Array.isArray(payslip.employerContributions) && payslip.employerContributions.length > 0) {
-    drawTable(doc, state, {
-      title: 'Employer Contributions',
-      subtitle: 'Employer-paid benefits and statutory amounts that do not reduce employee take-home pay.',
-      columns: [
-        { key: 'item', label: 'Item', width: 240, bold: true },
-        { key: 'type', label: 'Type', width: 140 },
-        { key: 'details', label: 'Details', width: 80 },
-        { key: 'amount', label: 'Amount', width: 100, align: 'right', bold: true },
-      ],
-      rows: buildRows(payslip.employerContributions, payslip.currency),
-      emptyMessage: 'No employer contributions were recorded for this payslip.',
+  if (employerRows.length > 3) {
+    appendDetailPages(doc, context, {
+      title: 'Employer contributions (information only)',
+      rows: employerRows,
+      startIndex: 1,
+      totalItems: employerRows.length,
       totalLabel: 'Total employer contributions',
-      totalValue: formatMoney(payslip.currency, payslip.totalEmployerContributions || 0),
-      accentColor: COLORS.info,
+      totalAmount: employerContributionTotal,
     });
   }
 
-  drawSectionHeading(doc, state, 'Year-To-Date Summary', 'Cumulative payroll totals recorded up to this pay period.');
-  drawSummaryCards(doc, state, [
-    {
-      label: 'YTD Gross',
-      value: formatMoney(payslip.currency, payslip.ytdSummary?.grossEarnings || 0),
-      accent: COLORS.ink,
-    },
-    {
-      label: 'YTD Tax',
-      value: formatMoney(payslip.currency, payslip.ytdSummary?.totalTax || 0),
-      accent: COLORS.danger,
-    },
-    {
-      label: 'YTD Net',
-      value: formatMoney(payslip.currency, payslip.ytdSummary?.netPay || 0),
-      accent: COLORS.success,
-    },
-  ]);
-
-  const noteText = [safeText(payslip.employeeNotes, ''), safeText(payslip.notes, '')].filter(Boolean);
-  if (noteText.length > 0) {
-    drawSectionHeading(doc, state, 'Notes', 'Additional information attached to this payslip.');
-    ensureSpace(doc, state, 72);
-    const noteY = doc.y;
-    const noteHeight = 26 + noteText.reduce((sum, note) => sum + Math.max(18, doc.heightOfString(note, {
-      width: pageWidth - 28,
-    })), 0);
-
-    doc.save();
-    doc.roundedRect(PAGE.margin, noteY, pageWidth, noteHeight, 14).fillAndStroke(COLORS.panel, COLORS.line);
-    doc.restore();
-
-    let cursorY = noteY + 14;
-    noteText.forEach((note) => {
-      doc.fillColor(COLORS.text).font('Helvetica').fontSize(9).text(note, PAGE.margin + 14, cursorY, {
-        width: pageWidth - 28,
-      });
-      cursorY = doc.y + 8;
-    });
-    doc.y = noteY + noteHeight + 10;
-  }
-
-  addFooters(doc, org.name);
+  addFooters(doc, context.org.name);
   return doc;
 }
 

@@ -3318,6 +3318,25 @@ function getPinEligibleHubApps(req) {
 
   return getHubApps({ isAkwaIbom: isAkwaIbomHub })
     .filter(app => app.appId !== 'lms')
+    .flatMap(app => {
+      if (app.appId !== 'smarthr') return [app]
+
+      return [
+        app,
+        {
+          ...app,
+          appId: 'people-transitions',
+          accessAppId: 'smarthr',
+          launchAppId: 'smarthr',
+          launchWorkspace: 'people-transitions',
+          name: 'People Transitions',
+          description: 'Onboarding, exits, retirement, documents, signatures, and employee handoffs',
+          icon: 'users',
+          color: '#0f766e',
+          order: Number(app.order || 1) + 0.1
+        }
+      ]
+    })
 }
 
 function getKnownHubPinAppIdSet(req) {
@@ -3341,7 +3360,7 @@ async function getVisibleHubPinAppIdSet(req, account, organization) {
   let visibleApps = pinEligibleApps
   if (memberAppAccess.mode === APP_ACCESS_MODE_SELECTED) {
     const allowedAppIds = new Set(memberAppAccess.appIds)
-    visibleApps = visibleApps.filter(app => allowedAppIds.has(app.appId))
+    visibleApps = visibleApps.filter(app => allowedAppIds.has(app.accessAppId || app.appId))
   }
 
   const subscriptionAccess = await getCurrentOrganizationSubscriptionAccessState(account)
@@ -3353,7 +3372,9 @@ async function getVisibleHubPinAppIdSet(req, account, organization) {
       .map(appId => String(appId || '').trim())
       .filter(Boolean)
   )
-  visibleApps = visibleApps.filter(app => !hiddenAppIds.has(app.appId))
+  visibleApps = visibleApps.filter(app =>
+    !hiddenAppIds.has(app.appId) && !hiddenAppIds.has(app.accessAppId || '')
+  )
 
   return new Set([
     ...visibleApps.map(app => app.appId),
@@ -3778,7 +3799,7 @@ app.get('/', async (req, res) => {
     // Filter hub cards by per-member access scope
     if (memberAppAccess.mode === APP_ACCESS_MODE_SELECTED) {
       const allowedAppIds = new Set(memberAppAccess.appIds)
-      apps = apps.filter(app => allowedAppIds.has(app.appId))
+      apps = apps.filter(app => allowedAppIds.has(app.accessAppId || app.appId))
     }
 
     // Filter hub cards by plan's hideHubCards (dynamically hide cards per plan)
@@ -3789,7 +3810,9 @@ app.get('/', async (req, res) => {
       const hideHubCards = subscription?.plan?.hideHubCards
       if (hideHubCards && Array.isArray(hideHubCards) && hideHubCards.length > 0) {
         const hideSet = new Set(hideHubCards.map(id => String(id).trim()).filter(Boolean))
-        apps = apps.filter(app => !hideSet.has(app.appId))
+        apps = apps.filter(app =>
+          !hideSet.has(app.appId) && !hideSet.has(app.accessAppId || '')
+        )
       }
       const showComingSoonCards = subscription?.plan?.showComingSoonCards
       if (showComingSoonCards && Array.isArray(showComingSoonCards) && showComingSoonCards.length > 0) {
@@ -4543,11 +4566,16 @@ app.get('/launch/:appId', async (req, res) => {
     if (launchBrand.name === 'Akwa Ibom State' && app.appId === 'smarthr') {
       frontendUrl = 'https://ibom.aiinnigeria.com'
     }
-    const redirectUrl = `${apiUrl}/api/auth/oidc/start?` + new URLSearchParams({
+    const requestedWorkspace = app.appId === 'smarthr' && req.query?.workspace === 'people-transitions'
+      ? 'people-transitions'
+      : null
+    const oidcStartParams = new URLSearchParams({
       idp_initiated: 'true',
       hub_token: ssoToken,
       returnTo: frontendUrl
-    }).toString()
+    })
+    if (requestedWorkspace) oidcStartParams.set('workspace', requestedWorkspace)
+    const redirectUrl = `${apiUrl}/api/auth/oidc/start?${oidcStartParams.toString()}`
 
     void logAppLaunchActivity({
       req,
@@ -4557,6 +4585,7 @@ app.get('/launch/:appId', async (req, res) => {
       details: {
         redirectUrl,
         authType: 'oidc',
+        workspace: requestedWorkspace || 'recruiter',
         launchDurationMs: Date.now() - launchStartTime
       }
     })
@@ -6052,7 +6081,7 @@ app.use('/api', teamsRouter)
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next()
   if (!isLegacyIdpOnboardingUiPath(req.path)) return next()
-  return res.redirect(302, '/launch/smarthr')
+  return res.redirect(302, '/launch/smarthr?workspace=people-transitions')
 })
 
 app.get('/api/notifications/summary', getSessionUser, async (req, res) => {

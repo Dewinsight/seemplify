@@ -183,13 +183,23 @@ async function migratePayrollIndexes() {
   );
   await PayrollSequence.init();
   // Older deployments allowed multiple provenance rows at the same instant.
-  // Consolidate only calculation-identical rows before enforcing the new
-  // immutable timeline. Conflicting rates deliberately fail startup rather
-  // than silently restating a historical payroll conversion.
+  // Preserve conflicting legacy rows in an audit archive, keep the documented
+  // manual/import/API precedence, and then enforce one immutable timeline.
   try {
-    const exchangeRateMigration = await consolidateExactInstantDuplicates(ExchangeRate.collection);
+    const conflictArchiveCollection = mongoose.connection.collection('exchange_rate_conflict_archive');
+    await conflictArchiveCollection.createIndex(
+      { resolutionKey: 1, originalExchangeRateId: 1 },
+      { unique: true, name: 'exchange_rate_conflict_archive_unique' }
+    );
+    const exchangeRateMigration = await consolidateExactInstantDuplicates(
+      ExchangeRate.collection,
+      { conflictArchiveCollection }
+    );
     if (exchangeRateMigration.removedCount > 0) {
       console.log(`Consolidated ${exchangeRateMigration.removedCount} duplicate exchange-rate record(s)`);
+    }
+    if (exchangeRateMigration.archivedConflictRows > 0) {
+      console.log(`Archived ${exchangeRateMigration.archivedConflictRows} conflicting exchange-rate record(s) for audit`);
     }
     await ExchangeRate.createIndexes();
     markExchangeRatesReady();

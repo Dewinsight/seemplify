@@ -2667,12 +2667,13 @@
         <section class="workspace-section apps" aria-labelledby="applications-heading">
           <% const appPresentation = {
             smarthr: { subtitle: 'Hire with signal', category: 'talent', metricLabel: 'Workspace', metricValue: 'Recruitment', description: 'AI-powered sourcing, screening, and interview coordination for every req.' },
+            'people-transitions': { subtitle: 'Move people smoothly', category: 'people-ops', metricLabel: 'Workspace', metricValue: 'Transitions', description: 'Onboarding, exits, retirement, documents, signatures, and employee handoffs in one workspace.' },
             'leave-management': { subtitle: 'Time off, sorted', category: 'people-ops', metricLabel: 'Workflow', metricValue: 'Requests', description: 'Requests, balances, and approvals with policies your team can actually read.' },
             'performance-management': { subtitle: 'Goals that move', category: 'insights', metricLabel: 'Workspace', metricValue: 'Reviews', description: 'OKRs, review cycles, and continuous feedback that stays close to the work.' },
             'payroll-management': { subtitle: 'Pay run confidence', category: 'finance', metricLabel: 'Workspace', metricValue: 'Payroll', description: 'Salary processing, bonuses, and compensation with a clean audit trail.' },
             'time-attendance': { subtitle: 'Hours you can trust', category: 'people-ops', metricLabel: 'Status', metricValue: 'Live', description: 'Track work hours, manage timesheets, and clear approvals in a single pass.' }
           }; %>
-          <% const appOrder = ['smarthr', 'leave-management', 'performance-management', 'payroll-management', 'time-attendance']; %>
+          <% const appOrder = ['smarthr', 'people-transitions', 'leave-management', 'performance-management', 'payroll-management', 'time-attendance']; %>
           <% const orderedHubApps = [...(apps || [])].sort((a, b) => appOrder.indexOf(a.appId) - appOrder.indexOf(b.appId)); %>
           <% const dashboardCards = [
             ...orderedHubApps.slice(0, 2),
@@ -2721,6 +2722,9 @@
           <% renderedDashboardCards.forEach(app => { %>
             <% const presentation = appPresentation[app.appId] || { subtitle: 'Listen, learn, act', category: 'insights', metricLabel: 'Launch', metricValue: 'External' }; %>
             <% const startsPinned = initialPinnedAppIdSet.has(String(app.appId)); %>
+            <% const launchHref = app.launchAppId
+              ? `/launch/${app.launchAppId}${app.launchWorkspace ? `?workspace=${encodeURIComponent(app.launchWorkspace)}` : ''}`
+              : `/launch/${app.appId}`; %>
             <article class="app-card" data-app-card data-app-id="<%= app.appId %>" data-app-order="<%= dashboardCardOrderById.get(String(app.appId)) %>" data-app-category="<%= presentation.category %>" data-app-title="<%= app.name.toLowerCase() %>" data-pinned="<%= startsPinned ? 'true' : 'false' %>" style="--app-color: <%= app.color || '#7048e8' %>">
               <div class="app-card__header">
                 <div class="app-card__identity">
@@ -2749,7 +2753,7 @@
                 <% } else if (app.isBeta) { %>
                   <button type="button" class="app-card__open" onclick="showBetaWarning('<%= app.appId %>', '<%= app.name %>')">Open <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 5 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                 <% } else { %>
-                  <a href="/launch/<%= app.appId %>" class="app-card__open">Open <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 5 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+                  <a href="<%= launchHref %>" class="app-card__open">Open <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 5 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
                 <% } %>
               </div>
               <% if (app.appId === 'time-attendance' && attendanceHubEnabled) { %><button id="attendanceCardToggle" class="attendance-card-toggle" type="button" hidden>Show clock controls</button><% } %>

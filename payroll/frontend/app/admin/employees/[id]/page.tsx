@@ -7,7 +7,9 @@ import { formatPayrollMoney } from '@/lib/payrollMoney';
 import {
     getPayrollBankAccountTypes,
     getPayrollBankJurisdiction,
+    getPayrollCountryDefaults,
     getPayrollDefaultBankAccountType,
+    NIGERIAN_BANK_OPTIONS,
     normalizePayrollBankCountry,
     PAYROLL_BANK_JURISDICTIONS,
 } from '@/lib/payrollBankJurisdictions.mjs';
@@ -370,11 +372,80 @@ const COUNTRY_CODE_HINTS: Record<string, string> = {
     GHANA: 'GH',
     KENYA: 'KE',
     'SOUTH AFRICA': 'ZA',
+    CANADA: 'CA',
+    CAMEROON: 'CM',
+    MOZAMBIQUE: 'MZ',
+    'EUROPEAN UNION': 'EU',
 };
 
 function normalizeJurisdictionCode(value: any): string {
     const raw = String(value || '').trim().toUpperCase();
     return COUNTRY_CODE_HINTS[raw] || raw;
+}
+
+function findAutomaticEmployerForCountry(entities: PayrollEmployerEntity[] = [], countryCode = '') {
+    const candidates = entities.filter((entity) => (
+        entity.status !== 'inactive' && entity.countryCode === countryCode
+    ));
+    const active = candidates.filter((entity) => entity.status === 'active');
+    if (active.length === 1) return active[0];
+    if (active.length === 0 && candidates.length === 1) return candidates[0];
+    return null;
+}
+
+function applyCountryDefaultsToPayrollForm(
+    current: any,
+    countryValue: string,
+    jurisdictions: TaxJurisdictionSummary[],
+    entities: PayrollEmployerEntity[]
+) {
+    const country = getPayrollCountryDefaults(countryValue);
+    if (!country || country.code === 'OTHER') {
+        return {
+            ...current,
+            employerEntityId: '',
+            taxAssignment: { ...current.taxAssignment, workCountryCode: '', workJurisdictionCode: '', taxJurisdictionCode: '' },
+            bankAccount: { ...current.bankAccount, country: country?.value || 'Other' },
+        };
+    }
+    const employer = findAutomaticEmployerForCountry(entities, country.code);
+    const jurisdiction = findJurisdictionById(jurisdictions, String(employer?.taxJurisdictionConfigId || ''))
+        || findJurisdictionByCode(jurisdictions, country.code);
+    const currentCountryCode = normalizeJurisdictionCode(current.taxConfig?.jurisdictionCode || '');
+    const countryChanged = currentCountryCode !== country.code;
+    const nextTaxConfig = syncTaxConfigWithJurisdiction({
+        ...current.taxConfig,
+        jurisdictionConfigId: jurisdiction?._id ? String(jurisdiction._id) : '',
+        jurisdictionCode: country.code,
+        jurisdictionName: jurisdiction?.displayName || jurisdiction?.countryName || country.label,
+        employeeTaxInputs: countryChanged ? {} : current.taxConfig?.employeeTaxInputs,
+    }, jurisdiction);
+    const nextBankCountry = country.value;
+    const bankCountryChanged = current.bankAccount?.country !== nextBankCountry;
+
+    return {
+        ...current,
+        employerEntityId: employer?._id || '',
+        currency: employer?.defaultCurrency || country.currency || current.currency,
+        taxAssignment: {
+            ...current.taxAssignment,
+            workCountryCode: country.code,
+            workJurisdictionCode: employer?.jurisdictionCode || country.code,
+            taxJurisdictionCode: employer?.jurisdictionCode || country.code,
+            determinationReason: `Automatically determined from the employee payroll country (${country.label}).`,
+        },
+        taxConfig: nextTaxConfig,
+        statutoryContributions: normalizeStatutoryContributionsForJurisdiction(
+            current.statutoryContributions,
+            country.code
+        ),
+        bankAccount: {
+            ...current.bankAccount,
+            country: nextBankCountry,
+            accountType: getPayrollDefaultBankAccountType(nextBankCountry, { preferSalary: false }),
+            ...(bankCountryChanged ? { routingNumber: '', sortCode: '', bankCode: '', iban: '', bicSwift: '' } : {}),
+        },
+    };
 }
 
 function withoutJurisdictionVersionPin(rawTaxConfig: Record<string, any> = {}) {
@@ -749,8 +820,12 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 const syncedBankAccount = payrollSync?.banking?.accounts?.[0] || {};
                 const payrollBankAccount = res.data.bankAccounts?.[0] || {};
                 const resolvedCountry = normalizePayrollBankCountry(
-                    syncedBankAccount?.country
+                    payrollSync?.personalInfo?.mailingAddress?.country
+                    || res.data?.employeeInfo?.countryCode
+                    || res.data?.employeeInfo?.countryName
+                    || syncedBankAccount?.country
                     || payrollSync?.banking?.country
+                    || payrollBankAccount?.country
                     || 'USA'
                 );
                 const resolvedBankJurisdiction = getPayrollBankJurisdiction(resolvedCountry);
@@ -974,6 +1049,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             const bankCountry = normalizePayrollBankCountry(formData.bankAccount?.country || 'USA');
             const bankJurisdiction = getPayrollBankJurisdiction(bankCountry);
             const localFieldKey = bankJurisdiction?.localField?.key || '';
+            const localFieldValue = localFieldKey === 'sortCode'
+                ? String(formData.bankAccount?.sortCode || '').trim()
+                : localFieldKey === 'bankCode'
+                    ? String(formData.bankAccount?.bankCode || '').trim()
+                    : String(formData.bankAccount?.routingNumber || '').trim();
             const bankName = String(formData.bankAccount?.bankName || '').trim();
             const accountHolderName = String(formData.bankAccount?.accountHolderName || '').trim();
             const accountNumber = String(formData.bankAccount?.accountNumber || '').trim();
@@ -994,9 +1074,19 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 alert('Bank name and account number are required if you want to save bank details.');
                 setSaving(false);
                 return;
+            } else if (bankJurisdiction?.localField?.required && !localFieldValue) {
+                alert(`${bankJurisdiction.localField.label} is required for ${bankJurisdiction.label}.`);
+                setSaving(false);
+                return;
+            } else if (bankJurisdiction?.requiresIban && !iban) {
+                alert(`IBAN is required for ${bankJurisdiction.label}.`);
+                setSaving(false);
+                return;
             } else {
                 bankAccounts = [
                     {
+                        country: bankCountry,
+                        countryCode: bankJurisdiction.code,
                         bankName,
                         accountNumber: effectivePayrollAccountNumber,
                         routingNumber: routingNumber || undefined,
@@ -1309,17 +1399,61 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         });
     };
 
-    const setJurisdictionConfig = (jurisdictionId: string) => {
-        const nextJurisdiction = findJurisdictionById(taxJurisdictions, jurisdictionId)
-            || findJurisdictionByCode(taxJurisdictions, jurisdictionId)
-            || null;
-        setFormData({
-            ...formData,
-            taxConfig: syncTaxConfigWithJurisdiction(formData.taxConfig, nextJurisdiction),
-            statutoryContributions: normalizeStatutoryContributionsForJurisdiction(
-                formData.statutoryContributions,
-                nextJurisdiction?.countryCode || formData.taxConfig.jurisdictionCode
-            )
+    const handlePayrollCountryChange = (countryValue: string) => {
+        const country = getPayrollCountryDefaults(countryValue);
+        setSetupData((current: any) => ({
+            ...current,
+            personalInfo: {
+                ...current.personalInfo,
+                mailingAddress: {
+                    ...current.personalInfo.mailingAddress,
+                    country: country.value,
+                },
+            },
+        }));
+        setFormData((current: any) => applyCountryDefaultsToPayrollForm(
+            current,
+            country.value,
+            taxJurisdictions,
+            employerEntities
+        ));
+    };
+
+    const handleEmployerEntityChange = (employerEntityId: string) => {
+        const employer = employerEntities.find((entity) => entity._id === employerEntityId) || null;
+        if (!employer) {
+            setFormData((current: any) => ({ ...current, employerEntityId: '' }));
+            return;
+        }
+        const country = getPayrollCountryDefaults(employer.countryCode);
+        const jurisdiction = findJurisdictionById(taxJurisdictions, String(employer.taxJurisdictionConfigId || ''))
+            || findJurisdictionByCode(taxJurisdictions, employer.countryCode);
+        setSetupData((current: any) => ({
+            ...current,
+            personalInfo: {
+                ...current.personalInfo,
+                mailingAddress: { ...current.personalInfo.mailingAddress, country: country.value },
+            },
+        }));
+        setFormData((current: any) => {
+            const countryDefaults = applyCountryDefaultsToPayrollForm(
+                current,
+                country.value,
+                taxJurisdictions,
+                employerEntities
+            );
+            return {
+                ...countryDefaults,
+                employerEntityId: employer._id,
+                currency: employer.defaultCurrency,
+                taxAssignment: {
+                    ...countryDefaults.taxAssignment,
+                    workCountryCode: employer.countryCode,
+                    workJurisdictionCode: employer.jurisdictionCode,
+                    taxJurisdictionCode: employer.jurisdictionCode,
+                },
+                taxConfig: syncTaxConfigWithJurisdiction(countryDefaults.taxConfig, jurisdiction),
+            };
         });
     };
 
@@ -1372,6 +1506,8 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         || 'cash_allowance';
     const newAllowanceTreatmentLocked = isStatutorilyTaxableClassification(newAllowanceClassification);
     const newBenefitTreatmentLocked = isStatutorilyTaxableClassification(newBenefit.classificationCode);
+    const automaticCountryDefaults = getPayrollCountryDefaults(setupData.personalInfo?.mailingAddress?.country || 'Other');
+    const automaticEmployer = employerEntities.find((entity) => entity._id === formData.employerEntityId);
 
     if (loading) {
         return (
@@ -1421,7 +1557,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[280px_minmax(0,1fr)]">
                     {/* Sidebar Info */}
                     <div className="space-y-6">
-                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-6">
                             <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
                                 Setup Status
                             </h3>
@@ -1453,7 +1589,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                             </div>
                         </div>
 
-                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-6">
                             <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
                                 Identity Info
                             </h3>
@@ -1650,23 +1786,19 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Address Country</label>
-                                    <input
-                                        type="text"
-                                        value={setupData.personalInfo?.mailingAddress?.country || ''}
-                                        onChange={(e) => setSetupData({
-                                            ...setupData,
-                                            personalInfo: {
-                                                ...setupData.personalInfo,
-                                                mailingAddress: {
-                                                    ...setupData.personalInfo.mailingAddress,
-                                                    country: e.target.value
-                                                }
-                                            }
-                                        })}
+                                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Payroll Country</label>
+                                    <select
+                                        value={normalizePayrollBankCountry(setupData.personalInfo?.mailingAddress?.country || 'Other')}
+                                        onChange={(e) => handlePayrollCountryChange(e.target.value)}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                        placeholder="e.g. Nigeria"
-                                    />
+                                    >
+                                        {PAYROLL_BANK_JURISDICTIONS.map((countryOption: any) => (
+                                            <option key={countryOption.value} value={countryOption.value}>{countryOption.label}</option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1.5 text-xs text-zinc-500">
+                                        {automaticCountryDefaults.label} sets {automaticCountryDefaults.currency || 'the local currency'}, the matching tax rules, statutory defaults, and local bank fields. {automaticEmployer ? `Employer: ${automaticEmployer.legalName}.` : 'A safe draft employer setup will be created when you save.'}
+                                    </p>
                                 </div>
                             </div>
 
@@ -1891,25 +2023,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         Legal employer
                                         <select
                                             value={formData.employerEntityId || ''}
-                                            onChange={(event) => {
-                                                const next = employerEntities.find((entity) => entity._id === event.target.value);
-                                                setFormData((current: any) => ({
-                                                    ...current,
-                                                    employerEntityId: event.target.value,
-                                                    currency: next?.defaultCurrency || current.currency,
-                                                    taxAssignment: {
-                                                        ...current.taxAssignment,
-                                                        workCountryCode: next?.countryCode || '',
-                                                        workJurisdictionCode: next?.jurisdictionCode || '',
-                                                        taxJurisdictionCode: next?.jurisdictionCode || '',
-                                                    },
-                                                    taxConfig: {
-                                                        ...current.taxConfig,
-                                                        jurisdictionConfigId: next?.taxJurisdictionConfigId || current.taxConfig.jurisdictionConfigId,
-                                                        jurisdictionCode: next?.countryCode || current.taxConfig.jurisdictionCode,
-                                                    },
-                                                }));
-                                            }}
+                                            onChange={(event) => handleEmployerEntityChange(event.target.value)}
                                             className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-zinc-200 focus:border-amber-500 focus:outline-none"
                                         >
                                             <option value="">Not assigned — excluded from payroll</option>
@@ -1944,8 +2058,8 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                     <label className="block text-sm font-medium text-zinc-400 mb-1.5">Currency</label>
                                     <select
                                         value={formData.currency}
-                                        onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                        disabled
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 opacity-80"
                                     >
                                         {selectablePaymentCurrencies.map((currency) => (
                                             <option key={currency.code} value={currency.code}>
@@ -1953,6 +2067,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             </option>
                                         ))}
                                     </select>
+                                    <p className="mt-1.5 text-xs text-zinc-500">Derived from the payroll country or legal employer.</p>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-zinc-400 mb-1.5">Pay basis</label>
@@ -2577,20 +2692,14 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">Bank Country</label>
                                         <select
                                             value={formData.bankAccount.country}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                bankAccount: {
-                                                    ...formData.bankAccount,
-                                                    country: e.target.value,
-                                                    accountType: getPayrollDefaultBankAccountType(e.target.value, { preferSalary: false })
-                                                }
-                                            })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            disabled
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 opacity-80"
                                         >
                                             {PAYROLL_BANK_JURISDICTIONS.map((countryOption: any) => (
                                                 <option key={countryOption.value} value={countryOption.value}>{countryOption.label}</option>
                                             ))}
                                         </select>
+                                        <p className="mt-1.5 text-xs text-zinc-500">Matches the employee payroll country automatically.</p>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">Account Holder Name</label>
@@ -2606,16 +2715,45 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">Bank Name</label>
-                                        <input
-                                            type="text"
-                                            value={formData.bankAccount.bankName}
-                                            onChange={(e) => setFormData({
-                                                ...formData,
-                                                bankAccount: { ...formData.bankAccount, bankName: e.target.value }
-                                            })}
-                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                            placeholder="e.g. Chase Bank"
-                                        />
+                                        {formData.bankAccount.country === 'Nigeria' ? (
+                                            <select
+                                                value={formData.bankAccount.bankCode || ''}
+                                                onChange={(e) => {
+                                                    const bank = NIGERIAN_BANK_OPTIONS.find((option: any) => option.code === e.target.value);
+                                                    setFormData({
+                                                        ...formData,
+                                                        bankAccount: {
+                                                            ...formData.bankAccount,
+                                                            bankCode: bank?.code || '',
+                                                            bankName: bank?.name || '',
+                                                        },
+                                                    });
+                                                }}
+                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            >
+                                                <option value="">Select a bank</option>
+                                                {formData.bankAccount.bankCode
+                                                    && !NIGERIAN_BANK_OPTIONS.some((bank: any) => bank.code === formData.bankAccount.bankCode) ? (
+                                                        <option value={formData.bankAccount.bankCode}>
+                                                            {formData.bankAccount.bankName || `Existing bank (${formData.bankAccount.bankCode})`}
+                                                        </option>
+                                                    ) : null}
+                                                {NIGERIAN_BANK_OPTIONS.map((bank: any) => (
+                                                    <option key={bank.code} value={bank.code}>{bank.name}</option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <input
+                                                type="text"
+                                                value={formData.bankAccount.bankName}
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    bankAccount: { ...formData.bankAccount, bankName: e.target.value }
+                                                })}
+                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                placeholder="Bank name"
+                                            />
+                                        )}
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">Account Type</label>
@@ -2637,7 +2775,9 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">Account Number</label>
+                                        <label className="block text-sm font-medium text-zinc-400 mb-1.5">
+                                            {getPayrollBankJurisdiction(formData.bankAccount.country).accountNumberLabel || 'Account Number'}
+                                        </label>
                                         <input
                                             type="text"
                                             value={formData.bankAccount.accountNumber}
@@ -2646,7 +2786,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                                 bankAccount: { ...formData.bankAccount, accountNumber: e.target.value }
                                             })}
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                            placeholder={getPayrollBankJurisdiction(formData.bankAccount.country).accountNumberPlaceholder || 'Account number'}
                                         />
+                                        {getPayrollBankJurisdiction(formData.bankAccount.country).accountNumberHint ? (
+                                            <p className="mt-1.5 text-xs text-zinc-500">{getPayrollBankJurisdiction(formData.bankAccount.country).accountNumberHint}</p>
+                                        ) : null}
                                     </div>
                                     {getPayrollBankJurisdiction(formData.bankAccount.country).localField ? (
                                         <div>
@@ -2671,15 +2815,18 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                                         routingNumber: getPayrollBankJurisdiction(formData.bankAccount.country).localField?.key === 'routingNumber' ? e.target.value : formData.bankAccount.routingNumber
                                                     }
                                                 })}
-                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
+                                                disabled={formData.bankAccount.country === 'Nigeria'}
+                                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none disabled:cursor-not-allowed disabled:opacity-70"
                                                 placeholder={getPayrollBankJurisdiction(formData.bankAccount.country).localField?.placeholder || 'Enter local bank code'}
                                             />
                                             <p className="text-xs text-zinc-500 mt-1.5">
-                                                {getPayrollBankJurisdiction(formData.bankAccount.country).localField?.hint}
+                                                {formData.bankAccount.country === 'Nigeria'
+                                                    ? 'Filled automatically from the selected Nigerian bank.'
+                                                    : getPayrollBankJurisdiction(formData.bankAccount.country).localField?.hint}
                                             </p>
                                         </div>
                                     ) : null}
-                                    <div>
+                                    {getPayrollBankJurisdiction(formData.bankAccount.country).supportsIban ? <div>
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">IBAN</label>
                                         <input
                                             type="text"
@@ -2690,8 +2837,8 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             })}
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                         />
-                                    </div>
-                                    <div>
+                                    </div> : null}
+                                    {getPayrollBankJurisdiction(formData.bankAccount.country).supportsSwift ? <div>
                                         <label className="block text-sm font-medium text-zinc-400 mb-1.5">BIC / SWIFT</label>
                                         <input
                                             type="text"
@@ -2702,7 +2849,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             })}
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                         />
-                                    </div>
+                                    </div> : null}
                                 </div>
                             </div>
                         </div>
@@ -2733,21 +2880,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
 
                                 <div>
                                     <label className="block text-sm font-medium text-zinc-400 mb-1.5">Employee Tax Rule</label>
-                                    <select
-                                        value={formData.taxConfig.jurisdictionConfigId || selectedJurisdiction?._id || ''}
-                                        onChange={(e) => setJurisdictionConfig(e.target.value)}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
-                                    >
-                                        <option value="">Select a tax rule</option>
-                                        {taxJurisdictions.map((jurisdiction) => (
-                                            <option key={jurisdiction._id} value={jurisdiction._id}>
-                                                {jurisdiction.scope === 'organization' ? '[Org] ' : '[Seeded] '}
-                                                {jurisdiction.displayName}
-                                            </option>
-                                        ))}
-                                    </select>
+                                    <div className="min-h-11 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-sm text-zinc-200">
+                                        {selectedJurisdictionLabel}
+                                    </div>
                                     <p className="text-xs text-zinc-500 mt-1.5">
-                                        Tax now follows the selected payroll jurisdiction rule. Manage formulas and country packs in Tax Rules.
+                                        Selected automatically from the payroll country and legal employer.
                                     </p>
                                 </div>
 

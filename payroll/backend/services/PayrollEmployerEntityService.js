@@ -4,6 +4,7 @@ const PayrollEmployerEntity = require('../models/PayrollEmployerEntity');
 const PayrollRun = require('../models/PayrollRun');
 const taxJurisdictionService = require('./TaxJurisdictionService');
 const createBuiltInTaxAdapterCandidateRegistry = require('./tax/createBuiltInTaxAdapterCandidateRegistry');
+const { normalizeTaxCountry } = require('./tax/TaxCurrencyCatalog');
 
 const candidateRegistry = createBuiltInTaxAdapterCandidateRegistry();
 const MATERIAL_FIELDS = Object.freeze([
@@ -207,6 +208,63 @@ class PayrollEmployerEntityService {
     return this.withReadiness(row, organizationId);
   }
 
+  /**
+   * Create the safest useful employer default after an administrator chooses an
+   * employee payroll country. The row deliberately remains a draft: country,
+   * currency and available software bindings can be derived, but a registered
+   * legal name and employer tax registration must still be verified by a human.
+   */
+  async ensureDefaultDraft(organizationId, countryInput, actor = {}) {
+    const country = normalizeTaxCountry(countryInput);
+    if (!country) return null;
+
+    const existing = await PayrollEmployerEntity.findOne({
+      organizationId,
+      countryCode: country.countryCode,
+    });
+    if (existing) {
+      return existing.status === 'inactive' ? null : this.withReadiness(existing, organizationId);
+    }
+
+    const jurisdiction = await taxJurisdictionService.findGlobalByCountryCode(country.countryCode);
+    const published = jurisdiction?.getPublishedVersion?.()
+      || (jurisdiction?.versions || []).find((version) => String(version._id) === String(jurisdiction?.publishedVersionId));
+    const candidate = candidateRegistry.list().find((entry) => (
+      entry.countryCode === country.countryCode
+      && entry.currency === country.currencyCode
+    ));
+    const organizationName = text(actor.organizationName);
+
+    const payload = {
+      code: `${country.countryCode}-DEFAULT`,
+      legalName: organizationName || `${country.countryName} payroll employer`,
+      employerType: 'company',
+      countryCode: country.countryCode,
+      jurisdictionCode: candidate?.jurisdictionCode || country.countryCode,
+      defaultCurrency: country.currencyCode,
+      registeredAddress: { countryCode: country.countryCode },
+      taxRegistrations: [],
+      taxJurisdictionConfigId: jurisdiction && published ? jurisdiction._id : null,
+      taxJurisdictionVersionId: published?._id || null,
+      taxAdapterCandidateId: candidate?.id || '',
+      status: 'draft',
+    };
+
+    try {
+      return await this.create(organizationId, payload, {
+        userId: text(actor.userId) || 'system-payroll-defaults',
+      });
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      const raced = await PayrollEmployerEntity.findOne({
+        organizationId,
+        countryCode: country.countryCode,
+        status: { $ne: 'inactive' },
+      });
+      return raced ? this.withReadiness(raced, organizationId) : null;
+    }
+  }
+
   async update(id, organizationId, payload, actor = {}) {
     const row = await PayrollEmployerEntity.findOne({ _id: id, organizationId });
     if (!row) throw serviceError('Legal employer not found.', 404, 'PAYROLL_EMPLOYER_ENTITY_NOT_FOUND');
@@ -281,7 +339,8 @@ class PayrollEmployerEntityService {
         'PAYROLL_EMPLOYEE_TAX_JURISDICTION_MISMATCH'
       );
     }
-    if (profile.taxConfig?.jurisdictionConfigId
+    if (entity.taxJurisdictionConfigId
+      && profile.taxConfig?.jurisdictionConfigId
       && idText(profile.taxConfig.jurisdictionConfigId) !== idText(entity.taxJurisdictionConfigId)) {
       throw serviceError(
         'Employee tax pack does not match the legal employer tax pack.',

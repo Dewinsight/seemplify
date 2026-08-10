@@ -19,6 +19,17 @@ function normalizeCurrencyCode(code) {
   return String(code || '').trim().toUpperCase();
 }
 
+function assertSupportedProviderBase(code) {
+  const normalized = normalizeCurrencyCode(code) || 'USD';
+  if (!currencyService.isSupportedCurrencyCode(normalized)) {
+    const error = new Error(`${normalized} is not a supported ISO payroll currency.`);
+    error.code = 'CURRENCY_NOT_SUPPORTED';
+    error.statusCode = 400;
+    throw error;
+  }
+  return normalized;
+}
+
 class ExchangeRateSyncService {
   getProviderInfo() {
     return PROVIDER_CONFIG;
@@ -53,7 +64,7 @@ class ExchangeRateSyncService {
     const payload = {};
 
     if (updates.providerBaseCurrency) {
-      payload.providerBaseCurrency = normalizeCurrencyCode(updates.providerBaseCurrency);
+      payload.providerBaseCurrency = assertSupportedProviderBase(updates.providerBaseCurrency);
     }
     if (updates.autoSyncEnabled !== undefined) {
       payload.autoSyncEnabled = !!updates.autoSyncEnabled;
@@ -124,9 +135,9 @@ class ExchangeRateSyncService {
     };
     const now = new Date();
     const settings = await this.getOrCreateSettings(organizationId, metadata);
-    const providerBaseCurrency = normalizeCurrencyCode(
+    const providerBaseCurrency = assertSupportedProviderBase(
       options.baseCurrency || settings.providerBaseCurrency || 'USD'
-    ) || 'USD';
+    );
     const preserveManualOverrides = options.preserveManualOverrides !== undefined
       ? !!options.preserveManualOverrides
       : settings.preserveManualOverrides !== false;

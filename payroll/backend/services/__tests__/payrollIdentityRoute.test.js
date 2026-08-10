@@ -46,6 +46,18 @@ jest.mock('../OrganizationCurrencyService', () => ({
   assertPaymentCurrency: jest.fn(async (_organizationId, currency) => currency),
 }));
 
+jest.mock('../PayrollCountryAutomationService', () => ({
+  reconcileProfile: jest.fn().mockResolvedValue({
+    country: null,
+    employer: null,
+    employerAmbiguous: false,
+    paymentReady: true,
+    bankComplete: false,
+    taxErrors: [],
+  }),
+  applyReadiness: jest.fn(),
+}));
+
 const PayrollProfile = require('../../models/PayrollProfile');
 const payrollRouter = require('../../routes/payroll');
 

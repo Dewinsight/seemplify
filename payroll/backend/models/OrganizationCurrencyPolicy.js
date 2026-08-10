@@ -58,6 +58,7 @@ const OrganizationCurrencyPolicySchema = new Schema({
   },
   enabledCurrencies: { type: [EnabledCurrencySchema], default: [] },
   customCurrencies: { type: [CustomCurrencySchema], default: [] },
+  taxCurrencyCatalogVersion: { type: Number, min: 0, default: 0 },
   requireConfiguredPaymentCurrency: { type: Boolean, default: true },
   lastModifiedBy: {
     userId: { type: String, default: '' },
@@ -72,6 +73,7 @@ OrganizationCurrencyPolicySchema.methods.toPublicJSON = function toPublicJSON() 
     reportingCurrency: this.reportingCurrency,
     enabledCurrencies: this.enabledCurrencies || [],
     customCurrencies: this.customCurrencies || [],
+    taxCurrencyCatalogVersion: this.taxCurrencyCatalogVersion || 0,
     requireConfiguredPaymentCurrency: this.requireConfiguredPaymentCurrency !== false,
     updatedAt: this.updatedAt,
   };

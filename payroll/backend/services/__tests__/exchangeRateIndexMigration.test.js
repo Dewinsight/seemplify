@@ -53,6 +53,8 @@ describe('ExchangeRate exact-instant index migration', () => {
     await expect(consolidateExactInstantDuplicates(collection)).resolves.toEqual({
       duplicateGroups: 1,
       removedCount: 1,
+      resolvedConflictGroups: 0,
+      archivedConflictRows: 0,
     });
     expect(collection.deleteMany).toHaveBeenCalledWith({
       _id: { $in: ['api-row'] },
@@ -77,12 +79,53 @@ describe('ExchangeRate exact-instant index migration', () => {
     expect(collection.deleteMany).not.toHaveBeenCalled();
   });
 
+  test('archives conflicting rows before choosing the deterministic canonical rate', async () => {
+    const groups = [{ _id: duplicateKey, rowIds: ['api-row', 'manual-row'], count: 2 }];
+    const collection = fakeCollection(groups, [
+      { _id: 'api-row', rate: 3.6725, source: 'api', isActive: true, expiresAt: null },
+      { _id: 'manual-row', rate: 3.68, source: 'manual', isActive: true, expiresAt: null },
+    ]);
+    const conflictArchiveCollection = { bulkWrite: jest.fn().mockResolvedValue({ upsertedCount: 2 }) };
+
+    await expect(consolidateExactInstantDuplicates(collection, {
+      conflictArchiveCollection,
+    })).resolves.toEqual({
+      duplicateGroups: 1,
+      removedCount: 1,
+      resolvedConflictGroups: 1,
+      archivedConflictRows: 2,
+    });
+    expect(conflictArchiveCollection.bulkWrite).toHaveBeenCalledTimes(1);
+    expect(collection.deleteMany).toHaveBeenCalledWith({ _id: { $in: ['api-row'] } });
+    const operations = conflictArchiveCollection.bulkWrite.mock.calls[0][0];
+    expect(operations).toHaveLength(2);
+    expect(operations[0].updateOne.update.$setOnInsert.resolution).toMatchObject({
+      canonicalExchangeRateId: 'manual-row',
+      canonicalSource: 'manual',
+    });
+  });
+
+  test('keeps an active provider row ahead of an inactive manual duplicate', async () => {
+    const groups = [{ _id: duplicateKey, rowIds: ['api-row', 'manual-row'], count: 2 }];
+    const collection = fakeCollection(groups, [
+      { _id: 'api-row', rate: 3.6725, source: 'api', isActive: true, expiresAt: null },
+      { _id: 'manual-row', rate: 3.68, source: 'manual', isActive: false, expiresAt: null },
+    ]);
+    const conflictArchiveCollection = { bulkWrite: jest.fn().mockResolvedValue({ upsertedCount: 2 }) };
+
+    await consolidateExactInstantDuplicates(collection, { conflictArchiveCollection });
+
+    expect(collection.deleteMany).toHaveBeenCalledWith({ _id: { $in: ['manual-row'] } });
+  });
+
   test('does nothing when the collection has no duplicate exact instants', async () => {
     const collection = fakeCollection([], []);
 
     await expect(consolidateExactInstantDuplicates(collection)).resolves.toEqual({
       duplicateGroups: 0,
       removedCount: 0,
+      resolvedConflictGroups: 0,
+      archivedConflictRows: 0,
     });
     expect(collection.find).not.toHaveBeenCalled();
     expect(collection.deleteMany).not.toHaveBeenCalled();

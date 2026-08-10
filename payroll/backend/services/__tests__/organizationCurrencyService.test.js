@@ -8,12 +8,50 @@ jest.mock('../../models/PayrollProfile', () => ({
 }));
 
 const organizationCurrencyService = require('../OrganizationCurrencyService');
+const OrganizationCurrencyPolicy = require('../../models/OrganizationCurrencyPolicy');
 const PayrollProfile = require('../../models/PayrollProfile');
+const taxJurisdictionService = require('../TaxJurisdictionService');
+const {
+  TAX_CURRENCY_CATALOG_VERSION,
+  TAX_CURRENCY_CODES,
+} = require('../tax/TaxCurrencyCatalog');
 
 describe('organization currency policy validation', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+    OrganizationCurrencyPolicy.findOne.mockReset();
+    OrganizationCurrencyPolicy.findOneAndUpdate.mockReset();
     PayrollProfile.distinct.mockReset().mockResolvedValue([]);
+  });
+
+  test('tax currency catalogue covers every built-in jurisdiction currency', () => {
+    const seededCurrencies = [...new Set(taxJurisdictionService.seedDefinitions
+      .map((definition) => definition.version?.calculationCurrency)
+      .filter(Boolean))].sort();
+
+    expect(TAX_CURRENCY_CODES).toEqual(seededCurrencies);
+  });
+
+  test('existing organizations receive current tax currencies once, including NGN', async () => {
+    const policy = {
+      functionalCurrency: 'USD',
+      reportingCurrency: 'USD',
+      enabledCurrencies: [{ code: 'USD', isActive: true, paymentEnabled: true }],
+      customCurrencies: [],
+      taxCurrencyCatalogVersion: 0,
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    OrganizationCurrencyPolicy.findOne.mockResolvedValue(policy);
+
+    const migrated = await organizationCurrencyService.getPolicy('org-1', { userId: 'admin-1' });
+
+    expect(migrated.taxCurrencyCatalogVersion).toBe(TAX_CURRENCY_CATALOG_VERSION);
+    expect(migrated.enabledCurrencies).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'NGN', isActive: true, paymentEnabled: true }),
+      expect.objectContaining({ code: 'GBP', isActive: true, paymentEnabled: true }),
+      expect.objectContaining({ code: 'XAF', isActive: true, paymentEnabled: false }),
+    ]));
+    expect(policy.save).toHaveBeenCalledTimes(1);
   });
 
   test('accepts ISO currencies and rejects custom codes that collide with ISO', () => {

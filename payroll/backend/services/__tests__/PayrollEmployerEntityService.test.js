@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const PayrollEmployerEntity = require('../../models/PayrollEmployerEntity');
 const PayrollRun = require('../../models/PayrollRun');
 const employerEntityService = require('../PayrollEmployerEntityService');
+const taxJurisdictionService = require('../TaxJurisdictionService');
 const { normalizePayload, readiness } = require('../PayrollEmployerEntityService');
 const nigeriaFixtures = require('../countryAdapters/fixtures/Nigeria2026OfficialFixtures');
 
@@ -59,6 +60,37 @@ describe('PayrollEmployerEntityService multi-jurisdiction controls', () => {
       defaultCurrency: 'NGN',
       taxAdapterCandidateId: 'NG_2026_WAVE_1',
     });
+  });
+
+  test('derives a safe draft employer from country, organization and published software defaults', async () => {
+    const jurisdictionId = objectId();
+    const versionId = objectId();
+    jest.spyOn(PayrollEmployerEntity, 'findOne').mockResolvedValue(null);
+    jest.spyOn(taxJurisdictionService, 'findGlobalByCountryCode').mockResolvedValue({
+      _id: jurisdictionId,
+      publishedVersionId: versionId,
+      getPublishedVersion: () => ({ _id: versionId, calculationCurrency: 'NGN' }),
+    });
+    const create = jest.spyOn(employerEntityService, 'create').mockResolvedValue({ _id: 'default-ng' });
+
+    const result = await employerEntityService.ensureDefaultDraft('org-1', 'Nigeria', {
+      userId: 'admin-1',
+      organizationName: 'Example Limited',
+    });
+
+    expect(create).toHaveBeenCalledWith('org-1', expect.objectContaining({
+      code: 'NG-DEFAULT',
+      legalName: 'Example Limited',
+      countryCode: 'NG',
+      jurisdictionCode: 'NG-LA',
+      defaultCurrency: 'NGN',
+      taxJurisdictionConfigId: jurisdictionId,
+      taxJurisdictionVersionId: versionId,
+      taxAdapterCandidateId: 'NG_2026_WAVE_1',
+      taxRegistrations: [],
+      status: 'draft',
+    }), { userId: 'admin-1' });
+    expect(result).toEqual({ _id: 'default-ng' });
   });
 
   test('rejects a jurisdiction that does not belong to the legal employer country', () => {
@@ -125,6 +157,18 @@ describe('PayrollEmployerEntityService multi-jurisdiction controls', () => {
       taxConfig: { jurisdictionCode: 'NG', jurisdictionConfigId: row.taxJurisdictionConfigId },
       taxAssignment: { taxJurisdictionCode: 'NG-LA' },
     };
+    expect(employerEntityService.assertProfileAssignment(profile, row)).toBe(true);
+  });
+
+  test('allows a blocked draft employer without a bound pack to retain country tax defaults', () => {
+    const row = entity({ taxJurisdictionConfigId: null, taxJurisdictionVersionId: null, taxAdapterCandidateId: '', status: 'draft' });
+    const profile = {
+      employerEntityId: row._id,
+      currency: 'NGN',
+      taxConfig: { jurisdictionCode: 'NG', jurisdictionConfigId: objectId() },
+      taxAssignment: { taxJurisdictionCode: 'NG-LA' },
+    };
+
     expect(employerEntityService.assertProfileAssignment(profile, row)).toBe(true);
   });
 

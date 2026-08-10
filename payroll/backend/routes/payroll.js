@@ -14,6 +14,7 @@ const payrollReportingService = require('../services/PayrollReportingService');
 const payrollFinalizationService = require('../services/PayrollFinalizationService');
 const payrollRetractionService = require('../services/PayrollRetractionService');
 const employerEntityService = require('../services/PayrollEmployerEntityService');
+const payrollCountryAutomationService = require('../services/PayrollCountryAutomationService');
 const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
 const { createPayslipPdf } = require('../services/payslipPdfService');
 const { hasPayConfiguration } = require('../services/contractPayService');
@@ -63,6 +64,11 @@ const { emailService } = require('../services/emailService');
 const getUserInfo = (req) => ({
   userId: req.session?.user?.sub || req.session?.user?.id,
   organizationId: req.currentOrganization?.id || req.session?.currentOrganizationId,
+  organizationName: req.currentOrganization?.name
+    || req.session?.user?.currentOrganization?.name
+    || req.session?.user?.organizations?.find((organization) => (
+      organization.id === (req.currentOrganization?.id || req.session?.currentOrganizationId)
+    ))?.name,
   name: req.session?.user?.name,
   role: req.currentOrganization?.role || req.session?.user?.currentRole
 });
@@ -299,6 +305,7 @@ function buildEmployeeSnapshotFromMember(member = {}, existingEmployeeInfo = {})
     teamId: teamId || existingEmployeeInfo?.teamId || '',
     teamName: teamName || existingEmployeeInfo?.teamName || '',
     dateOfBirth: idpDateOfBirth || existingEmployeeInfo?.dateOfBirth || null,
+    countryName: member?.payrollSync?.personalInfo?.mailingAddress?.country || existingEmployeeInfo?.countryName || '',
     lastSyncedAt: new Date()
   };
 }
@@ -333,6 +340,7 @@ function buildPayrollBankAccountsFromMember(member = {}, existingBankAccounts = 
       const country = String(account.country || member?.payrollSync?.banking?.country || '').trim();
       return {
         isPrimary: hasExplicitPrimary ? account.isPrimary === true : index === 0,
+        country,
         accountName: account.accountHolderName || member.name || 'Primary',
         accountNumber: account.accountNumber || '',
         bankName: account.bankName || '',
@@ -1013,6 +1021,13 @@ router.get('/profiles/:userId', requireHRAdmin, async (req, res) => {
       }
     }
 
+    const automationResult = await payrollCountryAutomationService.reconcileProfile(profile, organizationId, {
+      countryHint: idpSync?.payrollSync?.personalInfo?.mailingAddress?.country,
+      validateBankDetails: false,
+    });
+    payrollCountryAutomationService.applyReadiness(profile, automationResult);
+    await profile.save();
+
     const payload = profile.toObject({ virtuals: true });
     if (idpSync) {
       payload.idpSync = idpSync;
@@ -1192,7 +1207,7 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
  */
 router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
   try {
-    const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
+    const { organizationId, organizationName, userId: adminId, name: adminName } = getUserInfo(req);
     const accessToken = getIdpAccessToken(req);
     const {
       basicSalary,
@@ -1258,7 +1273,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
 
     // Update other fields
     if (currency !== undefined) {
-      profile.currency = await organizationCurrencyService.assertPaymentCurrency(organizationId, currency);
+      profile.currency = String(currency || '').trim().toUpperCase();
     }
     if (payFrequency !== undefined) profile.payFrequency = payFrequency;
     if (workTerms !== undefined) {
@@ -1291,6 +1306,15 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       applyPayrollSyncFromMember(profile, syncedMember);
     }
     profile.payrollFlags = normalizePayrollFlagsPayload(payrollFlags, profile.basicSalary, profile.payrollFlags, profile.workTerms);
+
+    const automationResult = await payrollCountryAutomationService.reconcileProfile(profile, organizationId, {
+      countryHint: taxAssignment?.workCountryCode
+        || idpProfileSync?.personalInfo?.mailingAddress?.country
+        || syncedMember?.payrollSync?.personalInfo?.mailingAddress?.country,
+      autoCreateEmployer: true,
+      actor: { userId: adminId, name: adminName, organizationName },
+    });
+    payrollCountryAutomationService.applyReadiness(profile, automationResult);
 
     if (profile.employerEntityId) {
       const employerEntity = await employerEntityService.assertAssignableEntity(profile.employerEntityId, organizationId);
@@ -1338,7 +1362,7 @@ router.post('/profiles', requireHRAdmin, (_req, res) => {
  */
 async function syncPayrollProfileFromIdp(req, res) {
   try {
-    const { organizationId, userId: adminId } = getUserInfo(req);
+    const { organizationId, organizationName, userId: adminId, name: adminName } = getUserInfo(req);
     const accessToken = getIdpAccessToken(req);
     const targetUserId = String(req.body?.userId || '').trim();
 
@@ -1370,6 +1394,13 @@ async function syncPayrollProfileFromIdp(req, res) {
       existing.userId = resolvedUserId;
       applyPayrollSyncFromMember(existing, member);
       existing.payrollFlags = normalizePayrollFlagsPayload(undefined, existing.basicSalary, existing.payrollFlags, existing.workTerms);
+      const automationResult = await payrollCountryAutomationService.reconcileProfile(existing, organizationId, {
+        countryHint: member?.payrollSync?.personalInfo?.mailingAddress?.country,
+        validateBankDetails: false,
+        autoCreateEmployer: true,
+        actor: { userId: adminId, name: adminName, organizationName },
+      });
+      payrollCountryAutomationService.applyReadiness(existing, automationResult);
       await existing.save();
       return res.json({
         success: true,
@@ -1398,15 +1429,24 @@ async function syncPayrollProfileFromIdp(req, res) {
       isActive: true,
     });
 
+    const automationResult = await payrollCountryAutomationService.reconcileProfile(profile, organizationId, {
+      countryHint: member?.payrollSync?.personalInfo?.mailingAddress?.country
+        || member?.payrollSync?.banking?.country,
+      validateBankDetails: false,
+      autoCreateEmployer: true,
+      actor: { userId: adminId, name: adminName, organizationName },
+    });
+    payrollCountryAutomationService.applyReadiness(profile, automationResult);
+
     await profile.save();
 
     res.status(201).json({ success: true, profile, existed: false, identitySource: 'identity_provider' });
   } catch (err) {
     console.error('Sync Payroll Profile From IDP Error:', err);
     const upstreamStatus = Number(err?.response?.status || 0);
-    const statusCode = isIdpUpstreamAuthFailure(err)
+    const statusCode = err?.statusCode || (isIdpUpstreamAuthFailure(err)
       ? 502
-      : (upstreamStatus === 404 ? 404 : 500);
+      : (upstreamStatus === 404 ? 404 : 500));
     res.status(statusCode).json({ error: getIdpProxyErrorMessage(err, 'Failed to synchronize payroll configuration from IDP') });
   }
 }

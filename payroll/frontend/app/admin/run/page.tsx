@@ -70,9 +70,10 @@ export default function AdminPayrollRunPage() {
         }
         setIsHRAdmin(true);
         try {
-          const entityRows = await listPayrollEmployerEntities('active');
+          const entityRows = await listPayrollEmployerEntities();
           setEmployerEntities(entityRows);
-          const firstEntity = entityRows[0];
+          const firstEntity = entityRows.find((entity) => entity.status === 'active' && entity.payrollReadiness.payrollRunnable)
+            || entityRows.find((entity) => entity.status === 'active');
           if (firstEntity) {
             setEmployerEntityId(firstEntity._id);
             setSettings((current) => ({ ...current, reportingCurrency: firstEntity.defaultCurrency }));
@@ -106,6 +107,10 @@ export default function AdminPayrollRunPage() {
   }, [allVariablePayProfiles, employerEntityId]);
 
   const runLabel = `${monthNames[month - 1]} ${year}`;
+  const selectedEmployer = useMemo(
+    () => employerEntities.find((entity) => entity._id === employerEntityId),
+    [employerEntities, employerEntityId]
+  );
 
   const handleRun = async () => {
     setError(null);
@@ -181,9 +186,7 @@ export default function AdminPayrollRunPage() {
               <ArrowLeft className="w-4 h-4 mr-1" />
               Back to Dashboard
             </Link>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
-              Run Payroll
-            </h1>
+            <h1 className="text-3xl font-bold text-zinc-100">Run Payroll</h1>
             <p className="text-zinc-500 mt-1">Calculate payroll and generate draft payslips for HR review</p>
           </div>
         </div>
@@ -195,7 +198,7 @@ export default function AdminPayrollRunPage() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6">
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
                 <Calendar className="w-5 h-5" />
@@ -265,7 +268,7 @@ export default function AdminPayrollRunPage() {
             </div>
           </div>
 
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6">
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400">
                 <Settings2 className="w-5 h-5" />
@@ -363,28 +366,34 @@ export default function AdminPayrollRunPage() {
               }}
               className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-zinc-200 focus:border-amber-500 focus:outline-none"
             >
-              <option value="">Select a legal employer</option>
+              <option value="">{employerEntities.some((entity) => entity.status === 'active') ? 'Select a legal employer' : 'No active legal employer available'}</option>
               {employerEntities.map((entity) => (
-                <option key={entity._id} value={entity._id}>
+                <option key={entity._id} value={entity._id} disabled={entity.status !== 'active'}>
                   {entity.legalName} — {entity.jurisdictionCode} / {entity.defaultCurrency} — {entity.payrollReadiness.mode.replace(/_/g, ' ')}
                 </option>
               ))}
             </select>
           </label>
-          {employerEntityId ? (() => {
-            const selected = employerEntities.find((entity) => entity._id === employerEntityId);
-            return selected && !selected.payrollReadiness.payrollRunnable ? (
-              <div className="mt-3 border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
-                Preview-only: calculations can be inspected, but finalization remains blocked until the legal and tax-pack gates pass.
-              </div>
-            ) : null;
-          })() : null}
+          {!employerEntities.some((entity) => entity.status === 'active') ? (
+            <div className="mt-3 border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
+              Payroll calculation is disabled until an employer setup has been legally verified and made active. Draft employers are shown above for context.
+            </div>
+          ) : null}
+          {selectedEmployer && !selectedEmployer.payrollReadiness.payrollRunnable ? (
+            <div className="mt-3 border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
+              <p className="font-medium">Preview-only calculation</p>
+              <ul className="mt-2 space-y-1 text-xs text-amber-100/80">
+                {selectedEmployer.payrollReadiness.blockingIssues.map((issue) => <li key={issue}>- {issue}</li>)}
+              </ul>
+            </div>
+          ) : null}
         </section>
 
         <div className="mt-6 flex items-center justify-end">
           <button
             onClick={handleRun}
-            disabled={processing}
+            disabled={processing || !employerEntityId}
+            title={!employerEntityId ? 'Complete and activate an employer setup first' : undefined}
             className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold disabled:opacity-50"
           >
             {processing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}

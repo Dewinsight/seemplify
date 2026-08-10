@@ -1,9 +1,11 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, Building2, CheckCircle2, Loader2, Plus, Save } from 'lucide-react';
 
+import { useUserContext } from '@/lib/hooks';
+import { PAYROLL_BANK_JURISDICTIONS } from '@/lib/payrollBankJurisdictions.mjs';
 import { listTaxJurisdictions, TaxJurisdictionSummary } from '@/lib/payrollTax';
 import {
   createPayrollEmployerEntity,
@@ -11,37 +13,74 @@ import {
   listTaxAdapterCandidates,
   PayrollEmployerEntity,
   TaxAdapterCandidate,
+  updatePayrollEmployerEntity,
 } from '@/lib/payrollEmployerEntities';
 
-const emptyForm = {
-  code: '',
-  legalName: '',
-  employerType: 'company' as const,
-  countryCode: 'NG',
-  jurisdictionCode: 'NG-LA',
-  defaultCurrency: 'NGN',
-  status: 'draft' as const,
-  taxJurisdictionConfigId: '',
-  taxJurisdictionVersionId: '',
-  taxAdapterCandidateId: 'NG_2026_WAVE_1',
-  authorityCode: '',
-  registrationType: 'PAYE employer registration',
-  registrationReference: '',
-  evidenceReference: '',
-  effectiveFrom: '2026-01-01',
+type EmployerForm = {
+  code: string;
+  legalName: string;
+  employerType: 'company' | 'subsidiary' | 'registered_branch' | 'employer_of_record';
+  countryCode: string;
+  jurisdictionCode: string;
+  defaultCurrency: string;
+  status: 'draft';
+  taxJurisdictionConfigId: string;
+  taxJurisdictionVersionId: string;
+  taxAdapterCandidateId: string;
+  authorityCode: string;
+  registrationType: string;
+  registrationReference: string;
+  evidenceReference: string;
+  effectiveFrom: string;
 };
 
+const supportedCountries = PAYROLL_BANK_JURISDICTIONS.filter((country: any) => country.code !== 'OTHER');
+
+function defaultForm(
+  countryCode = 'NG',
+  organizationName = '',
+  candidates: TaxAdapterCandidate[] = [],
+  jurisdictions: TaxJurisdictionSummary[] = []
+): EmployerForm {
+  const country = supportedCountries.find((entry: any) => entry.code === countryCode) || supportedCountries[0];
+  const candidate = candidates.find((entry) => entry.countryCode === country.code && entry.currency === country.currency);
+  const jurisdiction = jurisdictions.find((entry) => (
+    entry.countryCode === country.code
+    && entry.publishedVersion?.calculationCurrency === country.currency
+  ));
+
+  return {
+    code: `${country.code}-DEFAULT`,
+    legalName: organizationName,
+    employerType: 'company',
+    countryCode: country.code,
+    jurisdictionCode: candidate?.jurisdictionCode || country.code,
+    defaultCurrency: country.currency,
+    status: 'draft',
+    taxJurisdictionConfigId: jurisdiction?._id || '',
+    taxJurisdictionVersionId: jurisdiction?.publishedVersion?._id || '',
+    taxAdapterCandidateId: candidate?.id || '',
+    authorityCode: '',
+    registrationType: 'Employer payroll tax registration',
+    registrationReference: '',
+    evidenceReference: '',
+    effectiveFrom: `${new Date().getFullYear()}-01-01`,
+  };
+}
+
 export default function EmployerEntitiesPage() {
+  const { organization } = useUserContext();
   const [entities, setEntities] = useState<PayrollEmployerEntity[]>([]);
   const [candidates, setCandidates] = useState<TaxAdapterCandidate[]>([]);
   const [jurisdictions, setJurisdictions] = useState<TaxJurisdictionSummary[]>([]);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<EmployerForm>(() => defaultForm());
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [activatingId, setActivatingId] = useState('');
   const [error, setError] = useState('');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -53,38 +92,60 @@ export default function EmployerEntitiesPage() {
       setEntities(entityRows);
       setCandidates(candidateRows);
       setJurisdictions(jurisdictionRows);
+      if (entityRows.length === 0) {
+        setForm(defaultForm('NG', organization?.name || '', candidateRows, jurisdictionRows));
+        setShowForm(true);
+      }
     } catch (loadError: any) {
       setError(loadError?.response?.data?.error || loadError?.message || 'Failed to load legal employers.');
     } finally {
       setLoading(false);
     }
+  }, [organization?.name]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!organization?.name) return;
+    setForm((current) => current.legalName ? current : { ...current, legalName: organization.name });
+  }, [organization?.name]);
+
+  const selectedCandidate = useMemo(
+    () => candidates.find((candidate) => candidate.id === form.taxAdapterCandidateId),
+    [candidates, form.taxAdapterCandidateId]
+  );
+  const selectedJurisdiction = useMemo(
+    () => jurisdictions.find((jurisdiction) => jurisdiction._id === form.taxJurisdictionConfigId),
+    [form.taxJurisdictionConfigId, jurisdictions]
+  );
+
+  const selectCountry = (countryCode: string) => {
+    const next = defaultForm(countryCode, form.legalName || organization?.name || '', candidates, jurisdictions);
+    setForm({
+      ...next,
+      employerType: form.employerType,
+      authorityCode: form.authorityCode,
+      registrationReference: form.registrationReference,
+      evidenceReference: form.evidenceReference,
+    });
   };
 
-  useEffect(() => { void load(); }, []);
-
-  const matchingCandidates = useMemo(() => candidates.filter((candidate) => (
-    candidate.countryCode === form.countryCode
-    && candidate.jurisdictionCode === form.jurisdictionCode
-    && candidate.currency === form.defaultCurrency
-  )), [candidates, form.countryCode, form.defaultCurrency, form.jurisdictionCode]);
-
-  const matchingJurisdictions = useMemo(() => jurisdictions.filter((jurisdiction) => (
-    jurisdiction.countryCode === form.countryCode
-  )), [form.countryCode, jurisdictions]);
-
-  const chooseJurisdiction = (id: string) => {
-    const jurisdiction = jurisdictions.find((row) => row._id === id);
-    const published = jurisdiction?.publishedVersion;
-    setForm((current) => ({
-      ...current,
-      taxJurisdictionConfigId: id,
-      taxJurisdictionVersionId: published?._id || '',
-      defaultCurrency: published?.calculationCurrency || current.defaultCurrency,
-    }));
+  const openNewForm = () => {
+    setForm(defaultForm('NG', organization?.name || '', candidates, jurisdictions));
+    setError('');
+    setShowForm(true);
   };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
+    const registrationValues = [form.authorityCode, form.registrationReference, form.evidenceReference];
+    const hasAnyRegistration = registrationValues.some((value) => value.trim());
+    const hasCompleteRegistration = registrationValues.every((value) => value.trim());
+    if (hasAnyRegistration && !hasCompleteRegistration) {
+      setError('Complete the tax authority, registration reference, and evidence reference together, or leave all three blank for now.');
+      return;
+    }
+
     setSaving(true);
     setError('');
     try {
@@ -99,7 +160,7 @@ export default function EmployerEntitiesPage() {
         taxJurisdictionConfigId: form.taxJurisdictionConfigId || null,
         taxJurisdictionVersionId: form.taxJurisdictionVersionId || null,
         taxAdapterCandidateId: form.taxAdapterCandidateId,
-        taxRegistrations: form.authorityCode ? [{
+        taxRegistrations: hasCompleteRegistration ? [{
           authorityCode: form.authorityCode,
           registrationType: form.registrationType,
           registrationReference: form.registrationReference,
@@ -108,7 +169,6 @@ export default function EmployerEntitiesPage() {
           status: 'unverified',
         }] : [],
       });
-      setForm(emptyForm);
       setShowForm(false);
       await load();
     } catch (saveError: any) {
@@ -118,51 +178,112 @@ export default function EmployerEntitiesPage() {
     }
   };
 
+  const enablePreview = async (entity: PayrollEmployerEntity) => {
+    setActivatingId(entity._id);
+    setError('');
+    try {
+      await updatePayrollEmployerEntity(entity._id, { status: 'active' });
+      await load();
+    } catch (activateError: any) {
+      setError(activateError?.response?.data?.error || activateError?.message || 'Failed to enable this employer.');
+    } finally {
+      setActivatingId('');
+    }
+  };
+
   return (
     <main className="min-h-screen bg-zinc-950 px-6 py-8 text-zinc-200">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <Link href="/dashboard" className="mb-2 inline-flex min-h-11 items-center gap-2 text-sm text-zinc-400 hover:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
               <ArrowLeft className="h-4 w-4" /> Dashboard
             </Link>
-            <h1 className="text-2xl font-semibold text-zinc-100">Legal employers</h1>
+            <h1 className="text-2xl font-semibold text-zinc-100">Employer setup</h1>
             <p className="mt-1 max-w-3xl text-sm text-zinc-400">
-              Keep Nigerian companies, UK subsidiaries and other registered employers in separate statutory payrolls. An entity does not become runnable until its published tax pack and registration gates pass.
+              Choose the payroll country once. Currency, jurisdiction, tax pack, and calculation adapter are filled automatically.
             </p>
           </div>
-          <button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-amber-500 px-4 text-sm font-medium text-zinc-950 hover:bg-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
-            <Plus className="h-4 w-4" /> Add legal employer
-          </button>
+          {!showForm ? (
+            <button type="button" onClick={openNewForm} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 text-sm font-medium text-zinc-950 hover:bg-amber-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
+              <Plus className="h-4 w-4" /> Add employer
+            </button>
+          ) : null}
         </div>
 
         {error ? <div role="alert" className="mb-5 border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">{error}</div> : null}
 
         {showForm ? (
           <form onSubmit={save} className="mb-6 border border-zinc-800 bg-zinc-900 p-5">
-            <h2 className="text-base font-semibold text-zinc-100">New legal employer</h2>
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <label className="text-sm text-zinc-300">Code<input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
-              <label className="text-sm text-zinc-300 md:col-span-2">Registered legal name<input required value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
-              <label className="text-sm text-zinc-300">Employer type<select value={form.employerType} onChange={(event) => setForm({ ...form, employerType: event.target.value as typeof form.employerType })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5"><option value="company">Company</option><option value="subsidiary">Subsidiary</option><option value="registered_branch">Registered branch</option><option value="employer_of_record">Employer of record</option></select></label>
-              <label className="text-sm text-zinc-300">Country<input required maxLength={2} value={form.countryCode} onChange={(event) => setForm({ ...form, countryCode: event.target.value.toUpperCase() })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
-              <label className="text-sm text-zinc-300">Jurisdiction<input required value={form.jurisdictionCode} onChange={(event) => setForm({ ...form, jurisdictionCode: event.target.value.toUpperCase() })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
-              <label className="text-sm text-zinc-300">Currency<input required maxLength={3} value={form.defaultCurrency} onChange={(event) => setForm({ ...form, defaultCurrency: event.target.value.toUpperCase() })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
-              <label className="text-sm text-zinc-300 md:col-span-2">Published tax pack<select value={form.taxJurisdictionConfigId} onChange={(event) => chooseJurisdiction(event.target.value)} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5"><option value="">No pack selected</option>{matchingJurisdictions.map((row) => <option key={row._id} value={row._id}>{row.displayName} — {row.publishedVersion?.calculationStatus || 'not published'}</option>)}</select></label>
-              <label className="text-sm text-zinc-300">Tested adapter<select value={form.taxAdapterCandidateId} onChange={(event) => setForm({ ...form, taxAdapterCandidateId: event.target.value })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5"><option value="">No adapter selected</option>{matchingCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.displayName}</option>)}</select></label>
-              <label className="text-sm text-zinc-300">Tax authority code<input value={form.authorityCode} onChange={(event) => setForm({ ...form, authorityCode: event.target.value })} placeholder="LIRS or HMRC" className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
-              <label className="text-sm text-zinc-300">Registration reference<input value={form.registrationReference} onChange={(event) => setForm({ ...form, registrationReference: event.target.value })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
-              <label className="text-sm text-zinc-300">Evidence reference<input value={form.evidenceReference} onChange={(event) => setForm({ ...form, evidenceReference: event.target.value })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
+            <div className="flex flex-col gap-2 border-b border-zinc-800 pb-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-zinc-100">Employer details</h2>
+                <p className="mt-1 text-sm text-zinc-500">Defaults are saved as a draft until the real tax registration is verified.</p>
+              </div>
+              <span className="text-xs font-medium text-amber-300">Draft - not yet runnable</span>
             </div>
-            <div className="mt-5 flex justify-end gap-3"><button type="button" onClick={() => setShowForm(false)} className="min-h-11 rounded-lg border border-zinc-700 px-4 text-sm">Cancel</button><button disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-amber-500 px-4 text-sm font-medium text-zinc-950 disabled:opacity-60">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save draft</button></div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="text-sm text-zinc-300">
+                Payroll country
+                <select value={form.countryCode} onChange={(event) => selectCountry(event.target.value)} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5">
+                  {supportedCountries.map((country: any) => <option key={country.code} value={country.code}>{country.label}</option>)}
+                </select>
+                <span className="mt-1 block text-xs text-zinc-500">This controls employee currency, tax rules, statutory defaults, and bank fields.</span>
+              </label>
+              <label className="text-sm text-zinc-300">
+                Registered legal name
+                <input required value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} placeholder="Name on the company registration" className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" />
+              </label>
+              <label className="text-sm text-zinc-300">
+                Employer type
+                <select value={form.employerType} onChange={(event) => setForm({ ...form, employerType: event.target.value as EmployerForm['employerType'] })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5">
+                  <option value="company">Company</option><option value="subsidiary">Subsidiary</option><option value="registered_branch">Registered branch</option><option value="employer_of_record">Employer of record</option>
+                </select>
+              </label>
+              <label className="text-sm text-zinc-300">
+                Internal reference
+                <input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase() })} className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" />
+              </label>
+            </div>
+
+            <div className="mt-5 border border-zinc-700 bg-zinc-950/50 p-4">
+              <h3 className="text-sm font-medium text-zinc-200">Automatic payroll defaults</h3>
+              <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div><dt className="text-xs text-zinc-500">Currency</dt><dd className="mt-0.5 font-medium">{form.defaultCurrency}</dd></div>
+                <div><dt className="text-xs text-zinc-500">Jurisdiction</dt><dd className="mt-0.5 font-medium">{form.jurisdictionCode}</dd></div>
+                <div><dt className="text-xs text-zinc-500">Tax pack</dt><dd className="mt-0.5 font-medium">{selectedJurisdiction?.displayName || 'Not available yet'}</dd></div>
+                <div><dt className="text-xs text-zinc-500">Calculation adapter</dt><dd className="mt-0.5 font-medium">{selectedCandidate?.displayName || 'Not available yet'}</dd></div>
+              </dl>
+            </div>
+
+            <fieldset className="mt-5">
+              <legend className="text-sm font-medium text-zinc-200">Tax registration (optional for the draft)</legend>
+              <p className="mt-1 text-xs text-zinc-500">These values come from official employer documents, so payroll will never invent them.</p>
+              <div className="mt-3 grid gap-4 md:grid-cols-3">
+                <label className="text-sm text-zinc-300">Tax authority<input value={form.authorityCode} onChange={(event) => setForm({ ...form, authorityCode: event.target.value })} placeholder="For example, LIRS or HMRC" className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
+                <label className="text-sm text-zinc-300">Registration reference<input value={form.registrationReference} onChange={(event) => setForm({ ...form, registrationReference: event.target.value })} placeholder="Reference on the registration" className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
+                <label className="text-sm text-zinc-300">Evidence reference<input value={form.evidenceReference} onChange={(event) => setForm({ ...form, evidenceReference: event.target.value })} placeholder="Document or secure file reference" className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5" /></label>
+              </div>
+            </fieldset>
+
+            <div className="mt-5 flex justify-end gap-3">
+              {entities.length ? <button type="button" onClick={() => setShowForm(false)} className="min-h-11 rounded-lg border border-zinc-700 px-4 text-sm">Cancel</button> : null}
+              <button disabled={saving} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-amber-500 px-4 text-sm font-medium text-zinc-950 disabled:opacity-60">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save employer setup
+              </button>
+            </div>
           </form>
         ) : null}
 
         {loading ? <div className="flex min-h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-amber-400" /></div> : (
           <div className="overflow-x-auto border border-zinc-800">
             <table className="w-full min-w-[780px] text-left text-sm">
-              <thead className="bg-zinc-900 text-zinc-400"><tr><th className="px-4 py-3 font-medium">Legal employer</th><th className="px-4 py-3 font-medium">Jurisdiction</th><th className="px-4 py-3 font-medium">Tax pack</th><th className="px-4 py-3 font-medium">Payroll state</th></tr></thead>
-              <tbody className="divide-y divide-zinc-800">{entities.map((entity) => <tr key={entity._id} className="bg-zinc-950"><td className="px-4 py-4"><div className="flex items-start gap-3"><Building2 className="mt-0.5 h-5 w-5 text-zinc-500" /><div><p className="font-medium text-zinc-100">{entity.legalName}</p><p className="mt-1 text-xs text-zinc-500">{entity.code} · {entity.employerType.replace(/_/g, ' ')}</p></div></div></td><td className="px-4 py-4"><p>{entity.jurisdictionCode}</p><p className="mt-1 text-xs text-zinc-500">{entity.defaultCurrency}</p></td><td className="px-4 py-4"><p>{entity.payrollReadiness.taxPack?.label || 'Not bound'}</p><p className="mt-1 text-xs text-zinc-500">{entity.taxAdapterCandidateId || 'No tested adapter'}</p></td><td className="px-4 py-4"><div className="flex items-center gap-2">{entity.payrollReadiness.payrollRunnable ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className="h-4 w-4 text-amber-400" />}<span className="font-medium">{entity.payrollReadiness.mode.replace(/_/g, ' ')}</span></div>{entity.payrollReadiness.blockingIssues.length ? <ul className="mt-2 max-w-lg space-y-1 text-xs text-zinc-500">{entity.payrollReadiness.blockingIssues.map((issue) => <li key={issue}>• {issue}</li>)}</ul> : null}</td></tr>)}</tbody>
+              <thead className="bg-zinc-900 text-zinc-400"><tr><th className="px-4 py-3 font-medium">Legal employer</th><th className="px-4 py-3 font-medium">Jurisdiction</th><th className="px-4 py-3 font-medium">Automatic tax setup</th><th className="px-4 py-3 font-medium">Readiness</th><th className="px-4 py-3 font-medium">Action</th></tr></thead>
+              <tbody className="divide-y divide-zinc-800">
+                {entities.length === 0 ? <tr><td colSpan={5} className="px-4 py-10 text-center text-zinc-500">Save the employer setup above to begin.</td></tr> : null}
+                {entities.map((entity) => <tr key={entity._id} className="bg-zinc-950"><td className="px-4 py-4"><div className="flex items-start gap-3"><Building2 className="mt-0.5 h-5 w-5 text-zinc-500" /><div><p className="font-medium text-zinc-100">{entity.legalName}</p><p className="mt-1 text-xs text-zinc-500">{entity.code} - {entity.employerType.replace(/_/g, ' ')}</p></div></div></td><td className="px-4 py-4"><p>{entity.jurisdictionCode}</p><p className="mt-1 text-xs text-zinc-500">{entity.defaultCurrency}</p></td><td className="px-4 py-4"><p>{entity.payrollReadiness.taxPack?.label || 'No published pack yet'}</p><p className="mt-1 text-xs text-zinc-500">{entity.taxAdapterCandidateId || 'No tested adapter yet'}</p></td><td className="px-4 py-4"><div className="flex items-center gap-2">{entity.payrollReadiness.payrollRunnable ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <AlertTriangle className="h-4 w-4 text-amber-400" />}<span className="font-medium capitalize">{entity.payrollReadiness.mode.replace(/_/g, ' ')}</span></div>{entity.payrollReadiness.blockingIssues.length ? <ul className="mt-2 max-w-lg space-y-1 text-xs text-zinc-500">{entity.payrollReadiness.blockingIssues.map((issue) => <li key={issue}>- {issue}</li>)}</ul> : null}</td><td className="px-4 py-4">{entity.status === 'draft' && entity.payrollReadiness.taxPack ? <button type="button" disabled={activatingId === entity._id} onClick={() => void enablePreview(entity)} className="min-h-9 rounded-lg border border-amber-500/40 px-3 text-xs font-medium text-amber-300 hover:bg-amber-500/10 disabled:opacity-60">{activatingId === entity._id ? 'Enabling...' : 'Enable preview'}</button> : <span className="text-xs capitalize text-zinc-500">{entity.status === 'active' ? 'Active' : 'Awaiting tax pack'}</span>}</td></tr>)}
+              </tbody>
             </table>
           </div>
         )}

@@ -1,5 +1,9 @@
 const OrganizationCurrencyPolicy = require('../models/OrganizationCurrencyPolicy');
 const currencyService = require('./CurrencyService');
+const {
+  TAX_CURRENCY_CATALOG_VERSION,
+  TAX_CURRENCY_CODES,
+} = require('./tax/TaxCurrencyCatalog');
 
 class CurrencyPolicyValidationError extends Error {
   constructor(message, details = []) {
@@ -22,12 +26,19 @@ function uniqueCodes(values = []) {
 }
 
 function defaultEnabledCurrency(code) {
+  const currency = currencyService.getSupportedCurrencies().find((entry) => entry.code === code);
   return {
     code,
-    paymentEnabled: true,
+    paymentEnabled: currency?.decimals === 2,
     isActive: true,
     addedAt: new Date(),
   };
+}
+
+function defaultTaxCurrencies() {
+  return TAX_CURRENCY_CODES
+    .filter((code) => currencyService.isSupportedCurrencyCode(code))
+    .map(defaultEnabledCurrency);
 }
 
 class OrganizationCurrencyService {
@@ -97,13 +108,36 @@ class OrganizationCurrencyService {
             organizationId,
             functionalCurrency: 'USD',
             reportingCurrency: 'USD',
-            enabledCurrencies: [defaultEnabledCurrency('USD')],
+            enabledCurrencies: defaultTaxCurrencies(),
+            taxCurrencyCatalogVersion: TAX_CURRENCY_CATALOG_VERSION,
             requireConfiguredPaymentCurrency: true,
             lastModifiedBy: actor,
           },
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
+    }
+
+    if (Number(policy.taxCurrencyCatalogVersion || 0) < TAX_CURRENCY_CATALOG_VERSION) {
+      const enabledByCode = new Map((policy.enabledCurrencies || []).map((entry) => {
+        const plain = entry.toObject ? entry.toObject() : entry;
+        return [normalizeCode(plain.code), plain];
+      }));
+      for (const taxCurrency of defaultTaxCurrencies()) {
+        const existing = enabledByCode.get(taxCurrency.code);
+        enabledByCode.set(taxCurrency.code, {
+          ...existing,
+          ...taxCurrency,
+          addedAt: existing?.addedAt || taxCurrency.addedAt,
+        });
+      }
+      policy.enabledCurrencies = [...enabledByCode.values()];
+      policy.taxCurrencyCatalogVersion = TAX_CURRENCY_CATALOG_VERSION;
+      policy.lastModifiedBy = {
+        userId: actor.userId || 'system-currency-migration',
+        name: actor.name || 'Currency catalogue migration',
+      };
+      await policy.save();
     }
     return policy;
   }
@@ -180,6 +214,7 @@ class OrganizationCurrencyService {
     current.reportingCurrency = reportingCurrency;
     current.enabledCurrencies = enabledCurrencies;
     current.customCurrencies = customCurrencies;
+    current.taxCurrencyCatalogVersion = TAX_CURRENCY_CATALOG_VERSION;
     current.requireConfiguredPaymentCurrency = payload.requireConfiguredPaymentCurrency === undefined
       ? current.requireConfiguredPaymentCurrency !== false
       : payload.requireConfiguredPaymentCurrency !== false;

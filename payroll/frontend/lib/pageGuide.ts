@@ -199,13 +199,14 @@ const guides: RouteGuideMatcher[] = [
       steps: [
         'Start with the Setup Status panel to see which payroll requirements are still incomplete.',
         'Review employee details and sync-backed identity data before you change compensation.',
-        'Set compensation, currency, allowances, recurring deductions, and bank details in order.',
-        'Choose the right tax jurisdiction, complete any required employee tax fields, and use the tax preview before saving.',
+        'Confirm the payroll country first; currency, tax jurisdiction, and bank requirements are derived from it automatically.',
+        'Set compensation, allowances, recurring deductions, and the country-specific bank details requested by the form.',
+        'Complete any employee-specific tax fields and use the tax preview before saving.',
         'Confirm payroll flags, active status, and inclusion in next run once the setup is complete.',
       ],
       checks: [
         'Basic salary is set and bank details are valid if the employee will be paid.',
-        'Tax preview does not show validation errors for the selected jurisdiction.',
+        'Tax preview does not show validation errors for the jurisdiction derived from the payroll country.',
         'The employee should be included in payroll only when onboarding and setup are complete.',
       ],
       tips: [

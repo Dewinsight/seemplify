@@ -28,6 +28,7 @@ export const PAYROLL_BANK_JURISDICTIONS = [
   {
     value: 'USA',
     code: 'US',
+    currency: 'USD',
     label: 'United States',
     description: 'Use your account number and 9-digit ABA routing number for local payroll deposits.',
     accountNumberLabel: 'Account Number',
@@ -55,6 +56,7 @@ export const PAYROLL_BANK_JURISDICTIONS = [
   {
     value: 'UK',
     code: 'GB',
+    currency: 'GBP',
     label: 'United Kingdom',
     description: 'Use your sort code and 8-digit account number for local UK payments.',
     accountNumberLabel: 'Account Number',
@@ -80,6 +82,7 @@ export const PAYROLL_BANK_JURISDICTIONS = [
   {
     value: 'EU',
     code: 'EU',
+    currency: 'EUR',
     label: 'European Union member state',
     description: 'Use IBAN for SEPA payments. Add SWIFT/BIC when the bank asks for it for cross-border transfers.',
     accountNumberLabel: 'Account Number',
@@ -99,6 +102,7 @@ export const PAYROLL_BANK_JURISDICTIONS = [
   {
     value: 'Nigeria',
     code: 'NG',
+    currency: 'NGN',
     label: 'Nigeria',
     description: 'Use your 10-digit NUBAN account number and 3-digit bank code for local payouts.',
     accountNumberLabel: 'Account Number',
@@ -127,6 +131,7 @@ export const PAYROLL_BANK_JURISDICTIONS = [
   {
     value: 'Ghana',
     code: 'GH',
+    currency: 'GHS',
     label: 'Ghana',
     description: 'Use your account number plus the local bank or branch code used for domestic transfers.',
     accountNumberLabel: 'Account Number',
@@ -151,6 +156,7 @@ export const PAYROLL_BANK_JURISDICTIONS = [
   {
     value: 'Kenya',
     code: 'KE',
+    currency: 'KES',
     label: 'Kenya',
     description: 'Use your account number and the bank or branch code used for local EFT or RTGS payments.',
     accountNumberLabel: 'Account Number',
@@ -175,6 +181,7 @@ export const PAYROLL_BANK_JURISDICTIONS = [
   {
     value: 'South Africa',
     code: 'ZA',
+    currency: 'ZAR',
     label: 'South Africa',
     description: 'Use your account number and branch or universal branch code for local EFT payments.',
     accountNumberLabel: 'Account Number',
@@ -197,8 +204,78 @@ export const PAYROLL_BANK_JURISDICTIONS = [
     accountTypes: CURRENT_AND_SAVINGS_ACCOUNT_TYPES,
   },
   {
+    value: 'Canada',
+    code: 'CA',
+    currency: 'CAD',
+    label: 'Canada',
+    description: 'Use the account number with the 3-digit institution number and 5-digit transit number.',
+    accountNumberLabel: 'Account Number',
+    accountNumberPlaceholder: 'Bank account number',
+    accountNumberHint: 'Use the account number shown on the employee’s Canadian direct-deposit details.',
+    requiresAccountNumber: true,
+    localField: {
+      key: 'bankCode',
+      label: 'Institution + Transit Number',
+      placeholder: '000-12345',
+      hint: 'Enter the 3-digit institution number followed by the 5-digit branch transit number.',
+      required: true,
+    },
+    supportsIban: false,
+    requiresIban: false,
+    supportsSwift: true,
+    swiftRequired: false,
+    swiftHint: 'Add SWIFT/BIC only when finance requires an international wire.',
+    bankDirectory: null,
+    accountTypes: CURRENT_AND_SAVINGS_ACCOUNT_TYPES,
+  },
+  {
+    value: 'Cameroon',
+    code: 'CM',
+    currency: 'XAF',
+    label: 'Cameroon',
+    description: 'Use the domestic account or RIB details supplied by the employee’s bank.',
+    accountNumberLabel: 'Account / RIB Number',
+    accountNumberPlaceholder: 'Domestic account or RIB number',
+    accountNumberHint: 'Enter the account identifier exactly as provided by the bank.',
+    requiresAccountNumber: true,
+    localField: {
+      key: 'bankCode',
+      label: 'Bank / Branch Code',
+      placeholder: 'Bank or branch code',
+      hint: 'Use the domestic bank or branch code shown on the account details.',
+      required: true,
+    },
+    supportsIban: true,
+    requiresIban: false,
+    supportsSwift: true,
+    swiftRequired: false,
+    swiftHint: 'Add SWIFT/BIC for cross-border payments.',
+    bankDirectory: null,
+    accountTypes: CURRENT_AND_SAVINGS_ACCOUNT_TYPES,
+  },
+  {
+    value: 'Mozambique',
+    code: 'MZ',
+    currency: 'MZN',
+    label: 'Mozambique',
+    description: 'Use the account or NIB details issued by the employee’s Mozambican bank.',
+    accountNumberLabel: 'Account / NIB Number',
+    accountNumberPlaceholder: 'Account or NIB number',
+    accountNumberHint: 'Enter the domestic account or NIB identifier exactly as issued by the bank.',
+    requiresAccountNumber: true,
+    localField: null,
+    supportsIban: false,
+    requiresIban: false,
+    supportsSwift: true,
+    swiftRequired: false,
+    swiftHint: 'Add SWIFT/BIC for cross-border payments.',
+    bankDirectory: null,
+    accountTypes: CURRENT_AND_SAVINGS_ACCOUNT_TYPES,
+  },
+  {
     value: 'Other',
     code: 'OTHER',
+    currency: '',
     label: 'Other / custom country',
     description: 'Use the local account details your bank requires. Add SWIFT/BIC and IBAN when needed for international transfers.',
     accountNumberLabel: 'Account Number',
@@ -223,7 +300,11 @@ export const PAYROLL_BANK_JURISDICTIONS = [
 
 export function normalizePayrollBankCountry(value = 'USA') {
   const normalized = String(value || '').trim().toLowerCase();
-  const match = PAYROLL_BANK_JURISDICTIONS.find((item) => item.value.toLowerCase() === normalized);
+  const match = PAYROLL_BANK_JURISDICTIONS.find((item) => (
+    item.value.toLowerCase() === normalized
+    || item.label.toLowerCase() === normalized
+    || item.code.toLowerCase() === normalized
+  ));
   return match ? match.value : 'Other';
 }
 
@@ -252,4 +333,8 @@ export function getPayrollDefaultBankAccountType(value = 'USA', options = {}) {
 
 export function getPayrollBankLocalField(value = 'USA') {
   return getPayrollBankJurisdiction(value).localField || null;
+}
+
+export function getPayrollCountryDefaults(value = 'USA') {
+  return getPayrollBankJurisdiction(value);
 }

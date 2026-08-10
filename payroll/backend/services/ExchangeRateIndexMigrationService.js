@@ -18,6 +18,10 @@ function calculationFingerprint(row) {
 }
 
 function canonicalRowComparator(left, right) {
+  const leftActive = left.isActive !== false ? 1 : 0;
+  const rightActive = right.isActive !== false ? 1 : 0;
+  if (leftActive !== rightActive) return rightActive - leftActive;
+
   const leftPriority = SOURCE_PRIORITY[left.source] ?? Number.MAX_SAFE_INTEGER;
   const rightPriority = SOURCE_PRIORITY[right.source] ?? Number.MAX_SAFE_INTEGER;
   if (leftPriority !== rightPriority) return leftPriority - rightPriority;
@@ -44,7 +48,50 @@ function conflictingDuplicateError(group) {
   return error;
 }
 
-async function consolidateExactInstantDuplicates(collection) {
+function conflictResolutionKey(group) {
+  return [
+    String(group._id.organizationId),
+    group._id.baseCurrency,
+    group._id.targetCurrency,
+    dateKey(group._id.effectiveDate),
+  ].join(':');
+}
+
+async function archiveConflictingRows(archiveCollection, group, rows, canonical) {
+  if (!archiveCollection?.bulkWrite) throw conflictingDuplicateError(group);
+
+  const archivedAt = new Date();
+  const resolutionKey = conflictResolutionKey(group);
+  await archiveCollection.bulkWrite(rows.map((row) => ({
+    updateOne: {
+      filter: {
+        resolutionKey,
+        originalExchangeRateId: row._id,
+      },
+      update: {
+        $setOnInsert: {
+          resolutionKey,
+          originalExchangeRateId: row._id,
+          organizationId: group._id.organizationId,
+          baseCurrency: group._id.baseCurrency,
+          targetCurrency: group._id.targetCurrency,
+          effectiveDate: group._id.effectiveDate,
+          original: row,
+          resolution: {
+            canonicalExchangeRateId: canonical._id,
+            canonicalSource: canonical.source,
+            reason: 'same_instant_conflict',
+            strategy: 'manual_then_import_then_api_then_latest',
+          },
+          archivedAt,
+        },
+      },
+      upsert: true,
+    },
+  })), { ordered: true });
+}
+
+async function consolidateExactInstantDuplicates(collection, options = {}) {
   const groups = await collection.aggregate([
     {
       $group: {
@@ -62,28 +109,20 @@ async function consolidateExactInstantDuplicates(collection) {
   ]).toArray();
 
   let removedCount = 0;
+  let resolvedConflictGroups = 0;
+  let archivedConflictRows = 0;
   for (const group of groups) {
-    const rows = await collection.find(
-      { _id: { $in: group.rowIds } },
-      {
-        projection: {
-          rate: 1,
-          isActive: 1,
-          expiresAt: 1,
-          source: 1,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      }
-    ).toArray();
+    const rows = await collection.find({ _id: { $in: group.rowIds } }).toArray();
 
     const calculationVariants = new Set(rows.map(calculationFingerprint));
-    if (calculationVariants.size !== 1) {
-      throw conflictingDuplicateError(group);
-    }
-
     const [canonical, ...redundant] = [...rows].sort(canonicalRowComparator);
     if (!canonical || redundant.length === 0) continue;
+
+    if (calculationVariants.size !== 1) {
+      await archiveConflictingRows(options.conflictArchiveCollection, group, rows, canonical);
+      resolvedConflictGroups += 1;
+      archivedConflictRows += rows.length;
+    }
 
     const result = await collection.deleteMany({
       _id: { $in: redundant.map((row) => row._id) },
@@ -94,6 +133,8 @@ async function consolidateExactInstantDuplicates(collection) {
   return {
     duplicateGroups: groups.length,
     removedCount,
+    resolvedConflictGroups,
+    archivedConflictRows,
   };
 }
 
@@ -101,4 +142,5 @@ module.exports = {
   consolidateExactInstantDuplicates,
   calculationFingerprint,
   canonicalRowComparator,
+  conflictResolutionKey,
 };

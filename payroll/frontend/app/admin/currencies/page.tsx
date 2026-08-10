@@ -5,7 +5,6 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   DollarSign,
-  Globe,
   Landmark,
   Loader2,
   Plus,
@@ -57,6 +56,12 @@ interface ProviderInfo {
   requiresApiKey: boolean;
 }
 
+interface ExchangeRateRuntime {
+  ready: boolean;
+  code?: string | null;
+  message?: string | null;
+}
+
 interface CurrencyCatalogItem {
   code: string;
   name: string;
@@ -95,6 +100,7 @@ interface OrganizationCurrencyPolicy {
   enabledCurrencies: EnabledCurrency[];
   customCurrencies: CustomCurrency[];
   requireConfiguredPaymentCurrency: boolean;
+  taxCurrencyCatalogVersion?: number;
   updatedAt?: string;
 }
 
@@ -106,13 +112,15 @@ const emptyCustomCurrency = () => ({
 });
 
 export default function CurrenciesPage() {
-  const { currencies, loading: currenciesLoading } = usePayrollCurrencies();
+  const { currencies: sharedCurrencies, loading: currenciesLoading } = usePayrollCurrencies();
   const [rates, setRates] = useState<ExchangeRate[]>([]);
   const [settings, setSettings] = useState<CurrencySyncSettings | null>(null);
   const [provider, setProvider] = useState<ProviderInfo | null>(null);
   const [policy, setPolicy] = useState<OrganizationCurrencyPolicy | null>(null);
   const [policyCatalog, setPolicyCatalog] = useState<CurrencyCatalogItem[]>([]);
   const [activeRateCount, setActiveRateCount] = useState(0);
+  const [rateRuntime, setRateRuntime] = useState<ExchangeRateRuntime | null>(null);
+  const [rateNotice, setRateNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddRate, setShowAddRate] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState('USD');
@@ -162,27 +170,21 @@ export default function CurrenciesPage() {
   }, [settings?.lastSyncStatus]);
 
   const fetchData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
+    setRateNotice(null);
 
-      const [ratesRes, settingsRes, policyRes] = await Promise.all([
-        api.get('/currencies/rates'),
-        api.get('/currencies/settings'),
-        api.get('/currencies/policy'),
-      ]);
+    const [policyResult, settingsResult, ratesResult] = await Promise.allSettled([
+      api.get('/currencies/policy'),
+      api.get('/currencies/settings'),
+      api.get('/currencies/rates'),
+    ]);
 
-      const nextRates = Array.isArray(ratesRes.data?.rates) ? ratesRes.data.rates : [];
-      const nextSettings = settingsRes.data?.settings || null;
-
-      setRates(nextRates);
-      setSettings(nextSettings);
-      setProvider(settingsRes.data?.provider || null);
-      setActiveRateCount(Number(settingsRes.data?.activeRateCount || nextRates.length || 0));
-
-      const nextPolicy = policyRes.data?.policy || null;
+    if (policyResult.status === 'fulfilled') {
+      const nextPolicy = policyResult.value.data?.policy || null;
       setPolicy(nextPolicy);
-      setPolicyCatalog(Array.isArray(policyRes.data?.currencies) ? policyRes.data.currencies : []);
+      const returnedCatalog = policyResult.value.data?.currencies;
+      setPolicyCatalog(Array.isArray(returnedCatalog) && returnedCatalog.length ? returnedCatalog : []);
       if (nextPolicy) {
         setPolicyForm({
           functionalCurrency: nextPolicy.functionalCurrency || 'USD',
@@ -190,9 +192,24 @@ export default function CurrenciesPage() {
           enabledCurrencies: Array.isArray(nextPolicy.enabledCurrencies) ? nextPolicy.enabledCurrencies : [],
           customCurrencies: Array.isArray(nextPolicy.customCurrencies) ? nextPolicy.customCurrencies : [],
           requireConfiguredPaymentCurrency: nextPolicy.requireConfiguredPaymentCurrency !== false,
+          taxCurrencyCatalogVersion: nextPolicy.taxCurrencyCatalogVersion,
         });
       }
+    } else {
+      console.error('Failed to fetch currency policy:', policyResult.reason);
+      setError(policyResult.reason?.response?.data?.error || 'Failed to fetch the organization currency policy.');
+    }
 
+    if (settingsResult.status === 'fulfilled') {
+      const nextSettings = settingsResult.value.data?.settings || null;
+      const nextRuntime = settingsResult.value.data?.runtime || null;
+      setSettings(nextSettings);
+      setProvider(settingsResult.value.data?.provider || null);
+      setRateRuntime(nextRuntime);
+      setActiveRateCount(Number(settingsResult.value.data?.activeRateCount || 0));
+      if (nextRuntime?.ready === false) {
+        setRateNotice(nextRuntime.message || 'Exchange-rate history is being repaired. Currency policy controls remain available.');
+      }
       if (nextSettings) {
         setSettingsForm({
           providerBaseCurrency: nextSettings.providerBaseCurrency || 'USD',
@@ -202,12 +219,22 @@ export default function CurrenciesPage() {
         });
         setBaseCurrency(nextSettings.providerBaseCurrency || 'USD');
       }
-    } catch (err: any) {
-      console.error('Failed to fetch currency data:', err);
-      setError(err?.response?.data?.error || 'Failed to fetch currency data');
-    } finally {
-      setLoading(false);
+    } else {
+      console.error('Failed to fetch currency sync settings:', settingsResult.reason);
+      setRateNotice(settingsResult.reason?.response?.data?.error || 'Live-rate settings could not be loaded. Currency policy controls remain available.');
     }
+
+    if (ratesResult.status === 'fulfilled') {
+      const nextRates = Array.isArray(ratesResult.value.data?.rates) ? ratesResult.value.data.rates : [];
+      setRates(nextRates);
+      if (settingsResult.status !== 'fulfilled') setActiveRateCount(nextRates.length);
+    } else {
+      console.error('Failed to fetch exchange rates:', ratesResult.reason);
+      setRates([]);
+      setRateNotice((current) => current || ratesResult.reason?.response?.data?.error || 'Active exchange rates could not be loaded.');
+    }
+
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -215,23 +242,23 @@ export default function CurrenciesPage() {
   }, []);
 
   useEffect(() => {
-    if (!currencies.length) {
+    if (!sharedCurrencies.length) {
       return;
     }
 
-    if (!currencies.find((currency) => currency.code === baseCurrency)) {
-      setBaseCurrency(currencies[0].code);
+    if (!sharedCurrencies.find((currency) => currency.code === baseCurrency)) {
+      setBaseCurrency(sharedCurrencies[0].code);
     }
-    if (!currencies.find((currency) => currency.code === targetCurrency)) {
-      setTargetCurrency(currencies.find((currency) => currency.code !== baseCurrency)?.code || currencies[0].code);
+    if (!sharedCurrencies.find((currency) => currency.code === targetCurrency)) {
+      setTargetCurrency(sharedCurrencies.find((currency) => currency.code !== baseCurrency)?.code || sharedCurrencies[0].code);
     }
-    if (!currencies.find((currency) => currency.code === convertFrom)) {
-      setConvertFrom(currencies[0].code);
+    if (!sharedCurrencies.find((currency) => currency.code === convertFrom)) {
+      setConvertFrom(sharedCurrencies[0].code);
     }
-    if (!currencies.find((currency) => currency.code === convertTo)) {
-      setConvertTo(currencies.find((currency) => currency.code !== convertFrom)?.code || currencies[0].code);
+    if (!sharedCurrencies.find((currency) => currency.code === convertTo)) {
+      setConvertTo(sharedCurrencies.find((currency) => currency.code !== convertFrom)?.code || sharedCurrencies[0].code);
     }
-  }, [currencies, baseCurrency, targetCurrency, convertFrom, convertTo]);
+  }, [sharedCurrencies, baseCurrency, targetCurrency, convertFrom, convertTo]);
 
   const handleAddRate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -330,17 +357,35 @@ export default function CurrenciesPage() {
     [policyForm.enabledCurrencies]
   );
 
+  const resolvedPolicyCatalog = useMemo<CurrencyCatalogItem[]>(() => {
+    if (policyCatalog.length) return policyCatalog;
+    return sharedCurrencies.map((currency) => ({
+      code: currency.code,
+      name: currency.name,
+      symbol: currency.symbol,
+      decimals: currency.decimals,
+      label: currency.label,
+      kind: currency.kind === 'custom' ? 'custom' : 'iso',
+      enabled: currency.enabled !== false,
+      paymentEnabled: currency.paymentEnabled !== false,
+      statutoryEligible: currency.statutoryEligible !== false,
+      payrollCalculationReady: currency.payrollCalculationReady !== false,
+      ...(currency.kind === 'custom' ? { usage: 'reporting_only' as const } : {}),
+    }));
+  }, [policyCatalog, sharedCurrencies]);
+  const usingBuiltInPolicyCatalog = policyCatalog.length === 0 && resolvedPolicyCatalog.length > 0;
+
   const filteredPolicyCurrencies = useMemo(() => {
     const query = currencySearch.trim().toLowerCase();
-    return policyCatalog
+    return resolvedPolicyCatalog
       .filter((currency) => currency.kind === 'iso')
       .filter((currency) => !query
         || currency.code.toLowerCase().includes(query)
         || currency.name.toLowerCase().includes(query));
-  }, [currencySearch, policyCatalog]);
+  }, [currencySearch, resolvedPolicyCatalog]);
 
   const reportingCurrencies = useMemo(() => {
-    const iso = policyCatalog.filter((currency) => (
+    const iso = resolvedPolicyCatalog.filter((currency) => (
       currency.kind === 'iso' && activeIsoCurrencyCodes.has(currency.code)
     ));
     const custom = policyForm.customCurrencies
@@ -352,10 +397,10 @@ export default function CurrenciesPage() {
         kind: 'custom' as const,
       }));
     return [...iso, ...custom];
-  }, [activeIsoCurrencyCodes, policyCatalog, policyForm.customCurrencies]);
+  }, [activeIsoCurrencyCodes, resolvedPolicyCatalog, policyForm.customCurrencies]);
 
   const handleFunctionalCurrencyChange = (code: string) => {
-    if (policyCatalog.find((currency) => currency.code === code)?.payrollCalculationReady === false) return;
+    if (resolvedPolicyCatalog.find((currency) => currency.code === code)?.payrollCalculationReady === false) return;
     setPolicyForm((current) => {
       const alreadyEnabled = current.enabledCurrencies.some((currency) => currency.code === code);
       return {
@@ -372,7 +417,7 @@ export default function CurrenciesPage() {
 
   const togglePaymentCurrency = (code: string) => {
     if (code === policyForm.functionalCurrency) return;
-    const calculationReady = policyCatalog.find((currency) => currency.code === code)?.payrollCalculationReady !== false;
+    const calculationReady = resolvedPolicyCatalog.find((currency) => currency.code === code)?.payrollCalculationReady !== false;
     setPolicyForm((current) => {
       const enabled = current.enabledCurrencies.some((currency) => (
         currency.code === code
@@ -401,7 +446,7 @@ export default function CurrenciesPage() {
       setError('Enter a three-character code, name, and symbol for the reporting currency.');
       return;
     }
-    if (policyCatalog.some((currency) => currency.code === code)
+    if (resolvedPolicyCatalog.some((currency) => currency.code === code)
       || policyForm.customCurrencies.some((currency) => currency.code === code)) {
       setError(`${code} already exists in the currency catalogue.`);
       return;
@@ -440,7 +485,8 @@ export default function CurrenciesPage() {
       const response = await api.put('/currencies/policy', policyForm);
       const nextPolicy = response.data?.policy;
       setPolicy(nextPolicy || null);
-      setPolicyCatalog(Array.isArray(response.data?.currencies) ? response.data.currencies : []);
+      const returnedCatalog = response.data?.currencies;
+      if (Array.isArray(returnedCatalog) && returnedCatalog.length) setPolicyCatalog(returnedCatalog);
       if (nextPolicy) {
         setPolicyForm(nextPolicy);
       }
@@ -503,13 +549,13 @@ export default function CurrenciesPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Currency Management</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Seed live rates, keep daily sync on, and override any pair manually for payroll.
+            Manage the currencies used by payroll, tax calculations, reporting, and live conversion.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
           <button
             onClick={() => handleSyncRates('seed')}
-            disabled={syncing}
+            disabled={syncing || rateRuntime?.ready === false}
             className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
           >
             {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
@@ -517,7 +563,7 @@ export default function CurrenciesPage() {
           </button>
           <button
             onClick={() => handleSyncRates('sync')}
-            disabled={syncing}
+            disabled={syncing || rateRuntime?.ready === false}
             className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
           >
             {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -525,7 +571,8 @@ export default function CurrenciesPage() {
           </button>
           <button
             onClick={() => setShowAddRate(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800"
+            disabled={rateRuntime?.ready === false}
+            className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
             Manual Override
@@ -539,13 +586,19 @@ export default function CurrenciesPage() {
         </div>
       )}
 
+      {rateNotice && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          {rateNotice}
+        </div>
+      )}
+
       {feedback && (
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
           {feedback}
         </div>
       )}
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5" aria-labelledby="organization-currency-policy">
+      <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5" aria-labelledby="organization-currency-policy">
         <div className="flex flex-col gap-3 border-b border-zinc-800 pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <Landmark className="mt-0.5 h-5 w-5 text-amber-400" aria-hidden="true" />
@@ -559,13 +612,20 @@ export default function CurrenciesPage() {
           <button
             type="button"
             onClick={handleSavePolicy}
-            disabled={savingPolicy}
+            disabled={savingPolicy || !policy}
+            title={!policy ? 'The saved organization policy must reconnect before changes can be saved' : undefined}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
           >
             {savingPolicy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
             Save policy
           </button>
         </div>
+
+        {usingBuiltInPolicyCatalog ? (
+          <div className="border-b border-zinc-800 py-3 text-sm text-zinc-400">
+            The built-in ISO currency catalogue is available. {!policy ? 'Saving is paused until the organization policy reconnects.' : 'You can continue configuring the organization policy normally.'}
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-1 gap-6 py-5 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <div className="space-y-4">
@@ -577,7 +637,7 @@ export default function CurrenciesPage() {
                 onChange={(event) => handleFunctionalCurrencyChange(event.target.value)}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none"
               >
-                {policyCatalog.filter((currency) => currency.kind === 'iso' && currency.payrollCalculationReady !== false).map((currency) => (
+                {resolvedPolicyCatalog.filter((currency) => currency.kind === 'iso' && currency.payrollCalculationReady !== false).map((currency) => (
                   <option key={currency.code} value={currency.code}>{currency.label}</option>
                 ))}
               </select>
@@ -747,7 +807,7 @@ export default function CurrenciesPage() {
       </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr,0.8fr]">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="pt-0.5">
@@ -772,7 +832,7 @@ export default function CurrenciesPage() {
             )}
           </div>
 
-          <div className={`mb-5 rounded-xl border px-4 py-3 text-sm ${syncStatusTone}`}>
+          <div className={`mb-5 rounded-lg border px-4 py-3 text-sm ${syncStatusTone}`}>
             <div className="flex items-center gap-2 font-medium">
               <CheckCircle2 className="h-4 w-4" />
               <span>Last sync status: {settings?.lastSyncStatus || 'never'}</span>
@@ -790,7 +850,7 @@ export default function CurrenciesPage() {
                 onChange={(e) => setSettingsForm((current) => ({ ...current, providerBaseCurrency: e.target.value }))}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-white"
               >
-                {currencies.map((currency) => (
+                {sharedCurrencies.map((currency) => (
                   <option key={currency.code} value={currency.code}>
                     {currency.label}
                   </option>
@@ -801,7 +861,7 @@ export default function CurrenciesPage() {
               </p>
             </div>
 
-            <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+            <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
               <label className="flex items-center justify-between gap-3 text-sm text-zinc-300">
                 <span>Auto-sync live rates daily</span>
                 <input
@@ -836,7 +896,7 @@ export default function CurrenciesPage() {
             <button
               onClick={handleSaveSettings}
               disabled={savingSettings}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
             >
               {savingSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
               Save Sync Settings
@@ -850,60 +910,35 @@ export default function CurrenciesPage() {
             </button>
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-3 text-sm text-zinc-400 md:grid-cols-3">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-xs text-zinc-500">Active rates</div>
-              <div className="mt-2 text-xl font-semibold text-white">{activeRateCount}</div>
+          <dl className="mt-5 grid grid-cols-1 divide-y divide-zinc-800 border-y border-zinc-800 text-sm md:grid-cols-3 md:divide-x md:divide-y-0">
+            <div className="py-3 md:pr-4">
+              <dt className="text-xs text-zinc-500">Active rates</dt>
+              <dd className="mt-1 font-semibold text-white">{activeRateCount}</dd>
             </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-xs text-zinc-500">Provider updated</div>
-              <div className="mt-2 text-sm text-white">
+            <div className="py-3 md:px-4">
+              <dt className="text-xs text-zinc-500">Provider updated</dt>
+              <dd className="mt-1 text-zinc-200">
                 {settings?.lastProviderUpdateAt ? new Date(settings.lastProviderUpdateAt).toLocaleString() : 'Not synced yet'}
-              </div>
+              </dd>
             </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-xs text-zinc-500">Next provider update</div>
-              <div className="mt-2 text-sm text-white">
+            <div className="py-3 md:pl-4">
+              <dt className="text-xs text-zinc-500">Next provider update</dt>
+              <dd className="mt-1 text-zinc-200">
                 {settings?.nextProviderUpdateAt ? new Date(settings.nextProviderUpdateAt).toLocaleString() : 'Not available yet'}
-              </div>
+              </dd>
             </div>
-          </div>
+          </dl>
         </div>
 
-        <div className="space-y-6">
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="pt-0.5">
-                <Globe className="h-5 w-5 text-emerald-400" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-white">Supported Currencies</h2>
-                <p className="text-sm text-zinc-500">Payroll now uses the shared currency catalog everywhere.</p>
-              </div>
-            </div>
-            <div className="max-h-80 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
-              <div className="flex flex-wrap gap-2">
-                {currencies.map((currency) => (
-                  <div
-                    key={currency.code}
-                    className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm"
-                  >
-                    <span className="font-medium text-white">{currency.code}</span>
-                    <span className="ml-2 text-zinc-500">{currency.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5">
             <div className="mb-4 flex items-center gap-3">
               <div className="pt-0.5">
                 <DollarSign className="h-5 w-5 text-blue-400" />
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-white">Currency Converter</h2>
-                <p className="text-sm text-zinc-500">Test the exact rates payroll will use.</p>
+                <p className="text-sm text-zinc-500">Test the exact payroll rate across {sharedCurrencies.length} ISO currencies.</p>
               </div>
             </div>
 
@@ -925,7 +960,7 @@ export default function CurrenciesPage() {
                     onChange={(e) => setConvertFrom(e.target.value)}
                     className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-white"
                   >
-                    {currencies.map((currency) => (
+                    {sharedCurrencies.map((currency) => (
                       <option key={currency.code} value={currency.code}>
                         {currency.label}
                       </option>
@@ -941,7 +976,7 @@ export default function CurrenciesPage() {
                   onChange={(e) => setConvertTo(e.target.value)}
                   className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-white"
                 >
-                  {currencies.map((currency) => (
+                  {sharedCurrencies.map((currency) => (
                     <option key={currency.code} value={currency.code}>
                       {currency.label}
                     </option>
@@ -951,14 +986,15 @@ export default function CurrenciesPage() {
 
               <button
                 onClick={handleConvert}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-500"
+                disabled={rateRuntime?.ready === false}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 font-medium text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ArrowRightLeft className="h-4 w-4" />
                 Convert
               </button>
 
               {convertResult && (
-                <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 text-center">
+                <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4 text-center">
                   <p className="text-sm text-zinc-400">{convertResult.formattedOriginal}</p>
                   <p className="mt-1 text-2xl font-bold text-emerald-400">{convertResult.formattedConverted}</p>
                   <p className="mt-2 text-xs text-zinc-500">
@@ -972,7 +1008,7 @@ export default function CurrenciesPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="pt-0.5">
@@ -994,46 +1030,54 @@ export default function CurrenciesPage() {
         </div>
 
         {rates.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-950/40 py-10 text-center text-zinc-500">
+          <div className="rounded-lg border border-dashed border-zinc-700 bg-zinc-950/40 py-10 text-center text-zinc-500">
             <DollarSign className="mx-auto mb-3 h-8 w-8 opacity-50" />
             <p>No exchange rates configured yet.</p>
             <p className="mt-1 text-xs">Seed live rates to start multi-currency payroll calculations.</p>
           </div>
         ) : (
-          <div className="max-h-[32rem] overflow-y-auto space-y-3">
-            {rates.map((rate) => (
-              <div
-                key={rate._id}
-                className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 lg:flex-row lg:items-center lg:justify-between"
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 font-medium text-white">
-                    <span>{rate.baseCurrency}</span>
-                    <ArrowRightLeft className="h-4 w-4 text-zinc-500" />
-                    <span>{rate.targetCurrency}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${rate.source === 'manual' ? 'bg-amber-500/10 text-amber-300' : 'bg-blue-500/10 text-blue-300'}`}>
-                      {rate.source === 'manual' ? 'Manual override' : 'Live sync'}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    {new Date(rate.effectiveDate).toLocaleString()}
-                    {rate.createdByName ? ` • ${rate.createdByName}` : ''}
-                  </p>
-                  {rate.notes && <p className="mt-1 text-xs text-zinc-500">{rate.notes}</p>}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-lg font-semibold text-emerald-400">
-                    {Number(rate.rate || 0).toLocaleString()}
-                  </span>
-                  <button
-                    onClick={() => handleDeleteRate(rate._id)}
-                    className="rounded-lg border border-zinc-800 p-2 text-zinc-400 hover:border-red-500/30 hover:text-red-400"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="max-h-[32rem] overflow-auto rounded-lg border border-zinc-800">
+            <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
+              <thead className="sticky top-0 bg-zinc-900 text-xs uppercase tracking-wide text-zinc-500">
+                <tr>
+                  <th className="border-b border-zinc-800 px-4 py-3 font-medium">Pair</th>
+                  <th className="border-b border-zinc-800 px-4 py-3 font-medium">Rate</th>
+                  <th className="border-b border-zinc-800 px-4 py-3 font-medium">Source</th>
+                  <th className="border-b border-zinc-800 px-4 py-3 font-medium">Effective</th>
+                  <th className="border-b border-zinc-800 px-4 py-3 font-medium">Notes</th>
+                  <th className="border-b border-zinc-800 px-4 py-3 text-right font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {rates.map((rate) => {
+                  const canDeactivate = new Date(rate.effectiveDate).getTime() > Date.now();
+                  return (
+                    <tr key={rate._id} className="bg-zinc-950/40 align-top hover:bg-zinc-900">
+                      <td className="px-4 py-3 font-medium text-white">{rate.baseCurrency} / {rate.targetCurrency}</td>
+                      <td className="px-4 py-3 font-mono font-semibold text-emerald-400">
+                        {Number(rate.rate || 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-300">{rate.source === 'manual' ? 'Manual override' : 'Live sync'}</td>
+                      <td className="px-4 py-3 text-zinc-400">{new Date(rate.effectiveDate).toLocaleString()}</td>
+                      <td className="max-w-xs px-4 py-3 text-zinc-500">{rate.notes || rate.createdByName || '—'}</td>
+                      <td className="px-4 py-3 text-right">
+                        {canDeactivate ? (
+                          <button
+                            onClick={() => handleDeleteRate(rate._id)}
+                            className="rounded-md border border-zinc-800 p-2 text-zinc-400 hover:border-red-500/30 hover:text-red-400"
+                            aria-label={`Deactivate future ${rate.baseCurrency} to ${rate.targetCurrency} rate`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <span className="text-xs text-zinc-500">Immutable</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -1060,7 +1104,7 @@ export default function CurrenciesPage() {
                     onChange={(e) => setBaseCurrency(e.target.value)}
                     className="payroll-field"
                   >
-                    {currencies.map((currency) => (
+                    {sharedCurrencies.map((currency) => (
                       <option key={currency.code} value={currency.code}>
                         {currency.label}
                       </option>
@@ -1074,7 +1118,7 @@ export default function CurrenciesPage() {
                     onChange={(e) => setTargetCurrency(e.target.value)}
                     className="payroll-field"
                   >
-                    {currencies.map((currency) => (
+                    {sharedCurrencies.map((currency) => (
                       <option key={currency.code} value={currency.code}>
                         {currency.label}
                       </option>

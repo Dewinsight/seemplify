@@ -122,7 +122,10 @@ router.put('/settings', requireHRAdmin, async (req, res) => {
         });
     } catch (err) {
         console.error('Update Currency Settings Error:', err);
-        res.status(500).json({ error: 'Failed to update currency sync settings' });
+        res.status(err.statusCode || 500).json({
+            error: err.message || 'Failed to update currency sync settings',
+            code: err.code,
+        });
     }
 });
 
@@ -134,13 +137,28 @@ router.get('/rates', requireAuth, async (req, res) => {
     try {
         const { organizationId } = getUserInfo(req);
         const { baseCurrency } = req.query;
+        const runtime = getExchangeRateRuntimeState();
+
+        // Currency policy and catalogue controls must remain usable while a
+        // historical-rate conflict is quarantined. Return an empty read model
+        // instead of a 503; conversions and all rate mutations still fail
+        // closed through assertExchangeRatesReady().
+        if (!runtime.ready) {
+            return res.json({
+                rates: [],
+                baseCurrency: baseCurrency || null,
+                count: 0,
+                runtime,
+            });
+        }
 
         const rates = await currencyService.getActiveRates(organizationId, baseCurrency);
 
         res.json({
             rates,
             baseCurrency: baseCurrency || null,
-            count: rates.length
+            count: rates.length,
+            runtime,
         });
     } catch (err) {
         console.error('Get Rates Error:', err);

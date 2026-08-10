@@ -67,6 +67,31 @@ function normalizeSwift(value) {
     return normalizeText(value).replace(/\s+/g, '').toUpperCase();
 }
 
+function compactBankValue(value) {
+    return normalizeText(value).replace(/[\s-]+/g, '');
+}
+
+function isValidIban(value) {
+    const iban = compactBankValue(value).toUpperCase();
+    if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) return false;
+    const rearranged = `${iban.slice(4)}${iban.slice(0, 4)}`;
+    let remainder = 0;
+    for (const character of rearranged) {
+        const part = /[A-Z]/.test(character) ? String(character.charCodeAt(0) - 55) : character;
+        for (const digit of part) remainder = ((remainder * 10) + Number(digit)) % 97;
+    }
+    return remainder === 1;
+}
+
+function isValidAbaRoutingNumber(value) {
+    const digits = normalizeDigits(value);
+    if (!/^\d{9}$/.test(digits)) return false;
+    const checksum = digits.split('').reduce((sum, digit, index) => (
+        sum + (Number(digit) * [3, 7, 1][index % 3])
+    ), 0);
+    return checksum > 0 && checksum % 10 === 0;
+}
+
 function normalizeSortCode(value) {
     const digits = normalizeDigits(value);
     if (digits.length === 6) {
@@ -88,14 +113,14 @@ function normalizeBankAccount(country, account = {}) {
         country: normalizedCountry,
         bankName: normalizeText(account.bankName),
         accountHolderName: normalizeText(account.accountHolderName),
-        accountNumber: jurisdiction.requiresAccountNumber && normalizedCountry === 'Nigeria'
+        accountNumber: jurisdiction.requiresAccountNumber && ['USA', 'UK', 'Nigeria', 'South Africa'].includes(normalizedCountry)
             ? normalizeDigits(account.accountNumber)
             : normalizeText(account.accountNumber),
         routingNumber: normalizeDigits(account.routingNumber),
         sortCode: normalizeSortCode(account.sortCode),
         iban: normalizeIban(account.iban),
         bicSwift: normalizeSwift(account.bicSwift),
-        bankCode: normalizedCountry === 'Nigeria'
+        bankCode: ['Nigeria', 'Canada', 'South Africa'].includes(normalizedCountry)
             ? normalizeDigits(account.bankCode)
             : normalizeText(account.bankCode).toUpperCase(),
         accountType,
@@ -127,8 +152,8 @@ function validateBankAccount(account = {}) {
         }
     }
 
-    if (account.iban && !/^[A-Z0-9]{15,34}$/.test(account.iban)) {
-        return 'IBAN must be 15 to 34 alphanumeric characters';
+    if (account.iban && !isValidIban(account.iban)) {
+        return 'Enter a valid IBAN';
     }
 
     if (account.bicSwift && !/^[A-Z0-9]{8}([A-Z0-9]{3})?$/.test(account.bicSwift)) {
@@ -139,6 +164,9 @@ function validateBankAccount(account = {}) {
         case 'USA':
             if (!/^\d{9}$/.test(account.routingNumber || '')) {
                 return 'Routing number must be exactly 9 digits';
+            }
+            if (!isValidAbaRoutingNumber(account.routingNumber)) {
+                return 'Routing number checksum is invalid';
             }
             break;
         case 'UK':
@@ -166,6 +194,24 @@ function validateBankAccount(account = {}) {
         case 'Kenya':
             if (account.bankCode && !/^[A-Z0-9-]{3,12}$/i.test(account.bankCode)) {
                 return `${jurisdiction.localField?.label || 'Bank code'} must be 3 to 12 letters, numbers, or hyphens`;
+            }
+            break;
+        case 'Canada':
+            if (!/^(?:0\d{8}|\d{8})$/.test(account.bankCode || '')) {
+                return 'Institution and transit number must contain 3 institution digits followed by 5 transit digits, with an optional leading zero';
+            }
+            break;
+        case 'Cameroon':
+            if (!/^[A-Z0-9-]{2,12}$/i.test(account.bankCode || '')) {
+                return 'Bank or branch code must contain 2 to 12 letters, numbers, or hyphens';
+            }
+            if (!/^[A-Z0-9-]{6,34}$/i.test(account.accountNumber || '')) {
+                return 'Account or RIB number must contain 6 to 34 letters, numbers, or hyphens';
+            }
+            break;
+        case 'Mozambique':
+            if (!/^[A-Z0-9-]{6,34}$/i.test(account.accountNumber || '')) {
+                return 'Account or NIB number must contain 6 to 34 letters, numbers, or hyphens';
             }
             break;
         default:

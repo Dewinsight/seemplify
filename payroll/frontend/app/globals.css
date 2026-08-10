@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Instrument+Serif:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -146,144 +146,138 @@ html {
   }
 }
 
-/* Shared Seemplify product language */
-:root {
-  --background-start-rgb: 5, 5, 5;
-  --background-end-rgb: 5, 5, 5;
-  --background: 0 0% 2%;
-  --card: 240 21% 5%;
-  --popover: 240 21% 5%;
-  --border: 240 4% 16%;
-  --input: 240 4% 16%;
-  --primary: 239 84% 67%;
-  --ring: 239 84% 67%;
-}
-
-.bg-noise { display: none; }
-
-.glass,
-.glass-card,
-.glass-card:hover {
-  background: #0b0b11;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
-  backdrop-filter: none;
-}
-
-main :where(.rounded-xl, .rounded-2xl).border {
-  background-image: none;
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
-}
-
-nav { backdrop-filter: none !important; }
-
-/* Light surfaces mirror the IDP's warm neutral workspace without changing payroll's layout. */
+/* Payroll theme ----------------------------------------------------------
+ *
+ * Most payroll routes pre-date theme support and use dark Tailwind tokens
+ * directly. Keep those routes stable while translating the complete token
+ * set to readable, warm light surfaces. This layer is deliberately scoped to
+ * the authenticated app so the dark sign-in artwork is not recoloured.
+ */
 html.light {
-  --foreground-rgb: 29, 28, 26;
-  --background-start-rgb: 233, 231, 226;
-  --background-end-rgb: 233, 231, 226;
-  --background: 40 13% 90%;
-  --foreground: 40 5% 11%;
-  --card: 40 27% 98%;
-  --card-foreground: 40 5% 11%;
-  --popover: 40 27% 98%;
-  --popover-foreground: 40 5% 11%;
+  --foreground-rgb: 25, 24, 22;
+  --background-start-rgb: 241, 239, 233;
+  --background-end-rgb: 241, 239, 233;
+  --background: 40 20% 95%;
+  --foreground: 40 6% 10%;
+  --card: 40 27% 99%;
+  --card-foreground: 40 6% 10%;
+  --popover: 40 27% 99%;
+  --popover-foreground: 40 6% 10%;
   --secondary: 40 16% 94%;
-  --secondary-foreground: 40 5% 16%;
+  --secondary-foreground: 40 6% 16%;
   --muted: 40 16% 94%;
-  --muted-foreground: 35 7% 43%;
+  --muted-foreground: 35 7% 40%;
   --accent: 40 16% 94%;
-  --accent-foreground: 40 5% 16%;
-  --border: 39 12% 81%;
-  --input: 39 12% 81%;
+  --accent-foreground: 40 6% 16%;
+  --border: 39 12% 79%;
+  --input: 39 12% 79%;
 }
 
-html.light body { background: #f1efe9; color: #191816; }
-html.light .bg-noise { display: none; }
-html.light nav,
-html.light .bg-zinc-950,
-html.light .bg-zinc-950\/20,
-html.light .bg-zinc-950\/30,
-html.light .bg-zinc-950\/40,
-html.light .bg-zinc-950\/50,
-html.light .bg-zinc-950\/60,
-html.light .bg-zinc-950\/70,
-html.light .bg-zinc-950\/80,
-html.light .bg-zinc-950\/95,
-html.light .bg-zinc-950\/98,
-html.light .bg-\[\#0a0a0c\] { background-color: #fffdfa !important; }
-html.light .bg-zinc-900,
-html.light .bg-zinc-900\/40,
-html.light .bg-zinc-900\/50,
-html.light .bg-zinc-900\/60,
-html.light .bg-zinc-900\/70,
-html.light .bg-zinc-900\/80,
-html.light .bg-zinc-900\/95 { background-color: #f3f1ed !important; }
-html.light .bg-zinc-700,
-html.light .bg-zinc-800,
-html.light .bg-zinc-800\/20,
-html.light .bg-zinc-800\/30,
-html.light .bg-zinc-800\/40,
-html.light .bg-zinc-800\/50,
-html.light .bg-zinc-800\/60,
-html.light .bg-zinc-800\/70,
-html.light .bg-zinc-800\/80 { background-color: #e4e1da !important; }
-html.light .text-zinc-100,
-html.light .text-zinc-200,
-html.light .text-zinc-300 { color: #2b2926 !important; }
-html.light .text-zinc-400,
-html.light .text-zinc-500 { color: #625e57 !important; }
-html.light .text-white { color: #191816 !important; }
-html.light h1.text-white,
-html.light h2.text-white,
-html.light h3.text-white,
-html.light nav :is(a, button, div, span).text-white { color: #1d1c1a !important; }
-html.light .border-zinc-600,
-html.light .border-zinc-600\/50,
-html.light .border-zinc-700,
-html.light .border-zinc-700\/50,
-html.light .border-zinc-700\/60,
-html.light .border-zinc-700\/70,
-html.light .border-zinc-800,
-html.light .border-zinc-800\/50,
-html.light .border-zinc-800\/60,
-html.light .border-zinc-800\/70,
-html.light .border-zinc-800\/80,
-html.light .border-white\/\[0\.08\] { border-color: #cbc6bc !important; }
-html.light main :where(.rounded-xl, .rounded-2xl).border,
-html.light .glass,
-html.light .glass-card,
-html.light .glass-card:hover {
-  background: #fffdfa;
-  border-color: #cbc6bc;
-  box-shadow: 0 1px 2px rgba(38, 34, 28, 0.07), 0 4px 8px rgba(38, 34, 28, 0.05);
+html.light body.payroll-app-shell {
+  background: #f1efe9;
+  color: #191816;
 }
-html.light ::-webkit-scrollbar-track { background: #f1efe9; }
-html.light ::-webkit-scrollbar-thumb { background: #c4c0b8; }
-html.light [class*="bg-gradient-to-"].text-white,
-html.light [class*="bg-gradient-to-"] .text-white,
-html.light :is(.bg-amber-500, .bg-orange-500, .bg-red-500, .bg-rose-500, .bg-teal-500, .bg-emerald-500, .bg-blue-500, .bg-indigo-500, .bg-purple-500).text-white,
-html.light :is(.bg-amber-500, .bg-orange-500, .bg-red-500, .bg-rose-500, .bg-teal-500, .bg-emerald-500, .bg-blue-500, .bg-indigo-500, .bg-purple-500) .text-white { color: #fff !important; }
 
-/* Complete the legacy dark-token translation used throughout payroll. */
+html.light .payroll-app-shell .bg-noise {
+  display: none;
+}
+
+html.light .payroll-app-shell nav,
+html.light .payroll-app-shell :is(
+  .bg-zinc-950,
+  [class~="bg-zinc-950/20"],
+  [class~="bg-zinc-950/30"],
+  [class~="bg-zinc-950/40"],
+  [class~="bg-zinc-950/50"],
+  [class~="bg-zinc-950/60"],
+  [class~="bg-zinc-950/70"],
+  [class~="bg-zinc-950/80"],
+  [class~="bg-zinc-950/95"],
+  [class~="bg-zinc-950/98"],
+  [class~="bg-[#0a0a0c]"]
+) {
+  background-color: #fffdfa !important;
+}
+
+html.light .payroll-app-shell :is(
+  .bg-zinc-900,
+  [class~="bg-zinc-900/40"],
+  [class~="bg-zinc-900/50"],
+  [class~="bg-zinc-900/60"],
+  [class~="bg-zinc-900/70"],
+  [class~="bg-zinc-900/80"],
+  [class~="bg-zinc-900/95"]
+) {
+  background-color: #f3f1ed !important;
+}
+
+html.light .payroll-app-shell :is(
+  .bg-zinc-700,
+  .bg-zinc-800,
+  [class~="bg-zinc-800/20"],
+  [class~="bg-zinc-800/30"],
+  [class~="bg-zinc-800/40"],
+  [class~="bg-zinc-800/50"],
+  [class~="bg-zinc-800/60"],
+  [class~="bg-zinc-800/70"],
+  [class~="bg-zinc-800/80"]
+) {
+  background-color: #e5e1da !important;
+}
+
+html.light .payroll-app-shell :is(.text-zinc-100, .text-zinc-200, .text-zinc-300, .text-white) {
+  color: #2b2926 !important;
+}
+
+html.light .payroll-app-shell :is(.text-zinc-400, .text-zinc-500) {
+  color: #625e57 !important;
+}
+
+html.light .payroll-app-shell :is(
+  .border-zinc-600,
+  [class~="border-zinc-600/50"],
+  .border-zinc-700,
+  [class~="border-zinc-700/50"],
+  [class~="border-zinc-700/60"],
+  [class~="border-zinc-700/70"],
+  .border-zinc-800,
+  [class~="border-zinc-800/50"],
+  [class~="border-zinc-800/60"],
+  [class~="border-zinc-800/70"],
+  [class~="border-zinc-800/80"],
+  [class~="border-white/[0.08]"]
+) {
+  border-color: #cbc6bc !important;
+}
+
+html.light .payroll-app-shell main [class*="bg-gradient-to-br"][class*="from-zinc-9"] {
+  background-image: none !important;
+}
+
+/* A white-to-zinc clipped gradient becomes nearly transparent on light
+ * surfaces. Use a solid heading colour while leaving branded login gradients
+ * and filled action gradients untouched. */
 html.light .payroll-app-shell main :is(h1, h2, h3)[class*="bg-gradient-to-"][class~="bg-clip-text"][class~="text-transparent"] {
   background-image: none !important;
   color: #191816 !important;
   -webkit-text-fill-color: #191816 !important;
 }
 
+/* Semantic colours are tuned for dark canvases in the legacy routes. These
+ * foregrounds meet readable contrast on white and pale tinted light surfaces. */
 html.light .payroll-app-shell :is(
   .text-amber-100,
+  [class~="text-amber-100/80"],
   .text-amber-200,
+  [class~="text-amber-200/80"],
   .text-amber-300,
   .text-amber-400,
   .text-amber-500,
   .text-yellow-400,
-  .text-yellow-500,
-  [class~="text-amber-100/80"],
-  [class~="text-amber-200/80"]
-) { color: #87520b !important; }
+  .text-yellow-500
+) {
+  color: #87520b !important;
+}
 
 html.light .payroll-app-shell :is(.text-orange-300, .text-orange-400) {
   color: #a6400c !important;
@@ -298,22 +292,26 @@ html.light .payroll-app-shell :is(
   .text-green-400,
   .text-green-500,
   .text-teal-400
-) { color: #0b715d !important; }
+) {
+  color: #0b715d !important;
+}
 
 html.light .payroll-app-shell :is(
   .text-red-100,
+  [class~="text-red-100/90"],
   .text-red-200,
   .text-red-300,
   .text-red-400,
-  .text-red-500,
-  [class~="text-red-100/90"]
-) { color: #b42318 !important; }
+  .text-red-500
+) {
+  color: #b42318 !important;
+}
 
 html.light .payroll-app-shell :is(.text-blue-300, .text-blue-400, .text-blue-500, .text-cyan-400) {
   color: #175ca8 !important;
 }
 
-html.light .payroll-app-shell :is(.text-purple-400, .text-purple-500, .text-violet-400) {
+html.light .payroll-app-shell :is(.text-purple-300, .text-purple-400, .text-purple-500, .text-violet-400) {
   color: #6941b8 !important;
 }
 
@@ -321,489 +319,138 @@ html.light .payroll-app-shell [class~="hover:text-white"]:hover {
   color: #191816 !important;
 }
 
+html.light .payroll-app-shell [class~="group-hover:text-amber-400"]:is(.group:hover *) {
+  color: #87520b !important;
+}
+
 html.light .payroll-app-shell :is(
   [class~="hover:bg-zinc-700"],
   [class~="hover:bg-zinc-800"],
   [class~="hover:bg-zinc-800/30"],
   [class~="hover:bg-zinc-800/50"]
-):hover { background-color: #ddd8d0 !important; }
+):hover {
+  background-color: #ddd8d0 !important;
+}
 
 html.light .payroll-app-shell :is(
   [class~="hover:bg-zinc-900"],
   [class~="hover:bg-zinc-950/20"]
-):hover { background-color: #ece8e1 !important; }
+):hover {
+  background-color: #ece8e1 !important;
+}
 
+/* Preserve white foregrounds on genuinely filled actions and avatar marks. */
+html.light .payroll-app-shell [class*="bg-gradient-to-"] :is(.text-white, [class~="text-white/90"]),
+html.light .payroll-app-shell [class*="bg-gradient-to-"][class~="text-white"],
 html.light .payroll-app-shell :is(.bg-amber-600, .bg-orange-600, .bg-red-600, .bg-purple-600, .bg-emerald-600, .bg-blue-600)[class~="text-white"],
 html.light .payroll-app-shell .bg-zinc-700[class~="text-white"] {
   color: #fff !important;
 }
 
-/* Login artwork intentionally remains dark for every saved preference. */
+/* The login screen is intentionally dark in every preference. This also
+ * shields it from the broader compatibility rules present on older builds. */
 html.light body.payroll-login-shell .text-white,
 html.light body.payroll-login-shell :is(h1, h2, h3).text-white {
   color: #fff !important;
 }
 
-html.dark body { background: #0f0e13; }
-html.dark nav { background: #0f0e13 !important; border-color: #312d39 !important; }
-html.dark main :where(.rounded-xl, .rounded-2xl).border,
-html.dark .glass,
-html.dark .glass-card,
-html.dark .glass-card:hover {
-  background: #18161f;
-  border-color: #312d39;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+html.light ::-webkit-scrollbar-track {
+  background: #f1efe9;
 }
 
-html.light main [class*="bg-gradient-to-br"][class*="from-zinc-9"],
-html.dark main [class*="bg-gradient-to-br"][class*="from-zinc-9"] {
-  background-image: none !important;
+html.light ::-webkit-scrollbar-thumb {
+  background: #bdb7ad;
 }
 
-/* Seemplify suite dashboard system */
-:root {
-  --suite-canvas: #efede7;
-  --suite-surface: #fffdfa;
-  --suite-surface-muted: #f5f2ec;
-  --suite-ink: #191816;
-  --suite-muted: #6d675f;
-  --suite-subtle: #918a80;
-  --suite-line: #d7d2c8;
-  --suite-line-strong: #c7c0b5;
-  --suite-accent: #7047eb;
-  --suite-accent-soft: #f1edff;
-  --suite-positive: #16826f;
-  --suite-warning: #a86212;
-  --suite-danger: #b84040;
-  --suite-action: #171613;
-  --suite-action-ink: #ffffff;
-  --suite-shadow: 0 1px 2px rgba(35, 31, 26, .05), 0 4px 8px rgba(35, 31, 26, .05);
-}
-
-html.dark {
-  --suite-canvas: #0f0e13;
-  --suite-surface: #19171f;
-  --suite-surface-muted: #141219;
-  --suite-ink: #f7f5fa;
-  --suite-muted: #aaa3b2;
-  --suite-subtle: #7f7888;
-  --suite-line: #302d38;
-  --suite-line-strong: #403b49;
-  --suite-accent: #8b6cff;
-  --suite-accent-soft: #241d3b;
-  --suite-positive: #36c69e;
-  --suite-warning: #e1a34e;
-  --suite-danger: #ef7777;
-  --suite-action: #faf9fb;
-  --suite-action-ink: #17151b;
-  --suite-shadow: 0 1px 2px rgba(0, 0, 0, .28);
-}
-
-@layer components {
-  .suite-view-active { background: #fff; color: #171613; }
-  .suite-dashboard { color: var(--suite-ink); }
-  .suite-dashboard-header { @apply grid gap-6 border-b pb-7 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,.75fr)] lg:items-end; border-color: var(--suite-line); }
-  .suite-dashboard-title { @apply text-3xl font-semibold tracking-[-0.035em] md:text-4xl; color: var(--suite-ink); }
-  .suite-dashboard-copy { @apply mt-3 max-w-2xl text-[15px] leading-6; color: var(--suite-muted); }
-  .suite-context { @apply flex min-h-[108px] flex-col justify-between rounded-xl border p-5; background: var(--suite-surface); border-color: var(--suite-line); box-shadow: var(--suite-shadow); }
-  .suite-context-row { @apply flex items-start justify-between gap-4; }
-  .suite-context-mark { @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-semibold; background: var(--suite-accent); color: #fff; }
-  .suite-section { @apply mt-8; }
-  .suite-section-heading { @apply mb-4 flex items-end justify-between gap-4; }
-  .suite-section-title { @apply text-lg font-semibold tracking-[-0.02em]; color: var(--suite-ink); }
-  .suite-section-copy { @apply mt-1 text-sm; color: var(--suite-muted); }
-  .suite-panel { @apply rounded-xl border; background: var(--suite-surface); border-color: var(--suite-line); box-shadow: var(--suite-shadow); }
-  .suite-card { @apply flex min-h-[190px] flex-col rounded-xl border p-5 transition-colors duration-150; background: var(--suite-surface); border-color: var(--suite-line); box-shadow: var(--suite-shadow); }
-  .suite-card:hover { border-color: var(--suite-line-strong); }
-  .suite-card-top { @apply flex items-start justify-between gap-4; }
-  .suite-icon { @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border; color: var(--suite-accent); background: var(--suite-accent-soft); border-color: color-mix(in srgb, var(--suite-accent) 28%, transparent); }
-  .suite-card-title { @apply text-base font-semibold tracking-[-0.015em]; color: var(--suite-ink); }
-  .suite-card-copy { @apply mt-3 text-sm leading-6; color: var(--suite-muted); }
-  .suite-card-footer { @apply mt-auto flex items-end justify-between gap-4 border-t pt-4; border-color: var(--suite-line); }
-  .suite-label { @apply text-[11px] font-medium uppercase tracking-[0.08em]; color: var(--suite-subtle); }
-  .suite-value { @apply mt-1 text-xl font-semibold tracking-[-0.03em]; color: var(--suite-ink); }
-  .suite-button { @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-opacity duration-150; background: var(--suite-action); color: var(--suite-action-ink); }
-  .suite-button:hover { opacity: .82; }
-  .suite-button-secondary { @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3.5 text-sm font-medium transition-colors duration-150; border-color: var(--suite-line-strong); color: var(--suite-ink); background: transparent; }
-  .suite-button-secondary:hover { background: var(--suite-surface-muted); }
-  .suite-metrics { @apply grid divide-y rounded-xl border sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4; background: var(--suite-surface); border-color: var(--suite-line); box-shadow: var(--suite-shadow); }
-  .suite-metric { @apply min-w-0 px-5 py-4; border-color: var(--suite-line); }
-  .suite-metric-value { @apply mt-1 text-2xl font-semibold tracking-[-0.035em]; color: var(--suite-ink); }
-  .suite-split { @apply grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]; }
-  .suite-list-row { @apply flex items-center justify-between gap-4 border-b px-5 py-4 last:border-b-0; border-color: var(--suite-line); }
-  .suite-status { @apply inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium; border-color: var(--suite-line); color: var(--suite-muted); background: var(--suite-surface-muted); }
-  .suite-progress { @apply h-1.5 overflow-hidden rounded-sm; background: var(--suite-surface-muted); }
-  .suite-progress > span { @apply block h-full; background: var(--suite-accent); }
-  .suite-notice { @apply flex flex-col gap-3 rounded-xl border px-5 py-4 sm:flex-row sm:items-center sm:justify-between; background: var(--suite-surface); border-color: var(--suite-line-strong); }
-}
-
-html.light .suite-view-active,
-html[data-theme="light"] .suite-view-active {
-  background: #171613;
-  color: #fff;
-}
-
-/* Payroll overlays and transient surfaces */
-:root {
-  --payroll-overlay: rgba(24, 22, 18, .58);
-  --payroll-popup: #fffdfa;
-  --payroll-popup-muted: #f4f1eb;
-  --payroll-popup-field: #faf8f4;
-  --payroll-popup-ink: #191816;
-  --payroll-popup-copy: #625d55;
-  --payroll-popup-subtle: #817a70;
-  --payroll-popup-line: #ccc6ba;
-  --payroll-popup-line-strong: #b8b0a3;
-  --payroll-popup-accent: #a86212;
-  --payroll-popup-accent-soft: #fff1d5;
-  --payroll-popup-positive: #137966;
-  --payroll-popup-positive-soft: #e5f5ef;
-  --payroll-popup-action: #171613;
-  --payroll-popup-action-ink: #fff;
-}
-
-html.dark,
-html[data-theme="dark"] {
-  --payroll-overlay: rgba(0, 0, 0, .68);
-  --payroll-popup: #19171f;
-  --payroll-popup-muted: #141219;
-  --payroll-popup-field: #111016;
-  --payroll-popup-ink: #f7f5fa;
-  --payroll-popup-copy: #b2abb8;
-  --payroll-popup-subtle: #8b8492;
-  --payroll-popup-line: #37333e;
-  --payroll-popup-line-strong: #4a4552;
-  --payroll-popup-accent: #e0a344;
-  --payroll-popup-accent-soft: #302515;
-  --payroll-popup-positive: #43c7a2;
-  --payroll-popup-positive-soft: #173128;
-  --payroll-popup-action: #faf9fb;
-  --payroll-popup-action-ink: #17151b;
-}
-
-.payroll-overlay,
-.payroll-dialog-shell {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: var(--payroll-overlay);
-}
-
-.payroll-dialog-shell {
+/* Theme preference control */
+.theme-menu-trigger {
   display: flex;
+  width: 2.75rem;
+  height: 2.75rem;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-}
-
-.payroll-drawer,
-.payroll-dialog,
-.payroll-popover {
-  border: 1px solid var(--payroll-popup-line);
-  background: var(--payroll-popup);
-  color: var(--payroll-popup-ink);
-  box-shadow: 0 2px 8px rgba(24, 20, 16, .14);
-}
-
-.payroll-drawer {
-  position: fixed;
-  inset-block: 0;
-  right: 0;
-  z-index: 51;
-  display: flex;
-  width: min(440px, 100vw);
-  flex-direction: column;
-  border-width: 0 0 0 1px;
-}
-
-.payroll-dialog {
-  position: relative;
-  width: 100%;
-  max-height: min(760px, calc(100vh - 32px));
-  overflow-y: auto;
-  border-radius: 12px;
-}
-
-.payroll-dialog-header,
-.payroll-guide-header,
-.payroll-popover-header {
-  border-bottom: 1px solid var(--payroll-popup-line);
-}
-
-.payroll-dialog-title,
-.payroll-guide-title {
-  color: var(--payroll-popup-ink);
-}
-
-.payroll-dialog-copy,
-.payroll-guide-copy,
-.payroll-field-help {
-  color: var(--payroll-popup-copy);
-}
-
-.payroll-dialog-section {
-  border: 1px solid var(--payroll-popup-line);
-  border-radius: 10px;
-  background: var(--payroll-popup-muted);
-  color: var(--payroll-popup-copy);
-}
-
-.payroll-dialog-close {
-  display: inline-flex;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--payroll-popup-line);
-  border-radius: 9px;
-  color: var(--payroll-popup-copy);
+  border: 1px solid #3f3f46;
+  border-radius: .5rem;
+  background: rgba(24, 24, 27, .7);
+  color: #a1a1aa;
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
-.payroll-dialog-close:hover {
-  border-color: var(--payroll-popup-line-strong);
-  background: var(--payroll-popup-muted);
-  color: var(--payroll-popup-ink);
+.theme-menu-trigger:hover {
+  border-color: #52525b;
+  background: #27272a;
+  color: #fafafa;
 }
 
-.payroll-field-label {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--payroll-popup-copy);
-  font-size: 13px;
-  font-weight: 500;
+.theme-menu-trigger:focus-visible,
+.theme-menu-item:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
 }
 
-.payroll-field {
-  width: 100%;
-  border: 1px solid var(--payroll-popup-line);
-  border-radius: 8px;
-  background: var(--payroll-popup-field);
-  color: var(--payroll-popup-ink);
-  padding: 10px 12px;
-  outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.payroll-field::placeholder { color: var(--payroll-popup-subtle); }
-.payroll-field:focus {
-  border-color: var(--payroll-popup-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--payroll-popup-accent) 18%, transparent);
-}
-.payroll-field:disabled { cursor: not-allowed; opacity: .58; }
-
-.payroll-button-primary,
-.payroll-button-secondary {
-  display: inline-flex;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 8px;
-  padding: 9px 14px;
-  font-size: 14px;
-  font-weight: 600;
-  transition: opacity 150ms ease, background-color 150ms ease, border-color 150ms ease;
-}
-
-.payroll-button-primary {
-  border: 1px solid var(--payroll-popup-action);
-  background: var(--payroll-popup-action);
-  color: var(--payroll-popup-action-ink);
-}
-.payroll-button-primary:hover { opacity: .84; }
-.payroll-button-primary:disabled { cursor: not-allowed; opacity: .5; }
-
-.payroll-button-secondary {
-  border: 1px solid var(--payroll-popup-line-strong);
-  background: transparent;
-  color: var(--payroll-popup-ink);
-}
-.payroll-button-secondary:hover { background: var(--payroll-popup-muted); }
-
-.payroll-popover {
+.theme-menu-popover {
   overflow: hidden;
-  border-radius: 10px;
+  border: 1px solid #3f3f46;
+  border-radius: .625rem;
+  background: #0a0a0c;
+  color: #d4d4d8;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
 }
-.payroll-mobile-drawer {
-  border-left: 1px solid var(--payroll-popup-line);
-  background: var(--payroll-popup);
-  color: var(--payroll-popup-ink);
-  box-shadow: -2px 0 8px rgba(24, 20, 16, .14);
-}
-.payroll-popover-item {
+
+.theme-menu-item {
   display: flex;
   width: 100%;
+  min-height: 2.5rem;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  color: var(--payroll-popup-copy);
-  font-size: 14px;
-  text-align: left;
+  gap: .5rem;
+  border-radius: .375rem;
+  padding: .5rem .625rem;
+  color: #a1a1aa;
+  font-size: .875rem;
   transition: background-color 150ms ease, color 150ms ease;
 }
-.payroll-popover-item:hover,
-.payroll-popover-item.is-active {
-  background: var(--payroll-popup-muted);
-  color: var(--payroll-popup-ink);
+
+.theme-menu-item:hover,
+.theme-menu-item.is-active {
+  background: #27272a;
+  color: #fff;
 }
 
-.payroll-guide-trigger {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 40;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  border: 1px solid var(--payroll-popup-line-strong);
-  border-radius: 9px;
-  background: var(--payroll-popup-action);
-  color: var(--payroll-popup-action-ink);
-  padding: 9px 13px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 2px 8px rgba(24, 20, 16, .12);
-  transition: opacity 150ms ease;
-}
-.payroll-guide-trigger:hover { opacity: .84; }
-
-.payroll-guide-header { padding: 24px; }
-.payroll-guide-audience {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--payroll-popup-accent);
-  font-size: 13px;
-  font-weight: 600;
-}
-.payroll-guide-body { flex: 1; overflow-y: auto; padding: 4px 24px 24px; }
-.payroll-guide-section { padding: 20px 0; border-top: 1px solid var(--payroll-popup-line); }
-.payroll-guide-section:first-child { border-top: 0; }
-.payroll-guide-heading { display: flex; align-items: center; gap: 8px; color: var(--payroll-popup-ink); font-size: 14px; font-weight: 600; }
-.payroll-guide-list { display: grid; gap: 12px; margin-top: 14px; }
-.payroll-guide-row { display: flex; gap: 12px; color: var(--payroll-popup-copy); font-size: 14px; line-height: 1.55; }
-.payroll-guide-index {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: var(--payroll-popup-accent-soft);
-  color: var(--payroll-popup-accent);
-  font-size: 12px;
-  font-weight: 700;
-}
-.payroll-guide-marker { margin-top: 5px; color: var(--payroll-popup-positive); }
-.payroll-guide-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.payroll-guide-footer { border-top: 1px solid var(--payroll-popup-line); padding: 16px 24px; }
-
-@media (max-width: 640px) {
-  .payroll-guide-trigger { right: 16px; bottom: 16px; }
-  .payroll-guide-header { padding: 20px; }
-  .payroll-guide-body { padding-inline: 20px; }
-  .payroll-guide-footer { padding: 14px 20px; }
+.theme-option-active {
+  background: #3f3f46;
+  color: #fff;
 }
 
-/* Magic Patterns dashboard alignment — shared Seemplify product language. */
-:root {
-  --suite-canvas: #efede7;
-  --suite-surface: #fbfaf7;
-  --suite-surface-muted: #e4e1d9;
-  --suite-ink: #171512;
-  --suite-muted: #524e46;
-  --suite-subtle: #8b857a;
-  --suite-line: rgba(23, 21, 18, .08);
-  --suite-line-strong: rgba(23, 21, 18, .18);
-  --suite-accent: #7048e8;
-  --suite-accent-soft: #f3f0ff;
-  --suite-action: #171512;
-  --suite-action-ink: #fbfaf7;
-  --suite-shadow: 0 1px 2px rgba(23, 21, 18, .04), 0 8px 24px -12px rgba(23, 21, 18, .12);
+html.light .theme-menu-trigger {
+  border-color: #cbc6bc;
+  background: #fffdfa;
+  color: #625e57;
 }
-html.dark, .dark, [data-theme="dark"] {
-  --suite-canvas: #111014;
-  --suite-surface: #191820;
-  --suite-surface-muted: #141318;
-  --suite-ink: #ffffff;
-  --suite-muted: rgba(255, 255, 255, .65);
-  --suite-subtle: rgba(255, 255, 255, .42);
-  --suite-line: rgba(255, 255, 255, .08);
-  --suite-line-strong: rgba(255, 255, 255, .15);
-  --suite-accent: #8f71f3;
-  --suite-accent-soft: rgba(112, 72, 232, .15);
-  --suite-action: #ffffff;
-  --suite-action-ink: #111014;
-  --suite-shadow: none;
+
+html.light .theme-menu-trigger:hover {
+  border-color: #aaa398;
+  background: #f3f1ed;
+  color: #191816;
 }
-html, body { overflow-x: clip; }
-body { font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; text-rendering: optimizeLegibility; }
-.min-h-screen { background-color: var(--suite-canvas) !important; }
-.suite-dashboard { position: relative; isolation: isolate; font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif; }
-.suite-dashboard-header {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(380px, 1fr);
-  align-items: center;
-  gap: clamp(56px, 8vw, 128px);
-  margin-top: -32px;
-  padding: 64px 0 56px;
-  border: 0;
+
+html.light .theme-menu-popover {
+  border-color: #cbc6bc;
+  background: #fffdfa;
+  color: #2b2926;
+  box-shadow: 0 8px 24px rgba(38, 34, 28, .14);
 }
-.suite-dashboard-header::before {
-  position: absolute;
-  z-index: -1;
-  inset-block: 0;
-  left: 50%;
-  width: 100vw;
-  transform: translateX(-50%);
-  border-bottom: 1px solid var(--suite-line);
-  background-color: var(--suite-canvas);
-  background-image: radial-gradient(color-mix(in srgb, var(--suite-ink) 5%, transparent) 1px, transparent 1px);
-  background-size: 4px 4px;
-  content: "";
+
+html.light .theme-menu-item {
+  color: #625e57;
 }
-.suite-kicker { margin-bottom: 14px; color: var(--suite-accent); font-size: 12px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
-.suite-dashboard-title { color: var(--suite-ink); font-family: "Instrument Serif", ui-serif, Georgia, serif; font-size: clamp(42px, 4.2vw, 56px); font-weight: 400; line-height: 1.05; letter-spacing: -.02em; }
-.suite-dashboard-copy { max-width: 650px; margin-top: 18px; color: var(--suite-muted); font-size: 15px; line-height: 1.62; }
-.suite-context { min-height: 184px; padding: 22px; border-color: var(--suite-line); border-radius: 24px; background: var(--suite-surface); box-shadow: var(--suite-shadow); }
-.suite-context-mark { width: 44px; height: 44px; border-radius: 14px; background: var(--suite-accent); }
-.suite-context-row { gap: 20px; }
-.suite-section { margin-top: 56px; }
-.suite-section-heading { margin-bottom: 26px; }
-.suite-section-title { color: var(--suite-ink); font-size: 22px; font-weight: 650; line-height: 1.25; letter-spacing: -.02em; }
-.suite-section-copy { margin-top: 6px; color: var(--suite-muted); font-size: 14px; line-height: 1.5; }
-.suite-panel { border-color: var(--suite-line); border-radius: 16px; background: var(--suite-surface); box-shadow: var(--suite-shadow); }
-.suite-card { min-height: 220px; padding: 20px; border-color: var(--suite-line); border-radius: 16px; background: var(--suite-surface); box-shadow: var(--suite-shadow); transition: border-color .15s ease, box-shadow .15s ease; }
-.suite-card:hover { border-color: var(--suite-line-strong); box-shadow: 0 2px 4px rgba(23, 21, 18, .05), 0 18px 40px -16px rgba(23, 21, 18, .22); }
-html.dark .suite-card:hover, .dark .suite-card:hover { box-shadow: none; }
-.suite-icon { width: 44px; height: 44px; border-color: color-mix(in srgb, var(--suite-accent) 28%, transparent); border-radius: 14px; background: var(--suite-accent-soft); color: var(--suite-accent); }
-.suite-card-title { color: var(--suite-ink); font-size: 16px; font-weight: 650; letter-spacing: -.015em; }
-.suite-card-copy { margin-top: 14px; color: var(--suite-muted); font-size: 13px; line-height: 1.6; }
-.suite-card-footer { padding-top: 17px; border-color: var(--suite-line); }
-.suite-label { color: var(--suite-subtle); font-size: 10px; font-weight: 500; letter-spacing: .09em; }
-.suite-value { color: var(--suite-ink); font-size: 18px; font-weight: 650; }
-.suite-button { min-height: 36px; border-radius: 999px; background: var(--suite-action); color: var(--suite-action-ink); font-size: 13px; font-weight: 600; }
-.suite-button-secondary { min-height: 36px; border-color: var(--suite-line-strong); border-radius: 999px; color: var(--suite-ink); }
-.suite-button-secondary:hover { background: color-mix(in srgb, var(--suite-ink) 5%, transparent); }
-.suite-metrics { overflow: hidden; border-color: var(--suite-line); border-radius: 16px; background: var(--suite-surface); box-shadow: var(--suite-shadow); }
-.suite-metric { padding: 18px 20px; border-color: var(--suite-line); }
-.suite-metric-value { color: var(--suite-ink); font-size: 24px; font-weight: 650; }
-.suite-list-row { border-color: var(--suite-line); }
-.suite-status { border-color: var(--suite-line); border-radius: 8px; background: color-mix(in srgb, var(--suite-ink) 4%, transparent); color: var(--suite-muted); }
-.suite-notice { border-color: var(--suite-line-strong); border-radius: 16px; background: var(--suite-surface); }
-@media (max-width: 1023px) {
-  .suite-dashboard-header { grid-template-columns: 1fr; gap: 36px; }
-  .suite-context { max-width: 580px; }
+
+html.light .theme-menu-item:hover,
+html.light .theme-menu-item.is-active {
+  background: #ece8e1;
+  color: #191816;
 }
-@media (max-width: 640px) {
-  .suite-dashboard-header { margin-top: -24px; padding: 44px 0 40px; }
-  .suite-dashboard-title { font-size: 40px; }
-  .suite-context { min-height: 160px; padding: 18px; border-radius: 18px; }
-  .suite-section { margin-top: 40px; }
-  .suite-section-heading { align-items: flex-start; flex-direction: column; margin-bottom: 20px; }
+
+html.light .theme-option-active {
+  background: #191816 !important;
+  color: #fff !important;
 }

@@ -118,6 +118,8 @@ const RecurringDeductionSchema = new Schema({
 // Bank account schema
 const BankAccountSchema = new Schema({
   isPrimary: { type: Boolean, default: true },
+  country: { type: String, trim: true, default: 'Other' },
+  countryCode: { type: String, uppercase: true, trim: true, maxlength: 2, default: '' },
   accountName: { type: String, required: true },
   accountNumber: { type: String, required: true },
   bankName: { type: String, required: true },
@@ -299,6 +301,8 @@ const PayrollProfileSchema = new Schema({
     probationEndDate: Date,
     costCenter: String,
     workLocation: String,
+    countryCode: { type: String, uppercase: true, trim: true, maxlength: 2, default: '' },
+    countryName: { type: String, trim: true, default: '' },
     lastSyncedAt: Date
   },
 
@@ -606,6 +610,14 @@ PayrollProfileSchema.statics.findOrCreateForUser = async function (userId, organ
       employeeInfo: defaults.employeeInfo || {},
       payrollFlags: buildDefaultPayrollFlags(basicSalary, defaults.payrollFlags),
     });
+    const payrollCountryAutomationService = require('../services/PayrollCountryAutomationService');
+    const automationResult = await payrollCountryAutomationService.reconcileProfile(profile, organizationId, {
+      countryHint: defaults.taxAssignment?.workCountryCode
+        || defaults.employeeInfo?.countryCode
+        || defaults.employeeInfo?.countryName,
+      validateBankDetails: false,
+    });
+    payrollCountryAutomationService.applyReadiness(profile, automationResult);
     await profile.save();
   }
 
