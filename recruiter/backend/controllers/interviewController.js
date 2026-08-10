@@ -837,7 +837,7 @@ const scheduleInterview = async (req, res) => {
         notetakerResult = await nylasV3Service.createStandaloneNotetaker(
           event.conferencing.details.url,
           {
-            name: "SmartHR Notetaker Bot",
+            name: 'Nyla',
             videoRecording: true,
             audioRecording: true,
             transcription: true,
@@ -6060,7 +6060,7 @@ Best regards,
           notetakerResponse = await nylasV3Service.createStandaloneNotetaker(
             meetingLink,
             {
-              name: "SmartHR Notetaker Bot",
+              name: 'Nyla',
               videoRecording: true,
               audioRecording: true,
               transcription: true,
@@ -6075,7 +6075,7 @@ Best regards,
           notetakerResponse = await nylasV3Service.createStandaloneNotetaker(
             meetingLink,
             {
-              name: "SmartHR Notetaker Bot",
+              name: 'Nyla',
               videoRecording: true,
               audioRecording: true,
               transcription: true,

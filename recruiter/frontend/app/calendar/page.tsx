@@ -431,23 +431,25 @@ export default function CalendarPage({}: CalendarPageProps) {
         selectedInterview.conferencing?.details?.url
       );
       
-      toast.success(result.message || 'Notetaker is joining the meeting now');
+      const nextStatus = (result.status || 'joining') as Interview['notetakerStatus'];
+
+      toast.success(result.message || 'Nyla is joining the call');
       
       // Update the interview in the list
       setInterviews(prev => prev.map(i => 
         i._id === selectedInterview._id 
-          ? { ...i, notetakerStatus: 'joined', notetakerId: result.notetakerId }
+          ? { ...i, notetakerStatus: nextStatus, notetakerId: result.notetakerId }
           : i
       ));
       // Update selected interview
       setSelectedInterview(prev => prev ? {
         ...prev,
-        notetakerStatus: 'joined',
+        notetakerStatus: nextStatus,
         notetakerId: result.notetakerId
       } : null);
     } catch (error: any) {
-      console.error('Join meeting now error:', error);
-      toast.error(error.message || 'Failed to trigger notetaker to join');
+      console.error('Send Nyla to call error:', error);
+      toast.error(error.message || 'Failed to send Nyla to the call');
     } finally {
       setJoiningMeeting(false);
     }
@@ -973,12 +975,12 @@ export default function CalendarPage({}: CalendarPageProps) {
                             {joiningMeeting ? (
                               <>
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                Joining...
+                                Sending Nyla...
                               </>
                             ) : (
                               <>
                                 <Video className="h-4 w-4 mr-2" />
-                                Join Meeting Now
+                                Send Nyla to call
                               </>
                             )}
                           </Button>

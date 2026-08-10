@@ -34,7 +34,25 @@ import { InterviewFeedbackSimple } from '@/components/ui/interview-feedback-simp
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 const ACTIVE_NOTETAKER_STATUSES = new Set(['joining', 'joined', 'recording', 'processing', 'completed']);
-const TERMINAL_NOTETAKER_STATUSES = new Set(['failed', 'deleted', 'cancelled']);
+const TERMINAL_NOTETAKER_STATUSES = new Set(['failed', 'deleted', 'cancelled', 'stopped']);
+
+const getNylaActionState = (interview: any, isSending: boolean) => {
+  const status = interview?.notetakerStatus || 'pending';
+
+  if (isSending || status === 'joining') {
+    return { state: 'joining', label: 'Nyla is joining', disabled: true };
+  }
+
+  if (['joined', 'recording'].includes(status)) {
+    return { state: 'active', label: 'Nyla is in the call', disabled: true };
+  }
+
+  if (['processing', 'completed'].includes(status) || interview?.status === 'completed') {
+    return { state: 'complete', label: 'Nyla attended', disabled: true };
+  }
+
+  return { state: 'ready', label: 'Send Nyla to call', disabled: false };
+};
 
 // Helper component for transcript content
 function TranscriptContent({ transcript }: { transcript: any }) {
@@ -891,7 +909,7 @@ export default function TranscriptPage() {
     const meetingUrl = meetingLink || interview?.conferencing?.details?.url || interview?.meetingLink;
     if (!meetingUrl) {
       if (!automatic) {
-        toast.error('Meeting link is required to add bot to meeting');
+        toast.error('A meeting link is required to send Nyla');
       }
       return;
     }
@@ -899,9 +917,7 @@ export default function TranscriptPage() {
     setJoiningMeetingNow(true);
     try {
       const result = await interviewService.joinMeetingNow(interview._id, meetingUrl);
-      const nextStatus = result.alreadyActive
-        ? (result.status || interview?.notetakerStatus || 'joined')
-        : 'joining';
+      const nextStatus = result.status || 'joining';
 
       setInterview((prev: any) => ({
         ...prev,
@@ -912,18 +928,58 @@ export default function TranscriptPage() {
       }));
 
       if (!automatic) {
-        toast.success(result.message || 'Bot is joining the meeting');
+        toast.success(result.message || 'Nyla is joining the call');
       }
     } catch (error: any) {
-      console.error('Failed to add bot to meeting:', error);
+      console.error('Failed to send Nyla to the call:', error);
 
       if (!automatic) {
-        toast.error(error?.message || 'Failed to add bot to meeting');
+        toast.error(error?.message || 'Failed to send Nyla to the call');
       }
     } finally {
       setJoiningMeetingNow(false);
     }
   }, [interview, meetingLink]);
+
+  useEffect(() => {
+    const notetakerId = interview?.notetakerId;
+    const notetakerStatus = interview?.notetakerStatus || '';
+
+    if (!interview?._id || !notetakerId || !['joining', 'joined'].includes(notetakerStatus)) {
+      return;
+    }
+
+    let cancelled = false;
+    let requestInFlight = false;
+
+    const pollNylaStatus = async () => {
+      if (requestInFlight || cancelled) return;
+
+      requestInFlight = true;
+      try {
+        const result = await interviewService.checkNotetakerStatus(interview._id);
+        if (!cancelled && result.success && result.status) {
+          setInterview((previous: any) => ({
+            ...previous,
+            notetakerStatus: result.status
+          }));
+        }
+      } catch (error) {
+        console.warn('Unable to poll Nyla status:', error);
+      } finally {
+        requestInFlight = false;
+      }
+    };
+
+    const initialPoll = window.setTimeout(pollNylaStatus, 3000);
+    const interval = window.setInterval(pollNylaStatus, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialPoll);
+      window.clearInterval(interval);
+    };
+  }, [interview?._id, interview?.notetakerId, interview?.notetakerStatus]);
 
   useEffect(() => {
     if (!interview?._id || !interview?.notetakerEnabled) {
@@ -1057,15 +1113,19 @@ export default function TranscriptPage() {
       case 'processing': 
         return 'Generating transcript...';
       case 'pending': 
-        return hasEnded ? 'Interview has ended, checking final status...' : 'Will start at scheduled time';
+        return hasEnded ? 'Interview has ended, checking final status...' : 'Nyla will join at the scheduled time';
       case 'enabled': 
-        return 'AI notetaker is active';
+        return 'Nyla is ready for this interview';
+      case 'joining':
+        return 'Nyla is joining the call';
+      case 'joined':
+        return 'Nyla is in the call';
       case 'recording': 
-        return 'AI notetaker is recording';
+        return 'Nyla is recording';
       case 'failed': 
         return 'Recording failed or was interrupted';
       case 'deleted': 
-        return 'Notetaker was removed or expired';
+        return 'Nyla was removed or expired';
       default: 
         return 'Status unknown';
     }
@@ -1123,7 +1183,7 @@ export default function TranscriptPage() {
         status: 'completed',
         hasRecording: !!(completedTranscript?.recordingUrl || interview?.recordingUrl),
         hasTranscript: true,
-        title: 'Recording Complete',
+        title: 'Recording complete',
         description: 'Transcript and recording are ready for review',
         color: 'bg-green-100 text-green-800 border-green-200',
         icon: CheckCircle
@@ -1136,8 +1196,8 @@ export default function TranscriptPage() {
         status: 'processing',
         hasRecording: false,
         hasTranscript: false,
-        title: 'Processing Recording',
-        description: 'AI is generating transcript and processing recording...',
+        title: 'Processing recording',
+        description: 'Nyla is preparing the transcript and recording.',
         color: 'bg-blue-100 text-blue-800 border-blue-200',
         icon: Loader2
       };
@@ -1149,8 +1209,8 @@ export default function TranscriptPage() {
         status: 'waiting',
         hasRecording: false,
         hasTranscript: false,
-        title: 'Waiting to Start',
-        description: 'Interview has not started yet. Bot will join at meeting time.',
+        title: 'Nyla scheduled',
+        description: 'Nyla is assigned and will join at the interview time.',
         color: 'bg-gray-100 text-gray-800 border-gray-200',
         icon: Clock3
       };
@@ -1163,20 +1223,20 @@ export default function TranscriptPage() {
           status: 'attention',
           hasRecording: false,
           hasTranscript: false,
-          title: 'Interview In Progress',
-          description: 'Meeting is live but the bot is not connected. Add the bot to meeting now.',
+          title: 'Nyla is not connected',
+          description: 'The meeting is live. Send Nyla to the call to start recording.',
           color: 'bg-amber-100 text-amber-800 border-amber-200',
           icon: AlertTriangle
         };
       }
 
-      if (ACTIVE_NOTETAKER_STATUSES.has(notetakerStatus) || ['enabled'].includes(notetakerStatus)) {
+      if (['joined', 'recording'].includes(notetakerStatus)) {
         return {
           status: 'recording',
           hasRecording: false,
           hasTranscript: false,
-          title: 'Recording Active',
-          description: 'AI notetaker is currently recording the interview',
+          title: 'Nyla is in the call',
+          description: 'Recording and transcription are active.',
           color: 'bg-red-100 text-red-800 border-red-200',
           icon: Mic
         };
@@ -1186,8 +1246,8 @@ export default function TranscriptPage() {
         status: 'joining',
         hasRecording: false,
         hasTranscript: false,
-        title: 'Interview In Progress',
-        description: 'Meeting is live. Bot join is being checked and retried automatically.',
+        title: 'Nyla is joining',
+        description: 'Nyla is connecting now. Admission may be required in the meeting lobby.',
         color: 'bg-amber-100 text-amber-800 border-amber-200',
         icon: RefreshCw
       };
@@ -1200,7 +1260,7 @@ export default function TranscriptPage() {
           status: 'unavailable',
           hasRecording: false,
           hasTranscript: false,
-          title: 'Recording Unavailable',
+          title: 'Recording unavailable',
           description: 'Recording was not completed or has expired',
           color: 'bg-gray-100 text-gray-600 border-gray-200',
           icon: XCircle
@@ -1211,7 +1271,7 @@ export default function TranscriptPage() {
         status: 'checking',
         hasRecording: false,
         hasTranscript: false,
-        title: 'Checking Recording Status',
+        title: 'Checking recording status',
         description: 'Interview ended. Checking final recording and transcript state...',
         color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
         icon: RefreshCw
@@ -1223,7 +1283,7 @@ export default function TranscriptPage() {
       status: 'unknown',
       hasRecording: false,
       hasTranscript: false,
-      title: 'Status Unknown',
+      title: 'Nyla status unavailable',
       description: 'Unable to determine recording status',
       color: 'bg-gray-100 text-gray-500 border-gray-200',
       icon: AlertCircle
@@ -1289,6 +1349,7 @@ export default function TranscriptPage() {
   }
 
   const timeStatus = getMeetingTimeStatus();
+  const nylaAction = getNylaActionState(interview, joiningMeetingNow);
 
   return (
     <div className="interview-transcript-page">
@@ -1321,11 +1382,9 @@ export default function TranscriptPage() {
                       className={`interview-transcript-notetaker ${recordingStatus.color}`}
                     >
                       <recordingStatus.icon className={`h-4 w-4 ${
-                        recordingStatus.status === 'processing' ? 'animate-spin' : ''
+                        ['processing', 'joining', 'checking'].includes(recordingStatus.status) ? 'animate-spin' : ''
                       }`} />
-                      <span>
-                        AI Notetaker {recordingStatus.title.replace('Recording ', '')}
-                      </span>
+                      <span>{recordingStatus.title}</span>
                     </div>
                   );
                 })()
@@ -1336,19 +1395,27 @@ export default function TranscriptPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => handleJoinMeetingNow(false)}
-                  disabled={joiningMeetingNow}
-                  className="bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
-                  title="Manually push bot to join this meeting now"
+                  disabled={nylaAction.disabled}
+                  className="interview-transcript-nyla-action"
+                  data-state={nylaAction.state}
+                  title={nylaAction.state === 'ready'
+                    ? 'Send the existing Nyla bot to this meeting now'
+                    : nylaAction.label}
                 >
-                  {joiningMeetingNow ? (
+                  {nylaAction.state === 'joining' ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Adding Bot...
+                      {nylaAction.label}
+                    </>
+                  ) : nylaAction.state === 'ready' ? (
+                    <>
+                      <Bot className="h-4 w-4 mr-2" />
+                      {nylaAction.label}
                     </>
                   ) : (
                     <>
-                      <Bot className="h-4 w-4 mr-2" />
-                      Add Bot to Meeting
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      {nylaAction.label}
                     </>
                   )}
                 </Button>
@@ -1553,7 +1620,7 @@ export default function TranscriptPage() {
                 <CardHeader>
                   <CardTitle className="interview-transcript-section-title">
                     <Mic className="h-4 w-4" />
-                    Recording status
+                    Nyla status
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -1640,9 +1707,9 @@ export default function TranscriptPage() {
                         {interview?.notetakerEnabled && !interview?.notetakerId ? (
                           <div className="space-y-4">
                             <div>
-                              <p className="font-medium text-amber-800 mb-2">AI notetaker configuration needed</p>
+                              <p className="font-medium text-amber-800 mb-2">Nyla needs attention</p>
                               <p className="text-amber-700 text-sm">
-                                The AI notetaker is enabled but not properly configured for this interview.
+                                Nyla is enabled but is not yet attached to this interview.
                               </p>
                             </div>
                             <div className="flex gap-3">
@@ -1678,9 +1745,9 @@ export default function TranscriptPage() {
                         ) : (
                           <div className="space-y-4">
                             <div>
-                              <p className="font-medium text-amber-800 mb-2">No AI notetaker enabled</p>
+                              <p className="font-medium text-amber-800 mb-2">Nyla is not enabled</p>
                               <p className="text-amber-700 text-sm">
-                                To get transcripts and recordings for future interviews, enable the AI notetaker when scheduling.
+                                Enable Nyla to record and transcribe this interview.
                               </p>
                             </div>
                             <Button
@@ -1689,7 +1756,7 @@ export default function TranscriptPage() {
                               className="bg-amber-600 hover:bg-amber-700 text-white"
                             >
                               <Plus className="h-4 w-4 mr-2" />
-                              Add AI Notetaker Now
+                              Enable Nyla
                             </Button>
                           </div>
                         )}
@@ -1772,16 +1839,16 @@ export default function TranscriptPage() {
           </Tabs>
         </div>
 
-        {/* Manual Notetaker Dialog */}
+        {/* Manual Nyla setup dialog */}
         <Dialog open={showNotetakerDialog} onOpenChange={setShowNotetakerDialog}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Mic className="h-5 w-5 text-blue-600" />
-                Add AI Notetaker
+                Enable Nyla
               </DialogTitle>
               <DialogDescription>
-                Add an AI notetaker to record and transcribe this interview. The bot will join the meeting automatically.
+                Nyla records and transcribes this interview, then joins the saved meeting link automatically.
               </DialogDescription>
             </DialogHeader>
             
@@ -1823,7 +1890,7 @@ export default function TranscriptPage() {
                 ) : (
                   <>
                     <Mic className="h-4 w-4 mr-2" />
-                    Enable Notetaker
+                    Enable Nyla
                   </>
                 )}
               </Button>

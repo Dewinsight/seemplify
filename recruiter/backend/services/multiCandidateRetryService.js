@@ -679,7 +679,7 @@ class MultiCandidateRetryService {
     const notetakerResponse = await nylasV3Service.createStandaloneNotetaker(
       meetingLink,
       {
-        name: 'SmartHR Notetaker Bot',
+        name: 'Nyla',
         videoRecording: true,
         audioRecording: true,
         transcription: true,

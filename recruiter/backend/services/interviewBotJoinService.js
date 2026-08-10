@@ -1,47 +1,14 @@
+const { randomUUID } = require('node:crypto');
 const Interview = require('../models/Interview');
 const NylasAccount = require('../models/NylasAccount');
 const nylasV3Service = require('./nylasV3Service');
+const {
+  ACTIVE_JOIN_STATUSES: ACTIVE_STATUSES,
+  getNotetakerJoinAction,
+  mapNylasNotetakerStatus
+} = require('./notetakerJoinPolicy');
 
-const ACTIVE_STATUSES = new Set(['joining', 'joined', 'recording', 'processing', 'completed']);
 const TERMINAL_STATUSES = new Set(['cancelled', 'deleted']);
-const REPLACEABLE_STATUSES = new Set(['pending', 'scheduled', 'enabled', 'failed', 'stopped']);
-
-function mapNotetakerStatus(meetingState, state) {
-  if (state === 'scheduled' || state === 'created') {
-    return 'scheduled';
-  }
-  if (state === 'connected' || meetingState === 'in_call') {
-    return 'recording';
-  }
-  if (meetingState === 'dispatched' && state === 'connecting') {
-    return 'joining';
-  }
-  if (state === 'joining' || meetingState === 'joining') {
-    return 'joining';
-  }
-  if (state === 'joined') {
-    return 'joined';
-  }
-  if (meetingState === 'ended' || state === 'disconnected') {
-    return 'processing';
-  }
-  if (meetingState === 'failed_entry' || state === 'failed_entry') {
-    return 'failed';
-  }
-  if (state === 'completed') {
-    return 'completed';
-  }
-  if (state === 'cancelled') {
-    return 'cancelled';
-  }
-  if (state === 'processing' || meetingState === 'processing') {
-    return 'processing';
-  }
-  if (state === 'recording' || meetingState === 'recording') {
-    return 'recording';
-  }
-  return 'pending';
-}
 
 class InterviewBotJoinService {
   constructor() {
@@ -155,6 +122,34 @@ class InterviewBotJoinService {
       return;
     }
 
+    const lockToken = randomUUID();
+    const lockExpiresAt = new Date(now.getTime() + 2 * 60 * 1000);
+    const lockedInterview = await Interview.findOneAndUpdate(
+      {
+        _id: interview._id,
+        $or: [
+          { 'notetakerJoinLock.expiresAt': { $exists: false } },
+          { 'notetakerJoinLock.expiresAt': { $lte: now } }
+        ]
+      },
+      {
+        $set: {
+          notetakerJoinLock: {
+            token: lockToken,
+            expiresAt: lockExpiresAt
+          }
+        }
+      },
+      { new: true }
+    ).populate('interviewerId', 'nylasAccountId');
+
+    if (!lockedInterview) {
+      return;
+    }
+
+    interview = lockedInterview;
+
+    try {
     const accountCredentials = await this.getAccountCredentials(interview.interviewerId);
 
     if (interview.notetakerId) {
@@ -165,7 +160,7 @@ class InterviewBotJoinService {
           accountCredentials
         );
         const statusData = statusResponse?.data || statusResponse || {};
-        const mappedStatus = mapNotetakerStatus(
+        const mappedStatus = mapNylasNotetakerStatus(
           statusData.meeting_state || 'unknown',
           statusData.state || statusData.status || 'unknown'
         );
@@ -176,34 +171,48 @@ class InterviewBotJoinService {
           await interview.save();
         }
 
-        if (ACTIVE_STATUSES.has(mappedStatus) || TERMINAL_STATUSES.has(mappedStatus)) {
+        const joinAction = getNotetakerJoinAction(existingNotetakerId, mappedStatus);
+
+        if (joinAction === 'already-active' || TERMINAL_STATUSES.has(mappedStatus)) {
           return;
         }
 
-        if (!REPLACEABLE_STATUSES.has(mappedStatus)) {
+        if (joinAction === 'dispatch-existing') {
+          let existingBotMissing = false;
+          try {
+            await nylasV3Service.dispatchStandaloneNotetakerNow(
+              existingNotetakerId,
+              accountCredentials,
+              { name: 'Nyla' }
+            );
+            interview.notetakerEnabled = true;
+            interview.notetakerStatus = 'joining';
+            interview.notetakerType = 'standalone';
+            interview.notetakerError = null;
+            await interview.save();
+            this.markAttempt(interview._id);
+          } catch (dispatchError) {
+            if (dispatchError?.message?.includes('NOTETAKER_NOT_FOUND')) {
+              interview.notetakerStatus = 'deleted';
+              interview.notetakerId = null;
+              await interview.save();
+              existingBotMissing = true;
+            } else {
+              console.warn(
+                `[BOT-JOIN] Could not dispatch existing Nyla bot ${existingNotetakerId} for interview ${interview._id}: ${dispatchError.message}`
+              );
+            }
+          }
+          if (!existingBotMissing) {
+            return;
+          }
+        }
+
+        if (joinAction !== 'replace-failed' && interview.notetakerId) {
           console.warn(
             `[BOT-JOIN] Interview ${interview._id} has existing notetaker ${existingNotetakerId} in non-replaceable state '${mappedStatus}', skipping to avoid duplicates`
           );
           return;
-        }
-
-        try {
-          await nylasV3Service.cancelStandaloneNotetaker(existingNotetakerId, accountCredentials);
-          interview.notetakerId = null;
-          interview.notetakerStatus = 'cancelled';
-          interview.notetakerType = 'standalone';
-          await interview.save();
-        } catch (cancelError) {
-          if (cancelError?.message?.includes('NOTETAKER_NOT_FOUND')) {
-            interview.notetakerStatus = 'deleted';
-            interview.notetakerId = null;
-            await interview.save();
-          } else {
-            console.warn(
-              `[BOT-JOIN] Could not cancel existing notetaker ${existingNotetakerId} for interview ${interview._id}: ${cancelError.message}`
-            );
-            return;
-          }
         }
       } catch (statusError) {
         if (statusError?.message?.includes('NOTETAKER_NOT_FOUND')) {
@@ -224,7 +233,7 @@ class InterviewBotJoinService {
     const result = await nylasV3Service.createStandaloneNotetaker(
       meetingLink,
       {
-        name: 'SmartHR Notetaker',
+        name: 'Nyla',
         videoRecording: true,
         audioRecording: true,
         transcription: true,
@@ -249,6 +258,21 @@ class InterviewBotJoinService {
     console.log(
       `[BOT-JOIN] Triggered join for interview ${interview._id} with notetaker ${notetakerId}`
     );
+    } finally {
+      try {
+        await Interview.updateOne(
+          {
+            _id: interview._id,
+            'notetakerJoinLock.token': lockToken
+          },
+          { $unset: { notetakerJoinLock: 1 } }
+        );
+      } catch (lockError) {
+        console.warn(
+          `[BOT-JOIN] Failed to release join lock for interview ${interview._id}: ${lockError.message}`
+        );
+      }
+    }
   }
 
   async runCheck() {

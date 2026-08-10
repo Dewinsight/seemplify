@@ -100,6 +100,32 @@
   background: var(--suite-surface-muted) !important;
 }
 
+.interview-transcript-controls .interview-transcript-nyla-action[data-state="ready"] {
+  border-color: var(--suite-accent) !important;
+  background: var(--suite-accent) !important;
+  color: white !important;
+}
+
+.interview-transcript-controls .interview-transcript-nyla-action[data-state="ready"]:hover {
+  border-color: var(--suite-accent-hover) !important;
+  background: var(--suite-accent-hover) !important;
+}
+
+.interview-transcript-controls .interview-transcript-nyla-action[data-state="joining"] {
+  border-color: color-mix(in srgb, var(--suite-attention) 35%, var(--suite-line)) !important;
+  background: var(--suite-attention-soft) !important;
+  color: var(--suite-attention) !important;
+  opacity: 1 !important;
+}
+
+.interview-transcript-controls .interview-transcript-nyla-action[data-state="active"],
+.interview-transcript-controls .interview-transcript-nyla-action[data-state="complete"] {
+  border-color: color-mix(in srgb, var(--suite-positive) 35%, var(--suite-line)) !important;
+  background: var(--suite-positive-soft) !important;
+  color: var(--suite-positive) !important;
+  opacity: 1 !important;
+}
+
 .interview-transcript-controls .interview-transcript-danger {
   border-color: color-mix(in srgb, var(--suite-danger) 35%, var(--suite-line)) !important;
   color: var(--suite-danger) !important;

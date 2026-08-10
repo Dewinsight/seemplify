@@ -1,4 +1,5 @@
 const Interview = require('../models/Interview');
+const { randomUUID } = require('node:crypto');
 const User = require('../models/User');
 const NylasAccount = require('../models/NylasAccount');
 const nylasV3Service = require('../services/nylasV3Service');
@@ -9,6 +10,10 @@ const transcriptSegmentationService = require('../services/transcriptSegmentatio
 const { resolveOrganizationForEmail } = require('../utils/organizationEmailContext');
 const { decodeHtmlEntities } = require('../utils/htmlDecode');
 const { buildInterviewOrganizationQuery } = require('../utils/organizationResourceScope');
+const {
+  getNotetakerJoinAction,
+  mapNylasNotetakerStatus
+} = require('../services/notetakerJoinPolicy');
 
 async function organizationInterviewQuery(req, query) {
   return buildInterviewOrganizationQuery(req.user?.currentOrganization, query);
@@ -28,9 +33,6 @@ async function getAccountCredentials(user) {
     clientId: nylasAccount.clientId
   };
 }
-
-const ACTIVE_JOIN_STATUSES = new Set(['joining', 'joined', 'recording', 'processing', 'completed']);
-const REPLACEABLE_JOIN_STATUSES = new Set(['pending', 'scheduled', 'enabled', 'failed', 'stopped']);
 
 const handleNotetakerWebhook = async (req, res) => {
   try {
@@ -281,44 +283,13 @@ const handleNotetakerWebhook = async (req, res) => {
 // Helper function to map Nylas states to our status
 function mapNotetakerStatus(meetingState, state) {
   console.log(`🔍 Mapping notetaker status - state: '${state}', meetingState: '${meetingState}'`);
-  
-  // Map based on both meeting_state and state fields
-  if (state === 'scheduled' || state === 'created') {
-    return 'scheduled';
-  } else if (state === 'connected' || meetingState === 'in_call') {
-    // If bot is connected OR meeting state shows in_call, it's recording
-    return 'recording';
-  } else if (meetingState === 'dispatched' && state === 'connecting') {
-    return 'joining';
-  } else if (meetingState === 'ended' || state === 'disconnected') {
-    return 'processing';
-  } else if (meetingState === 'failed_entry') {
-    return 'failed';
-  } else if (meetingState === 'api_request' && state === 'disconnected') {
-    return 'stopped'; // Manually removed via API
-  } else if (state === 'enabled') {
-    return 'enabled';
-  } else if (state === 'completed') {
-    return 'completed';
-  } else if (state === 'cancelled') {
-    return 'cancelled';
-  } else if (state === 'joining' || meetingState === 'joining') {
-    return 'joining';
-  } else if (state === 'recording' || meetingState === 'recording') {
-    return 'recording';
-  } else if (state === 'processing' || meetingState === 'processing') {
-    return 'processing';
-  } else if (state === 'media_available') {
-    // Media is available for download/processing - meeting has ended
-    return 'processing';
+  const mappedStatus = mapNylasNotetakerStatus(meetingState, state);
+
+  if (mappedStatus === 'pending' && state !== 'pending') {
+    console.warn(`Unknown notetaker state mapping: state='${state}', meetingState='${meetingState}'`);
   }
-  
-  // Log unknown states for debugging
-  console.warn(`⚠️ Unknown notetaker state mapping: state='${state}', meetingState='${meetingState}'`);
-  console.warn('Consider adding this state to the mapping function');
-  
-  // Default to 'pending' for unknown states
-  return 'pending';
+
+  return mappedStatus;
 }
 
 // Enhanced function with time-based detection for stale meetings only
@@ -649,7 +620,7 @@ const enableNotetaker = async (req, res) => {
     const result = await nylasV3Service.createStandaloneNotetaker(
       meetingLink,
       {
-        name: "SmartHR Notetaker Bot",
+        name: 'Nyla',
         videoRecording: true,
         audioRecording: true,
         transcription: true,
@@ -768,33 +739,80 @@ const cancelNotetaker = async (req, res) => {
 
 // Trigger notetaker to join meeting immediately
 const joinMeetingNow = async (req, res) => {
+  const lockToken = randomUUID();
+  let lockedInterviewId = null;
+
   try {
     const { interviewId } = req.params;
-    const { meetingLink } = req.body;
-    
-    const interview = await Interview.findOne(await organizationInterviewQuery(req, { _id: interviewId }))
+    const { meetingLink } = req.body || {};
+    const now = new Date();
+    const lockExpiresAt = new Date(now.getTime() + 2 * 60 * 1000);
+    const joinLockQuery = await organizationInterviewQuery(req, {
+      _id: interviewId,
+      $or: [
+        { 'notetakerJoinLock.expiresAt': { $exists: false } },
+        { 'notetakerJoinLock.expiresAt': { $lte: now } }
+      ]
+    });
+
+    const interview = await Interview.findOneAndUpdate(
+      joinLockQuery,
+      {
+        $set: {
+          notetakerJoinLock: {
+            token: lockToken,
+            expiresAt: lockExpiresAt
+          }
+        }
+      },
+      { new: true }
+    )
       .populate('interviewerId', 'nylasGrantId nylasAccountId');
-    
+
     if (!interview) {
-      return res.status(404).json({ error: 'Interview not found' });
+      const existingInterview = await Interview.findOne(
+        await organizationInterviewQuery(req, { _id: interviewId })
+      ).select('notetakerId notetakerStatus');
+
+      if (!existingInterview) {
+        return res.status(404).json({ error: 'Interview not found' });
+      }
+
+      return res.status(202).json({
+        success: true,
+        notetakerId: existingInterview.notetakerId,
+        status: getNotetakerJoinAction(
+          existingInterview.notetakerId,
+          existingInterview.notetakerStatus
+        ) === 'already-active'
+          ? existingInterview.notetakerStatus
+          : 'joining',
+        joinInProgress: true,
+        reusedExisting: Boolean(existingInterview.notetakerId),
+        message: 'Nyla is already being sent to this call'
+      });
     }
-    
-    // Get the meeting link - from request body or interview data
-    const meetingUrl = meetingLink || 
-                      interview.conferencing?.details?.url || 
-                      interview.meetingLink;
-    
+
+    lockedInterviewId = interview._id;
+
+    // Prefer the saved interview link so a client cannot redirect the stored bot.
+    const meetingUrl = interview.conferencing?.details?.url ||
+                      interview.meetingLink ||
+                      meetingLink;
+
     if (!meetingUrl) {
       return res.status(400).json({ error: 'Meeting link is required' });
     }
-    
+
     // Get account credentials if interviewer has a linked Nylas account
     const accountCredentials = interview.interviewerId
       ? await getAccountCredentials(interview.interviewerId)
       : null;
 
-    console.log('Triggering notetaker to join meeting immediately:', meetingUrl);
+    console.log('Sending Nyla to join meeting immediately:', meetingUrl);
     console.log('Using account credentials:', !!accountCredentials);
+
+    let replacementCreated = false;
 
     if (interview.notetakerId) {
       try {
@@ -810,8 +828,9 @@ const joinMeetingNow = async (req, res) => {
           existingStatusData.join_time,
           existingStatusData
         );
+        const joinAction = getNotetakerJoinAction(existingNotetakerId, mappedStatus);
 
-        if (ACTIVE_JOIN_STATUSES.has(mappedStatus)) {
+        if (joinAction === 'already-active') {
           if (interview.notetakerStatus !== mappedStatus) {
             interview.notetakerStatus = mappedStatus;
             interview.notetakerType = 'standalone';
@@ -823,40 +842,57 @@ const joinMeetingNow = async (req, res) => {
             notetakerId: interview.notetakerId,
             status: mappedStatus,
             alreadyActive: true,
-            message: 'Notetaker is already active for this meeting'
+            reusedExisting: true,
+            message: ['joined', 'recording'].includes(mappedStatus)
+              ? 'Nyla is already in this call'
+              : 'Nyla is already assigned to this interview'
           });
         }
 
-        if (REPLACEABLE_JOIN_STATUSES.has(mappedStatus)) {
+        if (joinAction === 'dispatch-existing') {
           try {
-            await nylasV3Service.cancelStandaloneNotetaker(existingNotetakerId, accountCredentials);
-            console.log(
-              `Cancelled existing notetaker ${existingNotetakerId} for interview ${interview._id} before join-now`
+            await nylasV3Service.dispatchStandaloneNotetakerNow(
+              existingNotetakerId,
+              accountCredentials,
+              { name: 'Nyla' }
             );
 
-            interview.notetakerId = null;
-            interview.notetakerStatus = 'cancelled';
+            interview.notetakerEnabled = true;
+            interview.notetakerStatus = 'joining';
             interview.notetakerType = 'standalone';
+            interview.notetakerError = null;
             await interview.save();
-          } catch (cancelError) {
-            if (cancelError?.message?.includes('NOTETAKER_NOT_FOUND')) {
+
+            return res.json({
+              success: true,
+              notetakerId: existingNotetakerId,
+              status: 'joining',
+              reusedExisting: true,
+              message: 'The original Nyla bot is joining the call now'
+            });
+          } catch (dispatchError) {
+            if (dispatchError?.message?.includes('NOTETAKER_NOT_FOUND')) {
               interview.notetakerStatus = 'deleted';
               interview.notetakerId = null;
               await interview.save();
             } else {
               console.warn(
-                `Cannot safely replace existing notetaker ${existingNotetakerId} for interview ${interview._id}:`,
-                cancelError.message
+                `Cannot safely dispatch existing notetaker ${existingNotetakerId} for interview ${interview._id}:`,
+                dispatchError.message
               );
               return res.status(409).json({
-                error: 'An existing bot could not be replaced safely. Please refresh and try again.',
+                error: 'Nyla is already configured, but could not be sent safely. Refresh the status and try again.',
                 status: mappedStatus
               });
             }
           }
-        } else {
+        } else if (joinAction === 'replace-failed') {
+          // The provider has confirmed that the original bot cannot join. A
+          // replacement is safe because the old bot is terminal, not active.
+          replacementCreated = true;
+        } else if (joinAction === 'blocked') {
           return res.status(409).json({
-            error: 'An existing bot is already configured for this interview. Refresh status before adding another.',
+            error: 'Nyla already has a bot assigned to this interview. Refresh its status before retrying.',
             status: mappedStatus
           });
         }
@@ -871,7 +907,7 @@ const joinMeetingNow = async (req, res) => {
             statusError.message
           );
           return res.status(502).json({
-            error: 'Unable to verify existing bot status safely. Please retry.'
+            error: 'Unable to verify the original Nyla bot safely. Please retry.'
           });
         }
       }
@@ -882,7 +918,7 @@ const joinMeetingNow = async (req, res) => {
       const result = await nylasV3Service.createStandaloneNotetaker(
         meetingUrl,
         {
-          name: "SmartHR Notetaker",
+          name: 'Nyla',
           videoRecording: true,
           audioRecording: true,
           transcription: true,
@@ -891,7 +927,7 @@ const joinMeetingNow = async (req, res) => {
         null,
         accountCredentials
       );
-      console.log('Notetaker triggered successfully:', result);
+      console.log('Nyla triggered successfully:', result);
 
       const notetakerId = result.notetakerId || result.id;
       if (!notetakerId) {
@@ -910,7 +946,11 @@ const joinMeetingNow = async (req, res) => {
         success: true,
         notetakerId,
         status: 'joining',
-        message: 'Notetaker is joining the meeting now'
+        replacementCreated,
+        reusedExisting: false,
+        message: replacementCreated
+          ? 'The previous bot could not join, so a replacement Nyla bot is joining now'
+          : 'Nyla is joining the call now'
       });
       
     } catch (nylasError) {
@@ -918,8 +958,8 @@ const joinMeetingNow = async (req, res) => {
       
       // Check for specific errors
       if (nylasError.message.includes('already in meeting')) {
-        return res.status(400).json({ 
-          error: 'A notetaker is already in this meeting' 
+        return res.status(409).json({
+          error: 'Nyla is already in this meeting'
         });
       }
       
@@ -929,8 +969,22 @@ const joinMeetingNow = async (req, res) => {
   } catch (error) {
     console.error('Join meeting now error:', error);
     res.status(500).json({ 
-      error: error.message || 'Failed to trigger notetaker to join' 
+      error: error.message || 'Failed to send Nyla to the call'
     });
+  } finally {
+    if (lockedInterviewId) {
+      try {
+        await Interview.updateOne(
+          {
+            _id: lockedInterviewId,
+            'notetakerJoinLock.token': lockToken
+          },
+          { $unset: { notetakerJoinLock: 1 } }
+        );
+      } catch (lockError) {
+        console.warn(`Failed to release Nyla join lock for interview ${lockedInterviewId}:`, lockError.message);
+      }
+    }
   }
 };
 
@@ -1252,7 +1306,7 @@ async function syncNotetakerStatus(req, res) {
     const result = await nylasV3Service.createStandaloneNotetaker(
       meetingUrl,
       {
-        name: "SmartHR Notetaker Bot",
+        name: 'Nyla',
         videoRecording: true,
         audioRecording: true,
         transcription: true,

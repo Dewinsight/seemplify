@@ -184,6 +184,12 @@ const InterviewSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // Short-lived distributed lock used by manual/automatic join-now requests.
+  // It prevents concurrent requests from creating two provider-side bots.
+  notetakerJoinLock: {
+    token: String,
+    expiresAt: Date
+  },
   transcript: {
     content: {
       type: String,

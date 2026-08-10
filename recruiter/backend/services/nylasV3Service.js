@@ -880,7 +880,7 @@ class NylasV3Service {
             const notetakerResult = await this.createStandaloneNotetaker(
               meetingUrl,
               {
-                name: "SmartHR Notetaker Bot",
+                name: 'Nyla',
                 videoRecording: true,
                 audioRecording: true,
                 transcription: true,
@@ -1077,7 +1077,7 @@ class NylasV3Service {
 
       const requestBody = {
         meeting_link: meetingLink,
-        name: options.name || "SmartHR Notetaker Bot",
+        name: options.name || 'Nyla',
         meeting_settings: {
           video_recording: options.videoRecording ?? true,
           audio_recording: options.audioRecording ?? true,
@@ -1170,6 +1170,60 @@ class NylasV3Service {
       return await response.json();
     } catch (error) {
       console.error('Error getting standalone notetaker status:', error);
+      throw error;
+    }
+  }
+
+  async dispatchStandaloneNotetakerNow(notetakerId, accountCredentials = null, options = {}) {
+    try {
+      const apiKey = accountCredentials?.apiKey || this.apiKey;
+      const apiUri = accountCredentials?.apiUri || this.apiUri;
+      const nowMs = options.now instanceof Date
+        ? options.now.getTime()
+        : (typeof options.now === 'number' ? options.now : Date.now());
+
+      if (!apiKey) {
+        throw new Error('NYLAS_API_KEY is required to update a standalone notetaker');
+      }
+
+      // Nylas only updates scheduled bots. Moving the saved bot a few seconds
+      // ahead reuses its ID while still satisfying the API's future-time rule.
+      const requestBody = {
+        name: options.name || 'Nyla',
+        join_time: Math.floor(nowMs / 1000) + 2
+      };
+
+      const response = await fetch(`${apiUri}/v3/notetakers/${notetakerId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, application/gzip'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+
+        if (response.status === 404) {
+          throw new Error(`NOTETAKER_NOT_FOUND: The notetaker with ID ${notetakerId} was not found.`);
+        }
+
+        throw new Error(`NOTETAKER_UPDATE_FAILED: ${error} (Status: ${response.status})`);
+      }
+
+      const result = await response.json();
+      const notetakerData = result.data || result;
+
+      return {
+        ...notetakerData,
+        notetakerId: notetakerData.id || notetakerId,
+        id: notetakerData.id || notetakerId,
+        rawResponse: result
+      };
+    } catch (error) {
+      console.error('Error dispatching standalone notetaker:', error);
       throw error;
     }
   }

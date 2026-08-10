@@ -1083,6 +1083,9 @@ class InterviewService {
     notetakerId?: string;
     status?: string;
     alreadyActive?: boolean;
+    reusedExisting?: boolean;
+    replacementCreated?: boolean;
+    joinInProgress?: boolean;
     message: string;
   }> {
     try {
