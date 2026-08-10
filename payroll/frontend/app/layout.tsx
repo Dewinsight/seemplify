@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUserContext, useOrganizations } from '@/lib/hooks';
@@ -9,7 +9,7 @@ import { resolveIdpUrl } from '@/lib/runtimeConfig';
 import { PayrollViewModeProvider, PayrollViewMode } from '@/context/PayrollViewModeContext';
 import PageGuide from '@/components/PageGuide';
 import ThemePreferenceMenu from '@/components/ThemePreferenceMenu';
-import { themeInitScript } from '@/lib/theme-sync';
+import { applyThemePreference, readThemePreference } from '@/lib/theme-sync';
 import AttendancePresenceReporter from '@/components/AttendancePresenceReporter';
 import './globals.css';
 import {
@@ -76,6 +76,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [mobileExpandedDropdown, setMobileExpandedDropdown] = useState<string | null>(null);
   const [viewMode, setViewModeState] = useState<PayrollViewMode>('personal');
+
+  useLayoutEffect(() => {
+    applyThemePreference(readThemePreference());
+  }, []);
 
   useEffect(() => {
     handleAuthCallback();
@@ -157,8 +161,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   if (isLoginPage) {
     return (
       <html lang="en" suppressHydrationWarning>
-        <head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head>
-        <body>
+        <body className="payroll-login-shell">
           {children}
         </body>
       </html>
@@ -168,8 +171,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   if (showNoOrganizations) {
     return (
       <html lang="en" suppressHydrationWarning>
-        <head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head>
-        <body className="bg-[rgb(var(--background-start-rgb))]">
+        <body className="payroll-app-shell bg-[rgb(var(--background-start-rgb))]">
           <div className="bg-noise" />
           <div className="min-h-screen flex items-center justify-center px-4 py-16">
             <div className="w-full max-w-xl rounded-2xl border border-zinc-700/50 bg-gradient-to-br from-zinc-900/90 to-zinc-800/90 p-8 text-center shadow-2xl">
@@ -256,8 +258,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <head><script dangerouslySetInnerHTML={{ __html: themeInitScript }} /></head>
-      <body className="bg-[rgb(var(--background-start-rgb))]">
+      <body className="payroll-app-shell bg-[rgb(var(--background-start-rgb))]">
         <div className="bg-noise" />
 
         <PayrollViewModeProvider value={providerValue}>

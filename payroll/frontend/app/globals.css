@@ -203,14 +203,30 @@ html.light body { background: #f1efe9; color: #191816; }
 html.light .bg-noise { display: none; }
 html.light nav,
 html.light .bg-zinc-950,
+html.light .bg-zinc-950\/20,
+html.light .bg-zinc-950\/30,
+html.light .bg-zinc-950\/40,
+html.light .bg-zinc-950\/50,
+html.light .bg-zinc-950\/60,
+html.light .bg-zinc-950\/70,
 html.light .bg-zinc-950\/80,
+html.light .bg-zinc-950\/95,
+html.light .bg-zinc-950\/98,
 html.light .bg-\[\#0a0a0c\] { background-color: #fffdfa !important; }
 html.light .bg-zinc-900,
+html.light .bg-zinc-900\/40,
 html.light .bg-zinc-900\/50,
+html.light .bg-zinc-900\/60,
 html.light .bg-zinc-900\/70,
-html.light .bg-zinc-900\/80 { background-color: #f3f1ed !important; }
+html.light .bg-zinc-900\/80,
+html.light .bg-zinc-900\/95 { background-color: #f3f1ed !important; }
+html.light .bg-zinc-700,
 html.light .bg-zinc-800,
+html.light .bg-zinc-800\/20,
+html.light .bg-zinc-800\/30,
+html.light .bg-zinc-800\/40,
 html.light .bg-zinc-800\/50,
+html.light .bg-zinc-800\/60,
 html.light .bg-zinc-800\/70,
 html.light .bg-zinc-800\/80 { background-color: #e4e1da !important; }
 html.light .text-zinc-100,
@@ -223,9 +239,17 @@ html.light h1.text-white,
 html.light h2.text-white,
 html.light h3.text-white,
 html.light nav :is(a, button, div, span).text-white { color: #1d1c1a !important; }
+html.light .border-zinc-600,
+html.light .border-zinc-600\/50,
 html.light .border-zinc-700,
+html.light .border-zinc-700\/50,
+html.light .border-zinc-700\/60,
+html.light .border-zinc-700\/70,
 html.light .border-zinc-800,
+html.light .border-zinc-800\/50,
 html.light .border-zinc-800\/60,
+html.light .border-zinc-800\/70,
+html.light .border-zinc-800\/80,
 html.light .border-white\/\[0\.08\] { border-color: #cbc6bc !important; }
 html.light main :where(.rounded-xl, .rounded-2xl).border,
 html.light .glass,
@@ -241,6 +265,84 @@ html.light [class*="bg-gradient-to-"].text-white,
 html.light [class*="bg-gradient-to-"] .text-white,
 html.light :is(.bg-amber-500, .bg-orange-500, .bg-red-500, .bg-rose-500, .bg-teal-500, .bg-emerald-500, .bg-blue-500, .bg-indigo-500, .bg-purple-500).text-white,
 html.light :is(.bg-amber-500, .bg-orange-500, .bg-red-500, .bg-rose-500, .bg-teal-500, .bg-emerald-500, .bg-blue-500, .bg-indigo-500, .bg-purple-500) .text-white { color: #fff !important; }
+
+/* Complete the legacy dark-token translation used throughout payroll. */
+html.light .payroll-app-shell main :is(h1, h2, h3)[class*="bg-gradient-to-"][class~="bg-clip-text"][class~="text-transparent"] {
+  background-image: none !important;
+  color: #191816 !important;
+  -webkit-text-fill-color: #191816 !important;
+}
+
+html.light .payroll-app-shell :is(
+  .text-amber-100,
+  .text-amber-200,
+  .text-amber-300,
+  .text-amber-400,
+  .text-amber-500,
+  .text-yellow-400,
+  .text-yellow-500,
+  [class~="text-amber-100/80"],
+  [class~="text-amber-200/80"]
+) { color: #87520b !important; }
+
+html.light .payroll-app-shell :is(.text-orange-300, .text-orange-400) {
+  color: #a6400c !important;
+}
+
+html.light .payroll-app-shell :is(
+  .text-emerald-100,
+  .text-emerald-200,
+  .text-emerald-300,
+  .text-emerald-400,
+  .text-emerald-500,
+  .text-green-400,
+  .text-green-500,
+  .text-teal-400
+) { color: #0b715d !important; }
+
+html.light .payroll-app-shell :is(
+  .text-red-100,
+  .text-red-200,
+  .text-red-300,
+  .text-red-400,
+  .text-red-500,
+  [class~="text-red-100/90"]
+) { color: #b42318 !important; }
+
+html.light .payroll-app-shell :is(.text-blue-300, .text-blue-400, .text-blue-500, .text-cyan-400) {
+  color: #175ca8 !important;
+}
+
+html.light .payroll-app-shell :is(.text-purple-400, .text-purple-500, .text-violet-400) {
+  color: #6941b8 !important;
+}
+
+html.light .payroll-app-shell [class~="hover:text-white"]:hover {
+  color: #191816 !important;
+}
+
+html.light .payroll-app-shell :is(
+  [class~="hover:bg-zinc-700"],
+  [class~="hover:bg-zinc-800"],
+  [class~="hover:bg-zinc-800/30"],
+  [class~="hover:bg-zinc-800/50"]
+):hover { background-color: #ddd8d0 !important; }
+
+html.light .payroll-app-shell :is(
+  [class~="hover:bg-zinc-900"],
+  [class~="hover:bg-zinc-950/20"]
+):hover { background-color: #ece8e1 !important; }
+
+html.light .payroll-app-shell :is(.bg-amber-600, .bg-orange-600, .bg-red-600, .bg-purple-600, .bg-emerald-600, .bg-blue-600)[class~="text-white"],
+html.light .payroll-app-shell .bg-zinc-700[class~="text-white"] {
+  color: #fff !important;
+}
+
+/* Login artwork intentionally remains dark for every saved preference. */
+html.light body.payroll-login-shell .text-white,
+html.light body.payroll-login-shell :is(h1, h2, h3).text-white {
+  color: #fff !important;
+}
 
 html.dark body { background: #0f0e13; }
 html.dark nav { background: #0f0e13 !important; border-color: #312d39 !important; }
