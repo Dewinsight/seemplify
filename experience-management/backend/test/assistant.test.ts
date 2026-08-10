@@ -330,7 +330,16 @@ after(async () => {
   await stopCodexClients();
   globalThis.fetch = originalFetch;
   db.close();
-  fs.rmSync(root, { recursive: true, force: true });
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+      break;
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+      if (!['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(code) || attempt === 49) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
 });
 
 async function finishJob(jobId: string) {

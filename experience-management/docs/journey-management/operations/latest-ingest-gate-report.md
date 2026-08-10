@@ -1,6 +1,6 @@
 # Connected-journey PostgreSQL ingest gate report
 
-Generated at: 2026-08-06T21:56:49.254Z
+Generated at: 2026-08-08T13:14:52.014Z
 
 Status: passed
 Command: `node scripts/journey-postgres-ingest-security-load.mjs`
@@ -8,10 +8,10 @@ Command: `node scripts/journey-postgres-ingest-security-load.mjs`
 ## Summary
 
 - Exit code: 0
-- Runtime schema version: 30
+- Runtime schema version: 54
 - Generated load events: 600
-- Soak duration ms: 5359.77
-- Request latency p95 ms: 4992.58
+- Soak duration ms: 6255.29
+- Request latency p95 ms: 4821.03
 - Candidate batch target status: outside
 - Stage processing exercised: true
 - Reconciliation raw/dedupe drift: 0

@@ -268,7 +268,11 @@ export function JourneyRichCardWorkspace({ map, snapshot, editable, onChanged }:
       setDetail(loaded); setDocument(loaded.richText); setEmotion(loaded.emotion);
     }).catch((reason) => { if (active) setError(errorMessage(reason, 'Rich details could not be loaded.')); });
     return () => { active = false; };
-  }, [map.definition.id, map.version.state, selectedCardId, snapshot]);
+  // A catalog/map refresh must not clear a file or draft the user selected
+  // while an earlier mutation was finishing. Mutation handlers already apply
+  // the returned card detail; reset the editor only when its actual card or
+  // version identity changes.
+  }, [map.definition.id, selectedCardId]);
 
   const stageNames = useMemo(() => new Map(map.stages.map((stage) => [stage.stageKey, stage.name])), [map.stages]);
   const laneNames = useMemo(() => new Map(map.lanes.map((lane) => [lane.laneType, lane.title || lane.laneType])), [map.lanes]);

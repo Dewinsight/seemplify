@@ -12,6 +12,10 @@ async function login(page: Page) {
 }
 
 async function resetTutorial(page: Page, tutorialKey = 'overview') {
+  // A first-visit page can still be persisting its automatic `in_progress`
+  // record when the test asks the E2E server to reset it. Let that write finish
+  // first so it cannot recreate the row after the reset response.
+  await page.waitForLoadState('networkidle');
   const response = await page.request.post('/__e2e__/tutorials/reset', { data: { tutorialKey } });
   expect(response.status(), await response.text()).toBe(200);
 }

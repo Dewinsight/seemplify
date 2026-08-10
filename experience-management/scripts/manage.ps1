@@ -27,10 +27,13 @@ $ActiveProjectFile = Join-Path $RuntimeDir 'active-project-path'
 $SqliteDatabasePath = Join-Path $RuntimeDir 'experience.sqlite'
 $PostgresPasswordFile = Join-Path $RuntimeDir 'postgres-password'
 $PostgresOwnerPasswordFile = Join-Path $RuntimeDir 'postgres-owner-password'
+$PostgresWorkerPasswordFile = Join-Path $RuntimeDir 'postgres-worker-password'
+$JourneyActionWorkerSecretFile = Join-Path $RuntimeDir 'journey-worker-secret'
 $PostgresContainer = 'xplorer-postgres'
 $PostgresDatabase = 'seemplify_experience'
 $PostgresRole = 'seemplify_experience_app'
 $PostgresOwnerRole = 'seemplify_experience_owner'
+$PostgresWorkerRole = 'seemplify_experience_worker'
 $PostgresCutoverMarker = Join-Path $RuntimeDir 'postgres-cutover-v1'
 $PostgresCutoverState = Join-Path $RuntimeDir 'postgres-cutover-state-v1'
 $PostgresMigrationLog = Join-Path $RuntimeDir 'postgres-migration.log'
@@ -260,14 +263,16 @@ function Get-NylasEnvironmentFile {
 }
 function Initialize-Runtime {
   if (-not (Test-Path -LiteralPath $PasswordFile)) { Set-Content -LiteralPath $PasswordFile -Value (New-RandomSecret 24) -Encoding ascii }
-  if (-not (Test-Path -LiteralPath $SessionSecretFile)) { Set-Content -LiteralPath $SessionSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $SessionSecretFile)) { Set-Content -LiteralPath $SessionSecretFile -Value (New-RandomSecret 49) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $JourneyIdentityHashKeyFile)) {
     New-Item -ItemType Directory -Force (Split-Path -Parent $JourneyIdentityHashKeyFile) | Out-Null
-    Set-Content -LiteralPath $JourneyIdentityHashKeyFile -Value (New-RandomSecret 48) -Encoding ascii
+    Set-Content -LiteralPath $JourneyIdentityHashKeyFile -Value (New-RandomSecret 49) -Encoding ascii
   }
-  if (-not (Test-Path -LiteralPath $PostgresPasswordFile)) { Set-Content -LiteralPath $PostgresPasswordFile -Value (New-RandomSecret 48) -Encoding ascii }
-  if (-not (Test-Path -LiteralPath $PostgresOwnerPasswordFile)) { Set-Content -LiteralPath $PostgresOwnerPasswordFile -Value (New-RandomSecret 48) -Encoding ascii }
-  if (-not (Test-Path -LiteralPath $BrevoWebhookSecretFile)) { Set-Content -LiteralPath $BrevoWebhookSecretFile -Value (New-RandomSecret 48) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $PostgresPasswordFile)) { Set-Content -LiteralPath $PostgresPasswordFile -Value (New-RandomSecret 49) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $PostgresOwnerPasswordFile)) { Set-Content -LiteralPath $PostgresOwnerPasswordFile -Value (New-RandomSecret 49) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $PostgresWorkerPasswordFile)) { Set-Content -LiteralPath $PostgresWorkerPasswordFile -Value (New-RandomSecret 49) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $JourneyActionWorkerSecretFile)) { Set-Content -LiteralPath $JourneyActionWorkerSecretFile -Value (New-RandomSecret 49) -Encoding ascii }
+  if (-not (Test-Path -LiteralPath $BrevoWebhookSecretFile)) { Set-Content -LiteralPath $BrevoWebhookSecretFile -Value (New-RandomSecret 49) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $XCredentialEncryptionKeyFile)) { Set-Content -LiteralPath $XCredentialEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $NylasCredentialEncryptionKeyFile)) { Set-Content -LiteralPath $NylasCredentialEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
   if (-not (Test-Path -LiteralPath $EsignEncryptionKeyFile)) { Set-Content -LiteralPath $EsignEncryptionKeyFile -Value (New-RandomSecret 32) -Encoding ascii }
@@ -275,7 +280,7 @@ function Initialize-Runtime {
   New-Item -ItemType Directory -Force $KnowledgeStorageDir | Out-Null
   New-Item -ItemType Directory -Force $KnowledgeRuntimeDir | Out-Null
   foreach ($secretFile in @(
-    $PasswordFile, $SessionSecretFile, $JourneyIdentityHashKeyFile, $PostgresPasswordFile, $PostgresOwnerPasswordFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $NylasCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
+    $PasswordFile, $SessionSecretFile, $JourneyIdentityHashKeyFile, $PostgresPasswordFile, $PostgresOwnerPasswordFile, $PostgresWorkerPasswordFile, $JourneyActionWorkerSecretFile, $BrevoWebhookSecretFile, $XCredentialEncryptionKeyFile, $NylasCredentialEncryptionKeyFile, $EsignEncryptionKeyFile,
     $XConsumerKeyFile, $XConsumerSecretFile, $XBearerTokenFile, $XAccessTokenFile,
     $XAccessTokenSecretFile, $XClientIdFile, $XClientSecretFile, $CloudflareTunnelTokenFile, $ExperienceNylasEnvFile
   )) { Protect-RuntimeSecret $secretFile }
@@ -320,15 +325,19 @@ function Initialize-Postgres {
 
   $password = (Get-Content -LiteralPath $PostgresPasswordFile -Raw).Trim()
   $ownerPassword = (Get-Content -LiteralPath $PostgresOwnerPasswordFile -Raw).Trim()
-  if (-not $password -or -not $ownerPassword) { throw 'An Experience PostgreSQL password file is empty.' }
+  $workerPassword = (Get-Content -LiteralPath $PostgresWorkerPasswordFile -Raw).Trim()
+  if (-not $password -or -not $ownerPassword -or -not $workerPassword) { throw 'An Experience PostgreSQL password file is empty.' }
   $previousPassword = [Environment]::GetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_DB_PASSWORD', 'Process')
   $previousOwnerPassword = [Environment]::GetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', 'Process')
+  $previousWorkerPassword = [Environment]::GetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_WORKER_PASSWORD', 'Process')
   [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_DB_PASSWORD', $password, 'Process')
   [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', $ownerPassword, 'Process')
+  [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_WORKER_PASSWORD', $workerPassword, 'Process')
   try {
     $roleSql = @'
 \getenv app_password SEEMPLIFY_EXPERIENCE_DB_PASSWORD
 \getenv owner_password SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD
+\getenv worker_password SEEMPLIFY_EXPERIENCE_WORKER_PASSWORD
 DO $seemplify$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__OWNER_ROLE__') THEN
@@ -337,19 +346,27 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__APP_ROLE__') THEN
     CREATE ROLE __APP_ROLE__ LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='__WORKER_ROLE__') THEN
+    CREATE ROLE __WORKER_ROLE__ LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
 END
 $seemplify$;
 ALTER ROLE __OWNER_ROLE__ NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'owner_password';
 ALTER ROLE __APP_ROLE__ LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'app_password';
+ALTER ROLE __WORKER_ROLE__ LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'worker_password';
 ALTER ROLE __APP_ROLE__ SET statement_timeout='60s';
 ALTER ROLE __APP_ROLE__ SET lock_timeout='5s';
 ALTER ROLE __APP_ROLE__ SET idle_in_transaction_session_timeout='30s';
-'@.Replace('__OWNER_ROLE__', $PostgresOwnerRole).Replace('__APP_ROLE__', $PostgresRole)
-    $roleSql | & $identity.Docker exec -i -e SEEMPLIFY_EXPERIENCE_DB_PASSWORD -e SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD $PostgresContainer psql -X -v ON_ERROR_STOP=1 -q -U $identity.User -d $identity.Database
+ALTER ROLE __WORKER_ROLE__ SET statement_timeout='60s';
+ALTER ROLE __WORKER_ROLE__ SET lock_timeout='5s';
+ALTER ROLE __WORKER_ROLE__ SET idle_in_transaction_session_timeout='30s';
+'@.Replace('__OWNER_ROLE__', $PostgresOwnerRole).Replace('__APP_ROLE__', $PostgresRole).Replace('__WORKER_ROLE__',$PostgresWorkerRole)
+    $roleSql | & $identity.Docker exec -i -e SEEMPLIFY_EXPERIENCE_DB_PASSWORD -e SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD -e SEEMPLIFY_EXPERIENCE_WORKER_PASSWORD $PostgresContainer psql -X -v ON_ERROR_STOP=1 -q -U $identity.User -d $identity.Database
     if ($LASTEXITCODE -ne 0) { throw 'The isolated Experience PostgreSQL roles could not be configured.' }
   } finally {
     [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_DB_PASSWORD', $previousPassword, 'Process')
     [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_OWNER_PASSWORD', $previousOwnerPassword, 'Process')
+    [Environment]::SetEnvironmentVariable('SEEMPLIFY_EXPERIENCE_WORKER_PASSWORD', $previousWorkerPassword, 'Process')
   }
 
   $exists = @(& $identity.Docker exec $PostgresContainer psql -X -Atq -U $identity.User -d $identity.Database -c "SELECT 1 FROM pg_database WHERE datname='$PostgresDatabase'") -join ''
@@ -358,13 +375,14 @@ ALTER ROLE __APP_ROLE__ SET idle_in_transaction_session_timeout='30s';
     & $identity.Docker exec $PostgresContainer createdb -U $identity.User -O $PostgresOwnerRole $PostgresDatabase
     if ($LASTEXITCODE -ne 0) { throw 'The Experience PostgreSQL database could not be created.' }
   }
-  Invoke-PostgresAdminSql $identity $identity.Database "ALTER DATABASE $PostgresDatabase OWNER TO $PostgresOwnerRole; REVOKE CONNECT ON DATABASE $PostgresDatabase FROM PUBLIC; GRANT CONNECT ON DATABASE $PostgresDatabase TO $PostgresOwnerRole,$PostgresRole;"
+  Invoke-PostgresAdminSql $identity $identity.Database "ALTER DATABASE $PostgresDatabase OWNER TO $PostgresOwnerRole; REVOKE CONNECT ON DATABASE $PostgresDatabase FROM PUBLIC; GRANT CONNECT ON DATABASE $PostgresDatabase TO $PostgresOwnerRole,$PostgresRole,$PostgresWorkerRole;"
   Invoke-PostgresAdminSql $identity $PostgresDatabase @"
 ALTER SCHEMA public OWNER TO $PostgresOwnerRole;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM $PostgresRole;
 GRANT CONNECT ON DATABASE $PostgresDatabase TO $PostgresRole;
 GRANT USAGE ON SCHEMA public TO $PostgresRole;
+GRANT USAGE ON SCHEMA public TO $PostgresWorkerRole;
 "@
 }
 function Set-PostgresOwnerLogin([bool]$Enabled) {
@@ -389,7 +407,7 @@ ALTER ROLE $PostgresOwnerRole LOGIN PASSWORD :'owner_password';
 }
 function Grant-PostgresRuntimePrivileges([string]$ProjectDir) {
   $identity = Get-PostgresContainerIdentity
-  foreach ($identifier in @($PostgresDatabase,$PostgresRole,$PostgresOwnerRole)) {
+  foreach ($identifier in @($PostgresDatabase,$PostgresRole,$PostgresOwnerRole,$PostgresWorkerRole)) {
     if ($identifier -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { throw "Unsafe managed PostgreSQL identifier: $identifier" }
   }
   $privilegeFile = Join-Path $ProjectDir 'backend\migrations\postgres\runtime_privileges.sql'
@@ -399,6 +417,10 @@ function Grant-PostgresRuntimePrivileges([string]$ProjectDir) {
     Replace('__APP_ROLE__',$PostgresRole).
     Replace('__OWNER_ROLE__',$PostgresOwnerRole)
   Invoke-PostgresAdminSql $identity $PostgresDatabase $privilegeSql
+  $workerPrivilegeFile=Join-Path $ProjectDir 'backend\migrations\postgres\runtime_worker_privileges.sql'
+  if(-not(Test-Path -LiteralPath $workerPrivilegeFile -PathType Leaf)){throw 'The PostgreSQL worker privilege contract is missing.'}
+  $workerPrivilegeSql=(Get-Content -LiteralPath $workerPrivilegeFile -Raw).Replace('__DATABASE__',$PostgresDatabase).Replace('__WORKER_ROLE__',$PostgresWorkerRole)
+  Invoke-PostgresAdminSql $identity $PostgresDatabase $workerPrivilegeSql
 }
 function Invoke-PostgresRuntimeUpgrade([string]$ProjectDir, [System.Management.Automation.ApplicationInfo]$Node, [string]$SourceSha256) {
   $targetRuntimeSchemaVersion = Get-ManagedPostgresRuntimeSchemaVersion $ProjectDir
@@ -479,6 +501,12 @@ function Set-PostgresRuntimeEnvironment([string]$SourceSha256 = '') {
   $env:POSTGRES_DATABASE=$PostgresDatabase
   $env:POSTGRES_USER=$PostgresRole
   $env:POSTGRES_PASSWORD_FILE=$PostgresPasswordFile
+  $env:POSTGRES_WORKER_USER=$PostgresWorkerRole
+  $env:POSTGRES_WORKER_PASSWORD_FILE=$PostgresWorkerPasswordFile
+  # Runtime-42 is opt-in until an operator supplies an explicit bounded tenant
+  # and reviewed-adapter scope. Disabled means no claims, never implicit scope.
+  $env:JOURNEY_ACTION_WORKER_ENABLED='false'
+  $env:JOURNEY_ACTION_WORKER_SECRET_FILE=$JourneyActionWorkerSecretFile
   $env:POSTGRES_SSL='false'
   $env:POSTGRES_SCHEMA_VERSION='1'
   $env:POSTGRES_RUNTIME_SCHEMA_VERSION=[string]$targetRuntimeSchemaVersion

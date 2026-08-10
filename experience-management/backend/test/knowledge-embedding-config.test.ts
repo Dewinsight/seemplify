@@ -84,8 +84,8 @@ test('runtime schema 3 migration is additive and carries durable rollout state',
   ]) assert.match(migration, new RegExp(contract, 'u'));
   assert.match(migration, /ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS/u);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 29,
-    maximumRuntimeSchemaVersion: 29,
+    minimumRuntimeSchemaVersion: 55,
+    maximumRuntimeSchemaVersion: 55,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
 });
@@ -234,7 +234,9 @@ test('runtime schema 14 adds permission-aware evidence refresh lineage and appen
   assert.match(migration, /before_fingerprint TEXT NOT NULL CHECK\(length\(before_fingerprint\)=64\)/u);
   assert.match(migration, /after_fingerprint TEXT NOT NULL CHECK\(length\(after_fingerprint\)=64\)/u);
   assert.match(privileges, /REVOKE UPDATE,DELETE ON TABLE public\.journey_evidence_audit_events/u);
-  assert.match(manage, /\$PostgresRuntimeSchemaVersion = 20/u);
+  assert.match(manage, /function Get-ManagedPostgresRuntimeSchemaVersion\(\[string\]\$ProjectDir\)/u);
+  assert.match(manage, /\$maximum = \[int\]\$metadata\.maximumRuntimeSchemaVersion/u);
+  assert.match(manage, /\$targetRuntimeSchemaVersion = Get-ManagedPostgresRuntimeSchemaVersion \$ProjectDir/u);
   assert.match(autoDeploy, /PostgresRuntime14UpgradeMarker/u);
   assert.match(autoDeploy, /RequiredVersion -ge 14/u);
   assert.match(autoDeploy, /0014_journey_evidence_lifecycle\.sql/u);
@@ -290,7 +292,7 @@ test('runtime schema 17 adds partitioned immutable event facts with global dedup
   assert.match(privileges, /public\.journey_event_processing_receipts/u);
   assert.doesNotMatch(migration, /INDEX[^;]+(?:payload_json|context_json|consent_json|validation_issues_json)/su);
   assert.match(manage, /\$JourneyIdentityHashKeyFile/u);
-  assert.match(manage, /New-RandomSecret 48/u);
+  assert.match(manage, /New-RandomSecret 49/u);
   assert.match(manage, /\$env:JOURNEY_IDENTITY_HASH_KEY_FILE=\$JourneyIdentityHashKeyFile/u);
   assert.match(manage, /Protect-RuntimeSecret \$secretFile/u);
 });

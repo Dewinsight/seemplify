@@ -139,7 +139,11 @@ test('the analytics workspace renders suppressed states, a sentiment lane and go
   assert.match(page, /function SentimentLane\(/u);
   assert.match(page, /role="img"/u);
   assert.match(page, /the text alternative to the chart/u);
-  assert.match(page, /Individual posts are never shown and are not customer journey paths/u);
+  // The lane carries one shared privacy notice rather than a bespoke sentence,
+  // and that notice now also promises authors and post content are never read.
+  assert.match(page, /Individual posts are never shown\. \{NATIVE_SOCIAL_NOTICE\}/u);
+  assert.match(page, /const NATIVE_SOCIAL_NOTICE = 'Aggregate shares of authorised social posts only\./u);
+  assert.match(page, /authors and post content are never read into a measure, and a social measure is not an individual customer path\./u);
 
   // Governed export controls, gated on the export entitlement.
   assert.match(page, /downloadJourneyMetricAnalyticsExport/u);

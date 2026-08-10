@@ -1,7 +1,7 @@
 # Connected Journey Management implementation status
 
 **Overall status:** In progress — not fully implemented
-**Last reconciled:** 2026-08-06
+**Last reconciled:** 2026-08-08
 **Programme:** [CONNECTED-JOURNEY-MANAGEMENT-MASTER-PLAN.md](./CONNECTED-JOURNEY-MANAGEMENT-MASTER-PLAN.md)
 **Requirement ledger:** [CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md](./CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md)
 
@@ -11,14 +11,28 @@ No: the complete programme in the master plan is not implemented. Seemplify
 has a useful Journey Map 2.0 foundation, an exercised Research Hub workspace,
 durable metric definitions/observations/rebuilds and metric-alert lifecycle,
 durable collaboration/saved-view/portfolio backends, and several tested domain
-contracts. It does not yet provide the complete analytics experience, a fully
-productised portfolio or hierarchy workspace, a governed service-blueprint
-workspace, the complete connected-journey dogfood/SLO gate, Customer 360,
-full actual-path product completion, or orchestration runtime.
+contracts. It now has routed portfolio, hierarchy, service-blueprint, and first
+Customer 360 workspaces, stage-intelligence comparisons, predictive-governance
+and orchestration-operator workspaces, but it does not yet provide the complete
+analytics experience, Phase 4 export/health/performance closure, the connected-
+journey dogfood/SLO gate, complete Customer 360/privacy propagation, full
+actual-path product completion, or release-qualified consequential automation.
 
 The traceability ledger is the completion authority. A type, plan paragraph,
 seed fixture, pure calculator, route name, or narrow passing test is not treated
 as proof that the corresponding user outcome is shipped.
+
+Mounted Phase 4 hierarchy and service-blueprint APIs now sit over runtime-29,
+with the taxonomy-retirement correction delivered forward-only in runtime 32.
+Their routed workspaces expose shared hierarchy navigation, settings,
+governance and transparent health plus
+immutable current/future blueprint versions, five lanes, three boundaries,
+structured operational resources, analysis, gap review, and stored comparison.
+Focused permission/tenant/entitlement/kill-switch proof, production frontend
+build/typecheck, and desktop/mobile browser flows pass. Governed exports,
+Runtime 48 targeted measurement and Runtime 55 private hierarchy/blueprint
+saved views now have live PostgreSQL and browser proof. Ratified enterprise
+load, accessibility/security review, and the combined Phase 4 gate remain open.
 
 ## Implemented and exercised foundations
 
@@ -197,8 +211,29 @@ template programme's final combined release gates also remain incomplete.
   mutating history. Definition-scoped revision streams, credential/source/schema/
   lineage denial, idempotent metering, PostgreSQL migration/replay/rollback,
   least privilege, and a two-connection race probe pass. The permissioned
-  binding/analytics workspace, native ticket/social adapters, source
-  parity, accessibility, load/freshness SLOs and Phase 2 approval remain.
+  binding/analytics workspace and native ticket/social adapters are present.
+  An executable Phase 2 report now assembles 22 source-parity tests, 7 focused
+  Research Hub/metric access-deletion-citation tests, and a 2,000-response
+  SQLite candidate load probe. The measured initial, correction, and deletion
+  rebuilds pass the configured five-second local budget with fresh output and
+  complete source/window/sample metadata. This advances P2-11 only to In
+  progress: the load profile is explicitly unratified, SLO approval is not
+  recorded, and production-scale resilience/security approval remains open.
+- Runtimes 41, 43, and 45 now provide a governed stage-intelligence store and
+  authoritative survey-response and journey-event producers. The product shows
+  persona, segment, cohort and channel comparisons plus deterministic sentiment/
+  emotion aggregates with primary/secondary suppression, unknown/null states,
+  bounded content-safe lineage and export. Facts retain exact server-owned
+  metric/source/window/version provenance, HMAC pseudonyms and resumable
+  retention/deletion semantics; raw text and caller-supplied lineage are not
+  accepted. Ticket/social feeds, external privacy approval, accessibility and
+  ratified production scale remain open.
+- The stage-intelligence product now also exposes sentiment/emotion time-series
+  over those same governed facts: 1–31-day intervals, at most 52 explicit
+  buckets, independent suppression in each bucket, empty periods, and exact
+  fingerprint/lineage. The accessible table and interval control pass desktop
+  manager and mobile member scenarios. Persisted views and alert linkage remain
+  open and are not inferred from the trend surface.
 - Runtime schema 25 and SQLite parity add deterministic versioned journey-metric
   alerts for falling values, stale sources, small/privacy-suppressed samples and
   contradictory governed research. Exact windows, direction-aware thresholds,
@@ -217,6 +252,41 @@ template programme's final combined release gates also remain incomplete.
   initiatives with typed cross-journey links, pinned published snapshots,
   lifecycle readiness, dependencies, scoring lineage, checksummed baselines,
   and descriptive before/after outcomes that do not claim causation.
+- A first mounted Journey Portfolio backend surface now exists through
+  `/api/journey-portfolio`, exposing item, relationship, journey-link,
+  dependency, scoring-policy, assessment, outcome, and operational-link reads
+  and writes over the durable portfolio module. Typed operational attribution
+  now validates exact same-space assistant actions and recovery tickets without
+  converting them into initiatives, while immutable baseline capture and
+  before/after comparison read exact persisted metric observations and pinned
+  definition versions rather than caller-supplied values. Focused HTTP proof
+  covers member-read versus manager-write behaviour, tenant isolation,
+  idempotency, optimistic outcome conflicts, incomparable evidence, and routed
+  creation/listing of the broader portfolio records.
+- The first routed Journey Portfolio product workspace now exists at
+  `/journey-portfolio` behind the `journeyPortfolio` entitlement. It provides
+  table, status-driven lifecycle Kanban, priority-matrix, improvement-chain, dependency, scoring-
+  policy, assessment-history, filtering, and canonical item create/edit
+  flows. Initiative detail now also presents typed operational links and
+  outcomes plus immutable metric baseline/comparison evidence with versions,
+  windows, samples, checksums, attribution, and explicit non-causation wording.
+  Members receive a read-only alternative while owner/admin mutations continue
+  to be enforced by the backend. Focused frontend contract tests and isolated
+  Playwright acceptance pass on desktop and mobile. A member-readable aggregate
+  executive snapshot and formula-safe CSV now avoid raw item identifiers/titles
+  and causal claims. Runtime27 still has no portfolio-specific durable saved-view
+  identity, and its governance review row cannot encode the exact protected
+  lifecycle target required for drag-style approval moves. Graph-scale traversal,
+  retention, accessibility and enterprise-volume proof remain.
+- Journey collaboration is now mounted at `/api/journey-collaboration` and
+  routed at `/journey-collaboration`. The tenant-free strict client and
+  workspace expose threaded comments/replies/mentions, immutable edit history,
+  resolution, watch/mute, personal notifications, role assignment/revocation,
+  two-person governance review/publication, content-safe activity, and
+  revisioned collaboration settings. Backend route/domain/schema tests and four
+  isolated desktop/mobile manager/member Playwright scenarios pass. Broader
+  notification delivery, retention/deletion sweeps, scale, certification, and
+  combined Phase 3 release evidence remain.
 - Versioned actual-path analytics for signatures, transitions, ordered funnels,
   drop-off, loops, repeats, skipped/unexpected transitions, entry/exit, duration
   distributions, revision/conflict handling, lineage, and minimum-group
@@ -248,12 +318,17 @@ template programme's final combined release gates also remain incomplete.
   anonymous-only and known-profile stitched modes, and the same selected
   subject scope now also flows through persisted rollups and snapshots so each
   mode can be materialised, reopened, and inspected honestly from the same
-  workspace. The product is
-  still not a full known-identity path workspace: broader designed-versus-observed
-  reconciliation, correction handling, and product-scale comparisons remain.
-  version have changed since the snapshot was taken. Focused backend route
-  proof, path-analytics regressions, frontend/backend typecheck, and production
-  frontend build pass.
+  workspace. Runtime 33 now also adds deterministic, descriptive-only anomaly
+  indicators and human-review-only stage-inference recommendations with exact
+  journey/version/window/subject provenance, primary abstention, secondary
+  suppression, confidence components, immutable checksums, freshness, and
+  optimistic review lifecycle. The Journey Metrics product presents manager
+  preview/save/history/review and a read-only member alternative, repeatedly
+  states that no recommendation is applied automatically, and passes isolated
+  desktop/mobile acceptance. The product is still not a full known-identity
+  path workspace: broader designed-versus-observed reconciliation, operational
+  correction, product-scale detector calibration, and governed predictive
+  controls remain.
 - A typed service-blueprint contract for customer, frontstage, backstage,
   systems, policies/controls, handoffs, dependencies, SLA, cost, risk, failure
   points, the three blueprint lines, causal-gap analysis, and current/future
@@ -383,15 +458,21 @@ returning the remaining downstream targets that have not yet been executed. A
 further correction-window foundation now also records
 durable correction runs whenever identity commands trigger merge-driven or
 late-source-fact rebuilds of profile timelines, derived sessions, and
-materialised segment memberships. This is still not Customer 360: resumable
-consent/correction/erasure/retention execution across the remaining stores,
-broader concurrency/runtime proof, richer segment semantics, product UI, and
-richer 360/timeline surfaces still remain.
+materialised segment memberships. A first routed Customer identities workspace
+now presents deterministic profile facts and bindings, timelines, sessions,
+accounts/groups, segments, purpose-gated profile/account 360, privacy states,
+exports/jobs, and correction status. Frontend contracts, production build, and
+desktop/mobile browser proof pass. Runtime 52 now also projects eligible
+response-linked service-recovery-ticket facts into stage intelligence and a
+separate latest-only Customer 360 timeline, with correction, deletion and
+consent-withdrawal tombstones. This is still not complete Customer 360:
+remaining source stores, broader concurrency/runtime proof, richer segment
+semantics/connectors, and finer field-level sensitive controls still remain.
 
 The remaining connected-journey blockers include a reconciled Seemplify
 activation dogfood journey, ratified and stable load/SLO results, retained
-projection rebuilds, Customer 360, actual-
-path materialisation, privacy operations, and orchestration. The mock protocol
+projection rebuilds, complete Customer 360/privacy propagation, actual-path
+materialisation, and orchestration. The mock protocol
 server remains test-only and must not be deployed or confused with the durable
 `/v1` routes.
 
@@ -565,6 +646,84 @@ The following focused evidence has passed on the current programme branch:
   visits and three anonymous instances across restart, late/out-of-order,
   terminal, fencing and replay scenarios. Local latency is outside the
   provisional target and therefore is not production capacity evidence.
+- The first routed Journey hierarchy workspace is now mounted behind the
+  `journeyHierarchy` entitlement. Its strict client and responsive workspace
+  cover canonical hierarchy reads, type-specific relationship creation,
+  optimistic review/lifecycle transitions, shared-subjourney trees, all visible
+  breadcrumb paths, bounded upstream/downstream impact traversal, taxonomy
+  creation/assignment/correction, revisioned enablement and size limits, and
+  member-read/manager-write behavior. It now also manages versioned health
+  policies and persists transparent snapshots with exact own/child inputs,
+  weights, rules and lineage; unknown remains null/unknown. Runtime 32 adds the
+  assigned-term retirement guard forward-only after shipped runtime 31, and the
+  aggregate runtime chain now continues through runtime 45. Six focused
+  frontend contracts and four desktop/mobile manager/member Playwright
+  scenarios pass. This is product proof for the mounted governance/health
+  slice, not hierarchy export, enterprise performance, certification, or signed
+  release closure.
+- The first routed service-blueprint workspace is mounted behind the dedicated
+  `journeyBlueprints` entitlement. Its mounted aggregate API and strict client
+  cover blueprint/resource governance, immutable current/future versions,
+  structured five-lane operational content, relationships, analysis, persisted
+  gap review, and stored comparison. Focused hierarchy/blueprint tests,
+  the complete 779-test backend suite, frontend contracts/build/typecheck, and
+  desktop/mobile Playwright scenarios pass. Portfolio-link authoring, Runtime 48
+  targeted measurement, governed exports and Runtime 55 private saved views now
+  exist; enterprise performance/accessibility/security and release proof remain.
+- The first routed Customer identities and Customer 360 workspace is mounted
+  behind `journeyProfiles`. It presents exact profile facts/bindings, timelines,
+  sessions, accounts/groups, segments, purpose-gated derived 360 context,
+  privacy state, export/privacy jobs, and correction status. Desktop and mobile
+  browser flows pass, including pointer-operable overflowed tabs and table
+  containment. Resumable privacy propagation, richer connectors/inference
+  provenance, and complete Customer/Account 360 release proof remain.
+- Runtime 35 provides the durable Journey orchestration definition backend:
+  strict mounted workflow routes, revisioned drafts, immutable published
+  versions, persisted dry-run/historical simulation traces, held action records,
+  approval evidence, append-only audit, and a held-only outbox foundation. It is
+  manager-write/member-read, tenant-scoped, fail-closed across twelve safety
+  gates, and restricts bounded automation authorisation to Journey
+  administrators. Fourteen focused tests, runtime compatibility, live
+  PostgreSQL rollback/replay/least-privilege verification pass. Runtime 36 adds
+  the bounded retry state machine described below.
+- The routed Journey Orchestration workspace is now mounted behind its plan
+  entitlement. Managers can author, revise, publish and retire workflows, run
+  dry/historical simulations with all twelve safety gates, inspect exact
+  decision traces and record approvals; members are read-only. Runtime 36 adds transactional
+  approval-to-queue admission, fenced leases, retry/backoff/dead-letter states,
+  immutable attempts and a deterministic no-effect receipt. Runtime 38 adds
+  reviewed internal effects and an allowlisted signed-webhook adapter with
+  atomic receipts, idempotency, SSRF/signature/replay controls and failure
+  injection; survey invitation fails closed without an idempotent provider.
+  Runtime 40 adds routed five-level kill-switch operator controls. Runtime 42
+  provides disabled-by-default service authority and live consent/suppression/
+  pause/quiet-hours/quota/frequency reservations; runtime 44 atomically bridges
+  reviewed effects into that settlement. Ordinary tests do not send live
+  external effects, and no provider acceptance or production exactly-once claim
+  is made. Focused desktop/mobile scenarios pass.
+- Runtime 37 adds the first approved connector/import foundation for bounded
+  CSV, JSONL and approved-object-store inputs. It provides exact cursor CAS,
+  concurrent idempotency locking, retry-after handling, partial item receipts,
+  durable deletion tombstones and content-safe audit behind mounted tenant- and
+  entitlement-scoped routes. Runtime 51 adds the disabled-by-default execution
+  plane behind it: external file-reference-only principals, CAS key rotation,
+  explicit tenant/connector scope, a dedicated least-privilege worker role,
+  fenced leases, crash reap/reclaim, stale-completion denial and live
+  entitlement/principal rechecks, with one first-party
+  `service_recovery_tickets_v1` adapter that imports survey, status, priority
+  and timestamps only. Third-party provider credentials/adapters, any external
+  dispatch, downstream qualification and release proof remain. A routed strict client/workspace now covers
+  owner/admin create, enable/disable, start/load/submit, partial receipts,
+  checkpoints, retries and tombstones with a member read-only alternative and
+  focused desktop/mobile acceptance.
+- The registered aggregate runtime is now 54. The full backend suite passes
+  894/894 with zero skips; frontend source passes 219/219 and backend/frontend
+  typecheck and production-build gates pass. Live PostgreSQL reaches schema 54 with
+  rollback/replay, least-privilege worker roles, connector/stage-feed/retention
+  two-adapter crash/fence/cross-tenant probes and the application-role evidence
+  monitor operation probe, zero residual durable writes and exact cleanup. The
+  programme-wide combined desktop/mobile browser inventory must still be rerun
+  against the final aggregate before a release claim is made.
 
 This is not yet a release result. Full typecheck, all unit tests, production
 build, a green complete desktop/mobile Playwright run, supported migration
@@ -577,19 +736,28 @@ changes stop. No failing or unobserved release gate can be waived.
 1. Complete accessible visual journey authoring at the specified scale.
 2. Research synthesis presentation plus the Research Hub's complete
    accessibility, performance, security, deletion/retention and release proof.
-3. Complete live metric experience: native ticket/social adapters, sentiment and
-   emotional lanes, cohort/persona/segment/channel comparisons, exports,
-   privacy suppression, and the Phase 2 performance/release gate.
-4. Complete reusable pain point/opportunity/solution/initiative portfolio
-   management, governance, and routed UX.
-5. Complete hierarchy and service-blueprint workspaces, exports, and release
-   proof over the newer durable backend foundations.
+3. Complete live metric experience: governed survey, journey-event and Runtime 52
+   response-linked service-recovery-ticket feeds plus stage comparisons,
+   sentiment/emotion and privacy-safe export now exist;
+   an authoritative social feed, broader governed feeds, product-scale calibration, ratified load/SLO approval,
+   accessibility/privacy certification and the remaining Phase 2 matrix remain.
+4. Complete portfolio/collaboration: lifecycle Kanban, aggregate executive CSV,
+   Runtime 46 private saved views and protected requested-target transition
+   governance now exist; notification delivery, deletion/retention, scale,
+   certification and release proof remain.
+5. Complete ratified hierarchy/blueprint enterprise performance,
+   accessibility/security and release proof. Runtime 48 targeted measurement and
+   Runtime 55 private saved views now join hierarchy health/settings, blueprint
+   portfolio-link authoring and governed exports.
 6. Reconciled Seemplify activation dogfood, stable capacity/SLO proof, and
    retained labelled reprojection over the implemented stage runtime.
 7. Known-identity journey instances, product-scale actual-path comparisons, and broader designed-versus-observed reconciliation.
-8. Permissioned Customer and Account 360 with privacy operations.
-9. Risk/anomaly and reviewed inference/prediction controls.
-10. Idempotent, consent-aware, human-governed orchestration and action adapters.
+8. Release-qualify the routed permissioned Customer and Account 360, merge/split
+   governance and Runtime 47 privacy propagation across every authoritative store.
+9. Product-scale deterministic risk calibration and a trained, independently
+   approved model behind the implemented abstention-first governance controls.
+10. Release-qualify the implemented consent-aware worker, reviewed adapters and
+    kill switches with live provider, multi-node and operational proof.
 11. Complete roles, plans, quotas, retention, flags, audit, telemetry, runbooks,
     documentation, dogfood, beta, and GA evidence.
 

@@ -24,7 +24,7 @@ import {
  * CREATE FUNCTION. Executed-PostgreSQL coverage for runtime-28 is a separate and
  * currently OPEN gate. `scripts/probe-journey-collaboration-postgres.mjs` does
  * exist, but nothing here runs it and no run of it is recorded, so its existence
- * is not evidence. `runtime-compatibility.json` now pins min=max=29, which puts
+ * is not evidence. `runtime-compatibility.json` now pins min=max=31, which puts
  * runtime-28 inside the shipped window on paper; that is a declaration, not an
  * observation, and no applied-anywhere claim follows from it.
  *

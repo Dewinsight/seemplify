@@ -24,6 +24,7 @@ const ownerUser = String(process.env.POSTGRES_PROBE_OWNER_USER || '');
 const ownerPasswordFile = String(process.env.POSTGRES_PROBE_OWNER_PASSWORD_FILE || '');
 const appUser = String(process.env.POSTGRES_USER || '');
 const appPasswordFile = String(process.env.POSTGRES_PASSWORD_FILE || '');
+const runtimeVersion = Number(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION || 0);
 const proof = `pg28_collab_${crypto.randomBytes(6).toString('hex')}`;
 
 assert.equal(process.env.POSTGRES_PROBE_ALLOW_WRITES, 'true',
@@ -37,6 +38,8 @@ assert.match(ownerUser, /^[A-Za-z_][A-Za-z0-9_]*$/u);
 assert.match(appUser, /^[A-Za-z_][A-Za-z0-9_]*$/u);
 assert.ok(ownerPasswordFile && fs.existsSync(ownerPasswordFile));
 assert.ok(appPasswordFile && fs.existsSync(appPasswordFile));
+assert.ok(Number.isInteger(runtimeVersion) && runtimeVersion >= 28,
+  'The collaboration probe requires the configured current runtime schema version.');
 
 const password = (filename) => fs.readFileSync(filename, 'utf8').replace(/[\r\n]+$/u, '');
 const connection = (user, credential, name) => ({ host, port, database, user, password: credential, ssl: false,
@@ -74,8 +77,12 @@ try {
   const migration = await owner.query('SELECT version,checksum FROM experience_runtime_schema_version WHERE version=28');
   assert.equal(migration.rowCount, 1);
   assert.match(String(migration.rows[0].checksum), /^[a-f0-9]{64}$/u);
-  await assertRuntimeSchemaContract((sql) => owner.query(sql), { runtimeVersion: 28 });
-  await assertRuntimePrivileges((sql) => owner.query(sql), appUser, { runtimeVersion: 28 });
+  // Migration 28 owns this capability, but the disposable database may have
+  // later forward-only repairs. Validate the schema that is actually running;
+  // pretending a runtime-34 database is runtime 28 would incorrectly require
+  // historical foreign keys intentionally replaced by later migrations.
+  await assertRuntimeSchemaContract((sql) => owner.query(sql), { runtimeVersion });
+  await assertRuntimePrivileges((sql) => owner.query(sql), appUser, { runtimeVersion });
   emit('journey_collaboration_runtime_contract_passed');
 
   for (const [id, email, name] of [[ids.owner, `${proof}-owner@example.invalid`, 'Collaboration owner'],

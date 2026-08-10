@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AiProviderSettings } from '@/components/settings/AiProviderSettings';
+import { JourneyExportBrandSettings } from '@/components/settings/JourneyExportBrandSettings';
 import type { AuthSession, SpaceInvitation, SpaceMember, SpaceRole, SpaceSummary } from '@/types';
 
 const mediumDateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
@@ -252,6 +253,8 @@ export function SpaceSettingsPage() {
         </section>
 
         <AiProviderSettings />
+
+        <JourneyExportBrandSettings />
 
         <section className="border bg-card" aria-labelledby="subscription-heading">
           <div className="flex items-start gap-3 border-b px-5 py-4">

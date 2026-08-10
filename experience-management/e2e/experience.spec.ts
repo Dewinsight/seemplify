@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { accountPassword, signUpAndOnboard, submitSignup, verifyEmailAndOnboard } from './auth';
 
+const localE2eBaseUrl = `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT || 5412}`;
+
 test('space settings renders safely when stored timestamps are malformed', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-chromium', 'One desktop browser covers malformed legacy timestamps.');
   test.skip(Boolean(process.env.PLAYWRIGHT_EXTERNAL_URL), 'This test replaces local API responses with malformed legacy data.');
@@ -616,6 +618,11 @@ test('requests and approves a subscription through the workspace and platform ad
   await page.goto('/settings/space');
   await expect(page.getByText(targetName, { exact: true }).first()).toBeVisible();
   await expect(page.getByText('No request pending', { exact: true })).toBeVisible();
+
+  const reset = await page.request.post('/__e2e__/subscriptions/reset', {
+    data: { planCode: current.effectivePlan.code }
+  });
+  expect(reset.status(), 'subscription fixture cleanup failed').toBe(200);
 });
 
 test('root administration manages a user role and workspace access with an audit reason', async ({ page }, testInfo) => {
@@ -701,7 +708,7 @@ test('X social listening setup and journey maps remain visible while Terra work 
   await expect(page.getByText(/Some live data could not refresh/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Platform X settings' }).click();
   const appDialog = page.getByRole('dialog', { name: 'Platform X developer app' });
-  await expect(appDialog.getByText('http://127.0.0.1:5412/api/integrations/x/callback')).toBeVisible();
+  await expect(appDialog.getByText(`${localE2eBaseUrl}/api/integrations/x/callback`)).toBeVisible();
   await expect(page.getByLabel('OAuth 2 client ID')).toHaveValue('');
   await expect(page.getByLabel('Bearer token')).toHaveValue('');
   await page.getByLabel('OAuth 2 client ID').fill('incomplete-client-id');

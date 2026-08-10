@@ -12,8 +12,8 @@ durable production ingestion plane. The repository protocol mock is a
 non-durable conformance helper only. A supported release still requires real
 device/OS and application lifecycle matrices, installed-artifact upgrades,
 durable endpoint conformance, security/privacy review, load/soak results,
-signing/provenance, approved licensing, support ownership, and protected
-publication controls.
+signing/provenance, support ownership, and protected publication controls. The
+source is licensed under MIT; licensing no longer closes the other gates.
 
 The Gradle project intentionally uses a `-foundation` version and disables all
 Maven publication tasks. Its disabled CI template has read-only permissions and

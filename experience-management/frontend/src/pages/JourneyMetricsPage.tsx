@@ -10,6 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { JourneyActualPathComparisonPanel } from '@/components/journeys/JourneyActualPathComparisonPanel';
+import { JourneyActualPathCorrectionPanel } from '@/components/journeys/JourneyActualPathCorrectionPanel';
+import { JourneyStageInferenceReviewPanel } from '@/components/journeys/JourneyStageInferenceReviewPanel';
 import { useAuthSession, useSessionFeature } from '@/lib/authSessionContext';
 import { api } from '@/lib/api';
 import { listJourneyMaps, readJourneyMap, type JourneyMapReadModel } from '@/lib/journeyMaps';
@@ -20,12 +23,16 @@ import {
   journeyNativeSocialMeasureKinds, journeyNativeTicketMeasureKinds,
   createJourneyActualPathSnapshot, listJourneyActualPathSnapshots, materializeJourneyActualPathRollup,
   readJourneyActualPathSnapshot, readJourneyActualPaths, readLatestJourneyActualPathRollup, readLatestJourneyActualPathSnapshot,
+  createJourneyPathIntelligenceRun, listJourneyPathIntelligenceRuns, listJourneyStageInferenceRecommendations,
+  readJourneyPathIntelligence, transitionJourneyStageInferenceRecommendation,
   listJourneyMetricBindings, listJourneyMetricDefinitions, listJourneyMetricNativeSources,
   listJourneyMetricObservations,
   listJourneyMetricRebuilds, listJourneyMetricSegments, nativeMetricVersion, queueJourneyMetricRebuild,
   readJourneyMetricDefinition, readJourneyMetricObservationLineage,
   surveyMetricVersion, updateJourneyMetricBinding, updateJourneyMetricSegment,
   type JourneyActualPathResult, type JourneyActualPathRollup, type JourneyActualPathSnapshot, type JourneyActualPathSubjectKind,
+  type JourneyPathIntelligenceResult, type JourneyPathIntelligenceRun,
+  type JourneyStageInferenceRecommendation, type JourneyStageInferenceState,
   type JourneyMetricAnalyticsExportFormat, type JourneyMetricAppliedFilters, type JourneyMetricBinding,
   type JourneyMetricComparison, type JourneyMetricDefinition, type JourneyMetricNativeSourceCatalog,
   type JourneyMetricObservation, type JourneyMetricRebuild,
@@ -99,6 +106,10 @@ function formatWindow(seconds: number) {
   return `${seconds.toLocaleString()} seconds`;
 }
 function label(value: string) { return value.replaceAll('_', ' ').replace(/\b\w/gu, (match) => match.toUpperCase()); }
+const inferenceTransitions: Record<JourneyStageInferenceState, JourneyStageInferenceState[]> = {
+  draft: ['in_review', 'retired'], in_review: ['accepted', 'rejected', 'retired'], accepted: ['retired'],
+  rejected: ['retired'], retired: []
+};
 function safeNumber(value: string, field: string, minimum?: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || (minimum !== undefined && parsed < minimum)) throw new Error(`${field} must be ${minimum === undefined ? 'a number' : `at least ${minimum}`}.`);
@@ -350,6 +361,11 @@ export function JourneyMetricsPage() {
   const [latestActualPathSnapshot, setLatestActualPathSnapshot] = useState<JourneyActualPathSnapshot | null>(null);
   const [actualPathSnapshots, setActualPathSnapshots] = useState<JourneyActualPathSnapshot[]>([]);
   const [selectedActualPathSnapshotId, setSelectedActualPathSnapshotId] = useState<string | null>(null);
+  const [pathIntelligence, setPathIntelligence] = useState<JourneyPathIntelligenceResult | null>(null);
+  const [pathIntelligenceRuns, setPathIntelligenceRuns] = useState<JourneyPathIntelligenceRun[]>([]);
+  const [stageRecommendations, setStageRecommendations] = useState<JourneyStageInferenceRecommendation[]>([]);
+  const [intelligenceDraft, setIntelligenceDraft] = useState({ minimumSampleSize: '10', secondarySuppressionThreshold: '3' });
+  const [recommendationDrafts, setRecommendationDrafts] = useState<Record<string, { state: JourneyStageInferenceState; reason: string }>>({});
   const [channels, setChannels] = useState<Array<{ id: string; name: string }>>([]);
   const [exporting, setExporting] = useState<JourneyMetricAnalyticsExportFormat | null>(null);
   const [metricOpen, setMetricOpen] = useState(false); const [editingDefinition, setEditingDefinition] = useState<JourneyMetricDefinition | null>(null);
@@ -368,7 +384,8 @@ export function JourneyMetricsPage() {
   const loadJourney = useCallback(async (selected: string) => {
     if (!selected) { setMap(null); setDefinitions([]); setBindings([]); setSegments([]); setObservations([]); setRebuilds([]);
       setAlertDefinitions([]); setAlerts([]); setAlertRuns([]); setAlertNotifications([]); setAlertPreference(null);
-      setActualPaths(null); setLatestActualPathRollup(null); setLatestActualPathSnapshot(null); setActualPathSnapshots([]); setSelectedActualPathSnapshotId(null); return; }
+      setActualPaths(null); setLatestActualPathRollup(null); setLatestActualPathSnapshot(null); setActualPathSnapshots([]); setSelectedActualPathSnapshotId(null);
+      setPathIntelligence(null); setPathIntelligenceRuns([]); setStageRecommendations([]); return; }
     setLoading(true); setError('');
     try {
       const [nextMap, nextDefinitions, nextBindings, nextSegments, surveyRows] = await Promise.all([
@@ -377,7 +394,8 @@ export function JourneyMetricsPage() {
       ]);
       const [nextObservations, nextRebuilds, nextAlertDefinitions, nextAlerts, nextAlertRuns,
         nextAlertNotifications, nextAlertPreference, nextActualPaths, nextActualPathRollup,
-        nextActualPathSnapshot, nextActualPathSnapshots] = await Promise.all([
+        nextActualPathSnapshot, nextActualPathSnapshots, nextPathIntelligence, nextPathIntelligenceRuns,
+        nextStageRecommendations] = await Promise.all([
         listJourneyMetricObservations({ journeyDefinitionId: selected },
           { from: dateBoundary(range.from), to: dateBoundary(range.to, true) }, comparison),
         listJourneyMetricRebuilds({ journeyDefinitionId: selected }), listJourneyMetricAlertDefinitions(selected),
@@ -386,7 +404,11 @@ export function JourneyMetricsPage() {
         actualPathsEnabled ? readJourneyActualPaths(selected, { from: dateBoundary(range.from), to: dateBoundary(range.to, true) }, actualPathSubjectKind) : Promise.resolve(null),
         actualPathsEnabled ? readLatestJourneyActualPathRollup(selected, actualPathSubjectKind) : Promise.resolve(null),
         actualPathsEnabled ? readLatestJourneyActualPathSnapshot(selected, actualPathSubjectKind) : Promise.resolve(null),
-        actualPathsEnabled ? listJourneyActualPathSnapshots(selected, actualPathSubjectKind) : Promise.resolve([])
+        actualPathsEnabled ? listJourneyActualPathSnapshots(selected, actualPathSubjectKind) : Promise.resolve([]),
+        actualPathsEnabled ? readJourneyPathIntelligence(selected, { from: dateBoundary(range.from), to: dateBoundary(range.to, true),
+          subjectScope: actualPathSubjectKind, minimumSampleSize: 10, secondarySuppressionThreshold: 3 }) : Promise.resolve(null),
+        actualPathsEnabled ? listJourneyPathIntelligenceRuns(selected) : Promise.resolve([]),
+        actualPathsEnabled ? listJourneyStageInferenceRecommendations(selected) : Promise.resolve([])
       ]);
       setMap(nextMap); setDefinitions(nextDefinitions); setBindings(nextBindings); setSegments(nextSegments);
       setObservations(nextObservations.observations); setAppliedFilters(nextObservations.appliedFilters);
@@ -396,8 +418,10 @@ export function JourneyMetricsPage() {
       setLatestActualPathRollup(nextActualPathRollup);
       setLatestActualPathSnapshot(nextActualPathSnapshot);
       setActualPathSnapshots(nextActualPathSnapshots);
+      setPathIntelligence(nextPathIntelligence); setPathIntelligenceRuns(nextPathIntelligenceRuns);
+      setStageRecommendations(nextStageRecommendations); setRecommendationDrafts({});
       setSelectedActualPathSnapshotId(null);
-    } catch (value) { setError(errorMessage(value)); setObservations([]); setAppliedFilters(null); setActualPaths(null); setLatestActualPathRollup(null); setLatestActualPathSnapshot(null); setActualPathSnapshots([]); }
+    } catch (value) { setError(errorMessage(value)); setObservations([]); setAppliedFilters(null); setActualPaths(null); setLatestActualPathRollup(null); setLatestActualPathSnapshot(null); setActualPathSnapshots([]); setPathIntelligence(null); setPathIntelligenceRuns([]); setStageRecommendations([]); }
     finally { setLoading(false); }
   }, [range.from, range.to, comparison, actualPathsEnabled, actualPathSubjectKind]);
 
@@ -572,6 +596,39 @@ export function JourneyMetricsPage() {
       setActualPaths(snapshot.result);
       setSelectedActualPathSnapshotId(snapshot.id);
       toast.success('Actual-path snapshot opened.');
+    } catch (value) { toast.error(errorMessage(value)); }
+    finally { setWorking(null); }
+  }
+
+  function currentIntelligenceScope() {
+    return { from: dateBoundary(range.from), to: dateBoundary(range.to, true), subjectScope: actualPathSubjectKind,
+      minimumSampleSize: safeNumber(intelligenceDraft.minimumSampleSize, 'Minimum sample size', 3),
+      secondarySuppressionThreshold: safeNumber(intelligenceDraft.secondarySuppressionThreshold, 'Secondary suppression threshold', 3) };
+  }
+  async function analysePathIntelligence(save: boolean) {
+    if (!journeyId) return;
+    setWorking(save ? 'path-intelligence-save' : 'path-intelligence-read');
+    try {
+      if (save) {
+        const result = await createJourneyPathIntelligenceRun(journeyId, currentIntelligenceScope());
+        setPathIntelligence(result.run.result);
+        setPathIntelligenceRuns((current) => [result.run, ...current.filter((run) => run.id !== result.run.id)]);
+        setStageRecommendations((current) => [...result.recommendations,
+          ...current.filter((item) => !result.recommendations.some((created) => created.id === item.id))]);
+        toast.success(result.replayed ? 'The same reviewed scope is already saved.' : 'Path intelligence run saved for review.');
+      } else setPathIntelligence(await readJourneyPathIntelligence(journeyId, currentIntelligenceScope()));
+    } catch (value) { toast.error(errorMessage(value)); }
+    finally { setWorking(null); }
+  }
+  async function reviewStageRecommendation(item: JourneyStageInferenceRecommendation) {
+    const draft = recommendationDrafts[item.id];
+    if (!draft) return;
+    setWorking(`path-recommendation-${item.id}`);
+    try {
+      const updated = await transitionJourneyStageInferenceRecommendation(item.id, item.revision, draft.state, draft.reason);
+      setStageRecommendations((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+      setRecommendationDrafts((current) => { const next = { ...current }; delete next[item.id]; return next; });
+      toast.success(`Recommendation moved to ${label(updated.state).toLowerCase()}. No journey stage was changed.`);
     } catch (value) { toast.error(errorMessage(value)); }
     finally { setWorking(null); }
   }
@@ -1204,7 +1261,140 @@ export function JourneyMetricsPage() {
                 {actualPaths.scope.notes.map((note) => <li key={note}>{note}</li>)}
               </ul>
             </div>
+            <JourneyActualPathComparisonPanel journeyDefinitionId={journeyId}
+              currentFrom={actualPaths.analytics.lineage.period.start} currentTo={actualPaths.analytics.lineage.period.end}
+              subjectScope={actualPathSubjectKind}
+              stageName={(stageId) => stageNameById.get(stageId) || stageId} />
+            <JourneyActualPathCorrectionPanel journeyDefinitionId={journeyId}
+              journeyMapVersionId={actualPaths.scope.designVersionId}
+              windowStart={actualPaths.analytics.lineage.period.start} windowEnd={actualPaths.analytics.lineage.period.end}
+              canManage={canManage} />
+            <JourneyStageInferenceReviewPanel journeyDefinitionId={journeyId}
+              currentFrom={actualPaths.analytics.lineage.period.start} currentTo={actualPaths.analytics.lineage.period.end}
+              subjectScope={actualPathSubjectKind}
+              stageName={(stageId) => stageNameById.get(stageId) || stageId} />
           </div>}
+        </section>}
+
+        {actualPathsEnabled && <section className="overflow-hidden border bg-card" aria-labelledby="path-intelligence-heading"
+          data-testid="journey-path-intelligence">
+          <div className="border-b px-4 py-3">
+            <h2 id="path-intelligence-heading" className="text-sm font-semibold">Actual path intelligence and stage-inference review</h2>
+            <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
+              Versioned deterministic rules describe observed anomalies and risks. They do not predict outcomes, establish causes,
+              or change a journey stage. Every stage-inference recommendation requires human review.
+            </p>
+          </div>
+          <div className="space-y-5 p-4">
+            <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] lg:items-end"
+              onSubmit={(event) => { event.preventDefault(); void analysePathIntelligence(false); }}>
+              <div><Label htmlFor="path-intelligence-minimum">Minimum subject sample</Label>
+                <Input id="path-intelligence-minimum" inputMode="numeric" min={3} type="number"
+                  value={intelligenceDraft.minimumSampleSize}
+                  onChange={(event) => setIntelligenceDraft((current) => ({ ...current, minimumSampleSize: event.target.value }))} /></div>
+              <div><Label htmlFor="path-intelligence-secondary">Secondary disclosure threshold</Label>
+                <Input id="path-intelligence-secondary" inputMode="numeric" min={3} type="number"
+                  value={intelligenceDraft.secondarySuppressionThreshold}
+                  onChange={(event) => setIntelligenceDraft((current) => ({ ...current, secondarySuppressionThreshold: event.target.value }))} /></div>
+              <Button type="submit" variant="outline" disabled={working === 'path-intelligence-read'}>
+                {working === 'path-intelligence-read' ? <LoaderCircle className="animate-spin" /> : <RefreshCw />} Run analysis
+              </Button>
+              {canManage && <Button type="button" onClick={() => void analysePathIntelligence(true)}
+                disabled={working === 'path-intelligence-save'}>
+                {working === 'path-intelligence-save' ? <LoaderCircle className="animate-spin" /> : <Save />} Save review run
+              </Button>}
+            </form>
+
+            {pathIntelligence && <>
+              <dl className="grid gap-x-6 gap-y-2 border px-4 py-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div><dt className="text-xs text-muted-foreground">Subject scope</dt><dd className="mt-1 font-medium">{label(pathIntelligence.provenance.subjectScope)}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Journey version</dt><dd className="mt-1 break-all font-mono text-xs">{pathIntelligence.provenance.journeyMapVersionId}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Window</dt><dd className="mt-1">{formatDate(pathIntelligence.provenance.window.start)} to {formatDate(pathIntelligence.provenance.window.end)}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">As of</dt><dd className="mt-1">{formatDate(pathIntelligence.provenance.window.asOf)}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Accepted subjects</dt><dd className="mt-1 font-medium">{pathIntelligence.sample.suppressed ? 'Suppressed' : pathCount(pathIntelligence.sample.acceptedInstanceCount)}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Accepted visits</dt><dd className="mt-1 font-medium">{pathIntelligence.sample.suppressed ? 'Suppressed' : pathCount(pathIntelligence.sample.acceptedVisitCount)}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Primary minimum</dt><dd className="mt-1 font-medium">{pathIntelligence.sample.minimumSampleSize}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Secondary threshold</dt><dd className="mt-1 font-medium">{pathIntelligence.sample.secondarySuppressionThreshold}</dd></div>
+              </dl>
+
+              {pathIntelligence.status === 'abstained' && <div role="status" className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <p className="font-medium">Analysis abstained</p>
+                <p className="mt-1">No indicators or recommendations are disclosed when the primary sample is insufficient or suppressed.</p>
+                <ul className="mt-2 list-disc pl-5">{pathIntelligence.abstentionReasons.map((reason) => <li key={reason}>{label(reason)}</li>)}</ul>
+              </div>}
+
+              <section aria-labelledby="detected-path-indicators-heading">
+                <div className="border-b pb-2"><h3 id="detected-path-indicators-heading" className="text-sm font-semibold">Detected indicators</h3></div>
+                <ul className="divide-y border-x border-b" data-testid="path-intelligence-indicators">
+                  {pathIntelligence.indicators.map((indicator, index) => <li key={`${indicator.code}-${indicator.stageId || indicator.fromStageId}-${index}`} className="px-4 py-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2"><p className="text-sm font-medium">{label(indicator.code)}</p><p className="text-xs text-muted-foreground">{label(indicator.severity)}</p></div>
+                    <p className="mt-1 text-sm">{indicator.explanation}</p>
+                    <dl className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
+                      <div><dt className="text-muted-foreground">Stage or transition</dt><dd>{indicator.stageId ? stageNameById.get(indicator.stageId) || indicator.stageId : `${stageNameById.get(indicator.fromStageId || '') || indicator.fromStageId} → ${stageNameById.get(indicator.toStageId || '') || indicator.toStageId}`}</dd></div>
+                      <div><dt className="text-muted-foreground">Observed</dt><dd>{indicator.observed.count} records{indicator.observed.percentage === null ? '' : ` · ${indicator.observed.percentage}%`}</dd></div>
+                      <div><dt className="text-muted-foreground">Fixed rule threshold</dt><dd>{label(indicator.threshold.kind)} {indicator.threshold.value.toLocaleString()}</dd></div>
+                    </dl>
+                  </li>)}
+                  {!pathIntelligence.indicators.length && <li className="px-4 py-6 text-center text-sm text-muted-foreground">No disclosed indicators for this exact scope.</li>}
+                </ul>
+              </section>
+              <div className="border bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+                <p>{pathIntelligence.interpretation.statement}</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">{pathIntelligence.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
+              </div>
+            </>}
+
+            <section aria-labelledby="stage-inference-review-heading">
+              <div className="border-b pb-2"><h3 id="stage-inference-review-heading" className="text-sm font-semibold">Stage-inference recommendations</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Acceptance records a reviewed decision only. It never applies or schedules a stage change.</p></div>
+              <ul className="divide-y border-x border-b" data-testid="stage-inference-recommendations">
+                {stageRecommendations.map((item) => {
+                  const nextStates = inferenceTransitions[item.state];
+                  const draft = recommendationDrafts[item.id] || { state: nextStates[0] || item.state, reason: '' };
+                  return <li key={item.id} className="px-4 py-4">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2"><p className="text-sm font-medium">{stageNameById.get(item.recommendation.fromStageId) || item.recommendation.fromStageId} → {stageNameById.get(item.recommendation.inferredStageId) || item.recommendation.inferredStageId}</p><p className="text-xs text-muted-foreground">{label(item.state)} · revision {item.revision}</p></div>
+                    <p className="mt-1 text-sm">{item.recommendation.rationale}</p>
+                    <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                      <div><dt className="text-muted-foreground">Sample sufficiency</dt><dd>{item.recommendation.confidence.sampleSufficiency.observed} observed / {item.recommendation.confidence.sampleSufficiency.required} required</dd></div>
+                      <div><dt className="text-muted-foreground">Recurrence</dt><dd>{item.recommendation.confidence.recurrence.observed} observed / {item.recommendation.confidence.recurrence.required} required</dd></div>
+                      <div><dt className="text-muted-foreground">Visibility</dt><dd>{item.recommendation.confidence.visibility.suppressed ? 'Suppressed' : 'Disclosed above threshold'}</dd></div>
+                    </dl>
+                    <p className="mt-2 text-xs text-muted-foreground">Mode: human review only. No automatic stage application.</p>
+                    {canManage && nextStates.length > 0 && <fieldset className="mt-3 grid gap-3 border-t pt-3 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)_auto] sm:items-end">
+                      <legend className="sr-only">Review recommendation</legend>
+                      <div><Label htmlFor={`recommendation-state-${item.id}`}>Next state</Label>
+                        <select id={`recommendation-state-${item.id}`} className="mt-1 h-10 w-full border bg-background px-3 text-sm"
+                          value={draft.state} onChange={(event) => setRecommendationDrafts((current) => ({ ...current,
+                            [item.id]: { ...draft, state: event.target.value as JourneyStageInferenceState } }))}>
+                          {nextStates.map((state) => <option key={state} value={state}>{label(state)}</option>)}
+                        </select></div>
+                      <div><Label htmlFor={`recommendation-reason-${item.id}`}>Review reason</Label>
+                        <Input id={`recommendation-reason-${item.id}`} value={draft.reason} minLength={3} maxLength={2000}
+                          onChange={(event) => setRecommendationDrafts((current) => ({ ...current,
+                            [item.id]: { ...draft, reason: event.target.value } }))} /></div>
+                      <Button type="button" variant="outline" disabled={draft.reason.trim().length < 3 || working === `path-recommendation-${item.id}`}
+                        onClick={() => void reviewStageRecommendation(item)}>
+                        {working === `path-recommendation-${item.id}` ? <LoaderCircle className="animate-spin" /> : <ShieldCheck />} Record review
+                      </Button>
+                    </fieldset>}
+                  </li>;
+                })}
+                {!stageRecommendations.length && <li className="px-4 py-6 text-center text-sm text-muted-foreground">No stage-inference recommendations have been saved for this journey.</li>}
+              </ul>
+            </section>
+
+            {!!pathIntelligenceRuns.length && <section aria-labelledby="path-intelligence-history-heading">
+              <div className="border-b pb-2"><h3 id="path-intelligence-history-heading" className="text-sm font-semibold">Saved run history</h3></div>
+              <ul className="divide-y border-x border-b md:hidden" data-testid="path-intelligence-history-stacked">
+                {pathIntelligenceRuns.map((run) => <li key={run.id} className="px-4 py-3 text-sm"><p className="font-medium">{formatDate(run.createdAt)} · {label(run.result.status)}</p><p className="mt-1 text-xs text-muted-foreground">{label(run.subjectScope)} · version {run.journeyMapVersionId} · {label(run.freshness.status)}</p></li>)}
+              </ul>
+              <div className="hidden overflow-x-auto border-x border-b md:block"><table className="w-full min-w-[760px] border-collapse text-sm">
+                <caption className="sr-only">Saved path-intelligence runs with exact scope, version and freshness.</caption>
+                <thead><tr className="border-b bg-muted/30 text-left text-xs"><th className="px-4 py-2">Saved</th><th className="px-4 py-2">Scope</th><th className="px-4 py-2">Version</th><th className="px-4 py-2">Thresholds</th><th className="px-4 py-2">Result</th><th className="px-4 py-2">Freshness</th></tr></thead>
+                <tbody>{pathIntelligenceRuns.map((run) => <tr key={run.id} className="border-b last:border-b-0"><td className="px-4 py-3">{formatDate(run.createdAt)}</td><td className="px-4 py-3">{label(run.subjectScope)}</td><td className="px-4 py-3 font-mono text-xs">{run.journeyMapVersionId}</td><td className="px-4 py-3">{run.minimumSampleSize} / {run.secondarySuppressionThreshold}</td><td className="px-4 py-3">{label(run.result.status)}</td><td className="px-4 py-3">{label(run.freshness.status)}{run.freshness.staleReasons.length ? `: ${run.freshness.staleReasons.map(label).join(', ')}` : ''}</td></tr>)}</tbody>
+              </table></div>
+            </section>}
+          </div>
         </section>}
 
         <section className="overflow-hidden border bg-card" aria-labelledby="current-metrics-heading">

@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import test from 'node:test';import{fileURLToPath}from'node:url';
+const here=path.dirname(fileURLToPath(import.meta.url)),source=fs.readFileSync(path.resolve(here,'../migrations/postgres/0048_journey_blueprint_measurements.sql'),'utf8');
+test('runtime48 requires exact predecessor47 and pins composite blueprint, element and metric lineage',()=>{assert.match(source,/MAX\(version\)[\s\S]*<>47/u);
+  assert.match(source,/FOREIGN KEY\(blueprint_version_id,blueprint_id,space_id\)/u);assert.match(source,/FOREIGN KEY\(element_id,blueprint_version_id,space_id\)/u);
+  assert.match(source,/FOREIGN KEY\(metric_definition_version_id,metric_definition_id,space_id\)/u);assert.match(source,/baseline_observation_id/u);
+  assert.doesNotMatch(source,/metric_refs_json/u);});
+test('baseline and outcome evidence are immutable, checksummed, comparable and explicitly non-causal',()=>{assert.match(source,/blueprint baseline snapshot is immutable/u);
+  assert.match(source,/interpretation TEXT NOT NULL CHECK\(interpretation='descriptive_non_causal'\)/u);assert.match(source,/causal_claim BOOLEAN NOT NULL CHECK\(causal_claim=FALSE\)/u);
+  assert.match(source,/observation\.definition_version_id<>NEW\.metric_definition_version_id/u);assert.match(source,/observation\.period_start>=plan\.baseline_period_end/u);
+  assert.match(source,/snapshot_sha256 TEXT NOT NULL/u);assert.match(source,/journey_blueprint_measurement_audit_guard/u);});

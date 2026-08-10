@@ -1231,7 +1231,7 @@ test('exports declare mode, version, and an evidence legend in both formats', as
   assert.equal(json.body.legacyCompatible.stages[0].emotions[0], 'Frustrated');
 
   const csv = await agent.get(`/api/journey-maps/${created.body.id}/export.csv`).expect(200);
-  assert.match(csv.text, /^# \{/u);
+  assert.match(csv.text, /^"# \{/u);
   assert.match(csv.text, /"Frustrated"/u);
   assert.match(csv.text, /evidenceState/u);
   assert.match(String(csv.headers['content-disposition']),

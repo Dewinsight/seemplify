@@ -46,6 +46,68 @@ function Test-ProjectSupportsPostgresRuntimeVersion([string]$ProjectDir, [int]$R
   if ($RequiredVersion -ge 29 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0029_journey_hierarchy_blueprints.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 30 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0030_journey_stage_reprojection.sql') -PathType Leaf)) { return $false }
   if ($RequiredVersion -ge 31 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0031_journey_identity_profiles.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 32 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0032_journey_taxonomy_retirement_safeguard.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 33 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0033_journey_actual_path_intelligence.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 34 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0034_journey_portfolio_owner_attribution.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 35 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0035_journey_orchestration.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 36 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0036_journey_action_runtime.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 37 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0037_journey_connector_imports.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 38 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0038_journey_reviewed_adapters.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 39 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0039_journey_predictive_governance.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 40 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0040_journey_kill_switch.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 41 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0041_journey_stage_intelligence.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 42) {
+    foreach ($relativePath in @(
+      'backend\migrations\postgres\0042_journey_action_worker_safety.sql',
+      'backend\migrations\postgres\runtime_worker_privileges.sql'
+    )) {
+      if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $relativePath) -PathType Leaf)) { return $false }
+    }
+  }
+  if ($RequiredVersion -ge 43) {
+    foreach ($relativePath in @(
+      'backend\migrations\postgres\0043_journey_stage_survey_feed.sql',
+      'backend\migrations\postgres\runtime43_survey_feed_privileges.sql'
+    )) {
+      if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $relativePath) -PathType Leaf)) { return $false }
+    }
+  }
+  if ($RequiredVersion -ge 44 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0044_journey_reviewed_action_worker_bridge.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 45 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0045_journey_event_stage_intelligence_adapter.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 46 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0046_journey_portfolio_views_and_transitions.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 47 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0047_journey_privacy_propagation_authority.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 48 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0048_journey_blueprint_measurements.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 49 -and -not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0049_journey_export_branding.sql') -PathType Leaf)) { return $false }
+  if ($RequiredVersion -ge 50) {
+    foreach ($relativePath in @(
+      'backend\migrations\postgres\0050_journey_actual_path_durability.sql',
+      'backend\migrations\postgres\runtime50_actual_path_privileges.sql'
+    )) { if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $relativePath) -PathType Leaf)) { return $false } }
+  }
+  if ($RequiredVersion -ge 51) {
+    foreach ($relativePath in @(
+      'backend\migrations\postgres\0051_journey_connector_execution_plane.sql',
+      'backend\migrations\postgres\runtime51_connector_worker_privileges.sql'
+    )) { if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $relativePath) -PathType Leaf)) { return $false } }
+  }
+  if ($RequiredVersion -ge 52) {
+    foreach ($relativePath in @(
+      'backend\migrations\postgres\0052_journey_operational_stage_feed.sql',
+      'backend\migrations\postgres\runtime52_operational_stage_feed_privileges.sql'
+    )) { if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $relativePath) -PathType Leaf)) { return $false } }
+  }
+  if ($RequiredVersion -ge 53) {
+    foreach ($relativePath in @(
+      'backend\migrations\postgres\0053_journey_event_retention_reconciliation.sql',
+      'backend\migrations\postgres\runtime53_event_retention_privileges.sql'
+    )) { if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $relativePath) -PathType Leaf)) { return $false } }
+  }
+  if ($RequiredVersion -ge 54) {
+    if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0054_journey_evidence_monitor.sql') -PathType Leaf)) { return $false }
+  }
+  if ($RequiredVersion -ge 55) {
+    if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir 'backend\migrations\postgres\0055_journey_workspace_saved_views.sql') -PathType Leaf)) { return $false }
+  }
   return $true
 }
 

@@ -646,15 +646,17 @@ export function createJourneyMap(spaceId: string, userId: string | null, input: 
   const mapType = mapTypeSet.has(String(input.mapType)) ? input.mapType as JourneyMapType : 'current_state';
   const experienceType = experienceTypeSet.has(String(input.experienceType)) ? input.experienceType as JourneyExperienceType : 'customer';
   const stageNames = stringList(input.stageNames, journeyMapLimits.stages);
-  // Converted legacy maps are grandfathered: only maps authored after the
-  // entitlement release consume the plan allowance.
-  assertSubscriptionQuota(spaceId, 'journeyMaps', Number((db.prepare(
-    'SELECT COUNT(*) count FROM journey_definitions WHERE space_id=? AND legacy_journey_id IS NULL'
-  ).get(spaceId) as any)?.count || 0));
   const now = nowIso();
   const definitionId = crypto.randomUUID();
   const versionId = journeyVersionId(definitionId, 1);
   return db.transaction(() => {
+    if (db.provider === 'postgres') db.prepare('SELECT pg_advisory_xact_lock(hashtextextended(?,0))')
+      .get(`journey-map-quota:${spaceId}`);
+    // Converted legacy maps are grandfathered: only maps authored after the
+    // entitlement release consume the plan allowance.
+    assertSubscriptionQuota(spaceId, 'journeyMaps', Number((db.prepare(
+      'SELECT COUNT(*) count FROM journey_definitions WHERE space_id=? AND legacy_journey_id IS NULL'
+    ).get(spaceId) as any)?.count || 0));
     db.prepare(`INSERT INTO journey_definitions
       (id,space_id,legacy_journey_id,name,purpose,experience_type,map_type,mode,status,owner_user_id,
         current_version_id,published_version_id,review_cadence_days,revision,created_at,updated_at)
@@ -714,9 +716,6 @@ export function createJourneyMapFromTemplate(
 ) {
   assertSubscriptionFeature(spaceId, 'journeyDesign');
   assertSubscriptionFeature(spaceId, 'journeyTemplates');
-  assertSubscriptionQuota(spaceId, 'journeyMaps', Number((db.prepare(
-    'SELECT COUNT(*) count FROM journey_definitions WHERE space_id=? AND legacy_journey_id IS NULL'
-  ).get(spaceId) as any)?.count || 0));
   const source = db.prepare(`SELECT version.*,template.template_key,template.status template_status,
       template.published_version_id
     FROM journey_template_versions version JOIN journey_templates template ON template.id=version.template_id
@@ -750,6 +749,11 @@ export function createJourneyMapFromTemplate(
   const definitionId = crypto.randomUUID();
   const versionId = journeyVersionId(definitionId, 1);
   return db.transaction(() => {
+    if (db.provider === 'postgres') db.prepare('SELECT pg_advisory_xact_lock(hashtextextended(?,0))')
+      .get(`journey-map-quota:${spaceId}`);
+    assertSubscriptionQuota(spaceId, 'journeyMaps', Number((db.prepare(
+      'SELECT COUNT(*) count FROM journey_definitions WHERE space_id=? AND legacy_journey_id IS NULL'
+    ).get(spaceId) as any)?.count || 0));
     // Recheck state under the transaction so a concurrent retirement cannot
     // race a map into existence from an unavailable version.
     const stillPublished = db.prepare(`SELECT 1 FROM journey_template_versions version
@@ -2210,13 +2214,15 @@ export function createJourneyPersona(
   if (db.prepare('SELECT id FROM journey_personas WHERE space_id=? AND name=?').get(spaceId, name)) {
     throw new JourneyMapError('A persona with this name already exists.', 409, 'JOURNEY_PERSONA_NAME_TAKEN');
   }
-  assertSubscriptionQuota(spaceId, 'journeyPersonas', Number((db.prepare(
-    'SELECT COUNT(*) count FROM journey_personas WHERE space_id=?'
-  ).get(spaceId) as any)?.count || 0));
   const now = nowIso();
   const id = crypto.randomUUID();
   const personaVersionId = crypto.randomUUID();
   return db.transaction(() => {
+    if (db.provider === 'postgres') db.prepare('SELECT pg_advisory_xact_lock(hashtextextended(?,0))')
+      .get(`journey-persona-quota:${spaceId}`);
+    assertSubscriptionQuota(spaceId, 'journeyPersonas', Number((db.prepare(
+      'SELECT COUNT(*) count FROM journey_personas WHERE space_id=?'
+    ).get(spaceId) as any)?.count || 0));
     db.prepare(`INSERT INTO journey_personas
       (id,space_id,name,summary,lifecycle_state,owner_user_id,source,attributes_json,goals_json,behaviours_json,
         needs_json,barriers_json,review_at,revision,created_at,updated_at,current_version_id)
@@ -2429,6 +2435,42 @@ export function listEvidenceLinks(spaceId: string, userId: string, targetType: s
   // This makes access loss explicit without turning the journey into a bypass
   // for deleted, private, cross-space, owner-only, or plan-disabled content.
   return links.map((link) => evidenceLinkForViewer(spaceId, userId, link));
+}
+
+/** A single bounded, viewer-authorised projection for export source notes.
+ * Raw source references, excerpts, link identifiers and inaccessible-link
+ * cardinality never leave this boundary. */
+export function listJourneyExportSourceNotes(spaceId: string, userId: string, definitionId: string, versionId: string,
+  maximum = 200) {
+  assertSubscriptionFeature(spaceId, 'journeyEvidence');
+  const bounded = Math.max(1, Math.min(200, Math.floor(maximum)));
+  const rows = db.prepare(`SELECT link.* FROM journey_evidence_links link WHERE link.space_id=? AND (
+      (link.target_type='definition' AND link.target_id=?)
+      OR (link.target_type='stage' AND EXISTS(SELECT 1 FROM journey_map_stages stage
+        WHERE stage.id=link.target_id AND stage.space_id=link.space_id AND stage.version_id=?))
+      OR (link.target_type='card' AND EXISTS(SELECT 1 FROM journey_map_cards card
+        WHERE card.id=link.target_id AND card.space_id=link.space_id AND card.version_id=?))
+      OR (link.target_type='persona' AND EXISTS(SELECT 1 FROM journey_map_version_personas persona
+        WHERE persona.persona_id=link.target_id AND persona.space_id=link.space_id AND persona.version_id=?)))
+      ORDER BY link.created_at,link.id`).all(spaceId,definitionId,versionId,versionId,versionId) as any[];
+  const visible = rows.map(rowEvidenceLink).map((link) => evidenceLinkForViewer(spaceId,userId,link))
+    // Invalidated links remain visible in the governed map history, but they
+    // are negative export inputs even when the underlying record still exists.
+    // This preserves the viewer-authorised source-note boundary while ensuring
+    // a monitor-propagated revocation cannot be exported as current evidence.
+    .filter((link) => link.sourceAccess === 'available' && !link.invalidatedAt);
+  const notes: Array<{sourceType:EvidenceSourceType;sourceLabel:string;assessment:EvidenceAssessment;population:string;
+    sampleSize:number|null;windowStart:string|null;windowEnd:string|null;collectedAt:string|null;freshnessDays:number|null;
+    lastValidatedAt:string|null;refreshStatus:'current'|'changed'|'unavailable'}> = [];
+  const seen = new Set<string>();
+  for (const link of visible) {
+    const note = {sourceType:link.sourceType,sourceLabel:link.sourceLabel,assessment:link.assessment,population:link.population,
+      sampleSize:link.sampleSize,windowStart:link.windowStart,windowEnd:link.windowEnd,collectedAt:link.collectedAt,
+      freshnessDays:link.freshnessDays,lastValidatedAt:link.lastValidatedAt,refreshStatus:link.refreshStatus};
+    const fingerprint = JSON.stringify(note);
+    if (seen.has(fingerprint)) continue; seen.add(fingerprint); if (notes.length < bounded) notes.push(note);
+  }
+  return { notes, truncated: seen.size > bounded };
 }
 
 export function getEvidenceLinkSource(spaceId: string, userId: string, linkId: string): JourneyEvidenceSourceView {

@@ -246,6 +246,12 @@ export interface PlatformManagedPlan extends PlatformPlan {
     journeyCardAssets: number;
     journeyCardAssetBytes: number;
     journeySavedViews: number;
+    journeyPortfolioItems: number;
+    journeyPortfolioScoringPolicies: number;
+    journeyHierarchyLinks: number;
+    journeyBlueprints: number;
+    journeyBlueprintResources: number;
+    journeyConnectorDefinitions: number;
   };
   displayOrder: number;
   version: number;

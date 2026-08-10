@@ -16,6 +16,7 @@ import {
   createJourneyMap, createJourneyPersona, deleteJourneyCard, deleteJourneyMap, deleteJourneyPersona,
   deleteJourneyLane, deleteJourneyStage, detachEvidenceLink, ensureJourneyMapForLegacyJourney, getJourneyMap, getJourneyPersona,
   getEvidenceLinkSource, JourneyMapError, linkPersonaToJourney, listEvidenceLinks, listJourneyDefinitions,
+  listJourneyExportSourceNotes,
   listEvidenceAuditEvents, listJourneyPersonas, moveJourneyCard, moveJourneyCardAffectedCells, moveJourneyLane, moveJourneyStage,
   personaDraftFromLegacyAudience, publishJourneyMap, refreshEvidenceLink, reconcileJourneyMap, setJourneyLaneVisibility,
   unlinkPersonaFromJourney, updateJourneyCard, updateJourneyLane, updateJourneyPersona, updateJourneyStage
@@ -43,6 +44,10 @@ import {
   listJourneySavedViews, recordJourneySavedViewExport, resetDefaultJourneySavedView, resolveJourneySavedView,
   restoreJourneySavedView, selectDefaultJourneySavedView, updateJourneySavedView, updateJourneySavedViewSettings
 } from './journeySavedViews.js';
+import { JourneyCollaborationError } from './journeyCollaboration.js';
+import {
+  JourneyExportBrandError, journeyExportBrandRepository, type JourneyExportBrandSnapshot
+} from './journeyExportBranding.js';
 
 export const journeyMapRouter = express.Router();
 export const journeyPersonaRouter = express.Router();
@@ -105,6 +110,16 @@ function sendError(response: express.Response, error: unknown) {
   if (error instanceof JourneyEvidenceSourceError) {
     return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
   }
+  // Export branding reaches into journey capabilities, so this router now raises
+  // both of these. Without the mapping their governed 403/404/409/410 answers
+  // collapsed into a codeless 500, which reads to a client as a server fault
+  // rather than as the permission or brand-integrity decision it actually is.
+  if (error instanceof JourneyCollaborationError) {
+    return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
+  }
+  if (error instanceof JourneyExportBrandError) {
+    return response.status(error.status).json({ error: error.message, code: error.code });
+  }
   return response.status(500).json({ error: error instanceof Error ? error.message : 'Journey map request failed.' });
 }
 
@@ -145,8 +160,11 @@ export async function buildMeteredJourneyMapExport(input: {
   idempotencyKey: string;
   selectedView?: JourneyMapExportViewContext;
   richMap?: JourneyRichMapSnapshot | null;
+  brand?:JourneyExportBrandSnapshot|null;
+  sourceNotes?:ReturnType<typeof listJourneyExportSourceNotes>;
 }, renderer: typeof buildJourneyMapExport = buildJourneyMapExport) {
-  const artifact = await renderer(input.map, input.format, new Date().toISOString(), input.selectedView, input.richMap);
+  const artifact = await renderer(input.map,input.format,new Date().toISOString(),input.selectedView,input.richMap,{
+    brand:input.brand,sourceNotes:input.sourceNotes?.notes,sourceNotesTruncated:input.sourceNotes?.truncated});
   const receipt = consumeSubscriptionUsage({
     spaceId: input.spaceId,
     quota: 'monthlyJourneyExports',
@@ -445,13 +463,29 @@ journeyMapRouter.get('/:definitionId/export.:format', asyncRoute(async (request,
     return response.status(400).json({ error: 'Invalid Idempotency-Key header.', code: 'SUBSCRIPTION_USAGE_INPUT_INVALID' });
   }
   const idempotencyKey = suppliedKey || crypto.randomUUID();
-  const richMap = effectiveSubscriptionForSpace(space.id).plan.features.journeyRichCards
+  const subscription = effectiveSubscriptionForSpace(space.id);
+  const richMap = subscription.plan.features.journeyRichCards
     ? getJourneyRichMapSnapshot(space.id, map.definition.id, map.version.id)
     : null;
+  // Branding is an addition to an already-authorised export, not a precondition
+  // for one, and it is entitled separately from `journeyExports`. Brand governance
+  // is carried entirely by journey capabilities, which do not exist without
+  // `journeyCollaboration`: with that feature off every capability answers
+  // read-only, so a plan selling exports without collaboration -- Starter does --
+  // can never own a brand profile, yet asking for one failed the whole download on
+  // a check whose only possible answer was "none". Ask only where the answer can be
+  // non-empty; where a plan grants it, resolution is unchanged and still governed,
+  // including the retired-profile and logo-integrity refusals.
+  const brand = subscription.plan.features.journeyCollaboration
+    ? journeyExportBrandRepository.resolve({ spaceId: space.id, actorUserId: user.id, ...(viewId ? { viewId } : {}) })
+    : null;
+  const sourceNotes=subscription.plan.features.journeyEvidence
+    ? listJourneyExportSourceNotes(space.id,user.id,map.definition.id,map.version.id,200)
+    : {notes:[],truncated:false};
   // Rendering precedes accounting: a renderer failure never consumes quota.
   const { artifact, receipt } = await buildMeteredJourneyMapExport({
     map, format: format as JourneyMapExportFormat, spaceId: space.id, userId: user.id, idempotencyKey,
-    richMap, selectedView
+    richMap, selectedView,brand,sourceNotes
   });
   if (selectedSavedView && !receipt.replayed) recordJourneySavedViewExport({
     spaceId: space.id, actorUserId: user.id, view: selectedSavedView, format

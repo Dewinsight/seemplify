@@ -2142,6 +2142,7 @@ export function JourneyMapsPage() {
             metricsEnabled={metricsEnabled}
             richCardsEnabled={richCardsEnabled}
             evidenceEnabled={evidenceEnabled}
+            exportsEnabled={exportsEnabled}
             onApply={applySavedView}
             onReset={resetSavedView}
             onPresent={presentSavedView}

@@ -989,6 +989,39 @@ export function ensurePlatformSchema() {
     CREATE INDEX IF NOT EXISTS journey_actual_path_rollups_latest
       ON journey_actual_path_rollups(space_id,journey_definition_id,materialized_at DESC,id);
 
+    CREATE TABLE IF NOT EXISTS journey_actual_path_artifact_revisions (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
+      artifact_kind TEXT NOT NULL CHECK(artifact_kind IN ('snapshot','rollup')),
+      artifact_id TEXT NOT NULL,revision INTEGER NOT NULL CHECK(revision>0),
+      space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+      journey_definition_id TEXT NOT NULL,journey_map_version_id TEXT NOT NULL,
+      subject_scope TEXT NOT NULL CHECK(subject_scope IN ('anonymous_only','known_profiles')),
+      period_start TEXT NOT NULL,period_end TEXT NOT NULL,as_of TEXT NOT NULL,
+      analytics_version TEXT NOT NULL CHECK(length(analytics_version) BETWEEN 1 AND 100),
+      source_lineage_sha256 TEXT NOT NULL CHECK(length(source_lineage_sha256)=64),
+      result_sha256 TEXT NOT NULL CHECK(length(result_sha256)=64),
+      latest_reprojection_run_id TEXT,latest_reprojection_completed_at TEXT,created_at TEXT NOT NULL,
+      UNIQUE(artifact_kind,artifact_id,revision),UNIQUE(id,space_id),
+      FOREIGN KEY(journey_definition_id,space_id) REFERENCES journey_definitions(id,space_id) ON DELETE CASCADE,
+      FOREIGN KEY(journey_map_version_id,journey_definition_id,space_id)
+        REFERENCES journey_map_versions(id,definition_id,space_id) ON DELETE RESTRICT,
+      CHECK((latest_reprojection_run_id IS NULL)=(latest_reprojection_completed_at IS NULL))
+    );
+    CREATE INDEX IF NOT EXISTS journey_actual_path_artifact_revisions_latest
+      ON journey_actual_path_artifact_revisions(space_id,artifact_kind,artifact_id,revision DESC);
+
+    CREATE TABLE IF NOT EXISTS journey_actual_path_privacy_invalidations (
+      id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE NO ACTION,
+      journey_definition_id TEXT NOT NULL,source_type TEXT NOT NULL CHECK(source_type IN ('privacy_job','correction_run')),
+      source_id_sha256 TEXT NOT NULL CHECK(length(source_id_sha256)=64),
+      operation TEXT NOT NULL CHECK(operation IN ('suppress','erasure','correction')),
+      removed_snapshot_count INTEGER NOT NULL CHECK(removed_snapshot_count>=0),
+      removed_rollup_count INTEGER NOT NULL CHECK(removed_rollup_count>=0),invalidated_at TEXT NOT NULL,
+      UNIQUE(space_id,journey_definition_id,source_type,source_id_sha256)
+    );
+    CREATE INDEX IF NOT EXISTS journey_actual_path_privacy_invalidations_history
+      ON journey_actual_path_privacy_invalidations(space_id,journey_definition_id,invalidated_at DESC,id);
+
     CREATE TABLE IF NOT EXISTS journey_identity_profiles (
       id TEXT PRIMARY KEY CHECK(length(id) BETWEEN 1 AND 128),
       space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -1455,9 +1488,18 @@ export function ensurePlatformSchema() {
     CREATE TRIGGER IF NOT EXISTS journey_actual_path_snapshots_update_guard
       BEFORE UPDATE ON journey_actual_path_snapshots
       BEGIN SELECT RAISE(ABORT,'journey actual path snapshots are append-only'); END;
-    CREATE TRIGGER IF NOT EXISTS journey_actual_path_snapshots_delete_guard
-      BEFORE DELETE ON journey_actual_path_snapshots
-      BEGIN SELECT RAISE(ABORT,'journey actual path snapshots are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_actual_path_artifact_revisions_update_guard
+      BEFORE UPDATE ON journey_actual_path_artifact_revisions
+      BEGIN SELECT RAISE(ABORT,'journey actual path artifact revisions are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_actual_path_artifact_revisions_delete_guard
+      BEFORE DELETE ON journey_actual_path_artifact_revisions
+      BEGIN SELECT RAISE(ABORT,'journey actual path artifact revisions are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_actual_path_privacy_invalidations_update_guard
+      BEFORE UPDATE ON journey_actual_path_privacy_invalidations
+      BEGIN SELECT RAISE(ABORT,'journey actual path privacy invalidations are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS journey_actual_path_privacy_invalidations_delete_guard
+      BEFORE DELETE ON journey_actual_path_privacy_invalidations
+      BEGIN SELECT RAISE(ABORT,'journey actual path privacy invalidations are append-only'); END;
     CREATE TRIGGER IF NOT EXISTS journey_stage_rule_audit_update_guard
       BEFORE UPDATE ON journey_stage_rule_audit_events
       BEGIN SELECT RAISE(ABORT,'journey stage-rule audit is append-only'); END;
@@ -1753,6 +1795,12 @@ export function ensurePlatformSchema() {
       ON ticket_events(ticket_id,created_at,id);
 
   `);
+
+  // Runtime50 moves deletion authority from an unconditional SQLite trigger to
+  // the privacy propagation repository, which records an immutable invalidation
+  // before deleting derived aggregates. PostgreSQL uses a SECURITY DEFINER
+  // function and dedicated worker privilege instead.
+  db.exec('DROP TRIGGER IF EXISTS journey_actual_path_snapshots_delete_guard');
 
   const planSeededAt = '2026-08-04T00:00:00.000Z';
   const displayOrders: Record<string, number> = { starter: 10, team: 20, enterprise: 30 };

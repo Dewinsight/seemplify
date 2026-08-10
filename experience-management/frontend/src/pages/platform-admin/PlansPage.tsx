@@ -66,7 +66,13 @@ const limitOptions: Array<{ key: Exclude<keyof PlatformManagedPlan['limits'], 'k
   { key: 'journeyTouchpoints', label: 'Journey touchpoints' },
   { key: 'journeyCardAssets', label: 'Journey card assets' },
   { key: 'journeyCardAssetBytes', label: 'Journey card asset storage (bytes)' },
-  { key: 'journeySavedViews', label: 'Journey saved views' }
+  { key: 'journeySavedViews', label: 'Journey saved views' },
+  { key: 'journeyPortfolioItems', label: 'Journey portfolio items' },
+  { key: 'journeyPortfolioScoringPolicies', label: 'Portfolio scoring policies' },
+  { key: 'journeyHierarchyLinks', label: 'Hierarchy links' },
+  { key: 'journeyBlueprints', label: 'Service blueprints' },
+  { key: 'journeyBlueprintResources', label: 'Blueprint resources' },
+  { key: 'journeyConnectorDefinitions', label: 'Connector definitions' }
 ];
 
 const gigabyte = 1024 * 1024 * 1024;

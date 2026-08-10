@@ -283,7 +283,7 @@ test('metric/evidence alerts are deterministic, tenant-safe, durable, and role-a
     .send({ expectedRevision: fallingAlert.revision, action: 'acknowledge' }).expect(200);
   action = await owner.agent.post(`/api/journey-metrics/alerts/${fallingAlert.id}/actions`)
     .send({ expectedRevision: action.body.alert.revision, action: 'snooze',
-      snoozedUntil: '2026-08-06T12:00:00.000Z' }).expect(200);
+      snoozedUntil: new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString() }).expect(200);
   assert.equal(action.body.alert.state, 'snoozed');
 
   const corrected = seedObservation({ spaceId: owner.spaceId, userId: owner.userId, metricId: falling.id,

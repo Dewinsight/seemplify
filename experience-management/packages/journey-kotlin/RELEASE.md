@@ -16,8 +16,9 @@ Release remains blocked until all of the following are evidenced and approved:
 5. Threat model, mobile privacy review, dependency/SBOM and binary scan.
 6. Dogfood, soak, load, outage, retry, quota, and incident exercises.
 7. Ratified support/deprecation/compatibility policy and named ownership.
-8. Legal licence, Maven coordinates, signing keys, provenance, and protected
-   publication environment.
+8. Maven coordinates, signing keys, provenance, and a protected publication
+   environment. MIT licensing is already recorded in `LICENSE` and generated
+   POM metadata.
 
 Any future publication change must remove `-foundation`, deliberately enable a
 review-protected publication task, and update the programme traceability ledger.

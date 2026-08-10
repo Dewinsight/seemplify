@@ -1,0 +1,100 @@
+{
+  "ok": true,
+  "generatedAt": "2026-08-08T06:55:38.712Z",
+  "requirementId": "P2-11",
+  "state": "in_progress",
+  "releaseGateEligible": false,
+  "componentStatuses": {
+    "sourceParity": true,
+    "accessDeletionCitation": true,
+    "freshnessRebuildCandidate": true,
+    "metricMetadata": true,
+    "loadProfileRatified": false,
+    "sloApprovalRecorded": false
+  },
+  "blockers": [
+    "PHASE2_LOAD_PROFILE_NOT_RATIFIED",
+    "PHASE2_SLO_APPROVAL_NOT_RECORDED"
+  ],
+  "profile": {
+    "status": "local_candidate_unratified",
+    "approval": null,
+    "host": {
+      "platform": "win32",
+      "arch": "x64",
+      "node": "v22.11.0",
+      "logicalCpuCount": 16,
+      "totalMemoryBytes": 66235461632
+    },
+    "probe": {
+      "status": "local_candidate_unratified",
+      "rows": 2000,
+      "rebuildBudgetMs": 5000,
+      "runtime": {
+        "node": "v22.11.0",
+        "platform": "win32",
+        "arch": "x64",
+        "logicalCpuCount": 16,
+        "totalMemoryBytes": 66235461632
+      }
+    }
+  },
+  "measured": {
+    "assertions": {
+      "sourceParity": true,
+      "initialFreshness": "fresh",
+      "correctionRevision": 2,
+      "deletionRevision": 3,
+      "deletionSampleSize": 1999,
+      "metadataComplete": true,
+      "candidateBudgetPassed": true
+    },
+    "timings": {
+      "seedDurationMs": 6.86,
+      "initialRebuildMs": 26.75,
+      "correctionRebuildMs": 39.98,
+      "deletionRebuildMs": 33.49
+    }
+  },
+  "executions": {
+    "sourceParity": {
+      "ok": true,
+      "status": 0,
+      "durationMs": 1184.59,
+      "command": "npx tsx --test backend/test/journey-metric-calculations.test.ts backend/test/journey-operational-measures.test.ts backend/test/journey-native-metric-sources.test.ts",
+      "summary": {
+        "tests": 22,
+        "pass": 22,
+        "fail": 0,
+        "skipped": 0
+      },
+      "error": null
+    },
+    "accessDeletionCitation": {
+      "ok": true,
+      "status": 0,
+      "durationMs": 3136.85,
+      "command": "npx tsx --test backend/test/journey-research-hub.test.ts backend/test/journey-evidence-lifecycle.test.ts backend/test/journey-metrics-persistence.test.ts",
+      "summary": {
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "skipped": 0
+      },
+      "error": null
+    },
+    "freshnessRebuildLoad": {
+      "ok": true,
+      "status": 0,
+      "durationMs": 2346.03,
+      "command": "npx tsx scripts/probe-phase2-metric-load.mts",
+      "summary": null,
+      "error": null
+    }
+  },
+  "limitations": [
+    "The bundled load probe is a bounded single-process SQLite characterization, not an agreed production load profile.",
+    "Ratification and SLO approval require a matching phase2-release-approval/v1 artifact supplied through PHASE2_RELEASE_APPROVAL_FILE; this script never infers either from a fast local run.",
+    "The gate does not claim accessibility, independent security/privacy review, multi-node failover, or sustained soak proof."
+  ]
+}

@@ -1,0 +1,29 @@
+-- Apply only after 0052. The API role may enqueue from authoritative ticket writes;
+-- projection and retention remain separate least-privilege worker authorities.
+BEGIN;
+GRANT CONNECT ON DATABASE __DATABASE__ TO __OPERATIONAL_FEED_WORKER_ROLE__;
+GRANT USAGE ON SCHEMA public TO __OPERATIONAL_FEED_WORKER_ROLE__;
+GRANT SELECT ON public.experience_schema_version,public.experience_runtime_schema_version TO __OPERATIONAL_FEED_WORKER_ROLE__;
+GRANT SELECT,INSERT,UPDATE ON journey_operational_stage_mappings TO __APP_ROLE__;
+GRANT SELECT,INSERT ON journey_operational_stage_mapping_versions TO __APP_ROLE__;
+GRANT SELECT,INSERT ON journey_operational_stage_source_revisions,journey_operational_stage_outbox,
+  journey_operational_stage_tombstones,journey_operational_stage_feed_audit TO __APP_ROLE__;
+GRANT SELECT ON journey_operational_timeline_revisions TO __APP_ROLE__;
+REVOKE UPDATE,DELETE ON journey_operational_stage_source_revisions,journey_operational_stage_feed_audit FROM __APP_ROLE__;
+REVOKE DELETE ON journey_operational_stage_mappings FROM __APP_ROLE__;
+REVOKE UPDATE,DELETE ON journey_operational_stage_mapping_versions FROM __APP_ROLE__;
+
+GRANT SELECT,UPDATE,DELETE ON journey_operational_stage_outbox TO __OPERATIONAL_FEED_WORKER_ROLE__;
+GRANT SELECT ON journey_operational_stage_mappings,journey_operational_stage_mapping_versions,
+  journey_operational_stage_source_revisions,journey_stage_survey_governance_receipts,
+  journey_stage_survey_policy_versions,journey_profile_privacy_states,journey_identity_merges TO __OPERATIONAL_FEED_WORKER_ROLE__;
+GRANT SELECT,INSERT ON journey_operational_stage_outbox_attempts,
+  journey_operational_stage_tombstones,journey_operational_timeline_revisions,journey_stage_intelligence_facts,
+  journey_stage_intelligence_audit,journey_operational_stage_feed_audit TO __OPERATIONAL_FEED_WORKER_ROLE__;
+GRANT SELECT,INSERT,UPDATE ON journey_operational_stage_checkpoints TO __OPERATIONAL_FEED_WORKER_ROLE__;
+GRANT DELETE ON journey_operational_stage_source_revisions,journey_operational_stage_outbox_attempts,
+  journey_operational_stage_tombstones,journey_operational_timeline_revisions TO __OPERATIONAL_FEED_WORKER_ROLE__;
+REVOKE UPDATE,DELETE ON journey_operational_stage_feed_audit FROM __APP_ROLE__,__OPERATIONAL_FEED_WORKER_ROLE__;
+REVOKE EXECUTE ON FUNCTION journey_operational_stage_retention_delete_guard() FROM PUBLIC,__APP_ROLE__;
+REVOKE CREATE ON SCHEMA public FROM __APP_ROLE__,__OPERATIONAL_FEED_WORKER_ROLE__;
+COMMIT;

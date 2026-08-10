@@ -1,14 +1,17 @@
 # Connected-journey release-gate report
 
-Generated at: 2026-08-06T21:55:39.499Z
+Generated at: 2026-08-08T13:43:03.201Z
 
 ## Summary
 
-- Date: Thursday, August 6, 2026
+- Date: Saturday, August 8, 2026
 - Gate open: yes
 - Open blocker count: 5
+- Ingest gate evidence refreshed this run: no (Disposable Docker ingest gate not opted into; pass --allow-docker-gate (npm run report:journey:release-gate:local) or set JOURNEY_POSTGRES_GATE_ALLOW_DOCKER=true to refresh it. Recorded ingest gate evidence was reused unchanged.)
+- Ingest gate evidence usable: no
+- Ingest gate evidence runtime schema version: 54
 - Stage processing exercised: true
-- Request latency p95 ms: 4992.58
+- Request latency p95 ms: 4821.03
 - Generated load events: 600
 - Dogfood ChatGPT connected: 1
 - Dogfood ChatGPT selected: 1
@@ -20,31 +23,31 @@ Generated at: 2026-08-06T21:55:39.499Z
 
 - ID: independent_security_privacy_review
 - Open: yes
-- Evidence: Connected-journey ingest gate still records INDEPENDENT_SECURITY_PRIVACY_REVIEW_PENDING.
+- Evidence: Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local.
 
 ### Ratified hardware and load profile
 
 - ID: ratified_hardware_load_profile
 - Open: yes
-- Evidence: Current local request latency p95 is 4992.58 ms against an unratified candidate.
+- Evidence: Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local.
 
 ### Multi-node production PostgreSQL failover
 
 - ID: multi_node_failover
 - Open: yes
-- Evidence: Connected-journey ingest gate still records MULTI_NODE_PRODUCTION_POSTGRES_FAILOVER_NOT_EXERCISED.
+- Evidence: Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local.
 
 ### Sustained recovery and live-traffic soak
 
 - ID: sustained_recovery_live_traffic_soak
 - Open: yes
-- Evidence: Bounded local soak exists, but the gate still records SUSTAINED_RECOVERY_AND_LIVE_TRAFFIC_SOAK_PENDING.
+- Evidence: Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local.
 
 ### Signed SLO and capacity approval
 
 - ID: signed_slo_capacity_approval
 - Open: yes
-- Evidence: Connected-journey ingest gate still records SIGNED_SLO_AND_CAPACITY_APPROVAL_PENDING.
+- Evidence: Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local.
 
 ### Dogfood ChatGPT/runtime activity
 

@@ -106,6 +106,18 @@ export interface JourneyActualPathRollup {
   result: JourneyActualPathAnalyticsResultEnvelope;
 }
 
+type ActualPathArtifactKind = 'snapshot' | 'rollup';
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right)).map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(',')}}`;
+  return JSON.stringify(value) ?? 'null';
+}
+const sha256 = (value: unknown) => crypto.createHash('sha256').update(canonicalJson(value)).digest('hex');
+const timestamp = (value: unknown) => value instanceof Date ? value.toISOString() : String(value);
+const jsonObject = <T>(value: unknown) => (typeof value === 'string' ? JSON.parse(value) : value) as T;
+
 function loadDefinition(spaceId: string, definitionId: string) {
   const row = db.prepare(`SELECT id,published_version_id,current_version_id FROM journey_definitions
     WHERE id=? AND space_id=?`).get(definitionId, spaceId) as {
@@ -380,6 +392,41 @@ function latestReprojectionCompletedAt(spaceId: string, journeyDefinitionId: str
   ) as { latest?: string | null } | undefined)?.latest || null;
 }
 
+function latestReprojection(spaceId: string, journeyDefinitionId: string, journeyMapVersionId: string) {
+  const row = db.prepare(`SELECT id,completed_at FROM journey_stage_reprojection_runs
+    WHERE space_id=? AND journey_definition_id=? AND journey_map_version_id=? AND state='completed'
+    ORDER BY completed_at DESC,id DESC LIMIT 1`).get(spaceId,journeyDefinitionId,journeyMapVersionId) as any;
+  return row ? { id: String(row.id), completedAt: timestamp(row.completed_at) } : null;
+}
+
+function recordArtifactRevision(input: { kind: ActualPathArtifactKind; artifactId: string; spaceId: string;
+  journeyDefinitionId: string; journeyMapVersionId: string; subjectScope: 'anonymous_only' | 'known_profiles';
+  periodStart: string; periodEnd: string; asOf: string; analyticsVersion: string;
+  result: JourneyActualPathAnalyticsResultEnvelope; createdAt: string }) {
+  const prior = db.prepare(`SELECT MAX(revision) revision FROM journey_actual_path_artifact_revisions
+    WHERE artifact_kind=? AND artifact_id=? AND space_id=?`).get(input.kind,input.artifactId,input.spaceId) as any;
+  const revision=Number(prior?.revision||0)+1;const reprojection=latestReprojection(input.spaceId,input.journeyDefinitionId,input.journeyMapVersionId);
+  db.prepare(`INSERT INTO journey_actual_path_artifact_revisions
+    (id,artifact_kind,artifact_id,revision,space_id,journey_definition_id,journey_map_version_id,subject_scope,
+     period_start,period_end,as_of,analytics_version,source_lineage_sha256,result_sha256,
+     latest_reprojection_run_id,latest_reprojection_completed_at,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(crypto.randomUUID(),input.kind,input.artifactId,revision,input.spaceId,
+      input.journeyDefinitionId,input.journeyMapVersionId,input.subjectScope,input.periodStart,input.periodEnd,input.asOf,
+      input.analyticsVersion,sha256(input.result.analytics.lineage),sha256(input.result),reprojection?.id||null,
+      reprojection?.completedAt||null,input.createdAt);
+}
+
+function verifyArtifactRevision(kind: ActualPathArtifactKind,row:any,result:JourneyActualPathAnalyticsResultEnvelope) {
+  const lineage=db.prepare(`SELECT * FROM journey_actual_path_artifact_revisions WHERE artifact_kind=? AND artifact_id=? AND space_id=?
+    ORDER BY revision DESC LIMIT 1`).get(kind,row.id,row.space_id) as any;
+  if(!lineage||lineage.journey_definition_id!==row.journey_definition_id||lineage.journey_map_version_id!==row.journey_map_version_id
+    ||timestamp(lineage.period_start)!==timestamp(row.period_start)||timestamp(lineage.period_end)!==timestamp(row.period_end)
+    ||timestamp(lineage.as_of)!==timestamp(kind==='snapshot'?row.as_of:row.last_as_of)
+    ||lineage.source_lineage_sha256!==sha256(result.analytics.lineage)||lineage.result_sha256!==sha256(result))
+    throw new JourneyActualPathAnalyticsError('Actual-path artifact lineage verification failed.',409,
+      'JOURNEY_ACTUAL_PATH_LINEAGE_INVALID');
+}
+
 function freshnessFromMarkers(asOf: string, materializedAt: string, latestObservedAt: string | null,
   latestReprojectionAt: string | null): JourneyActualPathSnapshot['freshness'] {
   const staleReasons: JourneyActualPathSnapshot['freshness']['staleReasons'] = [];
@@ -446,15 +493,17 @@ function rowToSnapshot(row: {
   summary_json: string;
   result_json: string;
 }): JourneyActualPathSnapshot {
-  const result = JSON.parse(row.result_json) as JourneyActualPathAnalyticsResultEnvelope;
-  const summary = JSON.parse(row.summary_json) as JourneyActualPathSnapshot['summary'];
+  const result = jsonObject<JourneyActualPathAnalyticsResultEnvelope>(row.result_json);
+  const summary = jsonObject<JourneyActualPathSnapshot['summary']>(row.summary_json);
+  verifyArtifactRevision('snapshot',row,result);
+  const periodStart=timestamp(row.period_start),periodEnd=timestamp(row.period_end),asOf=timestamp(row.as_of),createdAt=timestamp(row.created_at);
   const observedAt = latestObservedEventAt(row.space_id, row.journey_definition_id, row.journey_map_version_id);
   const reprojectionAt = latestReprojectionCompletedAt(row.space_id, row.journey_definition_id, row.journey_map_version_id);
   const reconciliation = snapshotReconciliation({
     spaceId: row.space_id,
     journeyDefinitionId: row.journey_definition_id,
-    periodStart: row.period_start,
-    periodEnd: row.period_end,
+    periodStart,
+    periodEnd,
     minimumCohortSize: Number(row.minimum_cohort_size),
     savedJourneyMapVersionId: row.journey_map_version_id,
     subjectKind: row.subject_scope,
@@ -465,14 +514,14 @@ function rowToSnapshot(row: {
     journeyDefinitionId: row.journey_definition_id,
     journeyMapVersionId: row.journey_map_version_id,
     createdByUserId: row.created_by_user_id,
-    createdAt: row.created_at,
-    period: { start: row.period_start, end: row.period_end },
-    asOf: row.as_of,
+    createdAt,
+    period: { start: periodStart, end: periodEnd },
+    asOf,
     minimumCohortSize: Number(row.minimum_cohort_size),
     analyticsVersion: row.analytics_version,
     scopeSubject: row.subject_scope,
     summary,
-    freshness: freshnessFromMarkers(row.as_of, row.created_at, observedAt, reprojectionAt),
+    freshness: freshnessFromMarkers(asOf,createdAt,observedAt,reprojectionAt),
     reconciliation,
     result
   };
@@ -494,8 +543,10 @@ function rowToRollup(row: {
   materialized_by_user_id: string | null;
   materialized_at: string;
 }): JourneyActualPathRollup {
-  const result = JSON.parse(row.result_json) as JourneyActualPathAnalyticsResultEnvelope;
-  const summary = JSON.parse(row.summary_json) as JourneyActualPathRollup['summary'];
+  const result = jsonObject<JourneyActualPathAnalyticsResultEnvelope>(row.result_json);
+  const summary = jsonObject<JourneyActualPathRollup['summary']>(row.summary_json);
+  verifyArtifactRevision('rollup',row,result);
+  const periodStart=timestamp(row.period_start),periodEnd=timestamp(row.period_end),lastAsOf=timestamp(row.last_as_of),materializedAt=timestamp(row.materialized_at);
   const observedAt = latestObservedEventAt(row.space_id, row.journey_definition_id, row.journey_map_version_id);
   const reprojectionAt = latestReprojectionCompletedAt(row.space_id, row.journey_definition_id, row.journey_map_version_id);
   return {
@@ -503,14 +554,14 @@ function rowToRollup(row: {
     journeyDefinitionId: row.journey_definition_id,
     journeyMapVersionId: row.journey_map_version_id,
     materializedByUserId: row.materialized_by_user_id,
-    materializedAt: row.materialized_at,
-    period: { start: row.period_start, end: row.period_end },
-    lastAsOf: row.last_as_of,
+    materializedAt,
+    period: { start: periodStart, end: periodEnd },
+    lastAsOf,
     minimumCohortSize: Number(row.minimum_cohort_size),
     analyticsVersion: row.analytics_version,
     scopeSubject: row.subject_scope,
     summary,
-    freshness: freshnessFromMarkers(row.last_as_of, row.materialized_at, observedAt, reprojectionAt),
+    freshness: freshnessFromMarkers(lastAsOf,materializedAt,observedAt,reprojectionAt),
     result
   };
 }
@@ -540,14 +591,19 @@ export function createJourneyActualPathSnapshot(input: {
   if (existing) return { snapshot: rowToSnapshot(existing), replayed: true as const };
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
-  db.prepare(`INSERT INTO journey_actual_path_snapshots
-    (id,space_id,journey_definition_id,journey_map_version_id,subject_scope,period_start,period_end,as_of,
-      minimum_cohort_size,analytics_version,summary_json,result_json,created_by_user_id,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      id, input.spaceId, input.journeyDefinitionId, journeyMapVersionId, subjectKind, periodStart, periodEnd, asOf,
-      input.minimumCohortSize, result.analytics.analyticsVersion, JSON.stringify(snapshotSummary(result)), JSON.stringify(result),
-      input.actorUserId, createdAt
-    );
+  db.transaction(()=>{
+    db.prepare(`INSERT INTO journey_actual_path_snapshots
+      (id,space_id,journey_definition_id,journey_map_version_id,subject_scope,period_start,period_end,as_of,
+        minimum_cohort_size,analytics_version,summary_json,result_json,created_by_user_id,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+        id, input.spaceId, input.journeyDefinitionId, journeyMapVersionId, subjectKind, periodStart, periodEnd, asOf,
+        input.minimumCohortSize, result.analytics.analyticsVersion, JSON.stringify(snapshotSummary(result)), JSON.stringify(result),
+        input.actorUserId, createdAt
+      );
+    recordArtifactRevision({kind:'snapshot',artifactId:id,spaceId:input.spaceId,journeyDefinitionId:input.journeyDefinitionId,
+      journeyMapVersionId,subjectScope:subjectKind,periodStart,periodEnd,asOf,analyticsVersion:result.analytics.analyticsVersion,
+      result,createdAt});
+  })();
   const observedAt = latestObservedEventAt(input.spaceId, input.journeyDefinitionId, journeyMapVersionId);
   const reprojectionAt = latestReprojectionCompletedAt(input.spaceId, input.journeyDefinitionId, journeyMapVersionId);
   return { snapshot: {
@@ -625,37 +681,29 @@ export function materializeJourneyActualPathRollup(input: {
     ) as { id: string } | undefined;
   const id = existing?.id || crypto.randomUUID();
   const materializedAt = new Date().toISOString();
-  db.prepare(`INSERT INTO journey_actual_path_rollups
-    (id,space_id,journey_definition_id,journey_map_version_id,subject_scope,period_start,period_end,minimum_cohort_size,
-      analytics_version,last_as_of,latest_observed_event_at,latest_reprojection_completed_at,summary_json,result_json,
-      materialized_by_user_id,materialized_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(space_id,journey_definition_id,journey_map_version_id,subject_scope,period_start,period_end,minimum_cohort_size,analytics_version)
-    DO UPDATE SET
-      last_as_of=excluded.last_as_of,
-      latest_observed_event_at=excluded.latest_observed_event_at,
-      latest_reprojection_completed_at=excluded.latest_reprojection_completed_at,
-      summary_json=excluded.summary_json,
-      result_json=excluded.result_json,
-      materialized_by_user_id=excluded.materialized_by_user_id,
-      materialized_at=excluded.materialized_at`).run(
-        id,
-        input.spaceId,
-        input.journeyDefinitionId,
-        journeyMapVersionId,
-        subjectKind,
-        periodStart,
-        periodEnd,
-        input.minimumCohortSize,
-        analyticsVersion,
-        lastAsOf,
-        latestObservedEventAt(input.spaceId, input.journeyDefinitionId, journeyMapVersionId),
-        latestReprojectionCompletedAt(input.spaceId, input.journeyDefinitionId, journeyMapVersionId),
-        JSON.stringify(snapshotSummary(result)),
-        JSON.stringify(result),
-        input.actorUserId,
-        materializedAt
-      );
+  db.transaction(()=>{
+    db.prepare(`INSERT INTO journey_actual_path_rollups
+      (id,space_id,journey_definition_id,journey_map_version_id,subject_scope,period_start,period_end,minimum_cohort_size,
+        analytics_version,last_as_of,latest_observed_event_at,latest_reprojection_completed_at,summary_json,result_json,
+        materialized_by_user_id,materialized_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(space_id,journey_definition_id,journey_map_version_id,subject_scope,period_start,period_end,minimum_cohort_size,analytics_version)
+      DO UPDATE SET
+        last_as_of=excluded.last_as_of,
+        latest_observed_event_at=excluded.latest_observed_event_at,
+        latest_reprojection_completed_at=excluded.latest_reprojection_completed_at,
+        summary_json=excluded.summary_json,
+        result_json=excluded.result_json,
+        materialized_by_user_id=excluded.materialized_by_user_id,
+        materialized_at=excluded.materialized_at`).run(
+          id,input.spaceId,input.journeyDefinitionId,journeyMapVersionId,subjectKind,periodStart,periodEnd,
+          input.minimumCohortSize,analyticsVersion,lastAsOf,
+          latestObservedEventAt(input.spaceId,input.journeyDefinitionId,journeyMapVersionId),
+          latestReprojectionCompletedAt(input.spaceId,input.journeyDefinitionId,journeyMapVersionId),
+          JSON.stringify(snapshotSummary(result)),JSON.stringify(result),input.actorUserId,materializedAt);
+    recordArtifactRevision({kind:'rollup',artifactId:id,spaceId:input.spaceId,journeyDefinitionId:input.journeyDefinitionId,
+      journeyMapVersionId,subjectScope:subjectKind,periodStart,periodEnd,asOf:lastAsOf,analyticsVersion,result,createdAt:materializedAt});
+  })();
   const row = db.prepare('SELECT * FROM journey_actual_path_rollups WHERE id=?').get(id) as any;
   return { rollup: rowToRollup(row), updated: Boolean(existing) };
 }

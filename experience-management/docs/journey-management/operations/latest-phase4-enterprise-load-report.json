@@ -1,0 +1,230 @@
+{
+  "version": "phase4-enterprise-load-report/v1",
+  "generatedAt": "2026-08-08T08:04:06.960Z",
+  "requirementIds": [
+    "P4-02",
+    "P4-03",
+    "P4-04",
+    "P4-05",
+    "P4-07",
+    "P4-08",
+    "X-07",
+    "X-09"
+  ],
+  "state": "in_progress",
+  "executableProofPassed": true,
+  "releaseGateEligible": false,
+  "componentStatuses": {
+    "hierarchyBlueprintDomain": true,
+    "deterministicSyntheticProbe": true,
+    "candidateBackendBudgets": true,
+    "noProductionData": true,
+    "approvalArtifactValid": false
+  },
+  "blockers": [
+    "PHASE4_LOAD_PROFILE_AND_BUDGETS_NOT_RATIFIED"
+  ],
+  "approval": null,
+  "approvalValidation": {
+    "valid": false,
+    "validIdentity": false,
+    "profileMatches": false,
+    "budgetsMatch": false,
+    "fixtureMatches": false
+  },
+  "profile": {
+    "id": "phase4-enterprise-candidate/v1",
+    "hierarchy": {
+      "nodes": 500,
+      "links": 2000,
+      "depth": 12
+    },
+    "blueprint": {
+      "stages": 50,
+      "elementsPerLanePerStage": 10,
+      "elements": 2500,
+      "relationships": 1450,
+      "collectionCeilings": {
+        "stages": 200,
+        "elements": 5000,
+        "relationships": 20000,
+        "resources": 2000,
+        "portfolioLinks": 5000
+      }
+    }
+  },
+  "budgetsMs": {
+    "hierarchyValidate": 1000,
+    "hierarchyTraverse": 1000,
+    "hierarchyBreadcrumbs": 1000,
+    "hierarchyHealth": 1500,
+    "hierarchyRepositoryRead": 2000,
+    "hierarchyRepositoryTraverse": 2000,
+    "hierarchyRepositoryBreadcrumbs": 2000,
+    "hierarchyJsonExport": 4000,
+    "hierarchyCsvExport": 4000,
+    "blueprintAnalyse": 2000,
+    "blueprintCompare": 3000,
+    "blueprintRepositoryPersist": 20000,
+    "blueprintRepositoryRead": 4000,
+    "blueprintJsonExport": 8000,
+    "blueprintCsvExport": 8000,
+    "backendProjectionSerialise": 3000
+  },
+  "fixtureSha256": "2f3ce81404e1935e7df2c7f954633d05e4dd08820a83d2059ee4797046ab7333",
+  "host": {
+    "node": "v22.11.0",
+    "platform": "win32",
+    "arch": "x64",
+    "logicalCpuCount": 16,
+    "totalMemoryBytes": 66235461632
+  },
+  "measured": {
+    "assertions": {
+      "deterministicSyntheticFixtures": true,
+      "candidateBudgetsPassed": true,
+      "browserCertified": false,
+      "productionDataUsed": false,
+      "hierarchyNodeCount": 500,
+      "hierarchyLinkCount": 2000,
+      "blueprintElementCount": 2500,
+      "blueprintRelationshipCount": 1450
+    },
+    "artifactBytes": {
+      "hierarchyJson": 1740412,
+      "hierarchyCsv": 510417,
+      "blueprintJson": 3473367,
+      "blueprintCsv": 2198684,
+      "backendProjection": 3590819
+    },
+    "timings": {
+      "hierarchyValidate": 4.67,
+      "hierarchyTraverse": 4.71,
+      "hierarchyBreadcrumbs": 2.18,
+      "hierarchyHealth": 5.18,
+      "blueprintAnalyse": 12.32,
+      "blueprintCompare": 49.72,
+      "hierarchyRepositoryRead": 16.17,
+      "hierarchyRepositoryTraverse": 22.11,
+      "hierarchyRepositoryBreadcrumbs": 14.86,
+      "hierarchyJsonExport": 29.05,
+      "hierarchyCsvExport": 45,
+      "blueprintRepositoryPersist": 108.76,
+      "blueprintRepositoryRead": 16.82,
+      "blueprintJsonExport": 87.43,
+      "blueprintCsvExport": 114.13,
+      "backendProjectionSerialise": 12.05
+    },
+    "budgetResults": {
+      "hierarchyValidate": {
+        "measuredMs": 4.67,
+        "budgetMs": 1000,
+        "passed": true
+      },
+      "hierarchyTraverse": {
+        "measuredMs": 4.71,
+        "budgetMs": 1000,
+        "passed": true
+      },
+      "hierarchyBreadcrumbs": {
+        "measuredMs": 2.18,
+        "budgetMs": 1000,
+        "passed": true
+      },
+      "hierarchyHealth": {
+        "measuredMs": 5.18,
+        "budgetMs": 1500,
+        "passed": true
+      },
+      "hierarchyRepositoryRead": {
+        "measuredMs": 16.17,
+        "budgetMs": 2000,
+        "passed": true
+      },
+      "hierarchyRepositoryTraverse": {
+        "measuredMs": 22.11,
+        "budgetMs": 2000,
+        "passed": true
+      },
+      "hierarchyRepositoryBreadcrumbs": {
+        "measuredMs": 14.86,
+        "budgetMs": 2000,
+        "passed": true
+      },
+      "hierarchyJsonExport": {
+        "measuredMs": 29.05,
+        "budgetMs": 4000,
+        "passed": true
+      },
+      "hierarchyCsvExport": {
+        "measuredMs": 45,
+        "budgetMs": 4000,
+        "passed": true
+      },
+      "blueprintAnalyse": {
+        "measuredMs": 12.32,
+        "budgetMs": 2000,
+        "passed": true
+      },
+      "blueprintCompare": {
+        "measuredMs": 49.72,
+        "budgetMs": 3000,
+        "passed": true
+      },
+      "blueprintRepositoryPersist": {
+        "measuredMs": 108.76,
+        "budgetMs": 20000,
+        "passed": true
+      },
+      "blueprintRepositoryRead": {
+        "measuredMs": 16.82,
+        "budgetMs": 4000,
+        "passed": true
+      },
+      "blueprintJsonExport": {
+        "measuredMs": 87.43,
+        "budgetMs": 8000,
+        "passed": true
+      },
+      "blueprintCsvExport": {
+        "measuredMs": 114.13,
+        "budgetMs": 8000,
+        "passed": true
+      },
+      "backendProjectionSerialise": {
+        "measuredMs": 12.05,
+        "budgetMs": 3000,
+        "passed": true
+      }
+    }
+  },
+  "executions": {
+    "domain": {
+      "ok": true,
+      "status": 0,
+      "command": "npx tsx --test backend/test/journey-hierarchy.test.ts backend/test/journey-service-blueprint.test.ts",
+      "durationMs": 2636.91,
+      "summary": {
+        "tests": 52,
+        "pass": 52,
+        "fail": 0,
+        "skipped": 0
+      },
+      "error": null
+    },
+    "load": {
+      "ok": true,
+      "status": 0,
+      "command": "npx tsx scripts/probe-phase4-enterprise-load.mts",
+      "durationMs": 4080.78,
+      "error": null
+    }
+  },
+  "limitations": [
+    "Measurements are a deterministic single-process SQLite backend characterization on the recorded host, not production capacity certification.",
+    "The backend projection serialization measurement is not browser rendering, visual, accessibility, interaction-latency, or device certification.",
+    "The probe is bounded and not a sustained soak, concurrency, failover, PostgreSQL query-plan, network, or multi-region exercise.",
+    "Release eligibility requires an exact phase4-enterprise-load-approval/v1 artifact matching the profile, budgets, and fixture SHA-256; a fast local run never self-ratifies.",
+    "Independent security/privacy, accessibility, operational readiness, and signed Phase 4 release decisions remain separate gates."
+  ]
+}

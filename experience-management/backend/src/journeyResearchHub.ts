@@ -14,6 +14,7 @@ import {
 import { createKnowledgeMarkdownDocument, getKnowledgeBase } from './knowledgeRepository.js';
 import { publishEvent } from './events.js';
 import { assertSubscriptionFeature } from './subscriptionEntitlements.js';
+import { journeyOperationalStageFeedRepository } from './journeyOperationalStageFeedRepository.js';
 
 export type JourneyResearchTargetType = 'definition' | 'stage' | 'card' | 'persona';
 export type JourneyResearchNotificationKind =
@@ -435,6 +436,19 @@ function latestAssessment(spaceId: string, linkId: string) {
     ORDER BY revision DESC,id DESC LIMIT 1`).get(linkId, spaceId) as AssessmentRow | undefined;
 }
 
+function captureLinkedRecoveryTicket(source: SourceRow, targetType: JourneyResearchTargetType) {
+  if (source.source_type !== 'ticket' || targetType !== 'stage' || !source.source_ref.startsWith('recovery-ticket:')) return;
+  const ticketId = source.source_ref.slice('recovery-ticket:'.length);
+  if (!ticketId || ticketId.length > 128) return;
+  const events = db.prepare(`SELECT event.id,event.created_at FROM ticket_events event JOIN tickets ticket ON ticket.id=event.ticket_id
+    JOIN surveys survey ON survey.id=ticket.survey_id WHERE ticket.id=? AND survey.space_id=?
+    ORDER BY event.created_at,event.id LIMIT 1001`).all(ticketId, source.space_id) as Array<{ id: string; created_at: string }>;
+  if (events.length > 1_000) throw new JourneyResearchError(
+    'This recovery ticket has too many lifecycle events to project safely in one link operation.', 409,
+    'JOURNEY_RESEARCH_TICKET_EVENT_SCOPE_TOO_LARGE');
+  for (const event of events) journeyOperationalStageFeedRepository.captureTicketEvent(event.id, event.created_at);
+}
+
 export function createJourneyResearchLink(input: {
   spaceId: string; userId: string; sourceId: string; targetType: JourneyResearchTargetType; targetId: string;
   idempotencyKey?: string | null;
@@ -453,12 +467,18 @@ export function createJourneyResearchLink(input: {
         .get(input.spaceId, key) as LinkRow | undefined;
       if (replay && replay.intent_sha256 !== intent) throw new JourneyResearchError(
         'This idempotency key was already used for another link.', 409, 'JOURNEY_RESEARCH_IDEMPOTENCY_CONFLICT');
-      if (replay) return { link: linkSummary(replay, latestAssessment(input.spaceId, replay.id), snapshot), replayed: true };
+      if (replay) {
+        captureLinkedRecoveryTicket(source, input.targetType);
+        return { link: linkSummary(replay, latestAssessment(input.spaceId, replay.id), snapshot), replayed: true };
+      }
     }
     const active = db.prepare(`SELECT * FROM journey_research_links
       WHERE space_id=? AND target_type=? AND target_id=? AND source_id=? AND state='active'`)
       .get(input.spaceId, input.targetType, input.targetId, source.id) as LinkRow | undefined;
-    if (active) return { link: linkSummary(active, latestAssessment(input.spaceId, active.id), snapshot), replayed: true };
+    if (active) {
+      captureLinkedRecoveryTicket(source, input.targetType);
+      return { link: linkSummary(active, latestAssessment(input.spaceId, active.id), snapshot), replayed: true };
+    }
     const now = nowIso(); const id = crypto.randomUUID();
     db.prepare(`INSERT INTO journey_research_links
       (id,space_id,source_id,snapshot_id,target_type,target_id,state,revision,idempotency_key,intent_sha256,
@@ -467,6 +487,7 @@ export function createJourneyResearchLink(input: {
     const row = getLinkRow(input.spaceId, id);
     writeAudit({ spaceId: input.spaceId, actorUserId: input.userId, action: 'link.created',
       targetType: 'research_link', targetId: id, detail: { targetType: input.targetType, sourceId: source.id } });
+    captureLinkedRecoveryTicket(source, input.targetType);
     return { link: linkSummary(row, null, snapshot), replayed: false };
   })();
 }

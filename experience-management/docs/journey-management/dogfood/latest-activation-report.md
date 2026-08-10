@@ -1,6 +1,6 @@
 # Seemplify activation dogfood reconciliation report
 
-Generated at: 2026-08-06T21:56:53.076Z
+Generated at: 2026-08-08T13:43:09.006Z
 
 ## Summary
 
@@ -133,7 +133,7 @@ Generated at: 2026-08-06T21:56:53.076Z
 - Subscription requested: —
 - Subscription activated: —
 - Activation audit events: 0
-- AI runtime audit events: 2
+- AI runtime audit events: 3
 
 ### Okechukwu Samuel Omeh <okechukwuomeh3@gmail.com>
 

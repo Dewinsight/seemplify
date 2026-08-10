@@ -92,6 +92,13 @@ afterEvaluate {
                         connection.set("scm:git:https://github.com/seemplify/seemplify.git")
                         url.set("https://github.com/seemplify/seemplify")
                     }
+                    licenses {
+                        license {
+                            name.set("MIT License")
+                            url.set("https://opensource.org/license/mit")
+                            distribution.set("repo")
+                        }
+                    }
                 }
             }
         }

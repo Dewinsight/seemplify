@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import test from 'node:test';import {fileURLToPath} from 'node:url';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');const panel=fs.readFileSync(path.join(root,'src/components/journeys/JourneyEventMappingPanel.tsx'),'utf8');
+const page=fs.readFileSync(path.join(root,'src/pages/JourneyStageIntelligencePage.tsx'),'utf8');const client=fs.readFileSync(path.join(root,'src/lib/journeyEventIntelligence.ts'),'utf8');
+test('stage intelligence exposes member-readable event lineage and manager version controls',()=>{assert.match(page,/JourneyEventMappingPanel canManage=\{canManage\}/);
+  assert.match(panel,/Event mappings/);assert.match(panel,/New version/);assert.match(panel,/Retire/);assert.match(panel,/Published schema version ID/);
+  assert.match(panel,/IDs and hashes below are immutable lineage/);});
+test('client uses tenant API for create, append, retire, and list',()=>{for(const token of ['/api/journey-event-intelligence/mappings','appendJourneyEventMappingVersion','retireJourneyEventMapping'])assert.match(client,new RegExp(token));
+  assert.doesNotMatch(client,/spaceId\s*:/);});
+test('configuration surface stays restrained and avoids generic generated-dashboard styling',()=>{assert.match(panel,/<table/);assert.match(panel,/<form/);
+  assert.doesNotMatch(panel,/gradient|rounded-(?:2xl|3xl)|shadow-(?:xl|2xl)|backdrop-blur|hero|eyebrow/i);});

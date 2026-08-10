@@ -1,9 +1,8 @@
 # Seemplify Journey Swift
 
 Private Swift Package Manager foundation for emitting Seemplify Journey Event
-Protocol `1.0` envelopes from Apple applications. The package is not released,
-has no licence decision, and has no production Journey ingestion service to
-target.
+Protocol `1.0` envelopes from Apple applications. The package is MIT licensed
+but is not released and has no production Journey ingestion service to target.
 
 ## Supported foundation surface
 
@@ -31,8 +30,8 @@ qualification remain separate release gates.
 ## Installation during private development
 
 Add the local package directory in Xcode or declare a local SwiftPM dependency.
-Do not add a remote package URL or tag until release approval and licensing are
-complete.
+Do not add a remote package URL or tag until the remaining release approvals
+are complete.
 
 ```swift
 import SeemplifyJourney
@@ -129,6 +128,6 @@ failure. Those tests remain unverified until Swift execution succeeds.
 
 ## Release state
 
-There is no registry upload, binary distribution, tag, release artifact, or
-licence in this foundation. See `../SDK-SUPPORT.md`, `../SDK-RELEASE.md`, and
+There is no registry upload, binary distribution, tag, or release artifact in
+this MIT-licensed foundation. See `../SDK-SUPPORT.md`, `../SDK-RELEASE.md`, and
 `CHANGELOG.md` for the explicit open gates.

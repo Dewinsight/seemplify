@@ -174,10 +174,17 @@ async function main() {
       schema: 'public', runtimeVersion: config.postgres.runtimeSchemaVersion
     });
 
-    const actualTableNames = (db.prepare(`SELECT table_name name
-      FROM information_schema.tables
-      WHERE table_schema=current_schema() AND table_type='BASE TABLE'
-        AND table_name<>'experience_schema_version' ORDER BY table_name`).all()).map((row) => String(row.name));
+    // information_schema.tables is privilege-filtered in PostgreSQL. Runtime 42
+    // deliberately introduced worker-only safety tables that the application
+    // role must not be able to read, so using information_schema here made a
+    // correctly least-privileged schema look incomplete. pg_catalog describes
+    // the physical schema independently of the current role's table grants;
+    // assertRuntimePrivileges above remains the authority for access control.
+    const actualTableNames = (db.prepare(`SELECT relation.relname name
+      FROM pg_catalog.pg_class relation
+      JOIN pg_catalog.pg_namespace namespace ON namespace.oid=relation.relnamespace
+      WHERE namespace.nspname=current_schema() AND relation.relkind IN ('r','p')
+        AND relation.relname<>'experience_schema_version' ORDER BY relation.relname`).all()).map((row) => String(row.name));
     const { unknownTables, missingTables } = runtimeTableSetDifference(tableNames, actualTableNames, config.postgres.runtimeSchemaVersion);
     if (unknownTables.length || missingTables.length) {
       throw fail(`PostgreSQL tables differ from the source manifest plus runtime extensions (unknown: ${unknownTables.join(', ') || 'none'}; missing: ${missingTables.join(', ') || 'none'}).`, 'SOURCE_MANIFEST_MISMATCH');

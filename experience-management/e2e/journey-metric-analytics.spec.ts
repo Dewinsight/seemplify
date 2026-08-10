@@ -118,6 +118,35 @@ function analyticsFixtures(page: Page) {
   const segments = [{ id: 'segment-enterprise', journeyDefinitionId: 'analytics-map', name: 'Enterprise',
     description: '', rule: {}, state: 'active', revision: 1, createdByUserId: 'qa-user',
     createdAt: now, updatedAt: now }];
+  const emptySuppression = { applied: false, minimumCohortSize: 10, reason: null };
+  const actualPath = { analytics: { analyticsVersion: 'journey-path-analytics/v1', lineage: {
+    journeyId: 'analytics-map', journeyVersion: 'analytics-version', ruleSetVersion: 'rules-v1',
+    projectionVersion: 'projection-v1', period: { start: '2026-07-05T12:00:00.000Z', end: now, timezone: 'UTC' },
+    asOf: now, cohortId: null, designedStageOrder: ['stage-activate'] }, sample: { inputRecordCount: 0,
+    acceptedVisitCount: 0, acceptedInstanceCount: 0, distinctProfileCount: 0, distinctAccountCount: 0,
+    suppressed: false }, dataQuality: [], tables: {
+      pathSignatures: { rows: [], suppression: emptySuppression },
+      transitionMatrix: { rows: [], suppression: emptySuppression },
+      funnel: { rows: [], suppression: emptySuppression },
+      loops: { rows: [], suppression: emptySuppression },
+      repeats: { rows: [], suppression: emptySuppression },
+      skippedTransitions: { rows: [], suppression: emptySuppression },
+      unexpectedTransitions: { rows: [], suppression: emptySuppression },
+      entryExit: { rows: [], suppression: emptySuppression },
+      stageDurations: { rows: [], suppression: emptySuppression }
+    }, interpretation: { mode: 'descriptive_only', statement: 'Observed paths are descriptive only.' } },
+  designedVsObserved: { stageRows: [], summary: { unobservedStageCount: 1, atRiskStageCount: 0,
+    skippedForwardTransitionCount: 0, loopTransitionCount: 0 } }, scope: { subjectKind: 'anonymous_only',
+    identityModel: 'anonymous_instance_scoped', designVersionSource: 'published', designVersionId: 'analytics-version',
+    notes: ['No accepted journey instances were available in this fixture.'] } };
+  const intelligence = { detectorVersion: 'journey-path-intelligence/v1', provenance: {
+    journeyDefinitionId: 'analytics-map', journeyMapVersionId: 'analytics-version', subjectScope: 'anonymous_only',
+    identityModel: 'anonymous_instance_scoped', window: { start: '2026-07-05T12:00:00.000Z', end: now, asOf: now },
+    analyticsVersion: 'journey-path-analytics/v1' }, sample: { acceptedInstanceCount: 0, acceptedVisitCount: 0,
+    minimumSampleSize: 10, secondarySuppressionThreshold: 3, sufficient: false, suppressed: false },
+  status: 'abstained', abstentionReasons: ['INSUFFICIENT_SAMPLE'], indicators: [], recommendations: [],
+  limitations: ['No accepted journey instances were available.'], interpretation: { mode: 'descriptive_rules_only',
+    statement: 'Fixed versioned rules describe observed conditions only.' } };
   const requestedFilters: string[] = [];
 
   void page.route(/\/api\/journey-metrics(?:\/.*)?(?:\?.*)?$/u, async (route) => {
@@ -147,6 +176,15 @@ function analyticsFixtures(page: Page) {
       return;
     }
     if (relative === '/rebuilds') { await route.fulfill({ json: { rebuilds: [] } }); return; }
+    if (relative === '/actual-paths') { await route.fulfill({ json: actualPath }); return; }
+    if (relative === '/actual-path-rollups/latest') { await route.fulfill({ json: { rollup: null } }); return; }
+    if (relative === '/actual-path-snapshots/latest') { await route.fulfill({ json: { snapshot: null } }); return; }
+    if (relative === '/actual-path-snapshots') { await route.fulfill({ json: { snapshots: [] } }); return; }
+    if (relative === '/actual-path-intelligence') { await route.fulfill({ json: { intelligence } }); return; }
+    if (relative === '/actual-path-intelligence/runs') { await route.fulfill({ json: { runs: [] } }); return; }
+    if (relative === '/actual-path-intelligence/recommendations') {
+      await route.fulfill({ json: { recommendations: [] } }); return;
+    }
     if (relative === '/alert-definitions') { await route.fulfill({ json: { definitions: [] } }); return; }
     if (relative === '/alerts') { await route.fulfill({ json: { alerts: [] } }); return; }
     if (relative === '/alert-runs') { await route.fulfill({ json: { runs: [] } }); return; }

@@ -25,7 +25,7 @@ import type {
  * here. Executed-PostgreSQL coverage for runtime-27 is a separate and currently
  * OPEN gate. `scripts/probe-journey-portfolio-postgres.mjs` does exist, but
  * nothing here runs it and no run of it is recorded, so its existence is not
- * evidence. `runtime-compatibility.json` now pins min=max=29, which puts
+ * evidence. `runtime-compatibility.json` now pins min=max=31, which puts
  * runtime-27 inside the shipped window on paper; that is a declaration, not an
  * observation, and no applied-anywhere claim follows from it.
  *

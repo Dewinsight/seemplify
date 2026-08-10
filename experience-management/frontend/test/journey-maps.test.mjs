@@ -96,7 +96,12 @@ test('governed exports use authenticated binary downloads with a fresh idempoten
   assert.match(client, /'Idempotency-Key': idempotencyKey/u);
   assert.match(client, /credentials: 'same-origin'/u);
   assert.match(client, /headers\.set\('x-seemplify-space', selectedSpace\)/u);
-  assert.match(client, /new URLSearchParams\(\{ versionId \}\)/u);
+  // An omitted version must stay out of the query rather than be serialised as
+  // the literal "undefined", and a saved-view export must carry the exact
+  // revision the workspace read, so the file matches what the user is looking at.
+  assert.match(client, /const query = new URLSearchParams\(\);\s+if \(versionId\) query\.set\('versionId', versionId\);/u);
+  assert.match(client, /query\.set\('viewId', selectedView\.id\);\s+query\.set\('viewRevision', String\(selectedView\.revision\)\);/u);
+  assert.match(page, /activeSavedView \? \{ id: activeSavedView\.view\.id, revision: activeSavedView\.view\.revision \} : undefined/u);
   assert.match(client, /response\.headers\.get\('content-disposition'\)/u);
   assert.match(client, /blob: await response\.blob\(\)/u);
   assert.match(page, /saveExportBlob\(artifact\.blob, artifact\.filename\)/u);

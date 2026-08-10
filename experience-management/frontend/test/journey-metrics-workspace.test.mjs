@@ -78,7 +78,7 @@ test('each displayed measure opens the exact immutable definition version and so
   assert.match(page, /sourceRevisionSha256/u);
 });
 
-test('controls provide versioned definitions, survey bindings, segments and rebuilds without inventing native adapters', () => {
+test('controls provide versioned definitions, survey bindings, segments and rebuilds without inventing a source', () => {
   assert.match(page, /createJourneyMetricDefinitionVersion/u);
   assert.match(page, /surveyMetricVersion/u);
   assert.match(page, /createJourneyMetricBinding/u);
@@ -86,9 +86,39 @@ test('controls provide versioned definitions, survey bindings, segments and rebu
   assert.match(page, /createJourneyMetricSegment/u);
   assert.match(page, /updateJourneyMetricSegment/u);
   assert.match(page, /queueJourneyMetricRebuild/u);
-  assert.match(page, /Native ticket and social metric adapters are not yet shipped/u);
-  assert.match(page, /Operational imports require an authorised server source and published schema/u);
+  assert.match(page, /Governed operational imports still require an authorised server source and a published schema\./u);
   assert.doesNotMatch(page, /mock metric|sample trend|demo observation/iu);
+});
+
+test('shipped native ticket and social adapters stay entitlement-gated, aggregate-only and distinct from an import', () => {
+  // These adapters used to be absent, and the workspace said so. They now ship,
+  // so the guarantee under test is no longer "nothing is offered" but "only an
+  // authorised, content-free aggregate is offered".
+  assert.match(client, /export const journeyNativeMetricAdapters = \['service_recovery_tickets', 'social_mentions'\] as const;/u);
+  assert.match(client, /'\/api\/journey-metrics\/native-sources'/u);
+  assert.match(client, /export function nativeMetricVersion\(/u);
+  // The client builds a fixed, deterministic body: it pins the governed source
+  // kind, sorts the pinned identities, and leaves the subject type and event
+  // vocabulary to the server's adapter contract.
+  assert.match(client, /sourceKind: 'operational_import', bindingId: null, calculatorKind: 'operational',/u);
+  assert.match(client, /sourceIds: \[\.\.\.input\.sourceIds\]\.sort\(\),/u);
+  assert.match(client, /subjectType: enumValue\(row\.subjectType, 'sentiment\.subjectType', \['social_post'\] as const\),/u);
+  assert.match(client, /definitionVersion\.nativeSource is only valid on an operational source kind/u);
+  assert.match(client, /nativeSource\.sourceCount must match the pinned source identities/u);
+
+  // A native mode is only selectable where the space is both entitled and holds
+  // at least one authorised source, and the catalogue is never fetched for a
+  // member.
+  assert.match(page, /nativeSources\?\.ticketsEntitled && nativeSources\.tickets\.length/u);
+  assert.match(page, /nativeSources\?\.socialEntitled && nativeSources\.social\.length/u);
+  assert.match(page, /if \(!enabled \|\| !canManage\) \{ setNativeSources\(null\); return; \}/u);
+  assert.match(page, /listJourneyMetricNativeSources\(\)/u);
+  assert.match(page, /data-testid="journey-metrics-native-sources"/u);
+
+  // Content never reaches a measure, and native is never conflated with import.
+  assert.match(page, /never\s+ticket notes, mention content, authors or profiles\./u);
+  assert.match(page, /A native\s+definition never accepts an import, and an ordinary import is never reported as native\./u);
+  assert.match(page, /a\s+measure is retracted rather than partly recomputed if one is later revoked or deleted\./u);
 });
 
 test('the workspace has contained responsive tables and exact text alternatives', () => {

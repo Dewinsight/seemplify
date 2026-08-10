@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { db, getResponse, getSurvey } from './database.js';
+import { journeyOperationalStageFeedRepository } from './journeyOperationalStageFeedRepository.js';
 
 export type RecoveryTicketStatus = 'open' | 'in_progress' | 'closed';
 export type RecoveryTicketPriority = 'normal' | 'high' | 'urgent';
@@ -184,8 +185,12 @@ export function recordRecoveryTicketEvent(
   detail: Record<string, unknown>,
   createdAt = new Date().toISOString()
 ) {
+  const eventId = crypto.randomUUID();
   db.prepare(`INSERT INTO ticket_events (id,ticket_id,actor_user_id,event_type,detail_json,created_at)
-    VALUES (?,?,?,?,?,?)`).run(crypto.randomUUID(), ticketId, actorUserId, eventType, JSON.stringify(detail), createdAt);
+    VALUES (?,?,?,?,?,?)`).run(eventId, ticketId, actorUserId, eventType, JSON.stringify(detail), createdAt);
+  // Runtime52 derives its own bounded projection from the authoritative rows.
+  // The caller's detail object is deliberately never forwarded to the feed.
+  journeyOperationalStageFeedRepository.captureTicketEvent(eventId, createdAt);
 }
 
 export function createRecoveryTicket(spaceId: string, actorUserId: string, input: RecoveryTicketCreate) {

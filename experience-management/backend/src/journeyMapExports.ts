@@ -6,6 +6,7 @@ import type {
 } from './journeyDomain.js';
 import type { JourneyMapReadModel } from './journeyMaps.js';
 import type { JourneyRichMapSnapshot } from './journeyRichCards.js';
+import type { JourneyExportBrandSnapshot } from './journeyExportBranding.js';
 
 export const JOURNEY_MAP_EXPORT_SCHEMA = 'seemplify.journey-map.export/v1' as const;
 
@@ -45,6 +46,18 @@ export type JourneyMapExportViewContext = {
   comparisonTarget: { definitionId: string; versionId: string } | null;
   presentation: Record<string, unknown>;
   analytics: Record<string, unknown>;
+};
+
+export type JourneyMapExportSourceNote = {
+  sourceType: string; sourceLabel: string; assessment: string; population: string;
+  sampleSize: number | null; windowStart: string | null; windowEnd: string | null; collectedAt: string | null;
+  freshnessDays: number | null; lastValidatedAt: string | null; refreshStatus: 'current' | 'changed' | 'unavailable';
+};
+
+export type JourneyMapExportOptions = {
+  brand?: JourneyExportBrandSnapshot | null;
+  sourceNotes?: readonly JourneyMapExportSourceNote[];
+  sourceNotesTruncated?: boolean;
 };
 
 type SafeEvidence = {
@@ -184,6 +197,12 @@ export type JourneyMapExportMetadata = {
   evidenceSummary: Record<JourneyEvidenceState, number>;
   evidenceLegend: typeof journeyEvidenceLegend;
   notice: string;
+  presentation: { title: string; showEvidenceLegend: boolean; showResearchGaps: boolean; showEmptyLanes: boolean };
+  sourceNotes: JourneyMapExportSourceNote[];
+  sourceNotesTruncated: boolean;
+  brand: null | { profileId: string; version: number; organisationName: string; logoAssetId: string | null;
+    primaryHex: string; accentHex: string; backgroundHex: string; textHex: string; fontFamily: string;
+    footerText: string; locale: string; contentSha256: string };
   selectedView?: JourneyMapExportViewContext;
 };
 
@@ -416,11 +435,26 @@ export function sanitizeJourneyMapForExport(map: JourneyMapReadModel, richMap?: 
 export function journeyMapExportMetadata(
   map: SafeJourneyMapExport,
   generatedAt = new Date().toISOString(),
-  selectedView?: JourneyMapExportViewContext
+  selectedView?: JourneyMapExportViewContext,
+  options: JourneyMapExportOptions = {}
 ): JourneyMapExportMetadata {
   const safeGeneratedAt = Number.isFinite(Date.parse(generatedAt))
     ? new Date(generatedAt).toISOString()
     : new Date().toISOString();
+  const selectedPresentation=selectedView?.presentation&&typeof selectedView.presentation==='object'
+    ?selectedView.presentation as Record<string,unknown>:{};
+  const sourceNotes=(options.sourceNotes||[]).slice(0,200).map((note)=>({
+    sourceType:safeText(note.sourceType,80),sourceLabel:safeText(note.sourceLabel,200),assessment:safeText(note.assessment,40),
+    population:safeText(note.population,500),sampleSize:note.sampleSize===null?null:Math.max(0,Math.trunc(Number(note.sampleSize))),
+    windowStart:note.windowStart?safeText(note.windowStart,40):null,windowEnd:note.windowEnd?safeText(note.windowEnd,40):null,
+    collectedAt:note.collectedAt?safeText(note.collectedAt,40):null,freshnessDays:note.freshnessDays===null?null:
+      Math.max(0,Math.trunc(Number(note.freshnessDays))),lastValidatedAt:note.lastValidatedAt?safeText(note.lastValidatedAt,40):null,
+    refreshStatus:note.refreshStatus}));
+  const brand=options.brand?{profileId:options.brand.profileId,version:options.brand.version,
+    organisationName:safeText(options.brand.organisationName,160),logoAssetId:options.brand.logoAssetId,
+    primaryHex:options.brand.primaryHex,accentHex:options.brand.accentHex,backgroundHex:options.brand.backgroundHex,
+    textHex:options.brand.textHex,fontFamily:options.brand.fontFamily,footerText:safeText(options.brand.footerText,300),
+    locale:safeText(options.brand.locale,35),contentSha256:options.brand.contentSha256}:null;
   return {
     exportSchema: JOURNEY_MAP_EXPORT_SCHEMA,
     generatedAt: safeGeneratedAt,
@@ -446,6 +480,9 @@ export function journeyMapExportMetadata(
       : map.definition.mode === 'connected'
         ? 'This connected map combines designed content with observed measures. Review each card evidence state and measurement window.'
         : 'Evidence-backed cards reflect sources authorised for the exporting user. Metrics without a sample and window are proposed measures.',
+    presentation:{title:safeText(selectedPresentation.title,200),showEvidenceLegend:selectedPresentation.showEvidenceLegend!==false,
+      showResearchGaps:selectedPresentation.showResearchGaps!==false,showEmptyLanes:selectedPresentation.showEmptyLanes!==false},
+    sourceNotes,sourceNotesTruncated:Boolean(options.sourceNotesTruncated)||(options.sourceNotes?.length||0)>200,brand,
     ...(selectedView ? { selectedView } : {})
   };
 }
@@ -580,7 +617,13 @@ function buildCsv(map: SafeJourneyMapExport, metadata: JourneyMapExportMetadata)
   // into cells whose leading '=' is then evaluated.
   const safeMetadata = JSON.stringify(metadata).replace(/[\r\n]/gu, ' ');
   const metadataLine = formulaSafeCsvCell(`# ${safeMetadata}`);
-  return Buffer.from(`${metadataLine}\r\n${columns.map(formulaSafeCsvCell).join(',')}\r\n${rows.join('\r\n')}${rows.length ? '\r\n' : ''}`, 'utf8');
+  const sourceRows=metadata.sourceNotes.map((note,index)=>[
+    'sourceNote',index+1,note.sourceType,note.sourceLabel,note.assessment,note.population,note.sampleSize??'',note.windowStart||'',
+    note.windowEnd||'',note.collectedAt||'',note.freshnessDays??'',note.lastValidatedAt||'',note.refreshStatus
+  ].map(formulaSafeCsvCell).join(','));
+  const sourceSection=sourceRows.length?`\r\n${['recordType','ordinal','sourceType','sourceLabel','assessment','population','sampleSize',
+    'windowStart','windowEnd','collectedAt','freshnessDays','lastValidatedAt','refreshStatus'].map(formulaSafeCsvCell).join(',')}\r\n${sourceRows.join('\r\n')}\r\n`:'';
+  return Buffer.from(`${metadataLine}\r\n${columns.map(formulaSafeCsvCell).join(',')}\r\n${rows.join('\r\n')}${rows.length ? '\r\n' : ''}${sourceSection}`, 'utf8');
 }
 
 type PngRow = {
@@ -668,7 +711,10 @@ function pngRows(map: SafeJourneyMapExport): PngRow[] {
 /** Render a portable PNG without a browser process or remote assets. The SVG
  * intermediary contains only escaped text from the already-sanitized export
  * model and is rasterized inside this process with strict pixel bounds. */
-async function buildPng(map: SafeJourneyMapExport, metadata: JourneyMapExportMetadata) {
+function brandHex(value:string|undefined,fallback:string){return /^#[0-9A-Fa-f]{6}$/.test(value||'')?String(value):fallback;}
+function brandFont(metadata:JourneyMapExportMetadata,fallback:string){return metadata.brand?.fontFamily||fallback;}
+
+async function buildPng(map: SafeJourneyMapExport, metadata: JourneyMapExportMetadata, brand?:JourneyExportBrandSnapshot|null) {
   const columnWidth = 438;
   const columnGap = 18;
   const contentHeight = 3_500;
@@ -689,10 +735,20 @@ async function buildPng(map: SafeJourneyMapExport, metadata: JourneyMapExportMet
   const height = headerHeight + Math.max(300, ...columns.map((column) => column.height)) + padding;
   if (width * height > 60_000_000) throw new Error('Journey map is too large for a bounded PNG export.');
 
+  const background=brandHex(metadata.brand?.backgroundHex,'#f7faf8');
+  const ink=brandHex(metadata.brand?.textHex,'#172b26');
+  const accent=brandHex(metadata.brand?.accentHex,'#147a54');
+  const font=xmlText(brandFont(metadata,'Arial, Helvetica, sans-serif'));
+  let logoData='';
+  if(brand?.logo){const logo=await sharp(brand.logo.bytes,{limitInputPixels:16_777_216}).rotate().resize({width:260,height:90,
+    fit:'inside',withoutEnlargement:true}).png({compressionLevel:9}).toBuffer();logoData=`data:image/png;base64,${logo.toString('base64')}`;}
+  const title=metadata.presentation.title||map.definition.name||'Journey map';
+
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-    '<rect width="100%" height="100%" fill="#f7faf8"/>',
-    `<text x="${padding}" y="58" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#172b26">${xmlText(map.definition.name || 'Journey map')}</text>`,
+    `<rect width="100%" height="100%" fill="${background}"/>`,
+    ...(logoData?[`<image href="${logoData}" x="${width-310}" y="24" width="260" height="90" preserveAspectRatio="xMaxYMid meet"/>`]:[]),
+    `<text x="${padding}" y="58" font-family="${font}" font-size="34" font-weight="700" fill="${ink}">${xmlText(title)}</text>`,
     `<text x="${padding}" y="91" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#147a54">Version ${metadata.versionNumber} · ${xmlText(metadata.versionState)} · ${xmlText(metadata.mode.replaceAll('_', ' '))} · ${xmlText(metadata.mapType.replaceAll('_', ' '))}</text>`,
     `<text x="${padding}" y="121" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#596c66">${xmlText(`${metadata.selectedView ? `View ${metadata.selectedView.name} r${metadata.selectedView.revision} · ${selectedViewFilterLabel(metadata.selectedView)} · ` : ''}Generated ${metadata.generatedAt} · ${metadata.stageCount} stages · ${metadata.cardCount} cards · ${metadata.personaCount} personas`)}</text>`
   ];
@@ -702,10 +758,10 @@ async function buildPng(map: SafeJourneyMapExport, metadata: JourneyMapExportMet
   ));
   const legendY = 210;
   const legendWidth = Math.max(132, Math.floor((width - padding * 2) / journeyEvidenceLegend.length));
-  journeyEvidenceLegend.forEach((entry, index) => {
+  if(metadata.presentation.showEvidenceLegend)journeyEvidenceLegend.forEach((entry, index) => {
     const x = padding + index * legendWidth;
-    parts.push(`<circle cx="${x + 6}" cy="${legendY - 5}" r="5" fill="#147a54"/>`);
-    parts.push(`<text x="${x + 18}" y="${legendY}" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#29423a">${xmlText(`${entry.label} (${metadata.evidenceSummary[entry.state] || 0})`)}</text>`);
+    parts.push(`<circle cx="${x + 6}" cy="${legendY - 5}" r="5" fill="${accent}"/>`);
+    parts.push(`<text x="${x + 18}" y="${legendY}" font-family="${font}" font-size="12" font-weight="700" fill="${ink}">${xmlText(`${entry.label} (${metadata.evidenceSummary[entry.state] || 0})`)}</text>`);
   });
   parts.push(`<line x1="${padding}" y1="250" x2="${width - padding}" y2="250" stroke="#cad7d2" stroke-width="1"/>`);
 
@@ -782,7 +838,10 @@ function wrapPdfText(value: string, font: PDFFont, size: number, width: number) 
   return output;
 }
 
-async function buildPdf(map: SafeJourneyMapExport, metadata: JourneyMapExportMetadata) {
+function pdfHex(value:string){const clean=brandHex(value,'#000000').slice(1);return rgb(parseInt(clean.slice(0,2),16)/255,
+  parseInt(clean.slice(2,4),16)/255,parseInt(clean.slice(4,6),16)/255);}
+
+async function buildPdf(map: SafeJourneyMapExport, metadata: JourneyMapExportMetadata, brand?:JourneyExportBrandSnapshot|null) {
   const document = await PDFDocument.create();
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
@@ -794,11 +853,18 @@ async function buildPdf(map: SafeJourneyMapExport, metadata: JourneyMapExportMet
   let page!: PDFPage;
   let y = 0;
   let stageHeading = '';
+  const brandInk=metadata.brand?pdfHex(metadata.brand.textHex):pdfColours.ink;
+  const documentTitle=metadata.presentation.title||map.definition.name||'Journey map';
+  let embeddedLogo:Awaited<ReturnType<PDFDocument['embedPng']>>|Awaited<ReturnType<PDFDocument['embedJpg']>>|null=null;
+  if(brand?.logo){const logo=await sharp(brand.logo.bytes,{limitInputPixels:16_777_216}).rotate().resize({width:600,height:240,
+    fit:'inside',withoutEnlargement:true}).png().toBuffer();embeddedLogo=await document.embedPng(logo);}
 
   const addPage = (heading = '') => {
     page = document.addPage([width, height]);
     y = height - margin;
     stageHeading = heading;
+    if(embeddedLogo){const scaled=embeddedLogo.scaleToFit(150,42);page.drawImage(embeddedLogo,{x:width-margin-scaled.width,
+      y:height-margin-scaled.height,width:scaled.width,height:scaled.height});}
     if (heading) {
       page.drawText(pdfAscii(heading), { x: margin, y, size: 17, font: bold, color: pdfColours.ink, maxWidth: width - margin * 2 });
       y -= 28;
@@ -828,7 +894,7 @@ async function buildPdf(map: SafeJourneyMapExport, metadata: JourneyMapExportMet
   };
 
   addPage();
-  drawLines(wrapPdfText(map.definition.name || 'Untitled journey map', bold, 28, width - margin * 2), { font: bold, size: 28, gap: 8 });
+  drawLines(wrapPdfText(documentTitle, bold, 28, width - margin * 2-170), { font: bold, size: 28,colour:brandInk,gap: 8 });
   drawLines([
     `${metadata.mapType.replaceAll('_', ' ')} | ${metadata.experienceType.replaceAll('_', ' ')} | ${metadata.mode.replaceAll('_', ' ')}`,
     `Version ${metadata.versionNumber} (${metadata.versionState}) | Generated ${metadata.generatedAt}`,
@@ -844,13 +910,19 @@ async function buildPdf(map: SafeJourneyMapExport, metadata: JourneyMapExportMet
   page.drawRectangle({ x: margin, y: y - 42, width: width - margin * 2, height: 42, color: pdfColours.pale, borderColor: pdfColours.line, borderWidth: 0.5 });
   page.drawText(pdfAscii(metadata.notice), { x: margin + 12, y: y - 25, size: 9.5, font: italic, color: pdfColours.ink, maxWidth: width - margin * 2 - 24 });
   y -= 58;
-  drawLines(['Evidence legend'], { font: bold, size: 14, gap: 4 });
-  for (const entry of journeyEvidenceLegend) {
+  if(metadata.presentation.showEvidenceLegend)drawLines(['Evidence legend'], { font: bold, size: 14, gap: 4 });
+  if(metadata.presentation.showEvidenceLegend)for (const entry of journeyEvidenceLegend) {
     const count = metadata.evidenceSummary[entry.state] || 0;
     drawLines(wrapPdfText(`${entry.label} (${count} cards): ${entry.description}`, regular, 8.5, width - margin * 2), {
       font: regular, size: 8.5, colour: pdfColours.muted, gap: 1
     });
   }
+  if(metadata.sourceNotes.length){drawLines(['Authorised source notes'],{font:bold,size:14,gap:4});
+    metadata.sourceNotes.forEach((note,index)=>drawLines(wrapPdfText(`${index+1}. ${note.sourceLabel} | ${note.sourceType.replaceAll('_',' ')} | ${note.assessment}`+
+      `${note.sampleSize===null?'':` | sample ${note.sampleSize}`}${note.windowStart&&note.windowEnd?` | ${note.windowStart} to ${note.windowEnd}`:''}`,
+      regular,8.5,width-margin*2),{font:regular,size:8.5,colour:pdfColours.muted,gap:1}));
+    if(metadata.sourceNotesTruncated)drawLines(['Additional authorised source notes were omitted by the 200-note export bound.'],
+      {font:italic,size:8.5,colour:pdfColours.muted,gap:4});}
   if (map.emotionalCurve.length) {
     drawLines(['Exact emotional curve values'], { font: bold, size: 14, gap: 4 });
     for (const point of map.emotionalCurve) {
@@ -912,11 +984,11 @@ async function buildPdf(map: SafeJourneyMapExport, metadata: JourneyMapExportMet
     });
     item.drawText(`${index + 1} / ${pages.length}`, { x: width - margin - 35, y: 12, size: 7, font: regular, color: pdfColours.muted });
   });
-  document.setTitle(pdfAscii(map.definition.name || 'Journey map'));
-  document.setAuthor('Seemplify Experience Management');
+  document.setTitle(pdfAscii(documentTitle));
+  document.setAuthor(pdfAscii(metadata.brand?.organisationName||'Seemplify Experience Management'));
   document.setSubject(`Journey map export, version ${metadata.versionNumber}${metadata.selectedView
     ? `, view ${metadata.selectedView.name} revision ${metadata.selectedView.revision}` : ''}`);
-  document.setProducer('Seemplify Experience Management');
+  document.setProducer(pdfAscii(metadata.brand?.organisationName||'Seemplify Experience Management'));
   const exportDate = new Date(metadata.generatedAt);
   document.setCreationDate(exportDate);
   document.setModificationDate(exportDate);
@@ -932,7 +1004,7 @@ function pptxSnippet(value: string, max: number) {
   return text.length < max ? text : `${text.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
 }
 
-async function buildPptx(map: SafeJourneyMapExport, metadata: JourneyMapExportMetadata) {
+async function buildPptx(map: SafeJourneyMapExport, metadata: JourneyMapExportMetadata, brand?:JourneyExportBrandSnapshot|null) {
   // PptxGenJS 4 publishes a correct runtime default export but its conditional
   // type export is exposed as a module namespace under NodeNext. Keep that
   // packaging mismatch at this single boundary rather than weakening types in
@@ -942,42 +1014,53 @@ async function buildPptx(map: SafeJourneyMapExport, metadata: JourneyMapExportMe
     ? importedPptx
     : importedPptx.default) as new () => any;
   const pptx = new PptxConstructor();
+  const colours={...pptxColours,ink:brandHex(metadata.brand?.textHex,'#17332D').slice(1),
+    accent:brandHex(metadata.brand?.accentHex,'#147A55').slice(1),white:brandHex(metadata.brand?.backgroundHex,'#FFFFFF').slice(1)};
+  const font=brandFont(metadata,'Aptos');
   pptx.layout = 'LAYOUT_WIDE';
-  pptx.author = 'Seemplify Experience Management';
-  pptx.company = 'Seemplify';
+  pptx.author = metadata.brand?.organisationName||'Seemplify Experience Management';
+  pptx.company = metadata.brand?.organisationName||'Seemplify';
   pptx.subject = `Journey map export, version ${metadata.versionNumber}${metadata.selectedView
     ? `, view ${metadata.selectedView.name} revision ${metadata.selectedView.revision}` : ''}`;
-  pptx.title = map.definition.name || 'Journey map';
-  pptx.lang = 'en-GB';
+  pptx.title = metadata.presentation.title||map.definition.name||'Journey map';
+  pptx.lang = metadata.brand?.locale||'en-GB';
   pptx.theme = {
-    headFontFace: 'Aptos Display', bodyFontFace: 'Aptos', lang: 'en-GB'
+    headFontFace: font, bodyFontFace: font, lang: metadata.brand?.locale||'en-GB'
   };
   pptx.defineSlideMaster({
     title: 'SEEMPLIFY_JOURNEY',
-    background: { color: pptxColours.white },
+    background: { color: colours.white },
     objects: [
-      { line: { x: 0.6, y: 7.08, w: 12.13, h: 0, line: { color: pptxColours.line, width: 0.8 } } }
+      { line: { x: 0.6, y: 7.08, w: 12.13, h: 0, line: { color: colours.line, width: 0.8 } } }
     ],
-    slideNumber: { x: 12.05, y: 7.12, w: 0.65, h: 0.2, fontFace: 'Aptos', fontSize: 9, color: pptxColours.muted, align: 'right' }
+    slideNumber: { x: 12.05, y: 7.12, w: 0.65, h: 0.2, fontFace: font, fontSize: 9, color: colours.muted, align: 'right' }
   });
+  let logoData:string|null=null;
+  if(brand?.logo){const logo=await sharp(brand.logo.bytes,{limitInputPixels:16_777_216}).rotate().resize({width:600,height:240,
+    fit:'inside',withoutEnlargement:true}).png().toBuffer();logoData=`data:image/png;base64,${logo.toString('base64')}`;}
+  const sourceNotes=['[Sources]',...metadata.sourceNotes.map((note,index)=>`- ${index+1}. ${note.sourceLabel}; ${note.sourceType}; ${note.assessment}`),
+    ...(metadata.sourceNotesTruncated?['- Additional authorised notes omitted at the 200-note bound.']:[]),
+    ...(metadata.sourceNotes.length?[]:['- No viewer-authorised source notes were available for this export.'])].join('\n');
   const slides: any[] = [];
   const addSlide = () => {
     const slide = pptx.addSlide({ masterName: 'SEEMPLIFY_JOURNEY' });
     slide.addText(`${map.definition.name} | v${metadata.versionNumber} | ${metadata.mode.replaceAll('_', ' ')}`, {
-      x: 0.6, y: 7.12, w: 10.8, h: 0.2, fontFace: 'Aptos', fontSize: 9, color: pptxColours.muted, margin: 0
+      x: 0.6, y: 7.12, w: 10.8, h: 0.2, fontFace: font, fontSize: 9, color: colours.muted, margin: 0
     });
-    slide.addNotes('[Sources]\n- No external sources. Generated from the authorised Seemplify Journey Map read model.');
+    if(logoData)slide.addImage({data:logoData,x:10.45,y:.18,w:2.15,h:.62,
+      altText:brand?.logo?.altText||'Organisation logo'});
+    slide.addNotes(sourceNotes);
     slides.push(slide);
     return slide;
   };
 
   let slide = addSlide();
-  slide.addText(map.definition.name || 'Untitled journey map', {
-    x: 0.75, y: 1.15, w: 11.8, h: 1.2, fontFace: 'Aptos Display', fontSize: 50,
-    bold: true, color: pptxColours.ink, margin: 0, breakLine: false, fit: 'shrink'
+  slide.addText(metadata.presentation.title||map.definition.name||'Untitled journey map', {
+    x: 0.75, y: 1.15, w: 11.8, h: 1.2, fontFace: font, fontSize: 50,
+    bold: true, color: colours.ink, margin: 0, breakLine: false, fit: 'shrink'
   });
   slide.addText(`${metadata.mapType.replaceAll('_', ' ')}  |  ${metadata.experienceType.replaceAll('_', ' ')}  |  ${metadata.mode.replaceAll('_', ' ')}`, {
-    x: 0.75, y: 2.55, w: 11.8, h: 0.45, fontFace: 'Aptos', fontSize: 20, color: pptxColours.accent, margin: 0
+    x: 0.75, y: 2.55, w: 11.8, h: 0.45, fontFace: font, fontSize: 20, color: colours.accent, margin: 0
   });
   if (map.version.summary) slide.addText(pptxSnippet(map.version.summary, 520), {
     x: 0.75, y: 3.25, w: 10.8, h: 1.45, fontFace: 'Aptos', fontSize: 18,
@@ -991,11 +1074,17 @@ async function buildPptx(map: SafeJourneyMapExport, metadata: JourneyMapExportMe
     { x: 0.75, y: 6.4, w: 10.8, h: 0.48, fontFace: 'Aptos', fontSize: 10, color: pptxColours.muted, margin: 0 }
   );
 
-  slide = addSlide();
+  if(metadata.presentation.showEvidenceLegend){slide = addSlide();
   slide.addText('How to read the evidence states', {
     x: 0.75, y: 0.55, w: 11.8, h: 0.55, fontFace: 'Aptos Display', fontSize: 35,
     bold: true, color: pptxColours.ink, margin: 0
-  });
+  });}
+
+  if(metadata.sourceNotes.length){slide=addSlide();slide.addText('Authorised source notes',{
+    x:.75,y:.55,w:11.8,h:.55,fontFace:font,fontSize:35,bold:true,color:colours.ink,margin:0});
+    metadata.sourceNotes.slice(0,10).forEach((note,index)=>slide.addText(
+      `${index+1}. ${note.sourceLabel} | ${note.sourceType.replaceAll('_',' ')} | ${note.assessment}`,
+      {x:.75,y:1.35+index*.48,w:11.7,h:.34,fontFace:font,fontSize:14,color:colours.ink,margin:0,fit:'shrink'}));}
   slide.addText(metadata.notice, {
     x: 0.75, y: 1.25, w: 11.8, h: 0.5, fontFace: 'Aptos', fontSize: 16,
     italic: true, color: pptxColours.muted, margin: 0, fit: 'shrink'
@@ -1131,21 +1220,22 @@ export async function buildJourneyMapExport(
   format: JourneyMapExportFormat,
   generatedAt = new Date().toISOString(),
   selectedView?: JourneyMapExportViewContext,
-  richMap?: JourneyRichMapSnapshot | null
+  richMap?: JourneyRichMapSnapshot | null,
+  options:JourneyMapExportOptions={}
 ): Promise<JourneyMapExportArtifact> {
   const map = sanitizeJourneyMapForExport(readModel, richMap);
-  const metadata = journeyMapExportMetadata(map, generatedAt, selectedView);
+  const metadata = journeyMapExportMetadata(map, generatedAt, selectedView,options);
   const filename = journeyMapExportFilename(map, format, selectedView);
   if (format === 'json') return { bytes: buildJson(map, metadata), filename, mimeType: exportMimes.json };
   if (format === 'csv') return { bytes: buildCsv(map, metadata), filename, mimeType: exportMimes.csv };
   if (format === 'pdf') {
-    const rendered = await buildPdf(map, metadata);
+    const rendered = await buildPdf(map, metadata,options.brand);
     return { ...rendered, filename, mimeType: exportMimes.pdf };
   }
   if (format === 'png') {
-    const rendered = await buildPng(map, metadata);
+    const rendered = await buildPng(map, metadata,options.brand);
     return { ...rendered, filename, mimeType: exportMimes.png };
   }
-  const rendered = await buildPptx(map, metadata);
+  const rendered = await buildPptx(map, metadata,options.brand);
   return { ...rendered, filename, mimeType: exportMimes.pptx };
 }

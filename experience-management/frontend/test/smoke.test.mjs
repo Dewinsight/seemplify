@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
+import { LATEST_RUNTIME_SCHEMA_VERSION } from '../../scripts/postgres-runtime-contract.mjs';
 
 const source = path.resolve(import.meta.dirname, '..', 'src');
 test('registers protected admin and public response routes', () => {
@@ -137,7 +138,13 @@ test('exposes multi-account X listening, human-reviewed replies, cross-source in
   assert.match(shell, /label: 'Intelligence'/);
   assert.match(journeys, /\/api\/ai\/journeys/);
   assert.match(journeys, /Journey stages/);
-  assert.match(journeys, /Audit and improve/);
+  // The AI audit no longer improves a map in place; it proposes typed changes
+  // that need a recorded human decision, so assert that gate rather than the
+  // old combined "audit and improve" affordance.
+  assert.match(journeys, /Request AI journey suggestions/);
+  assert.match(journeys, /Nothing is applied automatically\./);
+  assert.match(journeys, /Audit focus/);
+  assert.match(journeys, /Create reviewable suggestions/);
 });
 test('publishes public X-aware terms and privacy links at authentication surfaces', () => {
   const legal = fs.readFileSync(path.join(source, 'pages', 'LegalPage.tsx'), 'utf8');
@@ -334,10 +341,15 @@ test('refuses an incompatible rollback after a PostgreSQL runtime upgrade starts
   assert.doesNotMatch(deploy, /Test-ProjectSupportsPostgresRuntimeVersion \$previousProject 2/);
   assert.match(deploy, /started runtime upgrade/);
   assert.deepEqual(compatibility, {
-    minimumRuntimeSchemaVersion: 29,
-    maximumRuntimeSchemaVersion: 29,
+    minimumRuntimeSchemaVersion: 55,
+    maximumRuntimeSchemaVersion: 55,
     minimumUpgradeSourceRuntimeSchemaVersion: 4
   });
+  // The window above was a bare literal and silently drifted a whole runtime
+  // behind the shipped migration set. Tie it to the contract every other runtime
+  // check reads, so a bump has to move both or fail here.
+  assert.equal(compatibility.minimumRuntimeSchemaVersion, LATEST_RUNTIME_SCHEMA_VERSION);
+  assert.equal(compatibility.maximumRuntimeSchemaVersion, LATEST_RUNTIME_SCHEMA_VERSION);
 });
 test('grants PostgreSQL runtime privileges from the exact active release', () => {
   const manage = fs.readFileSync(path.resolve(source, '..', '..', 'scripts', 'manage.ps1'), 'utf8');

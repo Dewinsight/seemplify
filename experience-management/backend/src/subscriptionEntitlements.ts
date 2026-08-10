@@ -16,7 +16,9 @@ export type SubscriptionQuota = 'seats' | 'activeSurveys' | 'monthlyAiActions' |
   | 'schemaDefinitions' | 'webhookDestinations' | 'monthlyJourneyExports'
   | 'journeyMetricDefinitions' | 'journeyMetricBindings' | 'journeyMetricSegments'
   | 'journeyMetricAlertDefinitions' | 'monthlyJourneyMetricImports' | 'journeyChannels' | 'journeyTouchpoints'
-  | 'journeyCardAssets' | 'journeyCardAssetBytes' | 'journeySavedViews';
+  | 'journeyCardAssets' | 'journeyCardAssetBytes' | 'journeySavedViews'
+  | 'journeyPortfolioItems' | 'journeyPortfolioScoringPolicies' | 'journeyHierarchyLinks'
+  | 'journeyBlueprints' | 'journeyBlueprintResources' | 'journeyConnectorDefinitions';
 export const meteredSubscriptionQuotas = [
   'monthlyAiActions', 'monthlyTrackedEvents', 'monthlyOrchestrationActions', 'monthlyJourneyExports',
   'monthlyJourneyMetricImports'
@@ -24,7 +26,7 @@ export const meteredSubscriptionQuotas = [
 export type MeteredSubscriptionQuota = typeof meteredSubscriptionQuotas[number];
 export type SubscriptionPlanCode = 'starter' | 'team' | 'enterprise';
 
-export const subscriptionCatalogVersion = '2026-08-05.2';
+export const subscriptionCatalogVersion = '2026-08-08.1';
 
 /** Journey design is deliberately decoupled from the AI-runtime feature so a
  * space with AI disabled can still build and own maps by hand. AI journey
@@ -70,7 +72,9 @@ export const defaultSubscriptionPlanCatalog: readonly SubscriptionPlan[] = [
       schemaDefinitions: 0, webhookDestinations: 0, monthlyJourneyExports: 5,
       journeyMetricDefinitions: 0, journeyMetricBindings: 0, journeyMetricSegments: 0, journeyMetricAlertDefinitions: 0,
       monthlyJourneyMetricImports: 0, journeyChannels: 0, journeyTouchpoints: 0,
-      journeyCardAssets: 0, journeyCardAssetBytes: 0, journeySavedViews: 0
+      journeyCardAssets: 0, journeyCardAssetBytes: 0, journeySavedViews: 0,
+      journeyPortfolioItems: 0, journeyPortfolioScoringPolicies: 0, journeyHierarchyLinks: 0,
+      journeyBlueprints: 0, journeyBlueprintResources: 0, journeyConnectorDefinitions: 0
     }
   },
   {
@@ -96,7 +100,9 @@ export const defaultSubscriptionPlanCatalog: readonly SubscriptionPlan[] = [
       schemaDefinitions: 0, webhookDestinations: 0, monthlyJourneyExports: 250,
       journeyMetricDefinitions: 100, journeyMetricBindings: 250, journeyMetricSegments: 100, journeyMetricAlertDefinitions: 100,
       monthlyJourneyMetricImports: 50_000, journeyChannels: 100, journeyTouchpoints: 500,
-      journeyCardAssets: 2_000, journeyCardAssetBytes: 2 * 1024 * 1024 * 1024, journeySavedViews: 100
+      journeyCardAssets: 2_000, journeyCardAssetBytes: 2 * 1024 * 1024 * 1024, journeySavedViews: 100,
+      journeyPortfolioItems: 1_000, journeyPortfolioScoringPolicies: 10, journeyHierarchyLinks: 1_000,
+      journeyBlueprints: 100, journeyBlueprintResources: 1_000, journeyConnectorDefinitions: 0
     }
   },
   {
@@ -124,7 +130,9 @@ export const defaultSubscriptionPlanCatalog: readonly SubscriptionPlan[] = [
       journeyMetricDefinitions: 10_000, journeyMetricBindings: 50_000, journeyMetricSegments: 5_000,
       journeyMetricAlertDefinitions: 10_000,
       monthlyJourneyMetricImports: 10_000_000, journeyChannels: 2_000, journeyTouchpoints: 20_000,
-      journeyCardAssets: 100_000, journeyCardAssetBytes: 200 * 1024 * 1024 * 1024, journeySavedViews: 5_000
+      journeyCardAssets: 100_000, journeyCardAssetBytes: 200 * 1024 * 1024 * 1024, journeySavedViews: 5_000,
+      journeyPortfolioItems: 100_000, journeyPortfolioScoringPolicies: 500, journeyHierarchyLinks: 100_000,
+      journeyBlueprints: 10_000, journeyBlueprintResources: 100_000, journeyConnectorDefinitions: 250
     }
   }
 ] as const;

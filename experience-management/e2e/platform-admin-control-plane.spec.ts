@@ -78,7 +78,11 @@ async function installControlPlaneMocks(page: Page) {
   let plans = [{
     code: 'starter', name: 'Starter', description: 'Core experience management for a small team.', requestable: true,
     features: { surveys: true, campaigns: true, agreements: true, serviceRecovery: true, socialListening: false, knowledgeBases: false, terra: true },
-    limits: { seats: 3, activeSurveys: 10, monthlyAiActions: 100, knowledgeStorageBytes: 0 },
+    limits: {
+      seats: 3, activeSurveys: 10, monthlyAiActions: 100, knowledgeStorageBytes: 0,
+      journeyPortfolioItems: 0, journeyPortfolioScoringPolicies: 0, journeyHierarchyLinks: 0,
+      journeyBlueprints: 0, journeyBlueprintResources: 0, journeyConnectorDefinitions: 0
+    },
     displayOrder: 10, version: 1, activeSubscriptions: 4, pendingRequests: 0,
     createdAt: '2026-08-04T00:00:00.000Z', updatedAt: '2026-08-04T00:00:00.000Z'
   }];
@@ -205,7 +209,8 @@ async function installControlPlaneMocks(page: Page) {
 
 test.describe('platform administrator control plane', () => {
   test.beforeEach(async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'desktop-chromium', 'The focused control-plane flow runs once at desktop width.');
+    test.skip(testInfo.project.name !== 'desktop-chromium' && testInfo.title !== 'subscription plans expose live feature and quota management',
+      'Only the focused managed-quota editor runs at both desktop and mobile widths.');
     await loginRoot(page);
   });
 
@@ -230,6 +235,11 @@ test.describe('platform administrator control plane', () => {
     await page.getByLabel('Plan name').fill('Starter Plus');
     await page.getByLabel('Social Listening').check();
     await page.getByLabel('AI actions per month').fill('250');
+    await expect(page.getByLabel('Journey portfolio items')).toBeVisible();
+    await expect(page.getByLabel('Hierarchy links')).toBeVisible();
+    await expect(page.getByRole('spinbutton', { name: 'Service blueprints' })).toBeVisible();
+    await expect(page.getByLabel('Connector definitions')).toBeVisible();
+    await page.getByLabel('Journey portfolio items').fill('25');
     await page.getByLabel('Reason for this change').fill('Expand the Starter plan for the new workspace rollout.');
     await page.getByRole('button', { name: 'Save plan' }).click();
     await expect(page.getByText('Starter Plus plan saved.')).toBeVisible();
@@ -237,7 +247,7 @@ test.describe('platform administrator control plane', () => {
     expect(mock.planWrites[0]).toMatchObject({
       name: 'Starter Plus',
       features: { socialListening: true },
-      limits: { monthlyAiActions: 250 },
+      limits: { monthlyAiActions: 250, journeyPortfolioItems: 25 },
       expectedVersion: 1
     });
     expect(mock.unhandled).toEqual([]);

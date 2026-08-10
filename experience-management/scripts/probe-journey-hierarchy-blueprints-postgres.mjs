@@ -28,6 +28,7 @@ const ownerUser = String(process.env.POSTGRES_PROBE_OWNER_USER || '');
 const ownerPasswordFile = String(process.env.POSTGRES_PROBE_OWNER_PASSWORD_FILE || '');
 const appUser = String(process.env.POSTGRES_USER || '');
 const appPasswordFile = String(process.env.POSTGRES_PASSWORD_FILE || '');
+const runtimeVersion = Number(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION || 0);
 const proof = `pg29hierarchy${crypto.randomBytes(6).toString('hex')}`;
 
 assert.equal(process.env.POSTGRES_PROBE_ALLOW_WRITES, 'true',
@@ -41,6 +42,8 @@ assert.match(ownerUser, /^[A-Za-z_][A-Za-z0-9_]*$/u);
 assert.match(appUser, /^[A-Za-z_][A-Za-z0-9_]*$/u);
 assert.ok(ownerPasswordFile && fs.existsSync(ownerPasswordFile));
 assert.ok(appPasswordFile && fs.existsSync(appPasswordFile));
+assert.ok(Number.isInteger(runtimeVersion) && runtimeVersion >= 29,
+  'The hierarchy/blueprint probe requires the configured current runtime schema version.');
 
 const password = (filename) => fs.readFileSync(filename, 'utf8').replace(/[\r\n]+$/u, '');
 const connection = (user, credential, name) => ({ host, port, database, user, password: credential, ssl: false,
@@ -134,8 +137,11 @@ try {
   const migration = await owner.query('SELECT version,checksum FROM experience_runtime_schema_version WHERE version=29');
   assert.equal(migration.rowCount, 1);
   assert.match(String(migration.rows[0].checksum), /^[a-f0-9]{64}$/u);
-  await assertRuntimeSchemaContract((sql) => owner.query(sql), { runtimeVersion: 29 });
-  await assertRuntimePrivileges((sql) => owner.query(sql), appUser, { runtimeVersion: 29 });
+  // Migration 29 owns this capability, but later forward-only repairs may
+  // intentionally replace constraints elsewhere in the same schema. Validate
+  // the current disposable runtime while separately proving migration 29.
+  await assertRuntimeSchemaContract((sql) => owner.query(sql), { runtimeVersion });
+  await assertRuntimePrivileges((sql) => owner.query(sql), appUser, { runtimeVersion });
   emit('journey_hierarchy_runtime_contract_passed');
 
   for (const [user, email, name] of [[ids.owner, 'owner', 'Hierarchy owner'],

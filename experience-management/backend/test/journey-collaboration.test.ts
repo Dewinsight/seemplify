@@ -11,7 +11,7 @@ import { signupVerifyAndOnboard } from './authTestHelper.js';
  * Domain tests for the Phase 3 collaboration facade, executed against SQLite.
  *
  * SCOPE WARNING. SQLite is a projection of `0028_journey_collaboration.sql`.
- * `runtime-compatibility.json` now pins min=max=29, so runtime-28 is inside the
+ * `runtime-compatibility.json` now pins min=max=54, so runtime-28 is inside the
  * shipped window on paper, but nothing here touches PostgreSQL and no applied
  * run is recorded, so a green run here is NOT executed-PostgreSQL evidence.
  * The projection is built by ensureSqliteSchema in journeyCollaboration.ts and
@@ -864,7 +864,9 @@ test('the space kill switch makes collaboration read-only without locking out se
     spaceId: owner.spaceId, actorUserId: owner.userId, target
   });
   assert.equal(context.readOnly, true);
-  assert.deepEqual(context.capabilities, ['journeys.read', 'journeys.view_activity']);
+  // journeys.export survives too: it reads, and it is entitled by journeyExports
+  // rather than by journeyCollaboration.
+  assert.deepEqual(context.capabilities, ['journeys.read', 'journeys.view_activity', 'journeys.export']);
   assert.ok(collaboration.listJourneyComments({
     spaceId: owner.spaceId, actorUserId: member.userId, target
   }).items.length > 0, 'reads survive the kill switch');
@@ -968,7 +970,9 @@ test('the plan gate closes writes when the subscription drops the feature', () =
       spaceId: owner.spaceId, actorUserId: owner.userId, target
     });
     assert.equal(context.readOnly, true);
-    assert.deepEqual(context.capabilities, ['journeys.read', 'journeys.view_activity']);
+    // starter keeps journeyExports, so dropping journeyCollaboration must not
+    // withdraw journeys.export from the advertised surface.
+    assert.deepEqual(context.capabilities, ['journeys.read', 'journeys.view_activity', 'journeys.export']);
     assert.ok(collaboration.listJourneyComments({
       spaceId: owner.spaceId, actorUserId: owner.userId, target
     }).items.length > 0, 'existing collaboration stays readable on a downgraded plan');
@@ -1233,10 +1237,18 @@ test('assertJourneyCapability is fail-closed on its own when collaboration is re
       rejects(() => collaboration.assertJourneyCapability(owner.spaceId, owner.userId, denied, target),
         { status: 403, code: 'JOURNEY_COLLABORATION_READ_ONLY' });
     }
-    for (const allowed of ['journeys.read', 'journeys.view_activity'] as const) {
+    // journeys.export is allowed, not denied: it reads, and it carries its own
+    // journeyExports entitlement. Gating it on journeyCollaboration made
+    // journeyExportBrandRepository.resolve -- and so every governed map export --
+    // fail JOURNEY_COLLABORATION_READ_ONLY on a plan that paid for exports.
+    for (const allowed of ['journeys.read', 'journeys.view_activity', 'journeys.export'] as const) {
       assert.equal(collaboration.assertJourneyCapability(owner.spaceId, owner.userId, allowed, target).readOnly,
         true);
     }
+    // Still fail-closed for anyone whose role lacks the capability: read-only
+    // collapses to the space-membership role, and a member maps to viewer.
+    rejects(() => collaboration.assertJourneyCapability(owner.spaceId, member.userId, 'journeys.export', target),
+      { status: 403, code: 'JOURNEY_CAPABILITY_REQUIRED' });
   } finally {
     // The kill switch lives in the settings this capability guards, so it has to
     // stay reversible: the settings path is the one caller allowed through.
@@ -1442,36 +1454,20 @@ test('collaboration SQL carries no PostgreSQL reserved-word table alias', () => 
     'canonical key ordering must not depend on locale or ICU data');
 });
 
-test('KNOWN DEFECT (SQLite projection, out of scope here): a comment author cannot be offboarded', () => {
-  // Pinned so the behaviour is visible and evidenced, NOT because it is correct.
-  // The defect has been HALF fixed, and this test pins the half that remains.
-  //
-  // 0028 used to declare five composite foreign keys from collaboration tables
-  // into space_memberships. It no longer does: those five columns are now
-  // users(id) ON DELETE NO ACTION plus journey_collaboration_membership_guard,
-  // which checks tenancy at write time and lets offboarding proceed afterwards
-  // (see journey-collaboration-migration.test.ts, which pins exactly that shape).
-  // ensureSqliteSchema in journeyCollaboration.ts was NOT updated with it and
-  // still declares all five as ON DELETE RESTRICT.
-  //
-  // SQLite is the runtime the product actually ships on, so spaces.ts
-  // removeSpaceMember -- a plain DELETE FROM space_memberships -- still fails with
-  // a raw foreign-key error once someone has authored a comment, edited one or
-  // requested a review: a 500, not a clean 409. The facade renders absent authors
-  // as 'Former member', i.e. it was written expecting members to disappear.
-  //
-  // Closing this means porting the 0028 correction into journeyCollaboration.ts,
-  // which is out of scope for this run. Until then this assertion is the accurate
-  // record that the fix has not reached the shipped runtime; if it stops throwing,
-  // the projection has been corrected and this test should be replaced.
+test('SQLite attribution survives offboarding while new writes still require membership', () => {
   const author = bareMember('offboard-author', 'member');
-  collaboration.createJourneyComment({
+  const created = collaboration.createJourneyComment({
     spaceId: owner.spaceId, actorUserId: author, target, body: 'Authored before offboarding.',
     idempotencyKey: key('offboard-comment')
   });
-  assert.throws(() => db.prepare('DELETE FROM space_memberships WHERE space_id=? AND user_id=?')
-    .run(owner.spaceId, author), /FOREIGN KEY constraint failed/u,
-    'if this stops throwing, ensureSqliteSchema has caught up with 0028 and this test should be replaced');
+  assert.doesNotThrow(() => db.prepare('DELETE FROM space_memberships WHERE space_id=? AND user_id=?')
+    .run(owner.spaceId, author));
+  const retained = collaboration.listJourneyComments({ spaceId: owner.spaceId, actorUserId: owner.userId, target });
+  assert.equal(retained.items.find((comment) => comment.id === created.comment.id)?.author.name, 'Bare offboard-author');
+  assert.throws(() => collaboration.createJourneyComment({
+    spaceId: owner.spaceId, actorUserId: author, target, body: 'Written after offboarding.',
+    idempotencyKey: key('offboard-denied')
+  }), /membership is required/u);
   // A member who has only ever held a role assignment offboards cleanly, because
   // that edge is declared ON DELETE CASCADE.
   const assignee = bareMember('offboard-assignee', 'member');

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lastUpdated": "2026-08-06",
+  "lastUpdated": "2026-08-08",
   "masterPlan": "docs/CONNECTED-JOURNEY-MANAGEMENT-MASTER-PLAN.md",
   "traceabilityLedger": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
   "allowedClasses": ["Code", "Data", "Controls", "Tests", "Runtime", "Operations"],
@@ -1446,6 +1446,1299 @@
         "docs/journey-management/operations/latest-journey-closure-blockers-report.json",
         "docs/journey-management/operations/latest-sdk-publication-readiness-report.md",
         "docs/journey-management/operations/latest-sdk-publication-readiness-report.json"
+      ]
+    },
+    {
+      "evidenceId": "journey-export-release-gaps-2026-08-07",
+      "requirementIds": ["P1-13"],
+      "class": "Tests",
+      "summary": "Journey export and presentation foundations have focused proof, while saved-view fidelity, branded output, and combined accessibility/security release evidence remain open.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+      "observed": {
+        "state": "In progress",
+        "blockingHighlights": [
+          "Saved-view and filter fidelity are not complete across every export format.",
+          "Combined accessibility and security release gates have not been signed."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove P1-13 is Verified.",
+        "Does not prove the Phase 1 release gate is complete."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "backend/src/journeyMapExports.ts",
+        "frontend/src/pages/JourneyMapsPage.tsx"
+      ]
+    },
+    {
+      "evidenceId": "journey-connectors-foundation-and-workspace-2026-08-08",
+      "requirementIds": ["P5E-03", "X-01", "X-02"],
+      "class": "Tests",
+      "summary": "Runtime 37 and the routed connector workspace provide governed imports; Runtime 51 adds the first disabled-by-default, least-privilege first-party execution adapter.",
+      "command": "npx tsx --test backend/test/journey-connector-import-routes.test.ts backend/test/journey-connector-import-migration.test.ts backend/test/journey-connector-worker-domain.test.ts backend/test/journey-connector-worker-repository.test.ts && node --test frontend/test/journey-connectors-workspace.test.mjs && npx playwright test e2e/journey-connectors.spec.ts --project=desktop-chromium --project=mobile-chromium && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "frontend/src/pages/JourneyConnectorsPage.tsx",
+      "observed": {
+        "proves": [
+          "Request-derived tenant isolation, entitlement and member-read/owner-admin-write boundaries govern CSV, JSONL and approved object-store imports.",
+          "Opaque checkpoints, optimistic CAS, bounded retry and partial receipts, hashed external identities, tombstones and content-safe audit are durable.",
+          "The routed workspace covers create, enable or disable, run, load, submit, receipt and audit states; focused source and four desktop/mobile scenarios pass.",
+          "Runtime 51's service-recovery-ticket adapter uses external file references, scoped principal authority, fenced leases, crash recovery, live rechecks and deletion tombstones while excluding ticket text and personal assignment fields.",
+          "Focused connector tests pass 16 of 16, aggregate static tests pass 31 of 31, and a genuine two-adapter restricted-role PostgreSQL probe passes at schema 51 with exact cleanup."
+        ],
+        "blockingHighlights": [
+          "Broader third-party CRM, support, warehouse and analytics providers are not production-qualified.",
+          "Live customer credentials, sustained load/security and signed release approval remain absent."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove third-party provider credentials, customer demand, broader downstream qualification or release approval.",
+        "Does not mark P5E-03 Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0037_journey_connector_imports.sql",
+        "backend/src/journeyConnectorImports.ts",
+        "backend/src/journeyConnectorImportRoutes.ts",
+        "backend/migrations/postgres/0051_journey_connector_execution_plane.sql",
+        "backend/src/journeyConnectorWorkerRepository.ts",
+        "backend/src/journeyConnectorWorkerRuntime.ts",
+        "frontend/src/pages/JourneyConnectorsPage.tsx",
+        "e2e/journey-connectors.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "native-sdk-mit-licensing-2026-08-07",
+      "requirementIds": ["P5E-02"],
+      "class": "Controls",
+      "summary": "The standing MIT decision now covers the Swift and Kotlin source foundations as well as the five npm SDK packages, without changing their unreleased status.",
+      "command": "npm run test:journey-swift:contract && npm run test:journey-kotlin:contract",
+      "artifactPath": "packages/journey-swift/LICENSE",
+      "observed": {
+        "proves": [
+          "Repository-root, Swift, and Kotlin MIT licence files use the GitHub MIT template with Seemplify copyright attribution.",
+          "The Swift and Kotlin static protocol contracts still pass after licensing.",
+          "Generated Kotlin Maven POM metadata names the MIT License and repository distribution."
+        ],
+        "artifactPaths": [
+          "LICENSE",
+          "packages/journey-swift/LICENSE",
+          "packages/journey-kotlin/LICENSE",
+          "packages/journey-kotlin/build.gradle.kts"
+        ]
+      },
+      "notClaimed": [
+        "Does not authorise or prove SwiftPM or Maven publication.",
+        "Does not prove native device, security, support, or production-ingestion qualification."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "LICENSE",
+        "packages/journey-swift/LICENSE",
+        "packages/journey-kotlin/LICENSE",
+        "packages/journey-kotlin/build.gradle.kts",
+        "scripts/sdk-swift-contract.mjs",
+        "scripts/sdk-kotlin-contract.mjs"
+      ]
+    },
+    {
+      "evidenceId": "portfolio-operational-outcomes-product-2026-08-07",
+      "requirementIds": ["P3-03", "P3-09"],
+      "class": "Tests",
+      "summary": "Typed operational attribution and exact persisted-observation before/after measurement are mounted in the portfolio API and initiative workspace.",
+      "command": "npx tsx --test backend/test/journey-portfolio.test.ts backend/test/journey-portfolio-routes.test.ts && node --test frontend/test/journey-portfolio-workspace.test.mjs && npx playwright test e2e/journey-portfolio.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "frontend/src/pages/JourneyPortfolioPage.tsx",
+      "observed": {
+        "proves": [
+          "Seventeen focused portfolio service/route tests pass for typed assistant-action and recovery-ticket links plus immutable metric baselines and comparisons.",
+          "Six portfolio workspace source contracts pass.",
+          "Four isolated desktop/mobile Playwright scenarios pass, including initiative evidence authoring, readback, and governed source rejection.",
+          "The complete backend suite passed 557 of 557 tests before the subsequent runtime-32/33 tranches landed."
+        ],
+        "artifactPaths": [
+          "backend/src/journeyPortfolio.ts",
+          "backend/src/journeyPortfolioRoutes.ts",
+          "backend/test/journey-portfolio.test.ts",
+          "backend/test/journey-portfolio-routes.test.ts",
+          "frontend/src/lib/journeyPortfolio.ts",
+          "frontend/src/pages/JourneyPortfolioPage.tsx",
+          "frontend/test/journey-portfolio-workspace.test.mjs",
+          "e2e/journey-portfolio.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove executive benefit rollups, exports, retention sweeps, or the Phase 3 release gate.",
+        "Does not claim an operational action or ticket is itself an initiative or that a measured change is causal."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyPortfolio.ts",
+        "backend/src/journeyPortfolioRoutes.ts",
+        "backend/test/journey-portfolio.test.ts",
+        "backend/test/journey-portfolio-routes.test.ts",
+        "frontend/src/lib/journeyPortfolio.ts",
+        "frontend/src/pages/JourneyPortfolioPage.tsx",
+        "frontend/test/journey-portfolio-workspace.test.mjs",
+        "e2e/journey-portfolio.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "hierarchy-governance-health-product-2026-08-07",
+      "requirementIds": ["P4-02", "P4-08"],
+      "class": "Tests",
+      "summary": "Revisioned hierarchy settings, safe taxonomy correction, and transparent persisted health policies/snapshots are mounted in the API and routed hierarchy workspace.",
+      "command": "npx tsx --test backend/test/journey-hierarchy.test.ts backend/test/journey-hierarchy-routes.test.ts backend/test/journey-taxonomy-retirement-safeguard-migration.test.ts && node --test frontend/test/journey-hierarchy-workspace.test.mjs && npx playwright test e2e/journey-hierarchy.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "frontend/src/pages/JourneyHierarchyPage.tsx",
+      "observed": {
+        "proves": [
+          "Hierarchy domain, HTTP, and forward-only runtime-32 safeguard tests pass with the runtime-33 aggregate chain retained.",
+          "Six strict hierarchy workspace source contracts pass.",
+          "Four independent desktop/mobile manager/member Playwright scenarios pass.",
+          "Unknown health remains a null score and unknown status while exact policy rules, own input, child values, weights, explanations, and lineage remain inspectable."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0032_journey_taxonomy_retirement_safeguard.sql",
+          "backend/src/journeyHierarchyRepository.ts",
+          "backend/src/journeyHierarchyRoutes.ts",
+          "backend/test/journey-hierarchy-routes.test.ts",
+          "backend/test/journey-taxonomy-retirement-safeguard-migration.test.ts",
+          "frontend/src/lib/journeyHierarchy.ts",
+          "frontend/src/pages/JourneyHierarchyPage.tsx",
+          "frontend/test/journey-hierarchy-workspace.test.mjs",
+          "e2e/journey-hierarchy.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove enterprise hierarchy load, export/saved-view integration, accessibility/security certification, or signed Phase 4 release approval.",
+        "Does not infer a zero health score from missing observations."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0032_journey_taxonomy_retirement_safeguard.sql",
+        "backend/src/journeyHierarchyRepository.ts",
+        "backend/src/journeyHierarchyRoutes.ts",
+        "backend/test/journey-hierarchy-routes.test.ts",
+        "backend/test/journey-taxonomy-retirement-safeguard-migration.test.ts",
+        "frontend/src/lib/journeyHierarchy.ts",
+        "frontend/src/pages/JourneyHierarchyPage.tsx",
+        "frontend/test/journey-hierarchy-workspace.test.mjs",
+        "e2e/journey-hierarchy.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "backend-complete-suite-runtime34-2026-08-07",
+      "requirementIds": ["P3-03", "P3-04", "P3-05", "P3-09", "P4-02", "P4-08", "P5C-02", "X-07"],
+      "class": "Tests",
+      "summary": "The complete backend suite is green through runtime 34 after portfolio attribution, collaboration routing/offboarding parity, hierarchy health, and actual-path intelligence changes.",
+      "command": "npm test --workspace backend",
+      "artifactPath": "backend/test",
+      "observed": {
+        "proves": [
+          "574 of 574 backend tests passed on the current August 7 worktree.",
+          "The suite includes mounted portfolio, hierarchy, blueprint, identity, actual-path intelligence, and collaboration route/domain coverage.",
+          "SQLite collaboration attribution now survives offboarding while new writes still require current membership.",
+          "Runtime configuration and the aggregate contract expectation both resolve to runtime 34 in this green run."
+        ]
+      },
+      "notClaimed": [
+        "Does not replace PostgreSQL Docker E2E, frontend/browser, security, accessibility, performance, or external approval gates.",
+        "Does not prove the complete programme is Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src",
+        "backend/test",
+        "backend/migrations/postgres",
+        "backend/package.json"
+      ]
+    },
+    {
+      "evidenceId": "journey-collaboration-product-2026-08-07",
+      "requirementIds": ["P3-04", "P3-05", "X-02"],
+      "class": "Tests",
+      "summary": "The mounted Journey collaboration API and routed workspace provide tenant-scoped discussion, notification, role, governance, activity, and settings workflows.",
+      "command": "npx tsx --test backend/test/journey-collaboration-routes.test.ts backend/test/journey-collaboration.test.ts backend/test/journey-collaboration-schema.test.ts && node --test frontend/test/journey-collaboration-workspace.test.mjs && npx playwright test e2e/journey-collaboration.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "frontend/src/pages/JourneyCollaborationPage.tsx",
+      "observed": {
+        "proves": [
+          "Fifty-nine focused backend collaboration route/domain/schema tests pass.",
+          "Six strict frontend workspace source contracts pass.",
+          "Four isolated desktop/mobile manager/member Playwright scenarios pass on an independent loopback port and state directory.",
+          "The product enforces request-derived tenancy, role and entitlement boundaries, two-person approval, optimistic revisions, idempotency, read-only kill switches, and content-safe activity presentation."
+        ],
+        "artifactPaths": [
+          "backend/src/journeyCollaboration.ts",
+          "backend/src/journeyCollaborationRoutes.ts",
+          "backend/test/journey-collaboration-routes.test.ts",
+          "frontend/src/lib/journeyCollaboration.ts",
+          "frontend/src/pages/JourneyCollaborationPage.tsx",
+          "frontend/test/journey-collaboration-workspace.test.mjs",
+          "e2e/journey-collaboration.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove broad notification delivery, retention/deletion sweeps, enterprise load, security/accessibility certification, or signed Phase 3 release approval.",
+        "Does not mark P3-04 or P3-05 Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyCollaboration.ts",
+        "backend/src/journeyCollaborationRoutes.ts",
+        "backend/test/journey-collaboration-routes.test.ts",
+        "frontend/src/lib/journeyCollaboration.ts",
+        "frontend/src/pages/JourneyCollaborationPage.tsx",
+        "frontend/test/journey-collaboration-workspace.test.mjs",
+        "e2e/journey-collaboration.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "actual-path-intelligence-product-2026-08-07",
+      "requirementIds": ["P5C-02", "X-06", "X-07"],
+      "class": "Tests",
+      "summary": "Deterministic actual-path anomaly indicators and human-review-only stage-inference recommendations are persisted and productised with explicit provenance and abstention.",
+      "command": "npx tsx --test backend/test/journey-actual-path-intelligence.test.ts backend/test/journey-actual-path-intelligence-routes.test.ts backend/test/journey-actual-path-intelligence-migration.test.ts && node --test frontend/test/journey-path-intelligence-workspace.test.mjs && npx playwright test e2e/journey-metrics.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "frontend/src/pages/JourneyMetricsPage.tsx",
+      "observed": {
+        "proves": [
+          "Deterministic detector, route, persistence, lifecycle, tenancy, entitlement, and member-denial tests pass.",
+          "Three strict path-intelligence workspace source contracts pass.",
+          "The complete Journey Metrics desktop/mobile Playwright spec passes its six applicable scenarios, including manager save/review and member suppression/staleness behavior.",
+          "Every recommendation remains human_review_only and no stage mutation is applied automatically."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0033_journey_actual_path_intelligence.sql",
+          "backend/src/journeyActualPathIntelligence.ts",
+          "backend/src/journeyActualPathIntelligenceRepository.ts",
+          "backend/test/journey-actual-path-intelligence-routes.test.ts",
+          "frontend/src/lib/journeyMetrics.ts",
+          "frontend/src/pages/JourneyMetricsPage.tsx",
+          "frontend/test/journey-path-intelligence-workspace.test.mjs",
+          "e2e/journey-metrics.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove predictive churn/conversion, causal interpretation, product-scale detector calibration, or automatic stage changes.",
+        "Does not replace accessibility/security/load/rollout approval or mark P5C-02 Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0033_journey_actual_path_intelligence.sql",
+        "backend/src/journeyActualPathIntelligence.ts",
+        "backend/src/journeyActualPathIntelligenceRepository.ts",
+        "backend/test/journey-actual-path-intelligence-routes.test.ts",
+        "frontend/src/lib/journeyMetrics.ts",
+        "frontend/src/pages/JourneyMetricsPage.tsx",
+        "frontend/test/journey-path-intelligence-workspace.test.mjs",
+        "e2e/journey-metrics.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "postgres-runtime34-targeted-browser-2026-08-07",
+      "requirementIds": ["P3-02", "P3-04", "P3-05", "P4-02", "P4-08", "P5C-02", "X-07"],
+      "class": "Runtime",
+      "summary": "The disposable PostgreSQL runtime-34 contract and targeted collaboration/metrics browser matrix pass with exact cleanup.",
+      "command": "node scripts/test-postgres-e2e.mjs e2e/journey-collaboration.spec.ts e2e/journey-metrics.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "scripts/test-postgres-e2e.mjs",
+      "observed": {
+        "proves": [
+          "Forward migrations 16 through 34, required rollback/replay slices, schema verification, least privilege, nested rollback, and exact disposable-database cleanup pass against PostgreSQL 16.",
+          "The runtime reports 93 main tables, 184 extension tables, 275 contract indexes, and 171 protected privilege tables.",
+          "Executed probes positively prove portfolio owner offboarding and inline policy creation, collaboration offboarding, hierarchy membership races, append-only histories, and current runtime contracts.",
+          "Ten applicable collaboration and Journey Metrics desktop/mobile scenarios pass against PostgreSQL; six intentionally project-specific scenarios skip on the opposite viewport."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0034_journey_portfolio_owner_attribution.sql",
+          "scripts/postgres-runtime-contract.mjs",
+          "scripts/probe-journey-portfolio-postgres.mjs",
+          "scripts/probe-journey-collaboration-postgres.mjs",
+          "scripts/probe-journey-hierarchy-blueprints-postgres.mjs",
+          "scripts/test-postgres-e2e.mjs",
+          "backend/test/e2e-server.ts",
+          "playwright.config.ts",
+          "e2e/journey-collaboration.spec.ts",
+          "e2e/journey-metrics.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not replace the complete repository-wide Playwright matrix, sustained load/soak, failover, accessibility/security certification, or signed rollout approval.",
+        "Does not mark any requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0034_journey_portfolio_owner_attribution.sql",
+        "scripts/postgres-runtime-contract.mjs",
+        "scripts/probe-journey-portfolio-postgres.mjs",
+        "scripts/probe-journey-collaboration-postgres.mjs",
+        "scripts/probe-journey-hierarchy-blueprints-postgres.mjs",
+        "scripts/test-postgres-e2e.mjs",
+        "backend/test/e2e-server.ts",
+        "playwright.config.ts",
+        "e2e/journey-collaboration.spec.ts",
+        "e2e/journey-metrics.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "journey-orchestration-domain-foundation-2026-08-07",
+      "requirementIds": ["P5D-01", "P5D-02", "P5D-03", "P5D-04", "X-05", "X-06"],
+      "class": "Tests",
+      "summary": "A deterministic safe-orchestration domain establishes immutable workflow versions, explainable simulation, bounded automation, approval defaults, safety gates, and stable action identities.",
+      "command": "npx tsx --test backend/test/journey-orchestration-domain.test.ts && npm run typecheck --workspace backend",
+      "artifactPath": "backend/src/journeyOrchestrationDomain.ts",
+      "observed": {
+        "proves": [
+          "Ten focused workflow validation, revision, publication, retirement, simulation, approval, idempotency, capability, and audit tests pass.",
+          "Dry-run and historical simulation share one evaluator and expose every trigger, condition, twelve safety gates, approval, and final decision.",
+          "Missing facts or gates fail closed; consequential and external actions require approval unless a separately authorised bounded policy covers the exact adapter, recipient scope, purpose, and caps.",
+          "Published versions are deeply immutable and content hashed; simulation audit facts hash subject and trigger references without retaining supplied fact content."
+        ],
+        "artifactPaths": [
+          "backend/src/journeyOrchestrationDomain.ts",
+          "backend/test/journey-orchestration-domain.test.ts",
+          "docs/journey-management/architecture/ADR-0006-orchestration-safety.md"
+        ]
+      },
+      "notClaimed": [
+        "Does not provide persistence, routes, a user workspace, transactional outbox, provider dispatch, retry/reconciliation, or durable kill switches.",
+        "Does not mark P5D-01 Implemented or any P5D requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyOrchestrationDomain.ts",
+        "backend/test/journey-orchestration-domain.test.ts",
+        "docs/journey-management/architecture/ADR-0006-orchestration-safety.md"
+      ]
+    },
+    {
+      "evidenceId": "journey-documentation-index-validation-2026-08-07",
+      "requirementIds": ["X-10"],
+      "class": "Tests",
+      "summary": "Journey Management documentation has an audience-oriented content index and executable referential-integrity gate.",
+      "command": "npm run validate:journey-docs",
+      "artifactPath": "docs/journey-management/index.md",
+      "observed": {
+        "proves": [
+          "All 41 non-index documents under docs/journey-management are listed.",
+          "All local Markdown links resolve and all seven JSON artifacts parse.",
+          "Index descriptions are content-derived and constrained to three through ten words."
+        ],
+        "artifactPaths": [
+          "docs/journey-management/index.md",
+          "scripts/validate-journey-docs.mjs"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove audience-specific quickstarts, complete public API references, hosted publication, search, accessibility, or exercised incident guides.",
+        "Does not mark X-10 Implemented or Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "docs/journey-management",
+        "scripts/validate-journey-docs.mjs",
+        "package.json"
+      ]
+    },
+    {
+      "evidenceId": "phase2-local-release-gate-2026-08-07",
+      "requirementIds": ["P2-11"],
+      "class": "Tests",
+      "summary": "The executable Phase 2 gate passes source parity, focused access/deletion/citation coverage, metadata checks, and a bounded local freshness/rebuild characterization while refusing release eligibility without ratification and approval.",
+      "command": "npm run report:journey:phase2-release-gate",
+      "artifactPath": "docs/journey-management/operations/latest-phase2-release-gate-report.json",
+      "observed": {
+        "state": "In progress",
+        "proves": [
+          "22 of 22 deterministic survey, operational, and native-source parity tests passed.",
+          "7 of 7 focused Research Hub and metric access, deletion, citation, and persistence tests passed.",
+          "A 2,000-response SQLite candidate probe produced fresh output, correction revision 2, deletion revision 3, sample size 1,999, and complete source/window/sample metadata.",
+          "Initial, correction, and deletion rebuilds each passed the explicit five-second local candidate budget."
+        ],
+        "blockers": [
+          "PHASE2_LOAD_PROFILE_NOT_RATIFIED",
+          "PHASE2_SLO_APPROVAL_NOT_RECORDED"
+        ],
+        "artifactPaths": [
+          "scripts/probe-phase2-metric-load.mts",
+          "scripts/generate-phase2-release-gate-report.mjs",
+          "docs/journey-management/operations/latest-phase2-release-gate-report.json",
+          "docs/journey-management/operations/latest-phase2-release-gate-report.md"
+        ]
+      },
+      "notClaimed": [
+        "Does not treat a single-process SQLite characterization as the agreed production load profile.",
+        "Does not prove independent security/privacy review, multi-node failover, sustained soak, accessibility certification, or signed Phase 2 release approval.",
+        "Does not mark P2-11 Implemented or Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "scripts/probe-phase2-metric-load.mts",
+        "scripts/generate-phase2-release-gate-report.mjs",
+        "backend/src/journeyMetricCalculations.ts",
+        "backend/src/journeyOperationalMeasures.ts",
+        "backend/src/journeyResearchHub.ts",
+        "backend/src/journeyMetrics.ts",
+        "backend/src/journeyMetricRebuild.ts",
+        "backend/test/journey-metric-calculations.test.ts",
+        "backend/test/journey-operational-measures.test.ts",
+        "backend/test/journey-native-metric-sources.test.ts",
+        "backend/test/journey-research-hub.test.ts",
+        "backend/test/journey-evidence-lifecycle.test.ts",
+        "backend/test/journey-metrics-persistence.test.ts"
+      ]
+    },
+    {
+      "evidenceId": "runtime35-orchestration-and-full-regression-2026-08-07",
+      "requirementIds": ["P5D-01", "P5D-02", "P5D-04", "X-02", "X-06", "X-07"],
+      "class": "Tests",
+      "summary": "Runtime 35 durably persists tenant-scoped Journey workflow definitions, immutable versions, simulations, held actions, approvals and content-safe audit history; aggregate backend, PostgreSQL and desktop/mobile regression gates pass after fixing uncovered lifecycle, permission and cross-test state defects.",
+      "command": "npm test --workspace backend && npm test --workspace frontend && npm run typecheck --workspace frontend && npm run build --workspace frontend && powershell -File scripts/test-postgres-runtime-compatibility.ps1 && PLAYWRIGHT_PORT=5535 node scripts/test-postgres-e2e.mjs --contract-only && PLAYWRIGHT_PORT=5539 PLAYWRIGHT_STATE_KEY=e2e-full-runtime35-final npx playwright test",
+      "observed": {
+        "state": "In progress",
+        "proves": [
+          "Fourteen focused orchestration domain, runtime-35 migration and mounted-route tests pass.",
+          "The complete backend suite passes 589 of 589 tests; frontend source tests, TypeScript and the production build pass.",
+          "The live disposable PostgreSQL runtime 16 through 35 rollback/replay chain passes, including deliberate runtime-35 rollback, replay, least-privilege verification over 179 protected tables, nested rollback and exact cleanup.",
+          "The complete 238-entry desktop/mobile Playwright inventory exits zero with 145 executed scenarios passed and 93 intentional project or environment guards skipped.",
+          "Regression fixes prove retired workflow reads and atomic retirement, manager-write enforcement for persisted simulation, administrator-only bounded automation authorisation, restored subscription fixture state, serialized tutorial reset, strict actual-path fixtures and stable rich-card file selection across refreshes."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0035_journey_orchestration.sql",
+          "backend/src/journeyOrchestrationDomain.ts",
+          "backend/src/journeyOrchestrationRepository.ts",
+          "backend/src/journeyOrchestrationRoutes.ts",
+          "backend/test/journey-orchestration-domain.test.ts",
+          "backend/test/journey-orchestration-migration.test.ts",
+          "backend/test/journey-orchestration-routes.test.ts",
+          "scripts/test-postgres-e2e.mjs"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove an executable dispatcher, retries, leases, dead letters, real adapter effects or no-duplicate consequential delivery.",
+        "Does not prove server-derived consent, suppression, caps, quotas and quiet-hours resolution or durable pending-work kill-switch recovery.",
+        "Does not prove a routed orchestration workspace, product-scale load, accessibility/security certification, sustained production SLOs or signed rollout approval.",
+        "Does not mark any requirement Verified and does not authorise SDK publication."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0035_journey_orchestration.sql",
+        "backend/src/journeyOrchestrationDomain.ts",
+        "backend/src/journeyOrchestrationRepository.ts",
+        "backend/src/journeyOrchestrationRoutes.ts",
+        "backend/test/e2e-server.ts",
+        "frontend/src/components/journeys/JourneyRichCardWorkspace.tsx",
+        "e2e/experience.spec.ts",
+        "e2e/journey-event-control-plane.spec.ts",
+        "e2e/journey-metric-analytics.spec.ts",
+        "e2e/journey-rich-cards.spec.ts",
+        "e2e/tutorials.spec.ts",
+        "scripts/postgres-runtime-contract.mjs",
+        "scripts/test-postgres-e2e.mjs"
+      ]
+    },
+    {
+      "evidenceId": "predictive-governance-foundation-2026-08-07",
+      "requirementIds": ["P5C-03", "X-05", "X-06"],
+      "class": "Tests",
+      "summary": "An abstention-first predictive governance domain establishes the minimum independently approved, validated, drift-aware, explainable and opt-in contract required before churn or conversion prediction can be productised.",
+      "command": "npx tsx --test backend/test/journey-predictive-governance.test.ts && npm run typecheck --workspace backend",
+      "observed": {
+        "state": "Foundation",
+        "proves": [
+          "Five of five focused predictive-governance tests pass.",
+          "Model acceptance requires independent approval, consistent class counts and a non-overlapping out-of-time validation window.",
+          "Prediction eligibility fails closed on consent, opt-in, purpose, sufficiency, validation performance, drift, OOD, feature coverage, output and explanation evidence.",
+          "Eligible output exposes exact model/version/hash/window/confidence and ordered feature contributions while hashing subject identity.",
+          "Audit evidence excludes raw subject identity and feature values."
+        ],
+        "artifactPaths": [
+          "backend/src/journeyPredictiveGovernance.ts",
+          "backend/test/journey-predictive-governance.test.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove a trained or approved production model, persistence, API, UI, scheduled drift monitoring, calibration/fairness study or product outcomes.",
+        "Does not prove product-scale performance, independent security/privacy review, rollout or sustained production SLOs.",
+        "Does not mark P5C-03 Implemented or Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyPredictiveGovernance.ts",
+        "backend/test/journey-predictive-governance.test.ts"
+      ]
+    },
+    {
+      "evidenceId": "runtime37-orchestration-action-connectors-2026-08-07",
+      "requirementIds": ["P5D-01", "P5D-02", "P5D-04", "P5E-03", "X-01", "X-02", "X-06"],
+      "class": "Tests",
+      "summary": "The routed workflow product, runtime-36 no-effect action queue and runtime-37 approved connector/import foundation pass focused, aggregate and live PostgreSQL gates while preserving an explicit no-real-dispatch boundary.",
+      "command": "npm test --workspace backend && npm run typecheck --workspace frontend && npm run build --workspace frontend && npx playwright test e2e/journey-orchestration.spec.ts && node scripts/test-postgres-e2e.mjs --contract-only",
+      "observed": {
+        "state": "In progress",
+        "proves": [
+          "The complete backend suite passes 608 of 608 tests at runtime 37.",
+          "Thirty-one combined predictive, orchestration, action-runtime, connector, migration and route tests pass after independent review.",
+          "Journey Orchestration source contracts, frontend typecheck/build and four desktop/mobile manager/member browser scenarios pass.",
+          "Runtime 36 approval admission, fenced retries, dead letters, pause races and deterministic no-effect completion are persisted and tested without enabling an external adapter.",
+          "Runtime 37 approved connector imports enforce cursor CAS, concurrent PostgreSQL idempotency locking, bounded retry-after, partial receipts, hashed identifiers and non-resurrecting tombstones.",
+          "Live PostgreSQL reached runtime 37 with rollback/replay, migration contract and least-privilege verification over 202 runtime extension tables and 189 protected tables.",
+          "The complete 242-entry desktop/mobile Playwright inventory exits zero with 149 executed scenarios passed and 93 explicit project/environment guards skipped."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0036_journey_action_runtime.sql",
+          "backend/migrations/postgres/0037_journey_connector_imports.sql",
+          "backend/src/journeyActionRuntimeRepository.ts",
+          "backend/src/journeyConnectorImports.ts",
+          "backend/src/journeyConnectorImportRoutes.ts",
+          "frontend/src/pages/JourneyOrchestrationPage.tsx",
+          "e2e/journey-orchestration.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove real survey/ticket/assistant/notification/webhook adapter dispatch or provider outcomes.",
+        "Does not prove live gate resolution, a daemon scheduler, held-work release, multi-node no-duplicate delivery or production soak.",
+        "Does not prove live external connector credentials/adapters, downstream deletion completion, connector UI, load/security review or customer approval.",
+        "Does not mark these requirements Verified and does not authorise SDK publication."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0036_journey_action_runtime.sql",
+        "backend/migrations/postgres/0037_journey_connector_imports.sql",
+        "backend/src/journeyActionRuntimeRepository.ts",
+        "backend/src/journeyConnectorImports.ts",
+        "backend/src/journeyConnectorImportRoutes.ts",
+        "backend/src/journeyOrchestrationRepository.ts",
+        "backend/src/journeyOrchestrationRoutes.ts",
+        "frontend/src/lib/journeyOrchestration.ts",
+        "frontend/src/pages/JourneyOrchestrationPage.tsx",
+        "e2e/journey-orchestration.spec.ts",
+        "scripts/postgres-runtime-contract.mjs",
+        "scripts/test-postgres-e2e.mjs"
+      ]
+    },
+    {
+      "evidenceId": "runtime38-40-reviewed-effects-predictive-kill-switch-2026-08-08",
+      "requirementIds": ["P5C-03", "P5D-02", "P5D-03", "P5D-04", "X-03", "X-05", "X-06", "X-07"],
+      "class": "Tests",
+      "summary": "Runtimes 38 through 40 add reviewed atomic effects, persisted abstention-first predictive governance, and durable five-level operator kill switches with focused failure and browser evidence.",
+      "command": "npx tsx --test backend/test/journey-reviewed-adapters.test.ts backend/test/journey-reviewed-adapter-worker.test.ts backend/test/journey-predictive-governance.test.ts backend/test/journey-predictive-governance-routes.test.ts backend/test/journey-kill-switch-domain.test.ts backend/test/journey-kill-switch-routes.test.ts",
+      "artifactPath": "backend/migrations/postgres/0038_journey_reviewed_adapters.sql",
+      "observed": {
+        "proves": [
+          "Reviewed service-recovery, assistant and internal-notification effects settle atomically with immutable receipts; signed webhooks apply bounded signing, nonce and SSRF controls.",
+          "Predictive decisions persist exact approved model/version/drift evidence and abstain when approval, consent, validation, drift, coverage or explanation gates fail.",
+          "Platform, space, workflow, adapter and pseudonymous-profile switches persist idempotent revisions and pause/resume reconciliation behind role boundaries."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0038_journey_reviewed_adapters.sql",
+          "backend/migrations/postgres/0039_journey_predictive_governance.sql",
+          "backend/migrations/postgres/0040_journey_kill_switch.sql",
+          "frontend/src/pages/JourneyPredictiveGovernancePage.tsx",
+          "frontend/src/pages/JourneyKillSwitchPage.tsx",
+          "e2e/journey-predictive-governance.spec.ts",
+          "e2e/journey-kill-switches.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove a trained production predictive model, fairness or calibration approval.",
+        "Does not prove a live external provider effect, production exactly-once delivery, accessibility certification or signed rollout approval."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0038_journey_reviewed_adapters.sql",
+        "backend/migrations/postgres/0039_journey_predictive_governance.sql",
+        "backend/migrations/postgres/0040_journey_kill_switch.sql",
+        "backend/src/journeyReviewedAdapters.ts",
+        "backend/src/journeyKillSwitchRepository.ts",
+        "frontend/src/pages/JourneyPredictiveGovernancePage.tsx",
+        "frontend/src/pages/JourneyKillSwitchPage.tsx"
+      ]
+    },
+    {
+      "evidenceId": "runtime41-stage-intelligence-product-2026-08-08",
+      "requirementIds": ["P2-07", "P2-08", "P2-09", "X-02", "X-05", "X-06", "X-07"],
+      "class": "Tests",
+      "summary": "Runtime 41 provides governed journey-stage cohort, persona, segment and channel comparison with deterministic sentiment/emotion and privacy-safe export.",
+      "command": "npx tsx --test backend/test/journey-stage-intelligence.test.ts backend/test/journey-stage-intelligence-routes.test.ts backend/test/journey-stage-intelligence-migration.test.ts backend/test/journey-stage-intelligence-sql.test.ts backend/test/journey-stage-intelligence-retention-worker.test.ts",
+      "artifactPath": "backend/migrations/postgres/0041_journey_stage_intelligence.sql",
+      "observed": {
+        "proves": [
+          "Facts retain server-owned metric/source/window/version lineage with HMAC subject and source references and bounded allowlisted dimensions.",
+          "Primary and secondary suppression, unknown/null states, repeated-subject denominators and bounded export prevent reconstructing suppressed groups.",
+          "Manager policy revision and member read access pass focused route and responsive desktop/mobile product tests; retention is resumable and physically meaningful."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0041_journey_stage_intelligence.sql",
+          "backend/src/journeyStageIntelligence.ts",
+          "backend/src/journeyStageIntelligenceSqlRepository.ts",
+          "frontend/src/pages/JourneyStageIntelligencePage.tsx",
+          "e2e/journey-stage-intelligence.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove ticket or social production feeds, LLM sentiment inference, product-scale calibration, accessibility certification or external privacy approval.",
+        "Does not mark P2-07, P2-08 or P2-09 Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0041_journey_stage_intelligence.sql",
+        "backend/src/journeyStageIntelligence.ts",
+        "backend/src/journeyStageIntelligenceSqlRepository.ts",
+        "backend/src/journeyStageIntelligenceRoutes.ts",
+        "frontend/src/pages/JourneyStageIntelligencePage.tsx",
+        "e2e/journey-stage-intelligence.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "runtime42-44-action-worker-safety-2026-08-08",
+      "requirementIds": ["P5D-02", "P5D-03", "P5D-04", "X-01", "X-03", "X-05", "X-06", "X-07"],
+      "class": "Runtime",
+      "summary": "Runtimes 42 and 44 connect disabled-by-default service-authority execution, live safety reservations and reviewed-effect settlement without enabling unreviewed external delivery.",
+      "command": "node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "backend/migrations/postgres/0042_journey_action_worker_safety.sql",
+      "observed": {
+        "proves": [
+          "Execution rechecks consent, suppression, source and kill-switch state, quiet hours, frequency and quota using expiring service authority and fenced atomic reservations.",
+          "Crash/replay, stale fencing and injected failures cannot create a second canonical no-effect or reviewed-effect settlement.",
+          "Runtime 44 prevents a new reservation after either Runtime 42 or Runtime 38 receipt completion; ordinary worker activation remains disabled by default."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0042_journey_action_worker_safety.sql",
+          "backend/migrations/postgres/0044_journey_reviewed_action_worker_bridge.sql",
+          "backend/src/journeyActionWorkerSafetyRepository.ts",
+          "backend/src/journeyActionWorkerService.ts",
+          "scripts/probe-journey-action-worker-postgres.mjs"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove live survey, ticket, assistant, notification or webhook provider acceptance.",
+        "Does not prove multi-node consequential exactly-once delivery, sustained soak, security certification or signed operations approval."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0042_journey_action_worker_safety.sql",
+        "backend/migrations/postgres/0044_journey_reviewed_action_worker_bridge.sql",
+        "backend/src/journeyActionWorkerSafetyRepository.ts",
+        "backend/src/journeyActionWorkerService.ts",
+        "scripts/probe-journey-action-worker-postgres.mjs"
+      ]
+    },
+    {
+      "evidenceId": "runtime43-45-authoritative-stage-feeds-2026-08-08",
+      "requirementIds": ["P2-05", "P2-07", "P2-08", "P2-09", "P5A-05", "P5A-07", "X-05", "X-06", "X-07"],
+      "class": "Data",
+      "summary": "Runtimes 43 and 45 feed stage intelligence from authoritative persisted survey responses and governed journey events through server-owned versioned mappings and resumable workers.",
+      "command": "npx tsx --test backend/test/journey-stage-survey-feed-worker.test.ts backend/test/journey-stage-survey-feed-sql.test.ts backend/test/journey-event-stage-intelligence-domain.test.ts backend/test/journey-event-stage-intelligence-repository.test.ts backend/test/journey-event-stage-intelligence-worker.test.ts",
+      "artifactPath": "backend/migrations/postgres/0043_journey_stage_survey_feed.sql",
+      "observed": {
+        "proves": [
+          "Survey mappings pin exact binding, question, calculator and metric versions; atomic response outbox/checkpoints apply consent, purpose, retention and deletion propagation.",
+          "Journey-event mappings pin source, schema, map, stage-rule and metric versions; workers are bounded, fenced and disabled by default.",
+          "Both feeds derive HMAC identity and lineage server-side and reject raw-text or caller-controlled lineage fabrication."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0043_journey_stage_survey_feed.sql",
+          "backend/migrations/postgres/0045_journey_event_stage_intelligence_adapter.sql",
+          "backend/src/journeyStageSurveyFeedRepository.ts",
+          "backend/src/journeyEventStageIntelligenceRepository.ts",
+          "backend/src/journeyEventStageIntelligenceWorker.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not claim in-place survey correction support where the legacy response API supplies no authoritative revision identity; that path fails closed.",
+        "Does not prove ticket/social feeds, production-scale latency, external privacy approval or release eligibility."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0043_journey_stage_survey_feed.sql",
+        "backend/migrations/postgres/0045_journey_event_stage_intelligence_adapter.sql",
+        "backend/src/journeyStageSurveyFeedRepository.ts",
+        "backend/src/journeyEventStageIntelligenceRepository.ts",
+        "backend/src/journeyEventStageIntelligenceWorker.ts"
+      ]
+    },
+    {
+      "evidenceId": "portfolio-kanban-executive-report-2026-08-08",
+      "requirementIds": ["P3-01", "P3-02", "P3-08", "P3-09", "P3-11", "X-02", "X-07"],
+      "class": "Tests",
+      "summary": "The portfolio workspace now provides canonical lifecycle Kanban and aggregate executive reporting/export without fabricating saved-view or protected-transition semantics.",
+      "command": "npx tsx --test backend/test/journey-portfolio.test.ts backend/test/journey-portfolio-routes.test.ts && node --test frontend/test/journey-portfolio-workspace.test.mjs && npx playwright test e2e/journey-portfolio.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "backend/src/journeyPortfolioReporting.ts",
+      "observed": {
+        "proves": [
+          "Eighteen backend portfolio tests and six frontend source contracts pass.",
+          "Four isolated desktop/mobile scenarios pass for status-driven Kanban, manager/member behaviour and executive reporting.",
+          "The CSV is bounded and aggregate-only, neutralises spreadsheet formulas, excludes item titles and identifiers, and states that recorded comparisons do not establish causation."
+        ],
+        "artifactPaths": [
+          "backend/src/journeyPortfolioReporting.ts",
+          "backend/src/journeyPortfolioRoutes.ts",
+          "frontend/src/pages/JourneyPortfolioPage.tsx",
+          "e2e/journey-portfolio.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not claim durable portfolio saved views because Runtime 27 has no portfolio-specific saved-view identity.",
+        "Does not claim approval-gated drag transitions because the current review schema cannot persist the exact requested target lifecycle.",
+        "Does not prove enterprise performance, accessibility certification, retention completion or Phase 3 release approval."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyPortfolioReporting.ts",
+        "backend/src/journeyPortfolioRoutes.ts",
+        "backend/test/journey-portfolio-routes.test.ts",
+        "frontend/src/pages/JourneyPortfolioPage.tsx",
+        "frontend/test/journey-portfolio-workspace.test.mjs",
+        "e2e/journey-portfolio.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "runtime45-aggregate-regression-2026-08-08",
+      "requirementIds": ["P2-07", "P2-08", "P2-09", "P3-08", "P5A-05", "P5A-07", "P5C-03", "P5D-02", "P5D-03", "P5D-04", "X-03", "X-05", "X-06", "X-07"],
+      "class": "Runtime",
+      "summary": "The current aggregate Runtime 45 backend, frontend, browser and disposable PostgreSQL regression completed without failures while retaining explicit external and elapsed-time blockers.",
+      "command": "npm test --workspace backend && npm test --workspace frontend && npm run typecheck && npm run build && npx playwright test && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "scripts/test-postgres-e2e.mjs",
+      "observed": {
+        "proves": [
+          "Backend 779 of 779 and frontend source 204 of 204 tests passed with zero skips; typecheck and production build passed.",
+          "The 262-entry browser inventory executed 163 scenarios successfully, intentionally skipped 99 project/environment-inapplicable entries, and failed zero; skipped entries are not described as executed.",
+          "Disposable PostgreSQL reached schema 45 with rollback/replay, 247 extension tables, 234 protected privilege tables, zero residual durable writes and exact cleanup."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0045_journey_event_stage_intelligence_adapter.sql",
+          "scripts/postgres-runtime-contract.mjs",
+          "scripts/test-postgres-e2e.mjs",
+          "playwright.config.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove accessibility certification, independent security/privacy approval, real provider acceptance, multi-node failover, sustained SLO/soak, signed release approval or publication.",
+        "Does not prove ChatGPT/Codex token refresh; a same-day run can show only a refresh candidate, and no live login was run for this evidence.",
+        "Does not mark any requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0045_journey_event_stage_intelligence_adapter.sql",
+        "backend/src/app.ts",
+        "frontend/src/App.tsx",
+        "scripts/postgres-runtime-contract.mjs",
+        "scripts/test-postgres-e2e.mjs",
+        "playwright.config.ts"
+      ]
+    },
+    {
+      "evidenceId": "runtime45-external-and-elapsed-gates-open-2026-08-08",
+      "requirementIds": ["P2-11", "P3-11", "P5A-08", "P5C-03", "P5D-03", "X-05", "X-08", "X-09", "X-10"],
+      "class": "Operations",
+      "summary": "External approval, live-provider, elapsed-time, accessibility, SLO, rollout and publication gates remain open after Runtime 45 local regression.",
+      "artifactPath": "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md",
+      "observed": {
+        "openGates": [
+          "Independent security and privacy approval, accessibility certification, ratified load profile/SLO and sustained soak are absent.",
+          "No live consequential provider acceptance, signed rollout approval or SDK/documentation publication is recorded.",
+          "The opt-in ChatGPT/Codex live harness was not executed here; long-lived credential reuse can only become a refresh candidate after the required elapsed checkpoint and cannot prove token expiry metadata by inference."
+        ]
+      },
+      "notClaimed": [
+        "Does not interpret a passing local regression as external approval or programme completion.",
+        "Does not mark any requirement Verified."
+      ],
+      "status": "blocking",
+      "invalidatedByPaths": [
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-COMPLETION-PROOF.md",
+        "docs/CONNECTED-JOURNEY-MANAGEMENT-TRACEABILITY.md",
+        "docs/journey-management/operations/latest-connected-journey-release-gate-report.json",
+        "docs/journey-management/operations/latest-journey-closure-blockers-report.json"
+      ]
+    },
+    {
+      "evidenceId": "stage-intelligence-sentiment-trends-2026-08-08",
+      "requirementIds": ["P2-09", "X-02", "X-05", "X-07"],
+      "class": "Tests",
+      "summary": "The Runtime 41 stage-intelligence product now derives bounded sentiment and emotion time-series with privacy recalculated independently for each period.",
+      "command": "npx tsx --test backend/test/journey-stage-intelligence.test.ts backend/test/journey-stage-intelligence-routes.test.ts && node --test frontend/test/journey-stage-intelligence-parser.test.ts frontend/test/journey-stage-intelligence.test.mjs && npx playwright test e2e/journey-stage-intelligence.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "backend/src/journeyStageIntelligence.ts",
+      "observed": {
+        "proves": [
+          "Seventeen focused backend tests, three parser tests and six frontend source tests pass.",
+          "Intervals are bounded to 1 through 31 days and at most 52 buckets; empty periods remain explicit and every bucket retains exact fingerprint and lineage.",
+          "Suppression is recalculated independently per bucket rather than inherited from an aggregate, and an accessible semantic table plus interval control pass one desktop-manager and one mobile-member scenario; two opposite-project cases are intentionally skipped, not executed."
+        ],
+        "artifactPaths": [
+          "backend/src/journeyStageIntelligence.ts",
+          "backend/src/journeyStageIntelligenceRoutes.ts",
+          "frontend/src/pages/JourneyStageIntelligencePage.tsx",
+          "frontend/test/journey-stage-intelligence-parser.test.ts",
+          "e2e/journey-stage-intelligence.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove persisted trend views, alert linkage, ticket/social feeds, product-scale performance or accessibility certification.",
+        "Does not mark P2-09 Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyStageIntelligence.ts",
+        "backend/src/journeyStageIntelligenceRoutes.ts",
+        "frontend/src/lib/journeyStageIntelligence.ts",
+        "frontend/src/pages/JourneyStageIntelligencePage.tsx",
+        "frontend/test/journey-stage-intelligence-parser.test.ts",
+        "frontend/test/journey-stage-intelligence.test.mjs",
+        "e2e/journey-stage-intelligence.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "runtime46-portfolio-saved-views-and-transitions-2026-08-08",
+      "requirementIds": ["P3-06", "P3-08", "P3-10", "P3-11", "X-01", "X-02", "X-05", "X-07"],
+      "class": "Runtime",
+      "summary": "Runtime 46 adds durable private portfolio saved views and an exact approval-gated requested-target transition lifecycle without overloading Runtime 27 review rows.",
+      "command": "npx tsx --test backend/test/journey-portfolio*.test.ts && node --test frontend/test/journey-portfolio-workspace.test.mjs && npm run typecheck && npm run build && node scripts/test-postgres-e2e.mjs --contract-only && npx playwright test e2e/journey-portfolio.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "backend/migrations/postgres/0046_journey_portfolio_views_and_transitions.sql",
+      "observed": {
+        "proves": [
+          "Private saved-view definitions, immutable configuration versions, per-user default/reset and formula-safe saved-view CSV are durable and tenant scoped.",
+          "Requested-target transitions enforce optimistic revision, idempotency, one active request per item, requester cancellation, independent two-person review, drift supersession and atomic canonical item revision with content-safe events.",
+          "Thirty focused portfolio tests, five Runtime 46 tests, six frontend source tests, backend/frontend typechecks and production builds, live PostgreSQL rollback/replay/schema verification and six desktop/mobile manager/member scenarios pass."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0046_journey_portfolio_views_and_transitions.sql",
+          "backend/src/journeyPortfolioGovernance.ts",
+          "backend/src/journeyPortfolioRoutes.ts",
+          "frontend/src/pages/JourneyPortfolioPage.tsx",
+          "e2e/journey-portfolio.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove graph-scale portfolio traversal, enterprise-volume performance, accessibility certification or the signed Phase 3 release gate.",
+        "Does not mark any requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0046_journey_portfolio_views_and_transitions.sql",
+        "backend/src/journeyPortfolioGovernance.ts",
+        "backend/src/journeyPortfolioRoutes.ts",
+        "frontend/src/lib/journeyPortfolio.ts",
+        "frontend/src/pages/JourneyPortfolioPage.tsx",
+        "e2e/journey-portfolio.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "phase4-hierarchy-blueprint-export-causality-2026-08-08",
+      "requirementIds": ["P4-03", "P4-05", "P4-06", "P4-08", "X-01", "X-02", "X-05", "X-07"],
+      "class": "Tests",
+      "summary": "Hierarchy and service-blueprint workspaces now provide governed export, while blueprint versions author exact-revision portfolio causality links.",
+      "command": "npx tsx --test backend/test/journey-hierarchy*.test.ts backend/test/journey-service-blueprint*.test.ts && node --test frontend/test/journey-hierarchy-workspace.test.mjs frontend/test/journey-service-blueprint-workspace.test.mjs && npm run typecheck && npm run build && npx playwright test e2e/journey-hierarchy.spec.ts e2e/journey-service-blueprint.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "backend/src/journeyHierarchyRepository.ts",
+      "observed": {
+        "proves": [
+          "Hierarchy export contains the complete permitted graph, retired links, validation/settings, taxonomy, health policies and bounded snapshots; exact-version blueprint export contains stages, elements, relationships, resources, portfolio links, gaps and analysis.",
+          "JSON and formula-safe CSV exports require the export entitlement and journeys.export capability and record content-free governed activity.",
+          "The blueprint editor pins exact same-space portfolio item id, revision and kind with compatible typed causality semantics; focused backend/source tests, production builds and desktop/mobile browser scenarios pass."
+        ],
+        "artifactPaths": [
+          "backend/src/journeyHierarchyRepository.ts",
+          "backend/src/journeyServiceBlueprintRepository.ts",
+          "frontend/src/pages/JourneyHierarchyPage.tsx",
+          "frontend/src/pages/JourneyServiceBlueprintPage.tsx",
+          "e2e/journey-hierarchy.spec.ts",
+          "e2e/journey-service-blueprint.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove targeted before/after blueprint measurement, durable hierarchy/blueprint saved views, enterprise synthetic load, accessibility/security certification or the signed Phase 4 release matrix.",
+        "Does not mark any requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyHierarchyRepository.ts",
+        "backend/src/journeyHierarchyRoutes.ts",
+        "backend/src/journeyServiceBlueprintRepository.ts",
+        "backend/src/journeyServiceBlueprintRoutes.ts",
+        "frontend/src/pages/JourneyHierarchyPage.tsx",
+        "frontend/src/pages/JourneyServiceBlueprintPage.tsx",
+        "e2e/journey-hierarchy.spec.ts",
+        "e2e/journey-service-blueprint.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "runtime47-privacy-propagation-authority-2026-08-08",
+      "requirementIds": ["P5B-04", "P5D-02", "P5D-04", "X-02", "X-04", "X-05", "X-08"],
+      "class": "Runtime",
+      "summary": "Runtime 47 delivers a dedicated least-privilege, fenced and resumable privacy-propagation authority that fails closed at unresolved legal, backup, regional and raw-erasure boundaries.",
+      "command": "npm test --workspace backend && npm run typecheck --workspace backend && npm run build --workspace backend && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "backend/migrations/postgres/0047_journey_privacy_propagation_authority.sql",
+      "observed": {
+        "proves": [
+          "The full backend suite passes 814 of 814 with zero skips after the Runtime 47 aggregate registration.",
+          "Live PostgreSQL proves rollback/replay, dedicated-role least privilege, two adapters, contention fencing, generation-2 crash recovery and authority resume, stale-fence and cross-tenant denial, rotation, no false erasure completion, runtime verification, zero residual durable writes and exact cleanup.",
+          "Binding gaps and missing actual-path snapshot/rollup storage remain operator-required instead of being represented as completed."
+        ],
+        "artifactPaths": [
+          "backend/migrations/postgres/0047_journey_privacy_propagation_authority.sql",
+          "backend/src/journeyPrivacyPropagationDomain.ts",
+          "backend/src/journeyPrivacyPropagationWorker.ts",
+          "backend/src/journeyPrivacyPropagationRuntime.ts",
+          "scripts/test-postgres-e2e.mjs"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove external legal-hold, backup or regional deletion authority, physical raw-store erasure, production multi-node soak or signed privacy/security approval.",
+        "Does not mark P5B-04 or any other requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0047_journey_privacy_propagation_authority.sql",
+        "backend/src/journeyPrivacyPropagationDomain.ts",
+        "backend/src/journeyPrivacyPropagationWorker.ts",
+        "backend/src/journeyPrivacyPropagationRuntime.ts",
+        "backend/migrations/postgres/runtime_privileges.sql",
+        "scripts/postgres-runtime-contract.mjs",
+        "scripts/test-postgres-e2e.mjs"
+      ]
+    },
+    {
+      "evidenceId": "identity-merge-split-governance-ux-2026-08-08",
+      "requirementIds": ["P5B-01", "P5B-02", "P5B-04", "X-02", "X-05", "X-07"],
+      "class": "Tests",
+      "summary": "The Customer identities workspace productises governed merge/split preflight, confirmation, conflict handling, audit and privacy-propagation truth without allowing members to mutate identity state.",
+      "command": "node --test frontend/test/journey-identity-workspace.test.mjs && npm run typecheck --workspace frontend && npm run build --workspace frontend && npx playwright test e2e/journey-identity.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "frontend/src/pages/JourneyIdentityPage.tsx",
+      "observed": {
+        "proves": [
+          "Strict command/audit/privacy schemas, source-target preflight, an 8 through 400 character reviewed reason, explicit MERGE/SPLIT confirmation and retry-stable command IDs are present.",
+          "Conflict and enumeration-safe errors, merge/split outcome, correction/privacy checkpoint and audit history render without reporting waiting or operator-required propagation as completed.",
+          "Eight focused source tests, the 209-test frontend source suite, typecheck/build and six desktop/mobile workflow/manager/member scenarios pass."
+        ],
+        "artifactPaths": [
+          "frontend/src/lib/journeyIdentity.ts",
+          "frontend/src/pages/JourneyIdentityPage.tsx",
+          "frontend/test/journey-identity-workspace.test.mjs",
+          "e2e/journey-identity.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove production-scale merge correction, automated privacy refresh, external consent approval or full Customer 360 release qualification.",
+        "Does not mark any requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "frontend/src/lib/journeyIdentity.ts",
+        "frontend/src/pages/JourneyIdentityPage.tsx",
+        "frontend/test/journey-identity-workspace.test.mjs",
+        "e2e/journey-identity.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "journey-operations-console-2026-08-08",
+      "requirementIds": ["P5A-05", "P5D-02", "P5D-04", "P5E-03", "X-02", "X-05", "X-08"],
+      "class": "Tests",
+      "summary": "A bounded content-safe Journey Operations console consolidates existing operational queues and safety state without inventing unsupported operator mutations.",
+      "command": "npx tsx --test backend/test/journey-orchestration-routes.test.ts && node --test frontend/test/journey-orchestration-workspace.test.mjs && npm run typecheck && npm run build && npx playwright test e2e/journey-orchestration.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "backend/src/journeyOperationsConsole.ts",
+      "observed": {
+        "proves": [
+          "Request-derived tenant projections cover action queue states, stale leases/oldest pending, survey and event stage-feed retries, connector failures, durable privacy backlog, kill switches, active pauses and reviewed worker/adapter status.",
+          "Each diagnostic feed is bounded to 20 rows; unsafe error text becomes a stable content-safe code and members receive a read-only projection.",
+          "Existing fenced queue retry/cancel controls remain; unsupported stage-feed, connector and privacy recovery actions are deliberately diagnostic-only. Backend/source/typecheck/build gates and four desktop/mobile manager/member scenarios pass."
+        ],
+        "artifactPaths": [
+          "backend/src/journeyOperationsConsole.ts",
+          "backend/src/journeyOrchestrationRoutes.ts",
+          "frontend/src/lib/journeyOrchestration.ts",
+          "frontend/src/pages/JourneyOrchestrationPage.tsx",
+          "e2e/journey-orchestration.spec.ts"
+        ]
+      },
+      "notClaimed": [
+        "Does not claim recovery controls where no fenced CAS/reason contract exists, multi-region telemetry, exercised runbooks, sustained SLOs or signed operations approval.",
+        "Does not mark X-08 or any other requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyOperationsConsole.ts",
+        "backend/src/journeyOrchestrationRoutes.ts",
+        "frontend/src/lib/journeyOrchestration.ts",
+        "frontend/src/pages/JourneyOrchestrationPage.tsx",
+        "e2e/journey-orchestration.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "phase4-enterprise-synthetic-load-candidate-2026-08-08",
+      "requirementIds": ["P4-02", "P4-03", "P4-04", "P4-05", "P4-07", "P4-08", "X-07", "X-09"],
+      "class": "Tests",
+      "summary": "A deterministic no-production-data Phase 4 candidate probe exercises large hierarchy and blueprint domain, repository, projection and export paths while requiring separate exact ratification before release eligibility.",
+      "command": "node scripts/generate-phase4-enterprise-load-report.mjs",
+      "artifactPath": "docs/journey-management/operations/latest-phase4-enterprise-load-report.json",
+      "observed": {
+        "proves": [
+          "The candidate fixture contains a 500-node, 2,000-link, depth-12 hierarchy and a 50-stage, 2,500-element, 1,450-relationship blueprint with a stable fixture SHA-256.",
+          "Pure validation/traversal/breadcrumb/health/analysis/comparison plus isolated SQLite repository persistence/read, JSON/CSV export and backend projection serialization all pass the recorded candidate budgets.",
+          "The generator reports executableProofPassed true and releaseGateEligible false with blocker PHASE4_LOAD_PROFILE_AND_BUDGETS_NOT_RATIFIED."
+        ],
+        "artifactPaths": [
+          "scripts/phase4-enterprise-load-fixtures.mts",
+          "scripts/probe-phase4-enterprise-load.mts",
+          "scripts/phase4-enterprise-load-governance.mjs",
+          "scripts/generate-phase4-enterprise-load-report.mjs",
+          "docs/journey-management/operations/latest-phase4-enterprise-load-report.json"
+        ]
+      },
+      "notClaimed": [
+        "Does not prove browser rendering, accessibility, interaction latency, PostgreSQL query plans, concurrency, soak, failover, network or multi-region capacity.",
+        "Does not self-ratify the candidate profile or mark any requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "scripts/phase4-enterprise-load-fixtures.mts",
+        "scripts/probe-phase4-enterprise-load.mts",
+        "scripts/phase4-enterprise-load-governance.mjs",
+        "scripts/generate-phase4-enterprise-load-report.mjs",
+        "docs/journey-management/operations/latest-phase4-enterprise-load-report.json"
+      ]
+    },
+    {
+      "evidenceId": "runtime50-actual-path-durability-2026-08-08",
+      "requirementIds": ["P5C-01", "P5B-04", "X-02", "X-05"],
+      "class": "Runtime",
+      "summary": "Runtime 50 closes the PostgreSQL durability and privacy-authority gap for actual-path snapshots and rollups while preserving bounded descriptive semantics.",
+      "command": "npx tsx --test backend/test/journey-actual-path-runtime50-migration.test.ts backend/test/journey-actual-paths-routes.test.ts backend/test/journey-privacy-propagation-worker.test.ts && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "backend/migrations/postgres/0050_journey_actual_path_durability.sql",
+      "observed": {
+        "proves": [
+          "PostgreSQL and SQLite store bounded tenant-scoped snapshots, rollups, immutable lineage revisions and content-safe invalidation audit.",
+          "Actual-path reads and writes require the metrics, actual-path and connected-Journey entitlements plus granular journeys.read or journeys.edit capability.",
+          "Focused actual-path/privacy gates pass 15 of 15 and migration/privilege gates pass 34 of 34.",
+          "Live PostgreSQL contract-only exits zero after Runtime 50 rollback/replay, downstream probes, least-privilege verification at schema version 50 and exact cleanup."
+        ],
+        "runtimeVerification": {
+          "schemaVersion": 50,
+          "extensionTables": 272,
+          "indexes": 275,
+          "protectedPrivilegeTables": 259
+        }
+      },
+      "notClaimed": [
+        "Does not prove broader automatic reconciliation scope, sustained production-scale performance, accessibility/security approval or signed rollout.",
+        "Does not mark P5C-01 or any other requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0050_journey_actual_path_durability.sql",
+        "backend/src/journeyActualPathIntelligenceRepository.ts",
+        "backend/src/journeyPrivacyPropagationWorker.ts",
+        "backend/migrations/postgres/runtime_privileges.sql",
+        "scripts/postgres-runtime-contract.mjs",
+        "scripts/test-postgres-e2e.mjs"
+      ]
+    },
+    {
+      "evidenceId": "journey-orchestration-independent-approval-2026-08-08",
+      "requirementIds": ["P5D-01", "P5D-02", "X-02", "X-04"],
+      "class": "Tests",
+      "summary": "Journey workflow approval now enforces genuine requester/reviewer separation while allowing a delegated reviewer to approve without authoring rights.",
+      "command": "npx tsx --test backend/test/journey-orchestration-domain.test.ts backend/test/journey-orchestration-routes.test.ts && node --test frontend/test/journey-orchestration-workspace.test.mjs && npx playwright test e2e/journey-orchestration.spec.ts --project=desktop-chromium --project=mobile-chromium",
+      "artifactPath": "backend/src/journeyOrchestrationRepository.ts",
+      "observed": {
+        "proves": [
+          "Approval joins an action to the immutable simulation-run requester and rejects self-review without writing an approval or queue row.",
+          "A separately delegated space approver can approve once without receiving workflow authoring authority; ordinary members remain read-only.",
+          "Requester and reviewer identities are projected in the workspace and unverifiable or self-review actions are blocked.",
+          "Focused orchestration, route and source gates plus six desktop/mobile manager, delegated-reviewer and member scenarios pass."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove production historical-subject selection, sustained concurrency/load, accessibility/security approval or signed rollout.",
+        "Does not mark P5D-01 or any other requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/src/journeyOrchestrationRepository.ts",
+        "backend/src/journeyOrchestrationRoutes.ts",
+        "backend/test/journey-orchestration-routes.test.ts",
+        "frontend/src/lib/journeyOrchestration.ts",
+        "frontend/src/pages/JourneyOrchestrationPage.tsx",
+        "e2e/journey-orchestration.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "runtime49-export-branding-2026-08-08",
+      "requirementIds": ["P1-13", "P3-10", "X-02", "X-05", "X-07"],
+      "class": "Runtime",
+      "summary": "Runtime 49 productises immutable tenant branding and saved-view-pinned export fidelity while retaining viewer re-authorisation and explicit accessibility limitations.",
+      "command": "npx tsx --test backend/test/journey-export-branding.test.ts backend/test/journey-export-brand-routes.test.ts backend/test/journey-map-exports.test.ts backend/test/journey-saved-views.test.ts && node --test frontend/test/journey-export-brand-settings-workspace.test.mjs && npx playwright test e2e/journey-export-brand.spec.ts --project=desktop-chromium --project=mobile-chromium && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "backend/migrations/postgres/0049_journey_export_branding.sql",
+      "observed": {
+        "proves": [
+          "Verified PNG/JPEG assets, immutable profile versions, exact defaults and saved-view bindings use optimistic revisions, idempotency and content-safe audit.",
+          "Exports resolve one immutable brand snapshot and a bounded viewer-authorised source-note projection instead of trusting raw brand or source identifiers.",
+          "Focused Map 2.0, saved-view, sharing and HTTP binding regressions pass 44 of 44 alongside renderer, typecheck and production-build gates.",
+          "A desktop manager completes authenticated logo upload through pinned saved-view reload against the real API; a mobile member receives read-only branding truth.",
+          "Live PostgreSQL contract-only exits zero after Runtime 49 rollback/replay, schema verification and exact cleanup."
+        ]
+      },
+      "notClaimed": [
+        "Does not claim PDF/UA tagged-document compliance, formal PPTX or PNG accessibility certification, font/licensing ratification, sustained export load or signed release approval.",
+        "Does not mark P1-13, P3-10 or any other requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0049_journey_export_branding.sql",
+        "backend/src/journeyExportBranding.ts",
+        "backend/src/journeyExportBrandRoutes.ts",
+        "backend/src/journeyMapExports.ts",
+        "frontend/src/components/settings/JourneyExportBrandSettings.tsx",
+        "frontend/src/lib/journeyExportBrand.ts",
+        "e2e/journey-export-brand.spec.ts"
+      ]
+    },
+    {
+      "evidenceId": "runtime51-connector-execution-plane-2026-08-08",
+      "requirementIds": ["P5E-03", "P5A-05", "X-02", "X-05", "X-08"],
+      "class": "Runtime",
+      "summary": "Runtime 51 adds a disabled-by-default, least-privilege connector execution plane and a first-party service-recovery-ticket adapter without inventing third-party credentials or dispatch.",
+      "command": "npx tsx --test backend/test/journey-connector-worker-*.test.ts && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "backend/migrations/postgres/0051_journey_connector_execution_plane.sql",
+      "observed": {
+        "proves": [
+          "External-file-reference-only principals, CAS key rotation, bounded tenant and connector scope, live entitlement and principal rechecks, fenced leases, crash reap/reclaim and deletion tombstones are durable.",
+          "The first-party service_recovery_tickets_v1 adapter projects only survey, status, priority and timestamps; ticket title, notes, owner and response content are excluded.",
+          "Focused connector tests pass 16 of 16 and aggregate static tests pass 31 of 31 alongside backend typecheck/build, frontend smoke and runtime compatibility.",
+          "A live PostgreSQL restricted-role probe uses two independent adapters and proves lease exclusion, higher-generation crash recovery, stale-completion denial, cross-tenant exclusion, content-safe projection, rollback/replay, runtime verification at schema 51 and exact cleanup."
+        ]
+      },
+      "notClaimed": [
+        "Does not prove third-party CRM, support, warehouse or analytics adapters, live customer credentials, external dispatch, sustained load or signed release approval.",
+        "Does not mark P5E-03 or any other requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0051_journey_connector_execution_plane.sql",
+        "backend/src/journeyConnectorWorkerDomain.ts",
+        "backend/src/journeyConnectorWorkerRepository.ts",
+        "backend/src/journeyConnectorWorkerService.ts",
+        "backend/src/journeyConnectorWorkerRuntime.ts",
+        "scripts/probe-journey-connector-worker-postgres.mts",
+        "scripts/test-postgres-e2e.mjs"
+      ]
+    },
+    {
+      "evidenceId": "runtime52-operational-stage-feed-2026-08-08",
+      "requirementIds": ["P2-07", "P2-08", "P2-09", "P5A-05", "P5A-07", "P5B-03", "X-02", "X-05", "X-06"],
+      "class": "Runtime",
+      "summary": "Runtime 52 provides a governed operational ticket feed into stage intelligence and Customer 360 while failing closed for ungoverned social analysis.",
+      "command": "npx tsx --test backend/test/journey-operational-stage-feed-*.test.ts && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "backend/migrations/postgres/0052_journey_operational_stage_feed.sql",
+      "observed": {
+        "proves": [
+          "Only response-linked tickets with exact Runtime 43 consent, purpose and retention receipts plus Runtime 48 metric/stage research lineage are eligible; unlinked or stale-governance tickets fail closed.",
+          "The worker writes a Runtime 41 stage fact and a separate latest-only Customer 360 timeline projection, with fenced correction, deletion and consent-withdrawal tombstones and bounded retention.",
+          "Focused tests pass 14 of 14 alongside typecheck, build, compatibility and aggregate contracts.",
+          "A live PostgreSQL dedicated-role two-worker probe proves crash reclaim, stale-fence denial, governed fact and timeline materialisation, tombstoning, rollback/replay, schema-52 verification and exact cleanup."
+        ]
+      },
+      "notClaimed": [
+        "Social mentions remain intentionally ineligible because mutable analysis_json has no immutable classifier version, consent, purpose, retention or customer-identity provenance.",
+        "Does not prove every operational source, sustained production load, external privacy approval or mark any requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0052_journey_operational_stage_feed.sql",
+        "backend/src/journeyOperationalStageFeedRepository.ts",
+        "backend/src/journeyOperationalStageFeedWorker.ts",
+        "backend/src/journeyOperationalStageFeedRuntime.ts",
+        "scripts/probe-journey-operational-stage-feed-postgres.mts",
+        "scripts/test-postgres-e2e.mjs"
+      ]
+    },
+    {
+      "evidenceId": "runtime53-event-retention-reconciliation-2026-08-08",
+      "requirementIds": ["P5A-05", "P5A-07", "P5B-04", "X-02", "X-05", "X-08"],
+      "class": "Runtime",
+      "summary": "Runtime 53 executes bounded raw-event retention and reconciliation through a dedicated destructive role while refusing unsafe stage-linked or identity-erasure claims.",
+      "command": "npx tsx --test backend/test/journey-event-retention.test.ts backend/test/journey-event-runtime53-migration.test.ts && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "backend/migrations/postgres/0053_journey_event_retention_reconciliation.sql",
+      "observed": {
+        "proves": [
+          "Durable runs, cursor checkpoints, expiring fenced leases, bounded deterministic planning and hash-only audit/telemetry prevent one failed or blocked chain from starving later work.",
+          "Only terminal, fully expired, non-stage-linked raw chains are physically purged in foreign-key-safe order; active processing, later retention dependencies and stage-linked chains fail closed with explicit outcomes.",
+          "A live PostgreSQL dedicated-role probe uses two adapters and proves crash reclaim with a higher fence, stale-fence rejection, eligible purge, active/stage-linked refusal, rollback/replay, schema-53 verification and exact cleanup."
+        ]
+      },
+      "notClaimed": [
+        "Does not physically erase raw identities, purge stage-linked evidence or fabricate stage repair; those paths require the separate privacy authority and a governed reprojection contract.",
+        "Does not prove sustained multi-node operation, signed legal/backup approval or mark any requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0053_journey_event_retention_reconciliation.sql",
+        "backend/src/journeyEventRetention.ts",
+        "backend/src/journeyEventRetentionRepository.ts",
+        "backend/src/journeyEventRetentionWorker.ts",
+        "backend/src/journeyEventRetentionRuntime.ts",
+        "scripts/probe-journey-event-retention-postgres.mts",
+        "scripts/test-postgres-e2e.mjs"
+      ]
+    },
+    {
+      "evidenceId": "runtime54-evidence-monitor-2026-08-08",
+      "requirementIds": ["P1-08", "P1-09", "X-02", "X-05", "X-08"],
+      "class": "Runtime",
+      "summary": "Runtime 54 adds a disabled-by-default automatic evidence monitor with source-authority checks, fenced retries and content-safe transition events.",
+      "command": "npx tsx --test backend/test/journey-evidence-monitor.test.ts && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "backend/migrations/postgres/0054_journey_evidence_monitor.sql",
+      "observed": {
+        "proves": [
+          "The bounded non-overlapping worker seeds missing states, claims expiring leases, detects current, changed, stale, unavailable and authority-missing outcomes, retries failures without source content and invalidates only authoritative source loss.",
+          "Invalidated links remain historical records but are excluded from viewer-authorised export source notes; immutable monitor events contain hashes and status only.",
+          "Local monitor tests pass 6 of 6, aggregate/runtime tests pass 43 of 43, frontend smoke passes 23 of 23, and typecheck/build/compatibility gates are green.",
+          "A live PostgreSQL application-role probe proves seed, claim, expired-lease reclaim, higher fence, stale completion denial, authoritative unavailable-source invalidation and content-safe event storage. Runtime 54 rollback/replay and verifier pass with 291 extension tables, 275 indexes, 278 protected privilege tables, durableWrites 0 and exact cleanup."
+        ]
+      },
+      "notClaimed": [
+        "Does not automatically refresh reviewed evidence content, send external notifications, prove every source adapter, sustained multi-node monitoring or signed accessibility/security/privacy approval.",
+        "Does not mark P1-09 or any other requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0054_journey_evidence_monitor.sql",
+        "backend/src/journeyEvidenceMonitorRepository.ts",
+        "backend/src/journeyEvidenceMonitorWorker.ts",
+        "backend/src/journeyMaps.ts",
+        "scripts/probe-journey-evidence-monitor-postgres.mts",
+        "scripts/test-postgres-e2e.mjs"
+      ]
+    },
+    {
+      "evidenceId": "runtime55-workspace-saved-views-2026-08-08",
+      "requirementIds": ["P3-06", "P4-01", "P4-04", "P4-08", "X-02", "X-05", "X-07"],
+      "class": "Runtime",
+      "summary": "Runtime 55 adds durable private saved views and per-user defaults to the hierarchy and service-blueprint workspaces without overloading map or portfolio view identities.",
+      "command": "npx tsx --test backend/test/journey-workspace-saved-views.test.ts backend/test/runtime-privilege-contract.test.ts && node --test frontend/test/journey-workspace-saved-views.test.mjs && npx playwright test e2e/journey-hierarchy.spec.ts e2e/journey-service-blueprint.spec.ts --retries=0 && node scripts/test-postgres-e2e.mjs --contract-only",
+      "artifactPath": "backend/migrations/postgres/0055_journey_workspace_saved_views.sql",
+      "observed": {
+        "proves": [
+          "Tenant-scoped user-private hierarchy and service-blueprint view definitions use immutable configuration versions, content hashes, optimistic revisions, idempotent mutations and append-only content-safe audit.",
+          "Per-user per-surface defaults support CAS set/reset, while cross-user and cross-tenant enumeration fail closed.",
+          "Strict clients and compact workspace toolbars save and reapply bounded hierarchy root/direction and blueprint selection/version-mode/semantic-section configuration for internal, executive, research, delivery and external use audiences.",
+          "Focused feature tests pass 5 of 5, aggregate/runtime contracts pass 45 of 45, frontend source tests pass 4 of 4, typechecks and production builds pass, and six desktop/mobile hierarchy/blueprint scenarios pass.",
+          "Live PostgreSQL contract-only exits zero after Runtime 55 rollback/replay, application-role repository probing, schema verification at version 55 and exact cleanup."
+        ]
+      },
+      "notClaimed": [
+        "Does not claim shared cross-user workspace views, saved-view retention execution, ratified enterprise browser/load budgets, accessibility/security certification or signed Phase 4 release approval.",
+        "Does not mark P3-06, P4-08 or any other requirement Verified."
+      ],
+      "status": "implemented",
+      "invalidatedByPaths": [
+        "backend/migrations/postgres/0055_journey_workspace_saved_views.sql",
+        "backend/src/journeyWorkspaceSavedViews.ts",
+        "backend/src/journeyWorkspaceSavedViewRoutes.ts",
+        "frontend/src/lib/journeyWorkspaceSavedViews.ts",
+        "frontend/src/components/journeys/JourneyWorkspaceSavedViewBar.tsx",
+        "frontend/src/pages/JourneyHierarchyPage.tsx",
+        "frontend/src/pages/JourneyServiceBlueprintPage.tsx",
+        "scripts/probe-journey-workspace-saved-views-postgres.mts",
+        "scripts/test-postgres-e2e.mjs"
       ]
     }
   ]

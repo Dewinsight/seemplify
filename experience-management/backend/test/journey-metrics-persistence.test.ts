@@ -219,9 +219,10 @@ test('journey metrics persist versioned bindings, corrections, deletion propagat
       targetId: map.id, name: 'Checkout failures', versionIdempotencyKey: 'definition-operational-v1',
       version: operationalVersion }).expect(201);
   const operationalDefinitionId = String(operationalDefinition.body.definition.id);
+  const operationalOccurredAt = new Date().toISOString();
   const importBody = { definitionId: operationalDefinitionId, schemaVersionId: schemaVersion.body.version.id,
     externalRecordId: 'failure-1', revision: 1, operation: 'upsert', subjectId: 'customer-secret-1',
-    subjectType: 'custom', eventType: 'checkout.failed', occurredAt: '2026-08-04T10:30:00.000Z',
+    subjectType: 'custom', eventType: 'checkout.failed', occurredAt: operationalOccurredAt,
     sourceLineage: { sourceRef, sourceVersion: '1', schemaVersion: '1.0', projectionVersion: '1',
       journeyId: null, journeyVersion: null, ruleSetVersion: null }, properties: {} };
   await request(app).post('/v1/metric-imports').set('Content-Type', 'text/plain').send('{}').expect(415)
@@ -329,7 +330,8 @@ test('journey metrics persist versioned bindings, corrections, deletion propagat
   assert.equal(operationalObservations.body.observations[0].denominator, null);
   assert.equal(operationalObservations.body.observations[0].sampleSize, null);
   assert.equal(operationalObservations.body.observations[0].sentiment, null);
-  assert.equal(operationalObservations.body.observations[1].privacy.suppressed, false);
+  assert.equal(operationalObservations.body.observations[1].privacy.suppressed, false,
+    JSON.stringify(operationalObservations.body.observations));
   assert.equal(operationalObservations.body.observations[1].value, 1);
   assert.equal(operationalObservations.body.observations[1].sampleSize, 1);
   const deletedLineage = await owner.agent.get(`/api/journey-metrics/observations/${

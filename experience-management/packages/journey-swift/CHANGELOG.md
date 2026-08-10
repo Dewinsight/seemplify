@@ -37,5 +37,5 @@ The package is private and has never been released.
 
 ### Release blockers
 
-- No licence, support ratification, version tag, distribution approval, or
-  production ingestion endpoint exists.
+- MIT licensing is present; support ratification, a version tag, distribution
+  approval, and a production ingestion endpoint remain open.

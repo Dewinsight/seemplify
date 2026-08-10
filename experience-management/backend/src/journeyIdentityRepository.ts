@@ -21,6 +21,7 @@ import {
 } from './journeyIdentityPolicy.js';
 import { assertSubscriptionFeature } from './subscriptionEntitlements.js';
 import type { SpaceRole } from './spaces.js';
+import { journeyOperationalStageFeedRepository } from './journeyOperationalStageFeedRepository.js';
 
 export class JourneyIdentityRepositoryError extends Error {
   constructor(
@@ -1167,9 +1168,11 @@ export function listJourneyProfileTimeline(input: {
 }) {
   assertSubscriptionFeature(input.spaceId, 'journeyConnected');
   assertSubscriptionFeature(input.spaceId, 'journeyProfiles');
-  const rows = db.prepare(`SELECT * FROM journey_profile_timeline_events WHERE space_id=? AND profile_id=?
-    ORDER BY occurred_at DESC,id`).all(input.spaceId, input.profileId) as any[];
-  return rows.slice(input.offset, input.offset + input.limit).map(rowToTimelineEvent);
+  const rows = (db.prepare(`SELECT * FROM journey_profile_timeline_events WHERE space_id=? AND profile_id=?`)
+    .all(input.spaceId, input.profileId) as any[]).map(rowToTimelineEvent);
+  return [...rows, ...journeyOperationalStageFeedRepository.listProfileTimeline(input.spaceId, input.profileId)]
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.id.localeCompare(left.id))
+    .slice(input.offset, input.offset + input.limit);
 }
 
 export function listJourneyGroupTimeline(input: {
@@ -1189,10 +1192,12 @@ export function listJourneyGroupTimeline(input: {
       && membership.groupType === input.groupType
       && !profileSuppressedForAnyPurpose(input.spaceId, membership.profileId))
     .map((membership) => membership.profileId));
-  const rows = db.prepare(`SELECT * FROM journey_profile_timeline_events WHERE space_id=?
-    ORDER BY occurred_at DESC,id`).all(input.spaceId) as any[];
-  return rows.map(rowToTimelineEvent)
+  const rows = db.prepare(`SELECT * FROM journey_profile_timeline_events WHERE space_id=?`).all(input.spaceId) as any[];
+  const operational = [...memberIds].flatMap((profileId) =>
+    journeyOperationalStageFeedRepository.listProfileTimeline(input.spaceId, profileId));
+  return [...rows.map(rowToTimelineEvent), ...operational]
     .filter((row) => memberIds.has(row.profileId))
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || right.id.localeCompare(left.id))
     .slice(input.offset, input.offset + input.limit);
 }
 

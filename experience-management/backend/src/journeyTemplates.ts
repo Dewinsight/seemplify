@@ -413,9 +413,6 @@ export function createGovernedJourneyTemplate(input: {
   }
   if (input.scope === 'space') {
     assertSubscriptionFeature(input.spaceId!, 'journeyTemplates');
-    const current = Number((db.prepare("SELECT COUNT(*) count FROM journey_templates WHERE scope='space' AND space_id=?")
-      .get(input.spaceId) as any)?.count || 0);
-    assertSubscriptionQuota(input.spaceId!, 'journeyTemplates', current);
   }
   const content = normalizeContent(input.content);
   const now = new Date().toISOString();
@@ -423,6 +420,13 @@ export function createGovernedJourneyTemplate(input: {
   const versionId = deterministicJourneyId('template-version', templateId, 1);
   try {
     return db.transaction(() => {
+      if (input.scope === 'space') {
+        if (db.provider === 'postgres') db.prepare('SELECT pg_advisory_xact_lock(hashtextextended(?,0))')
+          .get(`journey-template-quota:${input.spaceId}`);
+        const current = Number((db.prepare("SELECT COUNT(*) count FROM journey_templates WHERE scope='space' AND space_id=?")
+          .get(input.spaceId) as any)?.count || 0);
+        assertSubscriptionQuota(input.spaceId!, 'journeyTemplates', current);
+      }
       db.prepare(`INSERT INTO journey_templates
         (id,scope,space_id,template_key,status,current_version_id,published_version_id,revision,created_by_user_id,created_at,updated_at)
         VALUES (?,?,?,?,'active',NULL,NULL,1,?,?,?)`)

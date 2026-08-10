@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-/** Runtime-27 proof for the governed journey portfolio. This probe only writes
+/** Runtime-34 proof for the governed journey portfolio. This probe only writes
  * to the disposable PostgreSQL E2E database and exercises the invariants the
  * static migration test cannot reach: tenant-bound quota admission under a real
  * row lock, the default-scoring-policy tenant edge, the deferred
@@ -61,11 +61,11 @@ const insertItem = `INSERT INTO journey_portfolio_items
 
 try {
   await Promise.all([owner.connect(), app.connect(), left.connect(), right.connect()]);
-  const migration = await owner.query('SELECT version,checksum FROM experience_runtime_schema_version WHERE version=27');
+  const migration = await owner.query('SELECT version,checksum FROM experience_runtime_schema_version WHERE version=34');
   assert.equal(migration.rowCount, 1);
   assert.match(String(migration.rows[0].checksum), /^[a-f0-9]{64}$/u);
-  await assertRuntimeSchemaContract((sql) => owner.query(sql), { runtimeVersion: 27 });
-  await assertRuntimePrivileges((sql) => owner.query(sql), appUser, { runtimeVersion: 27 });
+  await assertRuntimeSchemaContract((sql) => owner.query(sql), { runtimeVersion: 34 });
+  await assertRuntimePrivileges((sql) => owner.query(sql), appUser, { runtimeVersion: 34 });
   emit('journey_portfolio_runtime_contract_passed');
 
   for (const [id, email, name] of [[ids.owner, `${proof}-owner@example.invalid`, 'Portfolio owner'],
@@ -92,40 +92,17 @@ try {
   // Tenancy: an owner who is not a member of the space cannot hold an item.
   await owner.query(insertItem, [ids.itemA, ids.spaceA, 'Same-tenant initiative', ids.owner, at]);
   await assert.rejects(owner.query(insertItem, [`${proof}_cross`, ids.spaceA, 'Cross-tenant owner', ids.outsider, at]),
-    (error) => error?.code === '23503' && error?.constraint === 'journey_portfolio_items_owner_membership_fk');
+    (error) => error?.code === '23503' && /not a member of space/u.test(String(error?.message)));
   emit('journey_portfolio_tenant_owner_guard_passed');
 
-  // KNOWN DEFECT, pinned deliberately rather than asserted as correct.
-  //
-  // journey_portfolio_items_owner_membership_fk is a LIVE composite edge into
-  // space_memberships (0027:76-77). Runtime 28 (0028:138-144) and runtime 29
-  // (0029:135-142) both document that exact shape as the cause of an offboarding
-  // failure and replaced it with a write-time membership guard; runtime 27 did
-  // not. The consequence is executed below: once a member owns a single
-  // portfolio item, the plain DELETE FROM space_memberships in
-  // spaces.ts removeSpaceMember raises 23503, and no application code catches
-  // it, so the caller sees an unhandled 500.
-  //
-  // This block asserts the CURRENT behaviour so the defect is proven and
-  // regression-visible, not because the behaviour is desirable. Correcting it
-  // means porting the 0028 guard into 0027, which changes that migration's
-  // checksum and the pinned contract, and is out of this probe's scope.
   await owner.query(`UPDATE journey_portfolio_items SET owner_user_id=$1,updated_by_user_id=$1,updated_at=$2
     WHERE id=$3 AND space_id=$4`, [ids.leaver, at, ids.itemA, ids.spaceA]);
-  await assert.rejects(owner.query('DELETE FROM space_memberships WHERE space_id=$1 AND user_id=$2',
-    [ids.spaceA, ids.leaver]),
-  (error) => error?.code === '23503' && error?.constraint === 'journey_portfolio_items_owner_membership_fk');
-  assert.equal(Number((await owner.query(`SELECT COUNT(*)::int count FROM space_memberships
-    WHERE space_id=$1 AND user_id=$2`, [ids.spaceA, ids.leaver])).rows[0].count), 1,
-  'the owning member is still present: runtime 27 refuses to offboard them');
-  // The only way through today is to strip ownership first, which loses the
-  // durable attribution runtimes 28 and 29 deliberately preserve.
-  await owner.query(`UPDATE journey_portfolio_items SET owner_user_id=NULL,updated_by_user_id=$1,updated_at=$2
-    WHERE id=$3 AND space_id=$4`, [ids.owner, at, ids.itemA, ids.spaceA]);
   await owner.query('DELETE FROM space_memberships WHERE space_id=$1 AND user_id=$2', [ids.spaceA, ids.leaver]);
-  emit('journey_portfolio_owner_offboarding_defect_pinned', {
-    constraint: 'journey_portfolio_items_owner_membership_fk', sqlstate: '23503'
-  });
+  assert.equal(Number((await owner.query(`SELECT COUNT(*)::int count FROM space_memberships
+    WHERE space_id=$1 AND user_id=$2`, [ids.spaceA, ids.leaver])).rows[0].count), 0);
+  assert.equal((await owner.query(`SELECT owner_user_id FROM journey_portfolio_items
+    WHERE id=$1 AND space_id=$2`, [ids.itemA, ids.spaceA])).rows[0].owner_user_id, ids.leaver);
+  emit('journey_portfolio_owner_offboarding_passed');
 
   // The policy root and its first immutable version reference each other, so the
   // integrity rule can only be a commit-time invariant. The pointer is set
@@ -152,6 +129,7 @@ try {
     await owner.query(insertPolicyVersion, [versionId, policyId, spaceId, 'rice', hash(versionId), ids.owner, at]);
     await owner.query('COMMIT');
   }
+  emit('journey_portfolio_policy_inline_creation_passed');
   // A policy that never gains a current version must not be able to commit.
   await owner.query('BEGIN');
   await owner.query(insertPolicy, [`${proof}_dangling_policy`, ids.spaceA, 'rice', null, ids.owner, at]);
@@ -168,31 +146,6 @@ try {
   await assert.rejects(owner.query('COMMIT'), (error) => error?.code === '23514');
   await owner.query('ROLLBACK');
 
-  // KNOWN DEFECT, pinned deliberately rather than asserted as correct.
-  //
-  // 0027:432-440 documents the intended write order as "insert the policy with
-  // NULL, then the version, then the pointer, inside one transaction", and
-  // journeyPortfolio.ts createScoringPolicy implements exactly that. The
-  // deferred constraint trigger refuses it: the queued INSERT event still
-  // carries current_version_id = NULL at COMMIT, so the sequence raises 23502
-  // and scoring-policy creation cannot succeed on PostgreSQL. Runtime 23 avoided
-  // this by setting the pointer inline; runtime 27's application code did not.
-  //
-  // Correcting it means changing journeyPortfolio.ts to the inline form proven
-  // above, which is outside this probe's scope. Asserted here so the defect is
-  // executed rather than argued, and so a fix flips this assertion.
-  await owner.query('BEGIN');
-  await owner.query(insertPolicy, [`${proof}_patched_policy`, ids.spaceA, 'rice', null, ids.owner, at]);
-  await owner.query(insertPolicyVersion, [`${proof}_patched_version`, `${proof}_patched_policy`, ids.spaceA,
-    'rice', hash('patched'), ids.owner, at]);
-  await owner.query('UPDATE journey_portfolio_scoring_policies SET current_version_id=$1 WHERE id=$2 AND space_id=$3',
-    [`${proof}_patched_version`, `${proof}_patched_policy`, ids.spaceA]);
-  await assert.rejects(owner.query('COMMIT'), (error) => error?.code === '23502'
-    && /current_version_id is required/u.test(String(error?.message)));
-  await owner.query('ROLLBACK');
-  emit('journey_portfolio_policy_deferred_patch_defect_pinned', {
-    trigger: 'journey_portfolio_policy_current_version_required', sqlstate: '23502'
-  });
   emit('journey_portfolio_policy_current_version_invariant_passed');
 
   // Default policy is a governance control, so it must not be settable to

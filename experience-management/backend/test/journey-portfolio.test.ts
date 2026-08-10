@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,6 +32,7 @@ Object.assign(process.env, {
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
 const portfolio = await import('../src/journeyPortfolio.js');
+const { createJourneyMap } = await import('../src/journeyMaps.js');
 
 after(() => {
   db.close();
@@ -109,6 +111,45 @@ function create(spaceId: string, actorUserId: string, overrides: Partial<Draft> 
   }).item;
 }
 
+const hash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
+function seedPortfolioMetric(journeyId: string) {
+  const id = crypto.randomUUID(); const versionId = crypto.randomUUID(); const at = '2026-08-01T00:00:00.000Z';
+  db.transaction(() => {
+    db.prepare(`INSERT INTO journey_metric_definitions
+      (id,space_id,journey_definition_id,target_type,target_id,name,state,current_version_id,revision,
+       idempotency_key,intent_sha256,created_by_user_id,created_at,updated_at)
+      VALUES (?,?,?,'journey',?,'Portfolio outcome','active',?,1,?,?,?,?,?)`).run(id, owner.spaceId, journeyId,
+      journeyId, versionId, `portfolio-metric-${id}`, hash(id), owner.userId, at, at);
+    db.prepare(`INSERT INTO journey_metric_definition_versions
+      (id,definition_id,space_id,version_number,source_kind,binding_id,calculator_kind,aggregation,direction,
+       window_seconds,timezone,minimum_sample_size,freshness_max_age_seconds,baseline_value,target_value,
+       population_json,filters_json,formula_json,configuration_json,content_sha256,idempotency_key,intent_sha256,
+       created_by_user_id,created_at)
+      VALUES (?,?,?,1,'operational_import',NULL,'operational','count','higher_is_better',86400,'UTC',2,86400,NULL,90,
+        '{"population":"customers"}','{"country":"GB"}','{"kind":"count"}','{"kind":"count"}',?,?,?,?,?)`)
+      .run(versionId, id, owner.spaceId, hash(`content-${id}`), `portfolio-version-${id}`,
+        hash(`intent-${id}`), owner.userId, at);
+  })();
+  return { id, versionId };
+}
+
+function seedPortfolioObservation(metric: { id: string; versionId: string }, start: string, end: string, value: number) {
+  const id = crypto.randomUUID(); const runId = crypto.randomUUID(); const result = JSON.stringify({ kind: 'count', value });
+  db.prepare(`INSERT INTO journey_metric_rebuild_runs
+    (id,space_id,definition_id,definition_version_id,reason,as_of,state,available_at,lease_generation,attempt_count,
+     max_attempts,idempotency_key,intent_sha256,requested_by_user_id,created_at,updated_at,completed_at)
+    VALUES (?,?,?,?,'manual',?,'completed',?,0,0,3,?,?,?,?,?,?)`).run(runId, owner.spaceId, metric.id,
+      metric.versionId, end, end, `portfolio-run-${runId}`, hash(runId), owner.userId, end, end, end);
+  db.prepare(`INSERT INTO journey_metric_observations
+    (id,space_id,definition_id,definition_version_id,revision,status,value,unit,numerator,denominator,sample_size,
+     period_start,period_end,timezone,as_of,calculated_at,freshness_status,latest_observed_at,minimum_sample_warning,
+     source_count,source_snapshot_sha256,result_sha256,result_json,rebuild_run_id,created_at)
+    VALUES (?,?,?,?,1,'available',?,'score',?,20,20,?,?,'UTC',?,?,'fresh',?,0,20,?,?,?,?,?)`).run(id,
+      owner.spaceId, metric.id, metric.versionId, value, value, start, end, end, end, end,
+      hash(`source-${id}`), hash(result), result, runId, end);
+  return id;
+}
+
 function rejects(run: () => unknown, expected: { status: number; code: string }) {
   assert.throws(run, (error: any) => {
     assert.equal(error.status, expected.status, `status for ${expected.code}: ${error.code} ${error.message}`);
@@ -155,6 +196,103 @@ test('requires the subscription feature, then space membership, then a managing 
 
   // A member still reads: the restriction is on managing, not on visibility.
   assert.ok(portfolio.listJourneyPortfolioItems({ spaceId: owner.spaceId, actorUserId: member.userId }).items.length >= 0);
+});
+
+test('keeps portfolio owner attribution when an owning member is offboarded', async () => {
+  const leaver = await collaborator(owner.spaceId, 'member', `offboarding-${keySequence}`);
+  const item = create(owner.spaceId, owner.userId, {
+    kind: 'initiative', ownerUserId: leaver.userId
+  });
+  db.prepare('DELETE FROM space_memberships WHERE space_id=? AND user_id=?')
+    .run(owner.spaceId, leaver.userId);
+  assert.equal((db.prepare('SELECT owner_user_id ownerUserId FROM journey_portfolio_items WHERE id=?')
+    .get(item.id) as { ownerUserId: string }).ownerUserId, leaver.userId);
+  assert.throws(() => create(owner.spaceId, owner.userId, {
+    kind: 'initiative', ownerUserId: leaver.userId
+  }), /not a member/u);
+});
+
+test('governs typed operational links and optimistic outcome attribution', async () => {
+  const initiative = create(owner.spaceId, owner.userId, { kind: 'initiative' });
+  const actionId = crypto.randomUUID();
+  const at = new Date().toISOString();
+  db.prepare(`INSERT INTO assistant_actions
+    (id,space_id,created_by,title,description,owner,status,priority,revision,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?, ?,1,?,?)`).run(actionId, owner.spaceId, owner.userId, 'Review checkout recovery', '', '',
+      'open', 'normal', at, at);
+
+  const created = portfolio.createJourneyPortfolioOperationalLink({
+    spaceId: owner.spaceId, actorUserId: owner.userId, initiativeId: initiative.id,
+    operationalKind: 'assistant_action', operationalId: actionId, relationship: 'supports',
+    idempotencyKey: key('operational-link')
+  });
+  assert.equal(created.operationalLink.outcomeState, 'linked');
+  assert.equal(created.operationalLink.createdByUserId, owner.userId);
+
+  rejects(() => portfolio.createJourneyPortfolioOperationalLink({
+    spaceId: owner.spaceId, actorUserId: owner.userId, initiativeId: initiative.id,
+    operationalKind: 'assistant_action', operationalId: actionId, relationship: 'supports',
+    idempotencyKey: key('operational-duplicate')
+  }), { status: 409, code: 'JOURNEY_PORTFOLIO_OPERATIONAL_LINK_DUPLICATE' });
+
+  const updated = portfolio.updateJourneyPortfolioOperationalOutcome({
+    spaceId: owner.spaceId, actorUserId: owner.userId, linkId: created.operationalLink.id,
+    expectedRevision: 1, outcomeState: 'succeeded', outcomeDetail: { code: 'completed', count: 1 }
+  }).operationalLink;
+  assert.equal(updated.revision, 2);
+  assert.equal(updated.createdByUserId, owner.userId);
+  assert.equal(updated.updatedByUserId, owner.userId);
+  assert.deepEqual(updated.outcomeDetail, { code: 'completed', count: 1 });
+  rejects(() => portfolio.updateJourneyPortfolioOperationalOutcome({
+    spaceId: owner.spaceId, actorUserId: owner.userId, linkId: updated.id,
+    expectedRevision: 1, outcomeState: 'failed', outcomeDetail: {}
+  }), { status: 409, code: 'JOURNEY_PORTFOLIO_REVISION_CONFLICT' });
+
+  const other = await collaborator(null, 'admin', 'operational-source-tenant');
+  db.prepare("UPDATE platform_subscriptions SET plan_code='enterprise' WHERE space_id=?").run(other.homeSpaceId);
+  const foreignActionId = crypto.randomUUID();
+  db.prepare(`INSERT INTO assistant_actions
+    (id,space_id,created_by,title,description,owner,status,priority,revision,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?, ?,1,?,?)`).run(foreignActionId, other.homeSpaceId, other.userId, 'Foreign action', '', '',
+      'open', 'normal', at, at);
+  rejects(() => portfolio.createJourneyPortfolioOperationalLink({
+    spaceId: owner.spaceId, actorUserId: owner.userId, initiativeId: initiative.id,
+    operationalKind: 'assistant_action', operationalId: foreignActionId, relationship: 'informs',
+    idempotencyKey: key('operational-cross-tenant')
+  }), { status: 404, code: 'JOURNEY_PORTFOLIO_OPERATIONAL_SOURCE_NOT_FOUND' });
+});
+
+test('captures immutable persisted metric baselines and compares exact after observations', () => {
+  const journey = createJourneyMap(owner.spaceId, owner.userId, {
+    name: 'Portfolio measurement journey', purpose: 'Verify governed outcomes', stageNames: ['Measure']
+  });
+  const metric = seedPortfolioMetric(journey.id);
+  const initiative = create(owner.spaceId, owner.userId, { kind: 'initiative', targetMetrics: [{
+    metricId: metric.id, metricDefinitionVersion: metric.versionId, direction: 'higher_is_better',
+    targetValue: 90, unit: 'score'
+  }] });
+  const beforeId = seedPortfolioObservation(metric, '2026-08-01T00:00:00.000Z', '2026-08-02T00:00:00.000Z', 80);
+  const afterId = seedPortfolioObservation(metric, '2026-08-02T00:00:00.000Z', '2026-08-03T00:00:00.000Z', 92);
+  const baseline = portfolio.captureJourneyInitiativeBaseline({
+    spaceId: owner.spaceId, actorUserId: owner.userId, initiativeId: initiative.id,
+    observationId: beforeId, idempotencyKey: key('baseline'), now: '2026-08-02T01:00:00.000Z'
+  }).baseline;
+  assert.equal(baseline.observation.observationId, beforeId);
+  assert.equal(baseline.target.metricDefinitionVersion, metric.versionId);
+  assert.throws(() => db.prepare('UPDATE journey_initiative_baselines SET checksum=? WHERE id=?')
+    .run('0'.repeat(64), baseline.baselineId), /append-only/u);
+
+  const outcome = portfolio.createJourneyInitiativeOutcomeComparison({
+    spaceId: owner.spaceId, actorUserId: owner.userId, baselineId: baseline.baselineId,
+    afterObservationId: afterId, idempotencyKey: key('outcome'), now: '2026-08-03T01:00:00.000Z'
+  }).outcome;
+  assert.equal(outcome.comparison.absoluteChange, 12);
+  assert.equal(outcome.comparison.targetResult, 'met');
+  assert.match(String((outcome.comparison.interpretation as any).statement), /does not establish/u);
+  rejects(() => portfolio.createJourneyInitiativeOutcomeComparison({
+    spaceId: owner.spaceId, actorUserId: owner.userId, baselineId: baseline.baselineId,
+    afterObservationId: afterId, idempotencyKey: key('outcome-duplicate'), now: '2026-08-03T01:00:00.000Z'
+  }), { status: 409, code: 'JOURNEY_PORTFOLIO_OUTCOME_DUPLICATE' });
 });
 
 test('refuses to create an item directly in an approval-gated lifecycle', () => {

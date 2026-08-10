@@ -86,7 +86,13 @@ const planLimitsSchema = z.object({
   journeyTouchpoints: z.number().int().min(0).max(100_000_000),
   journeyCardAssets: z.number().int().min(0).max(100_000_000),
   journeyCardAssetBytes: z.number().int().min(0).max(10_000_000_000_000),
-  journeySavedViews: z.number().int().min(0).max(10_000_000)
+  journeySavedViews: z.number().int().min(0).max(10_000_000),
+  journeyPortfolioItems: z.number().int().min(0).max(100_000_000),
+  journeyPortfolioScoringPolicies: z.number().int().min(0).max(1_000_000),
+  journeyHierarchyLinks: z.number().int().min(0).max(100_000_000),
+  journeyBlueprints: z.number().int().min(0).max(10_000_000),
+  journeyBlueprintResources: z.number().int().min(0).max(100_000_000),
+  journeyConnectorDefinitions: z.number().int().min(0).max(1_000_000)
 }).strict();
 const managedPlanSchema = z.object({
   name: z.string().trim().min(2).max(80),

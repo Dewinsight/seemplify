@@ -21,7 +21,17 @@ const JourneyMapsPage = lazy(() => import('@/pages/JourneyMapsPage').then((modul
 const JourneySuggestionReviewPage = lazy(() => import('@/pages/JourneySuggestionReviewPage').then((module) => ({ default: module.JourneySuggestionReviewPage })));
 const JourneyResearchHubPage = lazy(() => import('@/pages/JourneyResearchHubPage').then((module) => ({ default: module.JourneyResearchHubPage })));
 const JourneyMetricsPage = lazy(() => import('@/pages/JourneyMetricsPage').then((module) => ({ default: module.JourneyMetricsPage })));
+const JourneyStageIntelligencePage = lazy(() => import('@/pages/JourneyStageIntelligencePage').then((module) => ({ default: module.JourneyStageIntelligencePage })));
 const JourneyPersonasPage = lazy(() => import('@/pages/JourneyPersonasPage').then((module) => ({ default: module.JourneyPersonasPage })));
+const JourneyPortfolioPage = lazy(() => import('@/pages/JourneyPortfolioPage').then((module) => ({ default: module.JourneyPortfolioPage })));
+const JourneyCollaborationPage = lazy(() => import('@/pages/JourneyCollaborationPage').then((module) => ({ default: module.JourneyCollaborationPage })));
+const JourneyOrchestrationPage = lazy(() => import('@/pages/JourneyOrchestrationPage').then((module) => ({ default: module.JourneyOrchestrationPage })));
+const JourneyConnectorsPage = lazy(() => import('@/pages/JourneyConnectorsPage').then((module) => ({ default: module.JourneyConnectorsPage })));
+const JourneyPredictiveGovernancePage = lazy(() => import('@/pages/JourneyPredictiveGovernancePage').then((module) => ({ default: module.JourneyPredictiveGovernancePage })));
+const JourneyKillSwitchPage = lazy(() => import('@/pages/JourneyKillSwitchPage').then((module) => ({ default: module.JourneyKillSwitchPage })));
+const JourneyHierarchyPage = lazy(() => import('@/pages/JourneyHierarchyPage').then((module) => ({ default: module.JourneyHierarchyPage })));
+const JourneyServiceBlueprintPage = lazy(() => import('@/pages/JourneyServiceBlueprintPage').then((module) => ({ default: module.JourneyServiceBlueprintPage })));
+const JourneyIdentityPage = lazy(() => import('@/pages/JourneyIdentityPage').then((module) => ({ default: module.JourneyIdentityPage })));
 const CampaignsPage = lazy(() => import('@/pages/CampaignsPage').then((module) => ({ default: module.CampaignsPage })));
 const CampaignWorkspacePage = lazy(() => import('@/pages/CampaignWorkspacePage').then((module) => ({ default: module.CampaignWorkspacePage })));
 const AgreementsPage = lazy(() => import('@/pages/AgreementsPage').then((module) => ({ default: module.AgreementsPage })));
@@ -29,6 +39,7 @@ const NewAgreementPage = lazy(() => import('@/pages/NewAgreementPage').then((mod
 const AgreementWorkspacePage = lazy(() => import('@/pages/AgreementWorkspacePage').then((module) => ({ default: module.AgreementWorkspacePage })));
 const AgreementPreparePage = lazy(() => import('@/pages/AgreementPreparePage').then((module) => ({ default: module.AgreementPreparePage })));
 const PublicSigningPage = lazy(() => import('@/pages/PublicSigningPage').then((module) => ({ default: module.PublicSigningPage })));
+const PublicJourneySharePage = lazy(() => import('@/pages/PublicJourneySharePage').then((module) => ({ default: module.PublicJourneySharePage })));
 const MyDocumentsPage = lazy(() => import('@/pages/MyDocumentsPage').then((module) => ({ default: module.MyDocumentsPage })));
 const CertificateVerificationPage = lazy(() => import('@/pages/CertificateVerificationPage').then((module) => ({ default: module.CertificateVerificationPage })));
 const LoginPage = lazy(() => import('@/pages/LoginPage').then((module) => ({ default: module.LoginPage })));
@@ -84,6 +95,7 @@ function PlatformAdminRoutes() {
     <Route path="/admin/ai-defaults"><PlatformAdminAiDefaultsPage /></Route>
     <Route path="/admin/email-delivery"><PlatformAdminEmailDeliveryPage /></Route>
     <Route path="/admin/journey-templates"><PlatformAdminJourneyTemplatesPage /></Route>
+    <Route path="/admin/journey-safety"><JourneyKillSwitchPage /></Route>
     <Route path="/admin/audit/:id"><PlatformAdminAuditDetailPage /></Route>
     <Route path="/admin/audit"><PlatformAdminAuditPage /></Route>
     <Route path="/admin"><PlatformAdminOverviewPage /></Route>
@@ -117,7 +129,17 @@ function ExperienceRoutes() {
     <Route path="/journey-maps"><JourneyMapsPage /></Route>
     <Route path="/journey-research"><JourneyResearchHubPage /></Route>
     <Route path="/journey-metrics"><JourneyMetricsPage /></Route>
+    <Route path="/journey-stage-intelligence"><JourneyStageIntelligencePage /></Route>
     <Route path="/journey-personas"><JourneyPersonasPage /></Route>
+    <Route path="/journey-portfolio"><JourneyPortfolioPage /></Route>
+    <Route path="/journey-collaboration"><JourneyCollaborationPage /></Route>
+    <Route path="/journey-orchestration"><JourneyOrchestrationPage /></Route>
+    <Route path="/journey-connectors"><JourneyConnectorsPage /></Route>
+    <Route path="/journey-predictive-governance"><JourneyPredictiveGovernancePage /></Route>
+    <Route path="/journey-safety"><JourneyKillSwitchPage /></Route>
+    <Route path="/journey-hierarchy"><JourneyHierarchyPage /></Route>
+    <Route path="/journey-blueprints"><JourneyServiceBlueprintPage /></Route>
+    <Route path="/customer-360"><JourneyIdentityPage /></Route>
     <Route path="/journeys"><JourneysPage /></Route>
     <Route path="/ai-queue"><AiQueuePage /></Route>
     <Route path="/tickets"><TicketsPage /></Route>
@@ -140,6 +162,7 @@ export function App() {
     <Route path="/s/:slug"><StandalonePage><PublicSurveyPage /></StandalonePage></Route>
     <Route path="/sign/:token"><StandalonePage><PublicSigningPage /></StandalonePage></Route>
     <Route path="/sign"><StandalonePage><PublicSigningPage /></StandalonePage></Route>
+    <Route path="/journey-share/:token"><StandalonePage><PublicJourneySharePage /></StandalonePage></Route>
     <Route path="/my-documents"><StandalonePage><MyDocumentsPage /></StandalonePage></Route>
     <Route path="/verify/:certificateId"><StandalonePage><CertificateVerificationPage /></StandalonePage></Route>
     <Route path="/join/:token"><StandalonePage><JoinSpacePage /></StandalonePage></Route>

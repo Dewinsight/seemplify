@@ -4,6 +4,7 @@ const now = '2026-07-29T12:00:00.000Z';
 const alphaId = '11111111-1111-4111-8111-111111111111';
 const betaId = '22222222-2222-4222-8222-222222222222';
 const knowledgeBaseId = '33333333-3333-4333-8333-333333333333';
+const localE2eBaseUrl = `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT || 5412}`;
 
 async function signIn(page: Page) {
   await page.goto('/login');
@@ -431,7 +432,7 @@ test('social report history shows terminal failures, retries the same report, an
   await failureAlert.getByRole('button', { name: 'Retry report' }).click();
   await expect.poll(() => retryRequests).toEqual([{
     method: 'POST',
-    url: `http://127.0.0.1:5412/api/social/reports/${reportId}/retry`
+    url: `${localE2eBaseUrl}/api/social/reports/${reportId}/retry`
   }]);
   await expect(page.getByText('Retry queued with the same 2 saved posts and durable job.', { exact: true })).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'Waiting for Terra. This report is durable.' })).toBeVisible();

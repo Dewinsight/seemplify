@@ -160,6 +160,13 @@ test('journey actual-path analytics route returns descriptive anonymous-path tab
   assert.equal(response.body.designedVsObserved.summary.unobservedStageCount, 3);
   assert.equal(response.body.designedVsObserved.summary.atRiskStageCount, 0);
 
+  db.prepare(`INSERT INTO journey_stage_reprojection_runs
+    (id,space_id,reason,journey_definition_id,journey_map_version_id,state,available_at,lease_generation,attempt_count,
+     max_attempts,summary_json,idempotency_key,intent_sha256,created_at,updated_at,completed_at)
+    VALUES (?,?,?,?,?,'completed',?,0,1,5,'{}',?,?,?,?,?)`).run('runtime50-correction',current.spaceId,'manual',
+      map.definitionId,map.versionId,'2026-08-05T09:05:00.000Z','runtime50-correction','f'.repeat(64),
+      '2026-08-05T09:05:00.000Z','2026-08-05T09:05:00.000Z','2026-08-05T09:05:00.000Z');
+
   const rollup = await current.agent.post('/api/journey-metrics/actual-path-rollups/materialize').send({
     journeyDefinitionId: map.definitionId,
     from: '2026-08-05T00:00:00.000Z',
@@ -187,6 +194,15 @@ test('journey actual-path analytics route returns descriptive anonymous-path tab
   assert.equal(snapshot.body.snapshot.scopeSubject, 'anonymous_only');
   assert.equal(snapshot.body.snapshot.summary.unobservedStageCount, 3);
   assert.equal(snapshot.body.snapshot.result.designedVsObserved.stageRows.length, 3);
+  const snapshotLineage=db.prepare(`SELECT * FROM journey_actual_path_artifact_revisions
+    WHERE artifact_kind='snapshot' AND artifact_id=?`).get(snapshot.body.snapshot.id) as any;
+  assert.equal(snapshotLineage.revision,1);
+  assert.equal(snapshotLineage.journey_map_version_id,map.versionId);
+  assert.equal(snapshotLineage.period_start,'2026-08-05T00:00:00.000Z');
+  assert.match(snapshotLineage.source_lineage_sha256,/^[a-f0-9]{64}$/u);
+  assert.match(snapshotLineage.result_sha256,/^[a-f0-9]{64}$/u);
+  assert.equal(snapshotLineage.latest_reprojection_run_id,'runtime50-correction');
+  assert.equal(snapshotLineage.latest_reprojection_completed_at,'2026-08-05T09:05:00.000Z');
 
   const latest = await current.agent.get('/api/journey-metrics/actual-path-snapshots/latest')
     .query({ journeyDefinitionId: map.definitionId }).expect(200);
@@ -222,6 +238,11 @@ test('journey actual-path analytics route returns descriptive anonymous-path tab
   assert.equal(refreshedRollup.body.rollup.summary.acceptedVisitCount, 3);
   assert.equal(refreshedRollup.body.rollup.summary.unobservedStageCount, 2);
   assert.equal(refreshedRollup.body.rollup.summary.atRiskStageCount, 1);
+  const rollupLineage=db.prepare(`SELECT revision,source_lineage_sha256,result_sha256 FROM journey_actual_path_artifact_revisions
+    WHERE artifact_kind='rollup' AND artifact_id=? ORDER BY revision`).all(rollup.body.rollup.id) as any[];
+  assert.deepEqual(rollupLineage.map(row=>row.revision),[1,2]);
+  assert.equal(rollupLineage.every(row=>/^[a-f0-9]{64}$/u.test(row.source_lineage_sha256)
+    &&/^[a-f0-9]{64}$/u.test(row.result_sha256)),true);
 
   const staleLatest = await current.agent.get('/api/journey-metrics/actual-path-snapshots/latest')
     .query({ journeyDefinitionId: map.definitionId }).expect(200);

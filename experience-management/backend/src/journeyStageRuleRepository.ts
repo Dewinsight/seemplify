@@ -4,7 +4,7 @@ import {
   evaluateJourneyStageRules, journeyStageRuleLimits, type JourneyRuleEvent,
   type JourneyStagePredicate, type JourneyStageRule, type JourneyStageRuleRole
 } from './journeyStageRules.js';
-import { assertSubscriptionFeature } from './subscriptionEntitlements.js';
+import { assertSubscriptionFeature, assertSubscriptionQuota } from './subscriptionEntitlements.js';
 import type { JourneyEventPropertyDefinition } from './journeyEventControlPlane.js';
 
 export type JourneyStageRuleDraftInput = {
@@ -333,12 +333,17 @@ export function createJourneyStageRule(input: {
   assertConnected(input.spaceId); assertJourney(input.spaceId, input.journeyDefinitionId);
   assertGovernedStage(input.spaceId, input.journeyDefinitionId, input.draft.journeyMapVersionId, input.draft.stageKey);
   assertSources(input.spaceId, input.draft.sourceIds || []);
-  const count = Number((db.prepare(`SELECT COUNT(*) count FROM journey_stage_rule_definitions
-    WHERE space_id=? AND journey_definition_id=?`).get(input.spaceId, input.journeyDefinitionId) as any).count);
-  if (count >= journeyStageRuleLimits.rules) throw new JourneyStageRuleRepositoryError(
-    'This journey has reached the stage-rule limit.', 409, 'JOURNEY_STAGE_RULE_LIMIT'
-  );
   return db.transaction(() => {
+    if (db.provider === 'postgres') db.prepare('SELECT pg_advisory_xact_lock(hashtextextended(?,0))')
+      .get(`journey-stage-rule-quota:${input.spaceId}`);
+    const spaceCount = Number((db.prepare(`SELECT COUNT(*) count FROM journey_stage_rule_definitions
+      WHERE space_id=?`).get(input.spaceId) as any).count);
+    assertSubscriptionQuota(input.spaceId, 'activeJourneyRuleSets', spaceCount, 1);
+    const journeyCount = Number((db.prepare(`SELECT COUNT(*) count FROM journey_stage_rule_definitions
+      WHERE space_id=? AND journey_definition_id=?`).get(input.spaceId, input.journeyDefinitionId) as any).count);
+    if (journeyCount >= journeyStageRuleLimits.rules) throw new JourneyStageRuleRepositoryError(
+      'This journey has reached the stage-rule limit.', 409, 'JOURNEY_STAGE_RULE_LIMIT'
+    );
     const at = new Date().toISOString(); const ruleId = crypto.randomUUID(); const versionId = crypto.randomUUID();
     db.prepare(`INSERT INTO journey_stage_rule_definitions
       (id,space_id,journey_definition_id,name,revision,draft_version_id,published_version_id,

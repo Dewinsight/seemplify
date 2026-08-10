@@ -473,7 +473,9 @@ test('subscription plans are versioned, editable, propagated, resettable, and au
   for (const limit of [
     'journeyTemplates', 'journeyShares', 'eventSources', 'monthlyTrackedEvents', 'retainedProfiles',
     'eventRetentionDays', 'activeJourneyRuleSets', 'activeJourneyOrchestrations',
-    'monthlyOrchestrationActions', 'schemaDefinitions', 'webhookDestinations', 'monthlyJourneyExports'
+    'monthlyOrchestrationActions', 'schemaDefinitions', 'webhookDestinations', 'monthlyJourneyExports',
+    'journeyPortfolioItems', 'journeyPortfolioScoringPolicies', 'journeyHierarchyLinks',
+    'journeyBlueprints', 'journeyBlueprintResources', 'journeyConnectorDefinitions'
   ]) assert.equal(Number.isSafeInteger(current.limits[limit]), true, `${limit} is absent from the managed plan catalogue`);
 
   const updated = await rootAgent.put('/api/platform-admin/plans/starter').send({

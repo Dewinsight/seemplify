@@ -1,7 +1,7 @@
 {
   "ok": true,
-  "generatedAt": "2026-08-06T21:55:31.710Z",
-  "displayDate": "Thursday, August 6, 2026",
+  "generatedAt": "2026-08-08T13:42:56.952Z",
+  "displayDate": "Saturday, August 8, 2026",
   "inputs": {
     "validateJourneyPlan": {
       "ok": true,
@@ -30,8 +30,8 @@
         "sdk_publication"
       ],
       "currentEvidence": {
-        "releaseGateArtifactGeneratedAt": "2026-08-06T21:55:39.499Z",
-        "releaseGateOk": true,
+        "releaseGateArtifactGeneratedAt": "2026-08-08T13:43:03.201Z",
+        "releaseGateOk": false,
         "openConnectedJourneyBlockers": [
           "independent_security_privacy_review",
           "ratified_hardware_load_profile",
@@ -57,7 +57,7 @@
         "sdk_publication"
       ],
       "currentEvidence": {
-        "dogfoodArtifactGeneratedAt": "2026-08-06T21:56:53.076Z",
+        "dogfoodArtifactGeneratedAt": "2026-08-08T13:43:09.006Z",
         "accounts": 91,
         "onboardingCompleted": 61,
         "chatGptConnected": 1,
@@ -65,8 +65,7 @@
         "journeyCreated": 1
       },
       "missingProof": [
-        "full end-to-end dogfood run with fresh ChatGPT/runtime milestones",
-        "non-zero journey activity in sampled evidence",
+        "authoritative live ChatGPT/Codex foreground, queued-background, backend-restart and elapsed long-lived credential-reuse acceptance",
         "signed rollout and release signoff sufficient for X-09 and SDK publication"
       ]
     },
@@ -82,11 +81,11 @@
         "validation": {
           "valid": true,
           "requirements": 85,
-          "evidenceRecords": 49,
+          "evidenceRecords": 86,
           "states": {
-            "Not started": 17,
+            "Not started": 0,
             "Foundation": 9,
-            "In progress": 43,
+            "In progress": 60,
             "Implemented": 16,
             "Verified": 0
           }
@@ -115,7 +114,7 @@
         "sdk_publication"
       ],
       "currentEvidence": {
-        "readinessArtifactGeneratedAt": "2026-08-06T21:55:32.297Z",
+        "readinessArtifactGeneratedAt": "2026-08-08T13:42:57.398Z",
         "landingPreflightOk": true,
         "requiredFilesMissingOnMain": [],
         "committedMainHeadDiffs": 0,
@@ -138,8 +137,8 @@
       ],
       "currentEvidence": {
         "externalSetupBlockers": [
-          "npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-06T21_55_36_352Z-debug-0.log",
-          "npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-06T21_55_37_000Z-debug-0.log"
+          "npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-08T13_43_00_554Z-debug-0.log",
+          "npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\\Users\\User\\AppData\\Local\\npm-cache\\_logs\\2026-08-08T13_43_00_960Z-debug-0.log"
         ],
         "workstationLimitations": [
           "local Node v22.11.0 is below the trusted-publishing floor 22.14.0",

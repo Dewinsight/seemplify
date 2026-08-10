@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-06T21:56:49.254Z",
+  "generatedAt": "2026-08-08T13:14:52.014Z",
   "command": "node scripts/journey-postgres-ingest-security-load.mjs",
   "ok": true,
   "exitCode": 0,
@@ -24,7 +24,7 @@
     "runtime": {
       "node": "v22.11.0",
       "postgresImage": "postgres:16-alpine",
-      "runtimeSchemaVersion": 30,
+      "runtimeSchemaVersion": 54,
       "appProcesses": 2,
       "databaseRole": "dedicated-non-owner-runtime"
     },
@@ -33,35 +33,35 @@
       "waves": 5,
       "batchSize": 20,
       "concurrency": 8,
-      "elapsedMs": 25222.29,
-      "throughputEventsPerSecond": 23.79,
+      "elapsedMs": 24655.47,
+      "throughputEventsPerSecond": 24.34,
       "waveDurationsMs": [
-        5080.13,
-        4993.58,
-        5021.22,
-        5127.31,
-        4999.99
+        5051.64,
+        4904.61,
+        4821.68,
+        4834.66,
+        5042.8
       ]
     },
     "soak": {
-      "durationMs": 5359.77,
-      "requests": 4,
-      "events": 80,
-      "averageEventsPerSecond": 14.93
+      "durationMs": 6255.29,
+      "requests": 3,
+      "events": 60,
+      "averageEventsPerSecond": 9.59
     },
     "latencyMs": {
-      "requests": 91,
-      "p50": 578.38,
-      "p95": 4992.58,
-      "p99": 5126.45,
-      "maximum": 5126.45
+      "requests": 90,
+      "p50": 516.7,
+      "p95": 4821.03,
+      "p99": 5050.13,
+      "maximum": 5050.13
     },
     "reconciliation": {
-      "raw_events": 765,
-      "dedupe_events": 765,
-      "inbox_events": 765,
-      "metered_events": 765,
-      "receipts": 862,
+      "raw_events": 745,
+      "dedupe_events": 745,
+      "inbox_events": 745,
+      "metered_events": 745,
+      "receipts": 842,
       "rejections": 21,
       "oldest_queue_age_ms": 0,
       "rawDedupeDrift": 0,
@@ -70,7 +70,7 @@
     },
     "queue": {
       "states": {
-        "completed": 765
+        "completed": 745
       },
       "oldestPendingAgeMs": 0
     },
@@ -78,18 +78,18 @@
       "raw": [
         {
           "partition": "journey_raw_events_2026_08",
-          "count": 765
+          "count": 745
         }
       ],
       "receipts": [
         {
           "partition": "journey_event_ingest_receipts_2026_08",
-          "count": 862
+          "count": 842
         }
       ]
     },
     "outcomes": {
-      "accepted": 765,
+      "accepted": 745,
       "content_conflict": 11,
       "duplicate": 65,
       "over_quota": 15,
@@ -136,9 +136,9 @@
     },
     "stageProcessing": {
       "exercised": true,
-      "journeyDefinitionId": "fcb47deb-39cd-4fbc-8880-fa92ffd87268",
-      "publishedMapVersionId": "379881d9-5245-58af-b0e3-fe669214bd86",
-      "publishedRuleDefinitionId": "56b28bd1-cb32-4196-af7d-d4cdc824a3bc",
+      "journeyDefinitionId": "baa1dcc1-a9e2-4fc1-b80d-24a3236abee3",
+      "publishedMapVersionId": "aadb59ea-5231-566a-b550-49fdd5748e4d",
+      "publishedRuleDefinitionId": "17f8d36f-a5a8-4a30-ba29-af16d7921ef4",
       "projectedEvents": 2,
       "decisions": 2,
       "visits": 2,

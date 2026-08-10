@@ -114,8 +114,9 @@ const blockerFamilies = [
       journeyCreated: Number(dogfoodSummary.withJourneyCreated ?? 0)
     },
     missingProof: [
-      'full end-to-end dogfood run with fresh ChatGPT/runtime milestones',
-      'non-zero journey activity in sampled evidence',
+      'authoritative live ChatGPT/Codex foreground, queued-background, backend-restart and elapsed long-lived credential-reuse acceptance',
+      ...(Number(dogfoodSummary.withJourneyCreated ?? 0) === 0
+        ? ['non-zero journey activity in sampled evidence'] : []),
       'signed rollout and release signoff sufficient for X-09 and SDK publication'
     ]
   },

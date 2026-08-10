@@ -1,11 +1,13 @@
 {
-  "ok": true,
-  "generatedAt": "2026-08-06T21:55:39.499Z",
-  "displayDate": "Thursday, August 6, 2026",
+  "ok": false,
+  "generatedAt": "2026-08-08T13:43:03.201Z",
+  "displayDate": "Saturday, August 8, 2026",
   "inputs": {
     "ingestRefresh": {
       "ok": true,
-      "status": 0
+      "status": null,
+      "skipped": true,
+      "skipReason": "Disposable Docker ingest gate not opted into; pass --allow-docker-gate (npm run report:journey:release-gate:local) or set JOURNEY_POSTGRES_GATE_ALLOW_DOCKER=true to refresh it. Recorded ingest gate evidence was reused unchanged."
     },
     "dogfoodRefresh": {
       "ok": true,
@@ -15,9 +17,11 @@
   "summary": {
     "gateOpen": true,
     "openBlockerCount": 5,
-    "ingestEvidenceUsable": true,
+    "ingestEvidenceUsable": false,
+    "ingestEvidenceRefreshed": false,
+    "ingestEvidenceRuntimeSchemaVersion": 54,
     "stageProcessingExercised": true,
-    "requestLatencyP95Ms": 4992.58,
+    "requestLatencyP95Ms": 4821.03,
     "generatedLoadEvents": 600,
     "chatGptConnected": 1,
     "chatGptSelected": 1,
@@ -28,31 +32,31 @@
       "id": "independent_security_privacy_review",
       "title": "Independent security/privacy review",
       "open": true,
-      "evidence": "Connected-journey ingest gate still records INDEPENDENT_SECURITY_PRIVACY_REVIEW_PENDING."
+      "evidence": "Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local."
     },
     {
       "id": "ratified_hardware_load_profile",
       "title": "Ratified hardware and load profile",
       "open": true,
-      "evidence": "Current local request latency p95 is 4992.58 ms against an unratified candidate."
+      "evidence": "Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local."
     },
     {
       "id": "multi_node_failover",
       "title": "Multi-node production PostgreSQL failover",
       "open": true,
-      "evidence": "Connected-journey ingest gate still records MULTI_NODE_PRODUCTION_POSTGRES_FAILOVER_NOT_EXERCISED."
+      "evidence": "Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local."
     },
     {
       "id": "sustained_recovery_live_traffic_soak",
       "title": "Sustained recovery and live-traffic soak",
       "open": true,
-      "evidence": "Bounded local soak exists, but the gate still records SUSTAINED_RECOVERY_AND_LIVE_TRAFFIC_SOAK_PENDING."
+      "evidence": "Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local."
     },
     {
       "id": "signed_slo_capacity_approval",
       "title": "Signed SLO and capacity approval",
       "open": true,
-      "evidence": "Connected-journey ingest gate still records SIGNED_SLO_AND_CAPACITY_APPROVAL_PENDING."
+      "evidence": "Reused ingest gate evidence is not usable (ok true, runtime schema version 54 against expected 55); treated as open. Refresh with npm run report:journey:release-gate:local."
     },
     {
       "id": "dogfood_chatgpt_runtime_activity",

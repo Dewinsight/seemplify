@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';import test from 'node:test';import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';
+const here=path.dirname(fileURLToPath(import.meta.url));const migration=path.resolve(here,'../migrations/postgres/0051_journey_connector_execution_plane.sql');
+test('Runtime51 is exact-predecessor, external-reference-only and least-public-authority',()=>{const sql=fs.readFileSync(migration,'utf8');
+  assert.match(sql,/MAX\(version\).*<>50/su);assert.doesNotMatch(sql,/INSERT INTO experience_runtime_schema_version/u);
+  assert.match(sql,/secret_ref TEXT NOT NULL/u);assert.doesNotMatch(sql,/secret_value|secret_enc|access_token|refresh_token/iu);
+  assert.match(sql,/length\(secret_ref\) BETWEEN 8 AND 507/u);
+  assert.match(sql,/service_recovery_tickets_v1/u);assert.match(sql,/lease_token_sha256/u);assert.match(sql,/fencing_token BIGINT/u);
+  assert.match(sql,/lease_run_id TEXT/u);assert.match(sql,/journey_connector_worker_key_events_append_only/u);
+  assert.match(sql,/journey_connector_worker_events_append_only/u);assert.match(sql,/REVOKE INSERT,UPDATE,DELETE ON journey_connector_worker_principals/u);
+  assert.match(sql,/jsonb_array_length\(allowed_space_ids_json\) BETWEEN 1 AND 100/u);});

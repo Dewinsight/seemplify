@@ -7,6 +7,7 @@ import {
 } from '../src/journeyMapExports.js';
 import type { JourneyMapReadModel } from '../src/journeyMaps.js';
 import type { JourneyRichMapSnapshot } from '../src/journeyRichCards.js';
+import type { JourneyExportBrandSnapshot } from '../src/journeyExportBranding.js';
 
 const generatedAt = '2026-08-04T12:00:00.000Z';
 
@@ -172,7 +173,7 @@ test('CSV export neutralizes formulas after leading whitespace and retains gover
   assert.equal(formulaSafeCsvCell('normal'), '"normal"');
   const artifact = await buildJourneyMapExport(fixture({ formulas: true }), 'csv', generatedAt);
   const csv = artifact.bytes.toString('utf8');
-  assert.match(csv, new RegExp(`^# .*${JOURNEY_MAP_EXPORT_SCHEMA}`, 'u'));
+  assert.match(csv, new RegExp(`^"# .*${JOURNEY_MAP_EXPORT_SCHEMA}`, 'u'));
   assert.match(csv, /"'=HYPERLINK\(""https:\/\/bad""\)"/u);
   assert.match(csv, /"'@SUM\(1\+1\)"/u);
   assert.match(csv, /"'\+cmd\|test"/u);
@@ -209,6 +210,32 @@ test('rich-card export preserves safe structure, pinned names, governed media me
   assert.match(csv, /"Uncertain","'-3","4"/u);
   assert.match(csv, /"Checkout \(Website\)"/u);
   assert.match(csv, /"Checkout state.png \[image\]"/u);
+});
+
+test('version-pinned branding, presentation flags and viewer-safe source notes apply across export formats',async()=>{
+  const logo=await sharp({create:{width:24,height:16,channels:4,background:{r:40,g:80,b:60,alpha:1}}}).png().toBuffer();
+  const brand:JourneyExportBrandSnapshot={profileId:'brand-profile',version:2,organisationName:'Acme Research',logoAssetId:'logo-asset',
+    logo:{bytes:logo,mimeType:'image/png',altText:'Acme logo',width:24,height:16,sha256:'a'.repeat(64)},primaryHex:'#28503C',
+    accentHex:'#B45309',backgroundHex:'#FFFFFF',textHex:'#111827',fontFamily:'Noto Sans',footerText:'Confidential',locale:'en-GB',
+    contentSha256:'b'.repeat(64)};
+  const selectedView={id:'view',name:'Board view',revision:4,visibility:'space' as const,schemaVersion:1,checksum:'c'.repeat(64),
+    bindingPolicy:'exact' as const,filters:{},comparisonTarget:null,presentation:{title:'Executive onboarding',showEvidenceLegend:false,
+      showResearchGaps:false,showEmptyLanes:false},analytics:{}};
+  const options={brand,sourceNotes:[{sourceType:'survey_response' as const,sourceLabel:'Onboarding survey',assessment:'supports',population:'New customers',
+    sampleSize:120,windowStart:'2026-07-01T00:00:00.000Z',windowEnd:'2026-08-01T00:00:00.000Z',collectedAt:null,freshnessDays:30,
+    lastValidatedAt:'2026-08-04T00:00:00.000Z',refreshStatus:'current' as const}],sourceNotesTruncated:false};
+  const json=await buildJourneyMapExport(fixture(),'json',generatedAt,selectedView,null,options);const parsed=JSON.parse(json.bytes.toString());
+  assert.equal(parsed.metadata.brand.organisationName,'Acme Research');assert.equal(parsed.metadata.brand.version,2);
+  assert.equal(parsed.metadata.presentation.title,'Executive onboarding');assert.equal(parsed.metadata.presentation.showEvidenceLegend,false);
+  assert.equal(parsed.metadata.sourceNotes[0].sourceLabel,'Onboarding survey');assert.equal(JSON.stringify(parsed).includes('logo.bytes'),false);
+  const csv=(await buildJourneyMapExport(fixture(),'csv',generatedAt,selectedView,null,options)).bytes.toString();
+  assert.match(csv,/"sourceNote","1","survey_response","Onboarding survey"/u);
+  const pdf=await buildJourneyMapExport(fixture({empty:true}),'pdf',generatedAt,selectedView,null,options);const document=await PDFDocument.load(pdf.bytes);
+  assert.equal(document.getTitle(),'Executive onboarding');assert.equal(document.getAuthor(),'Acme Research');
+  const png=await buildJourneyMapExport(fixture({empty:true}),'png',generatedAt,selectedView,null,options);
+  assert.equal((await sharp(png.bytes).metadata()).format,'png');
+  const pptx=await buildJourneyMapExport(fixture({empty:true}),'pptx',generatedAt,selectedView,null,options);
+  assert.equal(pptx.bytes.subarray(0,2).toString('ascii'),'PK');assert.ok((pptx.slideCount||0)>=2);
 });
 
 test('PDF and PPTX exports handle empty and large maps with real pagination', async () => {

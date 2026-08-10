@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import request from 'supertest';
+import { signupVerifyAndOnboard } from './authTestHelper.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'seemplify-journey-stage-reprojection-'));
 const files = Object.fromEntries(['admin-password', 'session-secret', 'x-key', 'esign-key', 'identity-key']
@@ -31,7 +32,7 @@ Object.assign(process.env, {
 const { app } = await import('../src/app.js');
 const { db } = await import('../src/database.js');
 const {
-  claimJourneyStageReprojection, processJourneyStageReprojection, queueJourneyStageReprojection
+  claimJourneyStageReprojection, processJourneyStageReprojection
 } = await import('../src/journeyStageReprojection.js');
 
 after(() => { db.close(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -137,28 +138,55 @@ test('queues, claims, checkpoints and completes a durable stage reprojection ove
       .expect(202);
   }
 
-  const first = queueJourneyStageReprojection({
-    spaceId: current.spaceId,
-    actorUserId: current.userId,
-    journeyDefinitionId: map.definitionId,
-    journeyMapVersionId: map.versionId,
-    reason: 'manual',
-    sourceId: source.sourceId,
-    environment: 'production',
-    idempotencyKey: 'reprojection-run-1'
+  const requestReason = 'Correct retained events after the reviewed stage rule update.';
+  const first = await current.agent.post('/api/journey-metrics/actual-path-corrections')
+    .set(idem('reprojection-run-1')).send({ journeyDefinitionId: map.definitionId,
+      journeyMapVersionId: map.versionId, requestReason }).expect(202);
+  assert.equal(first.body.replayed, false);
+  assert.deepEqual(first.body.run.requestReasonProof, {
+    sha256: crypto.createHash('sha256').update(requestReason).digest('hex'), length: requestReason.length });
+  assert.doesNotMatch(JSON.stringify(first.body), /Correct retained events/u);
+  const replay = await current.agent.post('/api/journey-metrics/actual-path-corrections')
+    .set(idem('reprojection-run-1')).send({ journeyDefinitionId: map.definitionId,
+      journeyMapVersionId: map.versionId, requestReason }).expect(200);
+  assert.equal(replay.body.replayed, true);
+  assert.equal(replay.body.run.id, first.body.run.id);
+  await current.agent.post('/api/journey-metrics/actual-path-corrections')
+    .set(idem('reprojection-run-2')).send({ journeyDefinitionId: map.definitionId,
+      journeyMapVersionId: map.versionId, requestReason: 'A different correction while one remains active.' })
+    .expect(409).expect(({ body }) => assert.equal(body.code, 'JOURNEY_STAGE_REPROJECTION_ACTIVE_EXISTS'));
+  const history = await current.agent.get('/api/journey-metrics/actual-path-corrections')
+    .query({ journeyDefinitionId: map.definitionId }).expect(200);
+  assert.equal(history.body.runs.length, 1);
+  assert.doesNotMatch(JSON.stringify(history.body), /requestedByUserId|sourceId|lastRawEventId|Correct retained events/u);
+  const status = await current.agent.get(`/api/journey-metrics/actual-path-corrections/${first.body.run.id}`)
+    .query({ journeyDefinitionId: map.definitionId }).expect(200);
+  assert.equal(status.body.run.state, 'pending');
+  const persistedRequest = JSON.stringify({
+    run: db.prepare('SELECT summary_json,intent_sha256 FROM journey_stage_reprojection_runs WHERE id=?').get(first.body.run.id),
+    audit: db.prepare("SELECT detail_json FROM journey_stage_reprojection_audit_events WHERE target_id=? AND action='reprojection.requested'")
+      .get(first.body.run.id)
   });
-  const replay = queueJourneyStageReprojection({
-    spaceId: current.spaceId,
-    actorUserId: current.userId,
-    journeyDefinitionId: map.definitionId,
-    journeyMapVersionId: map.versionId,
-    reason: 'manual',
-    sourceId: source.sourceId,
-    environment: 'production',
-    idempotencyKey: 'reprojection-run-1'
-  });
-  assert.equal(replay.replayed, true);
-  assert.equal(replay.run.id, first.run.id);
+  assert.doesNotMatch(persistedRequest, /Correct retained events/u);
+  const member = request.agent(app);
+  await signupVerifyAndOnboard(member, { name: 'Reprojection reader', email: 'reprojection-reader@example.test',
+    password: 'Strong-reprojection-reader-password-2026!', spaceName: 'Reader home' });
+  const memberSession = await member.get('/api/auth/session').expect(200);
+  const memberId = String(memberSession.body.user.id); const joinedAt = new Date().toISOString();
+  db.prepare("INSERT INTO space_memberships(space_id,user_id,role,joined_at,updated_at) VALUES (?,?,'member',?,?)")
+    .run(current.spaceId, memberId, joinedAt, joinedAt);
+  await member.post(`/api/spaces/${current.spaceId}/select`).expect(200);
+  await member.get('/api/journey-metrics/actual-path-corrections')
+    .query({ journeyDefinitionId: map.definitionId }).expect(200);
+  await member.post('/api/journey-metrics/actual-path-corrections').set(idem('member-reprojection-denied'))
+    .send({ journeyDefinitionId: map.definitionId, journeyMapVersionId: map.versionId,
+      requestReason: 'A member cannot request this correction.' }).expect(403)
+    .expect(({ body }) => assert.equal(body.code, 'JOURNEY_STAGE_REPROJECTION_EDIT_REQUIRED'));
+  db.prepare("UPDATE platform_subscriptions SET plan_code='starter' WHERE space_id=?").run(current.spaceId);
+  await current.agent.get('/api/journey-metrics/actual-path-corrections')
+    .query({ journeyDefinitionId: map.definitionId }).expect(403)
+    .expect(({ body }) => assert.equal(body.code, 'SUBSCRIPTION_FEATURE_REQUIRED'));
+  db.prepare("UPDATE platform_subscriptions SET plan_code='enterprise' WHERE space_id=?").run(current.spaceId);
 
   const leaseBase = Date.now();
   const claim = claimJourneyStageReprojection({ owner: 'reprojection-test-worker', now: new Date(leaseBase) });
@@ -189,6 +217,15 @@ test('queues, claims, checkpoints and completes a durable stage reprojection ove
   assert.equal(completed.summary?.projected.changedTerminalState, 0);
 
   const attempts = db.prepare(`SELECT status,attempt_number FROM journey_stage_reprojection_attempts WHERE run_id=? ORDER BY id`)
-    .all(first.run.id) as Array<{ status: string; attempt_number: number }>;
+    .all(first.body.run.id) as Array<{ status: string; attempt_number: number }>;
   assert.deepEqual(attempts, [{ status: 'succeeded', attempt_number: 1 }]);
+  db.prepare(`INSERT INTO journey_collaboration_role_assignments
+    (id,space_id,scope_type,journey_definition_id,user_id,role,state,revision,assigned_by_user_id,assigned_at)
+    VALUES (? ,?,'space',NULL,?,'editor','active',1,?,?)`)
+    .run('reprojection-member-editor', current.spaceId, memberId, current.userId, new Date().toISOString());
+  const delegated = await member.post('/api/journey-metrics/actual-path-corrections')
+    .set(idem('member-editor-reprojection')).send({ journeyDefinitionId: map.definitionId,
+      journeyMapVersionId: map.versionId, requestReason: 'An explicitly delegated editor requests a reviewed correction.' })
+    .expect(202);
+  assert.equal(delegated.body.run.state, 'pending');
 });

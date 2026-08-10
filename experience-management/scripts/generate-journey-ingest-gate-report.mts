@@ -25,6 +25,17 @@ function numberValue(value: unknown) {
   return Number.isFinite(Number(value)) ? Number(value) : null;
 }
 
+if (String(process.env.JOURNEY_POSTGRES_GATE_ALLOW_DOCKER ?? '').trim() !== 'true') {
+  console.error(JSON.stringify({
+    ok: false,
+    reason: 'Set JOURNEY_POSTGRES_GATE_ALLOW_DOCKER=true to run the destructive-isolated Docker ingest gate.',
+    jsonPath,
+    markdownPath,
+    preservedExistingReport: fs.existsSync(jsonPath)
+  }));
+  process.exit(1);
+}
+
 const run = spawnSync(process.execPath, [gateScript], {
   cwd: projectDirectory,
   encoding: 'utf8',

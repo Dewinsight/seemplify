@@ -59,6 +59,23 @@ import {
 } from './journeySuggestions.js';
 import { journeyEventControlPlaneRouter } from './journeyEventControlPlaneRoutes.js';
 import { journeyEventIngestionRouter } from './journeyEventIngestionRoutes.js';
+import { journeyPortfolioRouter } from './journeyPortfolioRoutes.js';
+import { journeyCollaborationRouter, journeyPublicShareRouter } from './journeyCollaborationRoutes.js';
+import { journeyCollaborationEmailRouter } from './journeyCollaborationEmailRoutes.js';
+import { journeyConnectorImportRouter } from './journeyConnectorImportRoutes.js';
+import { journeyPredictiveGovernanceRouter } from './journeyPredictiveGovernanceRoutes.js';
+import { journeyKillSwitchRouter } from './journeyKillSwitchRoutes.js';
+import { journeyStageIntelligenceRouter } from './journeyStageIntelligenceRoutes.js';
+import { JourneyStageIntelligenceError, journeyStagePurposes } from './journeyStageIntelligence.js';
+import { journeyEventStageIntelligenceRouter } from './journeyEventStageIntelligenceRoutes.js';
+import { journeyStageSurveyFeedRepository, type SurveyFeedGovernance } from './journeyStageSurveyFeedRepository.js';
+import { journeyOperationalStageFeedRepository } from './journeyOperationalStageFeedRepository.js';
+import { journeyHierarchyRouter } from './journeyHierarchyRoutes.js';
+import { journeyOrchestrationRouter } from './journeyOrchestrationRoutes.js';
+import { journeyServiceBlueprintRouter } from './journeyServiceBlueprintRoutes.js';
+import { journeyBlueprintMeasurementRouter } from './journeyBlueprintMeasurementRoutes.js';
+import { journeyExportBrandRouter } from './journeyExportBrandRoutes.js';
+import { journeyWorkspaceSavedViewRouter } from './journeyWorkspaceSavedViewRoutes.js';
 import { journeyStageRuleRouter } from './journeyStageRuleRoutes.js';
 import { journeyResearchRouter } from './journeyResearchRoutes.js';
 import { journeyMetricImportRouter, journeyMetricRouter } from './journeyMetricRoutes.js';
@@ -171,6 +188,7 @@ app.post('/api/account/space-invitations/:invitationId/accept', noStore, (reques
 });
 app.use('/api', (request, response, next) => {
   const publicRoute = request.path.startsWith('/public/collectors/') || request.path.startsWith('/public/campaigns/unsubscribe/')
+    || request.path.startsWith('/public/journey-shares/')
     || request.path.startsWith('/public/esign/') || request.path.startsWith('/public/spaces/invitations/') || request.path.startsWith('/public/uploads/')
     || request.path === '/webhooks/brevo/transactional' || request.path === '/integrations/x/callback'
     || request.path === '/integrations/nylas/callback';
@@ -209,6 +227,9 @@ function sendError(response: express.Response, error: unknown, status = 400) {
   }
   if (error instanceof JourneyMapError) {
     return response.status(error.status).json({ error: error.message, code: error.code, details: error.details });
+  }
+  if (error instanceof JourneyStageIntelligenceError) {
+    return response.status(error.status).json({ error: error.message, code: error.code });
   }
   const message = error instanceof Error ? error.message : String(error);
   return response.status(status).json({ error: message });
@@ -551,6 +572,7 @@ app.use('/api/subscriptions', subscriptionRouter);
 app.use('/api/ai-provider', aiProviderRouter);
 app.use('/api/esign', esignRouter);
 app.use('/api/public/esign', esignPublicRouter);
+app.use('/api/public/journey-shares', journeyPublicShareRouter);
 app.use('/api/assistant', assistantRouter);
 app.get('/api/integrations/nylas/callback', noStore, nylasCallback);
 app.use('/api/tutorials', tutorialProgressRouter);
@@ -565,6 +587,20 @@ app.use('/api/journey-event-control-plane', journeyEventControlPlaneRouter);
 app.use('/api/journey-stage-rules', journeyStageRuleRouter);
 app.use('/api/journey-research', journeyResearchRouter);
 app.use('/api/journey-metrics', journeyMetricRouter);
+app.use('/api/journey-portfolio', journeyPortfolioRouter);
+app.use('/api/journey-collaboration', journeyCollaborationRouter);
+app.use('/api/journey-collaboration-email', journeyCollaborationEmailRouter);
+app.use('/api/journey-connectors', journeyConnectorImportRouter);
+app.use('/api/journey-predictive-governance', journeyPredictiveGovernanceRouter);
+app.use('/api/journey-kill-switches', journeyKillSwitchRouter);
+app.use('/api/journey-stage-intelligence', journeyStageIntelligenceRouter);
+app.use('/api/journey-event-intelligence', journeyEventStageIntelligenceRouter);
+app.use('/api/journey-hierarchy', journeyHierarchyRouter);
+app.use('/api/journey-orchestration', journeyOrchestrationRouter);
+app.use('/api/journey-blueprints', journeyServiceBlueprintRouter);
+app.use('/api/journey-blueprint-measurements',journeyBlueprintMeasurementRouter);
+app.use('/api/journey-export-brand',journeyExportBrandRouter);
+app.use('/api/journey-workspace-saved-views', journeyWorkspaceSavedViewRouter);
 app.use('/api/journey-identities', journeyIdentityRouter);
 app.use('/api/knowledge-bases', knowledgeRouter);
 knowledgeJobRoute(app);
@@ -1535,9 +1571,15 @@ app.delete('/api/surveys/:id', (request, response) => {
   const space = authenticatedSpace(request);
   const files = db.prepare(`SELECT u.stored_filename FROM uploads u JOIN collectors c ON c.id=u.collector_id
     WHERE c.survey_id=? AND u.space_id=?`).all(id, space.id) as Array<{ stored_filename: string }>;
-  queueJourneyMetricRebuildsForSurvey({ spaceId: space.id, surveyId: id, reason: 'source_deleted',
-    idempotencyPrefix: `survey-deleted:${id}`, actorUserId: authenticatedUser(request).id });
-  if (!deleteSurvey(id, space.id)) return response.status(404).json({ error: 'Survey not found.' });
+  const actorUserId = authenticatedUser(request).id;
+  const deleted = db.transaction(() => {
+    queueJourneyMetricRebuildsForSurvey({ spaceId: space.id, surveyId: id, reason: 'source_deleted',
+      idempotencyPrefix: `survey-deleted:${id}`, actorUserId });
+    journeyStageSurveyFeedRepository.enqueueSurveyDeletion({ spaceId: space.id, surveyId: id, actorUserId });
+    journeyOperationalStageFeedRepository.tombstoneSurvey({ spaceId: space.id, surveyId: id });
+    return deleteSurvey(id, space.id);
+  })();
+  if (!deleted) return response.status(404).json({ error: 'Survey not found.' });
   for (const file of files) removeUploadedFile(path.resolve(config.uploadDir, file.stored_filename));
   return response.status(204).end();
 });
@@ -1593,7 +1635,8 @@ app.get('/api/public/collectors/:slug', noStore, (request, response) => {
   if (!owningSpaceId) return response.status(410).json({ error: 'This survey is not accepting responses.' });
   try { assertSpaceOperationalById(owningSpaceId, 'surveys'); }
   catch { return response.status(410).json({ error: 'This survey is not accepting responses.' }); }
-  return response.json({ survey, collector, uploadGrant: issuePublicUploadGrant(collector.id) });
+  return response.json({ survey, collector, uploadGrant: issuePublicUploadGrant(collector.id),
+    stageIntelligencePolicy: journeyStageSurveyFeedRepository.publicPolicy(owningSpaceId, survey.id, collector.id) });
 });
 
 const submissionWindows = new Map<string, number[]>();
@@ -1617,7 +1660,10 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
   catch { return response.status(410).json({ error: 'This survey is not accepting responses.' }); }
   const remote = String(request.ip || 'unknown');
   if (!allowSubmission(`${remote}:${collector.id}`)) return response.status(429).json({ error: 'Too many submissions. Please wait before trying again.' });
-  const input = z.object({ answers: z.record(z.string(), z.unknown()), startedAt: z.string().datetime().optional(), respondentToken: z.string().max(200).optional(), status: z.enum(['partial', 'completed']).optional(), metadata: z.record(z.string(), z.unknown()).optional() }).safeParse(request.body);
+  const input = z.object({ answers: z.record(z.string(), z.unknown()), startedAt: z.string().datetime().optional(), respondentToken: z.string().max(200).optional(), status: z.enum(['partial', 'completed']).optional(), metadata: z.record(z.string(), z.unknown()).optional(),
+    stageIntelligenceGovernance: z.object({ policyVersionId: z.string().trim().min(1).max(128),
+      noticeAcknowledged: z.literal(true), consentState: z.enum(['granted', 'denied', 'withdrawn']),
+      purposes: z.array(z.enum(journeyStagePurposes)).min(1).max(3) }).strict().optional() }).safeParse(request.body);
   if (!input.success) return sendError(response, input.error);
   const answers = input.data.answers;
   const omittedPages = skippedPages(survey, answers);
@@ -1638,6 +1684,12 @@ app.post('/api/public/collectors/:slug/responses', (request, response) => {
         if (!claim.run(created.id, new Date().toISOString(), uploadRow.id).changes) {
           throw new Error('A supplied upload was already attached to another response.');
         }
+      }
+      journeyStageSurveyFeedRepository.recordResponse({ spaceId: owningSpaceId, survey, collector, response: created,
+        governance: input.data.stageIntelligenceGovernance as SurveyFeedGovernance | undefined });
+      if (input.data.stageIntelligenceGovernance?.consentState === 'withdrawn') {
+        journeyOperationalStageFeedRepository.tombstoneRespondentToken({ spaceId: owningSpaceId,
+          respondentToken: created.respondentToken });
       }
       return created;
     })();

@@ -157,6 +157,55 @@ export interface JourneyActualPathResult {
 
 export type JourneyActualPathSubjectKind = 'anonymous_only' | 'known_profiles';
 
+export type JourneyPathIndicatorCode = 'HIGH_STAGE_DROP_OFF' | 'OBSERVED_LOOP' | 'UNEXPECTED_TRANSITION' | 'PROLONGED_STAGE_DURATION';
+export interface JourneyPathIntelligenceIndicator {
+  code: JourneyPathIndicatorCode; severity: 'warning' | 'critical'; stageId: string | null;
+  fromStageId: string | null; toStageId: string | null;
+  observed: { count: number; denominator: number | null; percentage: number | null; durationMs: number | null };
+  threshold: { kind: 'percentage' | 'count' | 'duration_ms'; value: number };
+  explanation: string; limitations: string[];
+}
+export interface JourneyStageInferenceRecommendationContent {
+  key: string; kind: 'review_stage_inference_rule'; fromStageId: string; inferredStageId: string;
+  evidence: { occurrenceCount: number; sampleSize: number; percentage: number | null };
+  confidence: {
+    sampleSufficiency: { observed: number; required: number; met: boolean };
+    recurrence: { observed: number; required: number; met: boolean };
+    visibility: { suppressed: boolean };
+  };
+  rationale: string; limitations: string[]; applyMode: 'human_review_only';
+}
+export interface JourneyPathIntelligenceResult {
+  detectorVersion: string;
+  provenance: { journeyDefinitionId: string; journeyMapVersionId: string; subjectScope: JourneyActualPathSubjectKind;
+    identityModel: 'anonymous_instance_scoped' | 'known_profile_stitched';
+    window: { start: string; end: string; asOf: string }; analyticsVersion: string };
+  sample: { acceptedInstanceCount: number | null; acceptedVisitCount: number | null; minimumSampleSize: number;
+    secondarySuppressionThreshold: number; sufficient: boolean; suppressed: boolean };
+  status: 'detected' | 'abstained'; abstentionReasons: string[];
+  indicators: JourneyPathIntelligenceIndicator[]; recommendations: JourneyStageInferenceRecommendationContent[];
+  limitations: string[]; interpretation: { mode: 'descriptive_rules_only'; statement: string };
+}
+export interface JourneyPathIntelligenceRun {
+  id: string; journeyDefinitionId: string; journeyMapVersionId: string; subjectScope: JourneyActualPathSubjectKind;
+  period: { start: string; end: string }; asOf: string; minimumSampleSize: number; secondarySuppressionThreshold: number;
+  detectorVersion: string; contentSha256: string; result: JourneyPathIntelligenceResult;
+  freshness: { status: 'current' | 'stale'; staleReasons: Array<'design_version_changed' | 'newer_observed_visit' | 'newer_completed_reprojection'>;
+    latestObservedAt: string | null; latestCorrectionAt: string | null; currentJourneyMapVersionId: string | null };
+  createdByUserId: string | null; createdAt: string;
+}
+export type JourneyStageInferenceState = 'draft' | 'in_review' | 'accepted' | 'rejected' | 'retired';
+export interface JourneyStageInferenceRecommendation {
+  id: string; runId: string; journeyDefinitionId: string; journeyMapVersionId: string;
+  recommendation: JourneyStageInferenceRecommendationContent; contentSha256: string;
+  state: JourneyStageInferenceState; revision: number; reviewedByUserId: string | null;
+  reviewReason: string | null; reviewedAt: string | null; createdAt: string; updatedAt: string;
+}
+export interface JourneyPathIntelligenceScope {
+  from?: string; to?: string; asOf?: string; subjectScope?: JourneyActualPathSubjectKind;
+  minimumSampleSize: number; secondarySuppressionThreshold: number;
+}
+
 export interface JourneyActualPathSnapshot {
   id: string;
   journeyDefinitionId: string;
@@ -987,6 +1036,155 @@ export async function downloadJourneyMetricAnalyticsExport(input: {
 export async function readJourneyMetricObservationLineage(observationId: string) {
   const raw = await api<unknown>(`/api/journey-metrics/observations/${encodeURIComponent(observationId)}/lineage`);
   return parseJourneyMetricObservation(parseEnvelope(raw, 'observation'), true);
+}
+
+const pathIndicatorCodes = ['HIGH_STAGE_DROP_OFF', 'OBSERVED_LOOP', 'UNEXPECTED_TRANSITION', 'PROLONGED_STAGE_DURATION'] as const;
+const inferenceStates = ['draft', 'in_review', 'accepted', 'rejected', 'retired'] as const;
+function strings(value: unknown, label: string) {
+  return array(value, label).map((entry, index) => nonempty(entry, `${label}[${index}]`));
+}
+function parseInferenceContent(value: unknown): JourneyStageInferenceRecommendationContent {
+  const row = exact(value, 'stage inference content', ['key', 'kind', 'fromStageId', 'inferredStageId', 'evidence',
+    'confidence', 'rationale', 'limitations', 'applyMode']);
+  const evidence = exact(row.evidence, 'stage inference evidence', ['occurrenceCount', 'sampleSize', 'percentage']);
+  const confidence = exact(row.confidence, 'stage inference confidence', ['sampleSufficiency', 'recurrence', 'visibility']);
+  const component = (value: unknown, name: string) => {
+    const part = exact(value, name, ['observed', 'required', 'met']);
+    return { observed: integer(part.observed, `${name}.observed`), required: integer(part.required, `${name}.required`, 1),
+      met: bool(part.met, `${name}.met`) };
+  };
+  const visibility = exact(confidence.visibility, 'stage inference visibility', ['suppressed']);
+  return { key: nonempty(row.key, 'stage inference key'),
+    kind: enumValue(row.kind, 'stage inference kind', ['review_stage_inference_rule'] as const),
+    fromStageId: nonempty(row.fromStageId, 'stage inference fromStageId'),
+    inferredStageId: nonempty(row.inferredStageId, 'stage inference inferredStageId'),
+    evidence: { occurrenceCount: integer(evidence.occurrenceCount, 'stage inference occurrenceCount'),
+      sampleSize: integer(evidence.sampleSize, 'stage inference sampleSize'),
+      percentage: nullableFinite(evidence.percentage, 'stage inference percentage') },
+    confidence: { sampleSufficiency: component(confidence.sampleSufficiency, 'sample sufficiency'),
+      recurrence: component(confidence.recurrence, 'recurrence'),
+      visibility: { suppressed: bool(visibility.suppressed, 'stage inference visibility.suppressed') } },
+    rationale: nonempty(row.rationale, 'stage inference rationale'), limitations: strings(row.limitations, 'stage inference limitations'),
+    applyMode: enumValue(row.applyMode, 'stage inference applyMode', ['human_review_only'] as const) };
+}
+
+export function parseJourneyPathIntelligenceResult(value: unknown): JourneyPathIntelligenceResult {
+  const row = exact(value, 'path intelligence', ['detectorVersion', 'provenance', 'sample', 'status', 'abstentionReasons',
+    'indicators', 'recommendations', 'limitations', 'interpretation']);
+  const provenance = exact(row.provenance, 'path intelligence provenance', ['journeyDefinitionId', 'journeyMapVersionId',
+    'subjectScope', 'identityModel', 'window', 'analyticsVersion']);
+  const window = exact(provenance.window, 'path intelligence window', ['start', 'end', 'asOf']);
+  const sample = exact(row.sample, 'path intelligence sample', ['acceptedInstanceCount', 'acceptedVisitCount',
+    'minimumSampleSize', 'secondarySuppressionThreshold', 'sufficient', 'suppressed']);
+  const interpretation = exact(row.interpretation, 'path intelligence interpretation', ['mode', 'statement']);
+  const indicators = array(row.indicators, 'path intelligence indicators').map((value, index) => {
+    const label = `path intelligence indicators[${index}]`;
+    const item = exact(value, label, ['code', 'severity', 'stageId', 'fromStageId', 'toStageId', 'observed', 'threshold',
+      'explanation', 'limitations']);
+    const observed = exact(item.observed, `${label}.observed`, ['count', 'denominator', 'percentage', 'durationMs']);
+    const threshold = exact(item.threshold, `${label}.threshold`, ['kind', 'value']);
+    return { code: enumValue(item.code, `${label}.code`, pathIndicatorCodes),
+      severity: enumValue(item.severity, `${label}.severity`, ['warning', 'critical'] as const),
+      stageId: nullableText(item.stageId, `${label}.stageId`), fromStageId: nullableText(item.fromStageId, `${label}.fromStageId`),
+      toStageId: nullableText(item.toStageId, `${label}.toStageId`),
+      observed: { count: integer(observed.count, `${label}.observed.count`),
+        denominator: nullableFinite(observed.denominator, `${label}.observed.denominator`),
+        percentage: nullableFinite(observed.percentage, `${label}.observed.percentage`),
+        durationMs: nullableFinite(observed.durationMs, `${label}.observed.durationMs`) },
+      threshold: { kind: enumValue(threshold.kind, `${label}.threshold.kind`, ['percentage', 'count', 'duration_ms'] as const),
+        value: finite(threshold.value, `${label}.threshold.value`) },
+      explanation: nonempty(item.explanation, `${label}.explanation`),
+      limitations: strings(item.limitations, `${label}.limitations`) };
+  });
+  return { detectorVersion: nonempty(row.detectorVersion, 'path intelligence detectorVersion'),
+    provenance: { journeyDefinitionId: nonempty(provenance.journeyDefinitionId, 'path intelligence journeyDefinitionId'),
+      journeyMapVersionId: nonempty(provenance.journeyMapVersionId, 'path intelligence journeyMapVersionId'),
+      subjectScope: enumValue(provenance.subjectScope, 'path intelligence subjectScope', ['anonymous_only', 'known_profiles'] as const),
+      identityModel: enumValue(provenance.identityModel, 'path intelligence identityModel', ['anonymous_instance_scoped', 'known_profile_stitched'] as const),
+      window: { start: iso(window.start, 'path intelligence window.start'), end: iso(window.end, 'path intelligence window.end'),
+        asOf: iso(window.asOf, 'path intelligence window.asOf') },
+      analyticsVersion: nonempty(provenance.analyticsVersion, 'path intelligence analyticsVersion') },
+    sample: { acceptedInstanceCount: nullableFinite(sample.acceptedInstanceCount, 'path intelligence acceptedInstanceCount'),
+      acceptedVisitCount: nullableFinite(sample.acceptedVisitCount, 'path intelligence acceptedVisitCount'),
+      minimumSampleSize: integer(sample.minimumSampleSize, 'path intelligence minimumSampleSize', 1),
+      secondarySuppressionThreshold: integer(sample.secondarySuppressionThreshold, 'path intelligence secondarySuppressionThreshold', 1),
+      sufficient: bool(sample.sufficient, 'path intelligence sufficient'), suppressed: bool(sample.suppressed, 'path intelligence suppressed') },
+    status: enumValue(row.status, 'path intelligence status', ['detected', 'abstained'] as const),
+    abstentionReasons: strings(row.abstentionReasons, 'path intelligence abstentionReasons'), indicators,
+    recommendations: array(row.recommendations, 'path intelligence recommendations').map(parseInferenceContent),
+    limitations: strings(row.limitations, 'path intelligence limitations'),
+    interpretation: { mode: enumValue(interpretation.mode, 'path intelligence mode', ['descriptive_rules_only'] as const),
+      statement: nonempty(interpretation.statement, 'path intelligence statement') } };
+}
+
+export function parseJourneyPathIntelligenceRun(value: unknown): JourneyPathIntelligenceRun {
+  const row = exact(value, 'path intelligence run', ['id', 'journeyDefinitionId', 'journeyMapVersionId', 'subjectScope',
+    'period', 'asOf', 'minimumSampleSize', 'secondarySuppressionThreshold', 'detectorVersion', 'contentSha256', 'result',
+    'freshness', 'createdByUserId', 'createdAt']);
+  const period = exact(row.period, 'path intelligence run period', ['start', 'end']);
+  const freshness = exact(row.freshness, 'path intelligence run freshness', ['status', 'staleReasons', 'latestObservedAt',
+    'latestCorrectionAt', 'currentJourneyMapVersionId']);
+  const contentSha256 = nonempty(row.contentSha256, 'path intelligence run contentSha256');
+  if (!/^[a-f0-9]{64}$/u.test(contentSha256)) fail('path intelligence run contentSha256 must be a SHA-256 digest');
+  return { id: nonempty(row.id, 'path intelligence run id'), journeyDefinitionId: nonempty(row.journeyDefinitionId, 'path intelligence run journeyDefinitionId'),
+    journeyMapVersionId: nonempty(row.journeyMapVersionId, 'path intelligence run journeyMapVersionId'),
+    subjectScope: enumValue(row.subjectScope, 'path intelligence run subjectScope', ['anonymous_only', 'known_profiles'] as const),
+    period: { start: iso(period.start, 'path intelligence run period.start'), end: iso(period.end, 'path intelligence run period.end') },
+    asOf: iso(row.asOf, 'path intelligence run asOf'), minimumSampleSize: integer(row.minimumSampleSize, 'path intelligence run minimumSampleSize', 1),
+    secondarySuppressionThreshold: integer(row.secondarySuppressionThreshold, 'path intelligence run secondarySuppressionThreshold', 1),
+    detectorVersion: nonempty(row.detectorVersion, 'path intelligence run detectorVersion'), contentSha256,
+    result: parseJourneyPathIntelligenceResult(row.result),
+    freshness: { status: enumValue(freshness.status, 'path intelligence freshness status', ['current', 'stale'] as const),
+      staleReasons: array(freshness.staleReasons, 'path intelligence stale reasons').map((entry) => enumValue(entry,
+        'path intelligence stale reason', ['design_version_changed', 'newer_observed_visit', 'newer_completed_reprojection'] as const)),
+      latestObservedAt: nullableIso(freshness.latestObservedAt, 'path intelligence latestObservedAt'),
+      latestCorrectionAt: nullableIso(freshness.latestCorrectionAt, 'path intelligence latestCorrectionAt'),
+      currentJourneyMapVersionId: nullableText(freshness.currentJourneyMapVersionId, 'path intelligence currentJourneyMapVersionId') },
+    createdByUserId: nullableId(row.createdByUserId, 'path intelligence createdByUserId'), createdAt: iso(row.createdAt, 'path intelligence createdAt') };
+}
+
+export function parseJourneyStageInferenceRecommendation(value: unknown): JourneyStageInferenceRecommendation {
+  const row = exact(value, 'stage inference recommendation', ['id', 'runId', 'journeyDefinitionId', 'journeyMapVersionId',
+    'recommendation', 'contentSha256', 'state', 'revision', 'reviewedByUserId', 'reviewReason', 'reviewedAt', 'createdAt', 'updatedAt']);
+  const contentSha256 = nonempty(row.contentSha256, 'stage inference contentSha256');
+  if (!/^[a-f0-9]{64}$/u.test(contentSha256)) fail('stage inference contentSha256 must be a SHA-256 digest');
+  return { id: nonempty(row.id, 'stage inference id'), runId: nonempty(row.runId, 'stage inference runId'),
+    journeyDefinitionId: nonempty(row.journeyDefinitionId, 'stage inference journeyDefinitionId'),
+    journeyMapVersionId: nonempty(row.journeyMapVersionId, 'stage inference journeyMapVersionId'),
+    recommendation: parseInferenceContent(row.recommendation), contentSha256,
+    state: enumValue(row.state, 'stage inference state', inferenceStates), revision: integer(row.revision, 'stage inference revision', 1),
+    reviewedByUserId: nullableId(row.reviewedByUserId, 'stage inference reviewedByUserId'),
+    reviewReason: nullableText(row.reviewReason, 'stage inference reviewReason'), reviewedAt: nullableIso(row.reviewedAt, 'stage inference reviewedAt'),
+    createdAt: iso(row.createdAt, 'stage inference createdAt'), updatedAt: iso(row.updatedAt, 'stage inference updatedAt') };
+}
+
+function pathIntelligenceQuery(journeyDefinitionId: string, scope: JourneyPathIntelligenceScope) {
+  return { journeyDefinitionId, from: scope.from, to: scope.to, asOf: scope.asOf, subjectScope: scope.subjectScope,
+    minimumSampleSize: scope.minimumSampleSize, secondarySuppressionThreshold: scope.secondarySuppressionThreshold };
+}
+export async function readJourneyPathIntelligence(journeyDefinitionId: string, scope: JourneyPathIntelligenceScope) {
+  const raw = await api<unknown>(listQuery('/api/journey-metrics/actual-path-intelligence', pathIntelligenceQuery(journeyDefinitionId, scope)));
+  return parseJourneyPathIntelligenceResult(parseEnvelope(raw, 'intelligence'));
+}
+export async function createJourneyPathIntelligenceRun(journeyDefinitionId: string, scope: JourneyPathIntelligenceScope) {
+  const raw = await api<unknown>('/api/journey-metrics/actual-path-intelligence/runs', mutationOptions('POST', pathIntelligenceQuery(journeyDefinitionId, scope)));
+  const row = exact(raw, 'path intelligence run response', ['run', 'recommendations', 'replayed']);
+  return { run: parseJourneyPathIntelligenceRun(row.run), recommendations: array(row.recommendations, 'path intelligence recommendations').map(parseJourneyStageInferenceRecommendation),
+    replayed: bool(row.replayed, 'path intelligence replayed') };
+}
+export async function listJourneyPathIntelligenceRuns(journeyDefinitionId: string) {
+  const raw = await api<unknown>(listQuery('/api/journey-metrics/actual-path-intelligence/runs', { journeyDefinitionId }));
+  return array(parseEnvelope(raw, 'runs'), 'path intelligence runs').map(parseJourneyPathIntelligenceRun);
+}
+export async function listJourneyStageInferenceRecommendations(journeyDefinitionId: string) {
+  const raw = await api<unknown>(listQuery('/api/journey-metrics/actual-path-intelligence/recommendations', { journeyDefinitionId }));
+  return array(parseEnvelope(raw, 'recommendations'), 'stage inference recommendations').map(parseJourneyStageInferenceRecommendation);
+}
+export async function transitionJourneyStageInferenceRecommendation(id: string, expectedRevision: number,
+  state: JourneyStageInferenceState, reason: string) {
+  const raw = await api<unknown>(`/api/journey-metrics/actual-path-intelligence/recommendations/${encodeURIComponent(id)}`,
+    mutationOptions('PATCH', { expectedRevision, state, reason }));
+  return parseJourneyStageInferenceRecommendation(parseEnvelope(raw, 'recommendation'));
 }
 
 export interface JourneyMetricNativeSourceChoice { id: string; name: string; adapter: JourneyNativeMetricAdapter }

@@ -90,6 +90,7 @@ type Summary = {
     environment: JourneyEnvironment | null;
     windowStart: string | null;
     windowEnd: string | null;
+    requestReasonProof?: { sha256: string; length: number } | null;
   };
   before: {
     decisions: number;
@@ -242,11 +243,14 @@ export function queueJourneyStageReprojection(input: {
   windowStart?: string | null;
   windowEnd?: string | null;
   idempotencyKey: string;
+  requestReason?: string | null;
   now?: Date | string;
 }) {
   assertJourneyVersion(input.spaceId, input.journeyDefinitionId, input.journeyMapVersionId);
   const at = nowIso(input.now);
   const key = token(input.idempotencyKey, 'idempotency key');
+  const requestReason = input.requestReason ? token(input.requestReason, 'request reason', 500) : null;
+  const requestReasonProof = requestReason ? { sha256: sha(requestReason), length: requestReason.length } : null;
   const intent = {
     journeyDefinitionId: input.journeyDefinitionId,
     journeyMapVersionId: input.journeyMapVersionId,
@@ -256,7 +260,8 @@ export function queueJourneyStageReprojection(input: {
     sourceId: input.sourceId || null,
     environment: input.environment || null,
     windowStart: input.windowStart || null,
-    windowEnd: input.windowEnd || null
+    windowEnd: input.windowEnd || null,
+    requestReasonProof
   };
   if (intent.windowStart && intent.windowEnd && intent.windowEnd <= intent.windowStart) {
     throw new JourneyStageReprojectionError(
@@ -265,8 +270,6 @@ export function queueJourneyStageReprojection(input: {
       'JOURNEY_STAGE_REPROJECTION_WINDOW_INVALID'
     );
   }
-  const replay = idempotentRow(input.spaceId, key, intent);
-  if (replay) return { run: runPublic(replay), replayed: true };
   const id = crypto.randomUUID();
   const summary = {
     sourceScope: {
@@ -277,7 +280,8 @@ export function queueJourneyStageReprojection(input: {
       sourceId: input.sourceId || null,
       environment: input.environment || null,
       windowStart: input.windowStart || null,
-      windowEnd: input.windowEnd || null
+      windowEnd: input.windowEnd || null,
+      requestReasonProof
     },
     before: { decisions: 0, visits: 0, instances: 0 },
     projected: {
@@ -285,7 +289,19 @@ export function queueJourneyStageReprojection(input: {
       changedCurrentStage: 0, changedTerminalState: 0, noChange: 0
     }
   } satisfies Summary;
-  db.transaction(() => {
+  return db.transaction(() => {
+    const lockSuffix = db.provider === 'postgres' ? ' FOR UPDATE' : '';
+    const tenant = db.prepare(`SELECT id FROM spaces WHERE id=?${lockSuffix}`).get(input.spaceId);
+    if (!tenant) throw new JourneyStageReprojectionError(
+      'The reprojection tenant is unavailable.', 404, 'JOURNEY_STAGE_REPROJECTION_SPACE_NOT_FOUND');
+    const replay = idempotentRow(input.spaceId, key, intent);
+    if (replay) return { run: runPublic(replay), replayed: true };
+    const active = db.prepare(`SELECT id FROM journey_stage_reprojection_runs
+      WHERE space_id=? AND journey_definition_id=? AND state IN ('pending','leased','retryable')
+      ORDER BY created_at,id LIMIT 1`).get(input.spaceId, input.journeyDefinitionId) as { id?: string } | undefined;
+    if (active?.id) throw new JourneyStageReprojectionError(
+      'A stage correction is already active for this journey.', 409,
+      'JOURNEY_STAGE_REPROJECTION_ACTIVE_EXISTS');
     db.prepare(`INSERT INTO journey_stage_reprojection_runs
       (id,space_id,reason,journey_definition_id,journey_map_version_id,rule_definition_id,rule_version_id,
         source_id,environment,window_start,window_end,state,available_at,lease_owner,lease_token,lease_generation,
@@ -302,8 +318,49 @@ export function queueJourneyStageReprojection(input: {
       VALUES (?,?,NULL,NULL,NULL,0,0,0,0,0,0,0,0,0,1,?)`)
       .run(id, input.spaceId, at);
     audit(input.spaceId, input.actorUserId || null, 'reprojection.requested', 'reprojection_run', id, summary.sourceScope, at);
+    return { run: runPublic(db.prepare(`SELECT * FROM journey_stage_reprojection_runs WHERE id=? AND space_id=?`)
+      .get(id, input.spaceId) as RunRow), replayed: false };
   })();
-  return { run: runPublic(db.prepare(`SELECT * FROM journey_stage_reprojection_runs WHERE id=? AND space_id=?`).get(id, input.spaceId) as RunRow), replayed: false };
+}
+
+function safeRunPublic(row: RunRow) {
+  const run = runPublic(row);
+  const proof = run.summary?.sourceScope.requestReasonProof || null;
+  return {
+    id: run.id, reason: run.reason, journeyDefinitionId: run.journeyDefinitionId,
+    journeyMapVersionId: run.journeyMapVersionId, state: run.state,
+    attemptCount: run.attemptCount, maxAttempts: run.maxAttempts,
+    requestReasonProof: proof,
+    progress: run.checkpoint ? {
+      processedCount: run.checkpoint.processedCount, matchedCount: run.checkpoint.matchedCount,
+      noMatchCount: run.checkpoint.noMatchCount,
+      changedCurrentStageCount: run.checkpoint.changedCurrentStageCount,
+      changedTerminalStateCount: run.checkpoint.changedTerminalStateCount,
+      noChangeCount: run.checkpoint.noChangeCount
+    } : null,
+    errorCode: run.errorCode, createdAt: run.createdAt, updatedAt: run.updatedAt,
+    completedAt: run.completedAt
+  };
+}
+
+export function listJourneyStageReprojections(input: {
+  spaceId: string; journeyDefinitionId: string; limit?: number;
+}) {
+  const limit = Math.max(1, Math.min(50, Math.floor(input.limit || 20)));
+  return (db.prepare(`SELECT * FROM journey_stage_reprojection_runs
+    WHERE space_id=? AND journey_definition_id=? ORDER BY created_at DESC,id DESC LIMIT ?`)
+    .all(input.spaceId, input.journeyDefinitionId, limit) as RunRow[]).map(safeRunPublic);
+}
+
+export function readJourneyStageReprojection(input: {
+  spaceId: string; journeyDefinitionId: string; runId: string;
+}) {
+  const row = db.prepare(`SELECT * FROM journey_stage_reprojection_runs
+    WHERE id=? AND space_id=? AND journey_definition_id=?`).get(input.runId, input.spaceId,
+      input.journeyDefinitionId) as RunRow | undefined;
+  if (!row) throw new JourneyStageReprojectionError(
+    'Stage correction run not found.', 404, 'JOURNEY_STAGE_REPROJECTION_NOT_FOUND');
+  return safeRunPublic(row);
 }
 
 function recoverExpired(at: string) {

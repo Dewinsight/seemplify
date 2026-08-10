@@ -25,8 +25,19 @@ import {
   readLatestJourneyActualPathRollup, readLatestJourneyActualPathSnapshot
 } from './journeyActualPathAnalytics.js';
 import { JourneyPathAnalyticsConfigurationError } from './journeyPathAnalytics.js';
+import {
+  calculatePersistableJourneyPathIntelligence, createJourneyPathIntelligenceRun,
+  JourneyPathIntelligenceRepositoryError, listJourneyPathIntelligenceRuns,
+  listJourneyStageInferenceRecommendations, readJourneyActualPathComparison,
+  transitionJourneyStageInferenceRecommendation
+} from './journeyActualPathIntelligenceRepository.js';
 import { resolveRequestSpace, SpaceError } from './spaces.js';
-import { SubscriptionEntitlementError } from './subscriptionEntitlements.js';
+import { assertSubscriptionFeature, SubscriptionEntitlementError } from './subscriptionEntitlements.js';
+import { effectiveJourneyRole } from './journeyCollaboration.js';
+import {
+  JourneyStageReprojectionError, listJourneyStageReprojections, queueJourneyStageReprojection,
+  readJourneyStageReprojection
+} from './journeyStageReprojection.js';
 import {
   createJourneyMetricAlertDefinition, createJourneyMetricAlertDefinitionVersion,
   evaluateJourneyMetricAlerts, journeyMetricAlertNotificationPreference, listJourneyMetricAlertDefinitions,
@@ -35,6 +46,7 @@ import {
   updateJourneyMetricAlertDefinition, updateJourneyMetricAlertNotification,
   updateJourneyMetricAlertNotificationPreference, type JourneyMetricAlertVersionInput
 } from './journeyMetricAlerts.js';
+import { journeyStageInferenceGovernanceRouter } from './journeyStageInferenceGovernanceRoutes.js';
 
 export const journeyMetricRouter = express.Router();
 export const journeyMetricImportRouter = express.Router();
@@ -42,6 +54,7 @@ export const journeyMetricImportRouter = express.Router();
 journeyMetricRouter.use((_request, response, next) => {
   response.setHeader('Cache-Control', 'private, no-store'); next();
 });
+journeyMetricRouter.use('/actual-path-stage-inference', journeyStageInferenceGovernanceRouter);
 journeyMetricImportRouter.use((_request, response, next) => {
   response.setHeader('Cache-Control', 'no-store'); response.setHeader('X-Content-Type-Options', 'nosniff'); next();
 });
@@ -56,6 +69,19 @@ function context(request: express.Request) {
   const user = currentSessionUser(request);
   if (!user) throw new SpaceError('Authentication required.', 401, 'AUTHENTICATION_REQUIRED');
   return { user, space: resolveRequestSpace(request, user.id) };
+}
+function actualPathCorrectionContext(request: express.Request, capability: 'journeys.read' | 'journeys.edit') {
+  const resolved = context(request);
+  assertSubscriptionFeature(resolved.space.id, 'journeyMetrics');
+  assertSubscriptionFeature(resolved.space.id, 'journeyActualPaths');
+  assertSubscriptionFeature(resolved.space.id, 'journeyConnected');
+  if (!effectiveJourneyRole(resolved.space.id, resolved.user.id).capabilities.has(capability)) {
+    throw new JourneyStageReprojectionError(
+      `Journey ${capability === 'journeys.read' ? 'read' : 'edit'} capability is required.`, 403,
+      capability === 'journeys.read' ? 'JOURNEY_STAGE_REPROJECTION_READ_REQUIRED'
+        : 'JOURNEY_STAGE_REPROJECTION_EDIT_REQUIRED');
+  }
+  return resolved;
 }
 function editor(request: express.Request) {
   const resolved = context(request);
@@ -93,6 +119,12 @@ function sendError(response: express.Response, value: unknown) {
   if (value instanceof JourneyPathAnalyticsConfigurationError || value instanceof JourneyActualPathAnalyticsError) {
     return response.status('status' in value ? value.status : 400).json({ error: value.message, code: value.code });
   }
+  if (value instanceof JourneyPathIntelligenceRepositoryError) return response.status(value.status).json({
+    error: value.message, code: value.code, details: value.details
+  });
+  if (value instanceof JourneyStageReprojectionError) return response.status(value.status).json({
+    error: value.message, code: value.code
+  });
   if (value instanceof JourneyMetricsError || value instanceof SpaceError || value instanceof SubscriptionEntitlementError
       || value instanceof JourneyEventIngestionError || value instanceof JourneyNativeMetricSourceError) {
     return response.status(value.status).json({ error: value.message, code: value.code,
@@ -348,7 +380,7 @@ journeyMetricRouter.get('/observations', (request, response) => {
 
 journeyMetricRouter.get('/actual-paths', (request, response) => {
   try {
-    const { space } = context(request);
+    const { space } = actualPathCorrectionContext(request,'journeys.read');
     const query = z.object({
       journeyDefinitionId: id,
       from: z.string().datetime({ offset: true }).optional(),
@@ -360,16 +392,116 @@ journeyMetricRouter.get('/actual-paths', (request, response) => {
     return response.json(readJourneyActualPathAnalytics({ spaceId: space.id, ...query }));
   } catch (value) { return sendError(response, value); }
 });
+journeyMetricRouter.get('/actual-path-corrections', (request, response) => {
+  try {
+    const { space } = actualPathCorrectionContext(request, 'journeys.read');
+    const query = z.object({ journeyDefinitionId: id,
+      limit: z.coerce.number().int().min(1).max(50).default(20) }).strict().parse(request.query);
+    return response.json({ runs: listJourneyStageReprojections({ spaceId: space.id, ...query }) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.get('/actual-path-corrections/:runId', (request, response) => {
+  try {
+    const { space } = actualPathCorrectionContext(request, 'journeys.read');
+    const query = z.object({ journeyDefinitionId: id }).strict().parse(request.query);
+    return response.json({ run: readJourneyStageReprojection({ spaceId: space.id,
+      journeyDefinitionId: query.journeyDefinitionId, runId: id.parse(request.params.runId) }) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.post('/actual-path-corrections', (request, response) => {
+  try {
+    const { user, space } = actualPathCorrectionContext(request, 'journeys.edit');
+    const body = z.object({ journeyDefinitionId: id, journeyMapVersionId: id,
+      requestReason: z.string().trim().min(8).max(500),
+      windowStart: z.string().datetime({ offset: true }).nullable().optional(),
+      windowEnd: z.string().datetime({ offset: true }).nullable().optional(),
+      idempotencyKey: z.string().trim().max(200).optional() }).strict().parse(request.body || {});
+    const queued = queueJourneyStageReprojection({ spaceId: space.id, actorUserId: user.id,
+      journeyDefinitionId: body.journeyDefinitionId, journeyMapVersionId: body.journeyMapVersionId,
+      reason: 'manual', requestReason: body.requestReason, windowStart: body.windowStart,
+      windowEnd: body.windowEnd, idempotencyKey: key(request, body.idempotencyKey) });
+    const run = readJourneyStageReprojection({ spaceId: space.id,
+      journeyDefinitionId: body.journeyDefinitionId, runId: queued.run.id });
+    return response.status(queued.replayed ? 200 : 202).json({ run, replayed: queued.replayed });
+  } catch (value) { return sendError(response, value); }
+});
+const pathIntelligenceQuery = z.object({
+  journeyDefinitionId: id,
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  asOf: z.string().datetime({ offset: true }).optional(),
+  subjectScope: z.enum(['anonymous_only', 'known_profiles']).optional(),
+  minimumSampleSize: z.coerce.number().int().min(3).max(1_000).default(10),
+  secondarySuppressionThreshold: z.coerce.number().int().min(3).max(100).default(3)
+}).strict();
+journeyMetricRouter.get('/actual-path-intelligence', (request, response) => {
+  try {
+    const { user, space } = actualPathCorrectionContext(request,'journeys.read'); const query = pathIntelligenceQuery.parse(request.query);
+    return response.json({ intelligence: calculatePersistableJourneyPathIntelligence({
+      spaceId: space.id, actorUserId: user.id, ...query
+    }) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.get('/actual-path-comparisons', (request, response) => {
+  try {
+    const { user, space } = actualPathCorrectionContext(request,'journeys.read');
+    const query = z.object({
+      journeyDefinitionId: id,
+      subjectScope: z.enum(['anonymous_only', 'known_profiles']).optional(),
+      baselineFrom: z.string().datetime({ offset: true }), baselineTo: z.string().datetime({ offset: true }),
+      currentFrom: z.string().datetime({ offset: true }), currentTo: z.string().datetime({ offset: true }),
+      baselineAsOf: z.string().datetime({ offset: true }).optional(), currentAsOf: z.string().datetime({ offset: true }).optional(),
+      minimumSampleSize: z.coerce.number().int().min(3).max(1_000).default(10),
+      secondarySuppressionThreshold: z.coerce.number().int().min(3).max(100).default(3),
+      limit: z.coerce.number().int().min(1).max(50).default(20)
+    }).strict().parse(request.query);
+    return response.json({ comparison: readJourneyActualPathComparison({ spaceId: space.id, actorUserId: user.id, ...query }) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.post('/actual-path-intelligence/runs', (request, response) => {
+  try {
+    const { user, space } = actualPathCorrectionContext(request,'journeys.edit'); const body = pathIntelligenceQuery.parse(request.body || {});
+    const result = createJourneyPathIntelligenceRun({ spaceId: space.id, actorUserId: user.id, ...body });
+    return response.status(result.replayed ? 200 : 201).json(result);
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.get('/actual-path-intelligence/runs', (request, response) => {
+  try {
+    const { user, space } = actualPathCorrectionContext(request,'journeys.read');
+    const query = z.object({ journeyDefinitionId: id }).strict().parse(request.query);
+    return response.json({ runs: listJourneyPathIntelligenceRuns({ spaceId: space.id, actorUserId: user.id, ...query }) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.get('/actual-path-intelligence/recommendations', (request, response) => {
+  try {
+    const { user, space } = actualPathCorrectionContext(request,'journeys.read');
+    const query = z.object({ journeyDefinitionId: id.optional() }).strict().parse(request.query);
+    return response.json({ recommendations: listJourneyStageInferenceRecommendations({
+      spaceId: space.id, actorUserId: user.id, ...query
+    }) });
+  } catch (value) { return sendError(response, value); }
+});
+journeyMetricRouter.patch('/actual-path-intelligence/recommendations/:recommendationId', (request, response) => {
+  try {
+    const { user, space } = actualPathCorrectionContext(request,'journeys.edit');
+    const body = z.object({ expectedRevision: z.number().int().min(1),
+      state: z.enum(['draft', 'in_review', 'accepted', 'rejected', 'retired']),
+      reason: z.string().trim().min(3).max(2_000) }).strict().parse(request.body || {});
+    return response.json({ recommendation: transitionJourneyStageInferenceRecommendation({
+      spaceId: space.id, actorUserId: user.id, recommendationId: id.parse(request.params.recommendationId), ...body
+    }) });
+  } catch (value) { return sendError(response, value); }
+});
 journeyMetricRouter.get('/actual-path-rollups/latest', (request, response) => {
   try {
-    const { space } = context(request);
+    const { space } = actualPathCorrectionContext(request,'journeys.read');
     const query = z.object({ journeyDefinitionId: id, subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional() }).strict().parse(request.query);
     return response.json({ rollup: readLatestJourneyActualPathRollup(space.id, query.journeyDefinitionId, query.subjectKind) });
   } catch (value) { return sendError(response, value); }
 });
 journeyMetricRouter.post('/actual-path-rollups/materialize', (request, response) => {
   try {
-    const { user, space } = editor(request);
+    const { user, space } = actualPathCorrectionContext(request,'journeys.edit');
     const body = z.object({
       journeyDefinitionId: id,
       from: z.string().datetime({ offset: true }).optional(),
@@ -384,28 +516,28 @@ journeyMetricRouter.post('/actual-path-rollups/materialize', (request, response)
 });
 journeyMetricRouter.get('/actual-path-snapshots/latest', (request, response) => {
   try {
-    const { space } = context(request);
+    const { space } = actualPathCorrectionContext(request,'journeys.read');
     const query = z.object({ journeyDefinitionId: id, subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional() }).strict().parse(request.query);
     return response.json({ snapshot: readLatestJourneyActualPathSnapshot(space.id, query.journeyDefinitionId, query.subjectKind) });
   } catch (value) { return sendError(response, value); }
 });
 journeyMetricRouter.get('/actual-path-snapshots', (request, response) => {
   try {
-    const { space } = context(request);
+    const { space } = actualPathCorrectionContext(request,'journeys.read');
     const query = z.object({ journeyDefinitionId: id, subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional(), ...page }).strict().parse(request.query);
     return response.json({ snapshots: listJourneyActualPathSnapshots(space.id, query.journeyDefinitionId, query.limit, query.subjectKind) });
   } catch (value) { return sendError(response, value); }
 });
 journeyMetricRouter.get('/actual-path-snapshots/:snapshotId', (request, response) => {
   try {
-    const { space } = context(request);
+    const { space } = actualPathCorrectionContext(request,'journeys.read');
     const query = z.object({ journeyDefinitionId: id, subjectKind: z.enum(['anonymous_only', 'known_profiles']).optional() }).strict().parse(request.query);
     return response.json({ snapshot: readJourneyActualPathSnapshot(space.id, query.journeyDefinitionId, id.parse(request.params.snapshotId), query.subjectKind) });
   } catch (value) { return sendError(response, value); }
 });
 journeyMetricRouter.post('/actual-path-snapshots', (request, response) => {
   try {
-    const { user, space } = editor(request);
+    const { user, space } = actualPathCorrectionContext(request,'journeys.edit');
     const body = z.object({
       journeyDefinitionId: id,
       from: z.string().datetime({ offset: true }).optional(),

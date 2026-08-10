@@ -119,7 +119,15 @@ function run(command, arguments_, options = {}) {
   commandLogs.push(String(result.stdout || ''), String(result.stderr || ''));
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`${path.basename(command)} failed with exit ${result.status}.`);
+    const diagnosticLines = `${result.stderr || ''}\n${result.stdout || ''}`
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-8);
+    const diagnostic = diagnosticLines.length > 0
+      ? ` Last output: ${redactOperationalText(diagnosticLines.join(' | ')).slice(0, 2_000)}`
+      : '';
+    throw new Error(`${path.basename(command)} failed with exit ${result.status}.${diagnostic}`);
   }
   return result;
 }
@@ -136,7 +144,10 @@ function dockerPsql(databaseName, sql, allowFailure = false) {
   });
   commandLogs.push(String(result.stdout || ''), String(result.stderr || ''));
   if (!allowFailure && result.error) throw result.error;
-  if (!allowFailure && result.status !== 0) throw new Error(`docker psql failed with exit ${result.status}.`);
+  if (!allowFailure && result.status !== 0) {
+    const diagnostic = String(result.stderr || result.stdout || 'no psql diagnostic').trim();
+    throw new Error(`docker psql failed with exit ${result.status}: ${diagnostic}`);
+  }
   return result;
 }
 
@@ -509,7 +520,10 @@ async function provisionPostgres() {
     const ready = spawnSync(dockerCommand, ['exec', container, 'pg_isready', '-q', '-U', 'postgres', '-d', 'postgres'], {
       encoding: 'utf8', windowsHide: true
     });
-    if (ready.status === 0) break;
+    const sqlReady = ready.status === 0
+      ? dockerPsql('postgres', 'SELECT 1;', true)
+      : null;
+    if (ready.status === 0 && !sqlReady?.error && sqlReady.status === 0) break;
     if (attempt === 59) throw new Error('PostgreSQL container did not become ready within 30 seconds.');
     await wait(500);
   }

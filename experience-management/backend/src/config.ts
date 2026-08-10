@@ -158,6 +158,16 @@ function configuredBoolean(value: unknown, fallback: boolean, name: string) {
   throw new Error(`${name} must be a boolean value.`);
 }
 
+function configuredCsvTokens(value: unknown, name: string, maximum: number) {
+  if (value === undefined || value === null || String(value).trim() === '') return [] as string[];
+  const tokens = String(value).split(',').map((entry) => entry.trim());
+  if (!tokens.length || tokens.length > maximum || new Set(tokens).size !== tokens.length
+    || tokens.some((entry) => !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u.test(entry))) {
+    throw new Error(`${name} must contain 1 to ${maximum} unique comma-separated tokens.`);
+  }
+  return tokens;
+}
+
 /**
  * Resolve one immutable embedding-space identity. Keeping this pure makes
  * deployment configuration testable without importing the database runtime.
@@ -270,16 +280,21 @@ function postgresSourceSha256(value: unknown) {
   return normalized;
 }
 
+const resolvedDatabasePath = resolveFromBackend(
+  process.env.DATABASE_PATH || '../../.local-runtime/experience-management/experience.sqlite'
+);
+const resolvedCodexRuntimeDir = process.env.CODEX_RUNTIME_DIR
+  ? resolveFromBackend(process.env.CODEX_RUNTIME_DIR)
+  : process.env.DATABASE_PATH
+    ? path.join(path.dirname(resolvedDatabasePath), 'codex')
+    : resolveFromBackend('../../.local-runtime/experience-management/codex');
+
 export const config = {
   host: process.env.HOST || '127.0.0.1',
   port: Math.max(1, Number(process.env.PORT || 5410)),
   publicUrl: String(process.env.PUBLIC_URL || 'http://127.0.0.1:5410').replace(/\/+$/, ''),
-  databasePath: resolveFromBackend(
-    process.env.DATABASE_PATH || '../../.local-runtime/experience-management/experience.sqlite'
-  ),
-  codexRuntimeDir: resolveFromBackend(
-    process.env.CODEX_RUNTIME_DIR || '../../.local-runtime/experience-management/codex'
-  ),
+  databasePath: resolvedDatabasePath,
+  codexRuntimeDir: resolvedCodexRuntimeDir,
   databaseProvider: databaseProvider(process.env.DATABASE_PROVIDER),
   postgres: {
     host: String(process.env.POSTGRES_HOST || '127.0.0.1').trim(),
@@ -291,7 +306,75 @@ export const config = {
     ),
     ssl: postgresSsl(process.env.POSTGRES_SSL),
     schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
-    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 30, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 55, 1, 1_000_000),
+    sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
+  },
+  journeyActionWorkerEnabled: configuredBoolean(process.env.JOURNEY_ACTION_WORKER_ENABLED, false,
+    'JOURNEY_ACTION_WORKER_ENABLED'),
+  journeyActionWorkerPollMs: boundedNumber(process.env.JOURNEY_ACTION_WORKER_POLL_MS, 1_000, 100, 300_000),
+  journeyActionWorkerKeyId: String(process.env.JOURNEY_ACTION_WORKER_KEY_ID || 'journey-worker-primary').trim(),
+  journeyActionWorkerKeyRef: String(process.env.JOURNEY_ACTION_WORKER_KEY_REF || 'file://journey-worker-primary').trim(),
+  journeyActionWorkerSpaceIds: configuredCsvTokens(process.env.JOURNEY_ACTION_WORKER_SPACE_IDS,
+    'JOURNEY_ACTION_WORKER_SPACE_IDS', 100),
+  journeyActionWorkerAdapters: configuredCsvTokens(process.env.JOURNEY_ACTION_WORKER_ADAPTERS,
+    'JOURNEY_ACTION_WORKER_ADAPTERS', 5),
+  journeyActionWorkerSecretFile: resolveFromBackend(process.env.JOURNEY_ACTION_WORKER_SECRET_FILE
+    || '../../.local-runtime/experience-management/journey-worker-secret'),
+  journeyActionWorkerPostgres: {
+    host: String(process.env.POSTGRES_HOST || '127.0.0.1').trim(),
+    port: boundedNumber(process.env.POSTGRES_PORT, 5432, 1, 65_535),
+    database: String(process.env.POSTGRES_DATABASE || 'seemplify_experience').trim(),
+    user: String(process.env.POSTGRES_WORKER_USER || 'seemplify_experience_worker').trim(),
+    passwordFile: resolveFromBackend(process.env.POSTGRES_WORKER_PASSWORD_FILE
+      || '../../.local-runtime/experience-management/postgres-worker-password'),
+    ssl: postgresSsl(process.env.POSTGRES_SSL),
+    schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 55, 1, 1_000_000),
+    sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
+  },
+  journeyConnectorWorkerEnabled: configuredBoolean(process.env.JOURNEY_CONNECTOR_WORKER_ENABLED, false,
+    'JOURNEY_CONNECTOR_WORKER_ENABLED'),
+  journeyConnectorWorkerPollMs: configuredInteger(process.env.JOURNEY_CONNECTOR_WORKER_POLL_MS, 5_000, 250, 60_000,
+    'JOURNEY_CONNECTOR_WORKER_POLL_MS'),
+  journeyConnectorWorkerPrincipalId: String(process.env.JOURNEY_CONNECTOR_WORKER_PRINCIPAL_ID || '').trim(),
+  journeyConnectorWorkerKeyId: String(process.env.JOURNEY_CONNECTOR_WORKER_KEY_ID || '').trim(),
+  journeyConnectorWorkerKeyRef: String(process.env.JOURNEY_CONNECTOR_WORKER_KEY_REF || '').trim(),
+  journeyConnectorWorkerSecretFile: resolveFromBackend(process.env.JOURNEY_CONNECTOR_WORKER_SECRET_FILE
+    || '../../.local-runtime/experience-management/journey-connector-worker-secret'),
+  journeyConnectorWorkerSpaceIds: configuredCsvTokens(process.env.JOURNEY_CONNECTOR_WORKER_SPACE_IDS,
+    'JOURNEY_CONNECTOR_WORKER_SPACE_IDS', 100),
+  journeyConnectorWorkerConnectorIds: configuredCsvTokens(process.env.JOURNEY_CONNECTOR_WORKER_CONNECTOR_IDS,
+    'JOURNEY_CONNECTOR_WORKER_CONNECTOR_IDS', 200),
+  journeyConnectorWorkerPostgres: {
+    host: String(process.env.POSTGRES_HOST || '127.0.0.1').trim(),
+    port: boundedNumber(process.env.POSTGRES_PORT, 5432, 1, 65_535),
+    database: String(process.env.POSTGRES_DATABASE || 'seemplify_experience').trim(),
+    user: String(process.env.POSTGRES_CONNECTOR_WORKER_USER || 'seemplify_experience_connector_worker').trim(),
+    passwordFile: resolveFromBackend(process.env.POSTGRES_CONNECTOR_WORKER_PASSWORD_FILE
+      || '../../.local-runtime/experience-management/postgres-connector-worker-password'),
+    ssl: postgresSsl(process.env.POSTGRES_SSL), schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 55, 1, 1_000_000),
+    sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
+  },
+  journeyPrivacyWorkerEnabled: configuredBoolean(process.env.JOURNEY_PRIVACY_WORKER_ENABLED, false,
+    'JOURNEY_PRIVACY_WORKER_ENABLED'),
+  journeyPrivacyWorkerPollMs: boundedNumber(process.env.JOURNEY_PRIVACY_WORKER_POLL_MS, 1_000, 100, 300_000),
+  journeyPrivacyWorkerBatchSize: boundedNumber(process.env.JOURNEY_PRIVACY_WORKER_BATCH_SIZE, 10, 1, 50),
+  journeyPrivacyWorkerLeaseSeconds: boundedNumber(process.env.JOURNEY_PRIVACY_WORKER_LEASE_SECONDS, 60, 5, 300),
+  journeyPrivacyWorkerPrincipalId: String(process.env.JOURNEY_PRIVACY_WORKER_PRINCIPAL_ID || '').trim(),
+  journeyPrivacyWorkerKeyId: String(process.env.JOURNEY_PRIVACY_WORKER_KEY_ID || '').trim(),
+  journeyPrivacyWorkerKeyRef: String(process.env.JOURNEY_PRIVACY_WORKER_KEY_REF || '').trim(),
+  journeyPrivacyWorkerSecretFile: resolveFromBackend(process.env.JOURNEY_PRIVACY_WORKER_SECRET_FILE
+    || '../../.local-runtime/experience-management/journey-privacy-worker-secret'),
+  journeyPrivacyWorkerPostgres: {
+    host: String(process.env.POSTGRES_HOST || '127.0.0.1').trim(),
+    port: boundedNumber(process.env.POSTGRES_PORT, 5432, 1, 65_535),
+    database: String(process.env.POSTGRES_DATABASE || 'seemplify_experience').trim(),
+    user: String(process.env.POSTGRES_PRIVACY_WORKER_USER || 'seemplify_experience_privacy_worker').trim(),
+    passwordFile: resolveFromBackend(process.env.POSTGRES_PRIVACY_WORKER_PASSWORD_FILE
+      || '../../.local-runtime/experience-management/postgres-privacy-worker-password'),
+    ssl: postgresSsl(process.env.POSTGRES_SSL),schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION,1,1,1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION,55,1,1_000_000),
     sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
   },
   uploadDir: resolveFromBackend(
@@ -335,6 +418,61 @@ export const config = {
   journeyStageWorkerPollMs: boundedNumber(process.env.JOURNEY_STAGE_WORKER_POLL_MS, 750, 100, 60_000),
   journeyStageWorkerLeaseMs: boundedNumber(process.env.JOURNEY_STAGE_WORKER_LEASE_MS, 60_000, 5_000, 10 * 60_000),
   journeyStageWorkerBatchSize: boundedNumber(process.env.JOURNEY_STAGE_WORKER_BATCH_SIZE, 25, 1, 100),
+  journeyStageSurveyFeedWorkerEnabled: configuredBoolean(process.env.JOURNEY_STAGE_SURVEY_FEED_WORKER_ENABLED, false,
+    'JOURNEY_STAGE_SURVEY_FEED_WORKER_ENABLED'),
+  journeyOperationalStageFeedWorkerEnabled: configuredBoolean(process.env.JOURNEY_OPERATIONAL_STAGE_FEED_WORKER_ENABLED, false,
+    'JOURNEY_OPERATIONAL_STAGE_FEED_WORKER_ENABLED'),
+  journeyOperationalStageFeedWorkerPollMs: boundedNumber(process.env.JOURNEY_OPERATIONAL_STAGE_FEED_WORKER_POLL_MS, 1_000, 100, 60_000),
+  journeyOperationalStageFeedWorkerBatchSize: boundedNumber(process.env.JOURNEY_OPERATIONAL_STAGE_FEED_WORKER_BATCH_SIZE, 25, 1, 100),
+  journeyOperationalStageFeedWorkerLeaseMs: boundedNumber(process.env.JOURNEY_OPERATIONAL_STAGE_FEED_WORKER_LEASE_MS, 30_000, 5_000, 300_000),
+  journeyOperationalStageFeedRetentionPollMs: boundedNumber(process.env.JOURNEY_OPERATIONAL_STAGE_FEED_RETENTION_POLL_MS,
+    60_000, 1_000, 86_400_000),
+  journeyOperationalStageFeedWorkerSpaceIds: configuredCsvTokens(process.env.JOURNEY_OPERATIONAL_STAGE_FEED_WORKER_SPACE_IDS,
+    'JOURNEY_OPERATIONAL_STAGE_FEED_WORKER_SPACE_IDS', 100),
+  journeyOperationalStageFeedWorkerPostgres: {
+    host: String(process.env.POSTGRES_HOST || '127.0.0.1').trim(),
+    port: boundedNumber(process.env.POSTGRES_PORT, 5432, 1, 65_535),
+    database: String(process.env.POSTGRES_DATABASE || 'seemplify_experience').trim(),
+    user: String(process.env.POSTGRES_OPERATIONAL_FEED_WORKER_USER || 'seemplify_experience_operational_feed_worker').trim(),
+    passwordFile: resolveFromBackend(process.env.POSTGRES_OPERATIONAL_FEED_WORKER_PASSWORD_FILE
+      || '../../.local-runtime/experience-management/postgres-operational-feed-worker-password'),
+    ssl: postgresSsl(process.env.POSTGRES_SSL), schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION, 1, 1, 1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION, 55, 1, 1_000_000),
+    sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
+  },
+  journeyEventRetentionWorkerEnabled: configuredBoolean(process.env.JOURNEY_EVENT_RETENTION_WORKER_ENABLED, false,
+    'JOURNEY_EVENT_RETENTION_WORKER_ENABLED'),
+  journeyEventRetentionWorkerPollMs: boundedNumber(process.env.JOURNEY_EVENT_RETENTION_WORKER_POLL_MS, 60_000, 1_000, 86_400_000),
+  journeyEventRetentionWorkerBatchSize: boundedNumber(process.env.JOURNEY_EVENT_RETENTION_WORKER_BATCH_SIZE, 100, 1, 500),
+  journeyEventRetentionWorkerLeaseMs: boundedNumber(process.env.JOURNEY_EVENT_RETENTION_WORKER_LEASE_MS, 300_000, 30_000, 3_600_000),
+  journeyEventRetentionPostgres: {
+    host: String(process.env.POSTGRES_HOST || '127.0.0.1').trim(),port: boundedNumber(process.env.POSTGRES_PORT, 5432, 1, 65_535),
+    database: String(process.env.POSTGRES_DATABASE || 'seemplify_experience').trim(),
+    user: String(process.env.POSTGRES_EVENT_RETENTION_WORKER_USER || 'seemplify_experience_event_retention_worker').trim(),
+    passwordFile: resolveFromBackend(process.env.POSTGRES_EVENT_RETENTION_WORKER_PASSWORD_FILE
+      || '../../.local-runtime/experience-management/postgres-event-retention-worker-password'),
+    ssl: postgresSsl(process.env.POSTGRES_SSL),schemaVersion: boundedNumber(process.env.POSTGRES_SCHEMA_VERSION,1,1,1_000_000),
+    runtimeSchemaVersion: boundedNumber(process.env.POSTGRES_RUNTIME_SCHEMA_VERSION,55,1,1_000_000),
+    sourceSha256: postgresSourceSha256(process.env.POSTGRES_SOURCE_SHA256)
+  },
+  journeyEvidenceMonitorEnabled: configuredBoolean(process.env.JOURNEY_EVIDENCE_MONITOR_ENABLED,false,
+    'JOURNEY_EVIDENCE_MONITOR_ENABLED'),
+  journeyEvidenceMonitorPollMs: boundedNumber(process.env.JOURNEY_EVIDENCE_MONITOR_POLL_MS,60_000,1_000,86_400_000),
+  journeyEvidenceMonitorBatchSize: boundedNumber(process.env.JOURNEY_EVIDENCE_MONITOR_BATCH_SIZE,25,1,100),
+  // Outbound collaboration mail is off until a deployment decides otherwise.
+  // Recipients still have to opt in individually; this switch only decides
+  // whether the delivery worker exists at all.
+  journeyCollaborationEmailWorkerEnabled: configuredBoolean(
+    process.env.JOURNEY_COLLABORATION_EMAIL_WORKER_ENABLED, false,
+    'JOURNEY_COLLABORATION_EMAIL_WORKER_ENABLED'),
+  journeyCollaborationEmailWorkerPollMs: boundedNumber(
+    process.env.JOURNEY_COLLABORATION_EMAIL_WORKER_POLL_MS, 15_000, 1_000, 3_600_000),
+  journeyCollaborationEmailWorkerBatchSize: boundedNumber(
+    process.env.JOURNEY_COLLABORATION_EMAIL_WORKER_BATCH_SIZE, 25, 1, 100),
+  journeyEventIntelligenceWorkerEnabled: configuredBoolean(process.env.JOURNEY_EVENT_INTELLIGENCE_WORKER_ENABLED, false,
+    'JOURNEY_EVENT_INTELLIGENCE_WORKER_ENABLED'),
+  journeyEventIntelligenceWorkerPollMs: boundedNumber(process.env.JOURNEY_EVENT_INTELLIGENCE_WORKER_POLL_MS, 1_000, 100, 60_000),
+  journeyEventIntelligenceWorkerBatchSize: boundedNumber(process.env.JOURNEY_EVENT_INTELLIGENCE_WORKER_BATCH_SIZE, 25, 1, 100),
   journeyResearchRefreshPollMs: boundedNumber(process.env.JOURNEY_RESEARCH_REFRESH_POLL_MS, 2_000, 100, 60_000),
   journeyResearchRefreshLeaseMs: boundedNumber(process.env.JOURNEY_RESEARCH_REFRESH_LEASE_MS, 60_000, 5_000, 10 * 60_000),
   journeyResearchRefreshBatchSize: boundedNumber(process.env.JOURNEY_RESEARCH_REFRESH_BATCH_SIZE, 10, 1, 100),
@@ -385,6 +523,9 @@ export const config = {
   mailIdempotencyTtlMinutes: boundedNumber(process.env.MAIL_IDEMPOTENCY_TTL_MINUTES, 29, 5, 1440),
   brevoWebhookSecretFile: resolveFromBackend(
     process.env.BREVO_WEBHOOK_SECRET_FILE || '../../.local-runtime/experience-management/brevo-webhook-secret'
+  ),
+  journeyWebhookEncryptionKeyFile: resolveFromBackend(
+    process.env.JOURNEY_WEBHOOK_ENCRYPTION_KEY_FILE || '../../.local-runtime/experience-management/journey-webhook-encryption-key'
   ),
   xApiBaseUrl: String(process.env.X_API_BASE_URL || 'https://api.x.com').replace(/\/+$/, ''),
   xOAuthBaseUrl: String(process.env.X_OAUTH_BASE_URL || 'https://api.x.com').replace(/\/+$/, ''),

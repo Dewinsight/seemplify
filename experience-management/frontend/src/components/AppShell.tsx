@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { BarChart3, BookOpenText, BrainCircuit, CircleAlert, CircleCheck, ClipboardList, Code2, Cpu, FileCheck2, FileSearch, FileSignature, Gauge, Inbox, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, UsersRound, X } from 'lucide-react';
+import { BarChart3, BookOpenText, BrainCircuit, BriefcaseBusiness, CircleAlert, CircleCheck, ClipboardList, Code2, Cpu, Database, FileCheck2, FileSearch, FileSignature, Gauge, GitFork, Inbox, Layers3, LoaderCircle, LogOut, MailCheck, MailOpen, Megaphone, Menu, MessageSquareText, Plus, Radar, Route, Settings2, ShieldCheck, Sparkles, Unplug, UsersRound, X } from 'lucide-react';
 import { Link, Navigate, NavLink, useLocation } from '@/lib/router';
 import { activeSpaceId, api, json, storeActiveSpaceId, subscribeToSpaceChanges } from '@/lib/api';
 import { allowConfirmedSpaceSwitchUnload, confirmDiscardForSpaceSwitch } from '@/lib/unsavedChanges';
@@ -33,6 +33,16 @@ const navigation: Array<{ to: string; label: string; icon: typeof Gauge; end?: b
   { to: '/journey-personas', label: 'Personas', icon: UsersRound, feature: 'journeyPersonas' },
   { to: '/journey-research', label: 'Journey research', icon: FileSearch, feature: 'journeyEvidence' },
   { to: '/journey-metrics', label: 'Journey metrics', icon: BarChart3, feature: 'journeyMetrics' },
+  { to: '/journey-stage-intelligence', label: 'Stage intelligence', icon: BarChart3, feature: 'journeyMetrics' },
+  { to: '/journey-portfolio', label: 'Journey portfolio', icon: BriefcaseBusiness, feature: 'journeyPortfolio' },
+  { to: '/journey-collaboration', label: 'Journey collaboration', icon: MessageSquareText, feature: 'journeyCollaboration' },
+  { to: '/journey-orchestration', label: 'Journey orchestration', icon: Unplug, feature: 'journeyOrchestration' },
+  { to: '/journey-connectors', label: 'Journey connectors', icon: Database, feature: 'journeyConnectors' },
+  { to: '/journey-predictive-governance', label: 'Predictive governance', icon: ShieldCheck, feature: 'journeyActualPaths' },
+  { to: '/journey-safety', label: 'Journey safety', icon: ShieldCheck, feature: 'journeyOrchestration' },
+  { to: '/journey-hierarchy', label: 'Journey hierarchy', icon: GitFork, feature: 'journeyHierarchy' },
+  { to: '/journey-blueprints', label: 'Service blueprints', icon: Layers3, feature: 'journeyBlueprints' },
+  { to: '/customer-360', label: 'Customer 360', icon: UsersRound, feature: 'journeyProfiles' },
   { to: '/journeys', label: 'Journey maps (classic)', icon: Route, feature: 'terra' },
   { to: '/ai-queue', label: 'AI queue', icon: Sparkles, feature: 'terra' },
   { to: '/tickets', label: 'Service recovery', icon: Inbox, feature: 'serviceRecovery' },

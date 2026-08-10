@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Copy, Download, Eye, Loader2, RotateCcw, Settings2, Trash2 } from 'lucide-react';
+import { Bookmark, Copy, Download, Eye, Image, Loader2, RotateCcw, Settings2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { ApiError } from '@/lib/api';
+import { bindJourneySavedViewBrand, listJourneyExportBrands, readJourneyExportBrandAccess, readJourneySavedViewBrand,
+  type JourneyExportBrandAccess, type JourneyExportBrandBinding, type JourneyExportBrandCatalog } from '@/lib/journeyExportBrand';
 import { readJourneyRichMap, type JourneyChannelSnapshot } from '@/lib/journeyRichCards';
 import { listJourneyMetricSegments, type JourneyMetricSegment } from '@/lib/journeyMetrics';
 import type { JourneyMapExportFormat, JourneyMapIndex, JourneyMapReadModel } from '@/lib/journeyMaps';
@@ -29,6 +32,7 @@ type Props = {
   metricsEnabled: boolean;
   richCardsEnabled: boolean;
   evidenceEnabled: boolean;
+  exportsEnabled: boolean;
   onApply: (resolved: JourneySavedViewResolved) => void;
   onReset: () => void | Promise<void>;
   onPresent: (resolved: JourneySavedViewResolved) => void;
@@ -101,7 +105,7 @@ function isAvailable(view: JourneySavedViewList['views'][number]): view is Journ
 }
 
 export function JourneySavedViewBar({
-  map, optionsMap, index, currentUserId, spaceRole, metricsEnabled, richCardsEnabled, evidenceEnabled,
+  map, optionsMap, index, currentUserId, spaceRole, metricsEnabled, richCardsEnabled, evidenceEnabled, exportsEnabled,
   onApply, onReset, onPresent, onExport
 }: Props) {
   const filterMap = optionsMap || map;
@@ -120,6 +124,10 @@ export function JourneySavedViewBar({
   const [evidenceOptions, setEvidenceOptions] = useState<JourneySavedViewEvidenceOption[]>([]);
   const autoAppliedKey = useRef('');
   const [deleteReason, setDeleteReason] = useState('No longer needed in this journey workspace.');
+  const [brandOpen,setBrandOpen]=useState(false),[brandBusy,setBrandBusy]=useState(false),[brandError,setBrandError]=useState('');
+  const [brandAccess,setBrandAccess]=useState<JourneyExportBrandAccess|null>(null),[brandCatalog,setBrandCatalog]=useState<JourneyExportBrandCatalog|null>(null);
+  const [brandBinding,setBrandBinding]=useState<JourneyExportBrandBinding|null>(null),[brandPolicy,setBrandPolicy]=useState<'space_default'|'pinned'>('space_default');
+  const [brandProfileKey,setBrandProfileKey]=useState('');
   const canEditShared = spaceRole === 'owner' || spaceRole === 'admin';
   const selected = useMemo(() => catalog?.views.find((view) => view.id === selectedId) || null,
     [catalog?.views, selectedId]);
@@ -289,6 +297,19 @@ export function JourneySavedViewBar({
     finally { setBusy(''); }
   }
 
+  async function loadBrand(){if(!availableSelected)return;setBrandBusy(true);try{const[nextAccess,nextCatalog,nextBinding]=await Promise.all([
+      readJourneyExportBrandAccess(),listJourneyExportBrands(),readJourneySavedViewBrand(availableSelected.id)]);setBrandAccess(nextAccess);setBrandCatalog(nextCatalog);setBrandBinding(nextBinding);
+      setBrandPolicy(nextBinding.brandPolicy);setBrandProfileKey(nextBinding.profileId&&nextBinding.profileVersion?`${nextBinding.profileId}:${nextBinding.profileVersion}`:
+        nextCatalog.settings.defaultProfileId&&nextCatalog.settings.defaultProfileVersion?`${nextCatalog.settings.defaultProfileId}:${nextCatalog.settings.defaultProfileVersion}`:'');setBrandError('');}
+    catch(reason){setBrandError(errorMessage(reason,'Saved-view branding could not be loaded.'));}finally{setBrandBusy(false);}}
+  async function openBrand(){setBrandOpen(true);await loadBrand();}
+  async function saveBrand(){if(!availableSelected||!brandBinding)return;const [profileId,profileVersion]=brandProfileKey.split(':');setBrandBusy(true);try{
+      const updated=await bindJourneySavedViewBrand({viewId:availableSelected.id,viewRevision:availableSelected.revision,brandPolicy,
+        profileId:brandPolicy==='pinned'?profileId:null,profileVersion:brandPolicy==='pinned'?Number(profileVersion):null,expectedRevision:brandBinding.revision});
+      setBrandBinding(updated);toast.success('Saved-view export brand updated.');setBrandError('');}
+    catch(reason){if(reason instanceof ApiError&&reason.status===409){setBrandError(`${reason.message} The latest binding has been reloaded.`);await loadBrand();}
+      else setBrandError(errorMessage(reason,'Saved-view branding could not be updated.'));}finally{setBrandBusy(false);}}
+
   const patchFilters = (patch: Partial<JourneySavedViewConfiguration['filters']>) =>
     setConfiguration((current) => ({ ...current, filters: { ...current.filters, ...patch } }));
 
@@ -318,6 +339,8 @@ export function JourneySavedViewBar({
           onClick={() => void duplicateSelected()}><Copy />Duplicate</Button>
         <Button type="button" size="sm" variant="ghost" disabled={!availableSelected || Boolean(busy)}
           onClick={() => void setDefault()}>Set default</Button>
+        {exportsEnabled&&<Button type="button" size="sm" variant="ghost" disabled={!availableSelected||Boolean(busy)} onClick={()=>void openBrand()}>
+          <Image className="h-4 w-4"/>Brand</Button>}
         <Button type="button" size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => void reset()}>
           <RotateCcw />Reset
         </Button>
@@ -340,6 +363,26 @@ export function JourneySavedViewBar({
       </p> : null}
       {error && <p className="mt-2 text-sm text-destructive" role="alert">{error}</p>}
     </section>
+
+    <Dialog open={brandOpen} onOpenChange={setBrandOpen}><DialogContent className="sm:max-w-lg" data-testid="journey-saved-view-brand-dialog"><DialogHeader>
+      <DialogTitle>Saved-view export brand</DialogTitle><DialogDescription>The binding follows the exact saved-view revision shown here.</DialogDescription></DialogHeader>
+      {brandBusy&&!brandBinding?<p className="flex items-center gap-2 py-5 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>Loading saved-view branding…</p>:
+        brandBinding&&<div className="space-y-4"><div className="border p-3 text-sm"><p className="font-medium">{availableSelected?.name}</p><p className="mt-1 text-xs text-muted-foreground">Saved-view revision {brandBinding.viewRevision} · binding revision {brandBinding.revision}</p></div>
+          {canEditShared&&brandAccess?.canManageViews?<><div><Label htmlFor="saved-view-brand-policy">Brand source</Label><select id="saved-view-brand-policy" value={brandPolicy}
+            className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm" onChange={(event)=>setBrandPolicy(event.currentTarget.value as 'space_default'|'pinned')}>
+            <option value="space_default">Follow the space default</option><option value="pinned">Pin an exact profile version</option></select></div>
+            {brandPolicy==='pinned'&&<div><Label htmlFor="saved-view-brand-profile">Profile version</Label><select id="saved-view-brand-profile" value={brandProfileKey}
+              className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm" onChange={(event)=>setBrandProfileKey(event.currentTarget.value)}>
+              <option value="">Choose a profile</option>{brandCatalog?.profiles.filter((entry)=>entry.profile.state==='active').map((entry)=><option key={entry.profile.id} value={`${entry.profile.id}:${entry.version.version}`}>{entry.profile.name} · version {entry.version.version}</option>)}</select>
+              {brandBinding.brandPolicy==='pinned'&&brandBinding.profileId&&brandBinding.profileVersion&&!brandCatalog?.profiles.some((entry)=>entry.profile.id===brandBinding.profileId&&entry.version.version===brandBinding.profileVersion)&&
+                <p className="mt-2 text-xs text-amber-800">The current binding pins historical version {brandBinding.profileVersion}. Choose an available current version to replace it.</p>}</div>}</>:
+            <div className="text-sm"><p className="font-medium">{brandBinding.brandPolicy==='pinned'?'Pinned profile version':'Space default'}</p><p className="mt-1 text-muted-foreground" data-testid="journey-saved-view-brand-effective">
+              {brandBinding.brandPolicy==='pinned'?`Profile ${brandBinding.profileId}, version ${brandBinding.profileVersion}`:
+                brandCatalog?.settings.defaultProfileId?`${brandCatalog.profiles.find((entry)=>entry.profile.id===brandCatalog.settings.defaultProfileId)?.profile.name||'Space profile'}, version ${brandCatalog.settings.defaultProfileVersion}`:'Standard Seemplify export branding'}</p></div>}
+        </div>}
+      {brandError&&<p className="text-sm text-destructive" role="alert">{brandError}</p>}<DialogFooter><Button type="button" variant="outline" onClick={()=>setBrandOpen(false)}>Close</Button>
+        {canEditShared&&brandAccess?.canManageViews&&<Button type="button" disabled={brandBusy||!brandBinding||(brandPolicy==='pinned'&&!brandProfileKey)} onClick={()=>void saveBrand()}>{brandBusy&&<Loader2 className="animate-spin"/>}Save binding</Button>}</DialogFooter>
+    </DialogContent></Dialog>
 
     <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
       <DialogContent className="sm:max-w-2xl" data-testid="journey-saved-view-editor">

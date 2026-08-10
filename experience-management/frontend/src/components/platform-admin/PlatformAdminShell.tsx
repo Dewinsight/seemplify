@@ -27,6 +27,7 @@ const navigation: Array<{ to: string; label: string; icon: LucideIcon; end: bool
   { to: '/admin/ai-defaults', label: 'AI defaults', icon: SlidersHorizontal, end: false, capability: 'ai_defaults.read' },
   { to: '/admin/email-delivery', label: 'Email delivery', icon: Mail, end: false, capability: 'audit.read' },
   { to: '/admin/journey-templates', label: 'Journey templates', icon: BookCopy, end: false, capability: 'journey_templates.read' },
+  { to: '/admin/journey-safety', label: 'Journey safety', icon: ShieldCheck, end: false, capability: null },
   { to: '/admin/audit', label: 'Audit log', icon: FileClock, end: false, capability: 'audit.read' }
 ];
 

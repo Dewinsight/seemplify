@@ -1,10 +1,10 @@
 # SDK publication readiness report
 
-Generated at: 2026-08-06T21:55:32.297Z
+Generated at: 2026-08-08T13:42:57.398Z
 
 ## Summary
 
-- Date: Thursday, August 6, 2026
+- Date: Saturday, August 8, 2026
 - Current branch: codex/deep-graph-analysis
 - Target branch: main
 - Repo-side landing preflight: passed
@@ -34,8 +34,8 @@ Generated at: 2026-08-06T21:55:32.297Z
 
 ## Publish preflight external setup blockers
 
-- npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T21_55_36_352Z-debug-0.log
-- npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-06T21_55_37_000Z-debug-0.log
+- npm authentication is unavailable on this machine: npm error code ENEEDAUTH npm error need auth This command requires you to be logged in. npm error need auth You need to authorize this machine using `npm adduser` npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-08T13_43_00_554Z-debug-0.log
+- npm scope @seemplify is not proven ready: npm error code E404 npm error 404 Not Found - GET https://registry.npmjs.org/-/org/seemplify/user - Scope not found npm error A complete log of this run can be found in: C:\Users\User\AppData\Local\npm-cache\_logs\2026-08-08T13_43_00_960Z-debug-0.log
 
 ## Publish preflight workstation limitations
 

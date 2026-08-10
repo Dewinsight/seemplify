@@ -23,7 +23,7 @@ const BASE_RUNTIME_EXTENSION_TABLES = Object.freeze([
   'assistant_audit_events'
 ]);
 
-export const LATEST_RUNTIME_SCHEMA_VERSION = 30;
+export const LATEST_RUNTIME_SCHEMA_VERSION = 55;
 
 export function runtimeExtensionTables(runtimeVersion = LATEST_RUNTIME_SCHEMA_VERSION) {
   const tables = [...BASE_RUNTIME_EXTENSION_TABLES];
@@ -130,6 +130,110 @@ export function runtimeExtensionTables(runtimeVersion = LATEST_RUNTIME_SCHEMA_VE
   if (runtimeVersion >= 30) {
     tables.push('journey_stage_reprojection_runs','journey_stage_reprojection_attempts',
       'journey_stage_reprojection_checkpoints','journey_stage_reprojection_audit_events');
+  }
+  if (runtimeVersion >= 31) {
+    tables.push('journey_identity_profiles','journey_identity_bindings','journey_identity_merges',
+      'journey_identity_memberships','journey_identity_groups','journey_identity_source_facts',
+      'journey_identity_audit_facts','journey_identity_profile_tombstones',
+      'journey_identity_identifier_tombstones','journey_identity_processed_commands',
+      'journey_profile_timeline_events','journey_identity_sessions','journey_identity_segments',
+      'journey_identity_segment_versions','journey_identity_segment_memberships',
+      'journey_profile_privacy_states','journey_profile_export_jobs','journey_profile_privacy_jobs',
+      'journey_identity_correction_runs');
+  }
+  if (runtimeVersion >= 33) {
+    tables.push('journey_path_intelligence_runs','journey_stage_inference_recommendations',
+      'journey_path_intelligence_audit');
+  }
+  if (runtimeVersion >= 35) {
+    tables.push('journey_orchestration_settings','journey_workflow_definitions','journey_workflow_versions',
+      'journey_workflow_runs','journey_workflow_actions','journey_workflow_approvals','journey_workflow_outbox',
+      'journey_workflow_audit');
+  }
+  if (runtimeVersion >= 36) {
+    tables.push('journey_action_queue','journey_action_gate_resolutions','journey_action_attempts',
+      'journey_action_effect_receipts');
+  }
+  if (runtimeVersion >= 37) {
+    tables.push('journey_connector_definitions','journey_connector_import_runs','journey_connector_records',
+      'journey_connector_item_receipts','journey_connector_idempotency','journey_connector_audit');
+  }
+  if (runtimeVersion >= 38) {
+    tables.push('journey_webhook_destinations','journey_adapter_execution_attempts','journey_adapter_effect_receipts',
+      'journey_adapter_internal_notifications','journey_webhook_dispatches');
+  }
+  if (runtimeVersion >= 39) {
+    tables.push('journey_prediction_policies','journey_predictive_models','journey_predictive_model_versions',
+      'journey_prediction_drift_evaluations','journey_prediction_runs','journey_prediction_audit');
+  }
+  if (runtimeVersion >= 40) {
+    tables.push('journey_kill_switch_states','journey_kill_switch_mutations','journey_kill_switch_pauses',
+      'journey_kill_switch_resumptions','journey_kill_switch_audit');
+  }
+  if (runtimeVersion >= 41) {
+    tables.push('journey_stage_intelligence_policies','journey_stage_intelligence_policy_history',
+      'journey_stage_intelligence_facts','journey_stage_intelligence_audit');
+  }
+  if (runtimeVersion >= 42) {
+    tables.push('journey_worker_service_principals','journey_worker_service_key_audit','journey_action_live_contexts',
+      'journey_action_subject_controls','journey_action_source_controls','journey_action_quota_counters',
+      'journey_action_frequency_counters','journey_action_worker_reservations','journey_action_worker_reservation_events');
+  }
+  if (runtimeVersion >= 43) {
+    tables.push('journey_stage_source_mappings','journey_stage_source_mapping_versions',
+      'journey_stage_survey_policies','journey_stage_survey_policy_versions',
+      'journey_stage_survey_governance_receipts','journey_stage_survey_source_revisions',
+      'journey_stage_survey_outbox','journey_stage_survey_outbox_attempts',
+      'journey_stage_survey_checkpoints','journey_stage_survey_feed_audit');
+  }
+  if (runtimeVersion >= 45) {
+    tables.push('journey_event_intelligence_mappings','journey_event_intelligence_mapping_versions',
+      'journey_event_intelligence_erasure_handles','journey_event_intelligence_outbox',
+      'journey_event_intelligence_materialization_state','journey_event_intelligence_tombstones');
+  }
+  if (runtimeVersion >= 46) {
+    tables.push('journey_portfolio_view_definitions','journey_portfolio_view_versions',
+      'journey_portfolio_view_preferences','journey_portfolio_transition_requests',
+      'journey_portfolio_transition_events');
+  }
+  if (runtimeVersion >= 47) {
+    tables.push('journey_privacy_service_principals','journey_privacy_service_key_audit',
+      'journey_privacy_erasure_authorities','journey_privacy_propagation_claims','journey_privacy_propagation_events');
+  }
+  if (runtimeVersion >= 48) {
+    tables.push('journey_blueprint_measurement_plans','journey_blueprint_measurement_outcomes',
+      'journey_blueprint_measurement_audit');
+  }
+  if (runtimeVersion >= 49) {
+    tables.push('journey_export_brand_assets','journey_export_brand_profiles','journey_export_brand_profile_versions',
+      'journey_export_brand_settings','journey_saved_view_brand_bindings','journey_export_brand_operations',
+      'journey_export_brand_audit_events','journey_export_brand_asset_purge_queue');
+  }
+  if (runtimeVersion >= 50) {
+    tables.push('journey_actual_path_snapshots','journey_actual_path_rollups',
+      'journey_actual_path_artifact_revisions','journey_actual_path_privacy_invalidations');
+  }
+  if (runtimeVersion >= 51) {
+    tables.push('journey_connector_worker_principals','journey_connector_worker_key_events',
+      'journey_connector_worker_sources','journey_connector_worker_source_items','journey_connector_worker_events');
+  }
+  if (runtimeVersion >= 52) {
+    tables.push('journey_operational_stage_mappings','journey_operational_stage_mapping_versions',
+      'journey_operational_stage_source_revisions','journey_operational_stage_outbox',
+      'journey_operational_stage_outbox_attempts','journey_operational_stage_checkpoints',
+      'journey_operational_stage_tombstones','journey_operational_timeline_revisions',
+      'journey_operational_stage_feed_audit');
+  }
+  if (runtimeVersion >= 53) {
+    tables.push('journey_event_retention_runs','journey_event_retention_checkpoints','journey_event_retention_events');
+  }
+  if (runtimeVersion >= 54) {
+    tables.push('journey_evidence_monitor_states','journey_evidence_monitor_events');
+  }
+  if (runtimeVersion >= 55) {
+    tables.push('journey_workspace_view_definitions','journey_workspace_view_versions',
+      'journey_workspace_view_preferences','journey_workspace_view_operations',
+      'journey_workspace_view_audit_events');
   }
   return tables;
 }
@@ -4422,6 +4526,152 @@ const journeyHierarchyBlueprintRequiredTriggers = Object.freeze({
   journey_hierarchy_operations_append_only: ['journey_hierarchy_operations','journey_hierarchy_append_only_guard'],
   journey_taxonomy_parent_guard: ['journey_taxonomy_terms','journey_taxonomy_parent_guard'],
 });
+const journeyPortfolioRuntime34RequiredConstraints = Object.freeze({
+  journey_portfolio_items_owner_user_fk: [
+    'foreign key (owner_user_id) references users(id)'
+  ]
+});
+const journeyPortfolioRuntime34RequiredTriggers = Object.freeze({
+  journey_portfolio_items_owner_membership_guard: [
+    'journey_portfolio_items','journey_portfolio_owner_membership_guard'
+  ]
+});
+const journeyOrchestrationRequiredTriggers = Object.freeze({
+  journey_workflow_versions_append_only: ['journey_workflow_versions','journey_orchestration_append_only_guard'],
+  journey_workflow_runs_append_only: ['journey_workflow_runs','journey_orchestration_append_only_guard'],
+  journey_workflow_actions_append_only: ['journey_workflow_actions','journey_orchestration_append_only_guard'],
+  journey_workflow_approvals_append_only: ['journey_workflow_approvals','journey_orchestration_append_only_guard'],
+  journey_workflow_outbox_append_only: ['journey_workflow_outbox','journey_orchestration_append_only_guard'],
+  journey_workflow_audit_append_only: ['journey_workflow_audit','journey_orchestration_append_only_guard']
+});
+const journeyActionRuntimeRequiredTriggers = Object.freeze({
+  journey_action_gate_resolutions_append_only: ['journey_action_gate_resolutions','journey_orchestration_append_only_guard'],
+  journey_action_attempts_append_only: ['journey_action_attempts','journey_orchestration_append_only_guard'],
+  journey_action_effect_receipts_append_only: ['journey_action_effect_receipts','journey_orchestration_append_only_guard']
+});
+const journeyConnectorImportRequiredTriggers = Object.freeze({
+  journey_connector_receipts_append_only: ['journey_connector_item_receipts','journey_connector_append_only_guard'],
+  journey_connector_audit_append_only: ['journey_connector_audit','journey_connector_append_only_guard']
+});
+const journeyReviewedAdapterRequiredTriggers = Object.freeze({
+  journey_adapter_execution_attempts_append_only: ['journey_adapter_execution_attempts','journey_orchestration_append_only_guard'],
+  journey_adapter_effect_receipts_append_only: ['journey_adapter_effect_receipts','journey_orchestration_append_only_guard'],
+  journey_adapter_internal_notifications_append_only: ['journey_adapter_internal_notifications','journey_orchestration_append_only_guard']
+});
+const journeyPredictiveGovernanceRequiredTriggers = Object.freeze({
+  journey_predictive_versions_append_only: ['journey_predictive_model_versions','journey_orchestration_append_only_guard'],
+  journey_prediction_drift_append_only: ['journey_prediction_drift_evaluations','journey_orchestration_append_only_guard'],
+  journey_prediction_runs_append_only: ['journey_prediction_runs','journey_orchestration_append_only_guard'],
+  journey_prediction_audit_append_only: ['journey_prediction_audit','journey_orchestration_append_only_guard']
+});
+const journeyKillSwitchRequiredTriggers = Object.freeze({
+  journey_kill_switch_mutations_append_only: ['journey_kill_switch_mutations','journey_orchestration_append_only_guard'],
+  journey_kill_switch_pauses_append_only: ['journey_kill_switch_pauses','journey_orchestration_append_only_guard'],
+  journey_kill_switch_resumptions_append_only: ['journey_kill_switch_resumptions','journey_orchestration_append_only_guard'],
+  journey_kill_switch_audit_append_only: ['journey_kill_switch_audit','journey_orchestration_append_only_guard']
+});
+const journeyStageIntelligenceRequiredTriggers = Object.freeze({
+  journey_stage_intelligence_policy_history_append_only: [
+    'journey_stage_intelligence_policy_history','journey_orchestration_append_only_guard'
+  ],
+  journey_stage_intelligence_facts_append_only: [
+    'journey_stage_intelligence_facts','journey_orchestration_append_only_guard'
+  ],
+  journey_stage_intelligence_facts_retention_delete: [
+    'journey_stage_intelligence_facts','journey_stage_intelligence_retention_delete_guard'
+  ],
+  journey_stage_intelligence_audit_append_only: [
+    'journey_stage_intelligence_audit','journey_orchestration_append_only_guard'
+  ]
+});
+const journeyActionWorkerSafetyRequiredTriggers = Object.freeze({
+  journey_worker_service_key_audit_append_only:['journey_worker_service_key_audit','journey_worker_safety_append_only_guard'],
+  journey_action_live_contexts_append_only:['journey_action_live_contexts','journey_worker_safety_append_only_guard'],
+  journey_action_worker_reservation_events_append_only:['journey_action_worker_reservation_events','journey_worker_safety_append_only_guard'],
+  journey_worker_service_principals_lifecycle:['journey_worker_service_principals','journey_worker_service_principal_lifecycle_guard'],
+  journey_action_worker_reservations_fenced:['journey_action_worker_reservations','journey_action_worker_reservation_fence_guard'],
+  journey_action_quota_counters_monotonic:['journey_action_quota_counters','journey_action_safety_counter_guard'],
+  journey_action_frequency_counters_monotonic:['journey_action_frequency_counters','journey_action_safety_counter_guard']
+});
+const journeyStageSurveyFeedRequiredTriggers = Object.freeze({
+  journey_stage_source_mapping_versions_append_only: [
+    'journey_stage_source_mapping_versions','journey_orchestration_append_only_guard'],
+  journey_stage_survey_policy_versions_append_only: [
+    'journey_stage_survey_policy_versions','journey_orchestration_append_only_guard'],
+  journey_stage_survey_governance_receipts_append_only: [
+    'journey_stage_survey_governance_receipts','journey_stage_survey_retention_delete_guard'],
+  journey_stage_survey_source_revisions_append_only: [
+    'journey_stage_survey_source_revisions','journey_stage_survey_retention_delete_guard'],
+  journey_stage_survey_outbox_attempts_append_only: [
+    'journey_stage_survey_outbox_attempts','journey_stage_survey_retention_delete_guard'],
+  journey_stage_survey_feed_audit_append_only: [
+    'journey_stage_survey_feed_audit','journey_orchestration_append_only_guard']
+});
+const journeyEventIntelligenceRequiredTriggers = Object.freeze({
+  journey_event_intelligence_visit_outbox: [
+    'journey_anonymous_stage_visits','journey_event_intelligence_enqueue_visit'],
+  journey_event_intelligence_mapping_versions_append_only: [
+    'journey_event_intelligence_mapping_versions','journey_orchestration_append_only_guard'],
+  journey_event_intelligence_tombstones_append_only: [
+    'journey_event_intelligence_tombstones','journey_orchestration_append_only_guard'],
+  journey_event_intelligence_erasure_handles_append_only: [
+    'journey_event_intelligence_erasure_handles','journey_orchestration_append_only_guard']
+});
+const journeyPortfolioRuntime46RequiredTriggers = Object.freeze({
+  journey_portfolio_view_versions_guard: [
+    'journey_portfolio_view_versions','journey_portfolio_runtime46_guard'],
+  journey_portfolio_transition_events_guard: [
+    'journey_portfolio_transition_events','journey_portfolio_runtime46_guard'],
+  journey_portfolio_transition_request_guard: [
+    'journey_portfolio_transition_requests','journey_portfolio_runtime46_guard'],
+  journey_portfolio_view_preference_guard: [
+    'journey_portfolio_view_preferences','journey_portfolio_view_preference_guard']
+});
+const journeyPrivacyRuntime47RequiredTriggers = Object.freeze({
+  journey_privacy_principal_scope: ['journey_privacy_service_principals','journey_privacy_principal_scope_guard'],
+  journey_privacy_principal_guard: ['journey_privacy_service_principals','journey_privacy_runtime47_guard'],
+  journey_privacy_key_audit_guard: ['journey_privacy_service_key_audit','journey_privacy_runtime47_guard'],
+  journey_privacy_authority_scope: ['journey_privacy_erasure_authorities','journey_privacy_authority_scope_guard'],
+  journey_privacy_authority_guard: ['journey_privacy_erasure_authorities','journey_privacy_runtime47_guard'],
+  journey_privacy_claim_guard: ['journey_privacy_propagation_claims','journey_privacy_runtime47_guard'],
+  journey_privacy_event_guard: ['journey_privacy_propagation_events','journey_privacy_runtime47_guard']
+});
+const journeyBlueprintMeasurementRuntime48RequiredTriggers = Object.freeze({
+  journey_blueprint_measurement_plan_lineage: [
+    'journey_blueprint_measurement_plans','journey_blueprint_measurement_lineage_guard'],
+  journey_blueprint_measurement_outcome_lineage: [
+    'journey_blueprint_measurement_outcomes','journey_blueprint_measurement_lineage_guard'],
+  journey_blueprint_measurement_plan_guard: [
+    'journey_blueprint_measurement_plans','journey_blueprint_measurement_immutability_guard'],
+  journey_blueprint_measurement_outcome_guard: [
+    'journey_blueprint_measurement_outcomes','journey_blueprint_measurement_immutability_guard'],
+  journey_blueprint_measurement_audit_guard: [
+    'journey_blueprint_measurement_audit','journey_blueprint_measurement_immutability_guard']
+});
+const journeyExportBrandRuntime49RequiredTriggers = Object.freeze({
+  journey_export_brand_versions_immutable: [
+    'journey_export_brand_profile_versions','journey_export_brand_append_only_guard'],
+  journey_export_brand_operations_immutable: [
+    'journey_export_brand_operations','journey_export_brand_append_only_guard'],
+  journey_export_brand_audit_immutable: [
+    'journey_export_brand_audit_events','journey_export_brand_append_only_guard']
+});
+const journeyActualPathRuntime50RequiredTriggers = Object.freeze({
+  journey_actual_path_snapshots_update_guard: [
+    'journey_actual_path_snapshots','journey_actual_path_runtime50_immutable_guard'],
+  journey_actual_path_artifact_revisions_guard: [
+    'journey_actual_path_artifact_revisions','journey_actual_path_runtime50_immutable_guard'],
+  journey_actual_path_privacy_invalidations_guard: [
+    'journey_actual_path_privacy_invalidations','journey_actual_path_runtime50_immutable_guard']
+});
+const journeyTaxonomyRetirementRequiredTriggers = Object.freeze({
+  journey_taxonomy_assignment_lifecycle_guard: [
+    'journey_definition_taxonomy','journey_taxonomy_assignment_lifecycle_guard'
+  ],
+  journey_taxonomy_retirement_assignment_guard: [
+    'journey_taxonomy_terms','journey_taxonomy_assignment_lifecycle_guard'
+  ]
+});
 export const journeyHierarchyBlueprintRuntimeContract = Object.freeze({
   columns: journeyHierarchyBlueprintExactColumns, primaryKeys: journeyHierarchyBlueprintPrimaryKeys,
   foreignKeys: journeyHierarchyBlueprintRequiredForeignKeys, indexes: journeyHierarchyBlueprintRequiredIndexes,
@@ -4566,7 +4816,10 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
   if (journeyRichCardTables) foreignKeyContract.push(...journeyRichCardRequiredForeignKeys);
   if (journeyMetricAlertTables) foreignKeyContract.push(...journeyMetricAlertRequiredForeignKeys);
   if (journeySavedViewTables) foreignKeyContract.push(...journeySavedViewRequiredForeignKeys);
-  if (journeyPortfolioTables) foreignKeyContract.push(...journeyPortfolioRequiredForeignKeys);
+  if (journeyPortfolioTables) foreignKeyContract.push(...journeyPortfolioRequiredForeignKeys.filter((edge) =>
+    runtimeVersion < 34 || !(edge[0] === 'journey_portfolio_items' && edge[2] === 'space_memberships')));
+  if (runtimeVersion >= 34) foreignKeyContract.push(
+    ['journey_portfolio_items','owner_user_id','users','id','a']);
   if (journeyCollaborationTables) foreignKeyContract.push(...journeyCollaborationRequiredForeignKeys);
   if (journeyHierarchyBlueprintTables) foreignKeyContract.push(...journeyHierarchyBlueprintRequiredForeignKeys);
   const indexContract = runtimeVersion >= 11
@@ -4766,6 +5019,13 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
     }
   }
 
+  const portfolioNamedConstraints = journeyPortfolioTables
+    ? { ...journeyPortfolioRequiredConstraints }
+    : {};
+  if (runtimeVersion >= 34) {
+    delete portfolioNamedConstraints.journey_portfolio_items_owner_membership_fk;
+    Object.assign(portfolioNamedConstraints, journeyPortfolioRuntime34RequiredConstraints);
+  }
   const requiredNamedConstraints = {
     ...(journeyEventControlPlaneTables ? journeyEventControlPlaneRequiredConstraints : {}),
     ...(journeyEventDataPlaneTables ? journeyEventDataPlaneRequiredConstraints : {}),
@@ -4778,7 +5038,7 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
     ...(journeyRichCardTables ? journeyRichCardRequiredConstraints : {}),
     ...(journeyMetricAlertTables ? journeyMetricAlertRequiredConstraints : {}),
     ...(journeySavedViewTables ? journeySavedViewRequiredConstraints : {}),
-    ...(journeyPortfolioTables ? journeyPortfolioRequiredConstraints : {}),
+    ...portfolioNamedConstraints,
     ...(journeyCollaborationTables ? journeyCollaborationRequiredConstraints : {}),
     ...(journeyHierarchyBlueprintTables ? journeyHierarchyBlueprintRequiredConstraints : {})
   };
@@ -4796,7 +5056,24 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
     ...(journeySavedViewTables ? journeySavedViewRequiredTriggers : {}),
     ...(journeyPortfolioTables ? journeyPortfolioRequiredTriggers : {}),
     ...(journeyCollaborationTables ? journeyCollaborationRequiredTriggers : {}),
-    ...(journeyHierarchyBlueprintTables ? journeyHierarchyBlueprintRequiredTriggers : {})
+    ...(journeyHierarchyBlueprintTables ? journeyHierarchyBlueprintRequiredTriggers : {}),
+    ...(runtimeVersion >= 32 ? journeyTaxonomyRetirementRequiredTriggers : {}),
+    ...(runtimeVersion >= 34 ? journeyPortfolioRuntime34RequiredTriggers : {}),
+    ...(runtimeVersion >= 35 ? journeyOrchestrationRequiredTriggers : {}),
+    ...(runtimeVersion >= 36 ? journeyActionRuntimeRequiredTriggers : {}),
+    ...(runtimeVersion >= 37 ? journeyConnectorImportRequiredTriggers : {}),
+    ...(runtimeVersion >= 38 ? journeyReviewedAdapterRequiredTriggers : {}),
+    ...(runtimeVersion >= 39 ? journeyPredictiveGovernanceRequiredTriggers : {}),
+    ...(runtimeVersion >= 40 ? journeyKillSwitchRequiredTriggers : {}),
+    ...(runtimeVersion >= 41 ? journeyStageIntelligenceRequiredTriggers : {}),
+    ...(runtimeVersion >= 42 ? journeyActionWorkerSafetyRequiredTriggers : {}),
+    ...(runtimeVersion >= 43 ? journeyStageSurveyFeedRequiredTriggers : {}),
+    ...(runtimeVersion >= 45 ? journeyEventIntelligenceRequiredTriggers : {}),
+    ...(runtimeVersion >= 46 ? journeyPortfolioRuntime46RequiredTriggers : {}),
+    ...(runtimeVersion >= 47 ? journeyPrivacyRuntime47RequiredTriggers : {}),
+    ...(runtimeVersion >= 48 ? journeyBlueprintMeasurementRuntime48RequiredTriggers : {}),
+    ...(runtimeVersion >= 49 ? journeyExportBrandRuntime49RequiredTriggers : {}),
+    ...(runtimeVersion >= 50 ? journeyActualPathRuntime50RequiredTriggers : {})
   };
   if (Object.keys(requiredNamedConstraints).length) {
     const constraintRows = await rows(query, `SELECT constraint_record.conname,
@@ -4837,6 +5114,18 @@ export async function assertRuntimeSchemaContract(query, options = {}) {
         throw contractError('RUNTIME_SCHEMA_TRIGGER_MISMATCH',
           `Trigger ${schema}.${name} is missing, disabled, or bound to the wrong table/function.`);
       }
+    }
+  }
+
+  if (runtimeVersion >= 44) {
+    const fenceRows = await rows(query, `SELECT pg_get_functiondef(procedure_record.oid) definition
+      FROM pg_proc procedure_record JOIN pg_namespace namespace_record ON namespace_record.oid=procedure_record.pronamespace
+      WHERE namespace_record.nspname=${sqlLiteral(schema)}
+        AND procedure_record.proname='journey_action_worker_reservation_fence_guard'`);
+    const definition = normalized(fenceRows[0]?.definition || '');
+    if (!definition.includes('journey_action_effect_receipts') || !definition.includes('journey_adapter_effect_receipts')) {
+      throw contractError('RUNTIME_SCHEMA_FUNCTION_MISMATCH',
+        `${schema}.journey_action_worker_reservation_fence_guard must fence both no-effect and reviewed-effect receipts.`);
     }
   }
 
@@ -5121,6 +5410,331 @@ export async function assertRuntimePrivileges(query, runtimeRole, options = {}) 
       ['journey_stage_reprojection_checkpoints', true, true, true, false],
       ['journey_stage_reprojection_audit_events', true, true, false, false]
     );
+  }
+  if (privilegeRuntimeVersion >= 31) {
+    expectations.push(
+      ['journey_identity_profiles', true, true, true, true],
+      ['journey_identity_bindings', true, true, true, true],
+      ['journey_identity_merges', true, true, true, true],
+      ['journey_identity_memberships', true, true, true, true],
+      ['journey_identity_groups', true, true, true, true],
+      ['journey_identity_source_facts', true, true, true, true],
+      ['journey_identity_audit_facts', true, true, true, true],
+      ['journey_identity_profile_tombstones', true, true, true, true],
+      ['journey_identity_identifier_tombstones', true, true, true, true],
+      ['journey_identity_processed_commands', true, true, true, true],
+      ['journey_profile_timeline_events', true, true, true, true],
+      ['journey_identity_sessions', true, true, true, true],
+      ['journey_identity_segments', true, true, true, true],
+      ['journey_identity_segment_versions', true, true, true, true],
+      ['journey_identity_segment_memberships', true, true, true, true],
+      ['journey_profile_privacy_states', true, true, true, true],
+      ['journey_profile_export_jobs', true, true, true, true],
+      ['journey_profile_privacy_jobs', true, true, true, true],
+      ['journey_identity_correction_runs', true, true, true, true]
+    );
+  }
+  if (privilegeRuntimeVersion >= 32) {
+    const taxonomyGuardPrivilege = (await rows(query, `SELECT has_function_privilege(
+      ${sqlLiteral(runtimeRole)},${sqlLiteral(`${schema}.journey_taxonomy_assignment_lifecycle_guard()`)} ,'EXECUTE') can_execute`))[0];
+    if (Boolean(taxonomyGuardPrivilege?.can_execute)) {
+      throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+        `${runtimeRole} must not directly execute the taxonomy assignment lifecycle trigger guard.`);
+    }
+  }
+  if (privilegeRuntimeVersion >= 33) {
+    expectations.push(
+      ['journey_path_intelligence_runs', true, true, false, false],
+      ['journey_stage_inference_recommendations', true, true, true, false],
+      ['journey_path_intelligence_audit', true, true, false, false]
+    );
+    const inferenceGuardPrivilege = (await rows(query, `SELECT has_function_privilege(
+      ${sqlLiteral(runtimeRole)},${sqlLiteral(`${schema}.journey_stage_inference_content_guard()`)} ,'EXECUTE') can_execute`))[0];
+    if (Boolean(inferenceGuardPrivilege?.can_execute)) throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute the stage-inference content guard.`);
+  }
+  if (privilegeRuntimeVersion >= 34) {
+    const portfolioGuardPrivilege = (await rows(query, `SELECT has_function_privilege(
+      ${sqlLiteral(runtimeRole)},${sqlLiteral(`${schema}.journey_portfolio_owner_membership_guard()`)} ,'EXECUTE') can_execute`))[0];
+    if (Boolean(portfolioGuardPrivilege?.can_execute)) throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute the portfolio owner membership guard.`);
+  }
+  if (privilegeRuntimeVersion >= 35) {
+    expectations.push(
+      ['journey_orchestration_settings', true, true, true, false],
+      ['journey_workflow_definitions', true, true, true, false],
+      ['journey_workflow_versions', true, true, false, false],
+      ['journey_workflow_runs', true, true, false, false],
+      ['journey_workflow_actions', true, true, false, false],
+      ['journey_workflow_approvals', true, true, false, false],
+      ['journey_workflow_outbox', true, true, false, false],
+      ['journey_workflow_audit', true, true, false, false]
+    );
+    const orchestrationGuardPrivilege = (await rows(query, `SELECT has_function_privilege(
+      ${sqlLiteral(runtimeRole)},${sqlLiteral(`${schema}.journey_orchestration_append_only_guard()`)} ,'EXECUTE') can_execute`))[0];
+    if (Boolean(orchestrationGuardPrivilege?.can_execute)) throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute the orchestration append-only guard.`);
+  }
+  if (privilegeRuntimeVersion >= 36) {
+    expectations.push(
+      ['journey_action_queue', true, true, true, false],
+      ['journey_action_gate_resolutions', true, true, false, false],
+      ['journey_action_attempts', true, true, false, false],
+      ['journey_action_effect_receipts', true, true, false, false]
+    );
+  }
+  if (privilegeRuntimeVersion >= 37) {
+    expectations.push(
+      ['journey_connector_definitions', true, true, true, false],
+      ['journey_connector_import_runs', true, true, true, false],
+      ['journey_connector_records', true, true, true, false],
+      ['journey_connector_item_receipts', true, true, false, false],
+      ['journey_connector_idempotency', true, true, false, false],
+      ['journey_connector_audit', true, true, false, false]
+    );
+    const connectorGuardPrivilege = (await rows(query, `SELECT has_function_privilege(
+      ${sqlLiteral(runtimeRole)},${sqlLiteral(`${schema}.journey_connector_append_only_guard()`)} ,'EXECUTE') can_execute`))[0];
+    if (Boolean(connectorGuardPrivilege?.can_execute)) throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute the connector append-only guard.`);
+  }
+  if (privilegeRuntimeVersion >= 38) {
+    expectations.push(
+      ['journey_webhook_destinations', true, true, true, false],
+      ['journey_adapter_execution_attempts', true, true, false, false],
+      ['journey_adapter_effect_receipts', true, true, false, false],
+      ['journey_adapter_internal_notifications', true, true, false, false],
+      ['journey_webhook_dispatches', true, true, true, false]
+    );
+  }
+  if (privilegeRuntimeVersion >= 39) {
+    expectations.push(
+      ['journey_prediction_policies', true, true, true, false],
+      ['journey_predictive_models', true, true, true, false],
+      ['journey_predictive_model_versions', true, true, false, false],
+      ['journey_prediction_drift_evaluations', true, true, false, false],
+      ['journey_prediction_runs', true, true, false, false],
+      ['journey_prediction_audit', true, true, false, false]
+    );
+  }
+  if (privilegeRuntimeVersion >= 40) {
+    expectations.push(
+      ['journey_kill_switch_states', true, true, true, false],
+      ['journey_kill_switch_mutations', true, true, false, false],
+      ['journey_kill_switch_pauses', true, true, false, false],
+      ['journey_kill_switch_resumptions', true, true, false, false],
+      ['journey_kill_switch_audit', true, true, false, false]
+    );
+  }
+  if (privilegeRuntimeVersion >= 41) {
+    expectations.push(
+      ['journey_stage_intelligence_policies', true, true, true, false],
+      ['journey_stage_intelligence_policy_history', true, true, false, false],
+      ['journey_stage_intelligence_facts', true, true, false, false],
+      ['journey_stage_intelligence_audit', true, true, false, false]
+    );
+    const retentionGuardPrivilege = (await rows(query, `SELECT has_function_privilege(
+      ${sqlLiteral(runtimeRole)},
+      ${sqlLiteral(`${schema}.journey_stage_intelligence_retention_delete_guard()`)},
+      'EXECUTE') can_execute`))[0];
+    if (Boolean(retentionGuardPrivilege?.can_execute)) {
+      throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+        `${runtimeRole} must not directly execute the journey-stage retention purge guard.`);
+    }
+  }
+  if (privilegeRuntimeVersion >= 42) {
+    expectations.push(
+      ['journey_worker_service_principals',false,false,false,false],
+      ['journey_worker_service_key_audit',false,false,false,false],
+      ['journey_action_live_contexts',false,false,false,false],
+      ['journey_action_subject_controls',false,false,false,false],
+      ['journey_action_source_controls',false,false,false,false],
+      ['journey_action_quota_counters',false,false,false,false],
+      ['journey_action_frequency_counters',false,false,false,false],
+      ['journey_action_worker_reservations',false,false,false,false],
+      ['journey_action_worker_reservation_events',false,false,false,false]
+    );
+    for (const signature of ['journey_worker_safety_append_only_guard()','journey_worker_service_principal_lifecycle_guard()',
+      'journey_action_worker_reservation_fence_guard()','journey_action_safety_counter_guard()']) {
+      const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},${sqlLiteral(`${schema}.${signature}`)},'EXECUTE') can_execute`))[0];
+      if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',`${runtimeRole} must not execute ${signature}.`);
+    }
+  }
+  if (privilegeRuntimeVersion >= 43) {
+    expectations.push(
+      ['journey_stage_source_mappings',true,true,true,false],
+      ['journey_stage_source_mapping_versions',true,true,false,false],
+      ['journey_stage_survey_policies',true,true,true,false],
+      ['journey_stage_survey_policy_versions',true,true,false,false],
+      ['journey_stage_survey_governance_receipts',true,true,false,true],
+      ['journey_stage_survey_source_revisions',true,true,false,true],
+      ['journey_stage_survey_outbox',true,true,true,true],
+      ['journey_stage_survey_outbox_attempts',true,true,false,true],
+      ['journey_stage_survey_checkpoints',true,true,true,false],
+      ['journey_stage_survey_feed_audit',true,true,false,false]
+    );
+    const feedGuardPrivilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+      ${sqlLiteral(`${schema}.journey_stage_survey_retention_delete_guard()`)},'EXECUTE') can_execute`))[0];
+    if(Boolean(feedGuardPrivilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute the journey-stage survey retention guard.`);
+  }
+  if (privilegeRuntimeVersion >= 45) {
+    expectations.push(
+      ['journey_event_intelligence_mappings',true,true,true,false],
+      ['journey_event_intelligence_mapping_versions',true,true,false,false],
+      ['journey_event_intelligence_erasure_handles',true,true,false,false],
+      ['journey_event_intelligence_outbox',true,true,true,false],
+      ['journey_event_intelligence_materialization_state',true,true,true,false],
+      ['journey_event_intelligence_tombstones',true,true,false,false]
+    );
+    const enqueuePrivilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+      ${sqlLiteral(`${schema}.journey_event_intelligence_enqueue_visit()`)},'EXECUTE') can_execute`))[0];
+    if(Boolean(enqueuePrivilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute the journey-event intelligence trigger function.`);
+  }
+  if (privilegeRuntimeVersion >= 46) {
+    expectations.push(
+      ['journey_portfolio_view_definitions',true,true,true,false],
+      ['journey_portfolio_view_versions',true,true,false,false],
+      ['journey_portfolio_view_preferences',true,true,true,false],
+      ['journey_portfolio_transition_requests',true,true,true,false],
+      ['journey_portfolio_transition_events',true,true,false,false]
+    );
+    for (const signature of ['journey_portfolio_runtime46_guard()','journey_portfolio_view_preference_guard()']) {
+      const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+        ${sqlLiteral(`${schema}.${signature}`)},'EXECUTE') can_execute`))[0];
+      if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+        `${runtimeRole} must not directly execute ${signature}.`);
+    }
+  }
+  if (privilegeRuntimeVersion >= 47) {
+    expectations.push(
+      ['journey_privacy_service_principals',false,false,false,false],
+      ['journey_privacy_service_key_audit',false,false,false,false],
+      ['journey_privacy_erasure_authorities',false,false,false,false],
+      ['journey_privacy_propagation_claims',false,false,false,false],
+      ['journey_privacy_propagation_events',false,false,false,false]
+    );
+    for (const signature of ['journey_privacy_runtime47_guard()','journey_privacy_principal_scope_guard()',
+      'journey_privacy_authority_scope_guard()','journey_privacy_erasure_ready(text,text)',
+      'journey_privacy_claim(text,text,text,timestamp with time zone,integer)',
+      'journey_privacy_checkpoint(text,text,bigint,text,integer,text,jsonb,text,timestamp with time zone,timestamp with time zone)']) {
+      const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+        ${sqlLiteral(`${schema}.${signature}`)},'EXECUTE') can_execute`))[0];
+      if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+        `${runtimeRole} must not directly execute ${signature}.`);
+    }
+  }
+  if (privilegeRuntimeVersion >= 48) {
+    expectations.push(
+      ['journey_blueprint_measurement_plans',true,true,true,false],
+      ['journey_blueprint_measurement_outcomes',true,true,false,false],
+      ['journey_blueprint_measurement_audit',true,true,false,false]
+    );
+    for (const signature of ['journey_blueprint_measurement_lineage_guard()',
+      'journey_blueprint_measurement_immutability_guard()']) {
+      const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+        ${sqlLiteral(`${schema}.${signature}`)},'EXECUTE') can_execute`))[0];
+      if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+        `${runtimeRole} must not directly execute ${signature}.`);
+    }
+  }
+  if (privilegeRuntimeVersion >= 49) {
+    expectations.push(
+      ['journey_export_brand_assets',true,true,true,false],
+      ['journey_export_brand_profiles',true,true,true,false],
+      ['journey_export_brand_profile_versions',true,true,false,false],
+      ['journey_export_brand_settings',true,true,true,false],
+      ['journey_saved_view_brand_bindings',true,true,true,false],
+      ['journey_export_brand_operations',true,true,false,false],
+      ['journey_export_brand_audit_events',true,true,false,false],
+      ['journey_export_brand_asset_purge_queue',true,true,true,false]
+    );
+    const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+      ${sqlLiteral(`${schema}.journey_export_brand_append_only_guard()`)},'EXECUTE') can_execute`))[0];
+    if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute journey_export_brand_append_only_guard().`);
+  }
+  if (privilegeRuntimeVersion >= 50) {
+    expectations.push(
+      ['journey_actual_path_snapshots',true,true,false,false],
+      ['journey_actual_path_rollups',true,true,true,false],
+      ['journey_actual_path_artifact_revisions',true,true,false,false],
+      ['journey_actual_path_privacy_invalidations',true,false,false,false]
+    );
+    for (const signature of ['journey_actual_path_runtime50_immutable_guard()',
+      'journey_actual_path_privacy_invalidate(text,text,text,text,text,timestamp with time zone)']) {
+      const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+        ${sqlLiteral(`${schema}.${signature}`)},'EXECUTE') can_execute`))[0];
+      if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+        `${runtimeRole} must not directly execute ${signature}.`);
+    }
+  }
+  if (privilegeRuntimeVersion >= 51) {
+    expectations.push(
+      ['journey_connector_worker_principals',false,false,false,false],
+      ['journey_connector_worker_key_events',false,false,false,false],
+      ['journey_connector_worker_sources',false,false,false,false],
+      ['journey_connector_worker_source_items',false,false,false,false],
+      ['journey_connector_worker_events',false,false,false,false]
+    );
+    const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+      ${sqlLiteral(`${schema}.journey_connector_worker_history_guard()`)},'EXECUTE') can_execute`))[0];
+    if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute journey_connector_worker_history_guard().`);
+  }
+  if (privilegeRuntimeVersion >= 52) {
+    expectations.push(
+      ['journey_operational_stage_mappings',true,true,true,false],
+      ['journey_operational_stage_mapping_versions',true,true,false,false],
+      ['journey_operational_stage_source_revisions',true,true,false,false],
+      ['journey_operational_stage_outbox',true,true,false,false],
+      ['journey_operational_stage_outbox_attempts',false,false,false,false],
+      ['journey_operational_stage_checkpoints',false,false,false,false],
+      ['journey_operational_stage_tombstones',true,true,false,false],
+      ['journey_operational_timeline_revisions',true,false,false,false],
+      ['journey_operational_stage_feed_audit',true,true,false,false]
+    );
+    const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+      ${sqlLiteral(`${schema}.journey_operational_stage_retention_delete_guard()`)},'EXECUTE') can_execute`))[0];
+    if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute journey_operational_stage_retention_delete_guard().`);
+  }
+  if (privilegeRuntimeVersion >= 53) {
+    expectations.push(
+      ['journey_event_retention_runs',false,false,false,false],
+      ['journey_event_retention_checkpoints',false,false,false,false],
+      ['journey_event_retention_events',false,false,false,false]
+    );
+    const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+      ${sqlLiteral(`${schema}.journey_event_retention_purge_raw(text,text,text,text,text,text,timestamp with time zone,text,timestamp with time zone)`)},
+      'EXECUTE') can_execute`))[0];
+    if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute journey_event_retention_purge_raw().`);
+  }
+  if (privilegeRuntimeVersion >= 54) {
+    expectations.push(
+      ['journey_evidence_monitor_states',true,true,true,false],
+      ['journey_evidence_monitor_events',true,true,false,false]
+    );
+    const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+      ${sqlLiteral(`${schema}.journey_evidence_monitor_event_append_only_guard()`)},'EXECUTE') can_execute`))[0];
+    if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+      `${runtimeRole} must not directly execute journey_evidence_monitor_event_append_only_guard().`);
+  }
+  if (privilegeRuntimeVersion >= 55) {
+    expectations.push(
+      ['journey_workspace_view_definitions',true,true,true,false],
+      ['journey_workspace_view_versions',true,true,false,false],
+      ['journey_workspace_view_preferences',true,true,true,false],
+      ['journey_workspace_view_operations',true,true,false,false],
+      ['journey_workspace_view_audit_events',true,true,false,false]
+    );
+    for (const signature of ['journey_workspace_view_history_guard()','journey_workspace_view_preference_guard()']) {
+      const privilege=(await rows(query,`SELECT has_function_privilege(${sqlLiteral(runtimeRole)},
+        ${sqlLiteral(`${schema}.${signature}`)},'EXECUTE') can_execute`))[0];
+      if(Boolean(privilege?.can_execute))throw contractError('RUNTIME_PRIVILEGE_OVER_GRANT',
+        `${runtimeRole} must not directly execute ${signature}.`);
+    }
   }
   for (const [table, select, insert, update, remove] of expectations) {
     const qualified = `${schema}.${table}`;

@@ -10,6 +10,8 @@ import {
   type JourneyCollaborationCapability, type JourneyCollaborationRole,
   type JourneyCollaborationTargetType, type JourneyGovernanceTargetType
 } from './journeyCollaborationSchema.js';
+import type { JourneyCollaborationEmailKind } from './journeyCollaborationEmailDomain.js';
+import { journeyCollaborationEmailRepository } from './journeyCollaborationEmailRepository.js';
 
 export type JourneyTargetReference = {
   targetType: JourneyCollaborationTargetType;
@@ -158,6 +160,20 @@ function targetGuardSql(table: string, types: readonly JourneyCollaborationTarge
   return sql;
 }
 
+/** Attribution rows retain the immutable user identity after a member leaves a
+ * space. Match runtime-28 by validating membership when the attribution is
+ * written, rather than retaining a foreign key to the mutable membership row. */
+function membershipGuardSql(table: string, userColumn: string) {
+  return `CREATE TRIGGER IF NOT EXISTS ${table}_${userColumn}_membership_guard_insert
+    BEFORE INSERT ON ${table} WHEN NOT EXISTS (
+      SELECT 1 FROM space_memberships WHERE space_id=NEW.space_id AND user_id=NEW.${userColumn})
+    BEGIN SELECT RAISE(ABORT,'Journey collaboration user is outside the tenant'); END;
+  CREATE TRIGGER IF NOT EXISTS ${table}_${userColumn}_membership_guard_update
+    BEFORE UPDATE OF space_id,${userColumn} ON ${table} WHEN NOT EXISTS (
+      SELECT 1 FROM space_memberships WHERE space_id=NEW.space_id AND user_id=NEW.${userColumn})
+    BEGIN SELECT RAISE(ABORT,'Journey collaboration user is outside the tenant'); END;\n`;
+}
+
 /** PostgreSQL is migrated offline. SQLite gets a development/test projection at
  * module load so route and domain tests exercise the same normalised model and
  * referential behaviour. Divergences that remain are listed at the end of this
@@ -233,12 +249,11 @@ function ensureSqliteSchema() {
       target_type TEXT NOT NULL CHECK(target_type IN (
         'journey_map','journey_stage','journey_card','persona','portfolio_item','recommendation')),
       target_id TEXT NOT NULL,journey_definition_id TEXT,parent_comment_id TEXT,root_comment_id TEXT NOT NULL,
-      author_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      author_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE NO ACTION,
       state TEXT NOT NULL DEFAULT 'active' CHECK(state IN ('active','resolved','deleted')),
       revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),current_version_id TEXT NOT NULL,
       created_at TEXT NOT NULL,edited_at TEXT,resolved_at TEXT,resolved_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
       deleted_at TEXT,retention_expires_at TEXT,UNIQUE(id,space_id),UNIQUE(id,space_id,target_type,target_id),
-      FOREIGN KEY(space_id,author_user_id) REFERENCES space_memberships(space_id,user_id) ON DELETE RESTRICT,
       FOREIGN KEY(journey_definition_id,space_id) REFERENCES journey_definitions(id,space_id) ON DELETE CASCADE,
       FOREIGN KEY(parent_comment_id,space_id) REFERENCES journey_comments(id,space_id) ON DELETE CASCADE,
       FOREIGN KEY(root_comment_id,space_id) REFERENCES journey_comments(id,space_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
@@ -257,10 +272,9 @@ function ensureSqliteSchema() {
       id TEXT PRIMARY KEY,comment_id TEXT NOT NULL,space_id TEXT NOT NULL,version_number INTEGER NOT NULL CHECK(version_number>0),
       schema_version INTEGER NOT NULL CHECK(schema_version=1),body_json TEXT NOT NULL CHECK(json_valid(body_json)),
       plain_text TEXT NOT NULL CHECK(length(plain_text) BETWEEN 1 AND 8000),content_sha256 TEXT NOT NULL CHECK(length(content_sha256)=64),
-      editor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,edit_reason_sha256 TEXT,created_at TEXT NOT NULL,
+      editor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE NO ACTION,edit_reason_sha256 TEXT,created_at TEXT NOT NULL,
       UNIQUE(id,space_id),UNIQUE(id,comment_id,space_id),UNIQUE(comment_id,version_number),
-      FOREIGN KEY(comment_id,space_id) REFERENCES journey_comments(id,space_id) ON DELETE CASCADE,
-      FOREIGN KEY(space_id,editor_user_id) REFERENCES space_memberships(space_id,user_id) ON DELETE RESTRICT
+      FOREIGN KEY(comment_id,space_id) REFERENCES journey_comments(id,space_id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS journey_comment_versions_history
       ON journey_comment_versions(space_id,comment_id,version_number DESC,id);
@@ -298,7 +312,7 @@ function ensureSqliteSchema() {
       request_reason_sha256 TEXT NOT NULL CHECK(length(request_reason_sha256)=64),requested_at TEXT NOT NULL,due_at TEXT,
       decided_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,decision_summary TEXT,decided_at TEXT,
       published_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,published_at TEXT,
-      UNIQUE(id,space_id),FOREIGN KEY(space_id,requested_by_user_id) REFERENCES space_memberships(space_id,user_id) ON DELETE RESTRICT,
+      UNIQUE(id,space_id),
       FOREIGN KEY(journey_definition_id,space_id) REFERENCES journey_definitions(id,space_id) ON DELETE CASCADE,
       CHECK(decision_summary IS NULL OR length(decision_summary) BETWEEN 3 AND 2000),
       CHECK(due_at IS NULL OR due_at>requested_at),
@@ -377,7 +391,6 @@ function ensureSqliteSchema() {
       revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
       updated_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
       deleted_at TEXT,retention_expires_at TEXT,UNIQUE(id,space_id),
-      FOREIGN KEY(space_id,owner_user_id) REFERENCES space_memberships(space_id,user_id) ON DELETE RESTRICT,
       CHECK((resource_type='portfolio' AND resource_id=space_id) OR resource_type='journey_map'),
       CHECK((state='active' AND deleted_at IS NULL AND retention_expires_at IS NULL)
         OR (state='deleted' AND deleted_at IS NOT NULL AND retention_expires_at IS NOT NULL
@@ -401,7 +414,7 @@ function ensureSqliteSchema() {
       state TEXT NOT NULL DEFAULT 'active' CHECK(state IN ('active','revoked')),revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),
       created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,
       rotated_at TEXT,revoked_at TEXT,revoked_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,revocation_reason_sha256 TEXT,
-      UNIQUE(id,space_id),FOREIGN KEY(space_id,created_by_user_id) REFERENCES space_memberships(space_id,user_id) ON DELETE RESTRICT,
+      UNIQUE(id,space_id),
       CHECK(allow_download=0 OR allow_export=1),
       CHECK(expires_at>created_at),
       CHECK((state='active' AND revoked_at IS NULL AND revoked_by_user_id IS NULL AND revocation_reason_sha256 IS NULL)
@@ -515,7 +528,12 @@ function ensureSqliteSchema() {
   `);
   db.exec(targetGuardSql('journey_comments', journeyCollaborationTargetTypes)
     + targetGuardSql('journey_collaboration_watchers', journeyCollaborationTargetTypes)
-    + targetGuardSql('journey_governance_reviews', journeyGovernanceTargetTypes));
+    + targetGuardSql('journey_governance_reviews', journeyGovernanceTargetTypes)
+    + membershipGuardSql('journey_comments', 'author_user_id')
+    + membershipGuardSql('journey_comment_versions', 'editor_user_id')
+    + membershipGuardSql('journey_governance_reviews', 'requested_by_user_id')
+    + membershipGuardSql('journey_collaboration_views', 'owner_user_id')
+    + membershipGuardSql('journey_read_only_shares', 'created_by_user_id'));
 }
 ensureSqliteSchema();
 
@@ -607,9 +625,18 @@ function roleRank(role: JourneyCollaborationRole) {
 
 /** What a caller can still reach once the plan feature is gone or the space kill
  * switch is down. Every mutation passes assertCollaborationWritable, so this is
- * the advertised surface, not a second enforcement point. */
+ * the advertised surface, not a second enforcement point.
+ *
+ * `journeys.export` reads: it renders an already-visible journey and writes
+ * nothing. It is entitled by its own plan feature, `journeyExports`, which
+ * starter grants while withholding `journeyCollaboration`, so omitting it here
+ * gated one paid feature behind another -- every export on that plan, and on
+ * any space that switched collaboration off, failed
+ * JOURNEY_COLLABORATION_READ_ONLY. It still has to clear
+ * assertSubscriptionFeature(...,'journeyExports') and the capability check
+ * above, which no viewer holds. */
 const readOnlyCapabilities = new Set<JourneyCollaborationCapability>([
-  'journeys.read', 'journeys.view_activity'
+  'journeys.read', 'journeys.view_activity', 'journeys.export'
 ]);
 
 function targetJourneyDefinitionId(spaceId: string, target: JourneyTargetReference): string | null {
@@ -875,7 +902,18 @@ function appendActivity(input: {
   return activityId;
 }
 
-type IdempotentMutationInput<T extends Record<string, unknown>> = {
+/** Records a content-free activity emitted by another governed Journey
+ * surface. Callers remain responsible for their own entitlement/capability
+ * checks; this shared boundary only guarantees the activity and audit rows use
+ * the collaboration ledger's recursive content-safety rules. */
+export function recordJourneyGovernedActivity(input: {
+  spaceId: string; actorUserId: string | null; action: string; targetType: string; targetId: string;
+  journeyDefinitionId?: string | null; detail?: Record<string, unknown>; requestId?: string | null;
+}) {
+  return appendActivity(input);
+}
+
+export type IdempotentMutationInput<T extends Record<string, unknown>> = {
   spaceId: string; actorUserId: string; idempotencyKey: string; action: string;
   intent: Record<string, unknown>; run: () => T;
   /** Projects the result down to identifiers before it is written to
@@ -927,7 +965,7 @@ function readOperation<T extends Record<string, unknown>>(spaceId: string, actor
   return { ...(restore ? restore(stored) : (stored as T)), replayed: true };
 }
 
-function idempotentMutation<T extends Record<string, unknown>>(input: IdempotentMutationInput<T>): T & { replayed: boolean } {
+export function idempotentMutation<T extends Record<string, unknown>>(input: IdempotentMutationInput<T>): T & { replayed: boolean } {
   const key = normalizedIdempotencyKey(input.idempotencyKey);
   const intentSha256 = sha256(canonical({ action: input.action, ...input.intent }));
   const existing = readOperation<T>(input.spaceId, input.actorUserId, key, intentSha256, input.restore);
@@ -996,6 +1034,16 @@ function appendNotification(input: {
       db.prepare(`INSERT INTO journey_collaboration_notification_states
         (notification_id,space_id,recipient_user_id,state,revision,read_at) VALUES (?,?,?,'unread',1,NULL)`)
         .run(id, input.spaceId, input.recipientUserId);
+      // Runtime-56 email delivery rides on the same savepoint, so a queued email
+      // can never outlive a notification that failed to commit, and a recipient
+      // who has not opted in simply gets no outbox row. This is additive: the
+      // in-app notification above is written and read exactly as before, and the
+      // enqueue reports ineligibility by returning null rather than throwing,
+      // because an unrelated delivery concern must not roll back the inbox.
+      journeyCollaborationEmailRepository.enqueueForNotification({
+        spaceId: input.spaceId, notificationId: id, recipientUserId: input.recipientUserId,
+        kind: input.kind as JourneyCollaborationEmailKind, targetType: input.targetType
+      });
       return id;
     })();
   } catch (error) {

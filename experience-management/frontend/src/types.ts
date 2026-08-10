@@ -39,6 +39,8 @@ export interface SubscriptionLimits {
   journeyMetricBindings: number; journeyMetricSegments: number; monthlyJourneyMetricImports: number;
   journeyMetricAlertDefinitions: number;
   journeyChannels: number; journeyTouchpoints: number; journeyCardAssets: number; journeyCardAssetBytes: number; journeySavedViews: number;
+  journeyPortfolioItems: number; journeyPortfolioScoringPolicies: number; journeyHierarchyLinks: number;
+  journeyBlueprints: number; journeyBlueprintResources: number; journeyConnectorDefinitions: number;
 }
 export interface SpaceSession { spaces: SpaceSummary[]; activeSpace: SpaceSummary }
 export interface PendingSpaceInvitation {

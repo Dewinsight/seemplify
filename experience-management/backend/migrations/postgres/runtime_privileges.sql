@@ -160,7 +160,141 @@ BEGIN
     'journey_stage_reprojection_runs',
     'journey_stage_reprojection_attempts',
     'journey_stage_reprojection_checkpoints',
-    'journey_stage_reprojection_audit_events'
+    'journey_stage_reprojection_audit_events',
+    'journey_identity_profiles',
+    'journey_identity_bindings',
+    'journey_identity_merges',
+    'journey_identity_memberships',
+    'journey_identity_groups',
+    'journey_identity_source_facts',
+    'journey_identity_audit_facts',
+    'journey_identity_profile_tombstones',
+    'journey_identity_identifier_tombstones',
+    'journey_identity_processed_commands',
+    'journey_profile_timeline_events',
+    'journey_identity_sessions',
+    'journey_identity_segments',
+    'journey_identity_segment_versions',
+    'journey_identity_segment_memberships',
+    'journey_profile_privacy_states',
+    'journey_profile_export_jobs',
+    'journey_profile_privacy_jobs',
+    'journey_identity_correction_runs',
+    'journey_path_intelligence_runs',
+    'journey_stage_inference_recommendations',
+    'journey_path_intelligence_audit',
+    'journey_orchestration_settings',
+    'journey_workflow_definitions',
+    'journey_workflow_versions',
+    'journey_workflow_runs',
+    'journey_workflow_actions',
+    'journey_workflow_approvals',
+    'journey_workflow_outbox',
+    'journey_workflow_audit',
+    'journey_action_queue',
+    'journey_action_gate_resolutions',
+    'journey_action_attempts',
+    'journey_action_effect_receipts',
+    'journey_connector_definitions',
+    'journey_connector_import_runs',
+    'journey_connector_records',
+    'journey_connector_item_receipts',
+    'journey_connector_idempotency',
+    'journey_connector_audit',
+    'journey_webhook_destinations',
+    'journey_adapter_execution_attempts',
+    'journey_adapter_effect_receipts',
+    'journey_adapter_internal_notifications',
+    'journey_webhook_dispatches',
+    'journey_prediction_policies',
+    'journey_predictive_models',
+    'journey_predictive_model_versions',
+    'journey_prediction_drift_evaluations',
+    'journey_prediction_runs',
+    'journey_prediction_audit',
+    'journey_kill_switch_states',
+    'journey_kill_switch_mutations',
+    'journey_kill_switch_pauses',
+    'journey_kill_switch_resumptions',
+    'journey_kill_switch_audit',
+    'journey_stage_intelligence_policies',
+    'journey_stage_intelligence_policy_history',
+    'journey_stage_intelligence_facts',
+    'journey_stage_intelligence_audit',
+    'journey_worker_service_principals',
+    'journey_worker_service_key_audit',
+    'journey_action_live_contexts',
+    'journey_action_subject_controls',
+    'journey_action_source_controls',
+    'journey_action_quota_counters',
+    'journey_action_frequency_counters',
+    'journey_action_worker_reservations',
+    'journey_action_worker_reservation_events',
+    'journey_stage_source_mappings',
+    'journey_stage_source_mapping_versions',
+    'journey_stage_survey_policies',
+    'journey_stage_survey_policy_versions',
+    'journey_stage_survey_governance_receipts',
+    'journey_stage_survey_source_revisions',
+    'journey_stage_survey_outbox',
+    'journey_stage_survey_outbox_attempts',
+    'journey_stage_survey_checkpoints',
+    'journey_stage_survey_feed_audit',
+    'journey_event_intelligence_mappings',
+    'journey_event_intelligence_mapping_versions',
+    'journey_event_intelligence_erasure_handles',
+    'journey_event_intelligence_outbox',
+    'journey_event_intelligence_materialization_state',
+    'journey_event_intelligence_tombstones',
+    'journey_portfolio_view_definitions',
+    'journey_portfolio_view_versions',
+    'journey_portfolio_view_preferences',
+    'journey_portfolio_transition_requests',
+    'journey_portfolio_transition_events'
+    ,'journey_privacy_service_principals'
+    ,'journey_privacy_service_key_audit'
+    ,'journey_privacy_erasure_authorities'
+    ,'journey_privacy_propagation_claims'
+    ,'journey_privacy_propagation_events'
+    ,'journey_blueprint_measurement_plans'
+    ,'journey_blueprint_measurement_outcomes'
+    ,'journey_blueprint_measurement_audit'
+    ,'journey_export_brand_assets'
+    ,'journey_export_brand_profiles'
+    ,'journey_export_brand_profile_versions'
+    ,'journey_export_brand_settings'
+    ,'journey_saved_view_brand_bindings'
+    ,'journey_export_brand_operations'
+    ,'journey_export_brand_audit_events'
+    ,'journey_export_brand_asset_purge_queue'
+    ,'journey_actual_path_snapshots'
+    ,'journey_actual_path_rollups'
+    ,'journey_actual_path_artifact_revisions'
+    ,'journey_actual_path_privacy_invalidations'
+    ,'journey_connector_worker_principals'
+    ,'journey_connector_worker_key_events'
+    ,'journey_connector_worker_sources'
+    ,'journey_connector_worker_source_items'
+    ,'journey_connector_worker_events'
+    ,'journey_operational_stage_mappings'
+    ,'journey_operational_stage_mapping_versions'
+    ,'journey_operational_stage_source_revisions'
+    ,'journey_operational_stage_outbox'
+    ,'journey_operational_stage_outbox_attempts'
+    ,'journey_operational_stage_checkpoints'
+    ,'journey_operational_stage_tombstones'
+    ,'journey_operational_timeline_revisions'
+    ,'journey_operational_stage_feed_audit'
+    ,'journey_event_retention_runs'
+    ,'journey_event_retention_checkpoints'
+    ,'journey_event_retention_events'
+    ,'journey_evidence_monitor_states'
+    ,'journey_evidence_monitor_events'
+    ,'journey_workspace_view_definitions'
+    ,'journey_workspace_view_versions'
+    ,'journey_workspace_view_preferences'
+    ,'journey_workspace_view_operations'
+    ,'journey_workspace_view_audit_events'
   ] LOOP
     IF to_regclass('public.' || protected_table) IS NULL THEN
       RAISE EXCEPTION 'Required runtime privilege target public.% is missing', protected_table;
@@ -294,6 +428,36 @@ REVOKE UPDATE,DELETE ON TABLE
   public.journey_hierarchy_activity,
   public.journey_stage_reprojection_attempts,
   public.journey_stage_reprojection_audit_events
+  ,public.journey_path_intelligence_runs
+  ,public.journey_path_intelligence_audit
+  ,public.journey_workflow_versions
+  ,public.journey_workflow_runs
+  ,public.journey_workflow_actions
+  ,public.journey_workflow_approvals
+  ,public.journey_workflow_outbox
+  ,public.journey_workflow_audit
+  ,public.journey_action_gate_resolutions
+  ,public.journey_action_attempts
+  ,public.journey_action_effect_receipts
+  ,public.journey_connector_item_receipts
+  ,public.journey_connector_idempotency
+  ,public.journey_connector_audit
+  ,public.journey_adapter_execution_attempts
+  ,public.journey_adapter_effect_receipts
+  ,public.journey_adapter_internal_notifications
+  ,public.journey_predictive_model_versions
+  ,public.journey_prediction_drift_evaluations
+  ,public.journey_prediction_runs
+  ,public.journey_prediction_audit
+  ,public.journey_kill_switch_mutations
+  ,public.journey_kill_switch_pauses
+  ,public.journey_kill_switch_resumptions
+  ,public.journey_kill_switch_audit
+  ,public.journey_stage_intelligence_policy_history
+  ,public.journey_stage_intelligence_facts
+  ,public.journey_stage_intelligence_audit
+  ,public.journey_portfolio_view_versions
+  ,public.journey_portfolio_transition_events
 FROM __APP_ROLE__;
 REVOKE DELETE ON TABLE
   public.journey_event_rate_buckets,
@@ -334,6 +498,33 @@ REVOKE DELETE ON TABLE
   public.journey_blueprints,
   public.journey_stage_reprojection_runs,
   public.journey_stage_reprojection_checkpoints
+  ,public.journey_stage_inference_recommendations
+  ,public.journey_orchestration_settings
+  ,public.journey_workflow_definitions
+  ,public.journey_action_queue
+  ,public.journey_connector_definitions
+  ,public.journey_connector_import_runs
+  ,public.journey_connector_records
+  ,public.journey_webhook_destinations
+  ,public.journey_webhook_dispatches
+  ,public.journey_prediction_policies
+  ,public.journey_predictive_models
+  ,public.journey_predictive_model_versions
+  ,public.journey_prediction_drift_evaluations
+  ,public.journey_prediction_runs
+  ,public.journey_prediction_audit
+  ,public.journey_kill_switch_states
+  ,public.journey_kill_switch_mutations
+  ,public.journey_kill_switch_pauses
+  ,public.journey_kill_switch_resumptions
+  ,public.journey_kill_switch_audit
+  ,public.journey_stage_intelligence_policies
+  ,public.journey_stage_intelligence_policy_history
+  ,public.journey_stage_intelligence_facts
+  ,public.journey_stage_intelligence_audit
+  ,public.journey_portfolio_view_definitions
+  ,public.journey_portfolio_view_preferences
+  ,public.journey_portfolio_transition_requests
 FROM __APP_ROLE__;
 -- Blob purge receipts are stateful while pending, but are durable history:
 -- the runtime may claim/update them and cannot erase completed or failed
@@ -346,6 +537,100 @@ REVOKE DELETE ON TABLE public.journey_asset_blob_purge_outbox FROM __APP_ROLE__;
 REVOKE INSERT ON TABLE public.journey_ai_suggestion_purge_receipts FROM __APP_ROLE__;
 REVOKE EXECUTE ON FUNCTION public.journey_ai_suggestion_controlled_purge(TEXT,TEXT,TEXT,TEXT)
   FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_stage_inference_content_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_taxonomy_assignment_lifecycle_guard()
+  FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_portfolio_owner_membership_guard()
+  FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_orchestration_append_only_guard()
+  FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_connector_append_only_guard()
+  FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_stage_intelligence_retention_delete_guard()
+  FROM __APP_ROLE__;
+REVOKE UPDATE,DELETE ON TABLE public.journey_stage_source_mapping_versions,
+  public.journey_stage_survey_policy_versions,public.journey_stage_survey_feed_audit FROM __APP_ROLE__;
+REVOKE UPDATE ON TABLE public.journey_stage_survey_governance_receipts,
+  public.journey_stage_survey_source_revisions,public.journey_stage_survey_outbox_attempts FROM __APP_ROLE__;
+REVOKE DELETE ON TABLE public.journey_stage_source_mappings,public.journey_stage_survey_policies,
+  public.journey_stage_survey_checkpoints FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_stage_survey_retention_delete_guard() FROM PUBLIC,__APP_ROLE__;
+REVOKE UPDATE,DELETE ON TABLE public.journey_event_intelligence_mapping_versions,
+  public.journey_event_intelligence_erasure_handles,public.journey_event_intelligence_tombstones FROM __APP_ROLE__;
+REVOKE DELETE ON TABLE public.journey_event_intelligence_mappings,public.journey_event_intelligence_outbox,
+  public.journey_event_intelligence_materialization_state FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_event_intelligence_enqueue_visit() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_portfolio_runtime46_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_portfolio_view_preference_guard() FROM __APP_ROLE__;
+REVOKE ALL ON TABLE public.journey_privacy_service_principals,public.journey_privacy_service_key_audit,
+  public.journey_privacy_erasure_authorities,public.journey_privacy_propagation_claims,
+  public.journey_privacy_propagation_events FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_privacy_runtime47_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_privacy_principal_scope_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_privacy_authority_scope_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_privacy_erasure_ready(TEXT,TEXT) FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_privacy_claim(TEXT,TEXT,TEXT,TIMESTAMPTZ,INTEGER) FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_privacy_checkpoint(TEXT,TEXT,BIGINT,TEXT,INTEGER,TEXT,JSONB,TEXT,TIMESTAMPTZ,TIMESTAMPTZ)
+  FROM __APP_ROLE__;
+REVOKE DELETE ON TABLE public.journey_blueprint_measurement_plans FROM __APP_ROLE__;
+REVOKE UPDATE,DELETE ON TABLE public.journey_blueprint_measurement_outcomes,
+  public.journey_blueprint_measurement_audit FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_blueprint_measurement_lineage_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_blueprint_measurement_immutability_guard() FROM __APP_ROLE__;
+REVOKE UPDATE,DELETE ON TABLE public.journey_export_brand_profile_versions,
+  public.journey_export_brand_operations,public.journey_export_brand_audit_events FROM __APP_ROLE__;
+REVOKE DELETE ON TABLE public.journey_export_brand_assets,public.journey_export_brand_profiles,
+  public.journey_export_brand_settings,public.journey_saved_view_brand_bindings,
+  public.journey_export_brand_asset_purge_queue FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_export_brand_append_only_guard() FROM __APP_ROLE__;
+REVOKE UPDATE,DELETE ON TABLE public.journey_actual_path_snapshots,public.journey_actual_path_artifact_revisions FROM __APP_ROLE__;
+REVOKE INSERT,UPDATE,DELETE ON TABLE public.journey_actual_path_privacy_invalidations FROM __APP_ROLE__;
+REVOKE DELETE ON TABLE public.journey_actual_path_rollups FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_actual_path_runtime50_immutable_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_actual_path_privacy_invalidate(TEXT,TEXT,TEXT,TEXT,TEXT,TIMESTAMPTZ)
+  FROM __APP_ROLE__;
+REVOKE ALL ON TABLE public.journey_connector_worker_principals,public.journey_connector_worker_key_events,
+  public.journey_connector_worker_sources,public.journey_connector_worker_source_items,
+  public.journey_connector_worker_events FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_connector_worker_history_guard() FROM __APP_ROLE__;
+REVOKE DELETE ON TABLE public.journey_operational_stage_mappings FROM __APP_ROLE__;
+REVOKE UPDATE,DELETE ON TABLE public.journey_operational_stage_mapping_versions,
+  public.journey_operational_stage_source_revisions,public.journey_operational_stage_outbox,
+  public.journey_operational_stage_tombstones,public.journey_operational_stage_feed_audit FROM __APP_ROLE__;
+REVOKE ALL ON TABLE public.journey_operational_stage_outbox_attempts,
+  public.journey_operational_stage_checkpoints FROM __APP_ROLE__;
+REVOKE INSERT,UPDATE,DELETE ON TABLE public.journey_operational_timeline_revisions FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_operational_stage_retention_delete_guard() FROM __APP_ROLE__;
+REVOKE ALL ON TABLE public.journey_event_retention_runs,public.journey_event_retention_checkpoints,
+  public.journey_event_retention_events FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_event_retention_purge_raw(TEXT,TEXT,TEXT,TEXT,TEXT,TEXT,TIMESTAMPTZ,TEXT,TIMESTAMPTZ)
+  FROM __APP_ROLE__;
+REVOKE DELETE ON TABLE public.journey_evidence_monitor_states FROM __APP_ROLE__;
+REVOKE UPDATE,DELETE ON TABLE public.journey_evidence_monitor_events FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_evidence_monitor_event_append_only_guard() FROM __APP_ROLE__;
+REVOKE DELETE ON TABLE public.journey_workspace_view_definitions,
+  public.journey_workspace_view_preferences FROM __APP_ROLE__;
+REVOKE UPDATE,DELETE ON TABLE public.journey_workspace_view_versions,
+  public.journey_workspace_view_operations,public.journey_workspace_view_audit_events FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_workspace_view_history_guard(),
+  public.journey_workspace_view_preference_guard() FROM __APP_ROLE__;
+REVOKE ALL ON TABLE
+  public.journey_worker_service_principals,
+  public.journey_worker_service_key_audit,
+  public.journey_action_live_contexts,
+  public.journey_action_subject_controls,
+  public.journey_action_source_controls,
+  public.journey_action_quota_counters,
+  public.journey_action_frequency_counters,
+  public.journey_action_worker_reservations,
+  public.journey_action_worker_reservation_events
+FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_worker_safety_append_only_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_worker_service_principal_lifecycle_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_action_worker_reservation_fence_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_action_safety_counter_guard() FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_worker_subscription_snapshot(TEXT) FROM __APP_ROLE__;
+REVOKE EXECUTE ON FUNCTION public.journey_worker_lock_space(TEXT) FROM __APP_ROLE__;
 
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM __APP_ROLE__;
