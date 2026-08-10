@@ -3,6 +3,7 @@ const router = express.Router();
 const currencyService = require('../services/CurrencyService');
 const exchangeRateSyncService = require('../services/ExchangeRateSyncService');
 const ExchangeRate = require('../models/ExchangeRate');
+const organizationCurrencyService = require('../services/OrganizationCurrencyService');
 const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
 
 // Helper to get user info
@@ -16,11 +17,57 @@ const getUserInfo = (req) => ({
  * GET /api/payroll/currencies
  * Get all supported currencies
  */
-router.get('/', requireAuth, (req, res) => {
-    res.json({
-        currencies: currencyService.getSupportedCurrencies(),
-        provider: exchangeRateSyncService.getProviderInfo()
-    });
+router.get('/', requireAuth, async (req, res) => {
+    try {
+        const { organizationId, userId, name } = getUserInfo(req);
+        const policy = await organizationCurrencyService.getPolicy(organizationId, { userId, name });
+        res.json({
+            currencies: organizationCurrencyService.buildCatalog(policy),
+            policy: policy.toPublicJSON(),
+            provider: exchangeRateSyncService.getProviderInfo()
+        });
+    } catch (err) {
+        console.error('Get Currency Catalog Error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch currency catalogue' });
+    }
+});
+
+/**
+ * GET /api/payroll/currencies/policy
+ * Get the organization's payroll currency controls.
+ */
+router.get('/policy', requireHRAdmin, async (req, res) => {
+    try {
+        const { organizationId, userId, name } = getUserInfo(req);
+        const policy = await organizationCurrencyService.getPolicy(organizationId, { userId, name });
+        res.json({ policy: policy.toPublicJSON(), currencies: organizationCurrencyService.buildCatalog(policy) });
+    } catch (err) {
+        console.error('Get Currency Policy Error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to fetch currency policy', details: err.details });
+    }
+});
+
+/**
+ * PUT /api/payroll/currencies/policy
+ * Update functional/reporting/payment currencies and custom reporting units.
+ */
+router.put('/policy', requireHRAdmin, async (req, res) => {
+    try {
+        const { organizationId, userId, name } = getUserInfo(req);
+        const policy = await organizationCurrencyService.updatePolicy(
+            organizationId,
+            req.body || {},
+            { userId, name }
+        );
+        res.json({
+            success: true,
+            policy: policy.toPublicJSON(),
+            currencies: organizationCurrencyService.buildCatalog(policy)
+        });
+    } catch (err) {
+        console.error('Update Currency Policy Error:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update currency policy', details: err.details });
+    }
 });
 
 /**
@@ -135,7 +182,7 @@ router.post('/rates', requireHRAdmin, async (req, res) => {
         });
     } catch (err) {
         console.error('Set Rate Error:', err);
-        res.status(500).json({ error: 'Failed to set exchange rate' });
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to set exchange rate', code: err.code });
     }
 });
 
@@ -230,7 +277,7 @@ router.post('/rates/bulk', requireHRAdmin, async (req, res) => {
         });
     } catch (err) {
         console.error('Bulk Set Rates Error:', err);
-        res.status(500).json({ error: 'Failed to set exchange rates' });
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to set exchange rates', code: err.code });
     }
 });
 
@@ -276,11 +323,20 @@ router.delete('/rates/:id', requireHRAdmin, async (req, res) => {
     try {
         const { organizationId } = getUserInfo(req);
 
-        const rate = await ExchangeRate.findOneAndUpdate(
-            { _id: req.params.id, organizationId },
-            { isActive: false },
-            { new: true }
-        );
+        const existing = await ExchangeRate.findOne({ _id: req.params.id, organizationId });
+        if (existing && new Date(existing.effectiveDate).getTime() <= Date.now()) {
+            return res.status(409).json({
+                error: 'Historical and currently-effective exchange rates are immutable because payroll and reports may reference them. Add a later correction instead.',
+                code: 'EXCHANGE_RATE_IMMUTABLE',
+            });
+        }
+        const rate = existing
+            ? await ExchangeRate.findOneAndUpdate(
+                { _id: existing._id, organizationId },
+                { isActive: false },
+                { new: true }
+            )
+            : null;
 
         if (!rate) {
             return res.status(404).json({ error: 'Rate not found' });

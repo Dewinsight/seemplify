@@ -32,7 +32,9 @@ The connected-ChatGPT/Codex gateway is a shared Seemplify platform service for I
 
 ### Required deployment configuration
 
-- Both backends need `LOCAL_LLM_BASE_URL` and `LOCAL_LLM_SHARED_SECRET` for local inference.
+- Both backends need `LOCAL_LLM_BASE_URL` and their own derived
+  `LOCAL_LLM_SERVICE_SECRET` for local inference. Only Recruiter may retain
+  `LOCAL_LLM_SHARED_SECRET`, for verification of the Local gateway usage sink.
 - ChatGPT requires `CHATGPT_GATEWAY_BASE_URL` and `CHATGPT_GATEWAY_SHARED_SECRET`.
 - Performance enables runtimes with `PERFORMANCE_AI_LOCAL_ENABLED`, `PERFORMANCE_AI_CHATGPT_ENABLED`, and `PERFORMANCE_AI_DEFAULT_RUNTIME` until its persisted administrator setting is saved.
 - The gateway's `CODEX_SUBJECT_SOURCE_APPS` must include `recruiter,performance-management` before Performance ChatGPT connections are accepted.

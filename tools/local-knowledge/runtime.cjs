@@ -4,8 +4,11 @@ const path = require('node:path');
 const { monitorEventLoopDelay } = require('node:perf_hooks');
 const { AQL } = require('./aql.cjs');
 const { CONFIG } = require('./config.cjs');
-const { assertId, assertStagedSource, signRequest, tenantDatabaseName } = require('./auth.cjs');
+const { assertId, assertStagedSource, tenantDatabaseName } = require('./auth.cjs');
 const { EmbeddingMigrationController } = require('./migration-controller.cjs');
+const { signatureForServiceSecret } = require('../local-llm/service-auth.cjs');
+
+const LOCAL_LLM_SERVICE_ID = 'experience-management';
 
 const COLLECTIONS = Object.freeze([
   ['documents', 2], ['chunks', 2], ['experience_chunks_gte_v1', 2], ['entities', 2], ['claims', 2], ['relations', 3], ['operation_receipts', 2],
@@ -783,11 +786,31 @@ async function chatgptGraphWindow(source, { jobId, windowIndex, windowOffset, fe
     ],
     jsonSchema: GRAPH_SCHEMA, schemaName: 'experience_knowledge_graph_v1', temperature: 0, maxTokens: 8_000,
   });
-  const signed = signRequest(gatewaySecret, body, requestPath);
+  const timestamp = String(Date.now());
+  const nonce = crypto.randomBytes(24).toString('base64url');
+  const signed = {
+    timestamp,
+    nonce,
+    signature: signatureForServiceSecret(gatewaySecret, {
+      timestamp,
+      nonce,
+      serviceId: LOCAL_LLM_SERVICE_ID,
+      method: 'POST',
+      requestPath,
+      rawBody: body
+    })
+  };
   let response;
   try {
     response = await fetchImpl(`http://${config.host}:11435${requestPath}`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-seemplify-timestamp': signed.timestamp, 'x-seemplify-nonce': signed.nonce, 'x-seemplify-signature': signed.signature },
+      method: 'POST', headers: {
+        'content-type': 'application/json',
+        'x-seemplify-service': LOCAL_LLM_SERVICE_ID,
+        'x-seemplify-signature-version': '2',
+        'x-seemplify-timestamp': signed.timestamp,
+        'x-seemplify-nonce': signed.nonce,
+        'x-seemplify-signature': signed.signature
+      },
       body, signal: AbortSignal.timeout(6 * 60_000),
     });
   } catch (error) {

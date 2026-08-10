@@ -426,6 +426,7 @@ const appraisalSchema = new mongoose.Schema({
     },
     aiContext: {
       isAiGenerated: { type: Boolean, default: false },
+      fallback: { type: Boolean, default: false },
       promptUsed: String,
       modelUsed: String,
       tokensUsed: Number,

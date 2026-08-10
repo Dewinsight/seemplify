@@ -61,6 +61,11 @@ import {
 } from './utils/hubPins.js'
 import { initializeCleanupJobs } from './jobs/cleanupExpiredInvites.js'
 import { startCampaignWorker } from './jobs/campaignWorker.js'
+import {
+  probeWebhookTargets,
+  resolveWebhookSecret,
+  startWebhookOutboxWorker
+} from './services/webhookService.js'
 import { startSubscriptionLifecycleJobs } from './jobs/subscriptionLifecycle.js'
 import { getProfileCompletion, getProfileCompletionForAccount } from './utils/profileCompletion.js'
 import {
@@ -79,6 +84,8 @@ import { registerCampaignConversion, resolveVisitorTouches } from './services/ma
 import { samlIdPService as samlService } from './services/samlService.js'
 import { subscriptionService } from './services/subscriptionService.js'
 import cloudinary, { isCloudinaryConfigured } from './services/cloudinaryService.js'
+import { claimsCacheEnabled } from './utils/claimsCachePolicy.js'
+import { createWebhookReadinessVerifier } from './middleware/webhookReadinessAuth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -103,9 +110,10 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000
  */
 async function getCachedClaims(acc) {
   const startTime = Date.now()
+  const cacheEnabled = claimsCacheEnabled()
   const currentOrgId = acc.currentOrganization?._id?.toString() || acc.currentOrganization?.toString() || 'none'
   const cacheKey = `claims:${acc.sub}:${acc.updatedAt?.getTime() || 0}:${currentOrgId}`
-  const cached = claimsCache.get(cacheKey)
+  const cached = cacheEnabled ? claimsCache.get(cacheKey) : null
 
   if (cached && (Date.now() - cached.timestamp) < CLAIMS_CACHE_TTL) {
     console.log(`⚡ [PERF] Claims cache HIT for ${acc.email} (${Date.now() - startTime}ms)`)
@@ -175,10 +183,10 @@ async function getCachedClaims(acc) {
   }
 
   // Cache the claims
-  claimsCache.set(cacheKey, { data: claims, timestamp: Date.now() })
+  if (cacheEnabled) claimsCache.set(cacheKey, { data: claims, timestamp: Date.now() })
 
   // Clean up old cache entries periodically (keep cache size manageable)
-  if (claimsCache.size > 1000) {
+  if (cacheEnabled && claimsCache.size > 1000) {
     const now = Date.now()
     for (const [key, value] of claimsCache.entries()) {
       if (now - value.timestamp > CLAIMS_CACHE_TTL) {
@@ -1184,6 +1192,21 @@ app.set('views', join(__dirname, 'views'))
 app.use((req, res, next) => {
   console.log(`📨 ${req.method} ${req.path}`, req.query)
   next()
+})
+
+const verifyWebhookReadinessRequest = createWebhookReadinessVerifier({
+  resolveSecret: resolveWebhookSecret
+})
+
+// Proves the running IdP loaded its current target-specific keys and every
+// deployed product receiver accepts them. No membership state is mutated.
+app.post('/api/internal/webhook-readiness', verifyWebhookReadinessRequest, async (_req, res) => {
+  try {
+    const result = await probeWebhookTargets()
+    return res.json({ ok: true, targets: result.results.map(item => item.name), eventId: result.eventId })
+  } catch (error) {
+    return res.status(503).json({ ok: false, message: error.message, results: error.results || [] })
+  }
 })
 
 // Interaction routes MUST come BEFORE provider.callback()
@@ -10028,5 +10051,12 @@ app.listen(PORT, async () => {
     console.log('✅ Campaign worker initialized')
   } catch (error) {
     console.error('⚠️ Failed to initialize campaign worker:', error)
+  }
+
+  try {
+    startWebhookOutboxWorker()
+    console.log('Webhook outbox worker initialized')
+  } catch (error) {
+    console.error('Failed to initialize webhook outbox worker:', error)
   }
 })

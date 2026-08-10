@@ -11,6 +11,7 @@ import {
   requireTeamAdminOrManager
 } from '../middleware/permissions.js'
 import webhookService from '../services/webhookService.js'
+import { invalidateClaimsCache } from '../index.js'
 
 const router = express.Router()
 
@@ -488,18 +489,26 @@ router.delete('/:teamId/members/:memberId',
       }
 
       const removedRole = req.team.members.find(member => member.account.toString() === memberId)?.role
-      await req.team.removeMember(memberId)
+      const removedAccount = await Account.findById(memberId).select('sub').lean()
+      await webhookService.runAuthorizationMutationWithWebhook({
+        event: 'team.member.removed',
+        data: {
+          userId: removedAccount?.sub || memberId,
+          subject: removedAccount?.sub,
+          accountId: memberId,
+          teamId: req.team._id.toString(),
+          organizationId: req.team.organization.toString(),
+          role: removedRole,
+          action: 'removed'
+        },
+        mutation: (session) => req.team.removeMember(
+          memberId,
+          session ? { session } : undefined
+        )
+      })
+      if (removedAccount?.sub) invalidateClaimsCache(removedAccount.sub)
 
       console.log('✅ Member removed from team:', req.team.name, 'by', req.user.email)
-
-      // Send webhook notification for team member removal
-      const removedAccount = await Account.findById(memberId).select('sub').lean()
-      webhookService.notifyTeamMemberRemoved(
-        removedAccount?.sub || memberId,
-        req.team._id.toString(),
-        req.team.organization.toString(),
-        removedRole
-      ).catch(err => console.error('Webhook notification failed:', err))
 
       res.json({
         message: 'Member removed from team successfully',
@@ -542,19 +551,30 @@ router.put('/:teamId/members/:memberId',
       const member = req.team.members.find(m => m.account.toString() === memberId)
       const oldRole = member?.role || 'member'
 
-      await req.team.updateMemberRole(memberId, role)
+      const targetAccount = await Account.findById(memberId).select('sub').lean()
+      await webhookService.runAuthorizationMutationWithWebhook({
+        event: 'team.member.role_changed',
+        data: {
+          userId: targetAccount?.sub || memberId,
+          subject: targetAccount?.sub,
+          accountId: memberId,
+          teamId: req.team._id.toString(),
+          organizationId: req.team.organization.toString(),
+          oldRole,
+          newRole: role,
+          action: 'role_changed'
+        },
+        mutation: (session) => req.team.updateMemberRole(
+          memberId,
+          role,
+          session ? { session } : undefined
+        )
+      })
+      if (targetAccount?.sub) invalidateClaimsCache(targetAccount.sub)
 
       console.log('✅ Team member role updated to', role, 'in', req.team.name, 'by', req.user.email)
 
       // Send webhook notification for role change
-      const targetAccount = await Account.findById(memberId).select('sub').lean()
-      webhookService.notifyTeamRoleChanged(
-        targetAccount?.sub || memberId,
-        req.team._id.toString(),
-        oldRole,
-        role,
-        req.team.organization.toString()
-      ).catch(err => console.error('Webhook notification failed:', err))
 
       res.json({
         message: 'Team member role updated successfully',

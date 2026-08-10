@@ -11,7 +11,8 @@
  */
 
 import crypto from 'crypto'
-import { WebhookDelivery } from '../models/WebhookDelivery.js'
+import mongoose from 'mongoose'
+import WebhookOutbox from '../models/WebhookOutbox.js'
 
 // Registered webhook endpoints for each backend
 const WEBHOOK_ENDPOINTS = {
@@ -24,126 +25,416 @@ const WEBHOOK_ENDPOINTS = {
   recruiter: process.env.RECRUITER_WEBHOOK_URL || 'http://localhost:5001/api/webhooks/idp-lifecycle',
 }
 
-const WEBHOOK_SECRET = process.env.IDP_WEBHOOK_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'development-webhook-secret')
+const INSECURE_WEBHOOK_SECRET = 'your-webhook-secret-key'
+const WEBHOOK_TARGET_SECRET_ENV = {
+  smarthr: 'IDP_WEBHOOK_SECRET_RECRUITER',
+  leaveManagement: 'IDP_WEBHOOK_SECRET_LEAVE_MANAGEMENT',
+  payroll: 'IDP_WEBHOOK_SECRET_PAYROLL',
+  performance: 'IDP_WEBHOOK_SECRET_PERFORMANCE_MANAGEMENT',
+  timeAttendance: 'IDP_WEBHOOK_SECRET',
+  recruiter: 'IDP_WEBHOOK_SECRET_RECRUITER'
+}
+
+export function resolveWebhookSecret(source = process.env) {
+  const value = String(source.IDP_WEBHOOK_SECRET || '').trim()
+  const production = String(source.NODE_ENV || '').trim().toLowerCase() === 'production'
+  if (production && (value.length < 32 || value === INSECURE_WEBHOOK_SECRET)) {
+    throw new Error('IDP_WEBHOOK_SECRET must be a rotated secret of at least 32 characters in production')
+  }
+  return value || INSECURE_WEBHOOK_SECRET
+}
+
+const WEBHOOK_SECRET = resolveWebhookSecret()
+
+export function resolveWebhookSecretForTarget(targetName, source = process.env) {
+  const environmentName = WEBHOOK_TARGET_SECRET_ENV[targetName]
+  const explicit = String(environmentName ? source[environmentName] || '' : '').trim()
+  const production = String(source.NODE_ENV || '').trim().toLowerCase() === 'production'
+  if (explicit) {
+    if (production && (explicit.length < 32 || explicit === INSECURE_WEBHOOK_SECRET)) {
+      throw new Error(`${environmentName} must be a rotated secret of at least 32 characters in production`)
+    }
+    return explicit
+  }
+  if (production) {
+    throw new Error(`${environmentName || 'Target webhook secret'} is required in production`)
+  }
+  // Local development retains the single-key setup unless explicit target
+  // keys are provided. Production is always isolated per destination.
+  return resolveWebhookSecret(source)
+}
 const WEBHOOK_TIMEOUT = 5000 // 5 second timeout
+const WEBHOOK_MAX_ATTEMPTS = Math.max(1, Number(process.env.IDP_WEBHOOK_MAX_ATTEMPTS || 12))
+let outboxInterval = null
+
+const AUTHORIZATION_INVALIDATION_EVENTS = new Set([
+  'organization.member.removed',
+  'organization.member.app_access_changed',
+  'organization.member.app_access_updated',
+  'organization.member.role_changed',
+  'team.member.removed',
+  'team.member.role_changed',
+  'user.session.invalidate'
+])
+
+function requiresGuaranteedDelivery(event) {
+  return AUTHORIZATION_INVALIDATION_EVENTS.has(String(event || ''))
+}
+
+export function createWebhookPayload(event, data) {
+  const occurredAt = new Date().toISOString()
+  return {
+    eventId: crypto.randomUUID(),
+    event,
+    data,
+    occurredAt,
+    timestamp: occurredAt,
+    idpVersion: '1.0',
+  }
+}
 
 /**
  * Generate HMAC signature for webhook payload
  */
-function generateSignature(payload) {
-  if (!WEBHOOK_SECRET) throw new Error('IDP_WEBHOOK_SECRET is required in production')
-  const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET)
+function generateSignature(payload, secret = WEBHOOK_SECRET) {
+  const hmac = crypto.createHmac('sha256', secret)
   hmac.update(JSON.stringify(payload))
   return hmac.digest('hex')
+}
+
+function generateDeliverySignature(payload, deliveryTimestamp, secret = WEBHOOK_SECRET) {
+  return crypto.createHmac('sha256', secret)
+    .update(`${deliveryTimestamp}\n${JSON.stringify(payload)}`)
+    .digest('hex')
+}
+
+async function requireWebhookAcknowledgement(response, payload) {
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  let acknowledgement
+  try {
+    acknowledgement = await response.json()
+  } catch {
+    throw new Error('Invalid webhook acknowledgement: response was not JSON')
+  }
+  if (acknowledgement?.received !== true
+      || acknowledgement.event !== payload.event
+      || acknowledgement.eventId !== payload.eventId) {
+    throw new Error('Invalid webhook acknowledgement: event identity did not match')
+  }
+  return acknowledgement
+}
+
+function webhookDeliveryTargets() {
+  return Object.entries(WEBHOOK_ENDPOINTS)
+    .filter(([, url]) => Boolean(url))
+    .map(([name, url]) => ({
+      name,
+      url,
+      status: 'pending',
+      attempts: 0,
+      nextAttemptAt: new Date()
+    }))
+}
+
+async function deliverWebhookTarget(payload, target, { fetchImpl = fetch } = {}) {
+  const secret = resolveWebhookSecretForTarget(target.name)
+  const signature = generateSignature(payload, secret)
+  // The delivery timestamp is refreshed for every retry while occurredAt and
+  // eventId remain immutable. That allows recovery after an extended outage
+  // without weakening event identity or replay handling.
+  const deliveryTimestamp = new Date().toISOString()
+  const deliverySignature = generateDeliverySignature(payload, deliveryTimestamp, secret)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT)
+  try {
+    const response = await fetchImpl(target.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-IDP-Signature': signature,
+        'X-IDP-Signature-V2': deliverySignature,
+        'X-IDP-Delivery-Timestamp': deliveryTimestamp,
+        'X-IDP-Event': payload.event,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+    await requireWebhookAcknowledgement(response, payload)
+    return { name: target.name, success: true, status: response.status }
+  } catch (error) {
+    return { name: target.name, success: false, error: error.message }
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
 
 /**
  * Send webhook to all registered backends
  */
-export async function sendWebhook(event, data) {
-  return queueWebhook(event, data)
-}
+async function legacyDeliverWebhookPayload(payload, { fetchImpl = fetch } = {}) {
+  const deliveryTimestamp = new Date().toISOString()
 
-async function queueWebhook(event, data) {
-  const eventId = crypto.randomUUID()
-  const payload = {
-    schemaVersion: '1.0',
-    eventId,
-    event,
-    data,
-    organizationId: data.organizationId,
-    subjectId: data.idpSubject || data.userId || data.memberId || data.teamId,
-    occurredAt: new Date().toISOString(),
-    correlationId: data.correlationId || eventId,
-    idempotencyKey: data.idempotencyKey || eventId,
-    timestamp: new Date().toISOString(),
-    idpVersion: '1.0',
-  }
-  const signature = generateSignature(payload)
-  const deliveries = await Promise.all(Object.entries(WEBHOOK_ENDPOINTS)
-    .filter(([, endpointUrl]) => Boolean(endpointUrl))
-    .map(([endpointName, endpointUrl]) => WebhookDelivery.create({
-      eventId,
-      event,
-      endpointName,
-      endpointUrl,
-      payload,
-      signature,
-    })))
-  deliverPendingWebhooks().catch(error => console.error('Webhook delivery error:', error))
-  return deliveries.map(delivery => ({ name: delivery.endpointName, queued: true, eventId }))
-}
+  const results = await Promise.allSettled(
+    Object.entries(WEBHOOK_ENDPOINTS).map(async ([name, url]) => {
+      if (!url) return { name, skipped: true }
+      const secret = resolveWebhookSecretForTarget(name)
+      const signature = generateSignature(payload, secret)
+      const deliverySignature = generateDeliverySignature(payload, deliveryTimestamp, secret)
 
-async function claimDelivery() {
-  const now = new Date()
-  return WebhookDelivery.findOneAndUpdate(
-    {
-      $or: [
-        { status: { $in: ['pending', 'failed'] }, nextAttemptAt: { $lte: now }, $or: [{ leaseUntil: null }, { leaseUntil: { $exists: false } }, { leaseUntil: { $lt: now } }] },
-        { status: 'delivering', leaseUntil: { $lt: now } }
-      ]
-    },
-    {
-      $set: { status: 'delivering', leaseUntil: new Date(now.getTime() + 60000) },
-      $inc: { attempts: 1 }
-    },
-    { sort: { nextAttemptAt: 1 }, new: true }
-  )
-}
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT)
 
-async function deliverOne(delivery) {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT)
-  try {
-    const response = await fetch(delivery.endpointUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-IDP-Signature': delivery.signature,
-        'X-IDP-Event': delivery.event,
-      },
-      body: JSON.stringify(delivery.payload),
-      signal: controller.signal,
+        const response = await fetchImpl(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-IDP-Signature': signature,
+            'X-IDP-Signature-V2': deliverySignature,
+            'X-IDP-Delivery-Timestamp': deliveryTimestamp,
+            'X-IDP-Event': payload.event,
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        })
+
+        clearTimeout(timeoutId)
+        await requireWebhookAcknowledgement(response, payload)
+
+        console.log(`✅ Webhook sent to ${name}:`, response.status)
+        return { name, success: true, status: response.status }
+      } catch (error) {
+        console.error(`❌ Webhook failed for ${name}:`, error.message)
+        return { name, success: false, error: error.message }
+      }
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    delivery.status = 'delivered'
-    delivery.responseStatus = response.status
-    delivery.deliveredAt = new Date()
-    delivery.lastError = ''
-  } catch (error) {
-    delivery.status = delivery.attempts >= delivery.maxAttempts ? 'dead' : 'failed'
-    delivery.lastError = String(error.message || error).slice(0, 4000)
-    delivery.nextAttemptAt = new Date(Date.now() + Math.min(60 * 60 * 1000, 15000 * (2 ** Math.max(0, delivery.attempts - 1))))
-  } finally {
-    clearTimeout(timeoutId)
-    delivery.leaseUntil = undefined
-    await delivery.save()
-  }
+  )
+
+  const failures = results.filter(result => (
+    result.status === 'rejected' || result.value?.success === false
+  ))
+  if (failures.length) throw new Error(`Webhook delivery failed for ${failures.length} endpoint(s)`)
+  return results
 }
 
-let delivering = false
-export async function deliverPendingWebhooks(limit = 25) {
-  if (delivering) return { skipped: true }
-  delivering = true
-  let processed = 0
+async function legacyProcessWebhookOutboxRecord(record, { fetchImpl = fetch, now = () => new Date() } = {}) {
   try {
-    for (; processed < limit; processed += 1) {
-      const delivery = await claimDelivery()
-      if (!delivery) break
-      await deliverOne(delivery)
+    await deliverWebhookPayload(record.payload, { fetchImpl })
+    record.status = 'delivered'
+    record.deliveredAt = now()
+    record.leaseExpiresAt = null
+    record.lastError = ''
+  } catch (error) {
+    record.attempts = Number(record.attempts || 0) + 1
+    record.status = record.attempts >= WEBHOOK_MAX_ATTEMPTS ? 'dead' : 'pending'
+    record.leaseExpiresAt = null
+    record.lastError = String(error.message || error).slice(0, 1000)
+    record.nextAttemptAt = new Date(now().getTime() + Math.min(15 * 60_000, 1000 * (2 ** Math.min(record.attempts, 9))))
+  }
+  await record.save()
+  return record
+}
+
+async function deliverWebhookPayload(payload, { fetchImpl = fetch } = {}) {
+  const results = await Promise.all(
+    webhookDeliveryTargets().map(target => deliverWebhookTarget(payload, target, { fetchImpl }))
+  )
+  const failures = results.filter(result => result.success === false)
+  if (failures.length) throw new Error(`Webhook delivery failed for ${failures.length} endpoint(s)`)
+  return results
+}
+
+// Live end-to-end key-rotation probe. The caller is separately authenticated
+// by the IdP route; this deliberately avoids the durable outbox so a readiness
+// check cannot become an authorization event or retry forever.
+export async function probeWebhookTargets({ fetchImpl = fetch } = {}) {
+  const payload = createWebhookPayload('system.webhook_probe', {
+    purpose: 'secret-rotation-readiness'
+  })
+  const results = await Promise.all(
+    webhookDeliveryTargets().map(target => deliverWebhookTarget(payload, target, { fetchImpl }))
+  )
+  const failures = results.filter(result => result.success === false)
+  if (failures.length) {
+    const error = new Error(`Webhook readiness failed for: ${failures.map(item => item.name).join(', ')}`)
+    error.results = results
+    throw error
+  }
+  return { eventId: payload.eventId, results }
+}
+
+export async function processWebhookOutboxRecord(record, { fetchImpl = fetch, now = () => new Date() } = {}) {
+  const attemptTime = now()
+  const guaranteedDelivery = requiresGuaranteedDelivery(record.event || record.payload?.event)
+  if (!Array.isArray(record.deliveries) || record.deliveries.length === 0) {
+    // Lazily migrate records queued by a previous release.
+    record.deliveries = webhookDeliveryTargets().map(delivery => ({
+      ...delivery,
+      nextAttemptAt: attemptTime
+    }))
+  }
+  if (guaranteedDelivery) {
+    // Revocation/invalidation events are authorization state, not best-effort
+    // notifications. Never abandon them after a temporary product outage.
+    for (const delivery of record.deliveries) {
+      if (delivery.status === 'dead') {
+        delivery.status = 'pending'
+        delivery.nextAttemptAt = attemptTime
+      }
     }
-    return { processed }
-  } finally {
-    delivering = false
+    record.expiresAt = null
+  }
+
+  const dueDeliveries = record.deliveries.filter(delivery => (
+    delivery.status === 'pending' &&
+    (!delivery.nextAttemptAt || new Date(delivery.nextAttemptAt).getTime() <= attemptTime.getTime())
+  ))
+  const results = await Promise.all(dueDeliveries.map(async delivery => ({
+    delivery,
+    result: await deliverWebhookTarget(record.payload, delivery, { fetchImpl })
+  })))
+
+  for (const { delivery, result } of results) {
+    if (result.success) {
+      delivery.status = 'delivered'
+      delivery.deliveredAt = attemptTime
+      delivery.lastError = ''
+      continue
+    }
+    delivery.attempts = Number(delivery.attempts || 0) + 1
+    delivery.lastError = String(result.error || 'Webhook delivery failed').slice(0, 1000)
+    delivery.status = !guaranteedDelivery && delivery.attempts >= WEBHOOK_MAX_ATTEMPTS ? 'dead' : 'pending'
+    delivery.nextAttemptAt = new Date(
+      attemptTime.getTime() + Math.min(15 * 60_000, 1000 * (2 ** Math.min(delivery.attempts, 9)))
+    )
+  }
+
+  const pending = record.deliveries.filter(delivery => delivery.status === 'pending')
+  const dead = record.deliveries.filter(delivery => delivery.status === 'dead')
+  record.attempts = Math.max(0, ...record.deliveries.map(delivery => Number(delivery.attempts || 0)))
+  record.leaseExpiresAt = null
+  if (pending.length > 0) {
+    record.status = 'pending'
+    record.nextAttemptAt = new Date(Math.min(...pending.map(delivery => (
+      new Date(delivery.nextAttemptAt || attemptTime).getTime()
+    ))))
+    record.lastError = dead.length > 0 ? `${dead.length} endpoint(s) exhausted retries` : ''
+  } else if (dead.length > 0) {
+    record.status = 'dead'
+    record.lastError = `${dead.length} endpoint(s) exhausted retries`
+  } else {
+    record.status = 'delivered'
+    record.deliveredAt = attemptTime
+    record.lastError = ''
+  }
+  await record.save()
+  return record
+}
+
+function outboxRecordForPayload(payload) {
+  return {
+    eventId: payload.eventId,
+    event: payload.event,
+    payload,
+    deliveries: webhookDeliveryTargets(),
+    ...(requiresGuaranteedDelivery(payload.event) ? { expiresAt: null } : {})
   }
 }
 
-let deliveryTimer = null
-export function startWebhookDeliveryWorker() {
-  if (deliveryTimer) return
-  deliveryTimer = setInterval(() => deliverPendingWebhooks().catch(error => console.error('Webhook worker error:', error)), 15000)
-  deliveryTimer.unref?.()
-  deliverPendingWebhooks().catch(error => console.error('Webhook worker startup error:', error))
+/**
+ * Commit an authorization mutation and its invalidation intent atomically.
+ * Production deliberately has no sequential fallback: if MongoDB cannot
+ * provide transactions, the authorization mutation is rejected rather than
+ * committing a grant/revoke that downstream products never learn about.
+ * Local development may use the explicit sequential fallback because a
+ * standalone MongoDB is common there.
+ */
+export async function runAuthorizationMutationWithWebhook({
+  event,
+  data,
+  mutation
+}, {
+  environment = process.env.NODE_ENV,
+  sessionFactory = () => mongoose.startSession(),
+  outboxModel = WebhookOutbox,
+  scheduleDrain = true
+} = {}) {
+  if (typeof mutation !== 'function') throw new Error('Authorization mutation callback is required')
+  const payload = createWebhookPayload(event, data)
+  const production = String(environment || '').trim().toLowerCase() === 'production'
+  let result
+
+  if (!production) {
+    result = await mutation(null)
+    await outboxModel.create(outboxRecordForPayload(payload))
+  } else {
+    const session = await sessionFactory()
+    try {
+      await session.withTransaction(async () => {
+        result = await mutation(session)
+        await outboxModel.create([outboxRecordForPayload(payload)], { session })
+      }, {
+        readConcern: { level: 'snapshot' },
+        writeConcern: { w: 'majority' }
+      })
+    } finally {
+      await session.endSession()
+    }
+  }
+
+  if (scheduleDrain) {
+    queueMicrotask(() => void drainWebhookOutbox().catch(error => (
+      console.error('Webhook outbox drain failed:', error.message)
+    )))
+  }
+  return { result, queued: true, eventId: payload.eventId }
+}
+
+export async function drainWebhookOutbox({ fetchImpl = fetch, limit = 20 } = {}) {
+  let processed = 0
+  while (processed < limit) {
+    const now = new Date()
+    const record = await WebhookOutbox.findOneAndUpdate({
+      nextAttemptAt: { $lte: now },
+      $or: [
+        { status: 'pending' },
+        { status: 'processing', leaseExpiresAt: { $lte: now } },
+        { status: 'dead', event: { $in: [...AUTHORIZATION_INVALIDATION_EVENTS] } }
+      ]
+    }, {
+      $set: { status: 'processing', leaseExpiresAt: new Date(now.getTime() + 60_000) }
+    }, { sort: { nextAttemptAt: 1 }, new: true })
+    if (!record) break
+    await processWebhookOutboxRecord(record, { fetchImpl })
+    processed += 1
+  }
+  return processed
+}
+
+export function startWebhookOutboxWorker(intervalMs = 5000) {
+  if (outboxInterval) return outboxInterval
+  void drainWebhookOutbox().catch(error => console.error('Webhook outbox initial drain failed:', error.message))
+  outboxInterval = setInterval(() => {
+    void drainWebhookOutbox().catch(error => console.error('Webhook outbox drain failed:', error.message))
+  }, Math.max(1000, intervalMs))
+  outboxInterval.unref?.()
+  return outboxInterval
+}
+
+// Backwards-compatible worker name used by older bootstraps. Both names start
+// the same durable per-target outbox worker.
+export function startWebhookDeliveryWorker(intervalMs = 5000) {
+  return startWebhookOutboxWorker(intervalMs)
+}
+
+export async function sendWebhook(event, data) {
+  const payload = createWebhookPayload(event, data)
+  const durable = String(process.env.IDP_WEBHOOK_OUTBOX_ENABLED || '').toLowerCase() === 'true'
+    || String(process.env.NODE_ENV || '').toLowerCase() === 'production'
+  if (!durable) return deliverWebhookPayload(payload)
+  const record = await WebhookOutbox.create(outboxRecordForPayload(payload))
+  queueMicrotask(() => void drainWebhookOutbox().catch(error => console.error('Webhook outbox drain failed:', error.message)))
+  return { queued: true, eventId: record.eventId }
 }
 
 /**
@@ -163,13 +454,12 @@ export async function notifyTeamMemberAdded(userId, teamId, teamData, organizati
 /**
  * Notify backends when user is removed from a team
  */
-export async function notifyTeamMemberRemoved(userId, teamId, organizationId, role) {
+export async function notifyTeamMemberRemoved(userId, teamId, organizationId) {
   console.log(`📤 [WEBHOOK] team.member.removed: user=${userId}, team=${teamId}`)
   return sendWebhook('team.member.removed', {
     userId,
     teamId,
     organizationId,
-    role,
     action: 'removed',
   })
 }
@@ -206,12 +496,49 @@ export async function notifyOrgMemberAdded(userId, organizationId, orgData, role
 /**
  * Notify backends when user is removed from an organization
  */
-export async function notifyOrgMemberRemoved(userId, organizationId) {
+export async function notifyOrgMemberRemoved(identityOrUserId, legacyOrganizationId) {
+  const identity = typeof identityOrUserId === 'object' && identityOrUserId !== null
+    ? identityOrUserId
+    : { userId: identityOrUserId, organizationId: legacyOrganizationId }
+  const userId = String(identity.subject || identity.userId || '').trim()
+  const organizationId = String(identity.organizationId || legacyOrganizationId || '').trim()
   console.log(`📤 [WEBHOOK] organization.member.removed: user=${userId}, org=${organizationId}`)
   return sendWebhook('organization.member.removed', {
     userId,
+    subject: userId,
+    email: identity.email,
+    accountId: identity.accountId,
+    memberId: identity.memberId,
     organizationId,
     action: 'removed',
+  })
+}
+
+/**
+ * Notify products immediately when one member's per-app entitlement changes.
+ * `subject` is the stable OIDC identity; `accountId` and `memberId` are kept
+ * for products that already map the IdP's local records.
+ */
+export async function notifyOrgMemberAppAccessChanged({
+  organizationId,
+  memberId,
+  accountId,
+  subject,
+  email,
+  appAccess,
+  changedBy
+}) {
+  console.log(`ðŸ“¤ [WEBHOOK] organization.member.app_access_changed: account=${accountId}, org=${organizationId}`)
+  return sendWebhook('organization.member.app_access_changed', {
+    userId: subject,
+    organizationId,
+    memberId,
+    accountId,
+    subject,
+    email,
+    appAccess,
+    changedBy,
+    action: 'app_access_changed',
   })
 }
 
@@ -248,6 +575,8 @@ export default {
   notifyTeamRoleChanged,
   notifyOrgMemberAdded,
   notifyOrgMemberRemoved,
+  notifyOrgMemberAppAccessChanged,
   notifyManagerChanged,
   forceUserLogout,
+  startWebhookOutboxWorker,
 }

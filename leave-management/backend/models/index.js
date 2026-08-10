@@ -4,6 +4,7 @@ const LeavePolicy = require('./LeavePolicy');
 const AuditLog = require('./AuditLog');
 const IntegrationDelivery = require('./IntegrationDelivery');
 const LeaveEntitlementAdjustment = require('./LeaveEntitlementAdjustment');
+const InternalServiceNonce = require('./InternalServiceNonce');
 
 module.exports = {
   LeaveRequest,
@@ -12,4 +13,5 @@ module.exports = {
   AuditLog,
   IntegrationDelivery,
   LeaveEntitlementAdjustment,
+  InternalServiceNonce,
 };

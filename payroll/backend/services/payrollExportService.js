@@ -27,6 +27,7 @@ const OTHER_EARNING_EXCLUDED_TYPES = new Set([
 
 const OTHER_DEDUCTION_EXCLUDED_TYPES = new Set([
   'income_tax',
+  'payroll_tax',
   'social_security',
   'pension',
   'health_insurance',
@@ -42,6 +43,7 @@ const OTHER_DEDUCTION_EXCLUDED_TYPES = new Set([
 ]);
 
 const OTHER_EMPLOYER_CONTRIBUTION_EXCLUDED_TYPES = new Set([
+  'payroll_tax',
   'social_security',
   'pension_match',
   'health_insurance',
@@ -88,6 +90,7 @@ const COLUMN_DEFINITIONS = [
   { key: 'otherEarnings', header: 'Other Earnings' },
   { key: 'grossPay', header: 'Gross Pay' },
   { key: 'incomeTax', header: 'Income Tax' },
+  { key: 'payrollTaxEmployee', header: 'Payroll Tax / Levy (Employee)' },
   { key: 'socialSecurityEmployee', header: 'Social Security (Employee)' },
   { key: 'pensionEmployee', header: 'Pension (Employee)' },
   { key: 'healthInsuranceEmployee', header: 'Health Insurance (Employee)' },
@@ -103,6 +106,7 @@ const COLUMN_DEFINITIONS = [
   { key: 'otherDeductions', header: 'Other Deductions' },
   { key: 'totalDeductions', header: 'Total Deductions' },
   { key: 'employerSocialSecurity', header: 'Employer Social Security' },
+  { key: 'employerPayrollTax', header: 'Payroll Tax / Levy (Employer)' },
   { key: 'employerPension', header: 'Employer Pension' },
   { key: 'employerHealthInsurance', header: 'Employer Health Insurance' },
   { key: 'employerLifeInsurance', header: 'Employer Life Insurance' },
@@ -125,6 +129,7 @@ const COLUMN_DEFINITIONS = [
   { key: 'taxYearLabel', header: 'Tax Year' },
   { key: 'taxCalculationMode', header: 'Tax Calculation Mode' },
   { key: 'taxMethod', header: 'Tax Method' },
+  { key: 'statutoryLiabilityDetails', header: 'Statutory Liability Details' },
   { key: 'paymentReference', header: 'Payment Reference' },
   { key: 'transactionId', header: 'Transaction ID' },
 ];
@@ -140,6 +145,7 @@ const NUMERIC_COLUMNS = [
   'otherEarnings',
   'grossPay',
   'incomeTax',
+  'payrollTaxEmployee',
   'socialSecurityEmployee',
   'pensionEmployee',
   'healthInsuranceEmployee',
@@ -155,6 +161,7 @@ const NUMERIC_COLUMNS = [
   'otherDeductions',
   'totalDeductions',
   'employerSocialSecurity',
+  'employerPayrollTax',
   'employerPension',
   'employerHealthInsurance',
   'employerLifeInsurance',
@@ -168,12 +175,25 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function roundMoney(value) {
-  return Math.round((toNumber(value) + Number.EPSILON) * 100) / 100;
+function currencyMinorUnits(code) {
+  try {
+    return new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: String(code || 'USD').toUpperCase(),
+    }).resolvedOptions().maximumFractionDigits;
+  } catch (_error) {
+    return 2;
+  }
 }
 
-function formatAmount(value) {
-  return roundMoney(value).toFixed(2);
+function roundMoney(value, currency = 'USD') {
+  const factor = 10 ** currencyMinorUnits(currency);
+  return Math.round((toNumber(value) + Number.EPSILON) * factor) / factor;
+}
+
+function formatAmount(value, currency = 'USD') {
+  const precision = currencyMinorUnits(currency);
+  return roundMoney(value, currency).toFixed(precision);
 }
 
 function csvEscape(value) {
@@ -261,6 +281,7 @@ function buildDetailRow(payslip, run, profile) {
     ? payslip.employerContributions
     : [];
   const bankAccount = getPrimaryBankAccount(profile, payslip) || {};
+  const currency = payslip?.currency || run?.summary?.currency || profile?.currency || 'USD';
 
   const basicSalary = earnings.length
     ? sumByType(earnings, 'basic')
@@ -289,6 +310,7 @@ function buildDetailRow(payslip, run, profile) {
     payslip?.taxBreakdown?.taxAmount ??
     sumByType(deductions, 'income_tax')
   );
+  const payrollTaxEmployee = sumByType(deductions, 'payroll_tax');
   const socialSecurityEmployee = sumByType(deductions, 'social_security');
   const pensionEmployee = sumByType(deductions, 'pension');
   const healthInsuranceEmployee = sumByType(deductions, 'health_insurance');
@@ -312,6 +334,7 @@ function buildDetailRow(payslip, run, profile) {
         0,
         totalDeductions
           - incomeTax
+          - payrollTaxEmployee
           - socialSecurityEmployee
           - pensionEmployee
           - healthInsuranceEmployee
@@ -328,6 +351,7 @@ function buildDetailRow(payslip, run, profile) {
     );
 
   const employerSocialSecurity = sumByType(employerContributions, 'social_security');
+  const employerPayrollTax = sumByType(employerContributions, 'payroll_tax');
   const employerPension = sumByType(employerContributions, 'pension_match');
   const employerHealthInsurance = sumByType(employerContributions, 'health_insurance');
   const employerLifeInsurance = sumByType(employerContributions, 'life_insurance');
@@ -342,6 +366,7 @@ function buildDetailRow(payslip, run, profile) {
         0,
         totalEmployerContributions
           - employerSocialSecurity
+          - employerPayrollTax
           - employerPension
           - employerHealthInsurance
           - employerLifeInsurance
@@ -363,7 +388,7 @@ function buildDetailRow(payslip, run, profile) {
     ),
     month: payPeriod.month || '',
     year: payPeriod.year || '',
-    currency: payslip?.currency || run?.summary?.currency || profile?.currency || 'USD',
+    currency,
     employeeId: employeeSnapshot.employeeId || employeeInfo.employeeId || payslip?.userId || '',
     employeeName: employeeSnapshot.name || employeeInfo.name || '',
     employeeEmail: employeeSnapshot.email || employeeInfo.email || '',
@@ -390,6 +415,7 @@ function buildDetailRow(payslip, run, profile) {
     otherEarnings,
     grossPay,
     incomeTax,
+    payrollTaxEmployee,
     socialSecurityEmployee,
     pensionEmployee,
     healthInsuranceEmployee,
@@ -405,6 +431,7 @@ function buildDetailRow(payslip, run, profile) {
     otherDeductions,
     totalDeductions,
     employerSocialSecurity,
+    employerPayrollTax,
     employerPension,
     employerHealthInsurance,
     employerLifeInsurance,
@@ -427,6 +454,14 @@ function buildDetailRow(payslip, run, profile) {
     taxYearLabel: payslip?.taxBreakdown?.taxYearLabel || '',
     taxCalculationMode: payslip?.taxBreakdown?.calculationMode || '',
     taxMethod: payslip?.taxBreakdown?.method || '',
+    statutoryLiabilityDetails: [
+      ...deductions
+        .filter((item) => item?.metadata?.liabilityCode)
+        .map((item) => `employee|${item.metadata.liabilityCode}|${item.metadata.remittanceAuthority || ''}|${item.name}|${formatAmount(item.amount, currency)}`),
+      ...employerContributions
+        .filter((item) => item?.liabilityCode)
+        .map((item) => `employer|${item.liabilityCode}|${item.remittanceAuthority || ''}|${item.name}|${formatAmount(item.amount, currency)}`),
+    ].join('; '),
     paymentReference: payslip?.paymentDetails?.bankReference || run?.paymentBatch?.bankReference || '',
     transactionId: payslip?.paymentDetails?.transactionId || '',
   };
@@ -479,12 +514,13 @@ function buildControlRow(currency, totals) {
     taxYearLabel: '',
     taxCalculationMode: '',
     taxMethod: '',
+    statutoryLiabilityDetails: '',
     paymentReference: '',
     transactionId: '',
   };
 
   NUMERIC_COLUMNS.forEach((key) => {
-    row[key] = roundMoney(totals[key]);
+    row[key] = roundMoney(totals[key], currency);
   });
 
   return row;
@@ -494,7 +530,7 @@ function serializeRow(row) {
   return COLUMN_DEFINITIONS
     .map(({ key }) => {
       if (NUMERIC_COLUMNS.includes(key)) {
-        return csvEscape(row[key] === '' || row[key] === null || row[key] === undefined ? '' : formatAmount(row[key]));
+        return csvEscape(row[key] === '' || row[key] === null || row[key] === undefined ? '' : formatAmount(row[key], row.currency));
       }
       return csvEscape(row[key] ?? '');
     })
@@ -562,6 +598,46 @@ async function buildPayrollRegisterWorkbook({ payslips = [], runById = new Map()
   registerSheet.autoFilter = { from: 'A1', to: { row: 1, column: COLUMN_DEFINITIONS.length } };
   registerSheet.getRow(1).font = { bold: true };
 
+  const statutoryRows = [];
+  payslips.forEach((payslip) => {
+    const run = runById.get(mapKey(payslip?.payrollRunId)) || null;
+    const profile = profileByUserId.get(mapKey(payslip?.userId)) || null;
+    const currency = payslip?.currency || run?.summary?.currency || profile?.currency || 'USD';
+    const base = {
+      Period: getPeriodLabel(payslip?.payPeriod || run?.payPeriod || {}),
+      Currency: currency,
+      Payslip: payslip?.payslipNumber || '',
+      Employee: payslip?.employeeSnapshot?.name || profile?.employeeInfo?.name || payslip?.userId || '',
+    };
+    (payslip?.deductions || []).filter((item) => item?.metadata?.liabilityCode).forEach((item) => statutoryRows.push({
+      ...base,
+      Payer: 'Employee',
+      Type: item.type || '',
+      'Liability code': item.metadata.liabilityCode,
+      'Remittance authority': item.metadata.remittanceAuthority || '',
+      Liability: item.name || '',
+      Amount: roundMoney(item.amount, currency),
+    }));
+    (payslip?.employerContributions || []).filter((item) => item?.liabilityCode).forEach((item) => statutoryRows.push({
+      ...base,
+      Payer: 'Employer',
+      Type: item.type || '',
+      'Liability code': item.liabilityCode,
+      'Remittance authority': item.remittanceAuthority || '',
+      Liability: item.name || '',
+      Amount: roundMoney(item.amount, currency),
+    }));
+  });
+  const statutorySheet = workbook.addWorksheet('Statutory liabilities', { views: [{ state: 'frozen', ySplit: 1 }] });
+  const statutoryHeaders = ['Period', 'Currency', 'Payslip', 'Employee', 'Payer', 'Type', 'Liability code', 'Remittance authority', 'Liability', 'Amount'];
+  statutorySheet.columns = statutoryHeaders.map((header) => ({
+    header,
+    key: header,
+    width: Math.min(38, Math.max(14, header.length + 2)),
+  }));
+  statutorySheet.addRows(statutoryRows);
+  statutorySheet.getRow(1).font = { bold: true };
+
   const summaries = new Map();
   detailRows.forEach(row => {
     const key = `${row.periodLabel}|${row.currency}`;
@@ -576,11 +652,11 @@ async function buildPayrollRegisterWorkbook({ payslips = [], runById = new Map()
       'Employer contributions': 0,
     };
     current.Employees += 1;
-    current['Gross pay'] = roundMoney(current['Gross pay'] + row.grossPay);
-    current.Deductions = roundMoney(current.Deductions + row.totalDeductions);
-    current['Net pay'] = roundMoney(current['Net pay'] + row.netPay);
-    current.Tax = roundMoney(current.Tax + row.incomeTax);
-    current['Employer contributions'] = roundMoney(current['Employer contributions'] + row.totalEmployerContributions);
+    current['Gross pay'] = roundMoney(current['Gross pay'] + row.grossPay, row.currency);
+    current.Deductions = roundMoney(current.Deductions + row.totalDeductions, row.currency);
+    current['Net pay'] = roundMoney(current['Net pay'] + row.netPay, row.currency);
+    current.Tax = roundMoney(current.Tax + row.incomeTax + row.payrollTaxEmployee, row.currency);
+    current['Employer contributions'] = roundMoney(current['Employer contributions'] + row.totalEmployerContributions, row.currency);
     summaries.set(key, current);
   });
   const summaryRows = Array.from(summaries.values());

@@ -2,7 +2,6 @@ const cron = require('node-cron');
 const mongoose = require('mongoose');
 const PayrollEngineService = require('../services/PayrollEngineService');
 const PayrollRun = mongoose.model('PayrollRun');
-const Payslip = mongoose.model('Payslip');
 
 class MonthlyPayrollScheduler {
   constructor() {
@@ -71,6 +70,7 @@ class MonthlyPayrollScheduler {
       // Check if payroll run already exists for this month (check with correct field structure)
       const existingRun = await PayrollRun.findOne({
         organizationId,
+        'payPeriod.type': 'monthly',
         'payPeriod.month': month,
         'payPeriod.year': year,
         status: { $nin: ['cancelled'] }
@@ -89,16 +89,17 @@ class MonthlyPayrollScheduler {
         includeOvertime: true
       });
 
-      // Find the created run and update status to pending_approval
-      const createdRun = await PayrollRun.findOne({
-        organizationId,
-        'payPeriod.month': month,
-        'payPeriod.year': year,
-        status: { $in: ['calculated', 'pending_review'] }
-      });
+      if (payrollResult?.skipped) {
+        return payrollResult;
+      }
+
+      // Use only the run created by this invocation. Another scheduler replica
+      // may own a different in-flight run for the same organization.
+      const createdRun = payrollResult?.run?._id
+        ? await PayrollRun.findOne({ _id: payrollResult.run._id, organizationId })
+        : null;
       
       if (createdRun) {
-        createdRun.status = 'pending_approval';
         createdRun.processedBy = 'system-scheduler';
         createdRun.processedByName = 'Automated Scheduler';
         await createdRun.save();
@@ -106,7 +107,11 @@ class MonthlyPayrollScheduler {
         console.log(`Payroll processed for organization ${organizationId}: ${payrollResult.totalEmployees} employees, total cost: ${payrollResult.totalPayrollCost}`);
 
         // Send notification to finance/admin
-        await this.notifyPayrollReady(createdRun);
+        if (createdRun.status === 'calculated') {
+          await this.notifyPayrollReady(createdRun);
+        } else {
+          console.warn(`Payroll run ${createdRun._id} requires review and was not submitted.`);
+        }
         
         return { success: true, run: createdRun, result: payrollResult };
       } else {
@@ -116,21 +121,6 @@ class MonthlyPayrollScheduler {
 
     } catch (error) {
       console.error(`Error processing organization payroll for ${organizationId}:`, error);
-      
-      // Mark any existing run as failed
-      const failedRun = await PayrollRun.findOne({
-        organizationId,
-        'payPeriod.month': month,
-        'payPeriod.year': year,
-        status: { $in: ['processing', 'calculating'] }
-      });
-      
-      if (failedRun) {
-        failedRun.status = 'cancelled';
-        failedRun.notes = `Scheduler error: ${error.message}`;
-        await failedRun.save();
-      }
-      
       throw error;
     }
   }
@@ -138,7 +128,10 @@ class MonthlyPayrollScheduler {
   async getOrganizationsWithPayroll() {
     // This should return list of organization IDs that have active payroll profiles
     const PayrollProfile = mongoose.model('PayrollProfile');
-    const orgs = await PayrollProfile.distinct('organizationId', { isActive: true });
+    const orgs = await PayrollProfile.distinct('organizationId', {
+      isActive: true,
+      $or: [{ payFrequency: 'monthly' }, { payFrequency: { $exists: false } }],
+    });
     return orgs;
   }
 
@@ -162,7 +155,7 @@ class MonthlyPayrollScheduler {
     const month = payrollRun.payPeriod?.month || 'N/A';
     const year = payrollRun.payPeriod?.year || 'N/A';
     const totalEmployees = payrollRun.summary?.totalEmployees || 0;
-    const totalCost = payrollRun.summary?.totalGrossPayroll || 0;
+    const totalCost = payrollRun.summary?.totalEmployerCost || 0;
     
     console.log(`PAYROLL READY FOR REVIEW: Organization ${payrollRun.organizationId}, ${month}/${year}`);
     console.log(`Total employees: ${totalEmployees}, Total cost: ${totalCost}`);

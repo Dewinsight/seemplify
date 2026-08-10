@@ -44,6 +44,13 @@ const {
   runtimeProfileForActivity,
   runtimeProfileFromStatusInput
 } = require('./runtime-profiles.cjs');
+const {
+  SIGNATURE_VERSION: SERVICE_SIGNATURE_VERSION,
+  authorizeServiceRequest,
+  legacyV1Allowed,
+  normalizeServiceId,
+  verifyServiceSignature
+} = require('./service-auth.cjs');
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(workspaceRoot, '.local-runtime', 'llm');
@@ -555,10 +562,12 @@ function normalizeQueueTelemetry(input = {}) {
   };
 }
 
-async function verifySignature(headers, method, requestPath, rawBody) {
+async function verifySignature(headers, method, requestPath, rawBody, request) {
   const timestamp = String(headers['x-seemplify-timestamp'] || '');
   const nonce = String(headers['x-seemplify-nonce'] || '');
   const signature = String(headers['x-seemplify-signature'] || '');
+  const signatureVersion = String(headers['x-seemplify-signature-version'] || '1');
+  const serviceId = normalizeServiceId(headers['x-seemplify-service']);
   const numericTimestamp = Number(timestamp);
   const now = Date.now();
   if (!Number.isFinite(numericTimestamp) || Math.abs(now - numericTimestamp) > signatureSkewMs) {
@@ -567,13 +576,36 @@ async function verifySignature(headers, method, requestPath, rawBody) {
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(nonce)) {
     return { ok: false, code: 'NONCE_REJECTED' };
   }
-  const expected = crypto.createHmac('sha256', secret)
-    .update(`${timestamp}\n${nonce}\n${String(method || '').toUpperCase()}\n${requestPath}\n${rawBody}`)
-    .digest('base64url');
-  if (!safeEqual(expected, signature)) return { ok: false, code: 'SIGNATURE_INVALID' };
+  if (signatureVersion === SERVICE_SIGNATURE_VERSION) {
+    const valid = verifyServiceSignature(secret, {
+      timestamp, nonce, serviceId, method, requestPath, rawBody
+    }, signature);
+    if (!valid) return { ok: false, code: 'SERVICE_SIGNATURE_INVALID' };
+  } else {
+    const allowLegacy = legacyV1Allowed({
+      nodeEnv: process.env.NODE_ENV,
+      gatewayHost: host,
+      remoteAddress: request?.socket?.remoteAddress,
+      forwarded: request ? hasForwardingHeaders(request) : true
+    });
+    if (!allowLegacy) return { ok: false, code: 'SERVICE_SIGNATURE_V2_REQUIRED' };
+    const expected = crypto.createHmac('sha256', secret)
+      .update(`${timestamp}\n${nonce}\n${String(method || '').toUpperCase()}\n${requestPath}\n${rawBody}`)
+      .digest('base64url');
+    if (!safeEqual(expected, signature)) return { ok: false, code: 'SIGNATURE_INVALID' };
+  }
   await pruneNonces(now);
   if (!await claimNonce(nonce, now + nonceTtlMs, now)) return { ok: false, code: 'NONCE_REJECTED' };
-  return { ok: true };
+  return {
+    ok: true,
+    signatureVersion,
+    serviceId: signatureVersion === SERVICE_SIGNATURE_VERSION ? serviceId : 'legacy-loopback'
+  };
+}
+
+function authorizeVerifiedService(verified, input = {}) {
+  if (verified.signatureVersion !== SERVICE_SIGNATURE_VERSION) return { ok: true };
+  return authorizeServiceRequest(verified.serviceId, input);
 }
 
 function queueHistoryPath(inputUrl) {
@@ -713,8 +745,11 @@ function hasForwardingHeaders(request) {
     request.headers['cf-connecting-ip']
     || request.headers['cf-ray']
     || request.headers['cf-visitor']
+    || request.headers.forwarded
+    || request.headers['x-real-ip']
     || request.headers['x-forwarded-for']
     || request.headers['x-forwarded-host']
+    || request.headers['x-forwarded-proto']
   );
 }
 
@@ -1041,7 +1076,7 @@ async function handleCodexControl(request, response, rawBody, operation, request
   if (!withinRateLimit(request)) {
     return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
   }
-  const verified = await verifySignature(request.headers, request.method, requestPath, rawBody);
+  const verified = await verifySignature(request.headers, request.method, requestPath, rawBody, request);
   if (!verified.ok) return sendJson(response, 401, { code: verified.code, message: 'Request authentication failed' });
   if (!codexSessions.perUserSessionsEnabled()) {
     return sendJson(response, 503, {
@@ -1051,6 +1086,13 @@ async function handleCodexControl(request, response, rawBody, operation, request
   }
   const resolved = codexSubjectFromBody(rawBody);
   if (resolved.error) return sendJson(response, resolved.error.status, { code: resolved.error.code });
+  const authorized = authorizeVerifiedService(verified, {
+    requestPath,
+    codexSource: resolved.input?.sourceApp
+  });
+  if (!authorized.ok) {
+    return sendJson(response, 403, { code: authorized.code, message: 'Service is not authorized for this request' });
+  }
   const { subjectKey } = resolved;
   // Device logins are the expensive, abusable operation. Reserve an attempt
   // before starting, then refund it when OpenAI/Codex itself fails or when the
@@ -1113,7 +1155,7 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
     return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
   }
   const requestPath = new URL(request.url, `http://${request.headers.host || `${host}:${port}`}`).pathname;
-  const verified = await verifySignature(request.headers, request.method, requestPath, rawBody);
+  const verified = await verifySignature(request.headers, request.method, requestPath, rawBody, request);
   if (!verified.ok) return sendJson(response, 401, { code: verified.code, message: 'Request authentication failed' });
   const state = readState();
   if (!state.ingressEnabled || !state.enabled) {
@@ -1148,6 +1190,19 @@ async function handleCompletion(request, response, rawBody, { cvOnly = false } =
   const requestSource = String(input.requestSource || (cvOnly ? 'cv-route' : 'local-route'))
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .slice(0, 64);
+  const authorized = authorizeVerifiedService(verified, {
+    requestPath,
+    activity: input.activity,
+    requestSource,
+    meteringSource: input.metering?.record === true ? input.metering?.sourceApp : null,
+    codexSource: input.codexSourceApp
+  });
+  if (!authorized.ok) {
+    return sendJson(response, 403, {
+      code: authorized.code,
+      message: 'Service is not authorized for this activity or identity namespace'
+    });
+  }
   // A subject key is always derived here, never accepted from the body. A
   // caller able to supply one directly could address any session on the host.
   delete input.codexSubject;
@@ -1825,9 +1880,11 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
       }
       const rawBody = await readBody(request);
-      const verified = await verifySignature(request.headers, request.method, url.pathname, rawBody);
+      const verified = await verifySignature(request.headers, request.method, url.pathname, rawBody, request);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
       const input = JSON.parse(rawBody || '{}');
+      const authorized = authorizeVerifiedService(verified, { requestPath: url.pathname });
+      if (!authorized.ok) return sendJson(response, 403, { code: authorized.code });
       const runtimeProfile = runtimeProfileFromStatusInput(input);
       if (runtimeProfile && !isRuntimeProfile(runtimeProfile)) {
         return sendJson(response, 400, { code: 'INVALID_RUNTIME_PROFILE' });
@@ -1858,8 +1915,10 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, 429, { code: 'RATE_LIMITED', retryable: true });
       }
       const rawBody = await readBody(request);
-      const verified = await verifySignature(request.headers, request.method, url.pathname, rawBody);
+      const verified = await verifySignature(request.headers, request.method, url.pathname, rawBody, request);
       if (!verified.ok) return sendJson(response, 401, { code: verified.code });
+      const authorized = authorizeVerifiedService(verified, { requestPath: url.pathname });
+      if (!authorized.ok) return sendJson(response, 403, { code: authorized.code });
       const input = JSON.parse(rawBody);
       queueTelemetry = normalizeQueueTelemetry(input);
       await telemetryStore.recordQueueSnapshot(queueTelemetry);

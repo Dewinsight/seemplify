@@ -10,7 +10,8 @@
     "dev": "next dev -p 5200",
     "build": "next build",
     "start": "next start -p 5200",
-    "typecheck": "tsc --noEmit --pretty false"
+    "typecheck": "tsc --noEmit --pretty false",
+    "test:cv-upload": "node --experimental-strip-types --test scripts/cv-upload-persistence.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.1.4",

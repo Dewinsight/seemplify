@@ -4,6 +4,11 @@ export interface PayrollCurrencyOption {
   symbol: string;
   decimals: number;
   label: string;
+  kind?: 'iso' | 'custom';
+  enabled?: boolean;
+  paymentEnabled?: boolean;
+  statutoryEligible?: boolean;
+  payrollCalculationReady?: boolean;
 }
 
 const FALLBACK_CURRENCY_CODES = [
@@ -53,6 +58,11 @@ function buildCurrencyOption(code: string): PayrollCurrencyOption {
     symbol,
     decimals,
     label: `${normalizedCode} - ${name}`,
+    kind: 'iso',
+    enabled: true,
+    paymentEnabled: decimals === 2,
+    statutoryEligible: true,
+    payrollCalculationReady: decimals === 2,
   };
 }
 
@@ -68,6 +78,11 @@ export function normalizePayrollCurrencies(currencies: any[]): PayrollCurrencyOp
       symbol: String(currency?.symbol || '').trim(),
       decimals: Number.isFinite(Number(currency?.decimals)) ? Number(currency.decimals) : 2,
       label: String(currency?.label || '').trim(),
+      kind: currency?.kind === 'custom' ? 'custom' as const : 'iso' as const,
+      enabled: currency?.enabled !== false,
+      paymentEnabled: currency?.paymentEnabled !== false,
+      statutoryEligible: currency?.statutoryEligible !== false,
+      payrollCalculationReady: currency?.payrollCalculationReady !== false,
     }))
     .filter((currency) => currency.code.length === 3)
     .map((currency) => ({

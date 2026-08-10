@@ -1,38 +1,19 @@
 const azureOpenAIService = require('./azureOpenAIService');
+const { isPerformanceAIRuntimeError } = require('./aiGatewayService');
+const { AI_ACTIVITIES } = require('../config/aiActivityCatalog');
 
 class AIPerformanceService {
   constructor() {
     // Service is stateless, but we can initialize any specific configurations here if needed
   }
 
-  // --- Caching Strategy ---
-  static cache = new Map();
-
-  static async getCachedOrGenerate(key, generatorFunction) {
-    if (this.cache.has(key)) {
-      console.log(`Cache hit for key: ${key}`);
-      return this.cache.get(key);
-    }
-
-    console.log(`Cache miss for key: ${key}. Generating...`);
-    const result = await generatorFunction();
-    this.cache.set(key, result);
-    
-    // Cache for 1 hour (configurable)
-    setTimeout(() => {
-      this.cache.delete(key);
-    }, 3600000); 
-
-    return result;
-  }
-
   // --- OKR Generation ---
   static async generateOKRs(userRole, teamGoals, companyGoals) {
-    const cacheKey = `okr_${userRole}_${JSON.stringify(teamGoals).substring(0, 20)}`; // Simple cache key based on role and partial team goals
-
-    return this.getCachedOrGenerate(cacheKey, async () => {
-        try {
-            const prompt = `
+    // Do not cache model responses process-wide. Inputs contain organization
+    // goals and the effective model is user-specific; a shared cache could
+    // leak one tenant's generated OKRs into another tenant's response.
+    try {
+      const prompt = `
 Generate 3-5 SMART OKRs for a ${userRole} role.
 Context:
 - Team Goals: ${teamGoals}
@@ -45,18 +26,18 @@ Requirements:
 - Ensure Key Results are Measurable (contain numbers/%).
 `;
 
-            const response = await azureOpenAIService.getChatCompletions([
-                { role: "system", content: "You are an expert HR performance consultant. You output strictly valid JSON." },
-                { role: "user", content: prompt }
-            ], { temperature: 0.7 });
+      const response = await azureOpenAIService.getChatCompletions([
+        { role: 'system', content: 'You are an expert HR performance consultant. You output strictly valid JSON.' },
+        { role: 'user', content: prompt }
+      ], { activity: AI_ACTIVITIES.OKR_GENERATE, temperature: 0.7 });
 
-            const content = response.choices[0].message.content;
-            return this.parseAIResponse(content);
-        } catch (error) {
-            console.error('Error generating OKRs:', error);
-            return { success: false, error: error.message };
-        }
-    });
+      const content = response.choices[0].message.content;
+      return this.parseAIResponse(content);
+    } catch (error) {
+      console.error('Error generating OKRs:', error);
+      if (isPerformanceAIRuntimeError(error)) throw error;
+      return { success: false, error: error.message };
+    }
   }
 
   // --- Review Analysis ---
@@ -84,13 +65,14 @@ Focus on constructive feedback and identifying any discrepancies between self an
       const response = await azureOpenAIService.getChatCompletions([
         { role: "system", content: "You are an expert performance analyst. You output strictly valid JSON." },
         { role: "user", content: prompt }
-      ], { temperature: 0.5 }); // Lower temperature for analysis
+      ], { activity: AI_ACTIVITIES.MANAGER_REVIEW_ASSIST, temperature: 0.5 }); // Lower temperature for analysis
 
       const content = response.choices[0].message.content;
       return this.parseAIResponse(content);
 
     } catch (error) {
       console.error('Error analyzing performance review:', error);
+      if (isPerformanceAIRuntimeError(error)) throw error;
       return { success: false, error: error.message };
     }
   }
@@ -112,12 +94,13 @@ Output a JSON object with:
       const response = await azureOpenAIService.getChatCompletions([
         { role: "system", content: "You are an expert in workplace communication. You output strictly valid JSON." },
         { role: "user", content: prompt }
-      ], { temperature: 0.3 });
+      ], { activity: AI_ACTIVITIES.FEEDBACK_ANALYZE, temperature: 0.3 });
 
       const content = response.choices[0].message.content;
       return this.parseAIResponse(content);
     } catch (error) {
       console.error('Error analyzing feedback:', error);
+      if (isPerformanceAIRuntimeError(error)) throw error;
       return { success: false, error: error.message };
     }
   }
@@ -138,14 +121,57 @@ Output JSON:
         const response = await azureOpenAIService.getChatCompletions([
             { role: "system", content: "You are a D&I expert tool for flagging bias in performance reviews. Output strictly valid JSON." },
             { role: "user", content: prompt }
-        ], { temperature: 0.2 });
+        ], { activity: AI_ACTIVITIES.REVIEW_BIAS, temperature: 0.2 });
 
         const content = response.choices[0].message.content;
         return this.parseAIResponse(content);
 
     } catch (error) {
         console.error('Error detecting bias:', error);
+        if (isPerformanceAIRuntimeError(error)) throw error;
         return { success: false, error: error.message };
+    }
+  }
+
+  // --- Team Insights ---
+  static async generateTeamInsights(teamData, performanceMetrics) {
+    try {
+      const response = await azureOpenAIService.getChatCompletions([
+        {
+          role: 'system',
+          content: 'You are an HR analytics partner. Identify evidence-backed team patterns without exposing private individual commentary. Output strictly valid JSON.'
+        },
+        {
+          role: 'user',
+          content: `Analyze this team performance context.\nTeam: ${JSON.stringify(teamData)}\nMetrics: ${JSON.stringify(performanceMetrics)}\n\nReturn JSON with strengths, risks, coachingPriorities, and recommendedActions.`
+        }
+      ], { activity: AI_ACTIVITIES.TEAM_INSIGHTS, temperature: 0.3 });
+      return this.parseAIResponse(response.choices[0].message.content);
+    } catch (error) {
+      console.error('Error generating team insights:', error);
+      if (isPerformanceAIRuntimeError(error)) throw error;
+      return { success: false, error: error.message };
+    }
+  }
+
+  // --- Review Writing Assistant ---
+  static async generateReviewWritingAssistant(reviewContext, targetType) {
+    try {
+      const response = await azureOpenAIService.getChatCompletions([
+        {
+          role: 'system',
+          content: 'You are a performance coach. Draft fair, specific, evidence-based review language and avoid invented examples. Output strictly valid JSON.'
+        },
+        {
+          role: 'user',
+          content: `Help write the ${targetType || 'performance review'} section from this context:\n${JSON.stringify(reviewContext)}\n\nReturn JSON with draft, evidenceToAdd, questionsToClarify, and toneChecks.`
+        }
+      ], { activity: AI_ACTIVITIES.MANAGER_REVIEW_ASSIST, temperature: 0.4 });
+      return this.parseAIResponse(response.choices[0].message.content);
+    } catch (error) {
+      console.error('Error generating review writing assistance:', error);
+      if (isPerformanceAIRuntimeError(error)) throw error;
+      return { success: false, error: error.message };
     }
   }
 
@@ -176,7 +202,7 @@ Output JSON:
       try {
           const response = await azureOpenAIService.getChatCompletions([
               { role: "user", content: "ping" }
-          ], { maxTokens: 5 });
+          ], { activity: AI_ACTIVITIES.GENERAL, maxTokens: 5 });
           return { healthy: true, response: response.choices[0].message.content };
       } catch (error) {
           return { healthy: false, error: error.message };

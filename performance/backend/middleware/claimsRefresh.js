@@ -4,6 +4,10 @@
  */
 
 const { Issuer } = require('openid-client')
+const {
+  sanitizePerformancePrincipal,
+  toOrganizationId
+} = require('../services/performanceOrganizationAccess')
 
 function resolveCurrentOrganization(userinfo = {}) {
   return userinfo.currentOrganization || userinfo.current_organization || null
@@ -54,10 +58,16 @@ async function claimsRefreshMiddleware(req, res, next) {
       if (accessToken) {
         const freshUserinfo = await client.userinfo(accessToken)
 
-        req.session.user.organizations = freshUserinfo.organizations || []
-        req.session.user.teams = freshUserinfo.teams || []
-        req.session.user.team_permissions = freshUserinfo.team_permissions || []
-        req.session.user.currentOrganization = resolveCurrentOrganization(freshUserinfo)
+        req.session.user = sanitizePerformancePrincipal({
+          ...req.session.user,
+          organizations: freshUserinfo.organizations || [],
+          teams: freshUserinfo.teams || [],
+          idpTeams: freshUserinfo.teams || [],
+          idpTeamPermissions: freshUserinfo.team_permissions || [],
+          currentOrganization: resolveCurrentOrganization(freshUserinfo),
+          userinfo: freshUserinfo
+        }, req.session.currentOrganizationId)
+        req.session.currentOrganizationId = toOrganizationId(req.session.user.currentOrganization)
 
         req.session.claimsNeedRefresh = false
         req.session.claimsLastRefreshed = Date.now()

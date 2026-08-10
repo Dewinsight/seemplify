@@ -19,6 +19,36 @@ are never written there. Activity history is capped at 50,000 records and CV
 queue history at 10,000 jobs by default. Both limits are configurable through
 `LOCAL_LLM_TELEMETRY_MAX_EVENTS` and `LOCAL_LLM_QUEUE_HISTORY_MAX_JOBS`.
 
+## Service-bound request authentication
+
+Every remotely reachable or production gateway request uses the v2 HMAC
+envelope. The canonical request includes the authenticated service ID as well
+as the timestamp, nonce, method, path, and exact body. A service credential is
+derived from the gateway master with
+`HMAC-SHA256(master, "seemplify-local-llm-service-v2:<service-id>")`; clients
+receive only their derived `LOCAL_LLM_SERVICE_SECRET`.
+
+The gateway then binds that identity to a fixed request-source, metering-source,
+activity namespace, and allowed endpoint list. A Performance credential cannot
+claim a Recruiter activity or usage source, and neither Experience nor CRM can
+cross into another product's namespace. Legacy master-secret signatures remain
+available only to unforwarded loopback requests in a non-production process so
+existing local operator tools keep working. They are rejected on remote or
+production ingress.
+
+The master secret stays with the gateway. Recruiter is the sole application
+that may also retain it because Recruiter verifies the gateway's signed Local
+usage outbox; Recruiter request traffic still uses its derived service secret.
+
+Current service IDs are `recruiter`, `performance-management`,
+`experience-management` (the local knowledge runtime), and `xplorer-crm`.
+Xplorer CRM keeps its existing `M20_AI_RUNTIME_URL` but must receive the
+`xplorer-crm` derived value as `LOCAL_LLM_SERVICE_SECRET`. The knowledge
+runtime manager derives and installs its Experience credential without copying
+the master into the knowledge runtime. Any externally deployed consumer must
+receive its scoped credential before a production or remotely bound gateway is
+restarted with this version.
+
 ## Application runtime profiles
 
 Signed `/v1/complete` and `/v1/status` requests can select an application
@@ -52,8 +82,9 @@ Configure the local recruiter backend without printing the service secret:
 The operator concurrency setting accepts 1 through 8. The same service-owned
 limit is enforced by the gateway scheduler and reported to every consumer.
 
-Use `-Target public` only for a hosted recruiter environment with the same
-secret installed in its secret manager.
+Use `-Target public` only for a hosted recruiter environment with its derived
+Recruiter service credential installed in its secret manager. Do not distribute
+the gateway master to another product.
 
 Run the sequential model capability matrix (it never runs two GPU engines at
 the same time and restores the originally selected model):

@@ -163,7 +163,7 @@ function createCvStorageCleanupTaskRepository({
         { key },
         {
           $set: { state: 'completed', completedAt: at, expiresAt, updatedAt: at },
-          $unset: { nextAttemptAt: 1, lastError: 1 }
+          $unset: { nextAttemptAt: 1, lastError: 1, resource: 1, provider: 1 }
         },
         { returnDocument: 'after' }
       ));
@@ -178,6 +178,8 @@ function createCvStorageCleanupTaskRepository({
       task.updatedAt = iso(at);
       delete task.nextAttemptAt;
       delete task.lastError;
+      delete task.resource;
+      delete task.provider;
       return copy(task);
     });
   }
@@ -186,7 +188,7 @@ function createCvStorageCleanupTaskRepository({
     const at = operationTime();
     const lastError = {
       code: error?.code || 'CV_STORAGE_CLEANUP_FAILED',
-      message: String(error?.message || error).slice(0, 1000)
+      message: 'Durable CV storage cleanup failed and will be retried.'
     };
     if (useMongo) {
       return unwrap(await (await mongoCollection()).findOneAndUpdate(

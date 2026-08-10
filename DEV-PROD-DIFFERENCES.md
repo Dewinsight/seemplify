@@ -112,15 +112,19 @@ NODE_ENV=development
 
 ```env
 # PRODUCTION
-OIDC_COOKIE_SECRET=SeemplifyProd_Cookie_2026SecureKey!
-IDP_WEBHOOK_SECRET=SeemplifyProd_Webhook_2026SecureKey!
+OIDC_COOKIE_SECRET=<rotated-production-secret-from-secret-manager>
+IDP_WEBHOOK_MASTER_SECRET=<at-least-32-random-bytes-from-secret-manager>
+# Product deployments receive a derived target-specific IDP_WEBHOOK_SECRET.
 
 # DEV
-OIDC_COOKIE_SECRET=SeemplifyDev_Cookie_2026SecureKey!
-IDP_WEBHOOK_SECRET=SeemplifyDev_Webhook_2026SecureKey!
+OIDC_COOKIE_SECRET=<local-development-secret-at-least-32-characters>
+IDP_WEBHOOK_MASTER_SECRET=<local-high-entropy-secret-at-least-32-bytes>
+# Local manual setups may use a single IDP_WEBHOOK_SECRET; production may not.
 ```
 
 **Impact:** Cookies/tokens from dev won't work in production and vice versa.
+Webhook keys are isolated per receiving product, so one product cannot forge
+authorization events for another.
 
 ---
 

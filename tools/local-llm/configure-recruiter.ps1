@@ -13,8 +13,16 @@ $SecretFile = Join-Path $RuntimeDir 'service-secret'
 $ApprovedConcurrencyFile = Join-Path $RuntimeDir 'approved-concurrency.json'
 $BackendEnv = Join-Path $WorkspaceRoot 'recruiter\backend\.env'
 
-if (-not (Test-Path $SecretFile)) { throw 'Start the local LLM gateway once so a service secret can be generated.' }
-$ServiceSecret = (Get-Content -LiteralPath $SecretFile -Raw).Trim()
+if (-not (Test-Path $SecretFile)) { throw 'Start the local LLM gateway once so its master secret can be generated.' }
+$GatewayMasterSecret = (Get-Content -LiteralPath $SecretFile -Raw).Trim()
+$hmac = [Security.Cryptography.HMACSHA256]::new()
+try {
+  $hmac.Key = [Text.Encoding]::UTF8.GetBytes($GatewayMasterSecret)
+  $serviceKeyContext = [Text.Encoding]::UTF8.GetBytes('seemplify-local-llm-service-v2:recruiter')
+  $RecruiterServiceSecret = [Convert]::ToBase64String($hmac.ComputeHash($serviceKeyContext)).TrimEnd('=').Replace('+','-').Replace('/','_')
+} finally {
+  $hmac.Dispose()
+}
 $StatusSecretFile = Join-Path $RuntimeDir 'cv-status-secret'
 if (-not (Test-Path $StatusSecretFile)) {
   $bytes = New-Object byte[] 48
@@ -65,7 +73,10 @@ function Set-EnvValue([string]$Name, [string]$Value) {
 }
 
 Set-EnvValue 'LOCAL_LLM_BASE_URL' $BaseUrl
-Set-EnvValue 'LOCAL_LLM_SHARED_SECRET' $ServiceSecret
+Set-EnvValue 'LOCAL_LLM_SERVICE_SECRET' $RecruiterServiceSecret
+# Recruiter alone retains the master because it verifies the gateway's signed
+# Local usage outbox. Recruiter inference requests prefer the scoped key above.
+Set-EnvValue 'LOCAL_LLM_SHARED_SECRET' $GatewayMasterSecret
 Set-EnvValue 'LOCAL_LLM_MODEL' 'gemma4:26b-a4b-it-qat'
 Set-EnvValue 'CV_ANALYSIS_QUEUE_CONCURRENCY' ([string]$EffectiveConcurrency)
 Set-EnvValue 'CV_ANALYSIS_QUEUE_APPROVED_CONCURRENCY' ([string]$ApprovedConcurrency)
@@ -74,7 +85,7 @@ Set-EnvValue 'CV_STATUS_TOKEN_SECRET' $StatusSecret
 [IO.File]::WriteAllLines($BackendEnv, $lines, (New-Object Text.UTF8Encoding($false)))
 
 $sha = [Security.Cryptography.SHA256]::Create()
-try { $fingerprintBytes = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($ServiceSecret)) } finally { $sha.Dispose() }
+try { $fingerprintBytes = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($RecruiterServiceSecret)) } finally { $sha.Dispose() }
 $fingerprint = -join ($fingerprintBytes | ForEach-Object { $_.ToString('x2') })
 $result = [ordered]@{
   configured = $true

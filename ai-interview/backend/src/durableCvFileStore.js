@@ -90,6 +90,53 @@ function filesystemTarget(storageKey) {
   return target;
 }
 
+function planReference(buffer) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) {
+    const error = new Error('Uploaded CV is empty');
+    error.code = 'CV_FILE_EMPTY';
+    throw error;
+  }
+  const integrity = {
+    sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    length: buffer.length
+  };
+  if (shouldUseMongo()) {
+    return {
+      provider: 'gridfs',
+      bucket: BUCKET_NAME,
+      fileId: String(new mongoose.mongo.ObjectId()),
+      ...integrity
+    };
+  }
+  return {
+    provider: 'filesystem',
+    storageKey: `${crypto.randomUUID()}.cv`,
+    ...integrity
+  };
+}
+
+function referenceKey(reference = {}) {
+  if (reference.provider === 'gridfs' && reference.fileId) {
+    return `gridfs:${gridFsBucketName(reference.bucket)}:${String(reference.fileId)}`;
+  }
+  if (reference.provider === 'filesystem' && reference.storageKey) {
+    return `filesystem:${path.basename(filesystemTarget(reference.storageKey))}`;
+  }
+  return null;
+}
+
+function assertPlannedReference(reference, sha256, length) {
+  if (!reference) return;
+  const expected = expectedIntegrity(reference);
+  if (expected.sha256 !== sha256 || expected.length !== length) {
+    throw integrityError(
+      'The durable CV intake binding does not match the uploaded bytes',
+      'CV_DURABLE_FILE_BINDING_MISMATCH'
+    );
+  }
+  referenceKey(reference);
+}
+
 async function readGridFsBuffer(db, reference) {
   const name = gridFsBucketName(reference.bucket);
   const fileId = objectId(reference.fileId);
@@ -109,7 +156,7 @@ async function readGridFsBuffer(db, reference) {
   try {
     for await (const chunk of bucket.openDownloadStream(fileId)) chunks.push(chunk);
   } catch (error) {
-    if (error.code === 'ENOENT' || /FileNotFound/i.test(String(error.message || ''))) {
+    if (error.code === 'ENOENT' || /File\s*not\s*found/i.test(String(error.message || ''))) {
       throw integrityError('The durable CV file is missing', 'CV_DURABLE_FILE_MISSING');
     }
     error.code = error.code || 'CV_DURABLE_STORAGE_READ_FAILED';
@@ -118,25 +165,43 @@ async function readGridFsBuffer(db, reference) {
   return assertBufferIntegrity(Buffer.concat(chunks), reference);
 }
 
-async function persistBuffer(buffer, metadata = {}) {
+async function persistBuffer(buffer, metadata = {}, { reference = null } = {}) {
   if (!Buffer.isBuffer(buffer) || !buffer.length) {
     const error = new Error('Uploaded CV is empty');
     error.code = 'CV_FILE_EMPTY';
     throw error;
   }
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+  assertPlannedReference(reference, sha256, buffer.length);
   if (shouldUseMongo()) {
     const db = await database();
     const bucket = createGridFsBucket(db, { bucketName: BUCKET_NAME });
-    const upload = bucket.openUploadStream(safeFileName(metadata.originalName), {
+    const plannedId = reference ? objectId(reference.fileId) : null;
+    if (plannedId) {
+      try {
+        await readGridFsBuffer(db, reference);
+        return { ...reference, persistedAt: reference.persistedAt || new Date().toISOString() };
+      } catch (error) {
+        if (error.code !== 'CV_DURABLE_FILE_MISSING') throw error;
+      }
+    }
+    const uploadOptions = {
       contentType: String(metadata.mimeType || 'application/octet-stream').slice(0, 127),
       metadata: {
         purpose: 'ai-interview-cv-ingestion',
         organizationId: String(metadata.organizationId || '').slice(0, 100),
+        intakeId: String(metadata.intakeId || '').slice(0, 100),
         sha256,
         createdAt: new Date()
       }
-    });
+    };
+    const upload = plannedId
+      ? bucket.openUploadStreamWithId(
+        plannedId,
+        safeFileName(metadata.originalName),
+        uploadOptions
+      )
+      : bucket.openUploadStream(safeFileName(metadata.originalName), uploadOptions);
     let completed = false;
     try {
       await pipeline(Readable.from(buffer), upload);
@@ -172,13 +237,22 @@ async function persistBuffer(buffer, metadata = {}) {
           };
         }
       }
+      // Concurrent exact replays use the same pre-committed file identity. One
+      // upload can lose GridFS's unique-files race after the other has safely
+      // completed; in that case the verified winner is the durable result.
+      if (plannedId) {
+        try {
+          await readGridFsBuffer(db, reference);
+          return { ...reference, persistedAt: reference.persistedAt || new Date().toISOString() };
+        } catch {}
+      }
       error.code = error.code || 'CV_DURABLE_STORAGE_WRITE_FAILED';
       throw error;
     }
     return {
       provider: 'gridfs',
       bucket: BUCKET_NAME,
-      fileId: String(upload.id),
+      fileId: String(plannedId || upload.id),
       sha256,
       length: buffer.length,
       persistedAt: new Date().toISOString()
@@ -187,14 +261,30 @@ async function persistBuffer(buffer, metadata = {}) {
 
   const directory = storageDirectory();
   await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
-  const storageKey = `${crypto.randomUUID()}-${safeFileName(metadata.originalName)}`;
-  const target = path.join(directory, storageKey);
-  const temporary = `${target}.${process.pid}.tmp`;
+  // Keep user-provided filenames out of filesystem paths and cleanup records.
+  const storageKey = reference?.storageKey || `${crypto.randomUUID()}.cv`;
+  const target = filesystemTarget(storageKey);
+  if (reference) {
+    try {
+      const existing = await fs.promises.readFile(target);
+      assertBufferIntegrity(existing, reference);
+      return { ...reference, persistedAt: reference.persistedAt || new Date().toISOString() };
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`;
   let renamed = false;
   try {
     await fs.promises.writeFile(temporary, buffer, { flag: 'wx', mode: 0o600 });
-    await fs.promises.rename(temporary, target);
-    renamed = true;
+    try {
+      await fs.promises.rename(temporary, target);
+      renamed = true;
+    } catch (error) {
+      if (!reference || !['EEXIST', 'EPERM'].includes(error.code)) throw error;
+      assertBufferIntegrity(await fs.promises.readFile(target), reference);
+      await fs.promises.unlink(temporary).catch(() => {});
+    }
     assertBufferIntegrity(await fs.promises.readFile(target), {
       sha256,
       length: buffer.length
@@ -248,19 +338,29 @@ async function readBuffer(reference) {
   throw error;
 }
 
+async function removeGridFs(db, reference) {
+  const bucketName = gridFsBucketName(reference.bucket);
+  const fileId = objectId(reference.fileId);
+  try {
+    const bucket = createGridFsBucket(db, { bucketName });
+    await bucket.delete(fileId);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT' || /File\s*not\s*found/i.test(String(error.message || ''))) {
+      // A process can die after GridFS chunks are written but before the files
+      // document is committed. The pre-committed intake ID lets cleanup remove
+      // those otherwise invisible PII chunks directly.
+      const result = await db.collection(`${bucketName}.chunks`).deleteMany({ files_id: fileId });
+      return Number(result.deletedCount || 0) > 0;
+    }
+    throw error;
+  }
+}
+
 async function remove(reference) {
   if (reference?.provider === 'gridfs' && reference.fileId) {
-    try {
-      const db = await database();
-      const bucket = createGridFsBucket(db, {
-        bucketName: gridFsBucketName(reference.bucket)
-      });
-      await bucket.delete(objectId(reference.fileId));
-      return true;
-    } catch (error) {
-      if (error.code === 'ENOENT' || /FileNotFound/i.test(String(error.message || ''))) return false;
-      throw error;
-    }
+    const db = await database();
+    return removeGridFs(db, reference);
   }
   if (reference?.provider === 'filesystem' && reference.storageKey) {
     const target = filesystemTarget(reference.storageKey);
@@ -272,8 +372,73 @@ async function remove(reference) {
   return false;
 }
 
+async function listManagedReferences({
+  before = new Date(),
+  limit = 500,
+  after = null
+} = {}) {
+  const safeLimit = Math.max(1, Math.min(5_000, Math.floor(Number(limit) || 500)));
+  const cutoff = new Date(before);
+  if (shouldUseMongo()) {
+    const db = await database();
+    const filter = {
+      'metadata.purpose': 'ai-interview-cv-ingestion',
+      uploadDate: { $lte: cutoff }
+    };
+    if (after) filter._id = { $gt: objectId(after) };
+    const rows = await db.collection(`${BUCKET_NAME}.files`).find(filter)
+      .sort({ _id: 1 })
+      .limit(safeLimit)
+      .toArray();
+    const references = rows.map((file) => ({
+      provider: 'gridfs',
+      bucket: BUCKET_NAME,
+      fileId: String(file._id),
+      length: Number(file.length),
+      sha256: String(file.metadata?.sha256 || '').toLowerCase(),
+      persistedAt: new Date(file.uploadDate || file.metadata?.createdAt || 0).toISOString()
+    }));
+    return {
+      references,
+      nextCursor: rows.length === safeLimit ? String(rows[rows.length - 1]._id) : null
+    };
+  }
+
+  const directory = storageDirectory();
+  let names;
+  try {
+    names = (await fs.promises.readdir(directory, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.cv'))
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    if (error.code === 'ENOENT') return { references: [], nextCursor: null };
+    throw error;
+  }
+  const references = [];
+  let lastVisited = null;
+  for (const name of names) {
+    if (after && name <= String(after)) continue;
+    lastVisited = name;
+    const stat = await fs.promises.stat(filesystemTarget(name));
+    if (stat.mtimeMs > cutoff.getTime()) continue;
+    references.push({
+      provider: 'filesystem',
+      storageKey: name,
+      length: stat.size,
+      persistedAt: stat.mtime.toISOString()
+    });
+    if (references.length >= safeLimit) break;
+  }
+  return {
+    references,
+    nextCursor: references.length === safeLimit ? lastVisited : null
+  };
+}
+
 module.exports = {
   _readGridFsBufferForTests: readGridFsBuffer,
+  _removeGridFsForTests: removeGridFs,
   _resetDependenciesForTests() {
     createGridFsBucket = defaultCreateGridFsBucket;
   },
@@ -281,7 +446,10 @@ module.exports = {
     createGridFsBucket = factory;
   },
   assertBufferIntegrity,
+  listManagedReferences,
+  planReference,
   persistBuffer,
   readBuffer,
+  referenceKey,
   remove
 };

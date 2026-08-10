@@ -14,9 +14,12 @@ import {
 import {
     TaxFieldDefinition,
     TaxJurisdictionSummary,
+    describeTaxFieldCurrency,
     listTaxJurisdictions,
+    resolveTaxFieldCurrencyCode,
 } from '@/lib/payrollTax';
 import { usePayrollCurrencies } from '@/lib/usePayrollCurrencies';
+import { listPayrollEmployerEntities, PayrollEmployerEntity } from '@/lib/payrollEmployerEntities';
 import Link from 'next/link';
 import {
     ArrowLeft,
@@ -44,7 +47,6 @@ function hasText(value: any): boolean {
 function hasAnyBankingValue(account: any = {}): boolean {
     return [
         account?.bankName,
-        account?.accountHolderName,
         account?.accountNumber,
         account?.routingNumber,
         account?.sortCode,
@@ -108,7 +110,6 @@ function getDefaultTaxConfig() {
         taxId: '',
         calculationMode: 'configured',
         jurisdictionConfigId: '',
-        jurisdictionVersionId: '',
         jurisdictionCode: 'OTHER',
         jurisdictionName: '',
         employeeTaxInputs: {} as Record<string, any>,
@@ -244,7 +245,7 @@ const PAYROLL_STATUTORY_PROFILES: Record<string, StatutoryProfile> = {
     },
     KE: {
         code: 'KE',
-        intro: 'Kenya PAYE is built in. Use manual statutory overrides only if you need an extra payroll withholding for local schemes.',
+        intro: 'Kenya PAYE is available as a review-only preview while the remaining statutory edge cases are being certified. It cannot finalize payroll yet.',
         socialTitle: 'Statutory Contribution Override',
         socialOptInLabel: 'Enable Manual Statutory Contribution',
         socialIdentifierLabel: 'Statutory Reference Number',
@@ -376,6 +377,15 @@ function normalizeJurisdictionCode(value: any): string {
     return COUNTRY_CODE_HINTS[raw] || raw;
 }
 
+function withoutJurisdictionVersionPin(rawTaxConfig: Record<string, any> = {}) {
+    const {
+        jurisdictionVersionId: _legacyJurisdictionVersionId,
+        versionId: _legacyVersionId,
+        ...unpinnedTaxConfig
+    } = rawTaxConfig || {};
+    return unpinnedTaxConfig;
+}
+
 function findJurisdictionById(jurisdictions: TaxJurisdictionSummary[] = [], jurisdictionId: string) {
     const normalizedId = String(jurisdictionId || '').trim();
     if (!normalizedId) return null;
@@ -422,6 +432,7 @@ function hydrateEmployeeTaxInputs(
 }
 
 function syncTaxConfigWithJurisdiction(rawTaxConfig: Record<string, any> = {}, jurisdiction: TaxJurisdictionSummary | null) {
+    const unpinnedTaxConfig = withoutJurisdictionVersionPin(rawTaxConfig);
     const publishedVersion = jurisdiction?.publishedVersion || null;
     const employeeTaxInputs = hydrateEmployeeTaxInputs(
         Array.isArray(publishedVersion?.fieldDefinitions) ? publishedVersion.fieldDefinitions : [],
@@ -431,10 +442,9 @@ function syncTaxConfigWithJurisdiction(rawTaxConfig: Record<string, any> = {}, j
 
     return {
         ...getDefaultTaxConfig(),
-        ...rawTaxConfig,
+        ...unpinnedTaxConfig,
         calculationMode: 'configured',
         jurisdictionConfigId: jurisdiction?._id ? String(jurisdiction._id) : String(rawTaxConfig?.jurisdictionConfigId || ''),
-        jurisdictionVersionId: publishedVersion?._id ? String(publishedVersion._id) : '',
         jurisdictionCode: jurisdiction?.countryCode || normalizeJurisdictionCode(rawTaxConfig?.jurisdictionCode || 'OTHER') || 'OTHER',
         jurisdictionName: jurisdiction?.displayName || rawTaxConfig?.jurisdictionName || jurisdiction?.countryName || '',
         employeeTaxInputs,
@@ -486,13 +496,13 @@ function resolveEmployeeTaxConfig(
 function mapTaxConfigForForm(raw: any = {}) {
     const defaults = getDefaultTaxConfig();
     const jurisdictionCode = normalizeJurisdictionCode(raw?.jurisdictionCode || raw?.jurisdictionCountry || '') || defaults.jurisdictionCode;
+    const unpinnedTaxConfig = withoutJurisdictionVersionPin(raw);
 
     return {
         ...defaults,
-        ...raw,
+        ...unpinnedTaxConfig,
         calculationMode: 'configured',
         jurisdictionConfigId: String(raw?.jurisdictionConfigId || raw?.configId || ''),
-        jurisdictionVersionId: String(raw?.jurisdictionVersionId || raw?.versionId || ''),
         jurisdictionCode,
         jurisdictionName: raw?.jurisdictionName || '',
         employeeTaxInputs: (raw?.employeeTaxInputs && typeof raw.employeeTaxInputs === 'object') ? raw.employeeTaxInputs : {},
@@ -539,9 +549,78 @@ function formatCurrencyAmount(amount: any, currency = 'USD') {
     return formatPayrollMoney(amount, currency);
 }
 
+type PayComponentTaxTreatment = 'jurisdiction_default' | 'taxable' | 'non_taxable' | 'partially_taxable';
+
+const taxTreatmentLabels: Record<PayComponentTaxTreatment, string> = {
+    jurisdiction_default: 'Use jurisdiction rule',
+    taxable: 'Taxable',
+    non_taxable: 'Non-taxable',
+    partially_taxable: 'Partially taxable',
+};
+
+const STATUTORILY_TAXABLE_CLASSIFICATIONS = new Set([
+    'cash_allowance',
+    'housing_allowance',
+    'transport_allowance',
+    'cash_bonus',
+    'company_car',
+    'housing_benefit',
+    'cheap_loan',
+    'phone_benefit',
+    'benefit_in_kind',
+]);
+
+function isStatutorilyTaxableClassification(value: any): boolean {
+    return STATUTORILY_TAXABLE_CLASSIFICATIONS.has(String(value || '').trim().toLowerCase());
+}
+
+const allowanceClassificationByType: Record<string, string> = {
+    hra: 'housing_allowance',
+    transport: 'transport_allowance',
+    meal: 'cash_allowance',
+    phone: 'cash_allowance',
+    medical: 'cash_allowance',
+    education: 'cash_allowance',
+    special: 'cash_allowance',
+    other: 'cash_allowance',
+};
+
+const createNewAllowance = () => ({
+    type: 'hra',
+    name: '',
+    amount: 0,
+    classificationCode: 'housing_allowance',
+    paymentKind: 'cash',
+    taxTreatment: 'jurisdiction_default' as PayComponentTaxTreatment,
+    taxablePercentage: 100,
+    taxAuthorityReason: '',
+    taxEvidenceReference: '',
+    effectiveFrom: '',
+    effectiveTo: ''
+});
+
+const createNewBenefit = () => ({
+    classificationCode: 'benefit_in_kind',
+    name: '',
+    fairValue: 0,
+    cashPayable: false,
+    employerPaidAmount: 0,
+    taxTreatment: 'jurisdiction_default' as PayComponentTaxTreatment,
+    taxablePercentage: 100,
+    taxAuthorityReason: '',
+    taxEvidenceReference: '',
+    effectiveFrom: '',
+    effectiveTo: '',
+    overridePeriodKey: '',
+    overrideTaxTreatment: 'taxable' as Exclude<PayComponentTaxTreatment, 'jurisdiction_default'>,
+    overrideTaxablePercentage: 100,
+    overrideAuthorityReason: '',
+    overrideEvidenceReference: ''
+});
+
 export default function EmployeeEditPage({ params }: { params: { id: string } }) {
     const router = useRouter();
-    const { currencies } = usePayrollCurrencies();
+    const { currencies, paymentCurrencies } = usePayrollCurrencies();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [profile, setProfile] = useState<any>(null);
@@ -550,12 +629,22 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
     const [idpSyncWarning, setIdpSyncWarning] = useState('');
     const [canSyncIdpProfile, setCanSyncIdpProfile] = useState(false);
     const [taxJurisdictions, setTaxJurisdictions] = useState<TaxJurisdictionSummary[]>([]);
+    const [employerEntities, setEmployerEntities] = useState<PayrollEmployerEntity[]>([]);
     const [taxPreview, setTaxPreview] = useState<any>(null);
     const [taxPreviewLoading, setTaxPreviewLoading] = useState(false);
     const [taxPreviewError, setTaxPreviewError] = useState('');
 
     // Form State
     const [formData, setFormData] = useState<any>({
+        employerEntityId: '',
+        taxAssignment: {
+            workCountryCode: '',
+            workJurisdictionCode: '',
+            taxJurisdictionCode: '',
+            determinationReason: '',
+            evidenceReference: '',
+            effectiveFrom: ''
+        },
         basicSalary: 0,
         currency: 'USD',
         workTerms: {
@@ -571,6 +660,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         },
         isActive: true,
         allowances: [] as any[],
+        benefitItems: [] as any[],
         payrollFlags: {
             includeInNextRun: true,
             holdPayment: false,
@@ -613,14 +703,15 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
     });
 
     // Allowance Form State
-    const [newAllowance, setNewAllowance] = useState({
-        type: 'hra',
-        name: '',
-        amount: 0,
-        isTaxable: true,
-        effectiveFrom: '',
-        effectiveTo: ''
-    });
+    const [newAllowance, setNewAllowance] = useState(createNewAllowance());
+    const [newBenefit, setNewBenefit] = useState(createNewBenefit());
+
+    const selectablePaymentCurrencies = useMemo(() => {
+        const currentCurrency = currencies.find((currency) => currency.code === formData.currency);
+        return currentCurrency && !paymentCurrencies.some((currency) => currency.code === currentCurrency.code)
+            ? [currentCurrency, ...paymentCurrencies]
+            : paymentCurrencies;
+    }, [currencies, formData.currency, paymentCurrencies]);
 
     useEffect(() => {
         handleAuthCallback();
@@ -647,6 +738,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     console.error('Failed to load tax jurisdictions:', taxJurisdictionError);
                 }
                 setTaxJurisdictions(jurisdictionSummaries);
+                try {
+                    setEmployerEntities(await listPayrollEmployerEntities());
+                } catch (employerError) {
+                    console.error('Failed to load legal employers:', employerError);
+                }
 
                 const idpSync = res.data?.idpSync || null;
                 const payrollSync = idpSync?.payrollSync || {};
@@ -713,6 +809,15 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
 
                 // Initialize form
                 setFormData({
+                    employerEntityId: res.data.employerEntityId || '',
+                    taxAssignment: {
+                        workCountryCode: res.data.taxAssignment?.workCountryCode || '',
+                        workJurisdictionCode: res.data.taxAssignment?.workJurisdictionCode || '',
+                        taxJurisdictionCode: res.data.taxAssignment?.taxJurisdictionCode || nextTaxConfig.jurisdictionCode || '',
+                        determinationReason: res.data.taxAssignment?.determinationReason || '',
+                        evidenceReference: res.data.taxAssignment?.evidenceReference || '',
+                        effectiveFrom: toDateInputValue(res.data.taxAssignment?.effectiveFrom)
+                    },
                     basicSalary: res.data.basicSalary || 0,
                     currency: res.data.currency || 'USD',
                     workTerms: {
@@ -728,6 +833,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     },
                     isActive: res.data.isActive !== false,
                     allowances: res.data.allowances || [],
+                    benefitItems: res.data.benefitItems || [],
                     payrollFlags: {
                         includeInNextRun: res.data.payrollFlags?.includeInNextRun !== false,
                         holdPayment: !!res.data.payrollFlags?.holdPayment,
@@ -768,6 +874,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         currency: formData.currency,
         payFrequency: profile?.payFrequency || 'monthly',
         allowances: formData.allowances,
+        benefitItems: formData.benefitItems,
         recurringDeductions: formData.recurringDeductions,
         taxConfig: formData.taxConfig,
         statutoryContributions: formData.statutoryContributions,
@@ -790,9 +897,10 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                     currency: formData.currency,
                     payFrequency: profile?.payFrequency || 'monthly',
                     allowances: formData.allowances,
+                    benefitItems: formData.benefitItems,
                     recurringDeductions: formData.recurringDeductions,
                     taxConfig: {
-                        ...formData.taxConfig,
+                        ...withoutJurisdictionVersionPin(formData.taxConfig),
                         calculationMode: 'configured',
                         jurisdictionCode: formData.taxConfig.jurisdictionCode,
                         jurisdictionName: formData.taxConfig.jurisdictionName,
@@ -849,6 +957,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
         profile?.payFrequency,
         formData.allowances,
         formData.basicSalary,
+        formData.benefitItems,
         formData.currency,
         formData.recurringDeductions,
         formData.statutoryContributions,
@@ -941,6 +1050,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             } : undefined;
 
             await api.put(`/payroll/profiles/${params.id}`, {
+                employerEntityId: formData.employerEntityId || null,
+                taxAssignment: {
+                    ...formData.taxAssignment,
+                    effectiveFrom: formData.taxAssignment?.effectiveFrom || null,
+                },
                 basicSalary: Number(formData.basicSalary),
                 currency: formData.currency,
                 workTerms: {
@@ -954,9 +1068,10 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                 },
                 isActive: formData.isActive,
                 allowances: formData.allowances,
+                benefitItems: formData.benefitItems,
                 payrollFlags: formData.payrollFlags,
                 taxConfig: {
-                    ...formData.taxConfig,
+                    ...withoutJurisdictionVersionPin(formData.taxConfig),
                     calculationMode: 'configured',
                     jurisdictionCode: selectedJurisdiction?.countryCode || formData.taxConfig.jurisdictionCode,
                     jurisdictionName: selectedJurisdiction?.displayName || formData.taxConfig.jurisdictionName,
@@ -1008,12 +1123,25 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
 
     const addAllowance = () => {
         const amount = Number(newAllowance.amount || 0);
+        const classificationCode = newAllowance.classificationCode || allowanceClassificationByType[newAllowance.type] || 'cash_allowance';
+        const treatmentLocked = isStatutorilyTaxableClassification(classificationCode);
+        const selectedTreatment = treatmentLocked ? 'jurisdiction_default' : newAllowance.taxTreatment;
         if (!newAllowance.type) {
             alert('Please select an allowance type');
             return;
         }
         if (!(amount > 0)) {
             alert('Please enter a valid allowance amount');
+            return;
+        }
+        if (selectedTreatment !== 'jurisdiction_default'
+            && (!hasText(newAllowance.taxAuthorityReason) || !hasText(newAllowance.taxEvidenceReference))) {
+            alert('A legal reason and evidence reference are required when overriding the jurisdiction tax rule.');
+            return;
+        }
+        if (selectedTreatment === 'partially_taxable'
+            && !(Number(newAllowance.taxablePercentage) > 0 && Number(newAllowance.taxablePercentage) < 100)) {
+            alert('Enter a taxable percentage greater than 0 and less than 100.');
             return;
         }
 
@@ -1034,7 +1162,13 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             type: newAllowance.type,
             name,
             amount,
-            isTaxable: !!newAllowance.isTaxable,
+            classificationCode,
+            paymentKind: newAllowance.paymentKind,
+            taxTreatment: selectedTreatment,
+            taxablePercentage: Number(newAllowance.taxablePercentage || 0),
+            taxAuthorityReason: newAllowance.taxAuthorityReason.trim(),
+            taxEvidenceReference: newAllowance.taxEvidenceReference.trim(),
+            isTaxable: selectedTreatment !== 'non_taxable',
             isActive: true,
         };
 
@@ -1046,20 +1180,77 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             allowances: [...(formData.allowances || []), payload],
         });
 
-        setNewAllowance({
-            type: 'hra',
-            name: '',
-            amount: 0,
-            isTaxable: true,
-            effectiveFrom: '',
-            effectiveTo: '',
-        });
+        setNewAllowance(createNewAllowance());
     };
 
     const removeAllowance = (index: number) => {
         const updated = [...(formData.allowances || [])];
         updated.splice(index, 1);
         setFormData({ ...formData, allowances: updated });
+    };
+
+    const addBenefit = () => {
+        const fairValue = Number(newBenefit.fairValue || 0);
+        const treatmentLocked = isStatutorilyTaxableClassification(newBenefit.classificationCode);
+        const selectedTreatment = treatmentLocked ? 'jurisdiction_default' : newBenefit.taxTreatment;
+        if (!hasText(newBenefit.name) || !hasText(newBenefit.classificationCode) || !(fairValue > 0)) {
+            alert('Benefit name, classification, and a fair value greater than zero are required.');
+            return;
+        }
+        if (selectedTreatment !== 'jurisdiction_default'
+            && (!hasText(newBenefit.taxAuthorityReason) || !hasText(newBenefit.taxEvidenceReference))) {
+            alert('A legal reason and evidence reference are required when overriding the jurisdiction tax rule.');
+            return;
+        }
+        if (selectedTreatment === 'partially_taxable'
+            && !(Number(newBenefit.taxablePercentage) > 0 && Number(newBenefit.taxablePercentage) < 100)) {
+            alert('Enter a taxable percentage greater than 0 and less than 100.');
+            return;
+        }
+        if (!treatmentLocked && newBenefit.overridePeriodKey
+            && (!hasText(newBenefit.overrideAuthorityReason) || !hasText(newBenefit.overrideEvidenceReference))) {
+            alert('A month-specific tax rule requires a legal reason and evidence reference.');
+            return;
+        }
+        if (!treatmentLocked && newBenefit.overridePeriodKey && newBenefit.overrideTaxTreatment === 'partially_taxable'
+            && !(Number(newBenefit.overrideTaxablePercentage) > 0 && Number(newBenefit.overrideTaxablePercentage) < 100)) {
+            alert('Enter a month-specific taxable percentage greater than 0 and less than 100.');
+            return;
+        }
+
+        const payload: any = {
+            classificationCode: newBenefit.classificationCode.trim().toLowerCase(),
+            name: newBenefit.name.trim(),
+            fairValue,
+            cashPayable: !!newBenefit.cashPayable,
+            employerPaidAmount: Number(newBenefit.employerPaidAmount || 0),
+            taxTreatment: selectedTreatment,
+            taxablePercentage: Number(newBenefit.taxablePercentage || 0),
+            taxAuthorityReason: newBenefit.taxAuthorityReason.trim(),
+            taxEvidenceReference: newBenefit.taxEvidenceReference.trim(),
+            isActive: true,
+            taxTreatmentOverrides: !treatmentLocked && newBenefit.overridePeriodKey ? [{
+                periodKey: newBenefit.overridePeriodKey,
+                taxTreatment: newBenefit.overrideTaxTreatment,
+                taxablePercentage: Number(newBenefit.overrideTaxablePercentage || 0),
+                authorityReason: newBenefit.overrideAuthorityReason.trim(),
+                evidenceReference: newBenefit.overrideEvidenceReference.trim(),
+            }] : [],
+        };
+        if (newBenefit.effectiveFrom) payload.effectiveFrom = newBenefit.effectiveFrom;
+        if (newBenefit.effectiveTo) payload.effectiveTo = newBenefit.effectiveTo;
+
+        setFormData({
+            ...formData,
+            benefitItems: [...(formData.benefitItems || []), payload],
+        });
+        setNewBenefit(createNewBenefit());
+    };
+
+    const removeBenefit = (index: number) => {
+        const updated = [...(formData.benefitItems || [])];
+        updated.splice(index, 1);
+        setFormData({ ...formData, benefitItems: updated });
     };
 
     const addDeduction = () => {
@@ -1176,6 +1367,11 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
             && nigeriaPensionEmployerRate >= 10
             && (nigeriaPensionEmployeeRate + nigeriaPensionEmployerRate) >= 18
         );
+    const newAllowanceClassification = newAllowance.classificationCode
+        || allowanceClassificationByType[newAllowance.type]
+        || 'cash_allowance';
+    const newAllowanceTreatmentLocked = isStatutorilyTaxableClassification(newAllowanceClassification);
+    const newBenefitTreatmentLocked = isStatutorilyTaxableClassification(newBenefit.classificationCode);
 
     if (loading) {
         return (
@@ -1300,7 +1496,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 </p>
                                 {selectedJurisdictionVersion ? (
                                     <p className="text-xs text-zinc-500 mt-2">
-                                        Active version: {selectedJurisdictionVersion.label} (v{selectedJurisdictionVersion.versionNumber})
+                                        Currently published: {selectedJurisdictionVersion.label} (v{selectedJurisdictionVersion.versionNumber}). Payroll selects the pay-date effective version automatically.
                                     </p>
                                 ) : (
                                     <p className="text-xs text-amber-300 mt-2">
@@ -1682,6 +1878,67 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 </div>
                             </div>
 
+                            <div className="mb-5 border border-zinc-800 bg-zinc-950/40 p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-zinc-200">Legal employer and tax presence</h4>
+                                        <p className="mt-1 text-xs text-zinc-500">The company or registered branch that employs this person controls the statutory jurisdiction and payroll currency.</p>
+                                    </div>
+                                    <Link href="/admin/settings/employer-entities" className="inline-flex min-h-11 items-center rounded-lg border border-zinc-700 px-3 text-sm text-zinc-200 hover:border-amber-500/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">Manage</Link>
+                                </div>
+                                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <label className="text-sm text-zinc-400">
+                                        Legal employer
+                                        <select
+                                            value={formData.employerEntityId || ''}
+                                            onChange={(event) => {
+                                                const next = employerEntities.find((entity) => entity._id === event.target.value);
+                                                setFormData((current: any) => ({
+                                                    ...current,
+                                                    employerEntityId: event.target.value,
+                                                    currency: next?.defaultCurrency || current.currency,
+                                                    taxAssignment: {
+                                                        ...current.taxAssignment,
+                                                        workCountryCode: next?.countryCode || '',
+                                                        workJurisdictionCode: next?.jurisdictionCode || '',
+                                                        taxJurisdictionCode: next?.jurisdictionCode || '',
+                                                    },
+                                                    taxConfig: {
+                                                        ...current.taxConfig,
+                                                        jurisdictionConfigId: next?.taxJurisdictionConfigId || current.taxConfig.jurisdictionConfigId,
+                                                        jurisdictionCode: next?.countryCode || current.taxConfig.jurisdictionCode,
+                                                    },
+                                                }));
+                                            }}
+                                            className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-zinc-200 focus:border-amber-500 focus:outline-none"
+                                        >
+                                            <option value="">Not assigned — excluded from payroll</option>
+                                            {employerEntities.filter((entity) => entity.status !== 'inactive').map((entity) => (
+                                                <option key={entity._id} value={entity._id}>{entity.legalName} — {entity.jurisdictionCode} / {entity.defaultCurrency}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <label className="text-sm text-zinc-400">
+                                        Determination evidence reference
+                                        <input
+                                            value={formData.taxAssignment?.evidenceReference || ''}
+                                            onChange={(event) => setFormData((current: any) => ({ ...current, taxAssignment: { ...current.taxAssignment, evidenceReference: event.target.value } }))}
+                                            placeholder="Employment contract or mobility review reference"
+                                            className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-zinc-200 focus:border-amber-500 focus:outline-none"
+                                        />
+                                    </label>
+                                    <label className="text-sm text-zinc-400 md:col-span-2">
+                                        Why this tax jurisdiction applies
+                                        <input
+                                            value={formData.taxAssignment?.determinationReason || ''}
+                                            onChange={(event) => setFormData((current: any) => ({ ...current, taxAssignment: { ...current.taxAssignment, determinationReason: event.target.value } }))}
+                                            placeholder="Employee works for and is paid by the UK subsidiary under UK PAYE"
+                                            className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2.5 text-zinc-200 focus:border-amber-500 focus:outline-none"
+                                        />
+                                    </label>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-zinc-400 mb-1.5">Currency</label>
@@ -1690,9 +1947,9 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                                         className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                     >
-                                        {currencies.map((currency) => (
+                                        {selectablePaymentCurrencies.map((currency) => (
                                             <option key={currency.code} value={currency.code}>
-                                                {currency.label}
+                                                {currency.label}{currency.enabled === false ? ' (not enabled)' : ''}
                                             </option>
                                         ))}
                                     </select>
@@ -1784,15 +2041,17 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                                 <span className="text-[10px] bg-zinc-900/60 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-700/50 uppercase">
                                                     {String(allowance.type || 'other')}
                                                 </span>
-                                                {allowance.isTaxable === false && (
-                                                    <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20">NON-TAX</span>
-                                                )}
+                                                <span className="text-[10px] bg-zinc-900/60 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-700/50">
+                                                    {taxTreatmentLabels[(allowance.taxTreatment || (allowance.isTaxable === false ? 'non_taxable' : 'taxable')) as PayComponentTaxTreatment] || 'Review treatment'}
+                                                </span>
                                                 {allowance.isActive === false && (
                                                     <span className="text-[10px] bg-zinc-500/10 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-500/20">INACTIVE</span>
                                                 )}
                                             </div>
                                             <div className="text-xs text-zinc-500 mt-1">
                                                 {formatCurrencyAmount(allowance.amount || 0, formData.currency)}
+                                                {allowance.paymentKind === 'non_cash' && <span className="ml-2">Non-cash</span>}
+                                                {allowance.taxTreatment === 'partially_taxable' && <span className="ml-2">{Number(allowance.taxablePercentage || 0)}% taxable</span>}
                                                 {allowance.effectiveFrom && <span className="ml-2">From {new Date(allowance.effectiveFrom).toLocaleDateString()}</span>}
                                                 {allowance.effectiveTo && <span className="ml-2">To {new Date(allowance.effectiveTo).toLocaleDateString()}</span>}
                                             </div>
@@ -1817,7 +2076,14 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 <div className="grid grid-cols-2 gap-3 mb-3">
                                     <select
                                         value={newAllowance.type}
-                                        onChange={e => setNewAllowance({ ...newAllowance, type: e.target.value })}
+                                        onChange={e => setNewAllowance({
+                                            ...newAllowance,
+                                            type: e.target.value,
+                                            classificationCode: allowanceClassificationByType[e.target.value] || 'cash_allowance',
+                                            taxTreatment: isStatutorilyTaxableClassification(allowanceClassificationByType[e.target.value] || 'cash_allowance')
+                                                ? 'jurisdiction_default'
+                                                : newAllowance.taxTreatment,
+                                        })}
                                         className="bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
                                     >
                                         <option value="hra">HRA</option>
@@ -1848,16 +2114,85 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                         onChange={e => setNewAllowance({ ...newAllowance, amount: Number(e.target.value) })}
                                         className="bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
                                     />
-                                    <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!newAllowance.isTaxable}
-                                            onChange={(e) => setNewAllowance({ ...newAllowance, isTaxable: e.target.checked })}
-                                            className="rounded bg-zinc-950 border-zinc-700"
-                                        />
-                                        Taxable
-                                    </label>
+                                    <select
+                                        value={newAllowance.paymentKind}
+                                        onChange={(e) => setNewAllowance({ ...newAllowance, paymentKind: e.target.value })}
+                                        className="bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                    >
+                                        <option value="cash">Paid in cash</option>
+                                        <option value="non_cash">Non-cash value</option>
+                                    </select>
                                 </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div>
+                                        <label className="text-xs text-zinc-500 block mb-1">Tax classification</label>
+                                        <input
+                                            value={newAllowance.classificationCode}
+                                            onChange={(e) => {
+                                                const classificationCode = e.target.value.toLowerCase();
+                                                setNewAllowance({
+                                                    ...newAllowance,
+                                                    classificationCode,
+                                                    taxTreatment: isStatutorilyTaxableClassification(classificationCode)
+                                                        ? 'jurisdiction_default'
+                                                        : newAllowance.taxTreatment,
+                                                });
+                                            }}
+                                            placeholder="e.g. housing_allowance"
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-zinc-500 block mb-1">Tax treatment</label>
+                                        <select
+                                            value={newAllowance.taxTreatment}
+                                            onChange={(e) => setNewAllowance({ ...newAllowance, taxTreatment: e.target.value as PayComponentTaxTreatment })}
+                                            disabled={newAllowanceTreatmentLocked}
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                        >
+                                            {Object.entries(taxTreatmentLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                        </select>
+                                        {newAllowanceTreatmentLocked && <p className="mt-1 text-xs text-zinc-500">This statutory classification is always taxable; change the controlled classification to correct a miscoding.</p>}
+                                    </div>
+                                </div>
+
+                                {newAllowance.taxTreatment === 'partially_taxable' && (
+                                    <div className="mb-3">
+                                        <label className="text-xs text-zinc-500 block mb-1">Taxable percentage</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="99"
+                                            value={newAllowance.taxablePercentage}
+                                            onChange={(e) => setNewAllowance({ ...newAllowance, taxablePercentage: Number(e.target.value) })}
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                        />
+                                    </div>
+                                )}
+
+                                {newAllowance.taxTreatment !== 'jurisdiction_default' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                                        <div>
+                                            <label className="text-xs text-zinc-400 block mb-1">Legal reason</label>
+                                            <input
+                                                value={newAllowance.taxAuthorityReason}
+                                                onChange={(e) => setNewAllowance({ ...newAllowance, taxAuthorityReason: e.target.value })}
+                                                placeholder="Why this treatment applies"
+                                                className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-zinc-400 block mb-1">Evidence reference</label>
+                                            <input
+                                                value={newAllowance.taxEvidenceReference}
+                                                onChange={(e) => setNewAllowance({ ...newAllowance, taxEvidenceReference: e.target.value })}
+                                                placeholder="Policy, ruling, or document"
+                                                className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="grid grid-cols-2 gap-3 mb-4">
                                     <div>
@@ -1887,6 +2222,185 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                 >
                                     <Plus className="w-4 h-4" />
                                     Add Allowance
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Taxable and non-taxable benefits */}
+                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-6">
+                            <div className="flex items-start gap-3 mb-6">
+                                <FileText className="w-5 h-5 mt-0.5 text-amber-400" />
+                                <div>
+                                    <h3 className="text-lg font-semibold text-zinc-200">Benefits and benefits in kind</h3>
+                                    <p className="text-sm text-zinc-500 mt-1">Record fair value separately from cash pay and apply the jurisdiction rule or a documented override.</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3 mb-6">
+                                {(formData.benefitItems || []).map((benefit: any, idx: number) => (
+                                    <div key={benefit._id || `${benefit.classificationCode}-${idx}`} className="flex flex-col gap-3 bg-zinc-800/40 p-3 rounded-lg border border-zinc-700/50 sm:flex-row sm:items-center sm:justify-between">
+                                        <div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="font-medium text-zinc-200">{benefit.name}</span>
+                                                <span className="text-[10px] bg-zinc-900/60 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-700/50">
+                                                    {benefit.classificationCode || 'Unclassified'}
+                                                </span>
+                                                <span className="text-[10px] bg-zinc-900/60 text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-700/50">
+                                                    {taxTreatmentLabels[(benefit.taxTreatment || 'jurisdiction_default') as PayComponentTaxTreatment] || 'Review treatment'}
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-zinc-500 mt-1">
+                                                Fair value {formatCurrencyAmount(benefit.fairValue || 0, formData.currency)}
+                                                <span className="ml-2">{benefit.cashPayable ? 'Included in cash pay' : 'Non-cash benefit'}</span>
+                                                {Number(benefit.employerPaidAmount || 0) > 0 && <span className="ml-2">Employer paid {formatCurrencyAmount(benefit.employerPaidAmount, formData.currency)}</span>}
+                                            </div>
+                                            {benefit.taxTreatment === 'partially_taxable' && <p className="mt-1 text-xs text-zinc-500">{Number(benefit.taxablePercentage || 0)}% taxable</p>}
+                                            {Array.isArray(benefit.taxTreatmentOverrides) && benefit.taxTreatmentOverrides.length > 0 ? (
+                                                <p className="mt-1 text-xs text-amber-300">{benefit.taxTreatmentOverrides.length} month-specific tax rule{benefit.taxTreatmentOverrides.length === 1 ? '' : 's'}</p>
+                                            ) : null}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeBenefit(idx)}
+                                            className="self-end text-zinc-500 hover:text-red-400 p-2 transition-colors sm:self-auto"
+                                            aria-label={`Remove ${benefit.name || 'benefit'}`}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ))}
+                                {(formData.benefitItems || []).length === 0 && (
+                                    <p className="text-sm text-zinc-500 text-center py-2">No benefits configured</p>
+                                )}
+                            </div>
+
+                            <div className="bg-zinc-800/20 rounded-lg p-4 border border-zinc-700/50">
+                                <h4 className="text-sm font-medium text-zinc-300 mb-3">Add benefit</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div>
+                                        <label className="text-xs text-zinc-500 block mb-1">Name</label>
+                                        <input
+                                            value={newBenefit.name}
+                                            onChange={(e) => setNewBenefit({ ...newBenefit, name: e.target.value })}
+                                            placeholder="e.g. Company car"
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-zinc-500 block mb-1">Tax classification</label>
+                                        <input
+                                            list="payroll-benefit-classifications"
+                                            value={newBenefit.classificationCode}
+                                            onChange={(e) => {
+                                                const classificationCode = e.target.value.toLowerCase();
+                                                setNewBenefit({
+                                                    ...newBenefit,
+                                                    classificationCode,
+                                                    taxTreatment: isStatutorilyTaxableClassification(classificationCode)
+                                                        ? 'jurisdiction_default'
+                                                        : newBenefit.taxTreatment,
+                                                    overridePeriodKey: isStatutorilyTaxableClassification(classificationCode)
+                                                        ? ''
+                                                        : newBenefit.overridePeriodKey,
+                                                });
+                                            }}
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"
+                                        />
+                                        <datalist id="payroll-benefit-classifications">
+                                            <option value="benefit_in_kind" />
+                                            <option value="company_car" />
+                                            <option value="housing_benefit" />
+                                            <option value="cheap_loan" />
+                                            <option value="phone_benefit" />
+                                            <option value="employer_medical_cover" />
+                                            <option value="employer_meal" />
+                                            <option value="business_expense_reimbursement" />
+                                            <option value="statutory_reimbursement" />
+                                        </datalist>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                    <div>
+                                        <label className="text-xs text-zinc-500 block mb-1">Fair value</label>
+                                        <input type="number" min="0" step="0.01" value={newBenefit.fairValue}
+                                            onChange={(e) => setNewBenefit({ ...newBenefit, fairValue: Number(e.target.value) })}
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-zinc-500 block mb-1">Employer-paid amount</label>
+                                        <input type="number" min="0" step="0.01" value={newBenefit.employerPaidAmount}
+                                            onChange={(e) => setNewBenefit({ ...newBenefit, employerPaidAmount: Number(e.target.value) })}
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" />
+                                    </div>
+                                    <label className="mt-5 flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200">
+                                        <input type="checkbox" checked={newBenefit.cashPayable}
+                                            onChange={(e) => setNewBenefit({ ...newBenefit, cashPayable: e.target.checked })}
+                                            className="rounded bg-zinc-950 border-zinc-700" />
+                                        Include in cash pay
+                                    </label>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div>
+                                        <label className="text-xs text-zinc-500 block mb-1">Tax treatment</label>
+                                        <select value={newBenefit.taxTreatment}
+                                            onChange={(e) => setNewBenefit({ ...newBenefit, taxTreatment: e.target.value as PayComponentTaxTreatment })}
+                                            disabled={newBenefitTreatmentLocked}
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200">
+                                            {Object.entries(taxTreatmentLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                        </select>
+                                        {newBenefitTreatmentLocked && <p className="mt-1 text-xs text-zinc-500">This statutory classification is always taxable and cannot be reduced by an employee or monthly override.</p>}
+                                    </div>
+                                    {newBenefit.taxTreatment === 'partially_taxable' ? (
+                                        <div>
+                                            <label className="text-xs text-zinc-500 block mb-1">Taxable percentage</label>
+                                            <input type="number" min="1" max="99" value={newBenefit.taxablePercentage}
+                                                onChange={(e) => setNewBenefit({ ...newBenefit, taxablePercentage: Number(e.target.value) })}
+                                                className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" />
+                                        </div>
+                                    ) : <div />}
+                                </div>
+
+                                {newBenefit.taxTreatment !== 'jurisdiction_default' && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                                        <div>
+                                            <label className="text-xs text-zinc-400 block mb-1">Legal reason</label>
+                                            <input value={newBenefit.taxAuthorityReason}
+                                                onChange={(e) => setNewBenefit({ ...newBenefit, taxAuthorityReason: e.target.value })}
+                                                placeholder="Why this treatment applies"
+                                                className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-zinc-400 block mb-1">Evidence reference</label>
+                                            <input value={newBenefit.taxEvidenceReference}
+                                                onChange={(e) => setNewBenefit({ ...newBenefit, taxEvidenceReference: e.target.value })}
+                                                placeholder="Policy, ruling, or document"
+                                                className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div><label className="text-xs text-zinc-500 block mb-1">Effective from (optional)</label><input type="date" value={newBenefit.effectiveFrom} onChange={(e) => setNewBenefit({ ...newBenefit, effectiveFrom: e.target.value })} className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" /></div>
+                                    <div><label className="text-xs text-zinc-500 block mb-1">Effective to (optional)</label><input type="date" value={newBenefit.effectiveTo} onChange={(e) => setNewBenefit({ ...newBenefit, effectiveTo: e.target.value })} className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" /></div>
+                                </div>
+
+                                {!newBenefitTreatmentLocked && <details className="mb-4 rounded-lg border border-zinc-700 bg-zinc-900/60 p-3">
+                                    <summary className="cursor-pointer text-sm font-medium text-zinc-300">Month-specific tax treatment</summary>
+                                    <p className="mt-1 text-xs text-zinc-500">Optional. Use this when one payroll month has a different documented treatment.</p>
+                                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div><label className="text-xs text-zinc-500 block mb-1">Payroll month</label><input type="month" value={newBenefit.overridePeriodKey} onChange={(e) => setNewBenefit({ ...newBenefit, overridePeriodKey: e.target.value })} className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" /></div>
+                                        <div><label className="text-xs text-zinc-500 block mb-1">Treatment</label><select value={newBenefit.overrideTaxTreatment} onChange={(e) => setNewBenefit({ ...newBenefit, overrideTaxTreatment: e.target.value as Exclude<PayComponentTaxTreatment, 'jurisdiction_default'> })} className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200"><option value="taxable">Taxable</option><option value="non_taxable">Non-taxable</option><option value="partially_taxable">Partially taxable</option></select></div>
+                                        {newBenefit.overrideTaxTreatment === 'partially_taxable' ? <div><label className="text-xs text-zinc-500 block mb-1">Taxable percentage</label><input type="number" min="1" max="99" value={newBenefit.overrideTaxablePercentage} onChange={(e) => setNewBenefit({ ...newBenefit, overrideTaxablePercentage: Number(e.target.value) })} className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" /></div> : <div />}
+                                        <div className="md:col-span-1"><label className="text-xs text-zinc-500 block mb-1">Legal reason</label><input value={newBenefit.overrideAuthorityReason} onChange={(e) => setNewBenefit({ ...newBenefit, overrideAuthorityReason: e.target.value })} className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" /></div>
+                                        <div className="md:col-span-2"><label className="text-xs text-zinc-500 block mb-1">Evidence reference</label><input value={newBenefit.overrideEvidenceReference} onChange={(e) => setNewBenefit({ ...newBenefit, overrideEvidenceReference: e.target.value })} className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200" /></div>
+                                    </div>
+                                </details>}
+
+                                <button type="button" onClick={addBenefit}
+                                    className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-lg text-sm text-zinc-200 transition-colors flex items-center justify-center gap-2">
+                                    <Plus className="w-4 h-4" /> Add benefit
                                 </button>
                             </div>
                         </div>
@@ -2246,7 +2760,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             </p>
                                             {selectedJurisdictionVersion ? (
                                                 <p className="text-xs text-zinc-500 mt-2">
-                                                    Version {selectedJurisdictionVersion.versionNumber}: {selectedJurisdictionVersion.label}
+                                                    Currently published: v{selectedJurisdictionVersion.versionNumber} · {selectedJurisdictionVersion.label}. Employee profiles do not pin a version.
                                                 </p>
                                             ) : null}
                                         </div>
@@ -2435,7 +2949,8 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                     <div>
                                         <h4 className="text-sm font-semibold text-zinc-300">Employee Tax Inputs</h4>
                                         <p className="text-xs text-zinc-500 mt-1">
-                                            These fields come from the selected jurisdiction rule and are used directly in payroll tax formulas.
+                                            These fields come from the selected jurisdiction rule. Currency values default to the pack calculation currency
+                                            {selectedJurisdictionVersion?.calculationCurrency ? ` (${selectedJurisdictionVersion.calculationCurrency})` : ''}, not the employee payment currency, unless the field says otherwise.
                                         </p>
                                     </div>
                                     <Link
@@ -2464,6 +2979,14 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                             const inputType = field.type === 'date'
                                                 ? 'date'
                                                 : (isNumericField ? 'number' : 'text');
+                                            const fieldCurrencyCode = resolveTaxFieldCurrencyCode(field, {
+                                                calculationCurrency: selectedJurisdictionVersion?.calculationCurrency,
+                                                payrollCurrency: formData.currency,
+                                            });
+                                            const fieldCurrencyHelp = describeTaxFieldCurrency(field, {
+                                                calculationCurrency: selectedJurisdictionVersion?.calculationCurrency,
+                                                payrollCurrency: formData.currency,
+                                            });
 
                                             if (field.type === 'boolean') {
                                                 return (
@@ -2489,6 +3012,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                                 <div key={field.key}>
                                                     <label className="block text-sm font-medium text-zinc-400 mb-1.5">
                                                         {field.label}
+                                                        {field.type === 'currency' && fieldCurrencyCode ? ` (${fieldCurrencyCode})` : null}
                                                         {field.required ? <span className="text-amber-400 ml-1">*</span> : null}
                                                     </label>
                                                     {field.type === 'select' ? (
@@ -2519,6 +3043,7 @@ export default function EmployeeEditPage({ params }: { params: { id: string } })
                                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
                                                         />
                                                     )}
+                                                    {field.type === 'currency' ? <p className="text-xs text-amber-200/80 mt-1.5">{fieldCurrencyHelp}</p> : null}
                                                     {field.helpText ? <p className="text-xs text-zinc-500 mt-1.5">{field.helpText}</p> : null}
                                                 </div>
                                             );

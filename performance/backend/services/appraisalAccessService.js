@@ -328,8 +328,18 @@ function isAssignedManager(req, appraisal) {
     (requesterEmail && assignedManagerEmail && requesterEmail === assignedManagerEmail);
 }
 
+function appraisalBelongsToCurrentOrganization(req, appraisal) {
+  const currentOrganizationId = pickCurrentOrganizationId(req);
+  const appraisalOrganizationId = normalizeId(appraisal?.organizationId);
+  return Boolean(
+    currentOrganizationId
+      && appraisalOrganizationId
+      && currentOrganizationId === appraisalOrganizationId
+  );
+}
+
 async function canManageAppraisal(req, appraisal) {
-  if (!appraisal) return false;
+  if (!appraisal || !appraisalBelongsToCurrentOrganization(req, appraisal)) return false;
   if (isAssignedManager(req, appraisal)) return true;
 
   return canAppraiseEmployee(req, {
@@ -348,5 +358,6 @@ module.exports = {
   resolveAppraisalAccessScope,
   canAppraiseEmployee,
   canManageAppraisal,
+  appraisalBelongsToCurrentOrganization,
   isAssignedManager
 };

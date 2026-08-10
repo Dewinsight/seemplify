@@ -3,6 +3,35 @@ import { resolvePerformanceApiUrl } from './runtimeConfig';
 
 const API_URL = resolvePerformanceApiUrl();
 
+export const PERFORMANCE_AI_ATTENTION_EVENT = 'performance-ai-attention';
+
+export type PerformanceAIErrorDetail = {
+  code: string;
+  message: string;
+  status: number;
+  retryAfterSeconds?: number;
+};
+
+function actionableAIError(error: AxiosError): PerformanceAIErrorDetail | null {
+  const payload = error.response?.data as {
+    code?: unknown; error?: unknown; message?: unknown; retryAfterSeconds?: unknown;
+  } | undefined;
+  const code = typeof payload?.code === 'string' ? payload.code : '';
+  if (!/^(?:CHATGPT_|AI_|SHARED_AI_)/.test(code)) return null;
+  const message = typeof payload?.error === 'string'
+    ? payload.error
+    : typeof payload?.message === 'string'
+      ? payload.message
+      : 'Review your AI settings before trying this action again.';
+  const retryAfterSeconds = Number(payload?.retryAfterSeconds) || 0;
+  return {
+    code,
+    message,
+    status: Number(error.response?.status) || 500,
+    ...(retryAfterSeconds > 0 ? { retryAfterSeconds } : {})
+  };
+}
+
 // Create axios instance with credentials
 const api = axios.create({
   baseURL: API_URL,
@@ -33,7 +62,14 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
+    const aiAttention = actionableAIError(error);
+    if (aiAttention && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent<PerformanceAIErrorDetail>(
+        PERFORMANCE_AI_ATTENTION_EVENT,
+        { detail: aiAttention }
+      ));
+    }
+    if (error.response?.status === 401 && !aiAttention) {
       // Only redirect if not already on login page AND not in the middle of OIDC callback
       if (typeof window !== 'undefined') {
         const isLoginPage = window.location.pathname === '/login';

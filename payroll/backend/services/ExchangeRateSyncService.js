@@ -158,12 +158,17 @@ class ExchangeRateSyncService {
             targetCurrency: { $in: allTargetCodes },
             isActive: true,
             source: 'manual',
+            effectiveDate: { $lte: now },
+            $or: [
+              { expiresAt: { $exists: false } },
+              { expiresAt: null },
+              { expiresAt: { $gte: now } },
+            ],
           }).select('targetCurrency -_id').lean()).map((rate) => rate.targetCurrency)
         )
         : new Set();
 
       const providerEffectiveDate = providerPayload.lastUpdateAt || now;
-      const operations = [];
       let syncedCount = 0;
       let skippedCount = 0;
 
@@ -178,46 +183,21 @@ class ExchangeRateSyncService {
           continue;
         }
 
-        operations.push({
-          updateMany: {
-            filter: {
-              organizationId,
-              baseCurrency: providerPayload.baseCurrency,
-              targetCurrency,
-              isActive: true,
-              source: { $ne: 'manual' },
-            },
-            update: {
-              $set: {
-                isActive: false,
-                updatedAt: now,
-              },
-            },
-          },
-        });
-        operations.push({
-          insertOne: {
-            document: {
-              organizationId,
-              baseCurrency: providerPayload.baseCurrency,
-              targetCurrency,
-              rate,
-              effectiveDate: providerEffectiveDate,
-              source: 'api',
-              notes: `Synced from ${PROVIDER_CONFIG.name} (${PROVIDER_CONFIG.homepageUrl})`,
-              createdBy: metadata.userId || 'system',
-              createdByName: metadata.name || 'System',
-              isActive: true,
-              createdAt: now,
-              updatedAt: now,
-            },
-          },
-        });
+        await currencyService.setRate(
+          organizationId,
+          providerPayload.baseCurrency,
+          targetCurrency,
+          rate,
+          {
+            effectiveDate: providerEffectiveDate,
+            source: 'api',
+            preserveManualOverrides,
+            notes: `Synced from ${PROVIDER_CONFIG.name} (${PROVIDER_CONFIG.homepageUrl})`,
+            createdBy: metadata.userId || 'system',
+            createdByName: metadata.name || 'System',
+          }
+        );
         syncedCount += 1;
-      }
-
-      if (operations.length > 0) {
-        await ExchangeRate.bulkWrite(operations, { ordered: false });
       }
 
       const status = skippedCount > 0 ? 'partial' : 'success';

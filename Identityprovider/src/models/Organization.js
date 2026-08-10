@@ -570,13 +570,16 @@ OrganizationSchema.methods.removeBranch = async function(branchId) {
   return branch
 }
 
-OrganizationSchema.methods.getDerivedMemberDepartmentId = async function(accountId) {
+OrganizationSchema.methods.getDerivedMemberDepartmentId = async function(accountId, options = {}) {
+  const session = options.session || null
   const Team = mongoose.model('AiinTeam')
-  const teams = await Team.find({
+  let teamQuery = Team.find({
     organization: this._id,
     'members.account': accountId,
     'members.status': 'active'
-  }).select('department').lean()
+  }).select('department')
+  if (session) teamQuery = teamQuery.session(session)
+  const teams = await teamQuery.lean()
 
   const departmentIds = Array.from(new Set(
     teams
@@ -587,7 +590,8 @@ OrganizationSchema.methods.getDerivedMemberDepartmentId = async function(account
   return departmentIds[0] || null
 }
 
-OrganizationSchema.methods.syncMemberDepartmentFromTeams = async function(accountId) {
+OrganizationSchema.methods.syncMemberDepartmentFromTeams = async function(accountId, options = {}) {
+  const session = options.session || null
   const member = this.members.find(
     m => m.account.toString() === accountId.toString()
   )
@@ -596,16 +600,17 @@ OrganizationSchema.methods.syncMemberDepartmentFromTeams = async function(accoun
     return null
   }
 
-  const departmentId = await this.getDerivedMemberDepartmentId(accountId)
+  const departmentId = await this.getDerivedMemberDepartmentId(accountId, options)
   member.department = departmentId
 
   const Account = mongoose.model('AiinAccount')
   await Account.updateOne(
     { _id: accountId, 'organizations.organization': this._id },
-    { $set: { 'organizations.$.department': departmentId } }
+    { $set: { 'organizations.$.department': departmentId } },
+    session ? { session } : undefined
   )
 
-  await this.save()
+  await this.save(session ? { session } : undefined)
   return departmentId
 }
 
@@ -747,7 +752,8 @@ OrganizationSchema.methods.addMember = async function(accountId, role = 'recruit
 
 // Remove member from organization
 // CRITICAL: Prevent removing last owner
-OrganizationSchema.methods.removeMember = async function(accountId) {
+OrganizationSchema.methods.removeMember = async function(accountId, options = {}) {
+  const session = options.session || null
   const member = this.members.find(
     m => m.account.toString() === accountId.toString()
   )
@@ -767,7 +773,7 @@ OrganizationSchema.methods.removeMember = async function(accountId) {
   member.status = 'inactive'
   member.updatedAt = new Date()
 
-  await this.save()
+  await this.save(session ? { session } : undefined)
 
   // Preserve the membership history on the account while revoking access.
   const Account = mongoose.model('AiinAccount')
@@ -777,11 +783,13 @@ OrganizationSchema.methods.removeMember = async function(accountId) {
       $set: {
         'organizations.$.isActive': false
       }
-    }
+    },
+    session ? { session } : undefined
   )
   await Account.updateOne(
     { _id: accountId, currentOrganization: this._id },
-    { $set: { currentOrganization: null } }
+    { $set: { currentOrganization: null } },
+    session ? { session } : undefined
   )
 
   return this
@@ -789,7 +797,8 @@ OrganizationSchema.methods.removeMember = async function(accountId) {
 
 // Update member role
 // CRITICAL: Prevent demoting last owner
-OrganizationSchema.methods.updateMemberRole = async function(accountId, newRole, updatedBy) {
+OrganizationSchema.methods.updateMemberRole = async function(accountId, newRole, updatedBy, options = {}) {
+  const session = options.session || null
   const member = this.members.find(
     m => m.account.toString() === accountId.toString()
   )
@@ -820,19 +829,21 @@ OrganizationSchema.methods.updateMemberRole = async function(accountId, newRole,
   member.updatedAt = new Date()
   member.updatedBy = updatedBy
 
-  await this.save()
+  await this.save(session ? { session } : undefined)
 
   // Update Account's organizations array
   const Account = mongoose.model('AiinAccount')
   await Account.updateOne(
     { _id: accountId, 'organizations.organization': this._id },
-    { $set: { 'organizations.$.role': newRole } }
+    { $set: { 'organizations.$.role': newRole } },
+    session ? { session } : undefined
   )
 
   return this
 }
 
-OrganizationSchema.methods.updateMemberDetails = async function(accountId, updates = {}, updatedBy) {
+OrganizationSchema.methods.updateMemberDetails = async function(accountId, updates = {}, updatedBy, options = {}) {
+  const session = options.session || null
   const member = this.members.find(
     m => m.account.toString() === accountId.toString()
   )
@@ -865,7 +876,8 @@ OrganizationSchema.methods.updateMemberDetails = async function(accountId, updat
     const Account = mongoose.model('AiinAccount')
     await Account.updateOne(
       { _id: accountId, 'organizations.organization': this._id },
-      { $set: { 'organizations.$.branch': branchId } }
+      { $set: { 'organizations.$.branch': branchId } },
+      session ? { session } : undefined
     )
   }
 
@@ -876,14 +888,15 @@ OrganizationSchema.methods.updateMemberDetails = async function(accountId, updat
     const Account = mongoose.model('AiinAccount')
     await Account.updateOne(
       { _id: accountId, 'organizations.organization': this._id },
-      { $set: { 'organizations.$.appAccess': normalizedAppAccess } }
+      { $set: { 'organizations.$.appAccess': normalizedAppAccess } },
+      session ? { session } : undefined
     )
   }
 
   member.updatedAt = new Date()
   member.updatedBy = updatedBy
 
-  await this.save()
+  await this.save(session ? { session } : undefined)
 
   return member
 }

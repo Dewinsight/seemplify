@@ -5,6 +5,7 @@ const PayrollRun = require('../models/PayrollRun');
 const Payslip = require('../models/Payslip');
 const PayrollProfile = require('../models/PayrollProfile');
 const { buildPayrollRegisterCsv, buildPayrollRegisterWorkbook } = require('../services/payrollExportService');
+const payrollReportingService = require('../services/PayrollReportingService');
 
 // RBAC
 const { requireAuth, requireHRAdmin } = require('../middleware/rbac');
@@ -23,9 +24,30 @@ function getUserInfo(req) {
 
 const APPROVED_PAYSLIP_STATUSES = ['approved', 'exported', 'paid'];
 
-const sumByType = (items, type) => (items || [])
-  .filter(i => i && i.type === type)
-  .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+function reportingMetadata(reporting) {
+  return {
+    currency: reporting.reportingCurrency,
+    reportingCurrency: reporting.reportingCurrency,
+    hasAggregateTotals: reporting.hasAggregateTotals,
+    isMultiCurrency: reporting.isMultiCurrency,
+    currencies: reporting.currencies,
+    unconvertedCurrencies: reporting.unconvertedCurrencies,
+    conversionWarnings: reporting.conversionWarnings,
+  };
+}
+
+function aggregatePreparedSubset(prepared, rows) {
+  return payrollReportingService.aggregatePreparedRows(rows, {
+    reportingCurrency: prepared.reportingCurrency,
+    reportingMinorUnits: prepared.reportingMinorUnits,
+  });
+}
+
+function roundReportingAmount(value, minorUnits = 2) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return null;
+  const factor = 10 ** minorUnits;
+  return Math.round((Number(value) + Number.EPSILON) * factor) / factor;
+}
 
 /**
  * GET /api/payroll/reports/summary
@@ -50,86 +72,105 @@ router.get('/summary', requireHRAdmin, async (req, res) => {
       isActive: true,
     }).lean();
 
-    const totals = payslips.reduce((acc, p) => {
-      acc.totalPayroll += Number(p.netPay) || 0;
-      acc.totalGross += Number(p.earningsSummary?.grossPay) || 0;
-      acc.totalDeductions += Number(p.deductionsSummary?.totalDeductions) || 0;
-      acc.totalTax += Number(p.taxBreakdown?.taxAmount) || sumByType(p.deductions, 'income_tax');
-      return acc;
-    }, { totalPayroll: 0, totalGross: 0, totalDeductions: 0, totalTax: 0 });
+    const reporting = await payrollReportingService.preparePayslips(
+      organizationId,
+      payslips
+    );
 
-    // Group by department (net payroll)
+    // Group by department in the reporting currency, retaining native-currency detail.
     const deptMap = new Map();
-    payslips.forEach(p => {
-      const dept = p.employeeSnapshot?.department || 'Unassigned';
-      const currency = p.currency || 'USD';
-      const key = `${dept}|${currency}`;
-      const current = deptMap.get(key) || { department: dept, currency, total: 0, count: 0 };
-      current.total += Number(p.netPay) || 0;
-      current.count += 1;
-      deptMap.set(key, current);
+    reporting.rows.forEach((row) => {
+      const department = row.payslip?.employeeSnapshot?.department || 'Unassigned';
+      const rows = deptMap.get(department) || [];
+      rows.push(row);
+      deptMap.set(department, rows);
     });
 
-    const byDepartment = Array.from(deptMap.values())
-      .sort((a, b) => b.total - a.total);
+    const byDepartment = Array.from(deptMap.entries()).map(([department, rows]) => {
+      const departmentReporting = aggregatePreparedSubset(reporting, rows);
+      return {
+        department,
+        currency: reporting.reportingCurrency,
+        total: departmentReporting.totals.netPay,
+        count: departmentReporting.employeeCount,
+        currencyBreakdown: departmentReporting.currencyBreakdown,
+        ...reportingMetadata(departmentReporting),
+      };
+    }).sort((a, b) => (b.total ?? -Infinity) - (a.total ?? -Infinity));
 
     // Group by month
     const monthMap = new Map();
-    payslips.forEach(p => {
-      const monthNum = p.payPeriod?.month;
+    reporting.rows.forEach((row) => {
+      const monthNum = row.payslip?.payPeriod?.month;
       if (!monthNum) return;
-      const monthName = new Date(y, monthNum - 1, 1).toLocaleString('default', { month: 'short' });
-      const currency = p.currency || 'USD';
-      const key = `${monthNum}|${currency}`;
-      const current = monthMap.get(key) || { monthNum, month: monthName, currency, gross: 0, net: 0, deductions: 0 };
-      current.gross += Number(p.earningsSummary?.grossPay) || 0;
-      current.net += Number(p.netPay) || 0;
-      current.deductions += Number(p.deductionsSummary?.totalDeductions) || 0;
-      monthMap.set(key, current);
+      const rows = monthMap.get(monthNum) || [];
+      rows.push(row);
+      monthMap.set(monthNum, rows);
     });
 
-    const byMonth = Array.from(monthMap.values()).sort((a, b) => a.monthNum - b.monthNum || a.currency.localeCompare(b.currency));
+    const byMonth = Array.from(monthMap.entries()).map(([monthNum, rows]) => {
+      const monthReporting = aggregatePreparedSubset(reporting, rows);
+      return {
+        monthNum,
+        month: new Date(y, monthNum - 1, 1).toLocaleString('default', { month: 'short' }),
+        currency: reporting.reportingCurrency,
+        gross: monthReporting.totals.grossPay,
+        net: monthReporting.totals.netPay,
+        deductions: monthReporting.totals.totalDeductions,
+        tax: monthReporting.totals.totalTax,
+        currencyBreakdown: monthReporting.currencyBreakdown,
+        ...reportingMetadata(monthReporting),
+      };
+    }).sort((a, b) => a.monthNum - b.monthNum);
 
     const employmentMap = new Map();
-    payslips.forEach(p => {
-      const employmentType = p.employeeSnapshot?.employmentType || 'unassigned';
-      const currency = p.currency || 'USD';
-      const key = `${employmentType}|${currency}`;
-      const current = employmentMap.get(key) || { employmentType, currency, people: new Set(), gross: 0, net: 0 };
-      current.people.add(String(p.userId));
-      current.gross += Number(p.earningsSummary?.grossPay) || 0;
-      current.net += Number(p.netPay) || 0;
-      employmentMap.set(key, current);
+    reporting.rows.forEach((row) => {
+      const employmentType = row.payslip?.employeeSnapshot?.employmentType || 'unassigned';
+      const rows = employmentMap.get(employmentType) || [];
+      rows.push(row);
+      employmentMap.set(employmentType, rows);
     });
-    const byEmploymentType = Array.from(employmentMap.values()).map(item => ({
-      employmentType: item.employmentType,
-      currency: item.currency,
-      count: item.people.size,
-      gross: item.gross,
-      net: item.net,
-    })).sort((a, b) => b.gross - a.gross);
+    const byEmploymentType = Array.from(employmentMap.entries()).map(([employmentType, rows]) => {
+      const employmentReporting = aggregatePreparedSubset(reporting, rows);
+      return {
+        employmentType,
+        currency: reporting.reportingCurrency,
+        count: employmentReporting.employeeCount,
+        gross: employmentReporting.totals.grossPay,
+        net: employmentReporting.totals.netPay,
+        currencyBreakdown: employmentReporting.currencyBreakdown,
+        ...reportingMetadata(employmentReporting),
+      };
+    }).sort((a, b) => (b.gross ?? -Infinity) - (a.gross ?? -Infinity));
 
-    const currencyMap = new Map();
-    payslips.forEach(p => {
-      const currency = p.currency || 'USD';
-      const current = currencyMap.get(currency) || { currency, gross: 0, deductions: 0, net: 0, payslips: 0 };
-      current.gross += Number(p.earningsSummary?.grossPay) || 0;
-      current.deductions += Number(p.deductionsSummary?.totalDeductions) || 0;
-      current.net += Number(p.netPay) || 0;
-      current.payslips += 1;
-      currencyMap.set(currency, current);
-    });
-    const currencyBreakdown = Array.from(currencyMap.values()).sort((a, b) => a.currency.localeCompare(b.currency));
+    const currencyBreakdown = reporting.currencyBreakdown.map((entry) => ({
+      currency: entry.currency,
+      gross: entry.grossPay,
+      deductions: entry.totalDeductions,
+      tax: entry.totalTax,
+      net: entry.netPay,
+      employerContributions: entry.totalEmployerContributions,
+      employerCost: entry.totalEmployerCost,
+      payslips: entry.payslipCount,
+      employees: entry.employeeCount,
+    }));
 
     const paidEmployeeCount = new Set(payslips.map(p => String(p.userId))).size;
     res.json({
-      totalPayroll: totals.totalPayroll,
-      totalGross: totals.totalGross,
-      totalDeductions: totals.totalDeductions,
-      totalTax: totals.totalTax,
+      totalPayroll: reporting.totals.netPay,
+      totalGross: reporting.totals.grossPay,
+      totalDeductions: reporting.totals.totalDeductions,
+      totalTax: reporting.totals.totalTax,
+      totalEmployerContributions: reporting.totals.totalEmployerContributions,
+      totalEmployerCost: reporting.totals.totalEmployerCost,
       totalEmployees: paidEmployeeCount || profiles.length,
-      avgSalary: payslips.length > 0 ? Math.round(totals.totalPayroll / payslips.length) : 0,
-      currency: currencyBreakdown.length === 1 ? currencyBreakdown[0].currency : 'MIXED',
+      avgSalary: reporting.totals.netPay === null || payslips.length === 0
+        ? (payslips.length === 0 ? 0 : null)
+        : roundReportingAmount(
+          reporting.totals.netPay / payslips.length,
+          reporting.reportingMinorUnits
+        ),
+      ...reportingMetadata(reporting),
       currencyBreakdown,
       byDepartment,
       byMonth,
@@ -161,34 +202,53 @@ router.get('/department', requireHRAdmin, async (req, res) => {
     if (month) query['payPeriod.month'] = parseInt(month);
 
     const payslips = await Payslip.find(query).lean();
+    const reporting = await payrollReportingService.preparePayslips(
+      organizationId,
+      payslips
+    );
 
     const deptMap = new Map();
-    payslips.forEach(p => {
-      const dept = p.employeeSnapshot?.department || 'Unassigned';
-      if (!deptMap.has(dept)) {
-        deptMap.set(dept, {
-          department: dept,
-          employees: [],
-          totalGross: 0,
-          totalNet: 0,
-          totalDeductions: 0,
-          totalTax: 0,
-        });
-      }
-      const data = deptMap.get(dept);
-      data.employees.push({
-        name: p.employeeSnapshot?.name || 'Unknown',
-        grossPay: Number(p.earningsSummary?.grossPay) || 0,
-        netPay: Number(p.netPay) || 0,
-      });
-      data.totalGross += Number(p.earningsSummary?.grossPay) || 0;
-      data.totalNet += Number(p.netPay) || 0;
-      data.totalDeductions += Number(p.deductionsSummary?.totalDeductions) || 0;
-      data.totalTax += Number(p.taxBreakdown?.taxAmount) || sumByType(p.deductions, 'income_tax');
+    reporting.rows.forEach((row) => {
+      const department = row.payslip?.employeeSnapshot?.department || 'Unassigned';
+      const rows = deptMap.get(department) || [];
+      rows.push(row);
+      deptMap.set(department, rows);
     });
 
+    const departments = Array.from(deptMap.entries()).map(([department, rows]) => {
+      const departmentReporting = aggregatePreparedSubset(reporting, rows);
+      return {
+        department,
+        employees: rows.map((row) => ({
+          name: row.payslip?.employeeSnapshot?.name || 'Unknown',
+          userId: row.payslip?.userId,
+          grossPay: row.convertedAmounts?.grossPay ?? null,
+          netPay: row.convertedAmounts?.netPay ?? null,
+          currency: reporting.reportingCurrency,
+          sourceCurrency: row.sourceCurrency,
+          sourceGrossPay: row.sourceAmounts.grossPay,
+          sourceNetPay: row.sourceAmounts.netPay,
+          paymentDate: row.paymentDate?.toISOString() || null,
+          exchangeRate: row.reportingRate,
+          exchangeRateMetadata: row.rateMetadata,
+          conversionWarning: row.conversionWarning,
+        })),
+        totalGross: departmentReporting.totals.grossPay,
+        totalNet: departmentReporting.totals.netPay,
+        totalDeductions: departmentReporting.totals.totalDeductions,
+        totalTax: departmentReporting.totals.totalTax,
+        totalEmployerContributions: departmentReporting.totals.totalEmployerContributions,
+        totalEmployerCost: departmentReporting.totals.totalEmployerCost,
+        employeeCount: departmentReporting.employeeCount,
+        currencyBreakdown: departmentReporting.currencyBreakdown,
+        ...reportingMetadata(departmentReporting),
+      };
+    }).sort((a, b) => (b.totalNet ?? -Infinity) - (a.totalNet ?? -Infinity));
+
     res.json({
-      departments: Array.from(deptMap.values()).sort((a, b) => b.totalNet - a.totalNet),
+      departments,
+      ...reportingMetadata(reporting),
+      currencyBreakdown: reporting.currencyBreakdown,
       year: y,
       month: month ? parseInt(month) : null,
     });
@@ -219,28 +279,38 @@ router.get('/ytd/:userId', requireAuth, async (req, res) => {
       userId,
       'payPeriod.year': y,
       status: { $in: APPROVED_PAYSLIP_STATUSES },
-    }).sort({ 'payPeriod.month': 1 }).lean();
+    }).sort({ 'payPeriod.paymentDate': 1 }).lean();
+    const reporting = await payrollReportingService.preparePayslips(
+      organizationId,
+      payslips
+    );
 
     const ytd = {
-      grossPay: 0,
-      netPay: 0,
-      totalDeductions: 0,
-      totalTax: 0,
+      grossPay: reporting.totals.grossPay,
+      netPay: reporting.totals.netPay,
+      totalDeductions: reporting.totals.totalDeductions,
+      totalTax: reporting.totals.totalTax,
       payslipCount: payslips.length,
-      months: [],
+      ...reportingMetadata(reporting),
+      currencyBreakdown: reporting.currencyBreakdown,
+      months: reporting.rows.map((row) => ({
+        month: row.payslip?.payPeriod?.month,
+        paymentDate: row.paymentDate?.toISOString() || null,
+        grossPay: row.convertedAmounts?.grossPay ?? null,
+        netPay: row.convertedAmounts?.netPay ?? null,
+        deductions: row.convertedAmounts?.totalDeductions ?? null,
+        tax: row.convertedAmounts?.totalTax ?? null,
+        currency: reporting.reportingCurrency,
+        sourceCurrency: row.sourceCurrency,
+        sourceGrossPay: row.sourceAmounts.grossPay,
+        sourceNetPay: row.sourceAmounts.netPay,
+        sourceDeductions: row.sourceAmounts.totalDeductions,
+        sourceTax: row.sourceAmounts.totalTax,
+        exchangeRate: row.reportingRate,
+        exchangeRateMetadata: row.rateMetadata,
+        conversionWarning: row.conversionWarning,
+      })),
     };
-
-    payslips.forEach(p => {
-      ytd.grossPay += Number(p.earningsSummary?.grossPay) || 0;
-      ytd.netPay += Number(p.netPay) || 0;
-      ytd.totalDeductions += Number(p.deductionsSummary?.totalDeductions) || 0;
-      ytd.totalTax += Number(p.taxBreakdown?.taxAmount) || sumByType(p.deductions, 'income_tax');
-      ytd.months.push({
-        month: p.payPeriod?.month,
-        grossPay: Number(p.earningsSummary?.grossPay) || 0,
-        netPay: Number(p.netPay) || 0,
-      });
-    });
 
     res.json({ ...ytd, year: y, userId });
   } catch (err) {

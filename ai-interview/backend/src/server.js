@@ -17,7 +17,8 @@ const {
   makePublicState,
   shouldUseMongo,
   getMongoDbName,
-  canAccessOwnedResource
+  canAccessOwnedResource,
+  isVisibleCandidate
 } = require('./store');
 const { estimateAIInterviewWalletCost, findAIInterviewVoiceOption } = require('./aiInterviewVoiceOptions');
 const azureSpeechTtsService = require('./azureSpeechTtsService');
@@ -85,6 +86,20 @@ function asyncHandler(fn) {
 
 function sendError(res, status, code, message) {
   return res.status(status).json({ error: code, message });
+}
+
+function requireCvIdempotencyKey(req, res, next) {
+  const key = String(req.get('Idempotency-Key') || '').trim();
+  if (!key) {
+    return sendError(
+      res,
+      400,
+      'CV_IDEMPOTENCY_KEY_REQUIRED',
+      'A nonblank Idempotency-Key header is required for CV uploads.'
+    );
+  }
+  req.cvIdempotencyKey = key;
+  return next();
 }
 
 function centsToUsd(cents) {
@@ -212,7 +227,11 @@ function canAccessRecord(user, record) {
 
 function getOwnedRecord(store, collectionName, idValue, user) {
   const record = store[collectionName]?.find((item) => item._id === idValue);
-  if (!record || !canAccessRecord(user, record)) return null;
+  if (
+    !record
+    || (collectionName === 'candidates' && !isVisibleCandidate(record))
+    || !canAccessRecord(user, record)
+  ) return null;
   return record;
 }
 
@@ -326,6 +345,7 @@ function mergeCandidateProfile(candidate, profileInput = {}, metadata = {}) {
 
 function findCandidateByEmailAndJob(store, email, jobId, user) {
   return store.candidates.find((candidate) => (
+    isVisibleCandidate(candidate) &&
     normalizeEmail(candidate.email) === normalizeEmail(email) &&
     candidate.jobId === jobId &&
     canAccessRecord(user, candidate)
@@ -558,6 +578,51 @@ async function completeCvProcessingJob(processingJob, parsed) {
     profile: parsed.profile,
     history: buildCandidateHistory(store, candidate, actor)
   };
+}
+
+async function recoverPendingCandidateDeletions({
+  repository = cvCandidateResults,
+  queueService = cvProcessingQueue,
+  batchSize = 100
+} = {}) {
+  const store = await readStore();
+  const organizationId = store.settings.organizationId || store.settings._id;
+  const safeBatchSize = Math.max(1, Math.min(5_000, Math.floor(Number(batchSize) || 100)));
+  let after = null;
+  let recovered = 0;
+  let failed = 0;
+  while (true) {
+    const pending = await repository.listPendingCandidateDeletions({
+      limit: safeBatchSize,
+      after
+    });
+    if (!pending.length) break;
+    for (const tombstone of pending) {
+      try {
+        await queueService.cancelForCandidate(organizationId, tombstone.candidateId);
+        if (await repository.finishCandidateDeletion(
+          tombstone.candidateId,
+          tombstone.deletionToken
+        )) recovered += 1;
+      } catch (error) {
+        failed += 1;
+        console.error('Pending AI Interview candidate deletion recovery failed:', error.message);
+      }
+    }
+    const last = pending[pending.length - 1];
+    const nextAfter = {
+      requestedAt: last.requestedAt,
+      candidateId: last.candidateId
+    };
+    if (
+      after
+      && String(nextAfter.requestedAt) === String(after.requestedAt)
+      && String(nextAfter.candidateId) === String(after.candidateId)
+    ) break;
+    after = nextAfter;
+    if (pending.length < safeBatchSize) break;
+  }
+  return { recovered, failed };
 }
 
 async function processQueuedScoring() {
@@ -797,14 +862,38 @@ app.patch('/api/jobs/:id', authenticate, asyncHandler(async (req, res) => {
 }));
 
 app.delete('/api/jobs/:id', authenticate, asyncHandler(async (req, res) => {
+  const snapshot = await readStore();
+  const ownedJob = getOwnedRecord(snapshot, 'jobs', req.params.id, req.user);
+  if (!ownedJob) return sendError(res, 404, 'NOT_FOUND', 'Job not found.');
+  if (snapshot.interviews.some((interview) => interview.jobId === ownedJob._id)) {
+    throw new Error('This job already has interviews. Archive it instead of deleting it.');
+  }
+  const organizationId = snapshot.settings.organizationId || snapshot.settings._id;
+  const candidateIds = snapshot.candidates
+    .filter((candidate) => candidate.jobId === ownedJob._id && canAccessRecord(req.user, candidate))
+    .map((candidate) => candidate._id);
+  for (const candidateId of candidateIds) {
+    const deletion = await cvCandidateResults.beginCandidateDeletion(candidateId, {
+      actorId: req.user._id,
+      allowAny: req.user.role === 'admin'
+    });
+    if (!deletion) continue;
+    await cvProcessingQueue.cancelForCandidate(organizationId, candidateId);
+    await cvCandidateResults.finishCandidateDeletion(candidateId, deletion.deletionToken);
+  }
   await mutateStore((store) => {
     const record = getOwnedRecord(store, 'jobs', req.params.id, req.user);
     if (!record) throw new Error('Job not found.');
     if (store.interviews.some((interview) => interview.jobId === record._id)) {
       throw new Error('This job already has interviews. Archive it instead of deleting it.');
     }
+    if (store.candidates.some((candidate) => candidate.jobId === record._id)) {
+      const error = new Error('A candidate changed while the job was being deleted. Try again.');
+      error.code = 'JOB_DELETE_CONFLICT';
+      error.statusCode = 409;
+      throw error;
+    }
     store.jobs = store.jobs.filter((job) => job._id !== record._id);
-    store.candidates = store.candidates.filter((candidate) => candidate.jobId !== record._id);
     store.questions = store.questions.filter((question) => question.jobId !== record._id);
   });
   res.json({ success: true });
@@ -812,7 +901,9 @@ app.delete('/api/jobs/:id', authenticate, asyncHandler(async (req, res) => {
 
 app.get('/api/candidates', authenticate, asyncHandler(async (req, res) => {
   const store = await readStore();
-  let candidates = store.candidates.filter((candidate) => canAccessRecord(req.user, candidate));
+  let candidates = store.candidates.filter((candidate) => (
+    isVisibleCandidate(candidate) && canAccessRecord(req.user, candidate)
+  ));
   if (req.query.jobId) candidates = candidates.filter((candidate) => candidate.jobId === req.query.jobId);
   candidates = candidates.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   res.json({ candidates });
@@ -826,7 +917,12 @@ app.post('/api/candidates', authenticate, asyncHandler(async (req, res) => {
     const email = profile.email;
     const name = profile.name;
     if (!name || !email) throw new Error('Candidate name and email are required.');
-    if (store.candidates.some((item) => normalizeEmail(item.email) === email && item.jobId === job._id && canAccessRecord(req.user, item))) {
+    if (store.candidates.some((item) => (
+      isVisibleCandidate(item)
+      && normalizeEmail(item.email) === email
+      && item.jobId === job._id
+      && canAccessRecord(req.user, item)
+    ))) {
       throw new Error('This candidate already exists for the selected job.');
     }
     const now = iso(new Date());
@@ -858,7 +954,7 @@ app.post('/api/candidates', authenticate, asyncHandler(async (req, res) => {
   res.status(201).json({ candidate });
 }));
 
-app.post('/api/candidates/import-cv', authenticate, upload.single('cv'), asyncHandler(async (req, res) => {
+app.post('/api/candidates/import-cv', authenticate, requireCvIdempotencyKey, upload.single('cv'), asyncHandler(async (req, res) => {
   const store = await readStore();
   const job = getOwnedRecord(store, 'jobs', req.body?.jobId, req.user);
   if (!job) throw new Error('A valid job is required before importing a CV.');
@@ -869,7 +965,7 @@ app.post('/api/candidates/import-cv', authenticate, upload.single('cv'), asyncHa
     actorId: req.user._id,
     jobId: job._id,
     mode: 'import',
-    idempotencyKey: req.get('Idempotency-Key')
+    idempotencyKey: req.cvIdempotencyKey
   });
   res.status(202).json({
     ...cvProcessingQueue.publicState(queued.job),
@@ -933,7 +1029,7 @@ app.get('/api/candidates/:id/profile', authenticate, asyncHandler(async (req, re
   res.json({ candidate, history: buildCandidateHistory(store, candidate, req.user) });
 }));
 
-app.post('/api/candidates/:id/cv', authenticate, upload.single('cv'), asyncHandler(async (req, res) => {
+app.post('/api/candidates/:id/cv', authenticate, requireCvIdempotencyKey, upload.single('cv'), asyncHandler(async (req, res) => {
   const store = await readStore();
   const candidate = getOwnedRecord(store, 'candidates', req.params.id, req.user);
   if (!candidate) throw new Error('Candidate not found.');
@@ -945,7 +1041,7 @@ app.post('/api/candidates/:id/cv', authenticate, upload.single('cv'), asyncHandl
     jobId: candidate.jobId,
     candidateId: candidate._id,
     mode: 'enrich',
-    idempotencyKey: req.get('Idempotency-Key')
+    idempotencyKey: req.cvIdempotencyKey
   });
   res.status(202).json({
     ...cvProcessingQueue.publicState(queued.job),
@@ -955,11 +1051,54 @@ app.post('/api/candidates/:id/cv', authenticate, upload.single('cv'), asyncHandl
   });
 }));
 
+app.get('/api/cv-processing/jobs', authenticate, asyncHandler(async (req, res) => {
+  const store = await readStore();
+  const organizationId = store.settings.organizationId || store.settings._id;
+  const states = String(req.query.states || req.query.state || '')
+    .split(',')
+    .map((state) => state.trim())
+    .filter(Boolean);
+  const jobs = await cvProcessingQueue.listActorJobs(organizationId, req.user._id, {
+    states: states.length ? states : null,
+    limit: req.query.limit
+  });
+  res.json({ jobs });
+}));
+
+app.get('/api/cv-processing/jobs/:jobId/history', authenticate, asyncHandler(async (req, res) => {
+  const store = await readStore();
+  const organizationId = store.settings.organizationId || store.settings._id;
+  const history = await cvProcessingQueue.getActorHistory(
+    req.params.jobId,
+    organizationId,
+    req.user._id
+  );
+  if (!history) return sendError(res, 404, 'CV_JOB_NOT_FOUND', 'CV processing job was not found.');
+  res.json(history);
+}));
+
 app.get('/api/cv-processing/jobs/:jobId', authenticate, asyncHandler(async (req, res) => {
-  const statusToken = req.get('X-CV-Status-Token') || req.query.token;
-  const status = await cvProcessingQueue.getStatus(req.params.jobId, statusToken, req.user._id);
+  const store = await readStore();
+  const organizationId = store.settings.organizationId || store.settings._id;
+  const status = await cvProcessingQueue.getActorStatus(
+    req.params.jobId,
+    organizationId,
+    req.user._id
+  );
   if (!status) return sendError(res, 404, 'CV_JOB_NOT_FOUND', 'CV processing job was not found.');
   res.json(status);
+}));
+
+app.post('/api/cv-processing/jobs/:jobId/retry', authenticate, asyncHandler(async (req, res) => {
+  const store = await readStore();
+  const organizationId = store.settings.organizationId || store.settings._id;
+  const status = await cvProcessingQueue.retry(
+    req.params.jobId,
+    organizationId,
+    req.user._id
+  );
+  if (!status) return sendError(res, 404, 'CV_JOB_NOT_FOUND', 'CV processing job was not found.');
+  res.status(202).json(status);
 }));
 
 app.patch('/api/candidates/:id', authenticate, asyncHandler(async (req, res) => {
@@ -998,15 +1137,27 @@ app.patch('/api/candidates/:id', authenticate, asyncHandler(async (req, res) => 
 }));
 
 app.delete('/api/candidates/:id', authenticate, asyncHandler(async (req, res) => {
-  await mutateStore((store) => {
-    const record = getOwnedRecord(store, 'candidates', req.params.id, req.user);
-    if (!record) throw new Error('Candidate not found.');
-    if (store.sessions.some((session) => session.candidateId === record._id)) {
-      throw new Error('This candidate already has interview sessions. Archive the candidate instead of deleting.');
-    }
-    store.candidates = store.candidates.filter((candidate) => candidate._id !== record._id);
+  const store = await readStore();
+  const record = getOwnedRecord(store, 'candidates', req.params.id, req.user);
+  if (!record) return sendError(res, 404, 'NOT_FOUND', 'Candidate not found.');
+  if (store.sessions.some((session) => session.candidateId === record._id)) {
+    throw new Error('This candidate already has interview sessions. Archive the candidate instead of deleting.');
+  }
+  const deletion = await cvCandidateResults.beginCandidateDeletion(record._id, {
+    actorId: req.user._id,
+    allowAny: req.user.role === 'admin'
   });
-  res.json({ success: true });
+  if (!deletion) return sendError(res, 404, 'NOT_FOUND', 'Candidate not found.');
+  const organizationId = store.settings.organizationId || store.settings._id;
+  const cvCleanup = await cvProcessingQueue.cancelForCandidate(organizationId, record._id);
+  const deleted = await cvCandidateResults.finishCandidateDeletion(
+    record._id,
+    deletion.deletionToken
+  );
+  if (!deleted) {
+    return sendError(res, 409, 'CANDIDATE_DELETE_CONFLICT', 'Candidate changed while deletion was in progress.');
+  }
+  res.json({ success: true, cvCleanup });
 }));
 
 app.get('/api/questions', authenticate, asyncHandler(async (req, res) => {
@@ -1517,24 +1668,61 @@ app.use((error, _req, res, _next) => {
   sendError(res, status, error.code || (status >= 500 ? 'SERVER_ERROR' : 'REQUEST_ERROR'), error.message || 'Server error');
 });
 
-readStore()
-  .then(() => {
-    void cvProcessingQueue.init({ onCompleted: completeCvProcessingJob })
-      .catch((error) => console.error('AI Interview CV queue is waiting for Redis:', error.message));
-    app.listen(port, () => {
+async function startServer() {
+  assertProductionDurabilityConfig();
+  await readStore();
+  await recoverPendingCandidateDeletions().catch((error) => {
+    console.error('AI Interview pending candidate deletion startup recovery failed:', error.message);
+  });
+  void cvProcessingQueue.init({ onCompleted: completeCvProcessingJob })
+    .catch((error) => console.error('AI Interview CV queue is waiting for Redis:', error.message));
+  const server = app.listen(port, () => {
       console.log(`AI Interview standalone backend running on http://localhost:${port}`);
       console.log(`Database: ${shouldUseMongo() ? getMongoDbName() : 'json-dev-store'}`);
       console.log(`Mail service configured: ${mailDeliveryService.isConfigured() ? 'yes' : 'no'}`);
       console.log(`Demo candidate link: ${getFrontendUrl()}/public/ai-interview/demo-token`);
+  });
+  setInterval(() => {
+    processDueInvites().catch((error) => console.error('Due invite scheduler failed:', error.message));
+  }, 60 * 1000).unref();
+  setInterval(() => {
+    processQueuedScoring().catch((error) => console.error('Queued scoring retry failed:', error.message));
+  }, 60 * 1000).unref();
+  setInterval(() => {
+    recoverPendingCandidateDeletions().catch((error) => {
+      console.error('Pending candidate deletion scheduler failed:', error.message);
     });
-    setInterval(() => {
-      processDueInvites().catch((error) => console.error('Due invite scheduler failed:', error.message));
-    }, 60 * 1000).unref();
-    setInterval(() => {
-      processQueuedScoring().catch((error) => console.error('Queued scoring retry failed:', error.message));
-    }, 60 * 1000).unref();
-  })
-  .catch((error) => {
+  }, 60 * 1000).unref();
+  return server;
+}
+
+function assertProductionDurabilityConfig(environment = process.env) {
+  if (String(environment.NODE_ENV || '').toLowerCase() !== 'production') return true;
+  const mongoUri = String(
+    environment.AI_INTERVIEW_MONGO_URI
+    || environment.MONGO_URI
+    || environment.MONGODB_URI
+    || ''
+  ).trim();
+  if (mongoUri) return true;
+  const error = new Error(
+    'AI Interview production startup requires persistent MongoDB. Set AI_INTERVIEW_MONGO_URI before accepting traffic.'
+  );
+  error.code = 'AI_INTERVIEW_DURABLE_STORAGE_REQUIRED';
+  throw error;
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
     console.error('Failed to start AI Interview backend:', error);
     process.exit(1);
   });
+}
+
+module.exports = {
+  app,
+  assertProductionDurabilityConfig,
+  completeCvProcessingJob,
+  recoverPendingCandidateDeletions,
+  startServer
+};

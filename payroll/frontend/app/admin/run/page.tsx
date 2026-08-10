@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api, { authApi, handleAuthCallback, isAuthenticated } from '@/lib/api';
 import { ArrowLeft, Calendar, CheckCircle, ClipboardList, Loader2, Settings2 } from 'lucide-react';
+import { listPayrollEmployerEntities, PayrollEmployerEntity } from '@/lib/payrollEmployerEntities';
 
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -13,6 +14,7 @@ type VariablePayProfile = {
   employeeInfo?: { name?: string; employmentType?: string };
   currency?: string;
   workTerms?: { payBasis?: 'hourly' | 'daily' | 'fixed_contract'; rate?: number; contractAmount?: number };
+  employerEntityId?: string;
 };
 
 export default function AdminPayrollRunPage() {
@@ -31,12 +33,14 @@ export default function AdminPayrollRunPage() {
     includeCommissions: true,
     includeOvertime: true,
     processStatutoryDeductions: true,
-    processUnpaidLeave: true,
     calculateTax: true,
     prorate: true,
     reportingCurrency: '',
   });
   const [availableCurrencies, setAvailableCurrencies] = useState<Array<{ code: string; name: string }>>([]);
+  const [employerEntities, setEmployerEntities] = useState<PayrollEmployerEntity[]>([]);
+  const [employerEntityId, setEmployerEntityId] = useState('');
+  const [allVariablePayProfiles, setAllVariablePayProfiles] = useState<VariablePayProfile[]>([]);
   const [variablePayProfiles, setVariablePayProfiles] = useState<VariablePayProfile[]>([]);
   const [workInputs, setWorkInputs] = useState<Record<string, { regularHours: number; daysWorked: number; notes: string }>>({});
 
@@ -66,6 +70,17 @@ export default function AdminPayrollRunPage() {
         }
         setIsHRAdmin(true);
         try {
+          const entityRows = await listPayrollEmployerEntities('active');
+          setEmployerEntities(entityRows);
+          const firstEntity = entityRows[0];
+          if (firstEntity) {
+            setEmployerEntityId(firstEntity._id);
+            setSettings((current) => ({ ...current, reportingCurrency: firstEntity.defaultCurrency }));
+          }
+        } catch (entityError) {
+          console.error('Failed to load legal employers:', entityError);
+        }
+        try {
           const currenciesRes = await api.get('/currencies');
           setAvailableCurrencies(Array.isArray(currenciesRes.data?.currencies) ? currenciesRes.data.currencies : []);
         } catch (currencyError) {
@@ -74,7 +89,7 @@ export default function AdminPayrollRunPage() {
         try {
           const profilesRes = await api.get('/payroll/profiles', { params: { status: 'active', limit: 500 } });
           const profiles = Array.isArray(profilesRes.data?.profiles) ? profilesRes.data.profiles : [];
-          setVariablePayProfiles(profiles.filter((profile: VariablePayProfile) => ['hourly', 'daily', 'fixed_contract'].includes(profile.workTerms?.payBasis || '')));
+          setAllVariablePayProfiles(profiles.filter((profile: VariablePayProfile) => ['hourly', 'daily', 'fixed_contract'].includes(profile.workTerms?.payBasis || '')));
         } catch (profileError) {
           console.error('Failed to load contract work inputs:', profileError);
         }
@@ -86,10 +101,18 @@ export default function AdminPayrollRunPage() {
     })();
   }, [router]);
 
+  useEffect(() => {
+    setVariablePayProfiles(allVariablePayProfiles.filter((profile) => profile.employerEntityId === employerEntityId));
+  }, [allVariablePayProfiles, employerEntityId]);
+
   const runLabel = `${monthNames[month - 1]} ${year}`;
 
   const handleRun = async () => {
     setError(null);
+    if (!employerEntityId) {
+      setError('Create and select an active legal employer before calculating payroll.');
+      return;
+    }
     const missingInput = variablePayProfiles.find(profile => {
       const basis = profile.workTerms?.payBasis;
       const input = workInputs[profile.userId];
@@ -106,6 +129,7 @@ export default function AdminPayrollRunPage() {
     setProcessing(true);
     try {
       const res = await api.post('/payroll/runs', {
+        employerEntityId,
         month,
         year,
         paymentDate,
@@ -220,13 +244,15 @@ export default function AdminPayrollRunPage() {
             </div>
 
             <div className="mt-4">
-              <label className="block text-sm font-medium text-zinc-400 mb-1.5">Reporting Currency (optional)</label>
+              <label htmlFor="statutory-run-currency" className="block text-sm font-medium text-zinc-400 mb-1.5">Statutory run currency</label>
               <select
+                id="statutory-run-currency"
                 value={settings.reportingCurrency}
                 onChange={(e) => setSettings(s => ({ ...s, reportingCurrency: e.target.value }))}
+                disabled={!!employerEntityId}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-zinc-200 focus:border-amber-500 outline-none"
               >
-                <option value="">No roll-up currency</option>
+                <option value="">Select a legal employer first</option>
                 {availableCurrencies.map((currency) => (
                   <option key={currency.code} value={currency.code}>
                     {currency.code} - {currency.name}
@@ -234,7 +260,7 @@ export default function AdminPayrollRunPage() {
                 ))}
               </select>
               <p className="text-xs text-zinc-500 mt-2">
-                When employees are paid in different currencies, payroll will convert run totals into this currency using your configured exchange rates.
+                This comes from the selected legal employer. Cross-currency consolidated reporting remains separate from statutory payroll.
               </p>
             </div>
           </div>
@@ -256,7 +282,6 @@ export default function AdminPayrollRunPage() {
                 { key: 'includeBonuses', label: 'Include approved bonuses/incentives' },
                 { key: 'includeCommissions', label: 'Include approved commissions' },
                 { key: 'includeOvertime', label: 'Include approved overtime requests' },
-                { key: 'processUnpaidLeave', label: 'Apply unpaid leave deductions' },
                 { key: 'processStatutoryDeductions', label: 'Apply statutory deductions (SS/pension)' },
                 { key: 'calculateTax', label: 'Calculate income tax' },
                 { key: 'prorate', label: 'Prorate for join/termination dates' },
@@ -317,6 +342,44 @@ export default function AdminPayrollRunPage() {
             </div>
           </section>
         )}
+
+        <section className="mb-6 border border-zinc-800 bg-zinc-900 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-zinc-100">Legal employer</h2>
+              <p className="mt-1 text-sm text-zinc-500">Each payroll run is limited to one registered employer, jurisdiction and currency.</p>
+            </div>
+            <Link href="/admin/settings/employer-entities" className="inline-flex min-h-11 items-center rounded-lg border border-zinc-700 px-3 text-sm text-zinc-200 hover:border-amber-500/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">Manage legal employers</Link>
+          </div>
+          <label className="mt-4 block text-sm text-zinc-300">
+            Employer for this run
+            <select
+              value={employerEntityId}
+              onChange={(event) => {
+                const nextId = event.target.value;
+                const next = employerEntities.find((entity) => entity._id === nextId);
+                setEmployerEntityId(nextId);
+                if (next) setSettings((current) => ({ ...current, reportingCurrency: next.defaultCurrency }));
+              }}
+              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-zinc-200 focus:border-amber-500 focus:outline-none"
+            >
+              <option value="">Select a legal employer</option>
+              {employerEntities.map((entity) => (
+                <option key={entity._id} value={entity._id}>
+                  {entity.legalName} — {entity.jurisdictionCode} / {entity.defaultCurrency} — {entity.payrollReadiness.mode.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+          </label>
+          {employerEntityId ? (() => {
+            const selected = employerEntities.find((entity) => entity._id === employerEntityId);
+            return selected && !selected.payrollReadiness.payrollRunnable ? (
+              <div className="mt-3 border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
+                Preview-only: calculations can be inspected, but finalization remains blocked until the legal and tax-pack gates pass.
+              </div>
+            ) : null;
+          })() : null}
+        </section>
 
         <div className="mt-6 flex items-center justify-end">
           <button

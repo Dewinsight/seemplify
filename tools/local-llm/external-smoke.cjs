@@ -3,12 +3,17 @@ const dns = require('node:dns').promises;
 const fs = require('node:fs');
 const https = require('node:https');
 const path = require('node:path');
+const { deriveServiceSecret, signatureForServiceSecret } = require('./service-auth.cjs');
 
 const repositoryRoot = path.resolve(__dirname, '..', '..');
 const runtimeDir = path.join(repositoryRoot, '.local-runtime', 'llm');
 const hostname = 'cv-llm.aiinnigeria.com';
 const managedEngines = new Set(['ollama', 'vllm', 'codex']);
-const secret = fs.readFileSync(path.join(runtimeDir, 'service-secret'), 'utf8').trim();
+const serviceId = 'recruiter';
+const secret = deriveServiceSecret(
+  fs.readFileSync(path.join(runtimeDir, 'service-secret'), 'utf8').trim(),
+  serviceId
+);
 
 function request(ip, requestPath, { method = 'GET', headers = {}, body = '' } = {}) {
   return new Promise((resolve, reject) => {
@@ -46,9 +51,12 @@ function signedHeaders(body) {
     'content-length': Buffer.byteLength(body),
     'x-seemplify-timestamp': timestamp,
     'x-seemplify-nonce': nonce,
-    'x-seemplify-signature': crypto.createHmac('sha256', secret)
-      .update(`${timestamp}\n${nonce}\nPOST\n/v1/cv/analyze\n${body}`)
-      .digest('base64url')
+    'x-seemplify-service': serviceId,
+    'x-seemplify-signature-version': '2',
+    'x-seemplify-signature': signatureForServiceSecret(secret, {
+      timestamp, nonce, serviceId, method: 'POST',
+      requestPath: '/v1/cv/analyze', rawBody: body
+    })
   };
 }
 

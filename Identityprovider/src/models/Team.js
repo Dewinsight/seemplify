@@ -184,36 +184,42 @@ TeamSchema.methods.updateAccountTeamMembership = async function(accountId, role)
   }
 }
 
-TeamSchema.methods.syncOrganizationMemberDepartment = async function(accountId) {
+TeamSchema.methods.syncOrganizationMemberDepartment = async function(accountId, options = {}) {
+  const session = options.session || null
   const Organization = mongoose.model('AiinOrganization')
-  const organization = await Organization.findById(this.organization)
+  let organizationQuery = Organization.findById(this.organization)
+  if (session) organizationQuery = organizationQuery.session(session)
+  const organization = await organizationQuery
   if (!organization) return
 
-  await organization.syncMemberDepartmentFromTeams(accountId)
+  await organization.syncMemberDepartmentFromTeams(accountId, options)
 }
 
 // Remove member from team
-TeamSchema.methods.removeMember = async function(accountId) {
+TeamSchema.methods.removeMember = async function(accountId, options = {}) {
+  const session = options.session || null
   this.members = this.members.filter(
     m => m.account.toString() !== accountId.toString()
   )
 
-  await this.save()
+  await this.save(session ? { session } : undefined)
 
   // Remove from Account's teams array
   const Account = mongoose.model('AiinAccount')
   await Account.updateOne(
     { _id: accountId },
-    { $pull: { teams: { team: this._id } } }
+    { $pull: { teams: { team: this._id } } },
+    session ? { session } : undefined
   )
 
-  await this.syncOrganizationMemberDepartment(accountId)
+  await this.syncOrganizationMemberDepartment(accountId, options)
 
   return this
 }
 
 // Update team member role
-TeamSchema.methods.updateMemberRole = async function(accountId, newRole) {
+TeamSchema.methods.updateMemberRole = async function(accountId, newRole, options = {}) {
+  const session = options.session || null
   const member = this.members.find(
     m => m.account.toString() === accountId.toString()
   )
@@ -231,13 +237,14 @@ TeamSchema.methods.updateMemberRole = async function(accountId, newRole) {
   }
 
   member.role = newRole
-  await this.save()
+  await this.save(session ? { session } : undefined)
 
   // Update Account's teams array
   const Account = mongoose.model('AiinAccount')
   await Account.updateOne(
     { _id: accountId, 'teams.team': this._id },
-    { $set: { 'teams.$.role': newRole } }
+    { $set: { 'teams.$.role': newRole } },
+    session ? { session } : undefined
   )
 
   return this

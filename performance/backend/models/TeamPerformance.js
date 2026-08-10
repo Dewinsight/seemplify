@@ -33,6 +33,13 @@ const TeamPerformanceSchema = new mongoose.Schema({
     industryAverage: Number,
     recommendations: [String]
   },
+  aiInsights: {
+    strengths: [String],
+    risks: [String],
+    coachingPriorities: [String],
+    recommendedActions: [String],
+    generatedAt: Date
+  },
   
   createdAt: { 
     type: Date, 

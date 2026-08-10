@@ -31,6 +31,14 @@ import aiInterviewService, {
   type CVProcessingJobResponse
 } from "@/services/aiInterviewService";
 import { ADMIN_TOKEN_KEY, apiRequest, TOKEN_KEY } from "@/services/apiConfig";
+import {
+  buildCvRequestFingerprint,
+  forgetCvUploadAttempt,
+  getOrCreateCvUploadAttempt,
+  reconcileAcceptedCvUploads,
+  recordAcceptedCvUpload,
+  type CvUploadAttempt
+} from "@/utils/cvUploadPersistence";
 
 type OptionsState = {
   jobs: Array<{ _id: string; title: string; department?: string; location?: string }>;
@@ -121,7 +129,7 @@ export default function AIInterviewStandalonePage() {
   const [selectedCandidateId, setSelectedCandidateId] = useState("");
   const [profileLoading, setProfileLoading] = useState(false);
   const [cvImporting, setCvImporting] = useState(false);
-  const [cvProcessingJob, setCvProcessingJob] = useState<CVProcessingJobResponse | null>(null);
+  const [cvProcessingJobs, setCvProcessingJobs] = useState<CVProcessingJobResponse[]>([]);
   const cvPollGeneration = useRef(0);
   const [bulkImporting, setBulkImporting] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -174,6 +182,28 @@ export default function AIInterviewStandalonePage() {
     };
   }, [interviews]);
 
+  const rememberCvJob = (job: CVProcessingJobResponse) => {
+    setCvProcessingJobs((current) => [
+      job,
+      ...current.filter((item) => item.jobId !== job.jobId)
+    ].filter((item) => !["completed", "cancelled"].includes(item.state)));
+  };
+
+  const reconcileCvJobs = (actorId: string, jobs: CVProcessingJobResponse[]) => {
+    reconcileAcceptedCvUploads(actorId, jobs);
+    for (const job of jobs) {
+      if (["completed", "cancelled"].includes(job.state) && job.requestFingerprint) {
+        forgetCvUploadAttempt(actorId, job.requestFingerprint);
+      }
+    }
+    return jobs.filter((job) => [
+      "queued",
+      "waiting_for_chatgpt",
+      "processing",
+      "failed"
+    ].includes(job.state));
+  };
+
   const load = async () => {
     setLoading(true);
     try {
@@ -198,14 +228,16 @@ export default function AIInterviewStandalonePage() {
       }
       setUser(mePayload.user);
 
-      const [optionsPayload, listPayload, walletResponse] = await Promise.all([
+      const [optionsPayload, listPayload, walletResponse, cvJobs] = await Promise.all([
         aiInterviewService.getOptions() as Promise<OptionsState>,
         aiInterviewService.list(),
-        apiRequest("/api/wallet").then((response) => response.json())
+        apiRequest("/api/wallet").then((response) => response.json()),
+        aiInterviewService.listCvProcessingJobs({ limit: 50 })
       ]);
       setOptions(optionsPayload);
       setWallet(walletResponse.wallet);
       setInterviews(listPayload);
+      setCvProcessingJobs(reconcileCvJobs(mePayload.user.id, cvJobs));
       if (!selectedInterview && listPayload[0]) setSelectedInterview(listPayload[0] as any);
       setForm((current) => ({
         ...current,
@@ -223,6 +255,25 @@ export default function AIInterviewStandalonePage() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let stopped = false;
+    const refresh = async () => {
+      try {
+        const jobs = await aiInterviewService.listCvProcessingJobs({ limit: 50 });
+        if (stopped) return;
+        setCvProcessingJobs(reconcileCvJobs(user.id, jobs));
+      } catch {
+        // The accepted descriptors remain in actor-scoped storage until the API recovers.
+      }
+    };
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (!options) return;
@@ -325,12 +376,19 @@ export default function AIInterviewStandalonePage() {
   const waitForCvProcessing = async (initial: CVProcessingJobResponse) => {
     const generation = ++cvPollGeneration.current;
     let current = initial;
-    setCvProcessingJob(current);
+    rememberCvJob(current);
     while (generation === cvPollGeneration.current) {
-      if (current.state === "completed") return current;
+      if (current.state === "completed") {
+        if (user?.id && current.requestFingerprint) {
+          forgetCvUploadAttempt(user.id, current.requestFingerprint);
+        }
+        setCvProcessingJobs((jobs) => jobs.filter((job) => job.jobId !== current.jobId));
+        return current;
+      }
       if (current.state === "failed") {
         throw new Error(current.error?.message || "CV processing failed.");
       }
+      if (current.state === "cancelled") throw new Error("CV processing was cancelled.");
       await new Promise((resolve) => window.setTimeout(resolve, current.state === "processing" ? 1200 : 2200));
       try {
         current = await aiInterviewService.getCvProcessingJob({
@@ -338,7 +396,7 @@ export default function AIInterviewStandalonePage() {
           statusToken: initial.statusToken,
           statusUrl: initial.statusUrl
         });
-        setCvProcessingJob(current);
+        rememberCvJob(current);
       } catch {
         // The job is durable; transient polling failures should not turn into a failed upload.
         await new Promise((resolve) => window.setTimeout(resolve, 3000));
@@ -412,9 +470,29 @@ export default function AIInterviewStandalonePage() {
       toast.error("Select or create a job before importing a CV.");
       return;
     }
+    if (!user?.id) return;
     setCvImporting(true);
+    let attempt: CvUploadAttempt | null = null;
     try {
-      const queued = await aiInterviewService.importCandidateCv({ jobId: form.jobId, file });
+      const fingerprint = await buildCvRequestFingerprint(file, {
+        mode: "import",
+        jobId: form.jobId
+      });
+      attempt = getOrCreateCvUploadAttempt(user.id, {
+        fingerprint,
+        mode: "import",
+        jobId: form.jobId
+      });
+      const accepted = await aiInterviewService.importCandidateCv({
+        jobId: form.jobId,
+        file,
+        idempotencyKey: attempt.idempotencyKey
+      });
+      const queued = {
+        ...accepted,
+        requestFingerprint: accepted.requestFingerprint || fingerprint
+      };
+      recordAcceptedCvUpload(user.id, fingerprint, queued);
       toast.success("CV queued for local analysis.");
       const result = await waitForCvProcessing(queued);
       if (!result.candidate) throw new Error("CV processing completed without a candidate.");
@@ -425,6 +503,9 @@ export default function AIInterviewStandalonePage() {
       setCandidateProfile({ candidate, history: result.history || [] });
       setSelectedCandidateId(candidate._id);
     } catch (error: any) {
+      if (attempt && Number(error?.status || 0) >= 400 && Number(error?.status || 0) < 500) {
+        forgetCvUploadAttempt(user.id, attempt.fingerprint);
+      }
       toast.error(error.message || "Could not import CV");
     } finally {
       setCvImporting(false);
@@ -433,9 +514,34 @@ export default function AIInterviewStandalonePage() {
 
   const enrichCandidateCv = async (file?: File | null) => {
     if (!file || !selectedCandidateId) return;
+    if (!user?.id) return;
     setCvImporting(true);
+    let attempt: CvUploadAttempt | null = null;
     try {
-      const queued = await aiInterviewService.enrichCandidateCv({ candidateId: selectedCandidateId, file });
+      const targetJobId = candidateProfile?.candidate?.jobId
+        ?? options?.candidates.find((candidate) => candidate._id === selectedCandidateId)?.jobId
+        ?? "";
+      const fingerprint = await buildCvRequestFingerprint(file, {
+        mode: "enrich",
+        jobId: targetJobId,
+        candidateId: selectedCandidateId
+      });
+      attempt = getOrCreateCvUploadAttempt(user.id, {
+        fingerprint,
+        mode: "enrich",
+        jobId: targetJobId,
+        candidateId: selectedCandidateId
+      });
+      const accepted = await aiInterviewService.enrichCandidateCv({
+        candidateId: selectedCandidateId,
+        file,
+        idempotencyKey: attempt.idempotencyKey
+      });
+      const queued = {
+        ...accepted,
+        requestFingerprint: accepted.requestFingerprint || fingerprint
+      };
+      recordAcceptedCvUpload(user.id, fingerprint, queued);
       toast.success("CV queued for local analysis.");
       const result = await waitForCvProcessing(queued);
       if (!result.candidate) throw new Error("CV processing completed without a candidate.");
@@ -443,9 +549,25 @@ export default function AIInterviewStandalonePage() {
       await load();
       setCandidateProfile({ candidate: result.candidate, history: result.history || [] });
     } catch (error: any) {
+      if (attempt && Number(error?.status || 0) >= 400 && Number(error?.status || 0) < 500) {
+        forgetCvUploadAttempt(user.id, attempt.fingerprint);
+      }
       toast.error(error.message || "Could not enrich candidate profile");
     } finally {
       setCvImporting(false);
+    }
+  };
+
+  const retryCvProcessing = async (job: CVProcessingJobResponse) => {
+    try {
+      const retried = await aiInterviewService.retryCvProcessingJob(job.jobId);
+      rememberCvJob(retried);
+      if (user?.id && job.requestFingerprint) {
+        recordAcceptedCvUpload(user.id, job.requestFingerprint, retried);
+      }
+      toast.success("CV processing queued again.");
+    } catch (error: any) {
+      toast.error(error.message || "Could not retry CV processing");
     }
   };
 
@@ -694,28 +816,50 @@ export default function AIInterviewStandalonePage() {
                 <div className="flex items-center gap-2 text-lg font-semibold"><Upload className="h-5 w-5 text-emerald-600" />Import candidates</div>
                 <div className="mt-2 text-xs leading-5 text-slate-500">Import one CV for AI parsing, or bulk import CSV/XLSX rows with name, email, phone, title, and skills columns.</div>
                 <div className="mt-4 grid gap-3">
-                  {cvProcessingJob && !["completed", "failed"].includes(cvProcessingJob.state) && (
-                    <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5">
-                      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-blue-950">
-                        <span>
-                          {cvProcessingJob.state === "waiting_for_chatgpt"
+                  {cvProcessingJobs.length > 0 && (
+                    <div className="divide-y rounded-lg border bg-white">
+                      {cvProcessingJobs.map((job) => {
+                        const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
+                        const failed = job.state === "failed";
+                        const label = failed
+                          ? "Processing failed"
+                          : job.state === "waiting_for_chatgpt"
                             ? "Waiting for ChatGPT"
-                            : cvProcessingJob.state === "processing"
-                              ? "Analysing CV locally"
-                              : "Queued for local analysis"}
-                        </span>
-                        <span>{Math.max(0, Math.min(100, Number(cvProcessingJob.progress || 0)))}%</span>
-                      </div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100">
-                        <div
-                          className="h-full rounded-full bg-blue-600 transition-[width] duration-500"
-                          style={{ width: `${Math.max(4, Math.min(100, Number(cvProcessingJob.progress || 0)))}%` }}
-                        />
-                      </div>
-                      <div className="mt-2 text-[11px] text-blue-800">
-                        {cvProcessingJob.position ? `Queue position ${cvProcessingJob.position}. ` : ""}
-                        Your upload is saved and will keep waiting if the runtime is offline.
-                      </div>
+                            : job.state === "processing"
+                              ? "Analysing CV"
+                              : "Queued";
+                        return (
+                          <div key={job.jobId} className="px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold">{job.fileName || "CV upload"}</div>
+                                <div className={`mt-0.5 text-xs ${failed ? "text-red-700" : "text-slate-600"}`}>{label}</div>
+                              </div>
+                              {failed && job.retryable ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void retryCvProcessing(job)}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-white px-2.5 text-xs font-semibold hover:bg-slate-50"
+                                >
+                                  <RefreshCw className="h-3.5 w-3.5" />Retry
+                                </button>
+                              ) : <span className="text-xs font-medium text-slate-600">{progress}%</span>}
+                            </div>
+                            {!failed && (
+                              <div className="mt-2 h-1.5 overflow-hidden rounded bg-slate-100">
+                                <div className="h-full bg-slate-700 transition-[width] duration-500" style={{ width: `${Math.max(4, progress)}%` }} />
+                              </div>
+                            )}
+                            <div className="mt-2 text-[11px] leading-4 text-slate-500">
+                              {failed
+                                ? job.retryable
+                                  ? "The saved upload can be retried without selecting the file again."
+                                  : "Upload the CV again to create a new processing job."
+                                : `${job.position ? `Queue position ${job.position}. ` : ""}The upload is stored durably.`}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border bg-white p-3 text-sm font-semibold hover:bg-slate-50">

@@ -31,12 +31,68 @@ const AllowanceSchema = new Schema({
     required: true
   },
   name: { type: String, required: true },
-  amount: { type: Number, required: true, default: 0 },
+  amount: { type: Number, required: true, min: 0, default: 0 },
+  classificationCode: { type: String, trim: true, lowercase: true, default: '' },
+  paymentKind: { type: String, enum: ['cash', 'non_cash'], default: 'cash' },
+  taxTreatment: {
+    type: String,
+    enum: ['jurisdiction_default', 'taxable', 'non_taxable', 'partially_taxable'],
+    default: 'jurisdiction_default'
+  },
+  taxablePercentage: { type: Number, min: 0, max: 100, default: 100 },
+  taxAuthorityReason: { type: String, trim: true, default: '' },
+  taxEvidenceReference: { type: String, trim: true, default: '' },
   isTaxable: { type: Boolean, default: true },
   isActive: { type: Boolean, default: true },
   effectiveFrom: Date,
   effectiveTo: Date,
-  notes: String
+  notes: String,
+  taxTreatmentOverrides: [{
+    periodKey: { type: String, required: true, match: /^\d{4}-(0[1-9]|1[0-2])$/ },
+    taxTreatment: {
+      type: String,
+      enum: ['taxable', 'non_taxable', 'partially_taxable'],
+      required: true
+    },
+    taxablePercentage: { type: Number, min: 0, max: 100, default: 100 },
+    authorityReason: { type: String, required: true, trim: true },
+    evidenceReference: { type: String, required: true, trim: true },
+    approvedBy: { type: String, trim: true },
+    approvedAt: Date
+  }]
+}, { _id: true });
+
+const BenefitItemSchema = new Schema({
+  classificationCode: { type: String, required: true, trim: true, lowercase: true },
+  name: { type: String, required: true, trim: true },
+  fairValue: { type: Number, required: true, min: 0, default: 0 },
+  cashPayable: { type: Boolean, default: false },
+  employerPaidAmount: { type: Number, min: 0, default: 0 },
+  taxTreatment: {
+    type: String,
+    enum: ['jurisdiction_default', 'taxable', 'non_taxable', 'partially_taxable'],
+    default: 'jurisdiction_default'
+  },
+  taxablePercentage: { type: Number, min: 0, max: 100, default: 100 },
+  taxAuthorityReason: { type: String, trim: true, default: '' },
+  taxEvidenceReference: { type: String, trim: true, default: '' },
+  isActive: { type: Boolean, default: true },
+  effectiveFrom: Date,
+  effectiveTo: Date,
+  notes: String,
+  taxTreatmentOverrides: [{
+    periodKey: { type: String, required: true, match: /^\d{4}-(0[1-9]|1[0-2])$/ },
+    taxTreatment: {
+      type: String,
+      enum: ['taxable', 'non_taxable', 'partially_taxable'],
+      required: true
+    },
+    taxablePercentage: { type: Number, min: 0, max: 100, default: 100 },
+    authorityReason: { type: String, required: true, trim: true },
+    evidenceReference: { type: String, required: true, trim: true },
+    approvedBy: { type: String, trim: true },
+    approvedAt: Date
+  }]
 }, { _id: true });
 
 // Recurring deduction schema
@@ -46,15 +102,15 @@ const RecurringDeductionSchema = new Schema({
     required: true
   },
   name: { type: String, required: true },
-  amount: { type: Number, required: true, default: 0 },
-  percentage: Number, // If deduction is percentage-based
+  amount: { type: Number, required: true, min: 0, default: 0 },
+  percentage: { type: Number, min: 0, max: 100, default: 0 }, // If deduction is percentage-based
   isPercentage: { type: Boolean, default: false },
   isPreTax: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
   startDate: Date,
   endDate: Date,
-  totalAmount: Number, // For loans - total loan amount
-  remainingAmount: Number, // For loans - remaining balance
+  totalAmount: { type: Number, min: 0, default: 0 }, // For loans - total loan amount
+  remainingAmount: { type: Number, min: 0, default: 0 }, // For loans - remaining balance
   notes: String
 }, { _id: true });
 
@@ -203,6 +259,23 @@ const PayrollProfileSchema = new Schema({
   // User identification (from IdP)
   userId: { type: String, required: true, index: true },
   organizationId: { type: String, required: true, index: true },
+  employerEntityId: {
+    type: Schema.Types.ObjectId,
+    ref: 'PayrollEmployerEntity',
+    default: null,
+    index: true,
+  },
+  taxAssignment: {
+    workCountryCode: { type: String, uppercase: true, trim: true, maxlength: 2, default: '' },
+    workJurisdictionCode: { type: String, uppercase: true, trim: true, maxlength: 32, default: '' },
+    taxJurisdictionCode: { type: String, uppercase: true, trim: true, maxlength: 32, default: '' },
+    determinationReason: { type: String, trim: true, maxlength: 500, default: '' },
+    evidenceReference: { type: String, trim: true, maxlength: 240, default: '' },
+    effectiveFrom: { type: Date, default: null },
+    effectiveTo: { type: Date, default: null },
+    reviewedBy: { type: String, trim: true, default: '' },
+    reviewedAt: { type: Date, default: null },
+  },
 
   // Employee snapshot (synced from IdP but stored locally for payroll processing)
   employeeInfo: {
@@ -303,9 +376,20 @@ const PayrollProfileSchema = new Schema({
     pensionAccountNumber: String,
     pensionContributionPercent: { type: Number, default: 0 }, // Employee contribution %
     employerPensionPercent: { type: Number, default: 0 },      // Employer contribution %
+    exemptions: [{
+      liabilityCode: { type: String, required: true, trim: true, uppercase: true },
+      reasonCode: { type: String, required: true, trim: true },
+      authorityReason: { type: String, required: true, trim: true },
+      evidenceReference: { type: String, required: true, trim: true },
+      effectiveFrom: Date,
+      effectiveTo: Date,
+      approvedBy: { type: String, required: true, trim: true },
+      approvedAt: { type: Date, required: true },
+    }],
   },
 
   // ===== BENEFITS ENROLLMENT =====
+  benefitItems: [BenefitItemSchema],
   benefits: {
     healthInsurancePlan: String,
     healthInsurancePremium: { type: Number, default: 0 },
@@ -362,6 +446,7 @@ const PayrollProfileSchema = new Schema({
 // ===== INDEXES =====
 PayrollProfileSchema.index({ userId: 1, organizationId: 1 }, { unique: true });
 PayrollProfileSchema.index({ organizationId: 1, status: 1 });
+PayrollProfileSchema.index({ organizationId: 1, employerEntityId: 1, status: 1 });
 PayrollProfileSchema.index({ 'employeeInfo.teamId': 1 });
 PayrollProfileSchema.index({ 'salaryGrade.gradeId': 1 });
 
@@ -504,13 +589,19 @@ PayrollProfileSchema.statics.findOrCreateForUser = async function (userId, organ
   let profile = await this.findOne({ userId, organizationId });
 
   if (!profile) {
+    const organizationCurrencyService = require('../services/OrganizationCurrencyService');
+    await organizationCurrencyService.getPolicy(organizationId);
+    const defaultPaymentCurrency = await organizationCurrencyService.getDefaultPaymentCurrency(organizationId);
+    const currency = defaults.currency
+      ? await organizationCurrencyService.assertPaymentCurrency(organizationId, defaults.currency)
+      : defaultPaymentCurrency;
     const basicSalary = Number(defaults.basicSalary || 0);
     profile = new this({
       userId,
       organizationId,
       ...defaults,
       basicSalary,
-      currency: defaults.currency || 'USD',
+      currency,
       employeeInfo: defaults.employeeInfo || {},
       payrollFlags: buildDefaultPayrollFlags(basicSalary, defaults.payrollFlags),
     });

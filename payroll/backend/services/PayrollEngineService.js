@@ -6,6 +6,9 @@ const TimeAttendanceImport = require('../models/TimeAttendanceImport');
 const taxService = require('./TaxCalculationService');
 const LeaveIntegrationService = require('./LeaveIntegrationService');
 const currencyService = require('./CurrencyService');
+const employerEntityService = require('./PayrollEmployerEntityService');
+const payComponentTaxService = require('./PayComponentTaxService');
+const organizationCurrencyService = require('./OrganizationCurrencyService');
 const { calculateContractBasePay } = require('./contractPayService');
 
 // Instantiate integration services
@@ -13,6 +16,7 @@ const leaveService = new LeaveIntegrationService();
 
 const ALLOWED_DEDUCTION_TYPES = new Set([
   'income_tax',
+  'payroll_tax',
   'social_security',
   'pension',
   'health_insurance',
@@ -41,14 +45,50 @@ function normalizeCurrencyCode(code, fallback = 'USD') {
 
 function startOfDay(d) {
   const dt = new Date(d);
-  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  if (Number.isNaN(dt.getTime())) return null;
+  return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
 }
 
 function daysBetweenInclusive(start, end) {
-  const a = startOfDay(start).getTime();
-  const b = startOfDay(end).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return 0;
+  const startDate = startOfDay(start);
+  const endDate = startOfDay(end);
+  if (!startDate || !endDate) return 0;
+  const a = startDate.getTime();
+  const b = endDate.getTime();
+  if (b < a) return 0;
   return Math.floor((b - a) / 86400000) + 1;
+}
+
+function employmentPeriod(profile, payStart, payEnd) {
+  const periodStart = startOfDay(payStart);
+  const periodEnd = startOfDay(payEnd);
+  if (!periodStart || !periodEnd || periodEnd < periodStart) {
+    return { eligible: false, periodDays: 0, employedDays: 0, factor: 0 };
+  }
+
+  const starts = [profile?.employeeInfo?.dateOfJoining, profile?.workTerms?.contractStartDate]
+    .map(startOfDay)
+    .filter(Boolean);
+  const ends = [profile?.terminationDate, profile?.workTerms?.contractEndDate]
+    .map(startOfDay)
+    .filter(Boolean);
+  const employedStart = starts.reduce(
+    (latest, value) => (value > latest ? value : latest),
+    periodStart
+  );
+  const employedEnd = ends.reduce(
+    (earliest, value) => (value < earliest ? value : earliest),
+    periodEnd
+  );
+  const periodDays = daysBetweenInclusive(periodStart, periodEnd);
+  const employedDays = daysBetweenInclusive(employedStart, employedEnd);
+  const eligible = employedDays > 0 && employedStart <= periodEnd && employedEnd >= periodStart;
+  return {
+    eligible,
+    periodDays,
+    employedDays: eligible ? employedDays : 0,
+    factor: eligible && periodDays > 0 ? Math.min(1, employedDays / periodDays) : 0,
+  };
 }
 
 function inPeriod(payStart, payEnd, itemStart, itemEnd) {
@@ -62,6 +102,22 @@ function inPeriod(payStart, payEnd, itemStart, itemEnd) {
 function normalizeDeductionType(type) {
   if (!type) return 'other';
   return ALLOWED_DEDUCTION_TYPES.has(type) ? type : 'other';
+}
+
+function normalizeStatutoryComponentType(type, payer = 'employee') {
+  const normalized = String(type || '').trim().toLowerCase();
+  const allowed = payer === 'employer'
+    ? new Set(['payroll_tax', 'social_security', 'health_insurance', 'life_insurance', 'other'])
+    : ALLOWED_DEDUCTION_TYPES;
+  if (normalized === 'pension' && payer === 'employer') return 'pension_match';
+  return allowed.has(normalized) ? normalized : 'social_security';
+}
+
+function isVariableCompensationEnabled(type, settings = {}) {
+  if (type === 'overtime') return settings.includeOvertime !== false;
+  if (type === 'commission') return settings.includeCommissions !== false;
+  if (type === 'bonus' || type === 'incentive') return settings.includeBonuses !== false;
+  return true;
 }
 
 function maskSensitive(value) {
@@ -95,7 +151,8 @@ class PayrollEngineService {
       asOfDate
     );
 
-    return roundMoney(conversion.convertedAmount);
+    const precision = await organizationCurrencyService.getMinorUnits(organizationId, targetCurrency);
+    return roundMoney(conversion.convertedAmount, precision);
   }
 
   async applyRunCurrencySummary(run, payslips) {
@@ -104,6 +161,10 @@ class PayrollEngineService {
     const requestedReportingCurrency = run?.settings?.reportingCurrency
       ? normalizeCurrencyCode(run.settings.reportingCurrency)
       : null;
+    let reportingPrecision = requestedReportingCurrency
+      ? await organizationCurrencyService.getMinorUnits(run.organizationId, requestedReportingCurrency)
+      : 2;
+    const roundReporting = (value) => roundMoney(value, reportingPrecision);
 
     for (const payslip of payslips) {
       const currency = normalizeCurrencyCode(payslip.currency);
@@ -115,14 +176,21 @@ class PayrollEngineService {
         totalNetPayroll: 0,
         totalTaxWithheld: 0,
         totalEmployerContributions: 0,
+        totalEmployerCost: 0,
       };
 
       current.employeeCount += 1;
-      current.totalGrossPayroll = roundMoney(current.totalGrossPayroll + Number(payslip.earningsSummary?.grossPay || 0));
-      current.totalDeductions = roundMoney(current.totalDeductions + Number(payslip.deductionsSummary?.totalDeductions || 0));
-      current.totalNetPayroll = roundMoney(current.totalNetPayroll + Number(payslip.netPay || 0));
-      current.totalTaxWithheld = roundMoney(current.totalTaxWithheld + Number(payslip.taxBreakdown?.taxAmount || 0));
-      current.totalEmployerContributions = roundMoney(current.totalEmployerContributions + Number(payslip.totalEmployerContributions || 0));
+      current.totalGrossPayroll = currencyService.roundAmount(current.totalGrossPayroll + Number(payslip.earningsSummary?.grossPay || 0), currency);
+      current.totalDeductions = currencyService.roundAmount(current.totalDeductions + Number(payslip.deductionsSummary?.totalDeductions || 0), currency);
+      current.totalNetPayroll = currencyService.roundAmount(current.totalNetPayroll + Number(payslip.netPay || 0), currency);
+      current.totalTaxWithheld = currencyService.roundAmount(current.totalTaxWithheld + Number(payslip.taxBreakdown?.taxAmount || 0), currency);
+      current.totalEmployerContributions = currencyService.roundAmount(current.totalEmployerContributions + Number(payslip.totalEmployerContributions || 0), currency);
+      current.totalEmployerCost = currencyService.roundAmount(
+        current.totalEmployerCost
+        + Number(payslip.earningsSummary?.grossPay || 0)
+        + Number(payslip.totalEmployerContributions || 0),
+        currency
+      );
 
       breakdownMap.set(currency, current);
     }
@@ -131,6 +199,9 @@ class PayrollEngineService {
       .sort((a, b) => a.currency.localeCompare(b.currency));
     const currencies = currencyBreakdown.map((entry) => entry.currency);
     const isMultiCurrency = currencies.length > 1;
+    if (!requestedReportingCurrency && currencies.length === 1) {
+      reportingPrecision = await organizationCurrencyService.getMinorUnits(run.organizationId, currencies[0]);
+    }
 
     let summaryCurrency = currencies[0] || requestedReportingCurrency || normalizeCurrencyCode(run?.summary?.currency);
     let reportingCurrency = null;
@@ -140,6 +211,7 @@ class PayrollEngineService {
     let totalNetPayroll = 0;
     let totalTaxWithheld = 0;
     let totalEmployerContributions = 0;
+    let totalEmployerCost = 0;
     const unconvertedCurrencies = [];
     const conversionWarnings = [];
 
@@ -149,44 +221,51 @@ class PayrollEngineService {
 
       try {
         for (const entry of currencyBreakdown) {
-          totalGrossPayroll = roundMoney(totalGrossPayroll + await this.convertAmountToCurrency(
+          totalGrossPayroll = roundReporting(totalGrossPayroll + await this.convertAmountToCurrency(
             run.organizationId,
             entry.totalGrossPayroll,
             entry.currency,
             requestedReportingCurrency,
             payDate
           ));
-          totalDeductions = roundMoney(totalDeductions + await this.convertAmountToCurrency(
+          totalDeductions = roundReporting(totalDeductions + await this.convertAmountToCurrency(
             run.organizationId,
             entry.totalDeductions,
             entry.currency,
             requestedReportingCurrency,
             payDate
           ));
-          totalNetPayroll = roundMoney(totalNetPayroll + await this.convertAmountToCurrency(
+          totalNetPayroll = roundReporting(totalNetPayroll + await this.convertAmountToCurrency(
             run.organizationId,
             entry.totalNetPayroll,
             entry.currency,
             requestedReportingCurrency,
             payDate
           ));
-          totalTaxWithheld = roundMoney(totalTaxWithheld + await this.convertAmountToCurrency(
+          totalTaxWithheld = roundReporting(totalTaxWithheld + await this.convertAmountToCurrency(
             run.organizationId,
             entry.totalTaxWithheld,
             entry.currency,
             requestedReportingCurrency,
             payDate
           ));
-          totalEmployerContributions = roundMoney(totalEmployerContributions + await this.convertAmountToCurrency(
+          totalEmployerContributions = roundReporting(totalEmployerContributions + await this.convertAmountToCurrency(
             run.organizationId,
             entry.totalEmployerContributions,
             entry.currency,
             requestedReportingCurrency,
             payDate
           ));
+          totalEmployerCost = roundReporting(totalEmployerCost + await this.convertAmountToCurrency(
+            run.organizationId,
+            entry.totalEmployerCost,
+            entry.currency,
+            requestedReportingCurrency,
+            payDate
+          ));
         }
       } catch (conversionError) {
-        hasAggregateTotals = !isMultiCurrency;
+        hasAggregateTotals = false;
         conversionWarnings.push(conversionError.message);
         unconvertedCurrencies.push(...currencies.filter((currency) => currency !== requestedReportingCurrency));
 
@@ -198,6 +277,7 @@ class PayrollEngineService {
           totalNetPayroll = entry.totalNetPayroll;
           totalTaxWithheld = entry.totalTaxWithheld;
           totalEmployerContributions = entry.totalEmployerContributions;
+          totalEmployerCost = entry.totalEmployerCost;
         }
       }
     } else if (currencyBreakdown.length === 1) {
@@ -208,6 +288,7 @@ class PayrollEngineService {
       totalNetPayroll = entry.totalNetPayroll;
       totalTaxWithheld = entry.totalTaxWithheld;
       totalEmployerContributions = entry.totalEmployerContributions;
+      totalEmployerCost = entry.totalEmployerCost;
     } else {
       summaryCurrency = 'MIXED';
       hasAggregateTotals = false;
@@ -223,34 +304,83 @@ class PayrollEngineService {
       currencyBreakdown,
       unconvertedCurrencies: Array.from(new Set(unconvertedCurrencies)),
       conversionWarnings,
-      totalGrossPayroll: hasAggregateTotals ? roundMoney(totalGrossPayroll) : 0,
-      totalDeductions: hasAggregateTotals ? roundMoney(totalDeductions) : 0,
-      totalNetPayroll: hasAggregateTotals ? roundMoney(totalNetPayroll) : 0,
-      totalTaxWithheld: hasAggregateTotals ? roundMoney(totalTaxWithheld) : 0,
-      totalEmployerContributions: hasAggregateTotals ? roundMoney(totalEmployerContributions) : 0,
+      totalGrossPayroll: hasAggregateTotals ? roundReporting(totalGrossPayroll) : 0,
+      totalDeductions: hasAggregateTotals ? roundReporting(totalDeductions) : 0,
+      totalNetPayroll: hasAggregateTotals ? roundReporting(totalNetPayroll) : 0,
+      totalTaxWithheld: hasAggregateTotals ? roundReporting(totalTaxWithheld) : 0,
+      totalEmployerContributions: hasAggregateTotals ? roundReporting(totalEmployerContributions) : 0,
+      totalEmployerCost: hasAggregateTotals ? roundReporting(totalEmployerCost) : 0,
     };
   }
 
   async getEmployeeYearToDatePayrollContext(profile, paymentDate) {
     const payDate = paymentDate ? new Date(paymentDate) : new Date();
-    const taxYear = taxService.getTaxYearContext(profile?.taxConfig || {}, payDate);
+    const resolvedContext = await taxService.resolveTaxYearContext(
+      profile?.taxConfig || {},
+      payDate,
+      profile.organizationId
+    );
+    const taxYear = resolvedContext.taxYear;
+    const calculationCurrency = normalizeCurrencyCode(
+      resolvedContext.calculationCurrency || profile.currency
+    );
 
     const priorPayslips = await Payslip.find({
       organizationId: profile.organizationId,
       userId: profile.userId,
+      status: { $in: ['approved', 'exported', 'paid'] },
       'payPeriod.paymentDate': {
         $gte: taxYear.start,
         $lt: payDate,
       },
     })
-      .select('earningsSummary taxBreakdown')
+      .select('earningsSummary taxBreakdown currency payPeriod status')
       .lean();
+
+    const totals = { ytdGrossPay: 0, ytdTaxableIncome: 0, ytdIncomeTax: 0 };
+    for (const slip of priorPayslips) {
+      const storedBases = slip?.taxBreakdown?.calculationBases || {};
+      const storedBaseCurrency = String(storedBases.currency || '').trim().toUpperCase();
+      if (storedBaseCurrency && storedBaseCurrency === calculationCurrency) {
+        totals.ytdGrossPay += Number(storedBases.grossPay || 0);
+        totals.ytdTaxableIncome += Number(storedBases.taxableIncome || 0);
+        totals.ytdIncomeTax += Number(storedBases.incomeTaxAmount || 0);
+        continue;
+      }
+
+      const payrollCurrency = normalizeCurrencyCode(slip.currency || slip?.taxBreakdown?.payrollCurrency);
+      const storedCalculationCurrency = String(slip?.taxBreakdown?.calculationCurrency || '').trim().toUpperCase();
+      const storedRate = Number(slip?.taxBreakdown?.currencyConversion?.rate || 0);
+      const legacyValues = {
+        ytdGrossPay: Number(slip?.earningsSummary?.grossPay || 0),
+        ytdTaxableIncome: Number(slip?.taxBreakdown?.grossTaxableIncome || 0),
+        ytdIncomeTax: Number(slip?.taxBreakdown?.taxAmount || 0),
+      };
+
+      if (storedCalculationCurrency === calculationCurrency && storedRate > 0) {
+        totals.ytdGrossPay += legacyValues.ytdGrossPay * storedRate;
+        totals.ytdTaxableIncome += legacyValues.ytdTaxableIncome * storedRate;
+        totals.ytdIncomeTax += legacyValues.ytdIncomeTax * storedRate;
+        continue;
+      }
+
+      for (const [field, amount] of Object.entries(legacyValues)) {
+        totals[field] += await this.convertAmountToCurrency(
+          profile.organizationId,
+          amount,
+          payrollCurrency,
+          calculationCurrency,
+          slip?.payPeriod?.paymentDate || payDate
+        );
+      }
+    }
 
     return {
       taxYear,
-      ytdGrossPay: roundMoney(priorPayslips.reduce((sum, slip) => sum + Number(slip?.earningsSummary?.grossPay || 0), 0)),
-      ytdTaxableIncome: roundMoney(priorPayslips.reduce((sum, slip) => sum + Number(slip?.taxBreakdown?.grossTaxableIncome || 0), 0)),
-      ytdIncomeTax: roundMoney(priorPayslips.reduce((sum, slip) => sum + Number(slip?.taxBreakdown?.taxAmount || 0), 0)),
+      calculationCurrency,
+      ytdGrossPay: currencyService.roundAmount(totals.ytdGrossPay, calculationCurrency),
+      ytdTaxableIncome: currencyService.roundAmount(totals.ytdTaxableIncome, calculationCurrency),
+      ytdIncomeTax: currencyService.roundAmount(totals.ytdIncomeTax, calculationCurrency),
     };
   }
 
@@ -262,27 +392,44 @@ class PayrollEngineService {
   async processPayrollRun(organizationId, options) {
     const { month, year, includeBonuses, includeOvertime, paymentDate } = options || {};
 
-    if (!month || !year) {
-      throw new Error('month and year are required');
+    if (!Number.isInteger(Number(month)) || Number(month) < 1 || Number(month) > 12
+      || !Number.isInteger(Number(year)) || Number(year) < 2000 || Number(year) > 2200) {
+      throw new Error('month must be 1-12 and year must be a supported integer');
     }
 
-    const exists = await PayrollRun.existsForPeriod(organizationId, year, month);
+    const normalizedMonth = Number(month);
+    const normalizedYear = Number(year);
+
+    const runFrequency = 'monthly';
+    const exists = await PayrollRun.existsForPeriod(organizationId, normalizedYear, normalizedMonth, { type: runFrequency });
     if (exists) {
       return { skipped: true, reason: 'Payroll run already exists for this period' };
     }
 
-    const runNumber = await PayrollRun.generateRunNumber(organizationId, year, month);
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0);
+    const runNumber = await PayrollRun.generateRunNumber(organizationId, normalizedYear, normalizedMonth);
+    const startDate = new Date(Date.UTC(normalizedYear, normalizedMonth - 1, 1));
+    const endDate = new Date(Date.UTC(normalizedYear, normalizedMonth, 0, 23, 59, 59, 999));
     const defaultPaymentDate = paymentDate ? new Date(paymentDate) : endDate;
+    if (Number.isNaN(defaultPaymentDate.getTime())) {
+      throw new Error('paymentDate is invalid');
+    }
+
+    const currencyPolicy = await organizationCurrencyService.getPolicy(organizationId, {
+      userId: 'system-scheduler',
+      name: 'Automated Scheduler',
+    });
+    const reportingCurrency = await organizationCurrencyService.assertReportingCurrency(
+      organizationId,
+      currencyPolicy.reportingCurrency || currencyPolicy.functionalCurrency
+    );
 
     const run = new PayrollRun({
       runNumber,
       organizationId,
       payPeriod: {
-        type: 'monthly',
-        month,
-        year,
+        type: runFrequency,
+        month: normalizedMonth,
+        year: normalizedYear,
         startDate,
         endDate,
         paymentDate: defaultPaymentDate,
@@ -297,6 +444,7 @@ class PayrollEngineService {
         processUnpaidLeave: true,
         calculateTax: true,
         prorate: true,
+        reportingCurrency,
       },
       createdBy: 'system-scheduler',
       createdByName: 'Automated Scheduler',
@@ -304,7 +452,14 @@ class PayrollEngineService {
       processedByName: 'Automated Scheduler',
     });
 
-    await run.save();
+    try {
+      await run.save();
+    } catch (error) {
+      if (error?.code === 11000) {
+        return { skipped: true, reason: 'Payroll run already exists for this period' };
+      }
+      throw error;
+    }
 
     const result = await this.calculateRun(run._id, organizationId);
     const payslips = await Payslip.find({ payrollRunId: run._id });
@@ -312,7 +467,7 @@ class PayrollEngineService {
     return {
       payslips: payslips.map(p => p.toObject()),
       totalEmployees: result.summary.totalEmployees,
-      totalPayrollCost: result.summary.totalNetPayroll,
+      totalPayrollCost: result.summary.totalEmployerCost,
       run: result.run,
       summary: result.summary,
       errors: result.errors,
@@ -332,12 +487,29 @@ class PayrollEngineService {
     }
 
     const { settings = {}, payPeriod } = run;
+    if (!run.employerEntityId) {
+      const error = new Error('Assign a legal employer before calculating this payroll run.');
+      error.code = 'PAYROLL_EMPLOYER_ENTITY_REQUIRED';
+      error.statusCode = 422;
+      throw error;
+    }
+    const employerContext = await employerEntityService.assertRunEntity(
+      run.employerEntityId,
+      organizationId,
+      payPeriod?.paymentDate
+    );
+    if ((payPeriod?.type || 'monthly') !== 'monthly') {
+      const error = new Error('Only monthly payroll runs are currently certified. Non-monthly payroll requires a reviewed salary-frequency and period-overlap configuration.');
+      error.code = 'PAY_FREQUENCY_NOT_CERTIFIED';
+      throw error;
+    }
     const payStart = new Date(payPeriod.startDate);
     const payEnd = new Date(payPeriod.endDate);
 
     // 1. Fetch eligible profiles (with optional filters)
     const profileQuery = {
       organizationId,
+      employerEntityId: run.employerEntityId,
       isActive: true,
       'payrollFlags.includeInNextRun': true,
       $or: [
@@ -346,6 +518,16 @@ class PayrollEngineService {
         { 'workTerms.payBasis': 'fixed_contract', 'workTerms.contractAmount': { $gt: 0 } },
       ],
     };
+    if ((payPeriod.type || 'monthly') === 'monthly') {
+      profileQuery.$and = [{
+        $or: [
+          { payFrequency: 'monthly' },
+          { payFrequency: { $exists: false } },
+        ],
+      }];
+    } else {
+      profileQuery.payFrequency = payPeriod.type;
+    }
 
     if (Array.isArray(settings.departments) && settings.departments.length > 0) {
       profileQuery['employeeInfo.department'] = { $in: settings.departments };
@@ -371,17 +553,19 @@ class PayrollEngineService {
     const payslips = [];
     const errors = [];
     let skippedCount = 0;
-    let nextPayslipSequence = await Payslip.getNextPayslipSequence(
+    let nextPayslipSequence = await Payslip.reservePayslipSequences(
       run.organizationId,
       payPeriod.year,
       payPeriod.month,
-      { excludePayrollRunId: run._id }
+      Math.max(1, profiles.length)
     );
 
     for (const profile of profiles) {
       const employeeName = profile.employeeInfo?.name || 'Employee';
       const employeeCurrency = normalizeCurrencyCode(profile.currency);
       try {
+        employerEntityService.assertProfileAssignment(profile, employerContext.entity);
+        await organizationCurrencyService.assertPaymentCurrency(organizationId, employeeCurrency);
         // Skip on hold
         if (profile.payrollFlags?.holdPayment) {
           skippedCount += 1;
@@ -435,15 +619,15 @@ class PayrollEngineService {
         });
       } catch (profileError) {
         console.error(`Error processing profile ${profile.userId}:`, profileError);
-
+        const errorType = String(profileError.code || 'processing_error');
         errors.push({
           userId: profile.userId,
           employeeName,
-          errorType: 'processing_error',
+          errorType,
           errorMessage: profileError.message,
         });
 
-        run.logError(profile.userId, employeeName, 'processing_error', profileError.message);
+        run.logError(profile.userId, employeeName, errorType, profileError.message);
 
         run.employees.push({
           userId: profile.userId,
@@ -474,6 +658,16 @@ class PayrollEngineService {
     // Totals & status
     run.updateTotalsFromPayslips(payslips);
     await this.applyRunCurrencySummary(run, payslips);
+    if (run.summary?.hasAggregateTotals === false) {
+      const reportingError = {
+        userId: '',
+        employeeName: 'Payroll run',
+        errorType: 'REPORTING_CURRENCY_CONVERSION_MISSING',
+        errorMessage: `Reporting totals could not be calculated in ${run.summary?.reportingCurrency || run.summary?.currency || 'the configured currency'}: ${(run.summary?.conversionWarnings || []).join(' ') || 'one or more pay-date exchange rates are missing.'}`,
+      };
+      errors.push(reportingError);
+      run.logError('', reportingError.employeeName, reportingError.errorType, reportingError.errorMessage);
+    }
     run.summary.totalEmployees = profiles.length;
     run.summary.processedCount = payslips.length;
     run.summary.errorCount = errors.length;
@@ -496,6 +690,8 @@ class PayrollEngineService {
         totalGrossPayroll: run.summary.totalGrossPayroll,
         totalNetPayroll: run.summary.totalNetPayroll,
         totalTaxWithheld: run.summary.totalTaxWithheld,
+        totalEmployerContributions: run.summary.totalEmployerContributions,
+        totalEmployerCost: run.summary.totalEmployerCost,
       },
       errors: errors.length > 0 ? errors : undefined,
     };
@@ -516,6 +712,8 @@ class PayrollEngineService {
     const workInput = options.workInput || {};
     const basePay = calculateContractBasePay(profile, run.payPeriod, workInput);
     if (!basePay.eligible) return null;
+    const employment = employmentPeriod(profile, payStart, payEnd);
+    if (!employment.eligible) return null;
 
     // Bank snapshot (masked)
     const bank = (profile.bankAccounts || []).find(b => b.isPrimary) || profile.bankAccounts?.[0];
@@ -525,6 +723,14 @@ class PayrollEngineService {
       payrollRunId: run._id,
       userId: profile.userId,
       organizationId: run.organizationId,
+      employerEntityId: run.employerEntityId,
+      employerEntitySnapshot: {
+        code: run.employerEntitySnapshot?.code,
+        legalName: run.employerEntitySnapshot?.legalName,
+        countryCode: run.employerEntitySnapshot?.countryCode,
+        jurisdictionCode: run.employerEntitySnapshot?.jurisdictionCode,
+        currency: run.employerEntitySnapshot?.currency,
+      },
       payPeriod: {
         type: run.payPeriod.type || 'monthly',
         month,
@@ -601,21 +807,7 @@ class PayrollEngineService {
     let prorationFactor = 1;
 
     if (basePay.payBasis === 'salary' && settings.prorate !== false) {
-      const periodDays = daysBetweenInclusive(payStart, payEnd) || 30;
-      const joining = profile.employeeInfo?.dateOfJoining ? new Date(profile.employeeInfo.dateOfJoining) : null;
-      const contractStart = profile.workTerms?.contractStartDate ? new Date(profile.workTerms.contractStartDate) : null;
-      const termination = profile.terminationDate ? new Date(profile.terminationDate) : null;
-      const contractEnd = profile.workTerms?.contractEndDate ? new Date(profile.workTerms.contractEndDate) : null;
-      const joinDate = [joining, contractStart].filter(Boolean).sort((a, b) => b - a)[0] || null;
-      const termDate = [termination, contractEnd].filter(Boolean).sort((a, b) => a - b)[0] || null;
-
-      const employedStart = joinDate && joinDate > payStart ? joinDate : payStart;
-      const employedEnd = termDate && termDate < payEnd ? termDate : payEnd;
-
-      const employedDays = daysBetweenInclusive(employedStart, employedEnd);
-      if (employedDays > 0 && employedDays < periodDays) {
-        prorationFactor = employedDays / periodDays;
-      }
+      prorationFactor = employment.factor;
     }
 
     const importedRegularTime = attendanceLines.some(({ line }) => {
@@ -672,10 +864,73 @@ class PayrollEngineService {
       for (const allowance of profile.allowances) {
         if (!allowance?.isActive) continue;
         if (!inPeriod(payStart, payEnd, allowance.effectiveFrom, allowance.effectiveTo)) continue;
-        payslip.addEarning(allowance.type, allowance.name, roundMoney(allowance.amount), {
-          taxable: allowance.isTaxable,
+        const treatment = payComponentTaxService.resolveComponent(
+          allowance.toObject ? allowance.toObject() : allowance,
+          paymentDate,
+          profile.taxConfig?.jurisdictionCode
+        );
+        if (treatment.requiresReview) {
+          const error = new Error(treatment.reviewMessage || `Tax treatment for ${allowance.name} requires review.`);
+          error.code = 'PAY_COMPONENT_TAX_REVIEW_REQUIRED';
+          throw error;
+        }
+        payslip.addEarning(allowance.type, allowance.name, treatment.value, {
+          taxable: treatment.taxable,
+          taxableAmount: treatment.taxableAmount,
+          cashPayable: treatment.cashPayable,
+          classificationCode: allowance.classificationCode || allowance.type,
+          taxTreatment: treatment.treatment,
+          taxTreatmentSource: treatment.source,
+          metadata: {
+            authorityReason: treatment.authorityReason || '',
+            evidenceReference: treatment.evidenceReference || '',
+            overridePeriod: treatment.overridePeriod || '',
+          },
           isRecurring: true,
         });
+      }
+    }
+
+    // Recurring benefits may be cash or non-cash. Non-cash value is included in
+    // the relevant taxable base without being added to employee cash pay.
+    if (Array.isArray(profile.benefitItems)) {
+      for (const benefit of profile.benefitItems) {
+        if (!benefit?.isActive) continue;
+        if (!inPeriod(payStart, payEnd, benefit.effectiveFrom, benefit.effectiveTo)) continue;
+        const treatment = payComponentTaxService.resolveComponent(
+          benefit.toObject ? benefit.toObject() : benefit,
+          paymentDate,
+          profile.taxConfig?.jurisdictionCode
+        );
+        if (treatment.requiresReview) {
+          const error = new Error(treatment.reviewMessage || `Tax treatment for ${benefit.name} requires review.`);
+          error.code = 'PAY_COMPONENT_TAX_REVIEW_REQUIRED';
+          throw error;
+        }
+        payslip.addEarning('benefit_in_kind', benefit.name, treatment.value, {
+          taxable: treatment.taxable,
+          taxableAmount: treatment.taxableAmount,
+          cashPayable: benefit.cashPayable === true,
+          classificationCode: benefit.classificationCode,
+          taxTreatment: treatment.treatment,
+          taxTreatmentSource: treatment.source,
+          metadata: {
+            authorityReason: treatment.authorityReason || '',
+            evidenceReference: treatment.evidenceReference || '',
+            overridePeriod: treatment.overridePeriod || '',
+          },
+          isRecurring: true,
+        });
+        if (Number(benefit.employerPaidAmount || 0) > 0) {
+          payslip.employerContributions.push({
+            type: benefit.classificationCode === 'employer_medical_cover' ? 'health_insurance' : 'other',
+            name: `${benefit.name} - Employer Paid`,
+            amount: roundMoney(benefit.employerPaidAmount),
+            description: 'Employer-paid benefit cost; not deducted from employee cash pay.',
+            metadata: { classificationCode: benefit.classificationCode },
+          });
+          payslip.calculateTotals();
+        }
       }
     }
 
@@ -696,7 +951,7 @@ class PayrollEngineService {
       for (const req of requests) {
         const linkedRequestId = req._id.toString();
 
-        if (req.type === 'overtime' && settings.includeOvertime !== false) {
+        if (req.type === 'overtime' && isVariableCompensationEnabled(req.type, settings)) {
           const hourlyRate = basePay.payBasis === 'hourly'
             ? Number(profile.workTerms?.rate || 0)
             : (basicSalary > 0 ? (basicSalary / 176) : 0); // default working hours/month for salaried staff
@@ -721,13 +976,17 @@ class PayrollEngineService {
             payslip.addEarning('overtime', req.reason || `Overtime${hours ? ` (${hours}h @ ${multiplier}x)` : ''}`, overtimePay, {
               linkedRequestId,
               isRecurring: false,
-              taxable: req.taxable !== undefined ? !!req.taxable : true,
+              taxable: true,
+              classificationCode: 'cash_allowance',
+              taxTreatment: 'taxable',
+              taxTreatmentSource: 'statutory_compensation_default',
             });
           }
           continue;
         }
 
-        if ((req.type === 'bonus' || req.type === 'commission' || req.type === 'incentive') && settings.includeBonuses !== false) {
+        if ((req.type === 'bonus' || req.type === 'commission' || req.type === 'incentive')
+          && isVariableCompensationEnabled(req.type, settings)) {
           const earningType = req.type; // matches Payslip earning types
           let amt = roundMoney(req.amount || 0);
           const requestCurrency = normalizeCurrencyCode(req.currency, payslipCurrency);
@@ -744,7 +1003,10 @@ class PayrollEngineService {
             payslip.addEarning(earningType, req.reason || earningType.replace(/_/g, ' '), amt, {
               linkedRequestId,
               isRecurring: false,
-              taxable: req.taxable !== undefined ? !!req.taxable : true,
+              taxable: true,
+              classificationCode: 'cash_bonus',
+              taxTreatment: 'taxable',
+              taxTreatmentSource: 'statutory_compensation_default',
             });
           }
           continue;
@@ -763,10 +1025,38 @@ class PayrollEngineService {
             );
           }
           if (amt > 0) {
+            const metadata = req.metadata && typeof req.metadata === 'object' ? req.metadata : {};
+            const treatment = payComponentTaxService.resolveComponent({
+              name: req.reason || 'Reimbursement',
+              amount: amt,
+              fairValue: amt,
+              paymentKind: 'cash',
+              classificationCode: 'business_expense_reimbursement',
+              taxTreatment: req.taxable === false ? 'non_taxable' : 'taxable',
+              taxAuthorityReason: metadata.taxAuthorityReason || metadata.authorityReason || '',
+              taxEvidenceReference: metadata.taxEvidenceReference
+                || metadata.evidenceReference
+                || metadata.receiptReference
+                || metadata.receiptUrl
+                || '',
+            }, req.effectiveDate || paymentDate, profile.taxConfig?.jurisdictionCode);
+            if (treatment.requiresReview) {
+              const error = new Error(treatment.reviewMessage || 'The reimbursement tax treatment requires evidence.');
+              error.code = 'PAY_COMPONENT_TAX_REVIEW_REQUIRED';
+              throw error;
+            }
             payslip.addEarning('reimbursement', req.reason || 'Reimbursement', amt, {
               linkedRequestId,
               isRecurring: false,
-              taxable: req.taxable !== undefined ? !!req.taxable : false,
+              taxable: treatment.taxable,
+              taxableAmount: treatment.taxableAmount,
+              classificationCode: 'business_expense_reimbursement',
+              taxTreatment: treatment.treatment,
+              taxTreatmentSource: treatment.source,
+              metadata: {
+                authorityReason: treatment.authorityReason || '',
+                evidenceReference: treatment.evidenceReference || '',
+              },
             });
           }
           continue;
@@ -788,7 +1078,10 @@ class PayrollEngineService {
             payslip.addEarning('other', req.reason || 'Allowance', amt, {
               linkedRequestId,
               isRecurring: false,
-              taxable: req.taxable !== undefined ? !!req.taxable : true,
+              taxable: true,
+              classificationCode: 'cash_allowance',
+              taxTreatment: 'taxable',
+              taxTreatmentSource: 'statutory_compensation_default',
             });
           }
           continue;
@@ -797,24 +1090,67 @@ class PayrollEngineService {
     }
 
     // =====================================================
-    // 2) Pre-tax deductions (e.g., pension contributions)
+    // 2) Unpaid leave reduces earned salary before tax/statutory bases.
     // =====================================================
+    if (basePay.payBasis === 'salary' && settings.processUnpaidLeave === false) {
+      const error = new Error('Approved unpaid-leave verification cannot be disabled for salaried payroll.');
+      error.code = 'LEAVE_VERIFICATION_DISABLED';
+      throw error;
+    }
+    if (basePay.payBasis === 'salary') {
+      try {
+        const unpaidLeave = await leaveService.calculateUnpaidLeaveDeduction(
+          run.organizationId,
+          profile.userId,
+          Number((payslip.earnings || []).find((earning) => earning.type === 'basic')?.amount || 0),
+          payStart,
+          payEnd
+        );
 
+        if (unpaidLeave.days > 0 && unpaidLeave.amount > 0) {
+          const basicEarning = (payslip.earnings || []).find((earning) => earning.type === 'basic');
+          if (basicEarning) {
+            const originalAmount = Number(basicEarning.amount || 0);
+            const originalTaxableAmount = Number(basicEarning.taxableAmount ?? originalAmount);
+            const reduction = Math.min(originalAmount, Math.max(0, Number(unpaidLeave.amount || 0)));
+            basicEarning.amount = roundMoney(originalAmount - reduction);
+            basicEarning.taxableAmount = roundMoney(Math.max(0, originalTaxableAmount - reduction));
+            basicEarning.description = [
+              basicEarning.description,
+              `Reduced by ${roundMoney(reduction)} for ${unpaidLeave.days} unpaid leave day(s).`,
+            ].filter(Boolean).join(' ');
+            basicEarning.metadata = {
+              ...(basicEarning.metadata || {}),
+              unpaidLeaveDays: unpaidLeave.days,
+              unpaidLeaveReduction: roundMoney(reduction),
+            };
+            payslip.calculateTotals();
+          }
+        }
+      } catch (leaveError) {
+        const error = new Error(`Approved unpaid-leave data could not be verified for ${profile.employeeInfo?.name || profile.userId}: ${leaveError.message}`);
+        error.code = leaveError.code || 'LEAVE_DATA_UNAVAILABLE';
+        throw error;
+      }
+    }
+
+    // Voluntary profile pension percentages affect cash pay, but they are not
+    // assumed to reduce taxable income. Statutory relief belongs to the pack.
     const effectivePension = taxService.resolveEffectivePensionSettings(
       profile.taxConfig || {},
       profile.statutoryContributions || {}
     );
-
-    // Pension contribution (employee)
-    if (effectivePension.enabled && effectivePension.employeePercent > 0) {
+    const pensionIsPackManaged = String(profile.taxConfig?.jurisdictionCode || '').toUpperCase() === 'NG';
+    if (!pensionIsPackManaged && effectivePension.enabled && effectivePension.employeePercent > 0) {
       const pensionAmt = roundMoney((payslip.earningsSummary?.grossPay || 0) * (effectivePension.employeePercent / 100));
       if (pensionAmt > 0) {
-        payslip.addDeduction('pension', 'Pension Contribution', pensionAmt, { isPreTax: true });
+        payslip.addDeduction('pension', 'Voluntary Pension Contribution', pensionAmt, {
+          isPreTax: false,
+          metadata: { taxTreatment: 'post_tax_until_pack_verified' },
+        });
       }
     }
-
-    // Employer pension contribution (not deducted from employee)
-    if (effectivePension.enabled && effectivePension.employerPercent > 0) {
+    if (!pensionIsPackManaged && effectivePension.enabled && effectivePension.employerPercent > 0) {
       const employerAmt = roundMoney((payslip.earningsSummary?.grossPay || 0) * (effectivePension.employerPercent / 100));
       if (employerAmt > 0) {
         payslip.employerContributions.push({
@@ -826,69 +1162,41 @@ class PayrollEngineService {
     }
 
     // =====================================================
-    // 3) Unpaid leave deduction (post-tax by default)
-    // =====================================================
-    if (basePay.payBasis === 'salary' && settings.processUnpaidLeave !== false) {
-      try {
-        const unpaidLeave = await leaveService.calculateUnpaidLeaveDeduction(
-          profile.userId,
-          basicSalary,
-          month,
-          year
-        );
-
-        if (unpaidLeave.days > 0 && unpaidLeave.amount > 0) {
-          payslip.addDeduction('unpaid_leave', `Unpaid Leave (${unpaidLeave.days} days)`, roundMoney(unpaidLeave.amount), {
-            isPreTax: false,
-            metadata: { unpaidDays: unpaidLeave.days },
-          });
-        }
-      } catch (leaveError) {
-        console.warn(`Leave integration unavailable for ${profile.userId}:`, leaveError.message);
-      }
-    }
-
-    // =====================================================
-    // 4) Profile recurring deductions (pre-tax then post-tax)
+    // 3) Profile recurring deductions. Statutory pre-tax treatment must be
+    // owned by the effective tax pack rather than an unrestricted profile flag.
     // =====================================================
     const currentGross = payslip.earningsSummary?.grossPay || 0;
 
     const recurring = Array.isArray(profile.recurringDeductions) ? profile.recurringDeductions : [];
 
-    // Apply pre-tax first
-    for (const deduction of recurring.filter(d => d?.isActive && d?.isPreTax)) {
-      if (!inPeriod(payStart, payEnd, deduction.startDate, deduction.endDate)) continue;
-
-      const calcAmount = deduction.isPercentage
-        ? (currentGross * (Number(deduction.percentage || 0) / 100))
-        : Number(deduction.amount || 0);
-
-      const amt = roundMoney(calcAmount);
-      if (amt <= 0) continue;
-
-      const type = normalizeDeductionType(deduction.type);
-      const metadata = type === 'other' && deduction.type && deduction.type !== 'other'
-        ? { originalType: deduction.type }
-        : undefined;
-
-      payslip.addDeduction(type, deduction.name, amt, { isPreTax: true, metadata });
+    const ungovernedPreTax = recurring.find((deduction) => (
+      deduction?.isActive && deduction?.isPreTax
+      && inPeriod(payStart, payEnd, deduction.startDate, deduction.endDate)
+    ));
+    if (ungovernedPreTax) {
+      const error = new Error(`Recurring deduction "${ungovernedPreTax.name || 'Unnamed deduction'}" cannot reduce taxable income from a profile flag. Configure the statutory deduction and evidence in the employee's effective tax pack.`);
+      error.code = 'PRETAX_DEDUCTION_NOT_PACK_MANAGED';
+      throw error;
     }
 
     // =====================================================
-    // 5) Statutory deductions (income tax, social security)
+    // 4) Statutory deductions (income tax, social security)
     // =====================================================
 
-    if (settings.processStatutoryDeductions !== false) {
+    {
       // Compute taxable base: sum of taxable earnings - pre-tax deductions
       const taxableEarnings = (payslip.earnings || [])
         .filter(e => e?.taxable !== false)
-        .reduce((sum, e) => sum + (e.amount || 0), 0);
+        .reduce((sum, e) => sum + Number(e.taxableAmount ?? e.amount ?? 0), 0);
 
       const preTaxDeductions = (payslip.deductions || [])
         .filter(d => d?.isPreTax)
         .reduce((sum, d) => sum + (d.amount || 0), 0);
 
       const netTaxableIncome = Math.max(0, roundMoney(taxableEarnings - preTaxDeductions));
+      const pensionablePay = (payslip.earnings || [])
+        .filter((earning) => ['basic', 'hra', 'transport'].includes(earning.type))
+        .reduce((sum, earning) => sum + Number(earning.amount || 0), 0);
       const taxPaymentDate = payslip.payPeriod?.paymentDate || payEnd;
       const ytdContext = await this.getEmployeeYearToDatePayrollContext(profile, taxPaymentDate);
       const taxResult = await taxService.calculatePayrollTaxes({
@@ -904,23 +1212,44 @@ class PayrollEngineService {
         employeeInfo: profile.employeeInfo || {},
         ytdGrossPay: ytdContext.ytdGrossPay,
         ytdTaxableIncome: ytdContext.ytdTaxableIncome,
+        ytdIncomeTax: ytdContext.ytdIncomeTax,
+        ytdCurrency: ytdContext.calculationCurrency,
+        currency: payslipCurrency,
+        statutoryBases: {
+          pensionablePay: roundMoney(pensionablePay),
+          socialSecurityPay: roundMoney(taxableEarnings),
+          insurablePay: roundMoney(taxableEarnings),
+        },
       });
 
+      if (taxResult?.payrollRunnable === false) {
+        const error = new Error((taxResult.blockingErrors || taxResult.validationErrors || []).join(' ') || 'The selected statutory pack is not approved for payroll.');
+        error.code = 'STATUTORY_PACK_NOT_RUNNABLE';
+        error.details = taxResult.blockingErrors || taxResult.validationErrors || [];
+        throw error;
+      }
+
+      const incomeTaxAmount = roundMoney(taxResult?.incomeTax?.taxAmount ?? 0);
+      if (settings.calculateTax === false && incomeTaxAmount > 0) {
+        const error = new Error('Income-tax withholding cannot be disabled while the selected statutory pack calculates a liability. Record an approved statutory exemption instead.');
+        error.code = 'INCOME_TAX_PROCESSING_DISABLED';
+        throw error;
+      }
+
       if (settings.calculateTax !== false) {
-        const incomeTaxAmount = roundMoney(taxResult?.incomeTax?.taxAmount || 0);
 
         if (incomeTaxAmount > 0) {
           payslip.addDeduction('income_tax', 'Income Tax', incomeTaxAmount, { isPreTax: false });
         }
 
         payslip.taxBreakdown = {
-          grossTaxableIncome: roundMoney(taxResult?.incomeTax?.grossTaxableIncome || taxableEarnings),
-          taxExemptIncome: roundMoney(taxResult?.incomeTax?.taxExemptIncome || 0),
-          deductionsBeforeTax: roundMoney(taxResult?.incomeTax?.deductionsBeforeTax || preTaxDeductions),
-          netTaxableIncome: roundMoney(taxResult?.incomeTax?.netTaxableIncome || netTaxableIncome),
-          taxRate: roundMoney(taxResult?.incomeTax?.taxRate || 0),
+          grossTaxableIncome: roundMoney(taxResult?.incomeTax?.grossTaxableIncome ?? taxableEarnings),
+          taxExemptIncome: roundMoney(taxResult?.incomeTax?.taxExemptIncome ?? 0),
+          deductionsBeforeTax: roundMoney(taxResult?.incomeTax?.deductionsBeforeTax ?? preTaxDeductions),
+          netTaxableIncome: roundMoney(taxResult?.incomeTax?.netTaxableIncome ?? netTaxableIncome),
+          taxRate: roundMoney(taxResult?.incomeTax?.taxRate ?? 0),
           taxAmount: incomeTaxAmount,
-          yearToDateTax: roundMoney(ytdContext.ytdIncomeTax + incomeTaxAmount),
+          yearToDateTax: roundMoney((taxResult?.yearToDateIncomeTax ?? 0) + incomeTaxAmount),
           jurisdictionCode: taxResult?.incomeTax?.jurisdictionCode || '',
           jurisdictionName: taxResult?.incomeTax?.jurisdictionName || '',
           jurisdictionConfigId: taxResult?.jurisdictionConfig?._id || null,
@@ -928,22 +1257,59 @@ class PayrollEngineService {
           taxYearLabel: taxResult?.incomeTax?.taxYearLabel || ytdContext.taxYear?.label || '',
           calculationMode: taxResult?.incomeTax?.calculationMode || '',
           method: taxResult?.incomeTax?.method || '',
-          annualizedIncome: roundMoney(taxResult?.incomeTax?.annualizedIncome || 0),
-          annualizedTaxableIncome: roundMoney(taxResult?.incomeTax?.annualizedTaxableIncome || 0),
-          taxableIncomeAfterReliefs: roundMoney(taxResult?.incomeTax?.taxableIncomeAfterReliefs || 0),
+          annualizedIncome: roundMoney(taxResult?.incomeTax?.annualizedIncome ?? 0),
+          annualizedTaxableIncome: roundMoney(taxResult?.incomeTax?.annualizedTaxableIncome ?? 0),
+          taxableIncomeAfterReliefs: roundMoney(taxResult?.incomeTax?.taxableIncomeAfterReliefs ?? 0),
           notes: Array.isArray(taxResult?.incomeTax?.notes) ? taxResult.incomeTax.notes : [],
           details: taxResult?.incomeTax?.details || undefined,
           calculationTrace: {
             validationErrors: Array.isArray(taxResult?.validationErrors) ? taxResult.validationErrors : [],
             employeeTaxInputs: taxResult?.employeeTaxInputs || {},
+            statutoryPackHash: taxResult?.compliance?.contentHash || '',
+            sourceLinks: taxResult?.compliance?.sourceLinks || [],
           },
+          calculationCurrency: taxResult?.calculationCurrency || payslipCurrency,
+          payrollCurrency: payslipCurrency,
+          currencyConversion: taxResult?.currencyConversion || null,
+          calculationBases: taxResult?.calculationBases || null,
+          compliance: taxResult?.compliance || {},
         };
       }
 
-      for (const component of taxResult?.statutoryContributions?.components || []) {
+      const statutoryComponents = taxResult?.statutoryContributions?.components || [];
+      const hasStatutoryLiability = statutoryComponents.some((component) => Number(component?.amount || 0) > 0);
+      if (settings.processStatutoryDeductions === false && hasStatutoryLiability) {
+        const error = new Error('Statutory deductions and employer liabilities cannot be disabled while the selected pack calculates an amount. Record an approved statutory exemption instead.');
+        error.code = 'STATUTORY_PROCESSING_DISABLED';
+        throw error;
+      }
+
+      if (settings.processStatutoryDeductions !== false) {
+      for (const component of statutoryComponents) {
         if (Number(component?.amount || 0) <= 0) continue;
+        if (component.payer === 'employer') {
+          payslip.employerContributions.push({
+            type: normalizeStatutoryComponentType(component.type, 'employer'),
+            name: component.name || 'Employer Statutory Contribution',
+            amount: roundMoney(component.amount),
+            liabilityCode: component.liabilityCode || '',
+            remittanceAuthority: component.remittanceAuthority || '',
+            metadata: {
+              source: component.source,
+              taxableAmount: roundMoney(component.taxableAmount || 0),
+              rate: component.rate,
+              cap: component.cap,
+              threshold: component.threshold,
+              hitCap: component.hitCap,
+              calculationCurrency: component.calculationCurrency,
+              conversionRate: component.conversionRate,
+            },
+          });
+          payslip.calculateTotals();
+          continue;
+        }
         payslip.addDeduction(
-          'social_security',
+          normalizeStatutoryComponentType(component.type, 'employee'),
           component.name || 'Social Security',
           roundMoney(component.amount),
           {
@@ -956,15 +1322,21 @@ class PayrollEngineService {
               threshold: component.threshold,
               hitCap: component.hitCap,
               reducesTaxableIncome: !!component.reducesTaxableIncome,
+              liabilityCode: component.liabilityCode,
+              remittanceAuthority: component.remittanceAuthority,
+              calculationCurrency: component.calculationCurrency,
+              conversionRate: component.conversionRate,
             },
           }
         );
+      }
       }
     }
 
     // Apply post-tax recurring deductions (including loans)
     for (const deduction of recurring.filter(d => d?.isActive && !d?.isPreTax)) {
       if (!inPeriod(payStart, payEnd, deduction.startDate, deduction.endDate)) continue;
+      if (deduction.type === 'loan_repayment' && settings.processLoans === false) continue;
 
       const calcAmount = deduction.isPercentage
         ? (currentGross * (Number(deduction.percentage || 0) / 100))
@@ -991,9 +1363,24 @@ class PayrollEngineService {
 
     // Finalize totals
     payslip.calculateTotals();
+    payslip.normalizeCurrencyAmounts();
+
+    if (Number(payslip.netPay || 0) < 0) {
+      const error = new Error('Statutory and other deductions exceed this employee\'s cash earnings. Review withholding caps, deduction priority, or carry-forward handling before approval.');
+      error.code = 'PAYROLL_NEGATIVE_NET_PAY';
+      error.details = {
+        cashGrossPay: roundMoney(payslip.earningsSummary?.cashGrossPay ?? payslip.earningsSummary?.grossPay ?? 0),
+        totalDeductions: roundMoney(payslip.deductionsSummary?.totalDeductions ?? 0),
+        netPay: roundMoney(payslip.netPay),
+      };
+      throw error;
+    }
 
     return payslip;
   }
 }
 
 module.exports = PayrollEngineService;
+module.exports.isVariableCompensationEnabled = isVariableCompensationEnabled;
+module.exports.daysBetweenInclusive = daysBetweenInclusive;
+module.exports.employmentPeriod = employmentPeriod;

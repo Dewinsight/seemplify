@@ -424,6 +424,7 @@ export default function ChatInterface({
             <Tooltip title="Attach document (PDF, DOC, DOCX, TXT, PPTX)">
               <span>
                 <IconButton
+                  aria-label="Attach a document to this self-assessment"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={disabled || isLoading}
                   color="primary"
@@ -463,6 +464,7 @@ export default function ChatInterface({
             />
 
             <IconButton
+              aria-label={isSending ? 'Sending self-assessment message' : 'Send self-assessment message'}
               onClick={handleSend}
               disabled={!inputValue.trim() || isSending || disabled || isLoading}
               color="primary"
@@ -473,10 +475,8 @@ export default function ChatInterface({
                 borderRadius: 2.5,
                 width: 42,
                 height: 42,
-                backgroundImage: `linear-gradient(145deg, ${theme.palette.primary.main} 0%, ${theme.palette.info.main} 100%)`,
                 '&:hover': {
-                  bgcolor: 'primary.dark',
-                  transform: 'translateY(-1px)'
+                  bgcolor: 'primary.dark'
                 },
                 '&.Mui-disabled': { bgcolor: 'action.disabledBackground', color: 'action.disabled' }
               }}

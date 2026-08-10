@@ -16,7 +16,9 @@ AI_INTERVIEW_MONGO_URI=mongodb://127.0.0.1:27017
 AI_INTERVIEW_MONGO_DB=ai_recruiter
 ```
 
-Collections are `jobs`, `candidates`, `questions`, `interviews`, `sessions`, `emailLog`, `walletLedger`, `users`, `cvProcessingJobs`, and singleton `settings`.
+Collections are `jobs`, `candidates`, `questions`, `interviews`, `sessions`, `emailLog`, `walletLedger`, `users`, `cvProcessingJobs`, `cvProcessingIntakes`, `cvStorageCleanupTasks`, and singleton `settings`.
+
+Production refuses to start without `AI_INTERVIEW_MONGO_URI` (or the shared `MONGO_URI`/`MONGODB_URI`). The JSON and filesystem stores are development-only; durable CV processing in production also requires persistent Redis.
 
 ## Required Services
 
@@ -31,7 +33,7 @@ Configure these in `backend/.env`:
 - `MAIL_API_BASE_URL`, `MAIL_API_TOKEN`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`
 - `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`
 
-The standalone app never receives a provider API key or chooses a provider credential. The recruiter backend signs and routes every request. CV parsing returns `202`, persists the extracted text before dispatch, and waits in BullMQ while the ChatGPT gateway is unavailable. Azure remains configured only for interview speech.
+The standalone app never receives a provider API key or chooses a provider credential. The recruiter backend signs and routes every request. CV parsing requires an idempotency key, commits a durable intake before writing the raw CV to GridFS, returns `202` after the processing job is bound, and waits in BullMQ while the ChatGPT gateway is unavailable. Restart and periodic recovery reclaim abandoned intake files without deleting bytes referenced by queued or retryable jobs. Azure remains configured only for interview speech.
 
 ## Local Run
 

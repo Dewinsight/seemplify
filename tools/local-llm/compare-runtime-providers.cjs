@@ -17,9 +17,12 @@ const {
 } = require('../../recruiter/backend/config/aiRuntimeCatalog');
 const {
   AIRuntimeService,
-  signLocalRequest,
   stripReasoning
 } = require('../../recruiter/backend/services/aiRuntime/aiRuntimeService');
+const {
+  deriveServiceSecret,
+  signatureForServiceSecret
+} = require('./service-auth.cjs');
 const { evaluateOutput } = require('../../recruiter/backend/services/aiRuntime/evaluationHarness');
 const {
   benchmarkErrorResult,
@@ -36,6 +39,7 @@ const {
 
 const runtimeDir = path.join(repositoryRoot, '.local-runtime', 'llm');
 const secretFile = path.join(runtimeDir, 'service-secret');
+const localServiceId = 'recruiter';
 const argument = (name) => process.argv.find((value) => value.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
 const hasFlag = (name) => process.argv.includes(`--${name}`);
 const live = hasFlag('live');
@@ -502,8 +506,28 @@ function stableHash(value) {
 }
 
 function localSecret() {
-  if (!fs.existsSync(secretFile)) return null;
-  return fs.readFileSync(secretFile, 'utf8').trim() || null;
+  const configured = String(process.env.LOCAL_LLM_SERVICE_SECRET || '').trim();
+  if (configured) return configured;
+  const master = String(process.env.LOCAL_LLM_SHARED_SECRET || '').trim()
+    || (fs.existsSync(secretFile) ? fs.readFileSync(secretFile, 'utf8').trim() : '');
+  return master ? deriveServiceSecret(master, localServiceId) : null;
+}
+
+function signLocalServiceRequest(secret, body, { method = 'POST', path: requestPath } = {}) {
+  const timestamp = String(Date.now());
+  const nonce = crypto.randomBytes(24).toString('base64url');
+  return {
+    timestamp,
+    nonce,
+    signature: signatureForServiceSecret(secret, {
+      timestamp,
+      nonce,
+      serviceId: localServiceId,
+      method,
+      requestPath,
+      rawBody: body
+    })
+  };
 }
 
 function groqModelForActivity(activity) {
@@ -693,14 +717,16 @@ async function verifyTerra() {
   const secret = localSecret();
   if (!secret) throw new Error('Local gateway service secret is unavailable');
   const body = JSON.stringify({ operation: 'status' });
-  const signature = signLocalRequest(secret, body, { method: 'POST', path: '/v1/status' });
+  const signature = signLocalServiceRequest(secret, body, { method: 'POST', path: '/v1/status' });
   const response = await fetch(`${gatewayUrl}/v1/status`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-seemplify-timestamp': signature.timestamp,
       'x-seemplify-nonce': signature.nonce,
-      'x-seemplify-signature': signature.signature
+      'x-seemplify-signature': signature.signature,
+      'x-seemplify-service': localServiceId,
+      'x-seemplify-signature-version': '2'
     },
     body,
     signal: AbortSignal.timeout(10_000)
@@ -733,14 +759,16 @@ async function localCompletion({ fixture, route, messages, secret }) {
   const endpoint = ['candidate.cv_parse', 'ai_interview.cv_parse'].includes(fixture.activity)
     ? '/v1/cv/analyze'
     : '/v1/complete';
-  const signature = signLocalRequest(secret, body, { method: 'POST', path: endpoint });
+  const signature = signLocalServiceRequest(secret, body, { method: 'POST', path: endpoint });
   const response = await fetch(`${gatewayUrl}${endpoint}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-seemplify-timestamp': signature.timestamp,
       'x-seemplify-nonce': signature.nonce,
-      'x-seemplify-signature': signature.signature
+      'x-seemplify-signature': signature.signature,
+      'x-seemplify-service': localServiceId,
+      'x-seemplify-signature-version': '2'
     },
     body,
     signal: AbortSignal.timeout(timeoutMs + 30_000)

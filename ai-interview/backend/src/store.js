@@ -253,6 +253,7 @@ function seedStore() {
       }
     ],
     cvProcessingJobs: [],
+    cvProcessingIntakes: [],
     cvStorageCleanupTasks: [],
     users: seedUsers(nowText),
     generatedAt: nowText
@@ -326,7 +327,10 @@ function buildCandidateDeltaOperations(previousCandidates = [], nextCandidates =
     if (Object.keys(set).length || Object.keys(unset).length) {
       operations.push({
         updateOne: {
-          filter: { _id: candidateId },
+          filter: {
+            _id: candidateId,
+            cvDeletionRequestedAt: { $exists: false }
+          },
           update: {
             ...(Object.keys(set).length ? { $set: set } : {}),
             ...(Object.keys(unset).length ? { $unset: unset } : {})
@@ -425,6 +429,10 @@ function canAccessOwnedResource(user, item) {
   return !item.createdBy || item.createdBy === user._id;
 }
 
+function isVisibleCandidate(candidate) {
+  return Boolean(candidate && !candidate.cvDeletionRequestedAt);
+}
+
 function getOptionsPayload(store, user = null) {
   const voices = getAIInterviewVoiceOptions();
   const tiers = Object.values(voices.reduce((acc, voice) => {
@@ -447,7 +455,9 @@ function getOptionsPayload(store, user = null) {
     tiers,
     defaultVoiceId: voices.find((voice) => voice.isDefault)?.id || voices[0]?.id,
     jobs: store.jobs.filter((item) => canAccessOwnedResource(user, item)),
-    candidates: store.candidates.filter((item) => canAccessOwnedResource(user, item)),
+    candidates: store.candidates.filter((item) => (
+      isVisibleCandidate(item) && canAccessOwnedResource(user, item)
+    )),
     questions: store.questions.filter((item) => canAccessOwnedResource(user, item)),
     settings: store.settings,
     pricing: {
@@ -519,6 +529,7 @@ module.exports = {
   connectMongo,
   getMongoDbName,
   canAccessOwnedResource,
+  isVisibleCandidate,
   buildCandidateDeltaOperations,
   // Exposed for focused persistence-boundary tests.
   STORE_COLLECTIONS: Object.freeze([...COLLECTIONS])

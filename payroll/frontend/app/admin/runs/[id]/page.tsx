@@ -29,6 +29,12 @@ type PayrollRun = {
     endDate?: string;
     paymentDate?: string;
   };
+  employerEntitySnapshot?: {
+    legalName?: string;
+    jurisdictionCode?: string;
+    currency?: string;
+    payrollRunnableAtCreation?: boolean;
+  };
   summary?: {
     totalEmployees?: number;
     processedCount?: number;
@@ -234,7 +240,6 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
       setBusy(null);
     }
   };
-
   const saveWorkInputs = async () => {
     setBusy('work-inputs');
     try {
@@ -566,6 +571,20 @@ export default function PayrollRunDetailsPage({ params }: { params: { id: string
             )}
           </div>
         )}
+
+        <section aria-label="Legal employer for this run" className="border border-zinc-800 bg-zinc-900/60 p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Legal employer</h2>
+          <p className="mt-2 text-sm text-zinc-300">
+            {run.employerEntitySnapshot?.legalName || 'Legacy run — legal employer not recorded'}
+            {run.employerEntitySnapshot?.jurisdictionCode ? ` · ${run.employerEntitySnapshot.jurisdictionCode}` : ''}
+            {run.employerEntitySnapshot?.currency ? ` · ${run.employerEntitySnapshot.currency}` : ''}
+          </p>
+          {run.employerEntitySnapshot?.payrollRunnableAtCreation === false ? (
+            <div className="mt-3 border border-amber-500/30 bg-amber-950/20 p-3 text-sm text-amber-100">
+              This run was created against a preview-only tax pack and cannot be finalized.
+            </div>
+          ) : null}
+        </section>
 
         {/* Exceptions */}
         {(workInputDrafts?.length || 0) > 0 && (

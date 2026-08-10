@@ -6,9 +6,11 @@ import {
   CheckCircle2,
   DollarSign,
   Globe,
+  Landmark,
   Loader2,
   Plus,
   RefreshCw,
+  Search,
   Settings2,
   ShieldCheck,
   Trash2,
@@ -55,11 +57,61 @@ interface ProviderInfo {
   requiresApiKey: boolean;
 }
 
+interface CurrencyCatalogItem {
+  code: string;
+  name: string;
+  symbol: string;
+  decimals: number;
+  label: string;
+  kind: 'iso' | 'custom';
+  enabled: boolean;
+  paymentEnabled: boolean;
+  statutoryEligible: boolean;
+  payrollCalculationReady?: boolean;
+  usage?: 'reporting_only';
+}
+
+interface CustomCurrency {
+  code: string;
+  name: string;
+  symbol: string;
+  minorUnits: number;
+  isActive: boolean;
+  usage: 'reporting_only';
+  nonStatutoryOnly: true;
+  createdAt?: string;
+}
+
+interface EnabledCurrency {
+  code: string;
+  paymentEnabled: boolean;
+  isActive: boolean;
+  addedAt?: string;
+}
+
+interface OrganizationCurrencyPolicy {
+  functionalCurrency: string;
+  reportingCurrency: string;
+  enabledCurrencies: EnabledCurrency[];
+  customCurrencies: CustomCurrency[];
+  requireConfiguredPaymentCurrency: boolean;
+  updatedAt?: string;
+}
+
+const emptyCustomCurrency = () => ({
+  code: '',
+  name: '',
+  symbol: '',
+  minorUnits: 2,
+});
+
 export default function CurrenciesPage() {
   const { currencies, loading: currenciesLoading } = usePayrollCurrencies();
   const [rates, setRates] = useState<ExchangeRate[]>([]);
   const [settings, setSettings] = useState<CurrencySyncSettings | null>(null);
   const [provider, setProvider] = useState<ProviderInfo | null>(null);
+  const [policy, setPolicy] = useState<OrganizationCurrencyPolicy | null>(null);
+  const [policyCatalog, setPolicyCatalog] = useState<CurrencyCatalogItem[]>([]);
   const [activeRateCount, setActiveRateCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showAddRate, setShowAddRate] = useState(false);
@@ -69,6 +121,7 @@ export default function CurrenciesPage() {
   const [manualNotes, setManualNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [savingPolicy, setSavingPolicy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +130,16 @@ export default function CurrenciesPage() {
   const [convertTo, setConvertTo] = useState('NGN');
   const [convertAmount, setConvertAmount] = useState('1000');
   const [convertResult, setConvertResult] = useState<any>(null);
+  const [currencySearch, setCurrencySearch] = useState('');
+  const [customCurrency, setCustomCurrency] = useState(emptyCustomCurrency());
+
+  const [policyForm, setPolicyForm] = useState<OrganizationCurrencyPolicy>({
+    functionalCurrency: 'USD',
+    reportingCurrency: 'USD',
+    enabledCurrencies: [{ code: 'USD', paymentEnabled: true, isActive: true }],
+    customCurrencies: [],
+    requireConfiguredPaymentCurrency: true,
+  });
 
   const [settingsForm, setSettingsForm] = useState({
     providerBaseCurrency: 'USD',
@@ -103,9 +166,10 @@ export default function CurrenciesPage() {
       setLoading(true);
       setError(null);
 
-      const [ratesRes, settingsRes] = await Promise.all([
+      const [ratesRes, settingsRes, policyRes] = await Promise.all([
         api.get('/currencies/rates'),
         api.get('/currencies/settings'),
+        api.get('/currencies/policy'),
       ]);
 
       const nextRates = Array.isArray(ratesRes.data?.rates) ? ratesRes.data.rates : [];
@@ -115,6 +179,19 @@ export default function CurrenciesPage() {
       setSettings(nextSettings);
       setProvider(settingsRes.data?.provider || null);
       setActiveRateCount(Number(settingsRes.data?.activeRateCount || nextRates.length || 0));
+
+      const nextPolicy = policyRes.data?.policy || null;
+      setPolicy(nextPolicy);
+      setPolicyCatalog(Array.isArray(policyRes.data?.currencies) ? policyRes.data.currencies : []);
+      if (nextPolicy) {
+        setPolicyForm({
+          functionalCurrency: nextPolicy.functionalCurrency || 'USD',
+          reportingCurrency: nextPolicy.reportingCurrency || nextPolicy.functionalCurrency || 'USD',
+          enabledCurrencies: Array.isArray(nextPolicy.enabledCurrencies) ? nextPolicy.enabledCurrencies : [],
+          customCurrencies: Array.isArray(nextPolicy.customCurrencies) ? nextPolicy.customCurrencies : [],
+          requireConfiguredPaymentCurrency: nextPolicy.requireConfiguredPaymentCurrency !== false,
+        });
+      }
 
       if (nextSettings) {
         setSettingsForm({
@@ -239,6 +316,146 @@ export default function CurrenciesPage() {
     }
   };
 
+  const enabledCurrencyCodes = useMemo(
+    () => new Set(policyForm.enabledCurrencies
+      .filter((currency) => currency.isActive !== false && currency.paymentEnabled !== false)
+      .map((currency) => currency.code)),
+    [policyForm.enabledCurrencies]
+  );
+
+  const activeIsoCurrencyCodes = useMemo(
+    () => new Set(policyForm.enabledCurrencies
+      .filter((currency) => currency.isActive !== false)
+      .map((currency) => currency.code)),
+    [policyForm.enabledCurrencies]
+  );
+
+  const filteredPolicyCurrencies = useMemo(() => {
+    const query = currencySearch.trim().toLowerCase();
+    return policyCatalog
+      .filter((currency) => currency.kind === 'iso')
+      .filter((currency) => !query
+        || currency.code.toLowerCase().includes(query)
+        || currency.name.toLowerCase().includes(query));
+  }, [currencySearch, policyCatalog]);
+
+  const reportingCurrencies = useMemo(() => {
+    const iso = policyCatalog.filter((currency) => (
+      currency.kind === 'iso' && activeIsoCurrencyCodes.has(currency.code)
+    ));
+    const custom = policyForm.customCurrencies
+      .filter((currency) => currency.isActive !== false)
+      .map((currency) => ({
+        code: currency.code,
+        name: currency.name,
+        label: `${currency.code} - ${currency.name}`,
+        kind: 'custom' as const,
+      }));
+    return [...iso, ...custom];
+  }, [activeIsoCurrencyCodes, policyCatalog, policyForm.customCurrencies]);
+
+  const handleFunctionalCurrencyChange = (code: string) => {
+    if (policyCatalog.find((currency) => currency.code === code)?.payrollCalculationReady === false) return;
+    setPolicyForm((current) => {
+      const alreadyEnabled = current.enabledCurrencies.some((currency) => currency.code === code);
+      return {
+        ...current,
+        functionalCurrency: code,
+        enabledCurrencies: alreadyEnabled
+          ? current.enabledCurrencies.map((currency) => currency.code === code
+            ? { ...currency, isActive: true, paymentEnabled: true }
+            : currency)
+          : [...current.enabledCurrencies, { code, isActive: true, paymentEnabled: true }],
+      };
+    });
+  };
+
+  const togglePaymentCurrency = (code: string) => {
+    if (code === policyForm.functionalCurrency) return;
+    const calculationReady = policyCatalog.find((currency) => currency.code === code)?.payrollCalculationReady !== false;
+    setPolicyForm((current) => {
+      const enabled = current.enabledCurrencies.some((currency) => (
+        currency.code === code
+        && currency.isActive !== false
+        && (calculationReady ? currency.paymentEnabled !== false : true)
+      ));
+      const nextEnabled = enabled
+        ? current.enabledCurrencies.filter((currency) => currency.code !== code)
+        : [...current.enabledCurrencies.filter((currency) => currency.code !== code), {
+          code,
+          isActive: true,
+          paymentEnabled: calculationReady,
+        }];
+      const reportingCurrency = current.reportingCurrency === code && enabled
+        ? current.functionalCurrency
+        : current.reportingCurrency;
+      return { ...current, enabledCurrencies: nextEnabled, reportingCurrency };
+    });
+  };
+
+  const addCustomReportingCurrency = () => {
+    const code = customCurrency.code.trim().toUpperCase();
+    const name = customCurrency.name.trim();
+    const symbol = customCurrency.symbol.trim();
+    if (!/^[A-Z][A-Z0-9]{2}$/.test(code) || !name || !symbol) {
+      setError('Enter a three-character code, name, and symbol for the reporting currency.');
+      return;
+    }
+    if (policyCatalog.some((currency) => currency.code === code)
+      || policyForm.customCurrencies.some((currency) => currency.code === code)) {
+      setError(`${code} already exists in the currency catalogue.`);
+      return;
+    }
+
+    setError(null);
+    setPolicyForm((current) => ({
+      ...current,
+      customCurrencies: [...current.customCurrencies, {
+        code,
+        name,
+        symbol,
+        minorUnits: Math.min(6, Math.max(0, Number(customCurrency.minorUnits || 0))),
+        isActive: true,
+        usage: 'reporting_only',
+        nonStatutoryOnly: true,
+      }],
+    }));
+    setCustomCurrency(emptyCustomCurrency());
+  };
+
+  const removeCustomReportingCurrency = (code: string) => {
+    if (!window.confirm(`Remove ${code} from the custom reporting currency list?`)) return;
+    setPolicyForm((current) => ({
+      ...current,
+      reportingCurrency: current.reportingCurrency === code ? current.functionalCurrency : current.reportingCurrency,
+      customCurrencies: current.customCurrencies.filter((currency) => currency.code !== code),
+    }));
+  };
+
+  const handleSavePolicy = async () => {
+    setSavingPolicy(true);
+    setFeedback(null);
+    setError(null);
+    try {
+      const response = await api.put('/currencies/policy', policyForm);
+      const nextPolicy = response.data?.policy;
+      setPolicy(nextPolicy || null);
+      setPolicyCatalog(Array.isArray(response.data?.currencies) ? response.data.currencies : []);
+      if (nextPolicy) {
+        setPolicyForm(nextPolicy);
+      }
+      setFeedback('Organization currency policy updated.');
+    } catch (err: any) {
+      console.error('Failed to save currency policy:', err);
+      const details = Array.isArray(err?.response?.data?.details)
+        ? ` ${err.response.data.details.join(' ')}`
+        : '';
+      setError(`${err?.response?.data?.error || 'Failed to update currency policy'}${details}`);
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
+
   const handleSyncRates = async (mode: 'sync' | 'seed') => {
     setSyncing(true);
     setFeedback(null);
@@ -301,7 +518,7 @@ export default function CurrenciesPage() {
           <button
             onClick={() => handleSyncRates('sync')}
             disabled={syncing}
-            className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-medium text-white hover:shadow-lg disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
           >
             {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Sync Now
@@ -328,11 +545,212 @@ export default function CurrenciesPage() {
         </div>
       )}
 
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5" aria-labelledby="organization-currency-policy">
+        <div className="flex flex-col gap-3 border-b border-zinc-800 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Landmark className="mt-0.5 h-5 w-5 text-amber-400" aria-hidden="true" />
+            <div>
+              <h2 id="organization-currency-policy" className="text-lg font-semibold text-white">Organization currency policy</h2>
+              <p className="mt-1 text-sm text-zinc-400">
+                Choose the organization ledger currency, reporting currency, and currencies employees can be paid in.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleSavePolicy}
+            disabled={savingPolicy}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
+          >
+            {savingPolicy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+            Save policy
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 py-5 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-300" htmlFor="functional-currency">Functional currency</label>
+              <select
+                id="functional-currency"
+                value={policyForm.functionalCurrency}
+                onChange={(event) => handleFunctionalCurrencyChange(event.target.value)}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none"
+              >
+                {policyCatalog.filter((currency) => currency.kind === 'iso' && currency.payrollCalculationReady !== false).map((currency) => (
+                  <option key={currency.code} value={currency.code}>{currency.label}</option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-zinc-500">The legal ledger currency for payroll and statutory records. Payment calculation is currently certified for two-decimal currencies.</p>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-300" htmlFor="reporting-currency">Reporting currency</label>
+              <select
+                id="reporting-currency"
+                value={policyForm.reportingCurrency}
+                onChange={(event) => setPolicyForm((current) => ({ ...current, reportingCurrency: event.target.value }))}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none"
+              >
+                {reportingCurrencies.map((currency) => (
+                  <option key={currency.code} value={currency.code}>
+                    {currency.label}{currency.kind === 'custom' ? ' (reporting only)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-zinc-500">Used for consolidated reports. Custom units cannot be used for employee pay or tax.</p>
+            </div>
+
+            <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={policyForm.requireConfiguredPaymentCurrency}
+                onChange={(event) => setPolicyForm((current) => ({
+                  ...current,
+                  requireConfiguredPaymentCurrency: event.target.checked,
+                }))}
+                className="mt-0.5 rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-amber-500"
+              />
+              <span>
+                <span className="block font-medium text-zinc-200">Require an enabled payment currency</span>
+                <span className="mt-0.5 block text-xs text-zinc-500">Prevents new or edited payroll profiles from using an unapproved currency.</span>
+              </span>
+            </label>
+
+            {policy?.updatedAt ? (
+              <p className="text-xs text-zinc-500">Last updated {new Date(policy.updatedAt).toLocaleString()}</p>
+            ) : null}
+          </div>
+
+          <div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-200">Employee payment currencies</h3>
+                <p className="mt-1 text-xs text-zinc-500">The functional currency is always enabled. Zero- and three-decimal currencies can be enabled for reporting, but not employee payment, until their rounding pipelines are certified.</p>
+              </div>
+              <div className="relative sm:w-64">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                <input
+                  type="search"
+                  value={currencySearch}
+                  onChange={(event) => setCurrencySearch(event.target.value)}
+                  placeholder="Find a currency"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 py-2 pl-9 pr-3 text-sm text-white placeholder:text-zinc-600 focus:border-amber-500 focus:outline-none"
+                />
+              </div>
+            </div>
+            <div className="mt-3 max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/40">
+              {filteredPolicyCurrencies.length ? filteredPolicyCurrencies.map((currency) => {
+                const calculationReady = currency.payrollCalculationReady !== false;
+                const checked = calculationReady
+                  ? enabledCurrencyCodes.has(currency.code)
+                  : activeIsoCurrencyCodes.has(currency.code);
+                const locked = currency.code === policyForm.functionalCurrency;
+                return (
+                  <label
+                    key={currency.code}
+                    className="flex cursor-pointer items-center justify-between gap-3 border-b border-zinc-800 px-3 py-2.5 text-sm last:border-b-0 hover:bg-zinc-900"
+                  >
+                    <span className="min-w-0">
+                      <span className="font-medium text-zinc-200">{currency.code}</span>
+                      <span className="ml-2 truncate text-zinc-500">{currency.name}</span>
+                    </span>
+                    <span className="flex items-center gap-2 text-xs text-zinc-500">
+                      {locked ? 'Functional' : !calculationReady ? (checked ? 'Reporting only' : 'Disabled') : checked ? 'Payment enabled' : 'Disabled'}
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={locked}
+                        onChange={() => togglePaymentCurrency(currency.code)}
+                        className="rounded border-zinc-700 bg-zinc-900 text-amber-500 focus:ring-amber-500 disabled:opacity-50"
+                      />
+                    </span>
+                  </label>
+                );
+              }) : (
+                <p className="px-3 py-8 text-center text-sm text-zinc-500">No currencies match this search.</p>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">{enabledCurrencyCodes.size} payment currenc{enabledCurrencyCodes.size === 1 ? 'y' : 'ies'} enabled.</p>
+          </div>
+        </div>
+
+        <div className="border-t border-zinc-800 pt-5">
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-200">Custom reporting currencies</h3>
+            <p className="mt-1 text-xs text-zinc-500">For internal reporting units only. They are never eligible for statutory calculations or employee payment.</p>
+          </div>
+
+          {policyForm.customCurrencies.length > 0 ? (
+            <div className="mt-3 overflow-hidden rounded-lg border border-zinc-800">
+              {policyForm.customCurrencies.map((currency) => (
+                <div key={currency.code} className="flex items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-950/40 px-3 py-2.5 last:border-b-0">
+                  <div className="text-sm">
+                    <span className="font-medium text-zinc-200">{currency.code}</span>
+                    <span className="ml-2 text-zinc-500">{currency.name} · {currency.symbol} · {currency.minorUnits} decimals</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeCustomReportingCurrency(currency.code)}
+                    className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-red-300"
+                    aria-label={`Remove ${currency.code}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[0.7fr_1.4fr_0.7fr_0.6fr_auto]">
+            <input
+              value={customCurrency.code}
+              onChange={(event) => setCustomCurrency((current) => ({ ...current, code: event.target.value.toUpperCase() }))}
+              maxLength={3}
+              placeholder="Code"
+              aria-label="Custom currency code"
+              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-amber-500 focus:outline-none"
+            />
+            <input
+              value={customCurrency.name}
+              onChange={(event) => setCustomCurrency((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Name"
+              aria-label="Custom currency name"
+              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-amber-500 focus:outline-none"
+            />
+            <input
+              value={customCurrency.symbol}
+              onChange={(event) => setCustomCurrency((current) => ({ ...current, symbol: event.target.value }))}
+              maxLength={12}
+              placeholder="Symbol"
+              aria-label="Custom currency symbol"
+              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:border-amber-500 focus:outline-none"
+            />
+            <input
+              type="number"
+              min="0"
+              max="6"
+              value={customCurrency.minorUnits}
+              onChange={(event) => setCustomCurrency((current) => ({ ...current, minorUnits: Number(event.target.value) }))}
+              aria-label="Custom currency decimal places"
+              className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={addCustomReportingCurrency}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800"
+            >
+              <Plus className="h-4 w-4" /> Add
+            </button>
+          </div>
+        </div>
+      </section>
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr,0.8fr]">
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-amber-500/10 p-2">
+              <div className="pt-0.5">
                 <Settings2 className="h-5 w-5 text-amber-400" />
               </div>
               <div>
@@ -434,17 +852,17 @@ export default function CurrenciesPage() {
 
           <div className="mt-5 grid grid-cols-1 gap-3 text-sm text-zinc-400 md:grid-cols-3">
             <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-xs uppercase tracking-wide text-zinc-500">Active rates</div>
+              <div className="text-xs text-zinc-500">Active rates</div>
               <div className="mt-2 text-xl font-semibold text-white">{activeRateCount}</div>
             </div>
             <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-xs uppercase tracking-wide text-zinc-500">Provider updated</div>
+              <div className="text-xs text-zinc-500">Provider updated</div>
               <div className="mt-2 text-sm text-white">
                 {settings?.lastProviderUpdateAt ? new Date(settings.lastProviderUpdateAt).toLocaleString() : 'Not synced yet'}
               </div>
             </div>
             <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-xs uppercase tracking-wide text-zinc-500">Next provider update</div>
+              <div className="text-xs text-zinc-500">Next provider update</div>
               <div className="mt-2 text-sm text-white">
                 {settings?.nextProviderUpdateAt ? new Date(settings.nextProviderUpdateAt).toLocaleString() : 'Not available yet'}
               </div>
@@ -453,9 +871,9 @@ export default function CurrenciesPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
             <div className="mb-4 flex items-center gap-3">
-              <div className="rounded-xl bg-emerald-500/10 p-2">
+              <div className="pt-0.5">
                 <Globe className="h-5 w-5 text-emerald-400" />
               </div>
               <div>
@@ -478,9 +896,9 @@ export default function CurrenciesPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
             <div className="mb-4 flex items-center gap-3">
-              <div className="rounded-xl bg-blue-500/10 p-2">
+              <div className="pt-0.5">
                 <DollarSign className="h-5 w-5 text-blue-400" />
               </div>
               <div>
@@ -554,10 +972,10 @@ export default function CurrenciesPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-purple-500/10 p-2">
+            <div className="pt-0.5">
               <ArrowRightLeft className="h-5 w-5 text-purple-400" />
             </div>
             <div>

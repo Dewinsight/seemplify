@@ -4,6 +4,7 @@ const router = express.Router();
 const { validateHubToken } = require('../middleware/hubAuth');
 const User = require('../models/User');
 const { verifySubscriptionAccess, getSubscriptionRequiredUrl } = require('../services/idpSubscriptionService');
+const { toOrganizationId } = require('../services/performanceOrganizationAccess');
 
 // Hub launch endpoint - handles IdP-initiated SSO
 router.get('/launch', validateHubToken, async (req, res) => {
@@ -33,9 +34,10 @@ router.get('/launch', validateHubToken, async (req, res) => {
     // Set organization from hub or userinfo
     if (req.query.orgId) {
       // Verify user belongs to this org
-      const org = (hubUser.organizations || []).find(o => o.id === req.query.orgId);
+      const org = (hubUser.organizations || []).find(o => toOrganizationId(o) === String(req.query.orgId));
       if (org) {
         req.session.currentOrganizationId = req.query.orgId;
+        req.session.user.currentOrganization = org;
       }
     } else if (hubUser.currentOrganization) {
       req.session.currentOrganizationId = hubUser.currentOrganization.id;

@@ -19,7 +19,9 @@ import { buildOnboardingStateMap, getMemberOnboardingState } from '../utils/onbo
 import { buildPayrollProfileSyncData, getProfileCompletionForAccount } from '../utils/profileCompletion.js'
 import { sendProfileCompletionRemindersForAccounts } from '../jobs/profileCompletionReminders.js'
 import { emailService } from '../services/emailService.js'
-import { notifyOrgMemberRemoved, sendWebhook } from '../services/webhookService.js'
+import webhookService from '../services/webhookService.js'
+import { sendWebhook } from '../services/webhookService.js'
+import { invalidateClaimsCache } from '../index.js'
 import {
   requireAuth,
   requireOrganizationMember,
@@ -833,9 +835,38 @@ router.put('/:orgId/members/:memberId',
         return res.status(400).json({ error: 'Employee ID is already pending on another invitation' })
       }
 
+      const targetAccount = (hasRole || hasAppAccess)
+        ? await Account.findById(req.params.memberId).select('sub email').lean()
+        : null
+      const targetMember = req.organization.members.find(member => (
+        member.account?.toString() === req.params.memberId
+      ))
+
       try {
         if (hasRole) {
-          await req.organization.updateMemberRole(req.params.memberId, role, req.user._id)
+          const previousRole = targetMember?.role || null
+          await webhookService.runAuthorizationMutationWithWebhook({
+            event: 'organization.member.role_changed',
+            data: {
+              userId: targetAccount?.sub,
+              subject: targetAccount?.sub,
+              email: targetAccount?.email,
+              organizationId: req.organization._id.toString(),
+              memberId: targetMember?._id?.toString(),
+              accountId: req.params.memberId,
+              oldRole: previousRole,
+              newRole: role,
+              changedBy: req.user._id.toString(),
+              action: 'role_changed'
+            },
+            mutation: (session) => req.organization.updateMemberRole(
+              req.params.memberId,
+              role,
+              req.user._id,
+              session ? { session } : undefined
+            )
+          })
+          if (targetAccount?.sub) invalidateClaimsCache(targetAccount.sub)
         }
         if (hasDesignation) {
           await req.organization.updateMemberDetails(
@@ -859,11 +890,27 @@ router.put('/:orgId/members/:memberId',
           )
         }
         if (hasAppAccess) {
-          await req.organization.updateMemberDetails(
-            req.params.memberId,
-            { appAccess: normalizedAppAccess },
-            req.user._id
-          )
+          await webhookService.runAuthorizationMutationWithWebhook({
+            event: 'organization.member.app_access_changed',
+            data: {
+              userId: targetAccount?.sub,
+              organizationId: req.organization._id.toString(),
+              memberId: targetMember?._id?.toString(),
+              accountId: req.params.memberId,
+              subject: targetAccount?.sub,
+              email: targetAccount?.email,
+              appAccess: normalizedAppAccess,
+              changedBy: req.user._id.toString(),
+              action: 'app_access_changed'
+            },
+            mutation: (session) => req.organization.updateMemberDetails(
+              req.params.memberId,
+              { appAccess: normalizedAppAccess },
+              req.user._id,
+              session ? { session } : undefined
+            )
+          })
+          if (targetAccount?.sub) invalidateClaimsCache(targetAccount.sub)
         }
       } catch (err) {
         return res.status(400).json({ error: err.message })
@@ -934,15 +981,31 @@ router.delete('/:orgId/members/:memberId',
         return res.status(403).json({ error: 'Only owner can remove other owners' })
       }
 
+      const targetAccount = await Account.findById(memberId).select('sub email').lean()
+
       try {
-        await req.organization.removeMember(memberId)
+        await webhookService.runAuthorizationMutationWithWebhook({
+          event: 'organization.member.removed',
+          data: {
+            userId: targetAccount?.sub,
+            subject: targetAccount?.sub,
+            email: targetAccount?.email,
+            accountId: memberId,
+            memberId: targetMember._id?.toString(),
+            organizationId: req.organization._id.toString(),
+            action: 'removed'
+          },
+          mutation: (session) => req.organization.removeMember(
+            memberId,
+            session ? { session } : undefined
+          )
+        })
       } catch (err) {
         return res.status(400).json({ error: err.message })
       }
-      const removedAccount = await Account.findById(memberId).select('sub').lean()
-      await notifyOrgMemberRemoved(removedAccount?.sub || memberId, req.organization._id.toString())
-
       console.log('Member removed from', req.organization.name, 'by', req.user.email)
+
+      if (targetAccount?.sub) invalidateClaimsCache(targetAccount.sub)
 
       res.json({
         message: 'Member removed successfully',
@@ -979,14 +1042,31 @@ router.post('/:orgId/leave',
         })
       }
 
+      const leavingAccount = await Account.findById(memberId).select('sub email').lean()
+
       try {
-        await req.organization.removeMember(memberId)
+        await webhookService.runAuthorizationMutationWithWebhook({
+          event: 'organization.member.removed',
+          data: {
+            userId: leavingAccount?.sub,
+            subject: leavingAccount?.sub,
+            email: leavingAccount?.email,
+            accountId: memberId,
+            memberId: member._id?.toString(),
+            organizationId: req.organization._id.toString(),
+            action: 'removed'
+          },
+          mutation: (session) => req.organization.removeMember(
+            memberId,
+            session ? { session } : undefined
+          )
+        })
       } catch (err) {
         return res.status(400).json({ error: err.message })
       }
 
       console.log('User left organization:', req.organization.name, 'by', req.user.email)
-      await notifyOrgMemberRemoved(req.user.sub || memberId, req.organization._id.toString())
+      if (leavingAccount?.sub) invalidateClaimsCache(leavingAccount.sub)
 
       res.json({
         message: 'Successfully left the organization',

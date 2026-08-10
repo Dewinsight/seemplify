@@ -25,6 +25,9 @@ test('Mongo snapshot mutations only write candidate fields that actually changed
   });
   assert.equal('resumeUploads' in operations[0].updateOne.update.$set, false);
   assert.equal('cvProcessingJobIds' in operations[0].updateOne.update.$set, false);
+  assert.deepEqual(operations[0].updateOne.filter.cvDeletionRequestedAt, {
+    $exists: false
+  });
 });
 
 test('stale snapshot deletion cannot remove a candidate changed by CV processing', () => {

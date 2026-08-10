@@ -214,6 +214,19 @@ function New-StrongSecret {
   return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
 }
 
+function Get-LocalLlmServiceSecret {
+  param([Parameter(Mandatory=$true)][string]$MasterSecret, [Parameter(Mandatory=$true)][string]$ServiceId)
+  $hmac = [Security.Cryptography.HMACSHA256]::new()
+  try {
+    $hmac.Key = [Text.Encoding]::UTF8.GetBytes($MasterSecret)
+    $context = [Text.Encoding]::UTF8.GetBytes("seemplify-local-llm-service-v2:$ServiceId")
+    $bytes = $hmac.ComputeHash($context)
+    return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
+  } finally {
+    $hmac.Dispose()
+  }
+}
+
 function Ensure-Secret {
   param([string]$Name)
   $file = Join-Path $SecretsDir $Name
@@ -234,10 +247,17 @@ function Ensure-DirectoriesAndSecrets {
     $value = if (Test-Path $legacySecret) { (Get-Content -LiteralPath $legacySecret -Raw).Trim() } else { New-StrongSecret }
     [IO.File]::WriteAllText($serviceSecret, $value, [Text.UTF8Encoding]::new($false))
   }
-  $gatewaySource = Join-Path (Split-Path -Parent $RuntimeDir) 'chatgpt-gateway\service-secret'
+  $localRuntimeRoot = Split-Path -Parent $RuntimeDir
+  # Local knowledge consumes the independent Local LLM gateway. Never fall
+  # back to the hosted ChatGPT gateway secret: the two trust roots are distinct.
+  $gatewaySource = Join-Path $localRuntimeRoot 'llm\service-secret'
   $gatewayTarget = Join-Path $SecretsDir 'chatgpt-gateway'
-  if (-not (Test-Path $gatewaySource)) { throw 'The signed ChatGPT gateway secret is missing. Configure the hosted gateway before starting knowledge indexing.' }
-  [IO.File]::WriteAllText($gatewayTarget, (Get-Content -LiteralPath $gatewaySource -Raw).Trim(), [Text.UTF8Encoding]::new($false))
+  if (-not (Test-Path -LiteralPath $gatewaySource -PathType Leaf)) { throw 'The Local LLM gateway master is missing. Start the Local runtime before knowledge indexing.' }
+  $gatewayMaster = (Get-Content -LiteralPath $gatewaySource -Raw).Trim()
+  $gatewayServiceSecret = Get-LocalLlmServiceSecret -MasterSecret $gatewayMaster -ServiceId 'experience-management'
+  # The knowledge runtime receives only its scoped credential. It never keeps
+  # the Local gateway master and therefore cannot mint another product's key.
+  [IO.File]::WriteAllText($gatewayTarget, $gatewayServiceSecret, [Text.UTF8Encoding]::new($false))
 }
 
 function Get-GteDependencyStatus {

@@ -1,7 +1,22 @@
 const jwt = require('jsonwebtoken');
+const { sanitizePerformancePrincipal } = require('../services/performanceOrganizationAccess');
 
 function resolveCurrentOrganization(payload = {}) {
   return payload.currentOrganization || payload.current_organization || null;
+}
+
+function buildPerformanceHubUser(decoded = {}) {
+  return sanitizePerformancePrincipal({
+    id: decoded.sub,
+    sub: decoded.sub,
+    email: decoded.email,
+    name: decoded.name,
+    organizations: decoded.organizations || [],
+    teams: decoded.teams || [],
+    idpTeams: decoded.teams || [],
+    currentOrganization: resolveCurrentOrganization(decoded),
+    userinfo: decoded
+  });
 }
 
 // Middleware to validate hub tokens for IdP-initiated SSO
@@ -33,14 +48,13 @@ const validateHubToken = async (req, res, next) => {
     }
 
     // Extract user info from token
-    req.hubUser = {
-      id: decoded.sub,
-      email: decoded.email,
-      name: decoded.name,
-      organizations: decoded.organizations || [],
-      teams: decoded.teams || [],
-      currentOrganization: resolveCurrentOrganization(decoded),
-    };
+    req.hubUser = buildPerformanceHubUser(decoded);
+    if (!req.hubUser.currentOrganization) {
+      return res.status(403).json({
+        error: 'Performance Management is not assigned to you in an active organization',
+        code: 'PERFORMANCE_APP_ACCESS_REQUIRED'
+      });
+    }
 
     // Store the hub token for potential userinfo lookup
     req.hubToken = hubToken;
@@ -94,14 +108,13 @@ const validateHubTokenDev = async (req, res, next) => {
       algorithms: ['HS256'],
     });
 
-    req.hubUser = {
-      id: decoded.sub,
-      email: decoded.email,
-      name: decoded.name,
-      organizations: decoded.organizations || [],
-      teams: decoded.teams || [],
-      currentOrganization: resolveCurrentOrganization(decoded),
-    };
+    req.hubUser = buildPerformanceHubUser(decoded);
+    if (!req.hubUser.currentOrganization) {
+      return res.status(403).json({
+        error: 'Performance Management is not assigned to you in an active organization',
+        code: 'PERFORMANCE_APP_ACCESS_REQUIRED'
+      });
+    }
 
     req.hubToken = hubToken;
 

@@ -46,6 +46,10 @@ const {
   getOrganizationRole: getOrganizationRoleFromSession,
   isHrPlusRole
 } = require('../services/appraisalAccessService');
+const {
+  sanitizePerformancePrincipal,
+  toOrganizationId
+} = require('../services/performanceOrganizationAccess');
 
 // Validate Bearer token by calling IdP userinfo endpoint
 const getUserInfoFromIdP = async (accessToken) => {
@@ -198,7 +202,10 @@ function getDirectReports(user) {
     if (!currentOrgId) return true;
     return !team.organizationId || team.organizationId === currentOrgId;
   });
-  const teamPermissions = user.idpTeamPermissions || user.userinfo?.team_permissions || [];
+  const teamPermissions = (user.idpTeamPermissions || user.userinfo?.team_permissions || []).filter((permission) => {
+    const permissionOrgId = permission?.organization_id || permission?.organizationId;
+    return !currentOrgId || !permissionOrgId || String(permissionOrgId) === String(currentOrgId);
+  });
   const departmentHeadPermissions = (user.organizations || user.userinfo?.organizations || [])
     .find((org) => org.id === currentOrgId)?.departmentHeadPermissions || [];
 
@@ -347,12 +354,28 @@ const requireAuth = async (req, res, next) => {
   try {
     // 1. Check for session-based authentication first
     if (req.session?.user) {
-      req.userRole = getUserRole(req.session.user);
-      req.directReports = getDirectReports(req.session.user);
-      req.managedTeams = getManagedTeams(req.session.user);
-      req.userTeams = req.session.user.idpTeams || req.session.user.teams || req.session.user.userinfo?.teams || [];
-      req.currentOrganization = getCurrentOrganization(req.session.user);
-      req.currentTeam = getCurrentTeam(req.session.user);
+      const principal = sanitizePerformancePrincipal(
+        req.session.user,
+        req.session.currentOrganizationId
+      );
+      if (!principal.currentOrganization) {
+        return res.status(403).json({
+          success: false,
+          error: 'Performance Management is not assigned to you in an active organization',
+          code: 'PERFORMANCE_APP_ACCESS_REQUIRED'
+        });
+      }
+      req.session.user = principal;
+      req.session.currentOrganizationId = toOrganizationId(principal.currentOrganization);
+      // Keep a single normalized principal shape for legacy middleware that
+      // reads req.user and newer routes that read req.session.user.
+      req.user = principal;
+      req.userRole = getUserRole(principal);
+      req.directReports = getDirectReports(principal);
+      req.managedTeams = getManagedTeams(principal);
+      req.userTeams = principal.idpTeams || principal.teams || principal.userinfo?.teams || [];
+      req.currentOrganization = getCurrentOrganization(principal);
+      req.currentTeam = getCurrentTeam(principal);
       return next();
     }
 
@@ -366,7 +389,7 @@ const requireAuth = async (req, res, next) => {
         const userinfo = await getUserInfoFromIdP(accessToken);
 
         // Create session user from userinfo
-        req.session.user = {
+        const principal = sanitizePerformancePrincipal({
           id: userinfo.sub,
           sub: userinfo.sub,
           email: userinfo.email,
@@ -377,7 +400,17 @@ const requireAuth = async (req, res, next) => {
           currentOrganization: userinfo.current_organization || userinfo.currentOrganization,
           userinfo,
           accessToken,
-        };
+        });
+        if (!principal.currentOrganization) {
+          return res.status(403).json({
+            success: false,
+            error: 'Performance Management is not assigned to you in an active organization',
+            code: 'PERFORMANCE_APP_ACCESS_REQUIRED'
+          });
+        }
+        req.session.user = principal;
+        req.session.currentOrganizationId = toOrganizationId(principal.currentOrganization);
+        req.user = principal;
 
         // Attach role and permissions
         req.userRole = getUserRole(req.session.user);

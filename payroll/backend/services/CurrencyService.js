@@ -1,4 +1,7 @@
 const ExchangeRate = require('../models/ExchangeRate');
+const Payslip = require('../models/Payslip');
+
+const REPORT_LOCKED_PAYSLIP_STATUSES = Object.freeze(['approved', 'exported', 'paid']);
 
 const FALLBACK_CURRENCY_CODES = [
   'USD', 'EUR', 'GBP', 'NGN', 'KES', 'ZAR', 'GHS', 'UGX', 'TZS', 'INR',
@@ -97,6 +100,20 @@ function compareCurrencies(a, b) {
   return a.code.localeCompare(b.code);
 }
 
+function immutableRateError() {
+  const error = new Error('An exchange rate already exists at this exact effective time. Historical rates are immutable; add the correction with a later effective time.');
+  error.code = 'EXCHANGE_RATE_IMMUTABLE';
+  error.statusCode = 409;
+  return error;
+}
+
+function historicalReportLockError() {
+  const error = new Error('This effective time is on or before an approved or finalized payroll payment date. Adding the rate would restate historical payroll reports; use a later effective time.');
+  error.code = 'EXCHANGE_RATE_HISTORY_LOCKED';
+  error.statusCode = 409;
+  return error;
+}
+
 /**
  * Currency Service
  * Handles currency conversion and exchange rate management
@@ -131,6 +148,11 @@ class CurrencyService {
     return this.getSupportedCurrencies().map((currency) => currency.code);
   }
 
+  isSupportedCurrencyCode(code) {
+    const normalizedCode = normalizeCurrencyCode(code);
+    return this.getSupportedCurrencyCodes().includes(normalizedCode);
+  }
+
   /**
    * Get currency info by code
    */
@@ -138,6 +160,18 @@ class CurrencyService {
     const normalizedCode = normalizeCurrencyCode(code);
     return this.getSupportedCurrencies().find((currency) => currency.code === normalizedCode)
       || (normalizedCode.length === 3 ? buildCurrencyMetadata(normalizedCode) : null);
+  }
+
+  getMinorUnits(code) {
+    const currency = this.getCurrencyInfo(code);
+    return Number.isInteger(currency?.decimals) ? currency.decimals : 2;
+  }
+
+  roundAmount(amount, currencyCode) {
+    const numericAmount = Number(amount || 0);
+    const precision = this.getMinorUnits(currencyCode);
+    const factor = 10 ** precision;
+    return Math.round((numericAmount + Number.EPSILON) * factor) / factor;
   }
 
   /**
@@ -224,41 +258,129 @@ class CurrencyService {
       throw new Error('Base and target currency must be different');
     }
 
-    const deactivateQuery = {
+    const numericRate = Number(rate);
+    if (!Number.isFinite(numericRate) || numericRate <= 0) {
+      throw new Error('Exchange rate must be a finite number greater than zero');
+    }
+    const effectiveDate = options.effectiveDate ? new Date(options.effectiveDate) : new Date();
+    if (Number.isNaN(effectiveDate.getTime())) {
+      throw new Error('Exchange-rate effective date is invalid');
+    }
+    const requestedExpiry = options.expiresAt ? new Date(options.expiresAt) : null;
+    if (requestedExpiry && (Number.isNaN(requestedExpiry.getTime()) || requestedExpiry < effectiveDate)) {
+      throw new Error('Exchange-rate expiry must be on or after its effective date');
+    }
+    const source = options.source || 'manual';
+    const timelineQuery = {
       organizationId,
       baseCurrency: normalizedBase,
       targetCurrency: normalizedTarget,
-      isActive: true,
     };
 
-    if (options.source === 'api' && options.preserveManualOverrides !== false) {
-      deactivateQuery.source = { $ne: 'manual' };
+    const existingAtDate = await ExchangeRate.findOne({ ...timelineQuery, effectiveDate });
+    if (existingAtDate) {
+      if (Number(existingAtDate.rate) === numericRate && existingAtDate.isActive !== false) {
+        // Treat a retry as a repair operation, not an opportunity to change
+        // the already-persisted expiry of an immutable point.
+        await this.reconcileRateWindow(
+          existingAtDate,
+          timelineQuery,
+          existingAtDate.expiresAt || null
+        );
+        return existingAtDate;
+      }
+      throw immutableRateError();
     }
 
-    await ExchangeRate.updateMany(
-      deactivateQuery,
-      {
-        isActive: false,
-        updatedAt: new Date(),
-      }
-    );
+    // Approved/finalized reports currently resolve their stored payslip values
+    // through the immutable rate timeline. Refuse a new point that could alter
+    // any such historical payment-date conversion.
+    const lockedPayroll = await Payslip.exists({
+      organizationId,
+      status: { $in: REPORT_LOCKED_PAYSLIP_STATUSES },
+      'payPeriod.paymentDate': { $gte: effectiveDate },
+    });
+    if (lockedPayroll) {
+      throw historicalReportLockError();
+    }
 
     const exchangeRate = new ExchangeRate({
       organizationId,
       baseCurrency: normalizedBase,
       targetCurrency: normalizedTarget,
-      rate,
-      effectiveDate: options.effectiveDate || new Date(),
-      expiresAt: options.expiresAt,
-      source: options.source || 'manual',
+      rate: numericRate,
+      effectiveDate,
+      expiresAt: requestedExpiry,
+      source,
       notes: options.notes,
       createdBy: options.createdBy,
       createdByName: options.createdByName,
       isActive: true,
     });
 
-    await exchangeRate.save();
+    try {
+      // Insert first. If the boundary update below is interrupted, the newer
+      // row still wins deterministic as-of lookup; updating the older row
+      // first could instead create a historical coverage gap.
+      await exchangeRate.save();
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      const concurrent = await ExchangeRate.findOne({ ...timelineQuery, effectiveDate });
+      if (concurrent && Number(concurrent.rate) === numericRate && concurrent.isActive !== false) {
+        await this.reconcileRateWindow(
+          concurrent,
+          timelineQuery,
+          concurrent.expiresAt || null
+        );
+        return concurrent;
+      }
+      throw immutableRateError();
+    }
+
+    await this.reconcileRateWindow(exchangeRate, timelineQuery, requestedExpiry);
+
     return exchangeRate;
+  }
+
+  async reconcileRateWindow(exchangeRate, timelineQuery, requestedExpiry = null) {
+    const effectiveDate = new Date(exchangeRate.effectiveDate);
+    const nextRate = await ExchangeRate.findOne({
+      ...timelineQuery,
+      _id: { $ne: exchangeRate._id },
+      isActive: true,
+      effectiveDate: { $gt: effectiveDate },
+    }).sort({ effectiveDate: 1 });
+    const nextBoundary = nextRate
+      ? new Date(new Date(nextRate.effectiveDate).getTime() - 1)
+      : null;
+    const expiresAt = requestedExpiry && nextBoundary
+      ? new Date(Math.min(requestedExpiry.getTime(), nextBoundary.getTime()))
+      : (requestedExpiry || nextBoundary);
+
+    if (expiresAt) {
+      await ExchangeRate.updateOne(
+        { _id: exchangeRate._id, isActive: true },
+        { $set: { expiresAt } }
+      );
+      exchangeRate.expiresAt = expiresAt;
+    }
+
+    // This happens only after the new row exists. If this update is interrupted,
+    // latest-effective-date lookup still selects the inserted row, and an
+    // idempotent retry repairs the windows.
+    await ExchangeRate.updateMany({
+      ...timelineQuery,
+      _id: { $ne: exchangeRate._id },
+      isActive: true,
+      effectiveDate: { $lt: effectiveDate },
+      $or: [
+        { expiresAt: { $exists: false } },
+        { expiresAt: null },
+        { expiresAt: { $gte: effectiveDate } },
+      ],
+    }, {
+      $set: { expiresAt: new Date(effectiveDate.getTime() - 1) },
+    });
   }
 
   /**

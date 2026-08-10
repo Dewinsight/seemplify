@@ -2,8 +2,25 @@ const express = require('express');
 const { validationResult } = require('express-validator');
 const { requirePerformancePermission } = require('../middleware/performanceMiddleware');
 const AIPerformanceService = require('../services/aiPerformanceService');
+const { sendPerformanceAIError } = require('../services/aiGatewayService');
 
 const router = express.Router();
+
+function sendAIResult(res, result, message) {
+  if (!result?.success) {
+    return res.status(Number(result?.statusCode) || 502).json({
+      success: false,
+      error: result?.error || 'The AI response could not be completed.',
+      code: result?.code || 'AI_RESPONSE_INVALID'
+    });
+  }
+  return res.json({
+    success: true,
+    data: result.data,
+    confidence: result.confidence,
+    message
+  });
+}
 
 // Validation schemas
 const generateOKRsSchema = {
@@ -36,12 +53,7 @@ router.post('/generate-okrs', requirePerformancePermission('create:okrs'), async
       
       const result = await AIPerformanceService.generateOKRs(userRole, teamGoals, companyGoals);
       
-      res.json({
-        success: true,
-        data: result.data,
-        confidence: result.confidence,
-        message: 'OKRs generated successfully'
-      });
+      return sendAIResult(res, result, 'OKRs generated successfully');
     } else {
       res.status(400).json({
         success: false,
@@ -51,10 +63,7 @@ router.post('/generate-okrs', requirePerformancePermission('create:okrs'), async
     }
   } catch (error) {
     console.error('Error generating OKRs:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate OKRs'
-    });
+    return sendPerformanceAIError(res, error, 'Failed to generate OKRs');
   }
 });
 
@@ -71,12 +80,7 @@ router.post('/analyze-review', requirePerformancePermission('evaluate:reviews'),
         peerReviews
       );
       
-      res.json({
-        success: true,
-        data: result.data,
-        confidence: result.confidence,
-        message: 'Performance review analyzed successfully'
-      });
+      return sendAIResult(res, result, 'Performance review analyzed successfully');
     } else {
       res.status(400).json({
         success: false,
@@ -86,10 +90,7 @@ router.post('/analyze-review', requirePerformancePermission('evaluate:reviews'),
     }
   } catch (error) {
     console.error('Error analyzing performance review:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to analyze performance review'
-    });
+    return sendPerformanceAIError(res, error, 'Failed to analyze performance review');
   }
 });
 
@@ -102,12 +103,7 @@ router.post('/analyze-feedback', requirePerformancePermission('analyze:feedback'
       
       const result = await AIPerformanceService.analyzeFeedback(feedbackText);
       
-      res.json({
-        success: true,
-        data: result.data,
-        confidence: result.confidence,
-        message: 'Feedback analyzed successfully'
-      });
+      return sendAIResult(res, result, 'Feedback analyzed successfully');
     } else {
       res.status(400).json({
         success: false,
@@ -117,10 +113,7 @@ router.post('/analyze-feedback', requirePerformancePermission('analyze:feedback'
     }
   } catch (error) {
     console.error('Error analyzing feedback:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to analyze feedback'
-    });
+    return sendPerformanceAIError(res, error, 'Failed to analyze feedback');
   }
 });
 
@@ -133,12 +126,7 @@ router.post('/generate-team-insights', requirePerformancePermission('view:team-a
       
       const result = await AIPerformanceService.generateTeamInsights(teamData, performanceMetrics);
       
-      res.json({
-        success: true,
-        data: result.data,
-        confidence: result.confidence,
-        message: 'Team insights generated successfully'
-      });
+      return sendAIResult(res, result, 'Team insights generated successfully');
     } else {
       res.status(400).json({
         success: false,
@@ -148,10 +136,7 @@ router.post('/generate-team-insights', requirePerformancePermission('view:team-a
     }
   } catch (error) {
     console.error('Error generating team insights:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate team insights'
-    });
+    return sendPerformanceAIError(res, error, 'Failed to generate team insights');
   }
 });
 
@@ -164,12 +149,7 @@ router.post('/generate-review-assistant', requirePerformancePermission('particip
       
       const result = await AIPerformanceService.generateReviewWritingAssistant(reviewContext, targetType);
       
-      res.json({
-        success: true,
-        data: result.data,
-        confidence: result.confidence,
-        message: 'Review writing assistant generated successfully'
-      });
+      return sendAIResult(res, result, 'Review writing assistant generated successfully');
     } else {
       res.status(400).json({
         success: false,
@@ -179,10 +159,7 @@ router.post('/generate-review-assistant', requirePerformancePermission('particip
     }
   } catch (error) {
     console.error('Error generating review writing assistant:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate review writing assistant'
-    });
+    return sendPerformanceAIError(res, error, 'Failed to generate review writing assistant');
   }
 });
 
@@ -195,12 +172,7 @@ router.post('/detect-bias', requirePerformancePermission('evaluate:reviews'), as
       
       const result = await AIPerformanceService.detectBias(reviewText, reviewerRole);
       
-      res.json({
-        success: true,
-        data: result.data,
-        confidence: result.confidence,
-        message: 'Bias detection completed successfully'
-      });
+      return sendAIResult(res, result, 'Bias detection completed successfully');
     } else {
       res.status(400).json({
         success: false,
@@ -210,10 +182,7 @@ router.post('/detect-bias', requirePerformancePermission('evaluate:reviews'), as
     }
   } catch (error) {
     console.error('Error detecting bias:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to detect bias'
-    });
+    return sendPerformanceAIError(res, error, 'Failed to detect bias');
   }
 });
 

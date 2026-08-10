@@ -1,0 +1,473 @@
+{
+  "corpus": {
+    "publisher": "HM Revenue and Customs",
+    "page": "https://www.gov.uk/government/publications/software-developers-payroll-test-data-2026-to-2027",
+    "asset": "https://assets.publishing.service.gov.uk/media/696f9b5f2b64f0e8c32e33a4/Tax-test-data-examples-2026-27-v1-1.zip",
+    "version": "PAYE Tax v1.1",
+    "published": "2026-01-20",
+    "sha256": "163B18BD7DCFB699B8D77EC621AC1D4509372299DE72DAA1A5A027564CAF188C",
+    "caseIdConvention": "HMRC-PAYE-2026-27-v1.1/<workbook>/<sheet>/row-<Excel row>"
+  },
+  "unsupportedOfficialCases": [
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-23",
+      "taxCode": "SD3",
+      "grossPay": "99.99",
+      "expectedTaxDue": "47.52",
+      "reason": "Scottish D3 is outside the explicitly authorized Wave 1 D0-D2 scope"
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-24",
+      "taxCode": "SD3",
+      "grossPay": "1450.03",
+      "expectedTaxDue": "696.00",
+      "reason": "Scottish D3 is outside the explicitly authorized Wave 1 D0-D2 scope"
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-25",
+      "taxCode": "SD3",
+      "grossPay": "5300.67",
+      "expectedTaxDue": "2544.00",
+      "reason": "Scottish D3 is outside the explicitly authorized Wave 1 D0-D2 scope"
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_wkly/row-21",
+      "taxCode": "SD3",
+      "grossPay": "101.99",
+      "expectedTaxDue": "48.48",
+      "reason": "Scottish D3 is outside the explicitly authorized Wave 1 D0-D2 scope"
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_wkly/row-22",
+      "taxCode": "SD3",
+      "grossPay": "324.63",
+      "expectedTaxDue": "155.52",
+      "reason": "Scottish D3 is outside the explicitly authorized Wave 1 D0-D2 scope"
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_wkly/row-23",
+      "taxCode": "SD3",
+      "grossPay": "1056.81",
+      "expectedTaxDue": "506.88",
+      "reason": "Scottish D3 is outside the explicitly authorized Wave 1 D0-D2 scope"
+    }
+  ],
+  "cases": [
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-mthly/row-6",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-mthly",
+      "row": 6,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 1, "grossPay": "1156.25", "cumulativePayToDate": "1156.25", "previousTaxPaidToDate": "0.00", "taxCode": "1257L" },
+      "expected": { "taxDue": "21.40", "taxLiabilityToDate": "21.40" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-mthly/row-7",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-mthly",
+      "row": 7,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 2, "grossPay": "1156.26", "cumulativePayToDate": "2312.51", "previousTaxPaidToDate": "21.40", "taxCode": "1257L" },
+      "expected": { "taxDue": "21.60", "taxLiabilityToDate": "43.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-mthly/row-8",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-mthly",
+      "row": 8,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 3, "grossPay": "31123.26", "cumulativePayToDate": "33435.77", "previousTaxPaidToDate": "43.00", "taxCode": "1257L" },
+      "expected": { "taxDue": "10188.00", "taxLiabilityToDate": "10231.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-mthly/row-11",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-mthly",
+      "row": 11,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 6, "grossPay": "50000.00", "cumulativePayToDate": "150582.73", "previousTaxPaidToDate": "37154.70", "taxCode": "1257L" },
+      "expected": { "taxDue": "20878.65", "taxLiabilityToDate": "58033.35" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-mthly/row-14",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-mthly",
+      "row": 14,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 9, "grossPay": "12590.45", "cumulativePayToDate": "192173.73", "previousTaxPaidToDate": "67840.65", "taxCode": "BR" },
+      "expected": { "taxDue": "-29406.05", "taxLiabilityToDate": "38434.60" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-mthly/row-15",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-mthly",
+      "row": 15,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 10, "grossPay": "11245.05", "cumulativePayToDate": "203418.78", "previousTaxPaidToDate": "38434.60", "taxCode": "NT" },
+      "expected": { "taxDue": "-38434.60", "taxLiabilityToDate": "0.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-wkly/row-6",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-wkly",
+      "row": 6,
+      "input": { "payFrequency": "weekly", "basis": "cumulative", "periodNumber": 1, "grossPay": "267.07", "cumulativePayToDate": "267.07", "previousTaxPaidToDate": "0.00", "taxCode": "1257L" },
+      "expected": { "taxDue": "5.00", "taxLiabilityToDate": "5.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-wkly/row-10",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-wkly",
+      "row": 10,
+      "input": { "payFrequency": "weekly", "basis": "cumulative", "periodNumber": 5, "grossPay": "9834.16", "cumulativePayToDate": "13241.45", "previousTaxPaidToDate": "487.80", "taxCode": "1257L" },
+      "expected": { "taxDue": "3599.60", "taxLiabilityToDate": "4087.40" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-wkly/row-11",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-wkly",
+      "row": 11,
+      "input": { "payFrequency": "weekly", "basis": "cumulative", "periodNumber": 6, "grossPay": "15000.00", "cumulativePayToDate": "28241.45", "previousTaxPaidToDate": "4087.40", "taxCode": "1257L" },
+      "expected": { "taxDue": "6375.68", "taxLiabilityToDate": "10463.08" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_cumul-wkly/row-12",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_cumul-wkly",
+      "row": 12,
+      "input": { "payFrequency": "weekly", "basis": "cumulative", "periodNumber": 7, "grossPay": "242.84", "cumulativePayToDate": "28484.29", "previousTaxPaidToDate": "10463.08", "taxCode": "1257L" },
+      "expected": { "taxDue": "-264.87", "taxLiabilityToDate": "10198.21" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_mthly/row-7",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 7,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "39.25", "taxCode": "45L" },
+      "expected": { "taxDue": "0.20", "taxLiabilityToDate": "0.20" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_mthly/row-8",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 8,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "3164.24", "taxCode": "45L" },
+      "expected": { "taxDue": "625.00", "taxLiabilityToDate": "625.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_mthly/row-10",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 10,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "10450.24", "taxCode": "45L" },
+      "expected": { "taxDue": "3536.06", "taxLiabilityToDate": "3536.06" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_mthly/row-12",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 12,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "12539.24", "taxCode": "45L" },
+      "expected": { "taxDue": "4475.25", "taxLiabilityToDate": "4475.25" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_mthly/row-14",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 14,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "BR" },
+      "expected": { "taxDue": "19.80", "taxLiabilityToDate": "19.80" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_mthly/row-15",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 15,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "D0" },
+      "expected": { "taxDue": "39.60", "taxLiabilityToDate": "39.60" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_mthly/row-16",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 16,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "D1" },
+      "expected": { "taxDue": "44.55", "taxLiabilityToDate": "44.55" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_wkly/row-7",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_wkly",
+      "row": 7,
+      "input": { "payFrequency": "weekly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "29.06", "taxCode": "145L" },
+      "expected": { "taxDue": "0.20", "taxLiabilityToDate": "0.20" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_wkly/row-8",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_wkly",
+      "row": 8,
+      "input": { "payFrequency": "weekly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "750.06", "taxCode": "145L" },
+      "expected": { "taxDue": "144.40", "taxLiabilityToDate": "144.40" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Gen_W1M1_wkly/row-10",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_wkly",
+      "row": 10,
+      "input": { "payFrequency": "weekly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "2913.06", "taxCode": "145L" },
+      "expected": { "taxDue": "1032.92", "taxLiabilityToDate": "1032.92" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/K_cumul_mthly/row-6",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "K_cumul_mthly",
+      "row": 6,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 1, "grossPay": "895.00", "cumulativePayToDate": "895.00", "previousTaxPaidToDate": "0.00", "taxCode": "K585" },
+      "expected": { "taxDue": "276.60", "taxLiabilityToDate": "276.60" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/K_cumul_mthly/row-7",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "K_cumul_mthly",
+      "row": 7,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 2, "grossPay": "1250.00", "cumulativePayToDate": "2145.00", "previousTaxPaidToDate": "276.60", "taxCode": "K585" },
+      "expected": { "taxDue": "347.60", "taxLiabilityToDate": "624.20" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/K_cumul_mthly/row-8",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "K_cumul_mthly",
+      "row": 8,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 3, "grossPay": "765.00", "cumulativePayToDate": "2910.00", "previousTaxPaidToDate": "624.20", "taxCode": "K585" },
+      "expected": { "taxDue": "250.60", "taxLiabilityToDate": "874.80" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/K_W1M1_wkly/row-6",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "K_W1M1_wkly",
+      "row": 6,
+      "input": { "payFrequency": "weekly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "560.00", "taxCode": "K27" },
+      "expected": { "taxDue": "113.00", "taxLiabilityToDate": "113.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/K_W1M1_wkly/row-7",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "K_W1M1_wkly",
+      "row": 7,
+      "input": { "payFrequency": "weekly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "432.00", "taxCode": "K159" },
+      "expected": { "taxDue": "92.40", "taxLiabilityToDate": "92.40" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/K_W1M1_wkly/row-8",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "K_W1M1_wkly",
+      "row": 8,
+      "input": { "payFrequency": "weekly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "810.00", "taxCode": "K306" },
+      "expected": { "taxDue": "202.60", "taxLiabilityToDate": "202.60" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Large_code_mthly/row-6",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Large_code_mthly",
+      "row": 6,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 1, "grossPay": "2500.00", "cumulativePayToDate": "2500.00", "previousTaxPaidToDate": "0.00", "taxCode": "999L" },
+      "expected": { "taxDue": "333.20", "taxLiabilityToDate": "333.20" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Large_code_mthly/row-7",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Large_code_mthly",
+      "row": 7,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 1, "grossPay": "3000.00", "cumulativePayToDate": "3000.00", "previousTaxPaidToDate": "0.00", "taxCode": "1000L" },
+      "expected": { "taxDue": "433.00", "taxLiabilityToDate": "433.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/rest-of-UK/Large_code_mthly/row-8",
+      "workbook": "2026 - 27 rest of UK tax v1.0.xlsx",
+      "sheet": "Large_code_mthly",
+      "row": 8,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 1, "grossPay": "5000.00", "cumulativePayToDate": "5000.00", "previousTaxPaidToDate": "0.00", "taxCode": "1001L" },
+      "expected": { "taxDue": "1037.66", "taxLiabilityToDate": "1037.66" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_cumul_mthly/row-6",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_cumul_mthly",
+      "row": 6,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 1, "grossPay": "1156.25", "cumulativePayToDate": "1156.25", "previousTaxPaidToDate": "0.00", "taxCode": "S1257L" },
+      "expected": { "taxDue": "20.33", "taxLiabilityToDate": "20.33" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_cumul_mthly/row-8",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_cumul_mthly",
+      "row": 8,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 3, "grossPay": "31123.26", "cumulativePayToDate": "33435.77", "previousTaxPaidToDate": "40.85", "taxCode": "S1257L" },
+      "expected": { "taxDue": "11436.78", "taxLiabilityToDate": "11477.63" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_cumul_mthly/row-11",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_cumul_mthly",
+      "row": 11,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 6, "grossPay": "50000.00", "cumulativePayToDate": "150582.73", "previousTaxPaidToDate": "40611.32", "taxCode": "S1257L" },
+      "expected": { "taxDue": "22466.49", "taxLiabilityToDate": "63077.81" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_cumul_mthly/row-14",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_cumul_mthly",
+      "row": 14,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 9, "grossPay": "12590.45", "cumulativePayToDate": "192173.73", "previousTaxPaidToDate": "73930.79", "taxCode": "SBR" },
+      "expected": { "taxDue": "-35496.19", "taxLiabilityToDate": "38434.60" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_cumul_mthly/row-15",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_cumul_mthly",
+      "row": 15,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 10, "grossPay": "11245.05", "cumulativePayToDate": "203418.78", "previousTaxPaidToDate": "38434.60", "taxCode": "NT" },
+      "expected": { "taxDue": "-38434.60", "taxLiabilityToDate": "0.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-7",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 7,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "39.25", "taxCode": "S45L" },
+      "expected": { "taxDue": "0.19", "taxLiabilityToDate": "0.19" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-8",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 8,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "3164.24", "taxCode": "S45L" },
+      "expected": { "taxDue": "750.95", "taxLiabilityToDate": "750.95" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-10",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 10,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "10450.24", "taxCode": "S45L" },
+      "expected": { "taxDue": "3967.32", "taxLiabilityToDate": "3967.32" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-12",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 12,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "12539.24", "taxCode": "S45L" },
+      "expected": { "taxDue": "4969.52", "taxLiabilityToDate": "4969.52" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-14",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 14,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "SBR" },
+      "expected": { "taxDue": "19.80", "taxLiabilityToDate": "19.80" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-16",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 16,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "SD0" },
+      "expected": { "taxDue": "20.79", "taxLiabilityToDate": "20.79" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-18",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 18,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "SD1" },
+      "expected": { "taxDue": "41.58", "taxLiabilityToDate": "41.58" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/Gen_W1M1_mthly/row-20",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 20,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "SD2" },
+      "expected": { "taxDue": "44.55", "taxLiabilityToDate": "44.55" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/scotland/K_cumul_mthly/row-6",
+      "workbook": "2026 - 27 Scottish tax v1.1.xlsx",
+      "sheet": "K_cumul_mthly",
+      "row": 6,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 1, "grossPay": "895.00", "cumulativePayToDate": "895.00", "previousTaxPaidToDate": "0.00", "taxCode": "SK585" },
+      "expected": { "taxDue": "273.29", "taxLiabilityToDate": "273.29" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/wales/Gen_cumul_mthly/row-6",
+      "workbook": "2026- 27 Welsh tax v1.0.xlsx",
+      "sheet": "Gen_cumul_mthly",
+      "row": 6,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 1, "grossPay": "1156.25", "cumulativePayToDate": "1156.25", "previousTaxPaidToDate": "0.00", "taxCode": "C1257L" },
+      "expected": { "taxDue": "21.40", "taxLiabilityToDate": "21.40" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/wales/Gen_cumul_mthly/row-8",
+      "workbook": "2026- 27 Welsh tax v1.0.xlsx",
+      "sheet": "Gen_cumul_mthly",
+      "row": 8,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 3, "grossPay": "31123.26", "cumulativePayToDate": "33435.77", "previousTaxPaidToDate": "43.00", "taxCode": "C1257L" },
+      "expected": { "taxDue": "10188.00", "taxLiabilityToDate": "10231.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/wales/Gen_cumul_mthly/row-14",
+      "workbook": "2026- 27 Welsh tax v1.0.xlsx",
+      "sheet": "Gen_cumul_mthly",
+      "row": 14,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 9, "grossPay": "12590.45", "cumulativePayToDate": "192173.73", "previousTaxPaidToDate": "67840.65", "taxCode": "CBR" },
+      "expected": { "taxDue": "-29406.05", "taxLiabilityToDate": "38434.60" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/wales/Gen_cumul_mthly/row-15",
+      "workbook": "2026- 27 Welsh tax v1.0.xlsx",
+      "sheet": "Gen_cumul_mthly",
+      "row": 15,
+      "input": { "payFrequency": "monthly", "basis": "cumulative", "periodNumber": 10, "grossPay": "11245.05", "cumulativePayToDate": "203418.78", "previousTaxPaidToDate": "38434.60", "taxCode": "NT" },
+      "expected": { "taxDue": "-38434.60", "taxLiabilityToDate": "0.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/wales/Gen_W1M1_mthly/row-7",
+      "workbook": "2026- 27 Welsh tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 7,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "39.25", "taxCode": "C45L" },
+      "expected": { "taxDue": "0.20", "taxLiabilityToDate": "0.20" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/wales/Gen_W1M1_mthly/row-8",
+      "workbook": "2026- 27 Welsh tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 8,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "3164.24", "taxCode": "C45L" },
+      "expected": { "taxDue": "625.00", "taxLiabilityToDate": "625.00" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/wales/Gen_W1M1_mthly/row-14",
+      "workbook": "2026- 27 Welsh tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 14,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "CBR" },
+      "expected": { "taxDue": "19.80", "taxLiabilityToDate": "19.80" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/wales/Gen_W1M1_mthly/row-15",
+      "workbook": "2026- 27 Welsh tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 15,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "CD0" },
+      "expected": { "taxDue": "39.60", "taxLiabilityToDate": "39.60" }
+    },
+    {
+      "sourceCaseId": "HMRC-PAYE-2026-27-v1.1/wales/Gen_W1M1_mthly/row-16",
+      "workbook": "2026- 27 Welsh tax v1.0.xlsx",
+      "sheet": "Gen_W1M1_mthly",
+      "row": 16,
+      "input": { "payFrequency": "monthly", "basis": "week1_month1", "periodNumber": 1, "grossPay": "99.99", "taxCode": "CD1" },
+      "expected": { "taxDue": "44.55", "taxLiabilityToDate": "44.55" }
+    }
+  ]
+}

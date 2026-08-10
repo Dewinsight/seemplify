@@ -8,10 +8,49 @@ const CompensationRequest = require('../models/CompensationRequest');
 const TimeAttendanceImport = require('../models/TimeAttendanceImport');
 const PayrollEngineService = require('../services/PayrollEngineService');
 const taxService = require('../services/TaxCalculationService');
+const organizationCurrencyService = require('../services/OrganizationCurrencyService');
+const payComponentTaxService = require('../services/PayComponentTaxService');
+const payrollReportingService = require('../services/PayrollReportingService');
+const payrollFinalizationService = require('../services/PayrollFinalizationService');
+const payrollRetractionService = require('../services/PayrollRetractionService');
+const employerEntityService = require('../services/PayrollEmployerEntityService');
 const { buildPayrollRegisterCsv } = require('../services/payrollExportService');
 const { createPayslipPdf } = require('../services/payslipPdfService');
 const { hasPayConfiguration } = require('../services/contractPayService');
 const payrollEngineService = new PayrollEngineService();
+const PAY_FREQUENCIES = new Set(['monthly', 'semi-monthly', 'bi-weekly', 'weekly']);
+
+function reportingMetadata(reporting) {
+  return {
+    currency: reporting.reportingCurrency,
+    reportingCurrency: reporting.reportingCurrency,
+    hasAggregateTotals: reporting.hasAggregateTotals,
+    isMultiCurrency: reporting.isMultiCurrency,
+    currencies: reporting.currencies,
+    currencyBreakdown: reporting.currencyBreakdown,
+    unconvertedCurrencies: reporting.unconvertedCurrencies,
+    conversionWarnings: reporting.conversionWarnings,
+  };
+}
+
+function aggregatePreparedSubset(prepared, rows) {
+  return payrollReportingService.aggregatePreparedRows(rows, {
+    reportingCurrency: prepared.reportingCurrency,
+    reportingMinorUnits: prepared.reportingMinorUnits,
+  });
+}
+
+function percentageGrowth(current, previous) {
+  if (current === null || previous === null) return null;
+  if (previous <= 0) return 0;
+  return Math.round((((current - previous) / previous) * 100) * 10) / 10;
+}
+
+function roundReportingAmount(value, minorUnits = 2) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return null;
+  const factor = 10 ** minorUnits;
+  return Math.round((Number(value) + Number.EPSILON) * factor) / factor;
+}
 
 // Import RBAC middleware
 const { requireAuth, requireHRAdmin, requireManager, requirePermission } = require('../middleware/rbac');
@@ -29,6 +68,49 @@ const getUserInfo = (req) => ({
 
 const HR_ADMIN_ORG_ROLES = new Set(['owner', 'admin', 'hr_manager']);
 const ORG_ADMIN_ONLY_ROLES = new Set(['owner', 'admin']);
+
+function getRunBlockingIssues(run = {}) {
+  const issues = [];
+  const errors = Array.isArray(run.errors) ? run.errors : [];
+  const employeeErrors = (Array.isArray(run.employees) ? run.employees : [])
+    .filter((employee) => employee?.status === 'error');
+  const errorCount = Number(run.summary?.errorCount || 0);
+  if (errors.length > 0) issues.push(`${errors.length} calculation error(s)`);
+  if (employeeErrors.length > 0) issues.push(`${employeeErrors.length} employee calculation failure(s)`);
+  if (errorCount > 0) issues.push(`${errorCount} summary error(s)`);
+  return Array.from(new Set(issues));
+}
+
+function assertRunHasNoBlockingIssues(run) {
+  const issues = getRunBlockingIssues(run);
+  if (issues.length === 0) return;
+  const error = new Error(`Payroll cannot proceed while blocking calculation issues remain: ${issues.join(', ')}. Recalculate after correcting them.`);
+  error.statusCode = 409;
+  error.code = 'PAYROLL_RUN_HAS_BLOCKING_ERRORS';
+  throw error;
+}
+
+async function markRunCalculationFailure(run, error) {
+  if (!run?._id || !run?.organizationId) return;
+  const errorType = String(error?.code || 'RUN_CALCULATION_FAILED');
+  const errorMessage = String(error?.message || 'Payroll calculation failed before completion.');
+  await PayrollRun.updateOne(
+    { _id: run._id, organizationId: run.organizationId, status: 'calculating' },
+    {
+      $set: { status: 'pending_review' },
+      $inc: { 'summary.errorCount': 1 },
+      $push: {
+        errors: {
+          userId: '',
+          employeeName: 'Payroll run',
+          errorType,
+          errorMessage,
+          occurredAt: new Date(),
+        },
+      },
+    }
+  );
+}
 
 function getVisiblePayslipStatusesForRole(role) {
   if (HR_ADMIN_ORG_ROLES.has(role)) {
@@ -401,6 +483,13 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function isEffectiveOn(item, date, startKey = 'effectiveFrom', endKey = 'effectiveTo') {
+  const asOf = new Date(date);
+  const start = item?.[startKey] ? new Date(item[startKey]) : null;
+  const end = item?.[endKey] ? new Date(item[endKey]) : null;
+  return (!start || asOf >= start) && (!end || asOf <= end);
+}
+
 function extractValidationMessages(error) {
   if (!error || typeof error !== 'object') {
     return [];
@@ -450,11 +539,16 @@ router.get('/profile/me', requireAuth, async (req, res) => {
 
     if (!profile) {
       // Create a basic profile if none exists
+      await organizationCurrencyService.getPolicy(organizationId, {
+        userId,
+        name: req.session.user?.name,
+      });
+      const defaultPaymentCurrency = await organizationCurrencyService.getDefaultPaymentCurrency(organizationId);
       profile = new PayrollProfile({
         userId,
         organizationId,
         basicSalary: 0,
-        currency: 'USD',
+        currency: defaultPaymentCurrency,
         payrollFlags: normalizePayrollFlagsPayload({}, 0, {}),
         employeeInfo: {
           name: req.session.user?.name,
@@ -474,6 +568,7 @@ router.get('/profile/me', requireAuth, async (req, res) => {
       salaryGrade: profile.salaryGrade,
       allowances: profile.allowances,
       recurringDeductions: profile.recurringDeductions,
+      benefitItems: profile.benefitItems,
       benefits: profile.benefits,
       status: profile.status,
       grossMonthlySalary: profile.grossMonthlySalary,
@@ -509,16 +604,10 @@ router.get('/dashboard-stats', requireAuth, async (req, res) => {
       status: { $in: visibleStatuses }
     }).sort({ 'payPeriod.month': -1 });
 
-    // Calculate YTD
-    let ytdGrossEarnings = 0;
-    let ytdTotalTax = 0;
-    let ytdNetPay = 0;
-
-    for (const slip of payslips) {
-      ytdGrossEarnings += slip.earningsSummary?.grossPay || 0;
-      ytdTotalTax += slip.taxBreakdown?.taxAmount || 0;
-      ytdNetPay += slip.netPay || 0;
-    }
+    const reporting = await payrollReportingService.preparePayslips(
+      organizationId,
+      payslips
+    );
 
     // Get next payday from latest payroll run
     const nextRun = await PayrollRun.findOne({
@@ -540,13 +629,14 @@ router.get('/dashboard-stats', requireAuth, async (req, res) => {
 
     res.json({
       ytd: {
-        grossEarnings: ytdGrossEarnings,
-        totalTax: ytdTotalTax,
-        netPay: ytdNetPay
+        grossEarnings: reporting.totals.grossPay,
+        totalTax: reporting.totals.totalTax,
+        netPay: reporting.totals.netPay
       },
       totalPayslips: payslips.length,
       nextPayday: nextPayday?.toISOString().split('T')[0] || null,
-      currency: profile?.currency || 'USD',
+      ...reportingMetadata(reporting),
+      paymentCurrency: profile?.currency || 'USD',
       profileStatus: profile?.status || 'pending_setup',
       hasProfile: !!profile && hasPayConfiguration(profile)
     });
@@ -954,6 +1044,7 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
     const currency = String(req.body?.currency || profile.currency || 'USD').trim().toUpperCase() || 'USD';
     const payFrequency = String(req.body?.payFrequency || profile.payFrequency || 'monthly').trim() || 'monthly';
     const allowances = Array.isArray(req.body?.allowances) ? req.body.allowances : (profile.allowances || []);
+    const benefitItems = Array.isArray(req.body?.benefitItems) ? req.body.benefitItems : (profile.benefitItems || []);
     const recurringDeductions = Array.isArray(req.body?.recurringDeductions)
       ? req.body.recurringDeductions
       : (profile.recurringDeductions || []);
@@ -969,21 +1060,46 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
       ...(req.body?.statutoryContributions || {}),
     };
 
-    const totalAllowances = sumAllowanceAmount(allowances);
-    const taxableAllowances = sumAllowanceAmount(allowances, { taxableOnly: true });
-    const grossPay = roundMoney(basicSalary + totalAllowances);
-    const taxableEarnings = roundMoney(basicSalary + taxableAllowances);
-    const recurringPreTaxDeductions = sumRecurringDeductionAmount(recurringDeductions, grossPay, { isPreTax: true });
-    const recurringPostTaxDeductions = sumRecurringDeductionAmount(recurringDeductions, grossPay, { isPreTax: false });
+    const previewDate = req.body?.paymentDate ? new Date(req.body.paymentDate) : new Date();
+    const jurisdictionCode = String(taxConfig.jurisdictionCode || '').toUpperCase();
+    const componentReviewErrors = [];
+    const activeAllowances = allowances
+      .filter((item) => item && item.isActive !== false && isEffectiveOn(item, previewDate));
+    const activeBenefits = benefitItems
+      .filter((item) => item && item.isActive !== false && isEffectiveOn(item, previewDate));
+    const activeRecurringDeductions = recurringDeductions
+      .filter((item) => item && item.isActive !== false && isEffectiveOn(item, previewDate, 'startDate', 'endDate'));
+    const resolvedAllowances = activeAllowances
+      .map((item) => payComponentTaxService.resolveComponent(item, previewDate, jurisdictionCode));
+    const resolvedBenefits = activeBenefits
+      .map((item) => payComponentTaxService.resolveComponent(item, previewDate, jurisdictionCode));
+    [...resolvedAllowances, ...resolvedBenefits].forEach((item) => {
+      if (item.requiresReview) componentReviewErrors.push(item.reviewMessage);
+    });
+    const cashAllowances = resolvedAllowances.reduce((sum, item) => sum + (item.cashPayable ? item.value : 0), 0);
+    const cashBenefits = resolvedBenefits.reduce((sum, item) => sum + (item.cashPayable ? item.value : 0), 0);
+    const taxableAllowances = resolvedAllowances.reduce((sum, item) => sum + item.taxableAmount, 0);
+    const taxableBenefits = resolvedBenefits.reduce((sum, item) => sum + item.taxableAmount, 0);
+    const grossPay = roundMoney(basicSalary + cashAllowances + cashBenefits);
+    const taxableEarnings = roundMoney(basicSalary + taxableAllowances + taxableBenefits);
+    const ungovernedPreTax = activeRecurringDeductions.find((item) => item?.isPreTax);
+    if (ungovernedPreTax) {
+      componentReviewErrors.push(`Recurring deduction "${ungovernedPreTax.name || 'Unnamed deduction'}" cannot reduce taxable income from a profile flag. Configure it through the statutory pack.`);
+    }
+    const recurringPreTaxDeductions = 0;
+    const recurringPostTaxDeductions = sumRecurringDeductionAmount(activeRecurringDeductions, grossPay, { isPreTax: false });
     const effectivePension = taxService.resolveEffectivePensionSettings(taxConfig, statutoryContributions);
-    const employeePensionAmount = effectivePension.enabled
+    const pensionIsPackManaged = jurisdictionCode === 'NG';
+    const employeePensionAmount = effectivePension.enabled && !pensionIsPackManaged
       ? roundMoney(grossPay * (toNumber(effectivePension.employeePercent) / 100))
       : 0;
-    const employerPensionAmount = effectivePension.enabled
+    const employerPensionAmount = effectivePension.enabled && !pensionIsPackManaged
       ? roundMoney(grossPay * (toNumber(effectivePension.employerPercent) / 100))
       : 0;
-    const preTaxDeductions = roundMoney(recurringPreTaxDeductions + employeePensionAmount);
-    const taxableIncome = Math.max(0, roundMoney(taxableEarnings - preTaxDeductions));
+    // Voluntary profile pension settings are post-tax unless the statutory pack
+    // explicitly owns and limits the relief.
+    const preTaxDeductions = 0;
+    const taxableIncome = Math.max(0, roundMoney(taxableEarnings));
 
     const taxResult = await taxService.calculatePayrollTaxes({
       organizationId,
@@ -993,11 +1109,19 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
       taxableIncome,
       basicSalary,
       preTaxDeductions,
-      paymentDate: new Date(),
+      paymentDate: previewDate,
       payFrequency,
       employeeInfo,
       ytdGrossPay: 0,
       ytdTaxableIncome: 0,
+      currency,
+      statutoryBases: {
+        pensionablePay: roundMoney(basicSalary + activeAllowances
+          .filter((item) => ['hra', 'transport'].includes(item?.type))
+          .reduce((sum, item) => sum + Math.max(0, toNumber(item?.amount)), 0)),
+        socialSecurityPay: taxableEarnings,
+        insurablePay: taxableEarnings,
+      },
     });
 
     const statutoryDeductions = roundMoney(taxResult?.statutoryContributions?.totalAmount || 0);
@@ -1015,7 +1139,12 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
       currency,
       payFrequency,
       calculationMode: taxConfig.calculationMode,
-      validationErrors: Array.isArray(taxResult?.validationErrors) ? taxResult.validationErrors : [],
+      validationErrors: [...componentReviewErrors, ...(Array.isArray(taxResult?.validationErrors) ? taxResult.validationErrors : [])],
+      blockingErrors: [...componentReviewErrors, ...(Array.isArray(taxResult?.blockingErrors) ? taxResult.blockingErrors : [])],
+      payrollRunnable: componentReviewErrors.length === 0 && taxResult?.payrollRunnable !== false,
+      compliance: taxResult?.compliance || {},
+      calculationCurrency: taxResult?.calculationCurrency || currency,
+      currencyConversion: taxResult?.currencyConversion || null,
       jurisdictionVersion: taxResult?.jurisdictionVersion ? {
         _id: taxResult.jurisdictionVersion._id,
         label: taxResult.jurisdictionVersion.label,
@@ -1026,11 +1155,13 @@ router.post('/profiles/:userId/tax-preview', requireHRAdmin, async (req, res) =>
       summary: {
         basicSalary: roundMoney(basicSalary),
         grossPay,
+        taxableBenefits: roundMoney(taxableBenefits),
         taxableEarnings,
         recurringPreTaxDeductions,
         recurringPostTaxDeductions,
         employeePensionAmount,
         employerPensionAmount,
+        statutoryEmployerContributions: roundMoney(taxResult?.statutoryContributions?.totalEmployerAmount || 0),
         statutoryDeductions,
         incomeTax,
         estimatedEmployeeDeductions,
@@ -1071,6 +1202,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       allowances,
       recurringDeductions,
       benefits,
+      benefitItems,
       taxConfig,
       statutoryContributions,
       bankAccounts,
@@ -1081,6 +1213,8 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
       terminationReason,
       notes,
       tags,
+      employerEntityId,
+      taxAssignment,
       idpProfileSync
     } = req.body || {};
     const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
@@ -1122,7 +1256,9 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     }
 
     // Update other fields
-    if (currency !== undefined) profile.currency = currency;
+    if (currency !== undefined) {
+      profile.currency = await organizationCurrencyService.assertPaymentCurrency(organizationId, currency);
+    }
     if (payFrequency !== undefined) profile.payFrequency = payFrequency;
     if (workTerms !== undefined) {
       const existingWorkTerms = profile.workTerms?.toObject?.() || profile.workTerms || {};
@@ -1134,6 +1270,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (allowances !== undefined) profile.allowances = allowances;
     if (recurringDeductions !== undefined) profile.recurringDeductions = recurringDeductions;
     if (benefits !== undefined) profile.benefits = benefits;
+    if (benefitItems !== undefined) profile.benefitItems = benefitItems;
     if (normalizedTaxConfig !== undefined) profile.taxConfig = normalizedTaxConfig;
     if (statutoryContributions !== undefined) {
       profile.statutoryContributions = { ...(profile.statutoryContributions || {}), ...(statutoryContributions || {}) };
@@ -1145,10 +1282,23 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
     if (terminationReason !== undefined) profile.terminationReason = terminationReason;
     if (notes !== undefined) profile.notes = notes;
     if (tags !== undefined) profile.tags = tags;
+    if (employerEntityId !== undefined) profile.employerEntityId = employerEntityId || null;
+    if (taxAssignment !== undefined) {
+      profile.taxAssignment = { ...(profile.taxAssignment?.toObject?.() || profile.taxAssignment || {}), ...(taxAssignment || {}) };
+    }
     if (syncedMember) {
       applyPayrollSyncFromMember(profile, syncedMember);
     }
     profile.payrollFlags = normalizePayrollFlagsPayload(payrollFlags, profile.basicSalary, profile.payrollFlags, profile.workTerms);
+
+    if (profile.employerEntityId) {
+      const employerEntity = await employerEntityService.assertAssignableEntity(profile.employerEntityId, organizationId);
+      employerEntityService.assertProfileAssignment(profile, employerEntity);
+    } else if (profile.payrollFlags?.includeInNextRun) {
+      profile.payrollFlags.includeInNextRun = false;
+      profile.payrollFlags.requiresReview = true;
+      profile.payrollFlags.reviewReason = 'Assign a legal employer before including this employee in payroll.';
+    }
 
     profile.lastModifiedBy = adminId;
     await profile.save();
@@ -1162,7 +1312,7 @@ router.put('/profiles/:userId', requireHRAdmin, async (req, res) => {
         details: extractValidationMessages(err)
       });
     }
-    res.status(500).json({ error: 'Failed to update profile' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to update profile', details: err.details });
   }
 });
 
@@ -1183,6 +1333,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       allowances,
       recurringDeductions,
       benefits,
+      benefitItems,
       taxConfig,
       statutoryContributions,
       bankAccounts,
@@ -1190,7 +1341,9 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       status,
       isActive,
       notes,
-      tags
+      tags,
+      employerEntityId,
+      taxAssignment,
     } = req.body || {};
     const normalizedTaxConfig = normalizeTaxConfigPayload(taxConfig);
     const normalizedBasicSalary = Math.max(0, toNumber(basicSalary, 0));
@@ -1200,17 +1353,25 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Profile already exists for this user' });
     }
 
+    await organizationCurrencyService.getPolicy(organizationId, { userId: adminId });
+    const defaultPaymentCurrency = await organizationCurrencyService.getDefaultPaymentCurrency(organizationId);
+    const paymentCurrency = await organizationCurrencyService.assertPaymentCurrency(
+      organizationId,
+      currency || defaultPaymentCurrency
+    );
     const profile = new PayrollProfile({
       userId,
       organizationId,
+      employerEntityId: employerEntityId || null,
       basicSalary: normalizedBasicSalary,
-      currency: currency || 'USD',
+      currency: paymentCurrency,
       payFrequency: payFrequency || 'monthly',
       workTerms: workTerms || {},
       employeeInfo: employeeInfo || {},
       allowances: allowances || [],
       recurringDeductions: recurringDeductions || [],
       benefits: benefits || {},
+      benefitItems: benefitItems || [],
       taxConfig: normalizedTaxConfig || {},
       statutoryContributions: statutoryContributions || {},
       bankAccounts: bankAccounts || [],
@@ -1219,6 +1380,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       isActive: isActive !== undefined ? !!isActive : true,
       notes,
       tags,
+      taxAssignment: taxAssignment || {},
       createdBy: adminId
     });
 
@@ -1232,6 +1394,15 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
       });
     }
 
+    if (profile.employerEntityId) {
+      const employerEntity = await employerEntityService.assertAssignableEntity(profile.employerEntityId, organizationId);
+      employerEntityService.assertProfileAssignment(profile, employerEntity);
+    } else if (profile.payrollFlags?.includeInNextRun) {
+      profile.payrollFlags.includeInNextRun = false;
+      profile.payrollFlags.requiresReview = true;
+      profile.payrollFlags.reviewReason = 'Assign a legal employer before including this employee in payroll.';
+    }
+
     await profile.save();
     res.status(201).json({ success: true, profile });
   } catch (err) {
@@ -1242,7 +1413,7 @@ router.post('/profiles', requireHRAdmin, async (req, res) => {
         details: extractValidationMessages(err)
       });
     }
-    res.status(500).json({ error: 'Failed to create profile' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create profile', details: err.details });
   }
 });
 
@@ -1290,10 +1461,13 @@ router.post('/profiles/import-from-idp', requireHRAdmin, async (req, res) => {
       return res.json({ success: true, profile: existing, existed: true });
     }
 
+    await organizationCurrencyService.getPolicy(organizationId, { userId: adminId });
+    const defaultPaymentCurrency = await organizationCurrencyService.getDefaultPaymentCurrency(organizationId);
     const profile = new PayrollProfile({
       userId: resolvedUserId,
       organizationId,
       basicSalary: 0,
+      currency: defaultPaymentCurrency,
       employeeInfo: buildEmployeeSnapshotFromMember(member),
       bankAccounts: buildPayrollBankAccountsFromMember(member, []),
       emergencyContact: buildEmergencyContactFromMember(member, null),
@@ -1486,11 +1660,12 @@ router.get('/payslips/:id/pdf', requireAuth, async (req, res) => {
 router.get('/runs', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
-    const { year, status, limit = 12 } = req.query;
+    const { year, status, employerEntityId, limit = 12 } = req.query;
 
     const runs = await PayrollRun.getByOrganization(organizationId, {
       year: year ? parseInt(year) : undefined,
       status,
+      employerEntityId,
       limit: parseInt(limit)
     });
 
@@ -1530,37 +1705,101 @@ router.get('/runs/:id', requireHRAdmin, async (req, res) => {
  * Create and process a new payroll run
  */
 router.post('/runs', requireHRAdmin, async (req, res) => {
+  let createdRun = null;
   try {
     const { organizationId, userId: adminId, name: adminName } = getUserInfo(req);
-    const { month, year, settings = {}, paymentDate, workInputs = [] } = req.body;
+    const { month, year, settings = {}, paymentDate, workInputs = [], employerEntityId } = req.body;
+    const payFrequency = String(req.body?.payFrequency || settings.payFrequency || 'monthly').trim().toLowerCase();
 
     // Validate month/year
-    if (!month || !year) {
-      return res.status(400).json({ error: 'Month and year are required' });
+    if (!Number.isInteger(Number(month)) || Number(month) < 1 || Number(month) > 12
+      || !Number.isInteger(Number(year)) || Number(year) < 2000 || Number(year) > 2200) {
+      return res.status(400).json({ error: 'Month must be an integer from 1 to 12 and year must be an integer from 2000 to 2200.' });
+    }
+    if (!PAY_FREQUENCIES.has(payFrequency)) {
+      return res.status(400).json({ error: 'Pay frequency must be monthly, semi-monthly, bi-weekly, or weekly' });
+    }
+    if (payFrequency !== 'monthly') {
+      return res.status(422).json({
+        error: 'Only monthly payroll runs are currently certified. Weekly, bi-weekly, and semi-monthly runs remain blocked until salary-frequency, period-overlap, and leave-period rules are certified.',
+        code: 'PAY_FREQUENCY_NOT_CERTIFIED',
+      });
     }
 
-    // Check if run already exists
-    const exists = await PayrollRun.existsForPeriod(organizationId, year, month);
-    if (exists) {
-      return res.status(400).json({ error: 'Payroll run for this period already exists' });
+    if (req.body?.startDate !== undefined || req.body?.endDate !== undefined) {
+      return res.status(400).json({
+        error: 'Monthly payroll periods use canonical calendar-month boundaries; startDate and endDate cannot be overridden.',
+        code: 'PAYROLL_PERIOD_OVERRIDE_NOT_ALLOWED',
+      });
     }
 
-    // Generate run number
-    const runNumber = await PayrollRun.generateRunNumber(organizationId, year, month);
-
-    // Calculate pay period dates
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0); // Last day of month
+    const normalizedMonth = Number(month);
+    const normalizedYear = Number(year);
+    const startDate = new Date(Date.UTC(normalizedYear, normalizedMonth - 1, 1));
+    const endDate = new Date(Date.UTC(normalizedYear, normalizedMonth, 0, 23, 59, 59, 999));
     const defaultPaymentDate = paymentDate ? new Date(paymentDate) : endDate;
+    if (Number.isNaN(defaultPaymentDate.getTime())) {
+      return res.status(400).json({ error: 'Payment date is invalid' });
+    }
+    if (!employerEntityId) {
+      return res.status(422).json({
+        error: 'Select the legal employer that owns this payroll run.',
+        code: 'PAYROLL_EMPLOYER_ENTITY_REQUIRED',
+      });
+    }
+    const employerContext = await employerEntityService.assertRunEntity(
+      employerEntityId,
+      organizationId,
+      defaultPaymentDate
+    );
+
+    const exists = await PayrollRun.existsForPeriod(organizationId, normalizedYear, normalizedMonth, {
+      type: payFrequency,
+      employerEntityId,
+    });
+    if (exists) {
+      return res.status(409).json({ error: 'Payroll run for this legal employer and period already exists' });
+    }
+
+    const runNumber = await PayrollRun.generateRunNumber(organizationId, normalizedYear, normalizedMonth);
+    const currencyPolicy = await organizationCurrencyService.getPolicy(organizationId, {
+      userId: adminId,
+      name: adminName,
+    });
+    const reportingCurrency = await organizationCurrencyService.assertReportingCurrency(
+      organizationId,
+      settings.reportingCurrency || employerContext.entity.defaultCurrency
+    );
+    if (reportingCurrency !== employerContext.entity.defaultCurrency) {
+      return res.status(422).json({
+        error: `Payroll runs must use the legal employer currency ${employerContext.entity.defaultCurrency}. Cross-currency reporting remains available outside the statutory run.`,
+        code: 'PAYROLL_RUN_CURRENCY_MUST_MATCH_EMPLOYER',
+      });
+    }
 
     // Create Run Record
     const run = new PayrollRun({
       runNumber,
       organizationId,
+      employerEntityId: employerContext.entity._id,
+      employerEntitySnapshot: {
+        code: employerContext.entity.code,
+        legalName: employerContext.entity.legalName,
+        employerType: employerContext.entity.employerType,
+        countryCode: employerContext.entity.countryCode,
+        jurisdictionCode: employerContext.entity.jurisdictionCode,
+        currency: employerContext.entity.defaultCurrency,
+        taxJurisdictionConfigId: employerContext.entity.taxJurisdictionConfigId,
+        taxJurisdictionVersionId: employerContext.entity.taxJurisdictionVersionId,
+        taxAdapterCandidateId: employerContext.entity.taxAdapterCandidateId,
+        taxPackContentHash: employerContext.readiness.taxPack?.contentHash || '',
+        payrollRunnableAtCreation: employerContext.readiness.payrollRunnable,
+        blockingIssuesAtCreation: employerContext.readiness.blockingIssues,
+      },
       payPeriod: {
-        type: 'monthly',
-        month,
-        year,
+        type: payFrequency,
+        month: normalizedMonth,
+        year: normalizedYear,
         startDate,
         endDate,
         paymentDate: defaultPaymentDate
@@ -1570,10 +1809,17 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
         includeAllowances: settings.includeAllowances !== false,
         includeBonuses: settings.includeBonuses !== false,
         includeOvertime: settings.includeOvertime !== false,
+        includeCommissions: settings.includeCommissions !== false,
         processStatutoryDeductions: settings.processStatutoryDeductions !== false,
+        processLoans: settings.processLoans !== false,
+        // Leave verification is a payroll control, not an optional employee deduction toggle.
+        processUnpaidLeave: true,
         calculateTax: settings.calculateTax !== false,
         prorate: settings.prorate !== false,
-        ...settings
+        departments: Array.isArray(settings.departments) ? settings.departments : [],
+        teams: Array.isArray(settings.teams) ? settings.teams : [],
+        employmentTypes: Array.isArray(settings.employmentTypes) ? settings.employmentTypes : [],
+        reportingCurrency,
       },
       workInputs: (Array.isArray(workInputs) ? workInputs : []).map(input => ({
         userId: String(input?.userId || '').trim(),
@@ -1589,6 +1835,7 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
     });
 
     await run.save();
+    createdRun = run;
 
     // =====================================================
     // DELEGATE TO PAYROLL ENGINE SERVICE
@@ -1607,7 +1854,7 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
           await emailService.sendPayrollCompleteNotification(
             req.session.user.email,
             adminName,
-            { month, year },
+            { month: normalizedMonth, year: normalizedYear },
             result.summary?.processed || result.summary?.totalEmployees || 0,
             result.summary?.totalGrossPayroll || 0,
             result.run?.summary?.currency || 'USD'
@@ -1626,7 +1873,13 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('Create Payroll Run Error:', err);
-    res.status(500).json({ error: 'Failed to create payroll run', details: err.message });
+    try {
+      await markRunCalculationFailure(createdRun, err);
+    } catch (statusError) {
+      console.error('Failed to mark payroll run for review:', statusError.message);
+    }
+    const statusCode = err?.code === 11000 ? 409 : (err?.statusCode || (err?.code === 'PAY_FREQUENCY_NOT_CERTIFIED' ? 422 : 500));
+    res.status(statusCode).json({ error: 'Failed to create payroll run', details: err.message, code: err?.code });
   }
 });
 
@@ -1638,9 +1891,10 @@ router.post('/runs', requireHRAdmin, async (req, res) => {
  * Allowed only before submission for approval.
  */
 router.post('/runs/:id/recalculate', requireHRAdmin, async (req, res) => {
+  let run = null;
   try {
     const { organizationId, userId: adminId, name: adminName, role } = getUserInfo(req);
-    const run = await PayrollRun.findOne({ _id: req.params.id, organizationId });
+    run = await PayrollRun.findOne({ _id: req.params.id, organizationId });
 
     if (!run) {
       return res.status(404).json({ error: 'Payroll run not found' });
@@ -1664,7 +1918,12 @@ router.post('/runs/:id/recalculate', requireHRAdmin, async (req, res) => {
     });
   } catch (err) {
     console.error('Recalculate Run Error:', err);
-    res.status(500).json({ error: 'Failed to recalculate payroll run', details: err.message });
+    try {
+      await markRunCalculationFailure(run, err);
+    } catch (statusError) {
+      console.error('Failed to mark recalculated payroll run for review:', statusError.message);
+    }
+    res.status(err?.statusCode || 500).json({ error: 'Failed to recalculate payroll run', details: err.message, code: err?.code });
   }
 });
 
@@ -1719,9 +1978,11 @@ router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) =>
       return res.status(404).json({ error: 'Payroll run not found' });
     }
 
-    if (!['calculated', 'pending_review'].includes(run.status)) {
+    if (run.status !== 'calculated') {
       return res.status(400).json({ error: `Cannot submit run with status: ${run.status}` });
     }
+
+    assertRunHasNoBlockingIssues(run);
 
     run.addApproval('submitted', adminId, adminName, 'hr_admin', req.body.comments);
     run.status = 'pending_approval';
@@ -1736,7 +1997,7 @@ router.post('/runs/:id/submit-for-approval', requireHRAdmin, async (req, res) =>
     res.json({ success: true, run });
   } catch (err) {
     console.error('Submit Run Error:', err);
-    res.status(500).json({ error: 'Failed to submit payroll run' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to submit payroll run', code: err.code });
   }
 });
 
@@ -1761,6 +2022,8 @@ router.post('/runs/:id/approve', requireHRAdmin, async (req, res) => {
       return res.status(400).json({ error: `Cannot approve run with status: ${run.status}` });
     }
 
+    assertRunHasNoBlockingIssues(run);
+
     run.addApproval('approved', adminId, adminName, role, req.body.comments);
     await run.save();
 
@@ -1775,7 +2038,7 @@ router.post('/runs/:id/approve', requireHRAdmin, async (req, res) => {
     res.json({ success: true, run });
   } catch (err) {
     console.error('Approve Run Error:', err);
-    res.status(500).json({ error: 'Failed to approve payroll run' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to approve payroll run', code: err.code });
   }
 });
 
@@ -1825,9 +2088,10 @@ router.get('/runs/:id/export', requireHRAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Payroll run not found' });
     }
 
-    if (run.status === 'cancelled') {
-      return res.status(400).json({ error: 'Cannot export a retracted payroll run' });
+    if (!['approved', 'exported', 'paid'].includes(run.status)) {
+      return res.status(400).json({ error: `Cannot export a payroll run with status: ${run.status}` });
     }
+    assertRunHasNoBlockingIssues(run);
 
     const payslips = await Payslip.find({
       payrollRunId: run._id,
@@ -1855,230 +2119,48 @@ router.get('/runs/:id/export', requireHRAdmin, async (req, res) => {
     res.send(csv);
   } catch (err) {
     console.error('Export Run Error:', err);
-    res.status(500).json({ error: 'Failed to export payroll run' });
+    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to export payroll run', code: err.code });
   }
 });
 
 async function retractPayrollRun(runId, organizationId, adminId, adminName, comments) {
-  const run = await PayrollRun.findOne({ _id: runId, organizationId });
-  if (!run) {
-    const err = new Error('Payroll run not found');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (run.status === 'cancelled') {
-    const err = new Error('This payroll run has already been retracted');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  if (['calculating', 'processing_payment'].includes(run.status)) {
-    const err = new Error(`Cannot retract run while status is ${run.status}`);
-    err.statusCode = 400;
-    throw err;
-  }
-
-  const payslips = await Payslip.find({ payrollRunId: run._id, organizationId });
-
-  if (['exported', 'paid'].includes(run.status)) {
-    for (const payslip of payslips) {
-      if (!Array.isArray(payslip.deductions) || payslip.deductions.length === 0) continue;
-
-      const loanDeductions = payslip.deductions.filter((deduction) => deduction.type === 'loan_repayment');
-      if (loanDeductions.length === 0) continue;
-
-      const profile = await PayrollProfile.findOne({ userId: payslip.userId, organizationId });
-      if (!profile || !Array.isArray(profile.recurringDeductions)) continue;
-
-      let modified = false;
-      for (const deduction of loanDeductions) {
-        const profileDeduction = profile.recurringDeductions.find((item) =>
-          item.type === 'loan_repayment' && item.name === deduction.name
-        );
-        if (!profileDeduction) continue;
-
-        const currentRemaining = Number(profileDeduction.remainingAmount || 0);
-        const totalAmount = Number(
-          profileDeduction.totalAmount
-          || profileDeduction.remainingAmount
-          || deduction.amount
-          || 0
-        );
-        const restoredBalance = currentRemaining + Number(deduction.amount || 0);
-
-        profileDeduction.remainingAmount = totalAmount > 0
-          ? Math.min(restoredBalance, totalAmount)
-          : restoredBalance;
-
-        if (profileDeduction.remainingAmount > 0) {
-          profileDeduction.isActive = true;
-        }
-
-        modified = true;
-      }
-
-      if (modified) {
-        await profile.save();
-      }
-    }
-  }
-
-  const processedRequests = await CompensationRequest.find({
+  const result = await payrollRetractionService.retractRun({
+    runId,
     organizationId,
-    processedInRunId: run._id
-  }).select('_id').lean();
-  const processedRequestIds = processedRequests.map((request) => request._id);
-
-  if (processedRequestIds.length > 0) {
-    await CompensationRequest.updateMany(
-      {
-        _id: { $in: processedRequestIds },
-        organizationId
-      },
-      {
-        $set: {
-          status: 'approved',
-          processedInRunId: null
-        },
-        $unset: {
-          processedAt: ''
-        }
-      }
-    );
-  }
-
-  const deletedPayslips = await Payslip.deleteMany({
-    payrollRunId: run._id,
-    organizationId
+    adminId,
+    adminName,
+    comments,
   });
+
   await TimeAttendanceImport.updateMany(
-    { organizationId, appliedPayrollRunId: run._id, status: 'applied' },
+    { organizationId, appliedPayrollRunId: result.run._id, status: 'applied' },
     { $set: { status: 'accepted' }, $unset: { appliedPayrollRunId: '' } }
   );
-
-  run.status = 'cancelled';
-  run.retractedAt = new Date();
-  run.retractedBy = adminId;
-  run.retractedByName = adminName;
-  run.retractionReason = comments || 'Retracted by organization admin';
-  run.addApproval('retracted', adminId, adminName, 'admin', comments || 'Retracted payroll run');
-
-  const warningNotes = [
-    `Retracted on ${run.retractedAt.toISOString()} by ${adminName || adminId}.`,
-    `Removed ${deletedPayslips.deletedCount || 0} payslip(s).`,
-    `Reset ${processedRequestIds.length} processed compensation request(s).`
-  ];
-  run.internalNotes = [run.internalNotes, ...warningNotes].filter(Boolean).join(' ');
-
-  await run.save();
-
-  return {
-    run,
-    deletedPayslips: deletedPayslips.deletedCount || 0,
-    resetCompensationRequests: processedRequestIds.length
-  };
+  return result;
 }
 
 async function finalizePayrollRun(runId, organizationId, adminId, adminName, comments) {
-  const run = await PayrollRun.findOne({ _id: runId, organizationId });
-  if (!run) {
-    const err = new Error('Payroll run not found');
-    err.statusCode = 404;
-    throw err;
-  }
-
-  if (!['approved', 'exported', 'paid'].includes(run.status)) {
-    const err = new Error(`Cannot finalize run with status: ${run.status}`);
-    err.statusCode = 400;
-    throw err;
-  }
-
-  if (run.status === 'exported') {
-    return run;
-  }
-
-  const payslips = await Payslip.find({ payrollRunId: run._id, organizationId });
-
-  // Update loan balances for deductions that were applied in this run
-  for (const payslip of payslips) {
-    if (!Array.isArray(payslip.deductions) || payslip.deductions.length === 0) continue;
-
-    const loanDeductions = payslip.deductions.filter(d => d.type === 'loan_repayment');
-    if (loanDeductions.length === 0) continue;
-
-    const profile = await PayrollProfile.findOne({ userId: payslip.userId, organizationId });
-    if (!profile || !Array.isArray(profile.recurringDeductions)) continue;
-
-    let modified = false;
-    loanDeductions.forEach(deduction => {
-      const profileDeduction = profile.recurringDeductions.find(pd =>
-        pd.type === 'loan_repayment' && pd.name === deduction.name
-      );
-      if (!profileDeduction || !(profileDeduction.remainingAmount > 0)) return;
-
-      profileDeduction.remainingAmount -= deduction.amount;
-      if (profileDeduction.remainingAmount < 0) profileDeduction.remainingAmount = 0;
-
-      if (profileDeduction.remainingAmount === 0) {
-        profileDeduction.isActive = false;
-        profileDeduction.notes = (profileDeduction.notes || '') + ` [Finalized via Run ${run.runNumber}]`;
-      }
-      modified = true;
-    });
-
-    if (modified) await profile.save();
-  }
-
-  // Mark variable comp requests included in payslips as processed
-  const requestIds = new Set();
-  for (const payslip of payslips) {
-    for (const e of payslip.earnings || []) {
-      if (e?.linkedRequestId) requestIds.add(e.linkedRequestId);
-    }
-  }
-
-  if (requestIds.size > 0) {
-    await CompensationRequest.updateMany(
-      {
-        _id: { $in: Array.from(requestIds) },
+  return payrollFinalizationService.finalizeRun({
+    runId,
+    organizationId,
+    adminId,
+    adminName,
+    comments,
+    assertRunReady: async (run) => {
+      assertRunHasNoBlockingIssues(run);
+      const employerContext = await employerEntityService.assertRunEntity(
+        run.employerEntityId,
         organizationId,
-        status: { $in: ['approved', 'approved_l1', 'approved_l2'] }
-      },
-      {
-        $set: {
-          status: 'processed',
-          processedAt: new Date(),
-          processedInRunId: run._id
-        }
+        run.payPeriod?.paymentDate
+      );
+      if (!employerContext.readiness.payrollRunnable) {
+        const error = new Error(`Payroll cannot be finalized: ${employerContext.readiness.blockingIssues.join(' ')}`);
+        error.statusCode = 409;
+        error.code = 'PAYROLL_EMPLOYER_NOT_RUNNABLE';
+        throw error;
       }
-    );
-  }
-
-  // Mark payslips as exported/finalized
-  await Payslip.updateMany(
-    { payrollRunId: run._id, organizationId },
-    { status: 'exported' }
-  );
-
-  run.status = 'exported';
-  run.exportedAt = new Date();
-  run.exportedBy = adminId;
-  run.exportedByName = adminName;
-  if (comments) {
-    run.approvals = run.approvals || [];
-    run.approvals.push({
-      action: 'finalized',
-      actionBy: adminId,
-      actionByName: adminName,
-      actionByRole: 'hr_admin',
-      comments,
-      level: run.currentApprovalLevel + 1
-    });
-  }
-
-  await run.save();
-  return run;
+    },
+  });
 }
 
 /**
@@ -2092,7 +2174,11 @@ router.post('/runs/:id/finalize', requireHRAdmin, async (req, res) => {
     res.json({ success: true, run });
   } catch (err) {
     console.error('Finalize Run Error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to finalize payroll run' });
+    res.status(err.statusCode || 500).json({
+      error: err.message || 'Failed to finalize payroll run',
+      code: err.code,
+      retryable: err.retryable === true,
+    });
   }
 });
 
@@ -2107,7 +2193,11 @@ router.post('/runs/:id/process-payment', requireHRAdmin, async (req, res) => {
     res.json({ success: true, run });
   } catch (err) {
     console.error('Process Payment (Legacy) Error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to finalize payroll run' });
+    res.status(err.statusCode || 500).json({
+      error: err.message || 'Failed to finalize payroll run',
+      code: err.code,
+      retryable: err.retryable === true,
+    });
   }
 });
 
@@ -2141,7 +2231,11 @@ router.post('/runs/:id/retract', requireOrganizationAdminOnly, async (req, res) 
     });
   } catch (err) {
     console.error('Retract Run Error:', err);
-    res.status(err.statusCode || 500).json({ error: err.message || 'Failed to retract payroll run' });
+    res.status(err.statusCode || 500).json({
+      error: err.message || 'Failed to retract payroll run',
+      code: err.code,
+      retryable: err.retryable === true,
+    });
   }
 });
 
@@ -2157,38 +2251,53 @@ router.get('/analytics/summary', requireHRAdmin, async (req, res) => {
   try {
     const { organizationId } = getUserInfo(req);
     const { year = new Date().getFullYear() } = req.query;
+    const selectedYear = parseInt(year);
 
     // Get all runs for the year
     const runs = await PayrollRun.find({
       organizationId,
-      'payPeriod.year': parseInt(year),
+      'payPeriod.year': selectedYear,
       status: { $in: ['calculated', 'approved', 'exported', 'paid'] }
     }).sort({ 'payPeriod.month': 1 });
+    const runIds = runs.map((run) => run._id);
+    const payslips = runIds.length > 0
+      ? await Payslip.find({ organizationId, payrollRunId: { $in: runIds } })
+      : [];
+    const reporting = await payrollReportingService.preparePayslips(
+      organizationId,
+      payslips
+    );
 
-    // Calculate yearly totals
     const summary = {
-      year: parseInt(year),
+      year: selectedYear,
       totalPayrollRuns: runs.length,
-      totalEmployeesPaid: 0,
-      totalGrossPayroll: 0,
-      totalNetPayroll: 0,
-      totalTaxWithheld: 0,
+      totalEmployeesPaid: reporting.employeeCount,
+      totalGrossPayroll: reporting.totals.grossPay,
+      totalNetPayroll: reporting.totals.netPay,
+      totalTaxWithheld: reporting.totals.totalTax,
+      totalEmployerContributions: reporting.totals.totalEmployerContributions,
+      totalEmployerCost: reporting.totals.totalEmployerCost,
+      ...reportingMetadata(reporting),
       monthlyBreakdown: []
     };
 
     runs.forEach(run => {
-      summary.totalEmployeesPaid += run.summary?.processedCount || 0;
-      summary.totalGrossPayroll += run.summary?.totalGrossPayroll || 0;
-      summary.totalNetPayroll += run.summary?.totalNetPayroll || 0;
-      summary.totalTaxWithheld += run.summary?.totalTaxWithheld || 0;
+      const runRows = reporting.rows.filter((row) => (
+        String(row.payslip?.payrollRunId) === String(run._id)
+      ));
+      const runReporting = aggregatePreparedSubset(reporting, runRows);
 
       summary.monthlyBreakdown.push({
         month: run.payPeriod.month,
         year: run.payPeriod.year,
-        grossPayroll: run.summary?.totalGrossPayroll || 0,
-        netPayroll: run.summary?.totalNetPayroll || 0,
-        employees: run.summary?.processedCount || 0,
-        status: run.status
+        grossPayroll: runReporting.totals.grossPay,
+        netPayroll: runReporting.totals.netPay,
+        tax: runReporting.totals.totalTax,
+        employerContributions: runReporting.totals.totalEmployerContributions,
+        employerCost: runReporting.totals.totalEmployerCost,
+        employees: runReporting.employeeCount,
+        status: run.status,
+        ...reportingMetadata(runReporting),
       });
     });
 
@@ -2238,114 +2347,124 @@ router.get('/analytics/comprehensive', requireHRAdmin, async (req, res) => {
       }).sort({ 'payPeriod.month': 1 })
     ]);
 
-    // Calculate current year totals
-    let currentYearGross = 0;
-    let currentYearNet = 0;
-    let currentYearTax = 0;
-    let currentYearDeductions = 0;
-
-    currentYearPayslips.forEach(slip => {
-      currentYearGross += slip.earningsSummary?.grossPay || 0;
-      currentYearNet += slip.netPay || 0;
-      currentYearTax += slip.taxBreakdown?.taxAmount || 0;
-      currentYearDeductions += slip.deductionsSummary?.totalDeductions || 0;
-    });
-
-    // Calculate previous year totals for comparison
-    let previousYearGross = 0;
-    let previousYearNet = 0;
-
-    previousYearPayslips.forEach(slip => {
-      previousYearGross += slip.earningsSummary?.grossPay || 0;
-      previousYearNet += slip.netPay || 0;
-    });
-
-    // Calculate YoY growth
-    const yoyGrossGrowth = previousYearGross > 0 
-      ? ((currentYearGross - previousYearGross) / previousYearGross * 100).toFixed(1)
-      : 0;
-    const yoyNetGrowth = previousYearNet > 0 
-      ? ((currentYearNet - previousYearNet) / previousYearNet * 100).toFixed(1)
-      : 0;
+    const [currentReporting, previousReporting] = await Promise.all([
+      payrollReportingService.preparePayslips(organizationId, currentYearPayslips),
+      payrollReportingService.preparePayslips(organizationId, previousYearPayslips),
+    ]);
+    const currentYearGross = currentReporting.totals.grossPay;
+    const currentYearNet = currentReporting.totals.netPay;
+    const previousYearGross = previousReporting.totals.grossPay;
+    const previousYearNet = previousReporting.totals.netPay;
+    const yoyGrossGrowth = percentageGrowth(currentYearGross, previousYearGross);
+    const yoyNetGrowth = percentageGrowth(currentYearNet, previousYearNet);
 
     // Monthly breakdown with comparison
     const monthlyData = [];
     for (let month = 1; month <= 12; month++) {
-      const monthSlips = currentYearPayslips.filter(s => s.payPeriod?.month === month);
-      const prevMonthSlips = previousYearPayslips.filter(s => s.payPeriod?.month === month);
-      
-      const monthGross = monthSlips.reduce((sum, s) => sum + (s.earningsSummary?.grossPay || 0), 0);
-      const monthNet = monthSlips.reduce((sum, s) => sum + (s.netPay || 0), 0);
-      const monthTax = monthSlips.reduce((sum, s) => sum + (s.taxBreakdown?.taxAmount || 0), 0);
-      const prevMonthGross = prevMonthSlips.reduce((sum, s) => sum + (s.earningsSummary?.grossPay || 0), 0);
-      
+      const monthReporting = aggregatePreparedSubset(
+        currentReporting,
+        currentReporting.rows.filter((row) => row.payslip?.payPeriod?.month === month)
+      );
+      const previousMonthReporting = aggregatePreparedSubset(
+        previousReporting,
+        previousReporting.rows.filter((row) => row.payslip?.payPeriod?.month === month)
+      );
+
       monthlyData.push({
         month,
-        grossPayroll: monthGross,
-        netPayroll: monthNet,
-        tax: monthTax,
-        employees: monthSlips.length,
-        previousYearGross: prevMonthGross,
-        growth: prevMonthGross > 0 ? ((monthGross - prevMonthGross) / prevMonthGross * 100).toFixed(1) : 0
+        grossPayroll: monthReporting.totals.grossPay,
+        netPayroll: monthReporting.totals.netPay,
+        tax: monthReporting.totals.totalTax,
+        employees: monthReporting.employeeCount,
+        previousYearGross: previousMonthReporting.totals.grossPay,
+        growth: percentageGrowth(
+          monthReporting.totals.grossPay,
+          previousMonthReporting.totals.grossPay
+        ),
+        ...reportingMetadata(monthReporting),
+        previousYearReporting: reportingMetadata(previousMonthReporting),
       });
     }
 
     // Department breakdown
     const deptMap = new Map();
-    currentYearPayslips.forEach(slip => {
-      const dept = slip.employeeSnapshot?.department || 'Unassigned';
-      const current = deptMap.get(dept) || { 
-        department: dept, 
-        totalGross: 0, 
-        totalNet: 0, 
-        employeeCount: new Set(),
-        avgSalary: 0 
-      };
-      current.totalGross += slip.earningsSummary?.grossPay || 0;
-      current.totalNet += slip.netPay || 0;
-      current.employeeCount.add(slip.userId);
-      deptMap.set(dept, current);
+    currentReporting.rows.forEach((row) => {
+      const department = row.payslip?.employeeSnapshot?.department || 'Unassigned';
+      const rows = deptMap.get(department) || [];
+      rows.push(row);
+      deptMap.set(department, rows);
     });
 
-    const departmentBreakdown = Array.from(deptMap.values()).map(d => ({
-      department: d.department,
-      totalGross: d.totalGross,
-      totalNet: d.totalNet,
-      employeeCount: d.employeeCount.size,
-      avgSalary: d.employeeCount.size > 0 ? Math.round(d.totalGross / d.employeeCount.size / 12) : 0
-    })).sort((a, b) => b.totalGross - a.totalGross);
+    const departmentBreakdown = Array.from(deptMap.entries()).map(([department, rows]) => {
+      const departmentReporting = aggregatePreparedSubset(currentReporting, rows);
+      return {
+        department,
+        totalGross: departmentReporting.totals.grossPay,
+        totalNet: departmentReporting.totals.netPay,
+        totalEmployerContributions: departmentReporting.totals.totalEmployerContributions,
+        totalEmployerCost: departmentReporting.totals.totalEmployerCost,
+        employeeCount: departmentReporting.employeeCount,
+        avgSalary: departmentReporting.totals.grossPay === null || departmentReporting.employeeCount === 0
+          ? null
+          : roundReportingAmount(
+            departmentReporting.totals.grossPay / departmentReporting.employeeCount / 12,
+            currentReporting.reportingMinorUnits
+          ),
+        ...reportingMetadata(departmentReporting),
+      };
+    }).sort((a, b) => (b.totalGross ?? -Infinity) - (a.totalGross ?? -Infinity));
 
     // Salary distribution
     const activeProfiles = allProfiles.filter(p => p.isActive);
     const salaryRanges = [
-      { min: 0, max: 30000, label: '$0-30K' },
-      { min: 30000, max: 50000, label: '$30K-50K' },
-      { min: 50000, max: 75000, label: '$50K-75K' },
-      { min: 75000, max: 100000, label: '$75K-100K' },
-      { min: 100000, max: 150000, label: '$100K-150K' },
-      { min: 150000, max: Infinity, label: '$150K+' }
+      { min: 0, max: 30000, label: `0-30K ${currentReporting.reportingCurrency}` },
+      { min: 30000, max: 50000, label: `30K-50K ${currentReporting.reportingCurrency}` },
+      { min: 50000, max: 75000, label: `50K-75K ${currentReporting.reportingCurrency}` },
+      { min: 75000, max: 100000, label: `75K-100K ${currentReporting.reportingCurrency}` },
+      { min: 100000, max: 150000, label: `100K-150K ${currentReporting.reportingCurrency}` },
+      { min: 150000, max: Infinity, label: `150K+ ${currentReporting.reportingCurrency}` }
     ];
-
-    const salaryDistribution = salaryRanges.map(range => {
-      const count = activeProfiles.filter(p => {
-        const annual = (p.basicSalary || 0) * 12;
-        return annual >= range.min && annual < range.max;
-      }).length;
-      return { label: range.label, count };
+    const activeUserIds = new Set(activeProfiles.map((profile) => String(profile.userId)));
+    const latestRowByUser = new Map();
+    currentReporting.rows.forEach((row) => {
+      const userId = String(row.payslip?.userId || '');
+      if (!activeUserIds.has(userId)) return;
+      const current = latestRowByUser.get(userId);
+      if (!current || (row.paymentDate?.getTime() || 0) > (current.paymentDate?.getTime() || 0)) {
+        latestRowByUser.set(userId, row);
+      }
     });
+    const salaryDistributionAvailable = latestRowByUser.size === activeProfiles.length
+      && Array.from(latestRowByUser.values()).every((row) => Number.isFinite(row.reportingRate));
+    const annualBasicSalaries = salaryDistributionAvailable
+      ? Array.from(latestRowByUser.values()).map((row) => roundReportingAmount(
+        Number(row.payslip?.earningsSummary?.basicSalary || 0) * 12 * row.reportingRate,
+        currentReporting.reportingMinorUnits
+      ))
+      : [];
+    const salaryDistribution = salaryDistributionAvailable
+      ? salaryRanges.map((range) => ({
+        label: range.label,
+        count: annualBasicSalaries.filter((annual) => annual >= range.min && annual < range.max).length,
+      }))
+      : [];
 
     // Top earners (anonymized)
     const topEarnersByDept = {};
-    departmentBreakdown.forEach(d => {
-      const deptSlips = currentYearPayslips.filter(
-        s => (s.employeeSnapshot?.department || 'Unassigned') === d.department
-      );
-      const userTotals = {};
-      deptSlips.forEach(s => {
-        userTotals[s.userId] = (userTotals[s.userId] || 0) + (s.earningsSummary?.grossPay || 0);
+    deptMap.forEach((departmentRows, department) => {
+      const userRows = new Map();
+      departmentRows.forEach((row) => {
+        const userId = String(row.payslip?.userId || '');
+        const rows = userRows.get(userId) || [];
+        rows.push(row);
+        userRows.set(userId, rows);
       });
-      const maxEarner = Object.values(userTotals).sort((a, b) => b - a)[0] || 0;
-      topEarnersByDept[d.department] = maxEarner;
+      const totals = Array.from(userRows.values()).map((rows) => (
+        aggregatePreparedSubset(currentReporting, rows).totals.grossPay
+      ));
+      topEarnersByDept[department] = totals.some((total) => total === null)
+        ? null
+        : (totals.sort((a, b) => b - a)[0] || 0);
     });
 
     // Payroll run status summary
@@ -2356,62 +2475,58 @@ router.get('/analytics/comprehensive', requireHRAdmin, async (req, res) => {
       pending: currentYearRuns.filter(r => r.status === 'pending_approval').length
     };
 
-    // Deduction breakdown
-    const deductionTypes = {};
-    currentYearPayslips.forEach(slip => {
-      (slip.deductions || []).forEach(d => {
-        if (!deductionTypes[d.type]) {
-          deductionTypes[d.type] = { type: d.type, name: d.name, total: 0 };
-        }
-        deductionTypes[d.type].total += d.amount || 0;
-      });
-    });
-
-    const deductionBreakdown = Object.values(deductionTypes)
-      .sort((a, b) => b.total - a.total)
+    const deductionBreakdown = payrollReportingService
+      .aggregateLineItems(currentReporting.rows, 'deductions')
+      .sort((a, b) => (b.total ?? -Infinity) - (a.total ?? -Infinity))
       .slice(0, 8);
 
-    // Earning breakdown
-    const earningTypes = {};
-    currentYearPayslips.forEach(slip => {
-      (slip.earnings || []).forEach(e => {
-        if (!earningTypes[e.type]) {
-          earningTypes[e.type] = { type: e.type, name: e.name, total: 0 };
-        }
-        earningTypes[e.type].total += e.amount || 0;
-      });
-    });
-
-    const earningBreakdown = Object.values(earningTypes)
-      .sort((a, b) => b.total - a.total)
+    const earningBreakdown = payrollReportingService
+      .aggregateLineItems(currentReporting.rows, 'earnings')
+      .sort((a, b) => (b.total ?? -Infinity) - (a.total ?? -Infinity))
       .slice(0, 8);
 
     // Cost per employee metrics
-    const avgCostPerEmployee = activeProfiles.length > 0 
-      ? Math.round(currentYearGross / activeProfiles.length)
-      : 0;
+    const currentYearEmployerCost = currentReporting.totals.totalEmployerCost;
+    const avgCostPerEmployee = currentYearEmployerCost === null || activeProfiles.length === 0
+      ? (activeProfiles.length === 0 ? 0 : null)
+      : roundReportingAmount(
+        currentYearEmployerCost / activeProfiles.length,
+        currentReporting.reportingMinorUnits
+      );
 
-    const avgMonthlyPayroll = currentYearRuns.length > 0
-      ? Math.round(currentYearGross / currentYearRuns.length)
-      : 0;
+    const avgMonthlyPayroll = currentYearGross === null || currentYearRuns.length === 0
+      ? (currentYearRuns.length === 0 ? 0 : null)
+      : roundReportingAmount(
+        currentYearGross / currentYearRuns.length,
+        currentReporting.reportingMinorUnits
+      );
 
     res.json({
       year: currentYear,
+      ...reportingMetadata(currentReporting),
+      previousYearReporting: {
+        year: previousYear,
+        ...reportingMetadata(previousReporting),
+      },
       overview: {
         totalGrossPayroll: currentYearGross,
         totalNetPayroll: currentYearNet,
-        totalTaxWithheld: currentYearTax,
-        totalDeductions: currentYearDeductions,
+        totalTaxWithheld: currentReporting.totals.totalTax,
+        totalDeductions: currentReporting.totals.totalDeductions,
+        totalEmployerContributions: currentReporting.totals.totalEmployerContributions,
+        totalEmployerCost: currentYearEmployerCost,
         totalEmployees: activeProfiles.length,
         totalPayslips: currentYearPayslips.length,
         avgCostPerEmployee,
         avgMonthlyPayroll,
-        yoyGrossGrowth: parseFloat(yoyGrossGrowth),
-        yoyNetGrowth: parseFloat(yoyNetGrowth)
+        yoyGrossGrowth,
+        yoyNetGrowth
       },
       monthlyTrend: monthlyData,
       departmentBreakdown,
       salaryDistribution,
+      salaryDistributionAvailable,
+      salaryDistributionEmployeeCount: latestRowByUser.size,
       runStatusSummary,
       deductionBreakdown,
       earningBreakdown,
@@ -2503,32 +2618,39 @@ router.get('/analytics/ytd/:userId', requireHRAdmin, async (req, res) => {
       organizationId,
       'payPeriod.year': parseInt(year),
       status: { $in: ['approved', 'exported', 'paid'] }
-    });
+    }).sort({ 'payPeriod.paymentDate': 1 });
+    const reporting = await payrollReportingService.preparePayslips(
+      organizationId,
+      payslips
+    );
 
     const ytd = {
       year: parseInt(year),
       userId: req.params.userId,
       totalPayslips: payslips.length,
-      totalGrossEarnings: 0,
-      totalDeductions: 0,
-      totalTax: 0,
-      totalNetPay: 0,
-      breakdown: []
+      totalGrossEarnings: reporting.totals.grossPay,
+      totalDeductions: reporting.totals.totalDeductions,
+      totalTax: reporting.totals.totalTax,
+      totalNetPay: reporting.totals.netPay,
+      ...reportingMetadata(reporting),
+      breakdown: reporting.rows.map((row) => ({
+        month: row.payslip.payPeriod.month,
+        paymentDate: row.paymentDate?.toISOString() || null,
+        grossPay: row.convertedAmounts?.grossPay ?? null,
+        deductions: row.convertedAmounts?.totalDeductions ?? null,
+        tax: row.convertedAmounts?.totalTax ?? null,
+        netPay: row.convertedAmounts?.netPay ?? null,
+        currency: reporting.reportingCurrency,
+        sourceCurrency: row.sourceCurrency,
+        sourceGrossPay: row.sourceAmounts.grossPay,
+        sourceDeductions: row.sourceAmounts.totalDeductions,
+        sourceTax: row.sourceAmounts.totalTax,
+        sourceNetPay: row.sourceAmounts.netPay,
+        exchangeRate: row.reportingRate,
+        exchangeRateMetadata: row.rateMetadata,
+        conversionWarning: row.conversionWarning,
+      }))
     };
-
-    payslips.forEach(payslip => {
-      ytd.totalGrossEarnings += payslip.earningsSummary?.grossPay || 0;
-      ytd.totalDeductions += payslip.deductionsSummary?.totalDeductions || 0;
-      ytd.totalTax += payslip.taxBreakdown?.taxAmount || 0;
-      ytd.totalNetPay += payslip.netPay || 0;
-
-      ytd.breakdown.push({
-        month: payslip.payPeriod.month,
-        grossPay: payslip.earningsSummary?.grossPay || 0,
-        deductions: payslip.deductionsSummary?.totalDeductions || 0,
-        netPay: payslip.netPay
-      });
-    });
 
     res.json(ytd);
   } catch (err) {
@@ -2552,32 +2674,39 @@ router.get('/my-ytd', requireAuth, async (req, res) => {
       organizationId,
       'payPeriod.year': parseInt(year),
       status: { $in: visibleStatuses }
-    });
+    }).sort({ 'payPeriod.paymentDate': 1 });
+    const reporting = await payrollReportingService.preparePayslips(
+      organizationId,
+      payslips
+    );
 
     const ytd = {
       year: parseInt(year),
       totalPayslips: payslips.length,
-      totalGrossEarnings: 0,
-      totalDeductions: 0,
-      totalTax: 0,
-      totalNetPay: 0,
-      breakdown: []
+      totalGrossEarnings: reporting.totals.grossPay,
+      totalDeductions: reporting.totals.totalDeductions,
+      totalTax: reporting.totals.totalTax,
+      totalNetPay: reporting.totals.netPay,
+      ...reportingMetadata(reporting),
+      breakdown: reporting.rows.map((row) => ({
+        month: row.payslip.payPeriod.month,
+        periodDisplay: row.payslip.periodDisplay,
+        paymentDate: row.paymentDate?.toISOString() || null,
+        grossPay: row.convertedAmounts?.grossPay ?? null,
+        deductions: row.convertedAmounts?.totalDeductions ?? null,
+        tax: row.convertedAmounts?.totalTax ?? null,
+        netPay: row.convertedAmounts?.netPay ?? null,
+        currency: reporting.reportingCurrency,
+        sourceCurrency: row.sourceCurrency,
+        sourceGrossPay: row.sourceAmounts.grossPay,
+        sourceDeductions: row.sourceAmounts.totalDeductions,
+        sourceTax: row.sourceAmounts.totalTax,
+        sourceNetPay: row.sourceAmounts.netPay,
+        exchangeRate: row.reportingRate,
+        exchangeRateMetadata: row.rateMetadata,
+        conversionWarning: row.conversionWarning,
+      }))
     };
-
-    payslips.forEach(payslip => {
-      ytd.totalGrossEarnings += payslip.earningsSummary?.grossPay || 0;
-      ytd.totalDeductions += payslip.deductionsSummary?.totalDeductions || 0;
-      ytd.totalTax += payslip.taxBreakdown?.taxAmount || 0;
-      ytd.totalNetPay += payslip.netPay || 0;
-
-      ytd.breakdown.push({
-        month: payslip.payPeriod.month,
-        periodDisplay: payslip.periodDisplay,
-        grossPay: payslip.earningsSummary?.grossPay || 0,
-        deductions: payslip.deductionsSummary?.totalDeductions || 0,
-        netPay: payslip.netPay
-      });
-    });
 
     res.json(ytd);
   } catch (err) {

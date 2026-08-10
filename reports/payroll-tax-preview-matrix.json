@@ -1,0 +1,2550 @@
+{
+  "reportType": "payroll-tax-preview-smoke-matrix",
+  "certificationEvidence": false,
+  "generatedAt": "2026-08-09T19:12:12.766Z",
+  "warning": "These deterministic preview calculations are engineering smoke tests. They are not official expected-value fixtures and must not be used to certify a statutory pack.",
+  "packs": 11,
+  "adapterCandidates": [
+    {
+      "id": "CA_ON_2026_WAVE_1",
+      "countryCode": "CA",
+      "jurisdictionCode": "CA-ON",
+      "displayName": "Canada / Ontario Payroll 2026 Wave 1",
+      "currency": "CAD",
+      "minorUnits": 2,
+      "effectiveFrom": "2026-01-01",
+      "effectiveTo": "2026-12-31",
+      "releaseStatus": "certification_candidate",
+      "implementationDigestSha256": "d12a1fd024828108d354c2c58285d143913513cd3e34b3786c0fa2c9d68833d4",
+      "fixtureDigestSha256": "017e0c81dbc7239946face1d160d1b81bd1f5a9b3dfac60c94dd78cb94fd627e",
+      "fixtureSuite": "services/__tests__/Canada2026OntarioPayrollAdapter.test.js",
+      "officialSources": [
+        "https://www.canada.ca/content/dam/cra-arc/migration/cra-arc/tx/bsnss/tpcs/pyrll/t4032/2026/t4032-on-1-26e.pdf",
+        "https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jan/t4127-jan-payroll-deductions-formulas-computer-programs.html",
+        "https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jul/t4127-jul-payroll-deductions-formulas.html",
+        "https://www.canada.ca/en/revenue-agency/services/forms-publications/td1-personal-tax-credits-returns/td1-forms-pay-received-on-january-1-later.html",
+        "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/calculating-deductions/making-deductions/second-additional-cpp-contribution-rates-maximums.html",
+        "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/canada-pension-plan-cpp/cpp-contribution-rates-maximums-exemptions.html",
+        "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/employment-insurance-ei/ei-premium-rates-maximums.html",
+        "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/remitting-source-deductions/how-when-remit-due-dates.html",
+        "https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/remitting-source-deductions/how-when-remit-overview.html"
+      ],
+      "supportedScope": [
+        "ordinary periodic salary or wages with Ontario as the province of employment",
+        "CRA T4127 Option 1 federal and Ontario withholding, CPP, CPP2, and standard-rate EI",
+        "documented TD1/TD1ON, exact YTD caps, regular-remitter calendar, and PD7A liability metadata"
+      ],
+      "goldenEvidence": [
+        "Monthly CAD 5,000: CPP 280.15, employee EI 81.50, employer EI 114.10, federal tax 444.86, Ontario tax 248.47, net pay 3,945.02",
+        "CPP2 and EI annual-maximum crossings are asserted to the cent with YTD context",
+        "55 adapter tests and official January/July source-version selection fixtures"
+      ],
+      "blockers": [
+        "credentialed Canadian federal and Ontario tax-law, payroll-calculation, and independent-QA reviews are not recorded",
+        "Quebec and every province or territory other than Ontario require separate certified adapters",
+        "benefits, non-periodic pay, partial-year CPP, reduced-rate EI, non-regular remitters, corrections, and T4 filing remain excluded",
+        "the adapter is not bound to a published effective-dated jurisdiction pack"
+      ]
+    },
+    {
+      "id": "GB_PAYE_2026_WAVE_1",
+      "countryCode": "GB",
+      "jurisdictionCode": "GB",
+      "displayName": "United Kingdom PAYE 2026/27 Wave 1",
+      "currency": "GBP",
+      "minorUnits": 2,
+      "effectiveFrom": "2026-04-06",
+      "effectiveTo": "2027-04-05",
+      "releaseStatus": "certification_candidate",
+      "implementationDigestSha256": "ead1158a7f1ada3f45cf921412b420930f7aa1ad91313f9bfb902234fb2f21c8",
+      "fixtureDigestSha256": "d5c26a9edff8897258afc820565b1a4a41bc15dc15f736d319b920c8e1f92d74",
+      "fixtureSuite": "services/__tests__/UnitedKingdomPaye2026Service.test.js",
+      "officialSources": [
+        "https://www.gov.uk/government/publications/payroll-technical-specifications-income-tax",
+        "https://www.gov.uk/government/publications/software-developers-payroll-test-data-2026-to-2027"
+      ],
+      "supportedScope": [
+        "regular weekly and monthly cumulative or week-1/month-1 PAYE",
+        "rest-of-UK, Scottish, and Welsh tax-code tables through D2",
+        "HMRC regulatory deduction cap, refunds, FPS and remittance metadata"
+      ],
+      "goldenEvidence": [
+        "162 supported HMRC 2026/27 workbook rows independently replayed with zero mismatches",
+        "91 adapter tests cover cumulative, W1/M1, regional, K, BR, D0-D2, 0T and NT cases"
+      ],
+      "blockers": [
+        "credentialed UK tax-law, payroll-calculation, and independent-QA reviews are not recorded",
+        "SD3, week 53+, irregular intervals, free-of-tax calculations, and quarterly remitters remain excluded",
+        "the adapter is not bound to a published effective-dated jurisdiction pack"
+      ]
+    },
+    {
+      "id": "GH_2026_WAVE_1",
+      "countryCode": "GH",
+      "jurisdictionCode": "GH",
+      "displayName": "Ghana Payroll 2026 Wave 1",
+      "currency": "GHS",
+      "minorUnits": 2,
+      "effectiveFrom": "2026-01-01",
+      "effectiveTo": "2026-12-31",
+      "releaseStatus": "certification_candidate",
+      "implementationDigestSha256": "6376daafcb168acdadafece37b801344563f4885b3e9198f1500c6e268bdf8c2",
+      "fixtureDigestSha256": "971847d31cea4399e272a8b9a05eb401c7fcfb4d0ec84ce0b34cc5ddeae15e45",
+      "fixtureSuite": "services/__tests__/GhanaPayroll2026Service.test.js",
+      "officialSources": [
+        "https://gra.gov.gh/domestic-tax/personal-tax-relief/",
+        "https://gra.gov.gh/domestic-tax/tax-types/paye/",
+        "https://gra.gov.gh/implementation-of-new-tax-laws-and-amendments/",
+        "https://gra.gov.gh/wp-content/uploads/2020/09/Practice-Note-on-Gains-or-Profits-from-Employment.pdf",
+        "https://gra.gov.gh/wp-content/uploads/2023/04/INCOME-TAX-AMENDMENT-ACT-2023-ACT-1094.pdf",
+        "https://npra.gov.gh/assets/documents/Guidelines-for-the-payment-of-contributions.pdf",
+        "https://www.npra.gov.gh/regulations/act/",
+        "https://www.ssnit.org.gh/become-an-employer/",
+        "https://www.ssnit.org.gh/faqs/",
+        "https://www.ssnit.org.gh/wp-content/uploads/2023/08/SSNIT-Omnibus.pdf",
+        "https://www.ssnit.org.gh/wp-content/uploads/2026/01/Public-Notice-Min-Max-Insurable.pdf"
+      ],
+      "supportedScope": [
+        "resident and non-resident ordinary monthly PAYE below the guarded top-band conflict",
+        "SSNIT employee/employer amounts with Tier 1, Tier 2 and NHIA routing plus registered-scheme evidence",
+        "evidence-bound reliefs, concessionary bonus, junior overtime and Act 1094 vehicle/fuel benefits"
+      ],
+      "goldenEvidence": [
+        "Monthly GHS 5,000 basic plus 500 allowance: PAYE 904.75, net pay 4,320.25",
+        "GHS 1,500 pension base: employee 82.50, employer 195.00, Tier 1 202.50, Tier 2 75.00, NHIA 37.50",
+        "51 adapter tests cover PAYE boundaries, pension min/max, bonus, overtime, benefits and liabilities"
+      ],
+      "blockers": [
+        "credentialed Ghana tax-law, payroll-calculation, and independent-QA reviews are not recorded",
+        "GRA top-band widths and labels conflict; resident monthly chargeable income above GHS 50,000 is rejected",
+        "SSNIT minimum Tier 1 allocation and fractional-pesewa rounding lack an unambiguous official rule",
+        "casual/temporary/seasonal/expatriate cases, cumulative true-ups, salary changes and holiday-adjusted due dates remain excluded",
+        "the adapter is not bound to a published effective-dated jurisdiction pack"
+      ]
+    },
+    {
+      "id": "KE_2026_MONTHLY_STANDALONE",
+      "countryCode": "KE",
+      "jurisdictionCode": "KE",
+      "displayName": "Kenya Monthly Payroll 2026 Wave 1",
+      "currency": "KES",
+      "minorUnits": 2,
+      "effectiveFrom": "2026-01-01",
+      "effectiveTo": "2026-12-31",
+      "releaseStatus": "certification_candidate",
+      "implementationDigestSha256": "e1e7d48b5b11f16cc6e04568815c3902fd87f75fd83a3c84a1d54ac96a2c4e0a",
+      "fixtureDigestSha256": "3098b83d6a6e5f8fb5aca06082b8d0ec05eaba0df272bf6e2eff691ba9ce613b",
+      "fixtureSuite": "services/__tests__/Kenya2026PayrollAdapter.test.js",
+      "officialSources": [
+        "https://ecitizen.kra.go.ke/calculators/nssf-calculator",
+        "https://new.kenyalaw.org/akn/ke/act/1959/48/eng%402024-04-26",
+        "https://new.kenyalaw.org/akn/ke/act/1973/16/eng%402026-01-01",
+        "https://new.kenyalaw.org/akn/ke/act/2013/45/eng%402022-12-31",
+        "https://new.kenyalaw.org/akn/ke/act/2024/2/eng%402024-03-21",
+        "https://new.kenyalaw.org/akn/ke/act/ln/2010/36/eng%402022-12-31",
+        "https://new.kenyalaw.org/akn/ke/act/ln/2014/85",
+        "https://new.kenyalaw.org/akn/ke/act/ln/2024/49/eng%402025-02-28",
+        "https://www.kra.go.ke/images/publications/PAYE_Guide-2.pdf",
+        "https://www.kra.go.ke/individual/filing-paying/types-of-taxes/paye",
+        "https://www.kra.go.ke/individual/special-needs/people-with-disability/people-with-disability/129-getting-an-exemption-certificate",
+        "https://www.kra.go.ke/news-center/public-notices/2307-guidance-on-employer-obligations-in-applying-income-tax-deductions%2C-reliefs-and-exemptions",
+        "https://www.nita.go.ke/our-services/levy-inspectorate.html",
+        "https://www.nssf.or.ke/notice-to-employers-year-4-2026-nssf-contribution-rates"
+      ],
+      "supportedScope": [
+        "ordinary monthly resident/non-resident PAYE",
+        "AHL, SHIF, NSSF Year 3/4, contracted-out Tier II, aggregate pension cap, PWD, and NITA",
+        "exact component-level liability and remittance metadata"
+      ],
+      "goldenEvidence": [
+        "Monthly KES 100,000: PAYE 19,308.35, employee statutory 29,558.35, employer statutory 7,550.00, net pay 70,441.65",
+        "40 adapter tests cover PAYE bands, NSSF years/ages, pension cap, PWD, NITA and liability metadata"
+      ],
+      "blockers": [
+        "credentialed Kenya tax-law, payroll-calculation, and independent-QA reviews are not recorded",
+        "benefit/reimbursement valuation, annual reconciliation, multiple employments, and prior-period corrections remain excluded",
+        "NITA statutory and operational due-date guidance conflicts and needs counsel sign-off",
+        "the adapter is not bound to a published effective-dated jurisdiction pack"
+      ]
+    },
+    {
+      "id": "NG_2026_WAVE_1",
+      "countryCode": "NG",
+      "jurisdictionCode": "NG-LA",
+      "displayName": "Nigeria Payroll 2026 Wave 1",
+      "currency": "NGN",
+      "minorUnits": 2,
+      "effectiveFrom": "2026-01-01",
+      "effectiveTo": "2026-12-31",
+      "releaseStatus": "certification_candidate",
+      "implementationDigestSha256": "4a268e604c6ac2a8446eb18901a4199dfc742814a4b22f6bb6a2c6e1bdb0cd77",
+      "fixtureDigestSha256": "61bcd430d73223014599a8778828a80dd52a49fb284d6d77659822ef36e1ac51",
+      "fixtureSuite": "services/__tests__/Nigeria2026PayrollAdapter.test.js",
+      "officialSources": [
+        "https://fmbn.gov.ng/documents/National_Housing_Fund_Act.pdf",
+        "https://fmbn.gov.ng/products/nhf-scheme/legal-framework",
+        "https://itf.gov.ng/departments/revenue.html",
+        "https://nass.gov.ng/documents/download/11249",
+        "https://nsitf.gov.ng/publications/",
+        "https://statehouse.gov.ng/new-tax-laws-will-commence-on-january-1-2026-as-planned/",
+        "https://www.itf.gov.ng/ftp/ITF-ACT-2011.pdf",
+        "https://www.itf.gov.ng/ftp/ITF_Form_5A%282021%29.pdf",
+        "https://www.jrb.gov.ng/assets/2026-pit-guidelines-TJG3n9-T.pdf",
+        "https://www.nhia.gov.ng/faq/",
+        "https://www.nhia.gov.ng/requirement-for-organized-private-sector/",
+        "https://www.nhia.gov.ng/service/gifship/",
+        "https://www.nhia.gov.ng/wp-content/uploads/2024/03/NHIA-Act-2022-Gazetted-Copy.pdf",
+        "https://www.pencom.gov.ng/personal-pension-plan-ppp/",
+        "https://www.pencom.gov.ng/wp-content/uploads/2018/01/PRA_2014.pdf",
+        "https://www.pencom.gov.ng/wp-content/uploads/2025/05/CIRCULAR-ON-COMPLIANCE-WITH-PROVISIONS-OF-PRA-APPROVED.docx.pdf"
+      ],
+      "supportedScope": [
+        "ordinary resident organised-private-sector employee with at least five employees and stable monthly terms",
+        "2026 JRB/Nigeria Tax Act cumulative PAYE delta with a pinned synthetic State/FCT preview route",
+        "PRA pension, NHF, evidenced OPSSHIP/NHIA and NSITF, ITF provision and liability metadata"
+      ],
+      "goldenEvidence": [
+        "Monthly NGN 1,000,000 June payroll: PAYE 138,230.00, employee statutory deductions 239,730.00, net pay 760,270.00",
+        "Employer pension/NHIA/NSITF/ITF cost and provision total 150,900.00 using the visible minimum Form 5A fixture basis",
+        "56 adapter tests cover all PAYE band boundaries, cumulative YTD, contributions, evidence and fail-closed exclusions"
+      ],
+      "blockers": [
+        "the review evidence is AI-generated and is not a licensed Nigerian tax-professional opinion",
+        "each State or FCT filing route, registration, form and local administrative overlay requires separate certification",
+        "variable pay, starters/leavers, corrections, benefits and other non-periodic cases lack a certified cumulative method",
+        "NHIA and NSITF due dates/risk rates plus the ITF Form 5A basis require employer evidence or Nigerian counsel",
+        "the declared kobo rounding sequence is not prescribed by the pinned national sources",
+        "the adapter is not bound to a published effective-dated jurisdiction pack"
+      ]
+    },
+    {
+      "id": "US_FEDERAL_2026_WAVE1",
+      "countryCode": "US",
+      "jurisdictionCode": "US",
+      "displayName": "United States Federal Payroll 2026 Wave 1",
+      "currency": "USD",
+      "minorUnits": 2,
+      "effectiveFrom": "2026-01-01",
+      "effectiveTo": "2026-12-31",
+      "releaseStatus": "certification_candidate",
+      "implementationDigestSha256": "d9c1656f2dbe3a4d03b5440752b40dff0af2e539608815e8847193c5115aa3ff",
+      "fixtureDigestSha256": "fd0049241e39b4ebe1aed0a204b9412d64c16bcf1800ad13b97980b8fb72964a",
+      "fixtureSuite": "services/__tests__/USFederalPayrollAdapter2026.test.js",
+      "officialSources": [
+        "https://www.irs.gov/instructions/i941",
+        "https://www.irs.gov/pub/irs-pdf/p15t.pdf",
+        "https://www.irs.gov/publications/p15"
+      ],
+      "supportedScope": [
+        "2026 federal income-tax withholding for current and 2019-or-earlier W-4",
+        "exempt, NRA adjustment, supplemental flat methods, FICA, Additional Medicare, and FUTA",
+        "Form 941/940 component liability metadata"
+      ],
+      "goldenEvidence": [
+        "Biweekly USD 2,500 single W-4: federal income tax 216.15, employee FICA 191.25, employer FICA 191.25, net FUTA 15.00",
+        "31 adapter tests cover current/old W-4, NRA, supplemental wages, FICA caps and FUTA"
+      ],
+      "blockers": [
+        "credentialed US federal tax-law, payroll-calculation, and independent-QA reviews are not recorded",
+        "all state, local, and SUTA determinations require separately certified effective-dated companion adapters",
+        "lock-in letters, aggregate supplemental method, and multi-day daily payroll remain excluded",
+        "the adapter is not bound to a published effective-dated jurisdiction pack"
+      ]
+    },
+    {
+      "id": "ZA_2027_WAVE_1",
+      "countryCode": "ZA",
+      "jurisdictionCode": "ZA",
+      "displayName": "South Africa Payroll 2027 Year of Assessment Wave 1",
+      "currency": "ZAR",
+      "minorUnits": 2,
+      "effectiveFrom": "2026-03-01",
+      "effectiveTo": "2027-02-28",
+      "releaseStatus": "certification_candidate",
+      "implementationDigestSha256": "11ddb2363873f0ce1b7bb18ce6ca71350b53105b2977a1544cdbf8929e2057af",
+      "fixtureDigestSha256": "c9db481d5e9b0a3448c5de007c1ab6b2a49ab204f5c8d5428c94dcf7b0154ace",
+      "fixtureSuite": "services/__tests__/SouthAfrica2027PayrollAdapter.test.js",
+      "officialSources": [
+        "https://www.sars.gov.za/guide-for-employers-in-respect-of-employees-tax-2027/",
+        "https://www.sars.gov.za/latest-news/unemployment-insurance-fund-ceiling-earnings/",
+        "https://www.sars.gov.za/types-of-tax/pay-as-you-earn/completing-the-monthly-employer-declaration-emp201/",
+        "https://www.sars.gov.za/types-of-tax/pay-as-you-earn/registering/",
+        "https://www.sars.gov.za/types-of-tax/skills-development-levy/",
+        "https://www.sars.gov.za/types-of-tax/unemployment-insurance-fund/",
+        "https://www.sars.gov.za/wp-content/uploads/Docs/PAYE/Tables/tables2026/PAYE-GEN-01-G01-A03-Monthly-Tax-Deduction-Tables-2027-External-Annexure.pdf",
+        "https://www.sars.gov.za/wp-content/uploads/Docs/PAYE/Tables/tables2026/PAYE-GEN-01-G01-A04-Annual-Tax-Deduction-Tables-2027-External-Annexure.pdf",
+        "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-GEN-01-G01-Guide-for-Employers-in-respect-of-Tax-Deduction-Tables-External-Guide.pdf",
+        "https://www.sars.gov.za/wp-content/uploads/Ops/Guides/SDL-GEN-01-G01-Guide-for-Employers-in-respect-of-Skills-Development-Levy-External-Guide.pdf"
+      ],
+      "supportedScope": [
+        "ordinary monthly PAYE using the SARS A03 table and cumulative annual-equivalent PAYE using A04",
+        "all 1,635 published annual-table rows, age/rebate boundaries and medical scheme fee tax credits",
+        "UIF, SDL and EMP201 liability/remittance metadata with employer-registration evidence"
+      ],
+      "goldenEvidence": [
+        "Monthly ZAR 18,600 less certified retirement deductions: PAYE 908.00, UIF 177.12 each side, SDL 175.00",
+        "Cumulative ZAR 110,000 over seven months: annual-equivalent 188,571, annual table tax 16,156, seven-month target 9,424.33",
+        "57 adapter tests plus all 1,635 exact contiguous SARS annual annexure rows"
+      ],
+      "blockers": [
+        "credentialed South African tax-law, payroll-calculation, and independent-QA reviews are not recorded",
+        "bonuses, directors, fringe benefits, allowances, ETI, expatriates, AMTC/disability, UIF exclusions and SDL exemptions remain excluded",
+        "generic UIF/SDL fractional-cent rounding and the acknowledged manual-table versus statutory-program differences require professional sign-off",
+        "the adapter is not bound to a published effective-dated jurisdiction pack"
+      ]
+    }
+  ],
+  "independentAiReviews": [
+    {
+      "reviewId": "GH_2026_WAVE_1:AI-INDEPENDENT-REVIEW:2026-08-09",
+      "adapterId": "GH_2026_WAVE_1",
+      "jurisdiction": "Ghana",
+      "reviewer": "Codex independent Ghana statutory review agent",
+      "reviewerType": "independent_ai_technical_statutory_reviewer",
+      "generatedByAI": true,
+      "legalStanding": "not_a_licensed_tax_professional_opinion",
+      "reviewedContentHashSha256": "f37c566ec86fa8f35391a439fed2d7ac7861448803dcf5efe8c85fcea70739da",
+      "testEvidence": "67/67 Ghana and candidate-registry tests passed; six official PDF digests revalidated; representative payroll independently reconciled.",
+      "passedGates": [
+        "official formula mapping",
+        "PAYE through guarded ceiling",
+        "SSNIT/NPRA narrow-scope arithmetic",
+        "bonus/overtime/vehicle cases",
+        "non-postable controls"
+      ],
+      "blockedGates": [
+        "mutable web-source snapshots",
+        "official rounding instruction",
+        "GRA top-band conflict",
+        "SSNIT minimum allocation conflict",
+        "trusted evidence resolution",
+        "licensed human sign-off"
+      ],
+      "engineeringDecision": "approved_for_quarantined_preview",
+      "productionApproval": false,
+      "summary": "The calculation implementation is approved for guarded preview. Known statutory conflicts remain fail-closed.",
+      "reviewedAt": "2026-08-09T00:00:00.000Z"
+    },
+    {
+      "reviewId": "NG_2026_WAVE_1:AI-INDEPENDENT-REVIEW:2026-08-09",
+      "adapterId": "NG_2026_WAVE_1",
+      "jurisdiction": "Nigeria",
+      "reviewer": "Codex independent Nigeria statutory review agent",
+      "reviewerType": "independent_ai_technical_statutory_reviewer",
+      "generatedByAI": true,
+      "legalStanding": "not_a_licensed_tax_professional_opinion",
+      "reviewedContentHashSha256": "37fcff0616f43274e46c608ddb34455d6a62ce446f1f8a3a6eff925c7f2cfd29",
+      "testEvidence": "72/72 Nigeria and candidate-registry tests passed after independent route-injection and ITF-base remediation; all band boundaries and synthetic payroll independently reconciled.",
+      "passedGates": [
+        "official federal formula mapping",
+        "PAYE band arithmetic",
+        "stable-pay cumulative delta",
+        "pension/NHF narrow-scope arithmetic",
+        "pinned synthetic State/FCT preview receipts",
+        "non-postable controls"
+      ],
+      "blockedGates": [
+        "production State/FCT route packs",
+        "ITF/NTA legal treatment",
+        "employer-specific NHIA/NSITF evidence",
+        "official rounding sequence",
+        "immutable source snapshots",
+        "licensed human sign-off"
+      ],
+      "engineeringDecision": "approved_for_quarantined_preview",
+      "productionApproval": false,
+      "summary": "The corrected calculation implementation is approved for guarded preview. Production routing and unresolved statutory interpretations remain fail-closed.",
+      "reviewedAt": "2026-08-09T00:00:00.000Z"
+    }
+  ],
+  "rolloutInventory": [
+    {
+      "id": "AFRICA_FUTURE_DYNAMIC_PACKS",
+      "label": "Remaining requested African country packs",
+      "source": "https://au.int/en/member_states/countryprofiles2",
+      "entries": [
+        {
+          "code": "CM",
+          "name": "Cameroon",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "MZ",
+          "name": "Mozambique",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        }
+      ],
+      "additionalScope": "Cameroon and Mozambique remain governed dynamic-pack backlogs; their legacy previews are not certification evidence.",
+      "requiredModules": [
+        "national income-tax withholding",
+        "employee and employer social-security systems",
+        "training, housing, community, broadcasting and other payroll levies where applicable",
+        "benefits, allowances, bonuses and annual reconciliation",
+        "worker-class, sector, age and expatriate rules",
+        "filing and remittance outputs"
+      ],
+      "dynamicCreationTemplate": {
+        "creationMode": "admin_create_or_clone",
+        "initialVersionStatus": "draft",
+        "initialValidationStatus": "draft",
+        "initialCalculationStatus": "blocked",
+        "payrollRunnable": false,
+        "requiredBeforePublication": [
+          "effective-dated calculation currency and declared coverage/exclusions",
+          "primary-source snapshots with retrieval date and SHA-256 digest",
+          "exact formulas, statutory bases, rounding stages and liability/remittance mappings",
+          "source-bound zero, ordinary, boundary, high-income, YTD and employer-cost fixtures",
+          "distinct authorized tax-law, payroll-calculation and independent-QA reviews",
+          "a separate publisher who is not the author or a reviewer"
+        ]
+      },
+      "candidateCount": 0,
+      "runnableCount": 0
+    },
+    {
+      "id": "EU_MEMBER_STATES",
+      "label": "European Union national payroll-tax systems",
+      "source": "https://european-union.europa.eu/principles-countries-history/country-profiles_en",
+      "entries": [
+        {
+          "code": "AT",
+          "name": "Austria",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "BE",
+          "name": "Belgium",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "BG",
+          "name": "Bulgaria",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "HR",
+          "name": "Croatia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CY",
+          "name": "Cyprus",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CZ",
+          "name": "Czechia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "DK",
+          "name": "Denmark",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "EE",
+          "name": "Estonia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "FI",
+          "name": "Finland",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "FR",
+          "name": "France",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "DE",
+          "name": "Germany",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "GR",
+          "name": "Greece",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "HU",
+          "name": "Hungary",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "IE",
+          "name": "Ireland",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "IT",
+          "name": "Italy",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "LV",
+          "name": "Latvia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "LT",
+          "name": "Lithuania",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "LU",
+          "name": "Luxembourg",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "MT",
+          "name": "Malta",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "NL",
+          "name": "Netherlands",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "PL",
+          "name": "Poland",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "PT",
+          "name": "Portugal",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "RO",
+          "name": "Romania",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "SK",
+          "name": "Slovakia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "SI",
+          "name": "Slovenia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "ES",
+          "name": "Spain",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "SE",
+          "name": "Sweden",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        }
+      ],
+      "additionalScope": "Regional, municipal, church, sector and applicable social-security law must be layered where required.",
+      "requiredModules": [
+        "national income-tax withholding",
+        "employee and employer social security",
+        "regional, municipal and church taxes where applicable",
+        "benefits and irregular payments",
+        "EU applicable-social-security-law evidence for cross-border workers",
+        "filing and remittance outputs"
+      ],
+      "dynamicCreationTemplate": {
+        "creationMode": "admin_create_or_clone",
+        "initialVersionStatus": "draft",
+        "initialValidationStatus": "draft",
+        "initialCalculationStatus": "blocked",
+        "payrollRunnable": false,
+        "requiredBeforePublication": [
+          "effective-dated calculation currency and declared coverage/exclusions",
+          "primary-source snapshots with retrieval date and SHA-256 digest",
+          "exact formulas, statutory bases, rounding stages and liability/remittance mappings",
+          "source-bound zero, ordinary, boundary, high-income, YTD and employer-cost fixtures",
+          "distinct authorized tax-law, payroll-calculation and independent-QA reviews",
+          "a separate publisher who is not the author or a reviewer"
+        ]
+      },
+      "candidateCount": 0,
+      "runnableCount": 0
+    },
+    {
+      "id": "US_STATES_AND_DC",
+      "label": "United States state and District of Columbia companions",
+      "source": "https://www.usa.gov/states-and-territories",
+      "entries": [
+        {
+          "code": "US-AL",
+          "name": "Alabama",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-AK",
+          "name": "Alaska",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-AZ",
+          "name": "Arizona",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-AR",
+          "name": "Arkansas",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-CA",
+          "name": "California",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-CO",
+          "name": "Colorado",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-CT",
+          "name": "Connecticut",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-DE",
+          "name": "Delaware",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-DC",
+          "name": "District of Columbia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-FL",
+          "name": "Florida",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-GA",
+          "name": "Georgia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-HI",
+          "name": "Hawaii",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-ID",
+          "name": "Idaho",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-IL",
+          "name": "Illinois",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-IN",
+          "name": "Indiana",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-IA",
+          "name": "Iowa",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-KS",
+          "name": "Kansas",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-KY",
+          "name": "Kentucky",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-LA",
+          "name": "Louisiana",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-ME",
+          "name": "Maine",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-MD",
+          "name": "Maryland",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-MA",
+          "name": "Massachusetts",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-MI",
+          "name": "Michigan",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-MN",
+          "name": "Minnesota",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-MS",
+          "name": "Mississippi",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-MO",
+          "name": "Missouri",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-MT",
+          "name": "Montana",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-NE",
+          "name": "Nebraska",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-NV",
+          "name": "Nevada",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-NH",
+          "name": "New Hampshire",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-NJ",
+          "name": "New Jersey",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-NM",
+          "name": "New Mexico",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-NY",
+          "name": "New York",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-NC",
+          "name": "North Carolina",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-ND",
+          "name": "North Dakota",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-OH",
+          "name": "Ohio",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-OK",
+          "name": "Oklahoma",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-OR",
+          "name": "Oregon",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-PA",
+          "name": "Pennsylvania",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-RI",
+          "name": "Rhode Island",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-SC",
+          "name": "South Carolina",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-SD",
+          "name": "South Dakota",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-TN",
+          "name": "Tennessee",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-TX",
+          "name": "Texas",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-UT",
+          "name": "Utah",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-VT",
+          "name": "Vermont",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-VA",
+          "name": "Virginia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-WA",
+          "name": "Washington",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-WV",
+          "name": "West Virginia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-WI",
+          "name": "Wisconsin",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "US-WY",
+          "name": "Wyoming",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        }
+      ],
+      "additionalScope": "Local withholding, SUTA, disability, paid-leave and reciprocity rules remain separate effective-dated liabilities.",
+      "requiredModules": [
+        "state income-tax withholding or evidenced no-withholding treatment",
+        "state unemployment insurance",
+        "local income or occupational taxes",
+        "state disability and paid-family/medical-leave programs",
+        "reciprocity, resident/worksite allocation and supplemental pay",
+        "filing and remittance outputs"
+      ],
+      "dynamicCreationTemplate": {
+        "creationMode": "admin_create_or_clone",
+        "initialVersionStatus": "draft",
+        "initialValidationStatus": "draft",
+        "initialCalculationStatus": "blocked",
+        "payrollRunnable": false,
+        "requiredBeforePublication": [
+          "effective-dated calculation currency and declared coverage/exclusions",
+          "primary-source snapshots with retrieval date and SHA-256 digest",
+          "exact formulas, statutory bases, rounding stages and liability/remittance mappings",
+          "source-bound zero, ordinary, boundary, high-income, YTD and employer-cost fixtures",
+          "distinct authorized tax-law, payroll-calculation and independent-QA reviews",
+          "a separate publisher who is not the author or a reviewer"
+        ]
+      },
+      "candidateCount": 0,
+      "runnableCount": 0
+    },
+    {
+      "id": "CANADA_PROVINCES_AND_TERRITORIES",
+      "label": "Canadian province and territory companions",
+      "source": "https://www.canada.ca/en/intergovernmental-affairs/services/provinces-territories.html",
+      "entries": [
+        {
+          "code": "CA-AB",
+          "name": "Alberta",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-BC",
+          "name": "British Columbia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-MB",
+          "name": "Manitoba",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-NB",
+          "name": "New Brunswick",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-NL",
+          "name": "Newfoundland and Labrador",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-NS",
+          "name": "Nova Scotia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-NT",
+          "name": "Northwest Territories",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-NU",
+          "name": "Nunavut",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-ON",
+          "name": "Ontario",
+          "implementationStatus": "certification_candidate",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-PE",
+          "name": "Prince Edward Island",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-QC",
+          "name": "Quebec",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-SK",
+          "name": "Saskatchewan",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CA-YT",
+          "name": "Yukon",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        }
+      ],
+      "additionalScope": "Each entry requires the federal companion; Quebec also requires the separate Revenu Quebec, QPP and QPIP stack.",
+      "requiredModules": [
+        "federal T4127 companion",
+        "province or territory income-tax withholding",
+        "CPP/CPP2 and EI or Quebec QPP/QPIP/Quebec EI treatment",
+        "benefits and non-periodic pay",
+        "workers-compensation and other employer liabilities where in payroll scope",
+        "filing and remittance outputs"
+      ],
+      "dynamicCreationTemplate": {
+        "creationMode": "admin_create_or_clone",
+        "initialVersionStatus": "draft",
+        "initialValidationStatus": "draft",
+        "initialCalculationStatus": "blocked",
+        "payrollRunnable": false,
+        "requiredBeforePublication": [
+          "effective-dated calculation currency and declared coverage/exclusions",
+          "primary-source snapshots with retrieval date and SHA-256 digest",
+          "exact formulas, statutory bases, rounding stages and liability/remittance mappings",
+          "source-bound zero, ordinary, boundary, high-income, YTD and employer-cost fixtures",
+          "distinct authorized tax-law, payroll-calculation and independent-QA reviews",
+          "a separate publisher who is not the author or a reviewer"
+        ]
+      },
+      "candidateCount": 1,
+      "runnableCount": 0
+    },
+    {
+      "id": "OTHER_AMERICAS_SOVEREIGN_STATES",
+      "label": "Other sovereign states in the Americas",
+      "source": "https://unstats.un.org/unsd/methodology/m49/",
+      "entries": [
+        {
+          "code": "AG",
+          "name": "Antigua and Barbuda",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "AR",
+          "name": "Argentina",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "BS",
+          "name": "Bahamas",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "BB",
+          "name": "Barbados",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "BZ",
+          "name": "Belize",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "BO",
+          "name": "Bolivia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "BR",
+          "name": "Brazil",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CL",
+          "name": "Chile",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CO",
+          "name": "Colombia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CR",
+          "name": "Costa Rica",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "CU",
+          "name": "Cuba",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "DM",
+          "name": "Dominica",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "DO",
+          "name": "Dominican Republic",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "EC",
+          "name": "Ecuador",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "SV",
+          "name": "El Salvador",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "GD",
+          "name": "Grenada",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "GT",
+          "name": "Guatemala",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "GY",
+          "name": "Guyana",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "HT",
+          "name": "Haiti",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "HN",
+          "name": "Honduras",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "JM",
+          "name": "Jamaica",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "MX",
+          "name": "Mexico",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "NI",
+          "name": "Nicaragua",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "PA",
+          "name": "Panama",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "PY",
+          "name": "Paraguay",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "PE",
+          "name": "Peru",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "KN",
+          "name": "Saint Kitts and Nevis",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "LC",
+          "name": "Saint Lucia",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "VC",
+          "name": "Saint Vincent and the Grenadines",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "SR",
+          "name": "Suriname",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "TT",
+          "name": "Trinidad and Tobago",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "UY",
+          "name": "Uruguay",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        },
+        {
+          "code": "VE",
+          "name": "Venezuela",
+          "implementationStatus": "dynamic_pack_backlog",
+          "payrollRunnable": false
+        }
+      ],
+      "additionalScope": "Dependencies and territories must be added separately when an employer has payroll there.",
+      "requiredModules": [
+        "national income-tax withholding",
+        "employee and employer social-security systems",
+        "subnational or municipal payroll liabilities where applicable",
+        "benefits, bonuses and termination pay",
+        "worker-class, residency and expatriate rules",
+        "filing and remittance outputs"
+      ],
+      "dynamicCreationTemplate": {
+        "creationMode": "admin_create_or_clone",
+        "initialVersionStatus": "draft",
+        "initialValidationStatus": "draft",
+        "initialCalculationStatus": "blocked",
+        "payrollRunnable": false,
+        "requiredBeforePublication": [
+          "effective-dated calculation currency and declared coverage/exclusions",
+          "primary-source snapshots with retrieval date and SHA-256 digest",
+          "exact formulas, statutory bases, rounding stages and liability/remittance mappings",
+          "source-bound zero, ordinary, boundary, high-income, YTD and employer-cost fixtures",
+          "distinct authorized tax-law, payroll-calculation and independent-QA reviews",
+          "a separate publisher who is not the author or a reviewer"
+        ]
+      },
+      "candidateCount": 0,
+      "runnableCount": 0
+    }
+  ],
+  "adapterCandidateCount": 7,
+  "scenarios": 44,
+  "runnableScenarios": 0,
+  "results": [
+    {
+      "countryCode": "GB",
+      "countryName": "United Kingdom",
+      "packKey": "GB-2026-27",
+      "packLabel": "2026/27",
+      "configuredStatus": "preview_only",
+      "fixture": "zero_income",
+      "staffReference": "GB-SYNTHETIC-ZERO",
+      "calculationCurrency": "GBP",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "uk_paye",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "GB",
+      "countryName": "United Kingdom",
+      "packKey": "GB-2026-27",
+      "packLabel": "2026/27",
+      "configuredStatus": "preview_only",
+      "fixture": "ordinary_period",
+      "staffReference": "GB-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "GBP",
+      "grossPay": 5000,
+      "taxableIncome": 5000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 952.67,
+      "incomeTaxMethod": "uk_paye",
+      "employeeLiabilities": {
+        "GB_NI_EMPLOYEE": 267.5
+      },
+      "employerLiabilities": {
+        "GB_NI_EMPLOYER": 687.45
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "GB",
+      "countryName": "United Kingdom",
+      "packKey": "GB-2026-27",
+      "packLabel": "2026/27",
+      "configuredStatus": "preview_only",
+      "fixture": "high_income",
+      "staffReference": "GB-SYNTHETIC-HIGH",
+      "calculationCurrency": "GBP",
+      "grossPay": 15000,
+      "taxableIncome": 15000,
+      "ytdGrossPay": 30000,
+      "ytdTaxableIncome": 30000,
+      "ytdIncomeTax": 5000,
+      "incomeTax": 5600.25,
+      "incomeTaxMethod": "uk_paye",
+      "employeeLiabilities": {
+        "GB_NI_EMPLOYEE": 467.5
+      },
+      "employerLiabilities": {
+        "GB_NI_EMPLOYER": 2187.45
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "GB",
+      "countryName": "United Kingdom",
+      "packKey": "GB-2026-27",
+      "packLabel": "2026/27",
+      "configuredStatus": "preview_only",
+      "fixture": "year_to_date",
+      "staffReference": "GB-SYNTHETIC-YTD",
+      "calculationCurrency": "GBP",
+      "grossPay": 6250,
+      "taxableIncome": 6250,
+      "ytdGrossPay": 25000,
+      "ytdTaxableIncome": 25000,
+      "ytdIncomeTax": 4000,
+      "incomeTax": 1452.67,
+      "incomeTaxMethod": "uk_paye",
+      "employeeLiabilities": {
+        "GB_NI_EMPLOYEE": 292.5
+      },
+      "employerLiabilities": {
+        "GB_NI_EMPLOYER": 874.95
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "US",
+      "countryName": "United States",
+      "packKey": "US-FEDERAL-2026",
+      "packLabel": "2026",
+      "configuredStatus": "preview_only",
+      "fixture": "zero_income",
+      "staffReference": "US-SYNTHETIC-ZERO",
+      "calculationCurrency": "USD",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "us_federal_withholding",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "US",
+      "countryName": "United States",
+      "packKey": "US-FEDERAL-2026",
+      "packLabel": "2026",
+      "configuredStatus": "preview_only",
+      "fixture": "ordinary_period",
+      "staffReference": "US-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "USD",
+      "grossPay": 5000,
+      "taxableIncome": 5000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 418.33,
+      "incomeTaxMethod": "us_federal_withholding",
+      "employeeLiabilities": {
+        "US_SOCIAL_SECURITY_EMPLOYEE": 310,
+        "US_MEDICARE_EMPLOYEE": 72.5
+      },
+      "employerLiabilities": {
+        "US_SOCIAL_SECURITY_EMPLOYER": 310,
+        "US_MEDICARE_EMPLOYER": 72.5
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "US",
+      "countryName": "United States",
+      "packKey": "US-FEDERAL-2026",
+      "packLabel": "2026",
+      "configuredStatus": "preview_only",
+      "fixture": "high_income",
+      "staffReference": "US-SYNTHETIC-HIGH",
+      "calculationCurrency": "USD",
+      "grossPay": 15000,
+      "taxableIncome": 15000,
+      "ytdGrossPay": 30000,
+      "ytdTaxableIncome": 30000,
+      "ytdIncomeTax": 5000,
+      "incomeTax": 2661.17,
+      "incomeTaxMethod": "us_federal_withholding",
+      "employeeLiabilities": {
+        "US_SOCIAL_SECURITY_EMPLOYEE": 930,
+        "US_MEDICARE_EMPLOYEE": 217.5
+      },
+      "employerLiabilities": {
+        "US_SOCIAL_SECURITY_EMPLOYER": 930,
+        "US_MEDICARE_EMPLOYER": 217.5
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "US",
+      "countryName": "United States",
+      "packKey": "US-FEDERAL-2026",
+      "packLabel": "2026",
+      "configuredStatus": "preview_only",
+      "fixture": "year_to_date",
+      "staffReference": "US-SYNTHETIC-YTD",
+      "calculationCurrency": "USD",
+      "grossPay": 6250,
+      "taxableIncome": 6250,
+      "ytdGrossPay": 25000,
+      "ytdTaxableIncome": 25000,
+      "ytdIncomeTax": 4000,
+      "incomeTax": 639.17,
+      "incomeTaxMethod": "us_federal_withholding",
+      "employeeLiabilities": {
+        "US_SOCIAL_SECURITY_EMPLOYEE": 387.5,
+        "US_MEDICARE_EMPLOYEE": 90.63
+      },
+      "employerLiabilities": {
+        "US_SOCIAL_SECURITY_EMPLOYER": 387.5,
+        "US_MEDICARE_EMPLOYER": 90.63
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "NG",
+      "countryName": "Nigeria",
+      "packKey": "NG-2026-NTA",
+      "packLabel": "2026 - Nigeria Tax Act 2025",
+      "configuredStatus": "preview_only",
+      "fixture": "zero_income",
+      "staffReference": "NG-SYNTHETIC-ZERO",
+      "calculationCurrency": "NGN",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "nigeria_paye",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "NG",
+      "countryName": "Nigeria",
+      "packKey": "NG-2026-NTA",
+      "packLabel": "2026 - Nigeria Tax Act 2025",
+      "configuredStatus": "preview_only",
+      "fixture": "ordinary_period",
+      "staffReference": "NG-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "NGN",
+      "grossPay": 1000000,
+      "taxableIncome": 1000000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 148100,
+      "incomeTaxMethod": "nigeria_paye",
+      "employeeLiabilities": {
+        "NG_PENSION_EMPLOYEE": 80000
+      },
+      "employerLiabilities": {
+        "NG_PENSION_EMPLOYER": 100000
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "NG",
+      "countryName": "Nigeria",
+      "packKey": "NG-2026-NTA",
+      "packLabel": "2026 - Nigeria Tax Act 2025",
+      "configuredStatus": "preview_only",
+      "fixture": "high_income",
+      "staffReference": "NG-SYNTHETIC-HIGH",
+      "calculationCurrency": "NGN",
+      "grossPay": 3000000,
+      "taxableIncome": 3000000,
+      "ytdGrossPay": 6000000,
+      "ytdTaxableIncome": 6000000,
+      "ytdIncomeTax": 1000000,
+      "incomeTax": 545633.33,
+      "incomeTaxMethod": "nigeria_paye",
+      "employeeLiabilities": {
+        "NG_PENSION_EMPLOYEE": 240000
+      },
+      "employerLiabilities": {
+        "NG_PENSION_EMPLOYER": 300000
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "NG",
+      "countryName": "Nigeria",
+      "packKey": "NG-2026-NTA",
+      "packLabel": "2026 - Nigeria Tax Act 2025",
+      "configuredStatus": "preview_only",
+      "fixture": "year_to_date",
+      "staffReference": "NG-SYNTHETIC-YTD",
+      "calculationCurrency": "NGN",
+      "grossPay": 1250000,
+      "taxableIncome": 1250000,
+      "ytdGrossPay": 5000000,
+      "ytdTaxableIncome": 5000000,
+      "ytdIncomeTax": 800000,
+      "incomeTax": 194000,
+      "incomeTaxMethod": "nigeria_paye",
+      "employeeLiabilities": {
+        "NG_PENSION_EMPLOYEE": 100000
+      },
+      "employerLiabilities": {
+        "NG_PENSION_EMPLOYER": 125000
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "GH",
+      "countryName": "Ghana",
+      "packKey": "GH-2026",
+      "packLabel": "2026",
+      "configuredStatus": "preview_only",
+      "fixture": "zero_income",
+      "staffReference": "GH-SYNTHETIC-ZERO",
+      "calculationCurrency": "GHS",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "ghana_paye",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "GH",
+      "countryName": "Ghana",
+      "packKey": "GH-2026",
+      "packLabel": "2026",
+      "configuredStatus": "preview_only",
+      "fixture": "ordinary_period",
+      "staffReference": "GH-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "GHS",
+      "grossPay": 10000,
+      "taxableIncome": 10000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 1961,
+      "incomeTaxMethod": "ghana_paye",
+      "employeeLiabilities": {
+        "GH_SSNIT_EMPLOYEE": 550
+      },
+      "employerLiabilities": {
+        "GH_SSNIT_EMPLOYER": 1300
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "GH",
+      "countryName": "Ghana",
+      "packKey": "GH-2026",
+      "packLabel": "2026",
+      "configuredStatus": "preview_only",
+      "fixture": "high_income",
+      "staffReference": "GH-SYNTHETIC-HIGH",
+      "calculationCurrency": "GHS",
+      "grossPay": 30000,
+      "taxableIncome": 30000,
+      "ytdGrossPay": 60000,
+      "ytdTaxableIncome": 60000,
+      "ytdIncomeTax": 10000,
+      "incomeTax": 7108.67,
+      "incomeTaxMethod": "ghana_paye",
+      "employeeLiabilities": {
+        "GH_SSNIT_EMPLOYEE": 1650
+      },
+      "employerLiabilities": {
+        "GH_SSNIT_EMPLOYER": 3900
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "GH",
+      "countryName": "Ghana",
+      "packKey": "GH-2026",
+      "packLabel": "2026",
+      "configuredStatus": "preview_only",
+      "fixture": "year_to_date",
+      "staffReference": "GH-SYNTHETIC-YTD",
+      "calculationCurrency": "GHS",
+      "grossPay": 12500,
+      "taxableIncome": 12500,
+      "ytdGrossPay": 50000,
+      "ytdTaxableIncome": 50000,
+      "ytdIncomeTax": 8000,
+      "incomeTax": 2551.63,
+      "incomeTaxMethod": "ghana_paye",
+      "employeeLiabilities": {
+        "GH_SSNIT_EMPLOYEE": 687.5
+      },
+      "employerLiabilities": {
+        "GH_SSNIT_EMPLOYER": 1625
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "KE",
+      "countryName": "Kenya",
+      "packKey": "KE-2026-YEAR4",
+      "packLabel": "2026 Year 4",
+      "configuredStatus": "preview_only",
+      "fixture": "zero_income",
+      "staffReference": "KE-SYNTHETIC-ZERO",
+      "calculationCurrency": "KES",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "kenya_paye",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "KE",
+      "countryName": "Kenya",
+      "packKey": "KE-2026-YEAR4",
+      "packLabel": "2026 Year 4",
+      "configuredStatus": "preview_only",
+      "fixture": "ordinary_period",
+      "staffReference": "KE-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "KES",
+      "grossPay": 100000,
+      "taxableIncome": 100000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 19308.33,
+      "incomeTaxMethod": "kenya_paye",
+      "employeeLiabilities": {
+        "KE_AHL_EMPLOYEE": 1500,
+        "KE_SHIF_EMPLOYEE": 2750,
+        "KE_NSSF_TIER1_EMPLOYEE": 540,
+        "KE_NSSF_TIER2_EMPLOYEE": 5460
+      },
+      "employerLiabilities": {
+        "KE_AHL_EMPLOYER": 1500,
+        "KE_NSSF_TIER1_EMPLOYER": 540,
+        "KE_NSSF_TIER2_EMPLOYER": 5460
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "KE",
+      "countryName": "Kenya",
+      "packKey": "KE-2026-YEAR4",
+      "packLabel": "2026 Year 4",
+      "configuredStatus": "preview_only",
+      "fixture": "high_income",
+      "staffReference": "KE-SYNTHETIC-HIGH",
+      "calculationCurrency": "KES",
+      "grossPay": 300000,
+      "taxableIncome": 300000,
+      "ytdGrossPay": 600000,
+      "ytdTaxableIncome": 600000,
+      "ytdIncomeTax": 100000,
+      "incomeTax": 76614.33,
+      "incomeTaxMethod": "kenya_paye",
+      "employeeLiabilities": {
+        "KE_AHL_EMPLOYEE": 4500,
+        "KE_SHIF_EMPLOYEE": 8250,
+        "KE_NSSF_TIER1_EMPLOYEE": 540,
+        "KE_NSSF_TIER2_EMPLOYEE": 5940
+      },
+      "employerLiabilities": {
+        "KE_AHL_EMPLOYER": 4500,
+        "KE_NSSF_TIER1_EMPLOYER": 540,
+        "KE_NSSF_TIER2_EMPLOYER": 5940
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "KE",
+      "countryName": "Kenya",
+      "packKey": "KE-2026-YEAR4",
+      "packLabel": "2026 Year 4",
+      "configuredStatus": "preview_only",
+      "fixture": "year_to_date",
+      "staffReference": "KE-SYNTHETIC-YTD",
+      "calculationCurrency": "KES",
+      "grossPay": 125000,
+      "taxableIncome": 125000,
+      "ytdGrossPay": 500000,
+      "ytdTaxableIncome": 500000,
+      "ytdIncomeTax": 80000,
+      "incomeTax": 26345.58,
+      "incomeTaxMethod": "kenya_paye",
+      "employeeLiabilities": {
+        "KE_AHL_EMPLOYEE": 1875,
+        "KE_SHIF_EMPLOYEE": 3437.5,
+        "KE_NSSF_TIER1_EMPLOYEE": 540,
+        "KE_NSSF_TIER2_EMPLOYEE": 5940
+      },
+      "employerLiabilities": {
+        "KE_AHL_EMPLOYER": 1875,
+        "KE_NSSF_TIER1_EMPLOYER": 540,
+        "KE_NSSF_TIER2_EMPLOYER": 5940
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "ZA",
+      "countryName": "South Africa",
+      "packKey": "ZA-2027",
+      "packLabel": "2027",
+      "configuredStatus": "preview_only",
+      "fixture": "zero_income",
+      "staffReference": "ZA-SYNTHETIC-ZERO",
+      "calculationCurrency": "ZAR",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "south_africa_paye",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "ZA",
+      "countryName": "South Africa",
+      "packKey": "ZA-2027",
+      "packLabel": "2027",
+      "configuredStatus": "preview_only",
+      "fixture": "ordinary_period",
+      "staffReference": "ZA-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "ZAR",
+      "grossPay": 50000,
+      "taxableIncome": 50000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 10699.58,
+      "incomeTaxMethod": "south_africa_paye",
+      "employeeLiabilities": {
+        "ZA_UIF_EMPLOYEE": 177.12
+      },
+      "employerLiabilities": {
+        "ZA_UIF_EMPLOYER": 177.12
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "ZA",
+      "countryName": "South Africa",
+      "packKey": "ZA-2027",
+      "packLabel": "2027",
+      "configuredStatus": "preview_only",
+      "fixture": "high_income",
+      "staffReference": "ZA-SYNTHETIC-HIGH",
+      "calculationCurrency": "ZAR",
+      "grossPay": 150000,
+      "taxableIncome": 150000,
+      "ytdGrossPay": 300000,
+      "ytdTaxableIncome": 300000,
+      "ytdIncomeTax": 50000,
+      "incomeTax": 50981.75,
+      "incomeTaxMethod": "south_africa_paye",
+      "employeeLiabilities": {
+        "ZA_UIF_EMPLOYEE": 177.12
+      },
+      "employerLiabilities": {
+        "ZA_UIF_EMPLOYER": 177.12
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "ZA",
+      "countryName": "South Africa",
+      "packKey": "ZA-2027",
+      "packLabel": "2027",
+      "configuredStatus": "preview_only",
+      "fixture": "year_to_date",
+      "staffReference": "ZA-SYNTHETIC-YTD",
+      "calculationCurrency": "ZAR",
+      "grossPay": 62500,
+      "taxableIncome": 62500,
+      "ytdGrossPay": 250000,
+      "ytdTaxableIncome": 250000,
+      "ytdIncomeTax": 40000,
+      "incomeTax": 15335.08,
+      "incomeTaxMethod": "south_africa_paye",
+      "employeeLiabilities": {
+        "ZA_UIF_EMPLOYEE": 177.12
+      },
+      "employerLiabilities": {
+        "ZA_UIF_EMPLOYER": 177.12
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "CM",
+      "countryName": "Cameroon",
+      "packKey": "CM-2026-PREVIEW",
+      "packLabel": "2026 legal-review preview",
+      "configuredStatus": "preview_only",
+      "fixture": "zero_income",
+      "staffReference": "CM-SYNTHETIC-ZERO",
+      "calculationCurrency": "XAF",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "CM",
+      "countryName": "Cameroon",
+      "packKey": "CM-2026-PREVIEW",
+      "packLabel": "2026 legal-review preview",
+      "configuredStatus": "preview_only",
+      "fixture": "ordinary_period",
+      "staffReference": "CM-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "XAF",
+      "grossPay": 100000,
+      "taxableIncome": 100000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 2654.67,
+      "incomeTaxMethod": "cameroon_irpp_preview",
+      "employeeLiabilities": {
+        "CM_CNPS_PVID_EMPLOYEE": 4200,
+        "CM_CFC_EMPLOYEE": 1000,
+        "CM_CRTV_EMPLOYEE": 750,
+        "CM_TDL_EMPLOYEE": 500
+      },
+      "employerLiabilities": {
+        "CM_CNPS_PVID_EMPLOYER": 4200,
+        "CM_CNPS_FAMILY_EMPLOYER": 7000,
+        "CM_CNPS_ACCIDENT_EMPLOYER": 1750,
+        "CM_CFC_EMPLOYER": 1500,
+        "CM_FNE_EMPLOYER": 1000
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "CM",
+      "countryName": "Cameroon",
+      "packKey": "CM-2026-PREVIEW",
+      "packLabel": "2026 legal-review preview",
+      "configuredStatus": "preview_only",
+      "fixture": "high_income",
+      "staffReference": "CM-SYNTHETIC-HIGH",
+      "calculationCurrency": "XAF",
+      "grossPay": 300000,
+      "taxableIncome": 300000,
+      "ytdGrossPay": 600000,
+      "ytdTaxableIncome": 600000,
+      "ytdIncomeTax": 100000,
+      "incomeTax": 17130.67,
+      "incomeTaxMethod": "cameroon_irpp_preview",
+      "employeeLiabilities": {
+        "CM_CNPS_PVID_EMPLOYEE": 12600,
+        "CM_CFC_EMPLOYEE": 3000,
+        "CM_CRTV_EMPLOYEE": 3250,
+        "CM_TDL_EMPLOYEE": 2000
+      },
+      "employerLiabilities": {
+        "CM_CNPS_PVID_EMPLOYER": 12600,
+        "CM_CNPS_FAMILY_EMPLOYER": 21000,
+        "CM_CNPS_ACCIDENT_EMPLOYER": 5250,
+        "CM_CFC_EMPLOYER": 4500,
+        "CM_FNE_EMPLOYER": 3000
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "CM",
+      "countryName": "Cameroon",
+      "packKey": "CM-2026-PREVIEW",
+      "packLabel": "2026 legal-review preview",
+      "configuredStatus": "preview_only",
+      "fixture": "year_to_date",
+      "staffReference": "CM-SYNTHETIC-YTD",
+      "calculationCurrency": "XAF",
+      "grossPay": 125000,
+      "taxableIncome": 125000,
+      "ytdGrossPay": 500000,
+      "ytdTaxableIncome": 500000,
+      "ytdIncomeTax": 80000,
+      "incomeTax": 4464.17,
+      "incomeTaxMethod": "cameroon_irpp_preview",
+      "employeeLiabilities": {
+        "CM_CNPS_PVID_EMPLOYEE": 5250,
+        "CM_CFC_EMPLOYEE": 1250,
+        "CM_CRTV_EMPLOYEE": 1950,
+        "CM_TDL_EMPLOYEE": 750
+      },
+      "employerLiabilities": {
+        "CM_CNPS_PVID_EMPLOYER": 5250,
+        "CM_CNPS_FAMILY_EMPLOYER": 8750,
+        "CM_CNPS_ACCIDENT_EMPLOYER": 2187.5,
+        "CM_CFC_EMPLOYER": 1875,
+        "CM_FNE_EMPLOYER": 1250
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "MZ",
+      "countryName": "Mozambique",
+      "packKey": "MZ-2026-PREVIEW",
+      "packLabel": "2026 legal-review preview",
+      "configuredStatus": "preview_only",
+      "fixture": "zero_income",
+      "staffReference": "MZ-SYNTHETIC-ZERO",
+      "calculationCurrency": "MZN",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "mozambique_monthly_irps",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "MZ",
+      "countryName": "Mozambique",
+      "packKey": "MZ-2026-PREVIEW",
+      "packLabel": "2026 legal-review preview",
+      "configuredStatus": "preview_only",
+      "fixture": "ordinary_period",
+      "staffReference": "MZ-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "MZN",
+      "grossPay": 50000,
+      "taxableIncome": 50000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 5225,
+      "incomeTaxMethod": "mozambique_monthly_irps",
+      "employeeLiabilities": {
+        "MZ_INSS_EMPLOYEE": 1500
+      },
+      "employerLiabilities": {
+        "MZ_INSS_EMPLOYER": 2000
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "MZ",
+      "countryName": "Mozambique",
+      "packKey": "MZ-2026-PREVIEW",
+      "packLabel": "2026 legal-review preview",
+      "configuredStatus": "preview_only",
+      "fixture": "high_income",
+      "staffReference": "MZ-SYNTHETIC-HIGH",
+      "calculationCurrency": "MZN",
+      "grossPay": 150000,
+      "taxableIncome": 150000,
+      "ytdGrossPay": 300000,
+      "ytdTaxableIncome": 300000,
+      "ytdIncomeTax": 50000,
+      "incomeTax": 30055,
+      "incomeTaxMethod": "mozambique_monthly_irps",
+      "employeeLiabilities": {
+        "MZ_INSS_EMPLOYEE": 4500
+      },
+      "employerLiabilities": {
+        "MZ_INSS_EMPLOYER": 6000
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "MZ",
+      "countryName": "Mozambique",
+      "packKey": "MZ-2026-PREVIEW",
+      "packLabel": "2026 legal-review preview",
+      "configuredStatus": "preview_only",
+      "fixture": "year_to_date",
+      "staffReference": "MZ-SYNTHETIC-YTD",
+      "calculationCurrency": "MZN",
+      "grossPay": 62500,
+      "taxableIncome": 62500,
+      "ytdGrossPay": 250000,
+      "ytdTaxableIncome": 250000,
+      "ytdIncomeTax": 40000,
+      "incomeTax": 7812.5,
+      "incomeTaxMethod": "mozambique_monthly_irps",
+      "employeeLiabilities": {
+        "MZ_INSS_EMPLOYEE": 1875
+      },
+      "employerLiabilities": {
+        "MZ_INSS_EMPLOYER": 2500
+      },
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is preview-only and cannot be used to finalize payroll."
+      ],
+      "validationErrors": []
+    },
+    {
+      "countryCode": "CA",
+      "countryName": "Canada",
+      "packKey": "CA-2026-TEMPLATE",
+      "packLabel": "2026 implementation template",
+      "configuredStatus": "blocked",
+      "fixture": "zero_income",
+      "staffReference": "CA-SYNTHETIC-ZERO",
+      "calculationCurrency": "CAD",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "CA",
+      "countryName": "Canada",
+      "packKey": "CA-2026-TEMPLATE",
+      "packLabel": "2026 implementation template",
+      "configuredStatus": "blocked",
+      "fixture": "ordinary_period",
+      "staffReference": "CA-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "CAD",
+      "grossPay": 5000,
+      "taxableIncome": 5000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "CA",
+      "countryName": "Canada",
+      "packKey": "CA-2026-TEMPLATE",
+      "packLabel": "2026 implementation template",
+      "configuredStatus": "blocked",
+      "fixture": "high_income",
+      "staffReference": "CA-SYNTHETIC-HIGH",
+      "calculationCurrency": "CAD",
+      "grossPay": 15000,
+      "taxableIncome": 15000,
+      "ytdGrossPay": 30000,
+      "ytdTaxableIncome": 30000,
+      "ytdIncomeTax": 5000,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "CA",
+      "countryName": "Canada",
+      "packKey": "CA-2026-TEMPLATE",
+      "packLabel": "2026 implementation template",
+      "configuredStatus": "blocked",
+      "fixture": "year_to_date",
+      "staffReference": "CA-SYNTHETIC-YTD",
+      "calculationCurrency": "CAD",
+      "grossPay": 6250,
+      "taxableIncome": 6250,
+      "ytdGrossPay": 25000,
+      "ytdTaxableIncome": 25000,
+      "ytdIncomeTax": 4000,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "EU",
+      "countryName": "European Union",
+      "packKey": "EU-NOT-A-JURISDICTION",
+      "packLabel": "Country selection required",
+      "configuredStatus": "blocked",
+      "fixture": "zero_income",
+      "staffReference": "EU-SYNTHETIC-ZERO",
+      "calculationCurrency": "EUR",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "EU",
+      "countryName": "European Union",
+      "packKey": "EU-NOT-A-JURISDICTION",
+      "packLabel": "Country selection required",
+      "configuredStatus": "blocked",
+      "fixture": "ordinary_period",
+      "staffReference": "EU-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "EUR",
+      "grossPay": 5000,
+      "taxableIncome": 5000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "EU",
+      "countryName": "European Union",
+      "packKey": "EU-NOT-A-JURISDICTION",
+      "packLabel": "Country selection required",
+      "configuredStatus": "blocked",
+      "fixture": "high_income",
+      "staffReference": "EU-SYNTHETIC-HIGH",
+      "calculationCurrency": "EUR",
+      "grossPay": 15000,
+      "taxableIncome": 15000,
+      "ytdGrossPay": 30000,
+      "ytdTaxableIncome": 30000,
+      "ytdIncomeTax": 5000,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "EU",
+      "countryName": "European Union",
+      "packKey": "EU-NOT-A-JURISDICTION",
+      "packLabel": "Country selection required",
+      "configuredStatus": "blocked",
+      "fixture": "year_to_date",
+      "staffReference": "EU-SYNTHETIC-YTD",
+      "calculationCurrency": "EUR",
+      "grossPay": 6250,
+      "taxableIncome": 6250,
+      "ytdGrossPay": 25000,
+      "ytdTaxableIncome": 25000,
+      "ytdIncomeTax": 4000,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "OTHER",
+      "countryName": "Other / Custom jurisdiction",
+      "packKey": "OTHER-TEMPLATE",
+      "packLabel": "Template",
+      "configuredStatus": "blocked",
+      "fixture": "zero_income",
+      "staffReference": "OTHER-SYNTHETIC-ZERO",
+      "calculationCurrency": "",
+      "grossPay": 0,
+      "taxableIncome": 0,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "OTHER",
+      "countryName": "Other / Custom jurisdiction",
+      "packKey": "OTHER-TEMPLATE",
+      "packLabel": "Template",
+      "configuredStatus": "blocked",
+      "fixture": "ordinary_period",
+      "staffReference": "OTHER-SYNTHETIC-ORDINARY",
+      "calculationCurrency": "",
+      "grossPay": 5000,
+      "taxableIncome": 5000,
+      "ytdGrossPay": 0,
+      "ytdTaxableIncome": 0,
+      "ytdIncomeTax": 0,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "OTHER",
+      "countryName": "Other / Custom jurisdiction",
+      "packKey": "OTHER-TEMPLATE",
+      "packLabel": "Template",
+      "configuredStatus": "blocked",
+      "fixture": "high_income",
+      "staffReference": "OTHER-SYNTHETIC-HIGH",
+      "calculationCurrency": "",
+      "grossPay": 15000,
+      "taxableIncome": 15000,
+      "ytdGrossPay": 30000,
+      "ytdTaxableIncome": 30000,
+      "ytdIncomeTax": 5000,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    },
+    {
+      "countryCode": "OTHER",
+      "countryName": "Other / Custom jurisdiction",
+      "packKey": "OTHER-TEMPLATE",
+      "packLabel": "Template",
+      "configuredStatus": "blocked",
+      "fixture": "year_to_date",
+      "staffReference": "OTHER-SYNTHETIC-YTD",
+      "calculationCurrency": "",
+      "grossPay": 6250,
+      "taxableIncome": 6250,
+      "ytdGrossPay": 25000,
+      "ytdTaxableIncome": 25000,
+      "ytdIncomeTax": 4000,
+      "incomeTax": 0,
+      "incomeTaxMethod": "none",
+      "employeeLiabilities": {},
+      "employerLiabilities": {},
+      "payrollRunnable": false,
+      "blockingErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations.",
+        "This statutory pack is awaiting legal review and is available for preview only.",
+        "This statutory pack is blocked until its country or subdivision rules are configured and reviewed."
+      ],
+      "validationErrors": [
+        "This jurisdiction is a blank template and must be cloned and configured before it can be used for payroll tax calculations."
+      ]
+    }
+  ]
+}

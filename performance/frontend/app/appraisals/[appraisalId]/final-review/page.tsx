@@ -25,6 +25,11 @@ interface AIRatingSuggestion {
     ratingJustification: string;
 }
 
+function getApiErrorMessage(error: unknown, fallback: string) {
+    const candidate = error as { message?: string; response?: { data?: { error?: string; message?: string } } };
+    return candidate.response?.data?.error || candidate.response?.data?.message || candidate.message || fallback;
+}
+
 function normalizeIdentityEmail(value?: string | null) {
     if (!value || typeof value !== 'string') return null;
     return value.trim().toLowerCase();
@@ -41,6 +46,7 @@ export default function FinalReviewPage() {
 
     const [aiLoading, setAiLoading] = useState(false);
     const [aiSuggestion, setAiSuggestion] = useState<AIRatingSuggestion | null>(null);
+    const [aiSuggestionError, setAiSuggestionError] = useState('');
 
     const [finalRating, setFinalRating] = useState<number>(3);
     const [finalRatingTouched, setFinalRatingTouched] = useState(false);
@@ -77,12 +83,23 @@ export default function FinalReviewPage() {
     const fetchAiSuggestion = async () => {
         if (!aiAssistEnabled) return;
         setAiLoading(true);
+        setAiSuggestionError('');
         try {
             const res = await api.post(`/appraisals/${appraisalId}/ai-rating-suggestion`);
             const suggestion = res.data?.data?.aiSuggestion || res.data?.aiSuggestion;
-            setAiSuggestion(suggestion || null);
+            if (!res.data?.success || !suggestion || suggestion.success === false || suggestion.error) {
+                throw new Error(
+                    suggestion?.error
+                    || suggestion?.message
+                    || res.data?.error
+                    || 'The AI rating suggestion returned an inconclusive result.'
+                );
+            }
+            setAiSuggestion(suggestion);
         } catch (e) {
             console.error('Failed to fetch AI suggestion', e);
+            setAiSuggestion(null);
+            setAiSuggestionError(getApiErrorMessage(e, 'The AI rating suggestion could not be generated.'));
         } finally {
             setAiLoading(false);
         }
@@ -219,6 +236,26 @@ export default function FinalReviewPage() {
                                             {aiSuggestion.ratingJustification}
                                         </Typography>
                                     </Box>
+                                ) : aiSuggestionError ? (
+                                    <Alert
+                                        severity="error"
+                                        action={(
+                                            <Button color="inherit" size="small" href="/settings/ai">
+                                                Review AI settings
+                                            </Button>
+                                        )}
+                                    >
+                                        <Typography variant="body2">{aiSuggestionError}</Typography>
+                                        <Button
+                                            size="small"
+                                            color="inherit"
+                                            onClick={() => void fetchAiSuggestion()}
+                                            disabled={aiLoading}
+                                            sx={{ mt: 1 }}
+                                        >
+                                            Retry suggestion
+                                        </Button>
+                                    </Alert>
                                 ) : (
                                     <Typography variant="body2" color="text.secondary">
                                         {aiAssistEnabled

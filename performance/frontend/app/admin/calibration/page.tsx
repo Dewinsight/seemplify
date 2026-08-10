@@ -15,6 +15,11 @@ import {
 } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 
+function getApiErrorMessage(error: unknown, fallback: string) {
+  const candidate = error as { response?: { data?: { error?: string; message?: string } } };
+  return candidate.response?.data?.error || candidate.response?.data?.message || fallback;
+}
+
 export default function CalibrationPage() {
   const router = useRouter();
   const { isHRAdmin, isLoading: userLoading } = useUserContext();
@@ -28,6 +33,8 @@ export default function CalibrationPage() {
     title: '',
     scheduledDate: ''
   });
+  const [aiInsightsLoading, setAiInsightsLoading] = useState('');
+  const [aiInsightsError, setAiInsightsError] = useState('');
 
   if (userLoading || isLoading) {
     return (
@@ -81,11 +88,16 @@ export default function CalibrationPage() {
   };
 
   const handleGenerateInsights = async (sessionId: string) => {
+    setAiInsightsLoading(sessionId);
+    setAiInsightsError('');
     try {
       await api.post(`/calibration/${sessionId}/ai-insights`, {});
       mutate();
     } catch (error) {
       console.error('Error generating insights:', error);
+      setAiInsightsError(getApiErrorMessage(error, 'AI calibration insights could not be generated.'));
+    } finally {
+      setAiInsightsLoading('');
     }
   };
 
@@ -116,6 +128,21 @@ export default function CalibrationPage() {
           New Session
         </Button>
       </Box>
+
+      {aiInsightsError && (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={(
+            <Button color="inherit" size="small" href="/settings/ai">
+              Review AI settings
+            </Button>
+          )}
+          onClose={() => setAiInsightsError('')}
+        >
+          {aiInsightsError}
+        </Alert>
+      )}
 
       {/* Summary Cards */}
       <Grid container spacing={3} mb={4}>
@@ -272,10 +299,11 @@ export default function CalibrationPage() {
                           <Button
                             size="small"
                             variant="outlined"
-                            startIcon={<Insights />}
-                            onClick={() => handleGenerateInsights(session._id)}
+                            startIcon={aiInsightsLoading === session._id ? <CircularProgress size={16} /> : <Insights />}
+                            onClick={() => void handleGenerateInsights(session._id)}
+                            disabled={Boolean(aiInsightsLoading)}
                           >
-                            AI Insights
+                            {aiInsightsLoading === session._id ? 'Generating' : 'AI Insights'}
                           </Button>
                           <Button
                             size="small"

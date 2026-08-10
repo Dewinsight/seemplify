@@ -8,8 +8,9 @@ const {
 
 const COLLECTION_NAME = 'cvProcessingJobs';
 const ACTIVE_STATES = Object.freeze(['queued', 'waiting_for_chatgpt', 'processing']);
-const TERMINAL_STATES = Object.freeze(['completed', 'failed']);
+const TERMINAL_STATES = Object.freeze(['completed', 'failed', 'cancelled']);
 const DEFAULT_TERMINAL_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_FAILED_RETRY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_FAILURES = 5;
 const DEFAULT_QUEUE_EVENT_BATCH_SIZE = 100;
 const DEFAULT_QUEUE_EVENT_JOB_LIMIT = 25;
@@ -25,6 +26,19 @@ function durableCleanupOutstanding(job) {
     && !job.durableFile.releasedAt
     && job.durableFile.cleanupState !== 'deleted'
   );
+}
+
+function durableReferenceMatches(job, reference) {
+  if (!job?.durableFile || !reference) return false;
+  if (reference.provider === 'gridfs' && reference.fileId) {
+    return job.durableFile.provider === 'gridfs'
+      && String(job.durableFile.fileId || '') === String(reference.fileId);
+  }
+  if (reference.provider === 'filesystem' && reference.storageKey) {
+    return job.durableFile.provider === 'filesystem'
+      && String(job.durableFile.storageKey || '') === String(reference.storageKey);
+  }
+  return false;
 }
 
 function queueEventDeliveryOutstanding(job) {
@@ -145,9 +159,17 @@ function createCvProcessingJobRepository({
   terminalRetentionMs = Number(
     process.env.AI_INTERVIEW_CV_JOB_RETENTION_MS || DEFAULT_TERMINAL_RETENTION_MS
   ),
+  failedRetryRetentionMs = Number(
+    process.env.AI_INTERVIEW_CV_FAILED_RETRY_RETENTION_MS
+      || DEFAULT_FAILED_RETRY_RETENTION_MS
+  ),
   maxFailures = Number(process.env.AI_INTERVIEW_CV_MAX_FAILURES || DEFAULT_MAX_FAILURES)
 } = {}) {
   const safeRetentionMs = Math.max(60_000, Number(terminalRetentionMs) || DEFAULT_TERMINAL_RETENTION_MS);
+  const safeFailedRetryRetentionMs = Math.max(
+    60_000,
+    Number(failedRetryRetentionMs) || DEFAULT_FAILED_RETRY_RETENTION_MS
+  );
   const safeMaxFailures = Math.max(1, Math.floor(Number(maxFailures) || DEFAULT_MAX_FAILURES));
   let indexesPromise;
 
@@ -168,27 +190,56 @@ function createCvProcessingJobRepository({
     const db = await getDb();
     const collection = db.collection(COLLECTION_NAME);
     if (!indexesPromise) {
-      indexesPromise = collection.createIndexes([
-        { key: { publicId: 1 }, name: 'cv_public_id_unique', unique: true },
-        {
-          key: { organizationId: 1, idempotencyKey: 1 },
-          name: 'cv_organization_idempotency_unique',
-          unique: true,
-          partialFilterExpression: { idempotencyKey: { $type: 'string' } }
-        },
-        { key: { state: 1, createdAt: 1 }, name: 'cv_state_created_at' },
-        { key: { updatedAt: 1 }, name: 'cv_updated_at' },
-        {
-          key: { queueEventPending: 1, queueEventNextAttemptAt: 1, createdAt: 1 },
-          name: 'cv_queue_event_pending',
-          partialFilterExpression: { queueEventPending: true }
-        },
-        {
-          key: { queueEventInitialized: 1, _id: 1 },
-          name: 'cv_queue_event_repair'
-        },
-        { key: { expiresAt: 1 }, name: 'cv_terminal_ttl', expireAfterSeconds: 0 }
-      ]).catch((error) => {
+      indexesPromise = (async () => {
+        // Deployments before actor-scoped idempotency used an organization-only
+        // unique index. Build the replacement first (existing rows are already a
+        // valid subset), then remove only the known legacy index. This preserves
+        // uniqueness throughout rolling startup and leaves the legacy guard in
+        // place if replacement-index creation fails.
+        let hasLegacyIdempotencyIndex = false;
+        if (typeof collection.listIndexes === 'function' && typeof collection.dropIndex === 'function') {
+          const indexes = await collection.listIndexes().toArray().catch((error) => {
+            if (Number(error?.code) === 26) return [];
+            throw error;
+          });
+          hasLegacyIdempotencyIndex = indexes.some(
+            (index) => index.name === 'cv_organization_idempotency_unique'
+          );
+        }
+        await collection.createIndexes([
+          { key: { publicId: 1 }, name: 'cv_public_id_unique', unique: true },
+          {
+            key: { organizationId: 1, actorId: 1, idempotencyKey: 1 },
+            name: 'cv_organization_actor_idempotency_unique',
+            unique: true,
+            partialFilterExpression: {
+              actorId: { $type: 'string' },
+              idempotencyKey: { $type: 'string' }
+            }
+          },
+          { key: { organizationId: 1, actorId: 1, updatedAt: -1 }, name: 'cv_actor_history' },
+          { key: { candidateId: 1, updatedAt: -1 }, name: 'cv_candidate_jobs' },
+          { key: { 'durableFile.fileId': 1 }, name: 'cv_gridfs_file_reference' },
+          { key: { 'durableFile.storageKey': 1 }, name: 'cv_filesystem_file_reference' },
+          { key: { state: 1, createdAt: 1 }, name: 'cv_state_created_at' },
+          { key: { updatedAt: 1 }, name: 'cv_updated_at' },
+          {
+            key: { queueEventPending: 1, queueEventNextAttemptAt: 1, createdAt: 1 },
+            name: 'cv_queue_event_pending',
+            partialFilterExpression: { queueEventPending: true }
+          },
+          {
+            key: { queueEventInitialized: 1, _id: 1 },
+            name: 'cv_queue_event_repair'
+          },
+          { key: { expiresAt: 1 }, name: 'cv_terminal_ttl', expireAfterSeconds: 0 }
+        ]);
+        if (hasLegacyIdempotencyIndex) {
+          await collection.dropIndex('cv_organization_idempotency_unique').catch((error) => {
+            if (![26, 27].includes(Number(error?.code))) throw error;
+          });
+        }
+      })().catch((error) => {
         indexesPromise = null;
         throw error;
       });
@@ -344,7 +395,9 @@ function createCvProcessingJobRepository({
         store.cvProcessingJobs = store.cvProcessingJobs || [];
         if (normalizedKey) {
           const existing = store.cvProcessingJobs.find((item) => (
-            item.organizationId === job.organizationId && item.idempotencyKey === normalizedKey
+            item.organizationId === job.organizationId
+            && item.actorId === job.actorId
+            && item.idempotencyKey === normalizedKey
           ));
           if (existing) return copy(existing);
         }
@@ -360,7 +413,11 @@ function createCvProcessingJobRepository({
       await collection.insertOne(copy(job));
       return { job, created: true };
     }
-    const filter = { organizationId: job.organizationId, idempotencyKey: normalizedKey };
+    const filter = {
+      organizationId: job.organizationId,
+      actorId: job.actorId,
+      idempotencyKey: normalizedKey
+    };
     try {
       const result = await collection.updateOne(filter, { $setOnInsert: copy(job) }, { upsert: true });
       return {
@@ -381,16 +438,113 @@ function createCvProcessingJobRepository({
     return copy((store.cvProcessingJobs || []).find((item) => item.publicId === publicId) || null);
   }
 
-  async function findByIdempotencyKey(organizationId, idempotencyKey) {
+  async function findByIdempotencyKey(organizationId, actorId, idempotencyKey) {
     const normalizedKey = String(idempotencyKey || '').trim();
     if (!normalizedKey) return null;
     if (useMongo) {
-      return (await mongoCollection()).findOne({ organizationId, idempotencyKey: normalizedKey });
+      return (await mongoCollection()).findOne({
+        organizationId,
+        actorId,
+        idempotencyKey: normalizedKey
+      });
     }
     const store = await read();
     return copy((store.cvProcessingJobs || []).find((item) => (
-      item.organizationId === organizationId && item.idempotencyKey === normalizedKey
+      item.organizationId === organizationId
+      && item.actorId === actorId
+      && item.idempotencyKey === normalizedKey
     )) || null);
+  }
+
+  async function hasDurableReference(reference) {
+    if (!reference) return false;
+    if (useMongo) {
+      let filter;
+      if (reference.provider === 'gridfs' && reference.fileId) {
+        filter = {
+          'durableFile.provider': 'gridfs',
+          'durableFile.fileId': String(reference.fileId)
+        };
+      } else if (reference.provider === 'filesystem' && reference.storageKey) {
+        filter = {
+          'durableFile.provider': 'filesystem',
+          'durableFile.storageKey': String(reference.storageKey)
+        };
+      } else {
+        return false;
+      }
+      return (await mongoCollection()).countDocuments(filter, { limit: 1 }) > 0;
+    }
+    const store = await read();
+    return (store.cvProcessingJobs || []).some((job) => (
+      durableReferenceMatches(job, reference)
+    ));
+  }
+
+  async function findForActor(publicId, organizationId, actorId) {
+    const filter = { publicId, organizationId, actorId };
+    if (useMongo) return (await mongoCollection()).findOne(filter);
+    const store = await read();
+    return copy((store.cvProcessingJobs || []).find((item) => (
+      item.publicId === publicId
+      && item.organizationId === organizationId
+      && item.actorId === actorId
+    )) || null);
+  }
+
+  async function bindRequestFingerprint(publicId, fingerprint) {
+    const normalized = String(fingerprint || '').toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(normalized)) {
+      throw new TypeError('A valid CV request fingerprint is required');
+    }
+    if (!useMongo) {
+      return mutate((store) => {
+        store.cvProcessingJobs = store.cvProcessingJobs || [];
+        const job = store.cvProcessingJobs.find((item) => item.publicId === publicId);
+        if (!job) return null;
+        if (!job.requestFingerprint) job.requestFingerprint = normalized;
+        return copy(job);
+      });
+    }
+    const collection = await mongoCollection();
+    const updated = unwrapFindOneAndUpdate(await collection.findOneAndUpdate({
+      publicId,
+      $or: [
+        { requestFingerprint: { $exists: false } },
+        { requestFingerprint: null }
+      ]
+    }, {
+      $set: { requestFingerprint: normalized }
+    }, { returnDocument: 'after' }));
+    return updated || collection.findOne({ publicId });
+  }
+
+  async function listForActor(organizationId, actorId, {
+    states = null,
+    limit = 100
+  } = {}) {
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 100)));
+    const normalizedStates = Array.isArray(states)
+      ? states.filter((state) => [...ACTIVE_STATES, ...TERMINAL_STATES].includes(state))
+      : null;
+    const filter = { organizationId, actorId };
+    if (normalizedStates?.length) filter.state = { $in: normalizedStates };
+    if (useMongo) {
+      return (await mongoCollection()).find(filter)
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .limit(safeLimit)
+        .toArray();
+    }
+    const store = await read();
+    return copy((store.cvProcessingJobs || [])
+      .filter((item) => (
+        item.organizationId === organizationId
+        && item.actorId === actorId
+        && (!normalizedStates?.length || normalizedStates.includes(item.state))
+      ))
+      .sort((left, right) => new Date(right.updatedAt || right.createdAt)
+        - new Date(left.updatedAt || left.createdAt))
+      .slice(0, safeLimit));
   }
 
   async function beginAttempt(publicId, { countInference = true } = {}) {
@@ -489,11 +643,13 @@ function createCvProcessingJobRepository({
       completed = await jsonMutateJob(publicId, (job) => {
         Object.assign(job, set);
         delete job.lastError;
+        delete job.retryable;
+        delete job.retryUntil;
       });
     } else {
       completed = await mongoPatch(publicId, {
         set,
-        unset: ['lastError', 'failedAt', 'expiresAt'],
+        unset: ['lastError', 'failedAt', 'retryable', 'retryUntil', 'expiresAt'],
         at
       });
     }
@@ -532,8 +688,15 @@ function createCvProcessingJobRepository({
         current.lastError = lastError;
         if (nextAttemptAt) current.nextAttemptAt = iso(nextAttemptAt);
         if (deferred) current.deferredCycles = Number(current.deferredCycles || 0) + 1;
-        if (terminal) current.failedAt = iso(at);
-        else delete current.failedAt;
+        if (terminal) {
+          current.failedAt = iso(at);
+          current.retryable = durableCleanupOutstanding(current);
+          current.retryUntil = iso(new Date(at.getTime() + safeFailedRetryRetentionMs));
+        } else {
+          delete current.failedAt;
+          delete current.retryable;
+          delete current.retryUntil;
+        }
       });
     } else {
       const currentFailures = { $ifNull: ['$failureCount', 0] };
@@ -563,6 +726,14 @@ function createCvProcessingJobRepository({
             ]
           },
           failedAt: { $cond: [terminalExpression, literal(iso(at)), '$$REMOVE'] },
+          retryable: { $cond: [terminalExpression, mongoDurableCleanupOutstanding(), '$$REMOVE'] },
+          retryUntil: {
+            $cond: [
+              terminalExpression,
+              literal(new Date(at.getTime() + safeFailedRetryRetentionMs)),
+              '$$REMOVE'
+            ]
+          },
           expiresAt: '$$REMOVE'
         },
         at
@@ -570,6 +741,192 @@ function createCvProcessingJobRepository({
     }
     if (!job) job = await findByPublicId(publicId);
     return { job, terminal: job?.state === 'failed' };
+  }
+
+  async function retryFailed(publicId, organizationId, actorId) {
+    const at = operationTime();
+    if (!useMongo) {
+      let retried = false;
+      const job = await mutate((store) => {
+        store.cvProcessingJobs = store.cvProcessingJobs || [];
+        const current = store.cvProcessingJobs.find((item) => (
+          item.publicId === publicId
+          && item.organizationId === organizationId
+          && item.actorId === actorId
+        ));
+        if (!current) return null;
+        if (current.state !== 'failed') return copy(current);
+        const retryUntil = new Date(current.retryUntil || 0).getTime();
+        if (
+          current.retryable !== true
+          || !durableCleanupOutstanding(current)
+          || retryUntil <= at.getTime()
+        ) return copy(current);
+        retried = true;
+        current.state = 'queued';
+        current.stage = String(current.resumeText || '').trim() ? 'analyzing' : 'ingesting';
+        current.progress = String(current.resumeText || '').trim() ? 50 : 5;
+        current.failureCount = 0;
+        current.manualRetryCount = Number(current.manualRetryCount || 0) + 1;
+        current.lastManualRetryAt = iso(at);
+        delete current.lastError;
+        delete current.failedAt;
+        delete current.nextAttemptAt;
+        delete current.retryable;
+        delete current.retryUntil;
+        delete current.expiresAt;
+        current.updatedAt = iso(at);
+        current.revision = Number.isFinite(Number(current.revision))
+          ? Number(current.revision) + 1
+          : 0;
+        enqueueQueueEvent(current, appendTransition(current));
+        return copy(current);
+      });
+      return { job, retried };
+    }
+
+    const collection = await mongoCollection();
+    const result = await collection.findOneAndUpdate({
+      publicId,
+      organizationId,
+      actorId,
+      state: 'failed',
+      retryable: true,
+      retryUntil: { $gt: at },
+      $and: [
+        {
+          $or: [
+            { 'durableFile.fileId': { $exists: true } },
+            { 'durableFile.storageKey': { $exists: true } }
+          ]
+        },
+        {
+          $or: [
+            { 'durableFile.releasedAt': { $exists: false } },
+            { 'durableFile.releasedAt': null }
+          ]
+        }
+      ],
+      'durableFile.cleanupState': { $ne: 'deleted' }
+    }, buildPatchPipeline({
+      set: { state: 'queued', failureCount: 0, lastManualRetryAt: iso(at) },
+      expressions: {
+        stage: {
+          $cond: [
+            { $gt: [{ $strLenCP: { $ifNull: ['$resumeText', ''] } }, 0] },
+            'analyzing',
+            'ingesting'
+          ]
+        },
+        progress: {
+          $cond: [
+            { $gt: [{ $strLenCP: { $ifNull: ['$resumeText', ''] } }, 0] },
+            50,
+            5
+          ]
+        }
+      },
+      inc: { manualRetryCount: 1 },
+      unset: [
+        'lastError',
+        'failedAt',
+        'nextAttemptAt',
+        'retryable',
+        'retryUntil',
+        'expiresAt'
+      ],
+      ttlMode: 'active',
+      at
+    }), { returnDocument: 'after' });
+    const job = unwrapFindOneAndUpdate(result);
+    if (job) return { job, retried: true };
+    return { job: await findForActor(publicId, organizationId, actorId), retried: false };
+  }
+
+  async function cancelAndRedactForCandidate(organizationId, candidateId) {
+    const at = operationTime();
+    const matchesCandidate = (job) => (
+      job.organizationId === organizationId
+      && (job.candidateId === candidateId || job.result?.candidate?._id === candidateId)
+    );
+    const redact = (job) => {
+      const wasActive = ACTIVE_STATES.includes(job.state);
+      if (wasActive) {
+        job.state = 'cancelled';
+        job.stage = 'cancelled';
+        job.cancelledAt = iso(at);
+      }
+      job.retryable = false;
+      job.redactedAt = iso(at);
+      job.redactionReason = 'candidate_deleted';
+      delete job.originalName;
+      delete job.resumeText;
+      delete job.result;
+      delete job.lastError;
+      delete job.retryUntil;
+      delete job.nextAttemptAt;
+      if (job.durableFile) delete job.durableFile.cleanupError;
+    };
+
+    if (!useMongo) {
+      const updated = [];
+      await mutate((store) => {
+        store.cvProcessingJobs = store.cvProcessingJobs || [];
+        for (const job of store.cvProcessingJobs) {
+          if (!matchesCandidate(job)) continue;
+          redact(job);
+          job.updatedAt = iso(at);
+          job.revision = Number.isFinite(Number(job.revision)) ? Number(job.revision) + 1 : 0;
+          enqueueQueueEvent(job, appendTransition(job));
+          if (durableCleanupOutstanding(job) || queueEventDeliveryOutstanding(job)) {
+            delete job.expiresAt;
+          } else if (TERMINAL_STATES.includes(job.state)) {
+            job.expiresAt = jsonExpiryAt(at);
+          }
+          updated.push(copy(job));
+        }
+      });
+      return updated;
+    }
+
+    const collection = await mongoCollection();
+    const matches = await collection.find({
+      organizationId,
+      $or: [
+        { candidateId },
+        { 'result.candidate._id': candidateId }
+      ]
+    }).project({ publicId: 1 }).toArray();
+    const updated = [];
+    for (const match of matches) {
+      const job = await mongoPatch(match.publicId, {
+        set: {
+          retryable: false,
+          redactedAt: iso(at),
+          redactionReason: 'candidate_deleted'
+        },
+        expressions: {
+          state: { $cond: [{ $in: ['$state', ACTIVE_STATES] }, 'cancelled', '$state'] },
+          stage: { $cond: [{ $in: ['$state', ACTIVE_STATES] }, 'cancelled', '$stage'] },
+          cancelledAt: {
+            $cond: [{ $in: ['$state', ACTIVE_STATES] }, literal(iso(at)), '$cancelledAt']
+          }
+        },
+        unset: [
+          'originalName',
+          'resumeText',
+          'result',
+          'lastError',
+          'retryUntil',
+          'nextAttemptAt',
+          'durableFile.cleanupError',
+          'expiresAt'
+        ],
+        at
+      }, null);
+      if (job) updated.push(job);
+    }
+    return updated;
   }
 
   async function markDurableFileCleanupAttempt(publicId, attemptedAt = iso(operationTime())) {
@@ -598,21 +955,30 @@ function createCvProcessingJobRepository({
   async function markDurableFileCleanupFailed(publicId, error, nextAttemptAt) {
     const at = operationTime();
     const cleanupError = String(error?.message || error).slice(0, 1000);
+    const redactedCleanupError = 'Durable CV cleanup is pending and will be retried.';
     if (!useMongo) {
       return jsonMutateJob(publicId, (job) => {
         if (!job.durableFile) return;
         job.durableFile.cleanupState = 'failed';
         job.durableFile.cleanupAttemptedAt = iso(at);
         job.durableFile.cleanupNextAttemptAt = iso(nextAttemptAt);
-        job.durableFile.cleanupError = cleanupError;
+        job.durableFile.cleanupError = job.redactedAt ? redactedCleanupError : cleanupError;
       }, { allowedStates: null, appendHistory: false });
     }
     return mongoPatch(publicId, {
       set: {
         'durableFile.cleanupState': 'failed',
         'durableFile.cleanupAttemptedAt': iso(at),
-        'durableFile.cleanupNextAttemptAt': new Date(nextAttemptAt),
-        'durableFile.cleanupError': cleanupError
+        'durableFile.cleanupNextAttemptAt': new Date(nextAttemptAt)
+      },
+      expressions: {
+        'durableFile.cleanupError': {
+          $cond: [
+            { $ne: [{ $ifNull: ['$redactedAt', null] }, null] },
+            redactedCleanupError,
+            cleanupError
+          ]
+        }
       },
       ttlMode: 'active',
       appendHistory: false
@@ -626,16 +992,36 @@ function createCvProcessingJobRepository({
         if (!job.durableFile) return;
         job.durableFile.cleanupState = 'deleted';
         job.durableFile.releasedAt = releasedAt;
+        delete job.durableFile.provider;
+        delete job.durableFile.bucket;
+        delete job.durableFile.fileId;
+        delete job.durableFile.storageKey;
+        delete job.durableFile.sha256;
+        delete job.durableFile.length;
+        delete job.durableFile.persistedAt;
         delete job.durableFile.cleanupNextAttemptAt;
         delete job.durableFile.cleanupError;
+        job.retryable = false;
+        delete job.retryUntil;
+        if (['failed', 'cancelled'].includes(job.state)) {
+          delete job.originalName;
+          delete job.resumeText;
+        }
       }, { allowedStates: null, appendHistory: false });
     }
     return mongoPatch(publicId, {
       set: {
         'durableFile.cleanupState': 'deleted',
-        'durableFile.releasedAt': releasedAt
+        'durableFile.releasedAt': releasedAt,
+        retryable: false
       },
       expressions: {
+        originalName: {
+          $cond: [{ $in: ['$state', ['failed', 'cancelled']] }, '$$REMOVE', '$originalName']
+        },
+        resumeText: {
+          $cond: [{ $in: ['$state', ['failed', 'cancelled']] }, '$$REMOVE', '$resumeText']
+        },
         expiresAt: {
           $cond: [
             {
@@ -649,7 +1035,18 @@ function createCvProcessingJobRepository({
           ]
         }
       },
-      unset: ['durableFile.cleanupNextAttemptAt', 'durableFile.cleanupError'],
+      unset: [
+        'durableFile.provider',
+        'durableFile.bucket',
+        'durableFile.fileId',
+        'durableFile.storageKey',
+        'durableFile.sha256',
+        'durableFile.length',
+        'durableFile.persistedAt',
+        'durableFile.cleanupNextAttemptAt',
+        'durableFile.cleanupError',
+        'retryUntil'
+      ],
       appendHistory: false
     }, null);
   }
@@ -657,8 +1054,21 @@ function createCvProcessingJobRepository({
   async function findCleanupPending(at = operationTime(), limit = 100) {
     if (useMongo) {
       return (await mongoCollection()).find({
-        state: { $in: TERMINAL_STATES },
         $and: [
+          {
+            $or: [
+              { state: { $in: ['completed', 'cancelled'] } },
+              {
+                state: 'failed',
+                $or: [
+                  { retryable: { $ne: true } },
+                  { retryUntil: { $exists: false } },
+                  { retryUntil: null },
+                  { retryUntil: { $lte: at } }
+                ]
+              }
+            ]
+          },
           {
             $or: [
               { 'durableFile.fileId': { $exists: true } },
@@ -688,6 +1098,12 @@ function createCvProcessingJobRepository({
       .filter((job) => (
         TERMINAL_STATES.includes(job.state)
         && durableCleanupOutstanding(job)
+        && (
+          job.state !== 'failed'
+          || job.retryable !== true
+          || !job.retryUntil
+          || new Date(job.retryUntil).getTime() <= threshold
+        )
         && (
           !job.durableFile.cleanupNextAttemptAt
           || new Date(job.durableFile.cleanupNextAttemptAt).getTime() <= threshold
@@ -764,23 +1180,47 @@ function createCvProcessingJobRepository({
     return repaired;
   }
 
-  async function findRecoverable(staleBefore, limit = 500) {
+  async function findRecoverable(staleBefore, limit = 500, { after = null } = {}) {
     const staleText = iso(staleBefore);
+    const safeLimit = Math.max(1, Math.min(5_000, Math.floor(Number(limit) || 500)));
     if (useMongo) {
-      return (await mongoCollection()).find({
+      const filter = {
         state: { $in: ACTIVE_STATES },
         updatedAt: { $lt: staleText }
-      }).sort({ createdAt: 1 }).limit(limit).toArray();
+      };
+      if (after?.createdAt && after?.publicId) {
+        filter.$or = [
+          { createdAt: { $gt: after.createdAt } },
+          { createdAt: after.createdAt, publicId: { $gt: after.publicId } }
+        ];
+      }
+      return (await mongoCollection()).find(filter)
+        .sort({ createdAt: 1, publicId: 1 })
+        .limit(safeLimit)
+        .toArray();
     }
     const store = await read();
     const threshold = new Date(staleBefore).getTime();
+    const afterCreatedAt = after?.createdAt ? String(after.createdAt) : null;
+    const afterPublicId = after?.publicId ? String(after.publicId) : null;
     return copy((store.cvProcessingJobs || [])
       .filter((item) => (
         ACTIVE_STATES.includes(item.state)
         && new Date(item.updatedAt || item.createdAt).getTime() < threshold
+        && (
+          !afterCreatedAt
+          || String(item.createdAt) > afterCreatedAt
+          || (
+            String(item.createdAt) === afterCreatedAt
+            && String(item.publicId) > afterPublicId
+          )
+        )
       ))
-      .sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))
-      .slice(0, limit));
+      .sort((left, right) => (
+        String(left.createdAt).localeCompare(String(right.createdAt))
+        || String(left.publicId).localeCompare(String(right.publicId))
+      ))
+      .slice(0, safeLimit));
   }
 
   async function repairQueueEventOutbox(limit = 500) {
@@ -1083,6 +1523,8 @@ function createCvProcessingJobRepository({
     acknowledgeQueueEvents,
     appendTransition,
     beginAttempt,
+    bindRequestFingerprint,
+    cancelAndRedactForCandidate,
     clearActiveExpirations,
     complete,
     countAhead,
@@ -1091,9 +1533,12 @@ function createCvProcessingJobRepository({
     finalizeTerminalExpiry,
     findByIdempotencyKey,
     findByPublicId,
+    findForActor,
     findCleanupPending,
     findRecoverable,
+    hasDurableReference,
     listPendingQueueEventJobs,
+    listForActor,
     markDurableFileCleanupAttempt,
     markDurableFileCleanupFailed,
     markDurableFileReleased,
@@ -1103,6 +1548,7 @@ function createCvProcessingJobRepository({
     recordFailure,
     recordInferenceAttempt,
     repairQueueEventOutbox,
+    retryFailed,
     telemetrySnapshot,
     updateStage
   };
@@ -1115,10 +1561,12 @@ module.exports = {
   ACTIVE_STATES,
   COLLECTION_NAME,
   DEFAULT_MAX_FAILURES,
+  DEFAULT_FAILED_RETRY_RETENTION_MS,
   DEFAULT_QUEUE_EVENT_BATCH_SIZE,
   DEFAULT_QUEUE_EVENT_JOB_LIMIT,
   DEFAULT_TERMINAL_RETENTION_MS,
   TERMINAL_STATES,
   appendTransition,
-  createCvProcessingJobRepository
+  createCvProcessingJobRepository,
+  durableReferenceMatches
 };

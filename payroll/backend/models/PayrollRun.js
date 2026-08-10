@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const PayrollSequence = require('./PayrollSequence');
 
 /**
  * PayrollRun Model
@@ -20,7 +21,8 @@ const CurrencyBreakdownSchema = new Schema({
   totalDeductions: { type: Number, default: 0 },
   totalNetPayroll: { type: Number, default: 0 },
   totalTaxWithheld: { type: Number, default: 0 },
-  totalEmployerContributions: { type: Number, default: 0 }
+  totalEmployerContributions: { type: Number, default: 0 },
+  totalEmployerCost: { type: Number, default: 0 }
 }, { _id: false });
 
 const ProcessingSummarySchema = new Schema({
@@ -33,6 +35,7 @@ const ProcessingSummarySchema = new Schema({
   totalNetPayroll: { type: Number, default: 0 },
   totalTaxWithheld: { type: Number, default: 0 },
   totalEmployerContributions: { type: Number, default: 0 },
+  totalEmployerCost: { type: Number, default: 0 },
   currency: { type: String, default: 'USD' },
   reportingCurrency: String,
   hasAggregateTotals: { type: Boolean, default: true },
@@ -132,11 +135,26 @@ const PayrollRunSchema = new Schema({
   // Identification
   runNumber: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   }, // e.g., "PR-2024-12-001"
   
   organizationId: { type: String, required: true, index: true },
+  employerEntityId: { type: Schema.Types.ObjectId, ref: 'PayrollEmployerEntity', default: null, index: true },
+  employerEntitySnapshot: {
+    code: String,
+    legalName: String,
+    employerType: String,
+    countryCode: String,
+    jurisdictionCode: String,
+    currency: String,
+    taxJurisdictionConfigId: Schema.Types.ObjectId,
+    taxJurisdictionVersionId: Schema.Types.ObjectId,
+    taxAdapterCandidateId: String,
+    taxPackContentHash: String,
+    payrollRunnableAtCreation: { type: Boolean, default: false },
+    blockingIssuesAtCreation: [String],
+  },
+  activePeriodKey: { type: String, default: undefined },
   
   // Pay Period
   payPeriod: {
@@ -145,8 +163,8 @@ const PayrollRunSchema = new Schema({
       enum: ['monthly', 'bi-weekly', 'weekly', 'semi-monthly'],
       default: 'monthly'
     },
-    month: { type: Number, required: true }, // 1-12
-    year: { type: Number, required: true },
+    month: { type: Number, required: true, min: 1, max: 12 },
+    year: { type: Number, required: true, min: 2000, max: 2200 },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     paymentDate: { type: Date, required: true }
@@ -162,6 +180,8 @@ const PayrollRunSchema = new Schema({
       'pending_review',   // Awaiting HR review
       'pending_approval', // Awaiting approval
       'approved',         // Approved, ready for payment
+      'finalizing',       // Transactional finalization claim
+      'retracting',       // Transactional retraction claim
       'processing_payment', // Payment in progress
       'paid',             // Fully paid
       'exported',         // Exported/finalized for accountant
@@ -193,6 +213,8 @@ const PayrollRunSchema = new Schema({
   // Dates
   calculatedAt: Date,
   approvedAt: Date,
+  finalizationStartedAt: Date,
+  retractionStartedAt: Date,
   paidAt: Date,
   exportedAt: Date,
   retractedAt: Date,
@@ -202,6 +224,10 @@ const PayrollRunSchema = new Schema({
   createdByName: String,
   processedBy: String,
   processedByName: String,
+  finalizationStartedBy: String,
+  finalizationStartedByName: String,
+  retractionStartedBy: String,
+  retractionStartedByName: String,
   exportedBy: String,
   exportedByName: String,
   retractedBy: String,
@@ -211,6 +237,11 @@ const PayrollRunSchema = new Schema({
   notes: String,
   internalNotes: String, // HR only
   retractionReason: String,
+  retractionSummary: {
+    originalStatus: String,
+    deletedPayslips: { type: Number, min: 0 },
+    resetCompensationRequests: { type: Number, min: 0 }
+  },
   
   // Error tracking
   errors: [{
@@ -246,7 +277,25 @@ const PayrollRunSchema = new Schema({
 // ===== INDEXES =====
 PayrollRunSchema.index({ organizationId: 1, 'payPeriod.year': -1, 'payPeriod.month': -1 });
 PayrollRunSchema.index({ organizationId: 1, status: 1 });
-PayrollRunSchema.index({ runNumber: 1 });
+PayrollRunSchema.index({ organizationId: 1, runNumber: 1 }, { unique: true });
+PayrollRunSchema.index({ organizationId: 1, employerEntityId: 1, activePeriodKey: 1 }, { unique: true, sparse: true });
+
+PayrollRunSchema.pre('validate', function setActivePeriodKey(next) {
+  if (this.status === 'cancelled') {
+    this.activePeriodKey = undefined;
+    return next();
+  }
+  if ((this.payPeriod?.type || 'monthly') === 'monthly') {
+    this.activePeriodKey = `monthly:${this.payPeriod?.year}:${String(this.payPeriod?.month).padStart(2, '0')}`;
+    return next();
+  }
+  const start = this.payPeriod?.startDate ? new Date(this.payPeriod.startDate) : null;
+  const end = this.payPeriod?.endDate ? new Date(this.payPeriod.endDate) : null;
+  if (start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+    this.activePeriodKey = `${this.payPeriod?.type || 'monthly'}:${start.toISOString()}:${end.toISOString()}`;
+  }
+  return next();
+});
 
 // ===== VIRTUALS =====
 
@@ -292,6 +341,7 @@ PayrollRunSchema.methods.initializeSummary = function(totalEmployees, currency =
     totalNetPayroll: 0,
     totalTaxWithheld: 0,
     totalEmployerContributions: 0,
+    totalEmployerCost: 0,
     currency,
     reportingCurrency: options.reportingCurrency || null,
     hasAggregateTotals: true,
@@ -358,6 +408,7 @@ PayrollRunSchema.methods.updateTotalsFromPayslips = function(payslips) {
   this.summary.totalNetPayroll = totalNet;
   this.summary.totalTaxWithheld = totalTax;
   this.summary.totalEmployerContributions = totalEmployerContributions;
+  this.summary.totalEmployerCost = totalGross + totalEmployerContributions;
   
   // Also update employee breakdown
   payslips.forEach(payslip => {
@@ -416,18 +467,7 @@ PayrollRunSchema.methods.logError = function(userId, employeeName, errorType, er
 PayrollRunSchema.statics.generateRunNumber = async function(organizationId, year, month) {
   const prefix = 'PR';
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
-  
-  const lastRun = await this.findOne({
-    organizationId,
-    runNumber: new RegExp(`^${prefix}-${yearMonth}-`)
-  }).sort({ runNumber: -1 });
-  
-  let sequence = 1;
-  if (lastRun) {
-    const parts = lastRun.runNumber.split('-');
-    sequence = parseInt(parts[3]) + 1;
-  }
-  
+  const sequence = await PayrollSequence.reserve(`payroll-run:${organizationId}:${yearMonth}`, 1);
   return `${prefix}-${yearMonth}-${String(sequence).padStart(3, '0')}`;
 };
 
@@ -438,13 +478,18 @@ PayrollRunSchema.statics.getLatestByOrganization = function(organizationId) {
 };
 
 // Check if run exists for period
-PayrollRunSchema.statics.existsForPeriod = async function(organizationId, year, month) {
-  const count = await this.countDocuments({
+PayrollRunSchema.statics.existsForPeriod = async function(organizationId, year, month, options = {}) {
+  const query = {
     organizationId,
     'payPeriod.year': year,
     'payPeriod.month': month,
     status: { $nin: ['cancelled'] }
-  });
+  };
+  if (options.employerEntityId) query.employerEntityId = options.employerEntityId;
+  if (options.type) query['payPeriod.type'] = options.type;
+  if (options.startDate) query['payPeriod.startDate'] = new Date(options.startDate);
+  if (options.endDate) query['payPeriod.endDate'] = new Date(options.endDate);
+  const count = await this.countDocuments(query);
   return count > 0;
 };
 
@@ -458,6 +503,7 @@ PayrollRunSchema.statics.getByOrganization = function(organizationId, options = 
   if (options.status) {
     query.status = Array.isArray(options.status) ? { $in: options.status } : options.status;
   }
+  if (options.employerEntityId) query.employerEntityId = options.employerEntityId;
   
   return this.find(query)
     .sort({ 'payPeriod.year': -1, 'payPeriod.month': -1, createdAt: -1 })

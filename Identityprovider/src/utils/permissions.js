@@ -6,6 +6,14 @@
  */
 
 import { Organization } from '../models/Organization.js'
+import { normalizeAppAccess } from './appAccess.js'
+
+export function organizationClaimAppAccess(accountMembership, organizationMember) {
+  // The Organization member is the canonical authorization record used by
+  // app launch checks. An older embedded Account membership may still carry
+  // its historical default `all`; it must not mask a newer selected-app rule.
+  return normalizeAppAccess(organizationMember?.appAccess || accountMembership?.appAccess)
+}
 
 // Base permissions (organization-level)
 const basePermissions = {
@@ -253,7 +261,7 @@ export async function buildOrganizationClaims(account) {
 
   const organizationDocs = organizationIds.length > 0
     ? await Organization.find({ _id: { $in: organizationIds } })
-      .select('name departments branches members.account members.status members.designation members.employeeId members.branch')
+      .select('name departments branches members.account members.status members.designation members.employeeId members.branch members.appAccess')
       .lean()
     : []
 
@@ -265,7 +273,13 @@ export async function buildOrganizationClaims(account) {
   const claimsPromises = activeOrgs.map(async (org) => {
     const orgDoc = org.organization
     const orgId = orgDoc._id?.toString() || orgDoc.toString()
-    const fullOrgDoc = organizationDocById.get(orgId) || orgDoc
+    const fullOrgDoc = organizationDocById.get(orgId)
+    // Account.organizations is a denormalized navigation aid, not the
+    // authorization authority. A crash between removing the canonical
+    // Organization member and pruning Account.organizations must fail closed.
+    // Never mint an OIDC organization claim unless the canonical organization
+    // still contains this account as an active member.
+    if (!fullOrgDoc) return null
     const departments = Array.isArray(fullOrgDoc.departments) ? fullOrgDoc.departments : []
     const branches = Array.isArray(fullOrgDoc.branches) ? fullOrgDoc.branches : []
     const memberEntry = Array.isArray(fullOrgDoc.members)
@@ -287,6 +301,7 @@ export async function buildOrganizationClaims(account) {
     const memberDepartment = memberDepartmentId
       ? departments.find((department) => department._id?.toString() === memberDepartmentId)
       : null
+    if (!memberEntry) return null
     const memberBranchId = memberEntry?.branch?.toString() || null
     const memberBranch = memberBranchId
       ? branches.find((branch) => branch._id?.toString() === memberBranchId)
@@ -313,6 +328,9 @@ export async function buildOrganizationClaims(account) {
       branchId: memberBranchId,
       branchName: memberBranch?.name || null,
       branchCode: memberBranch?.code || null,
+      // Downstream apps use this signed claim to distinguish organization
+      // membership from authorization to enter a particular product.
+      appAccess: organizationClaimAppAccess(org, memberEntry),
       departmentHeadPermissions: headedDepartments,
       permissions: getPermissionsForRole(org.role),
       appPermissions: {
@@ -325,7 +343,7 @@ export async function buildOrganizationClaims(account) {
     }
   })
 
-  const claims = await Promise.all(claimsPromises)
+  const claims = (await Promise.all(claimsPromises)).filter(Boolean)
 
   console.log(`⏱️ [PERF] buildOrganizationClaims: ${claims.length} orgs in ${Date.now() - startTime}ms`)
 

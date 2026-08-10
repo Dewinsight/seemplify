@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import api from '@/lib/api';
 import { normalizePayrollCurrencies, payrollCurrencies, PayrollCurrencyOption } from '@/lib/payrollCurrencies';
@@ -6,6 +6,12 @@ import { normalizePayrollCurrencies, payrollCurrencies, PayrollCurrencyOption } 
 export function usePayrollCurrencies() {
   const [currencies, setCurrencies] = useState<PayrollCurrencyOption[]>(payrollCurrencies);
   const [loading, setLoading] = useState(true);
+  const paymentCurrencies = useMemo(() => currencies.filter((currency) => (
+    currency.kind !== 'custom'
+    && currency.enabled !== false
+    && currency.paymentEnabled !== false
+    && currency.statutoryEligible !== false
+  )), [currencies]);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +40,7 @@ export function usePayrollCurrencies() {
 
   return {
     currencies,
+    paymentCurrencies,
     loading,
   };
 }

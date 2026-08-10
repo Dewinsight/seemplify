@@ -54,7 +54,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 
 export default function MyRequestsPage() {
     const router = useRouter();
-    const { currencies } = usePayrollCurrencies();
+    const { paymentCurrencies: currencies } = usePayrollCurrencies();
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [requests, setRequests] = useState<any[]>([]);
@@ -71,6 +71,12 @@ export default function MyRequestsPage() {
         reason: '',
         effectiveDate: new Date().toISOString().split('T')[0]
     });
+
+    useEffect(() => {
+        if (currencies.length > 0 && !currencies.some((currency) => currency.code === formData.currency)) {
+            setFormData((current) => ({ ...current, currency: currencies[0].code }));
+        }
+    }, [currencies, formData.currency]);
 
     useEffect(() => {
         if (!isAuthenticated()) {

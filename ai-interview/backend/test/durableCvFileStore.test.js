@@ -63,6 +63,36 @@ test('GridFS reads verify file metadata, byte length, and content SHA-256', asyn
   );
 });
 
+test('GridFS cleanup removes partial chunks when a crash left no files document', async () => {
+  const reference = {
+    provider: 'gridfs',
+    bucket: 'ai_interview_cv_ingestion_files',
+    fileId: '507f1f77bcf86cd799439012'
+  };
+  let deletedFileId;
+  const database = {
+    collection(name) {
+      assert.equal(name, 'ai_interview_cv_ingestion_files.chunks');
+      return {
+        async deleteMany(filter) {
+          deletedFileId = String(filter.files_id);
+          return { deletedCount: 3 };
+        }
+      };
+    }
+  };
+  durableCvFileStore._setGridFsBucketFactoryForTests(() => ({
+    async delete() {
+      throw new Error(`File not found for id ${reference.fileId}`);
+    }
+  }));
+  assert.equal(
+    await durableCvFileStore._removeGridFsForTests(database, reference),
+    true
+  );
+  assert.equal(deletedFileId, reference.fileId);
+});
+
 test('filesystem persistence and reads verify length and SHA-256', async () => {
   const bytes = Buffer.from('Grace Hopper\ngrace@example.com\nCompiler and distributed systems leader.');
   const reference = await durableCvFileStore.persistBuffer(bytes, {

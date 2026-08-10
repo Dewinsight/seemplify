@@ -1,5 +1,23 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const PayrollSequence = require('./PayrollSequence');
+
+function currencyMinorUnits(code) {
+  try {
+    return new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: String(code || 'USD').toUpperCase(),
+    }).resolvedOptions().maximumFractionDigits;
+  } catch (_error) {
+    return 2;
+  }
+}
+
+function roundForCurrency(value, code) {
+  const numeric = Number(value || 0);
+  const factor = 10 ** currencyMinorUnits(code);
+  return Math.round((numeric + Number.EPSILON) * factor) / factor;
+}
 
 const PAYSLIP_NUMBER_PREFIX = 'PS';
 
@@ -45,6 +63,7 @@ const EarningItemSchema = new Schema({
       'arrears',         // Back pay/salary arrears
       'reimbursement',   // Expense reimbursement
       'gratuity',        // End of service gratuity
+      'benefit_in_kind', // Taxable/non-taxable non-cash benefit
       'other'            // Other earnings
     ],
     required: true
@@ -53,6 +72,12 @@ const EarningItemSchema = new Schema({
   amount: { type: Number, required: true, default: 0 },
   description: String,
   taxable: { type: Boolean, default: true },
+  taxableAmount: { type: Number, min: 0, default: null },
+  cashPayable: { type: Boolean, default: true },
+  classificationCode: { type: String, trim: true, default: '' },
+  taxTreatment: { type: String, trim: true, default: '' },
+  taxTreatmentSource: { type: String, trim: true, default: '' },
+  metadata: Schema.Types.Mixed,
   isRecurring: { type: Boolean, default: true }, // Part of regular salary structure
   linkedRequestId: String // Link to BonusRequest/CompensationRequest if applicable
 }, { _id: false });
@@ -63,6 +88,7 @@ const DeductionItemSchema = new Schema({
     type: String,
     enum: [
       'income_tax',           // Income tax
+      'payroll_tax',          // Employee statutory levy other than income tax
       'social_security',      // Social security/National Insurance
       'pension',              // Pension/401k contribution
       'health_insurance',     // Health insurance premium
@@ -97,13 +123,17 @@ const EmployerContributionSchema = new Schema({
       'life_insurance',       // Employer life insurance contribution
       'social_security',      // Employer social security contribution
       'training_allowance',   // Training/education benefit
+      'payroll_tax',          // Employer-only statutory levy/tax
       'other'
     ],
     required: true
   },
   name: { type: String, required: true },
   amount: { type: Number, required: true, default: 0 },
-  description: String
+  description: String,
+  liabilityCode: { type: String, trim: true, default: '' },
+  remittanceAuthority: { type: String, trim: true, default: '' },
+  metadata: Schema.Types.Mixed
 }, { _id: false });
 
 // Tax breakdown schema
@@ -129,6 +159,11 @@ const TaxBreakdownSchema = new Schema({
   notes: [String],
   details: Schema.Types.Mixed,
   calculationTrace: Schema.Types.Mixed,
+  calculationCurrency: String,
+  payrollCurrency: String,
+  currencyConversion: Schema.Types.Mixed,
+  calculationBases: Schema.Types.Mixed,
+  compliance: Schema.Types.Mixed,
 }, { _id: false });
 
 // Year-to-Date summary schema
@@ -156,8 +191,7 @@ const PayslipSchema = new Schema({
   // Identifiers
   payslipNumber: { 
     type: String, 
-    required: true, 
-    unique: true 
+    required: true
   }, // e.g., "PS-2024-12-001"
   payrollRunId: { 
     type: Schema.Types.ObjectId, 
@@ -168,6 +202,14 @@ const PayslipSchema = new Schema({
   // Employee Identification (from IdP)
   userId: { type: String, required: true, index: true },
   organizationId: { type: String, required: true, index: true },
+  employerEntityId: { type: Schema.Types.ObjectId, ref: 'PayrollEmployerEntity', default: null, index: true },
+  employerEntitySnapshot: {
+    code: String,
+    legalName: String,
+    countryCode: String,
+    jurisdictionCode: String,
+    currency: String,
+  },
   
   // Pay Period
   payPeriod: {
@@ -256,6 +298,9 @@ const PayslipSchema = new Schema({
     totalBonuses: { type: Number, default: 0 },
     overtimePay: { type: Number, default: 0 },
     otherEarnings: { type: Number, default: 0 },
+    taxableBenefits: { type: Number, default: 0 },
+    taxableGrossPay: { type: Number, default: 0 },
+    cashGrossPay: { type: Number, default: 0 },
     grossPay: { type: Number, required: true, default: 0 }
   },
   
@@ -363,8 +408,10 @@ const PayslipSchema = new Schema({
 // ===== INDEXES =====
 PayslipSchema.index({ userId: 1, 'payPeriod.year': -1, 'payPeriod.month': -1 });
 PayslipSchema.index({ organizationId: 1, status: 1 });
+PayslipSchema.index({ organizationId: 1, status: 1, 'payPeriod.paymentDate': -1 });
 PayslipSchema.index({ payrollRunId: 1 });
 PayslipSchema.index({ 'payPeriod.paymentDate': -1 });
+PayslipSchema.index({ organizationId: 1, payslipNumber: 1 }, { unique: true });
 
 // ===== VIRTUALS =====
 
@@ -386,9 +433,19 @@ PayslipSchema.methods.calculateTotals = function() {
   let totalBonuses = 0;
   let overtimePay = 0;
   let otherEarnings = 0;
+  let taxableBenefits = 0;
+  let taxableGrossPay = 0;
   
   this.earnings.forEach(earning => {
-    grossPay += earning.amount;
+    const amount = Number(earning.amount || 0);
+    const taxableAmount = earning.taxable === false
+      ? 0
+      : Number(earning.taxableAmount ?? earning.amount ?? 0);
+    if (earning.cashPayable !== false) grossPay += amount;
+    taxableGrossPay += taxableAmount;
+    if (earning.type === 'benefit_in_kind' || earning.cashPayable === false) {
+      taxableBenefits += taxableAmount;
+    }
     switch (earning.type) {
       case 'basic':
         basicSalary += earning.amount;
@@ -431,6 +488,7 @@ PayslipSchema.methods.calculateTotals = function() {
         break;
       case 'social_security':
       case 'pension':
+      case 'payroll_tax':
         statutoryDeductions += deduction.amount;
         break;
       case 'health_insurance':
@@ -460,6 +518,9 @@ PayslipSchema.methods.calculateTotals = function() {
     totalBonuses,
     overtimePay,
     otherEarnings,
+    taxableBenefits,
+    taxableGrossPay,
+    cashGrossPay: grossPay,
     grossPay
   };
   
@@ -478,6 +539,34 @@ PayslipSchema.methods.calculateTotals = function() {
   return this;
 };
 
+PayslipSchema.methods.normalizeCurrencyAmounts = function() {
+  const code = this.currency || 'USD';
+  for (const earning of this.earnings || []) {
+    earning.amount = roundForCurrency(earning.amount, code);
+    if (earning.taxableAmount !== null && earning.taxableAmount !== undefined) {
+      earning.taxableAmount = roundForCurrency(earning.taxableAmount, code);
+    }
+  }
+  for (const deduction of this.deductions || []) {
+    deduction.amount = roundForCurrency(deduction.amount, code);
+  }
+  for (const contribution of this.employerContributions || []) {
+    contribution.amount = roundForCurrency(contribution.amount, code);
+  }
+  if (this.taxBreakdown) {
+    for (const field of [
+      'grossTaxableIncome', 'taxExemptIncome', 'deductionsBeforeTax', 'netTaxableIncome',
+      'taxAmount', 'yearToDateTax', 'annualizedIncome', 'annualizedTaxableIncome',
+      'taxableIncomeAfterReliefs',
+    ]) {
+      if (this.taxBreakdown[field] !== null && this.taxBreakdown[field] !== undefined) {
+        this.taxBreakdown[field] = roundForCurrency(this.taxBreakdown[field], code);
+      }
+    }
+  }
+  return this.calculateTotals();
+};
+
 // Add an earning item
 PayslipSchema.methods.addEarning = function(type, name, amount, options = {}) {
   this.earnings.push({
@@ -486,6 +575,12 @@ PayslipSchema.methods.addEarning = function(type, name, amount, options = {}) {
     amount,
     description: options.description,
     taxable: options.taxable !== false,
+    taxableAmount: options.taxable === false ? 0 : (options.taxableAmount ?? amount),
+    cashPayable: options.cashPayable !== false,
+    classificationCode: options.classificationCode || '',
+    taxTreatment: options.taxTreatment || '',
+    taxTreatmentSource: options.taxTreatmentSource || '',
+    metadata: options.metadata,
     isRecurring: options.isRecurring !== false,
     linkedRequestId: options.linkedRequestId
   });
@@ -510,7 +605,7 @@ PayslipSchema.methods.addDeduction = function(type, name, amount, options = {}) 
 
 // Generate payslip number
 PayslipSchema.statics.generatePayslipNumber = async function(organizationId, year, month) {
-  const sequence = await this.getNextPayslipSequence(organizationId, year, month);
+  const sequence = await this.reservePayslipSequences(organizationId, year, month, 1);
   return this.buildPayslipNumber(year, month, sequence);
 };
 
@@ -530,6 +625,10 @@ PayslipSchema.statics.getNextPayslipSequence = async function(organizationId, ye
 
   const lastPayslip = await this.findOne(query).sort({ payslipNumber: -1 }).lean();
   return lastPayslip ? parsePayslipSequence(lastPayslip.payslipNumber) + 1 : 1;
+};
+
+PayslipSchema.statics.reservePayslipSequences = function(organizationId, year, month, count = 1) {
+  return PayrollSequence.reserve(`payslip:${organizationId}:${year}-${String(month).padStart(2, '0')}`, count);
 };
 
 // Get payslips for a user

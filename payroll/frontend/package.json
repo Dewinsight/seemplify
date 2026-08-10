@@ -6,7 +6,8 @@
     "dev": "next dev -p 5007",
     "build": "next build",
     "start": "next start -p 5007",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e:tax": "playwright test --config=playwright.tax.config.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -31,6 +32,7 @@
     "axios": "^1.14.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/lodash": "^4.17.21",
     "@types/next": "^8.0.7",
     "@types/node": "^20",

@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payroll tax certification — 2026-08-09</title>
+  <style>
+    :root { color-scheme: light; --ink:#17202a; --muted:#64707d; --line:#dfe4e8; --paper:#f5f6f7; --card:#fff; --red:#a52a2a; --red-bg:#fff1ef; --amber:#8a5a00; --amber-bg:#fff8e6; --blue:#215a8a; --green:#196b45; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { width:min(1480px, calc(100% - 40px)); margin:28px auto 64px; }
+    header { border:1px solid var(--line); background:var(--card); padding:28px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:28px; align-items:start; }
+    h1 { margin:0 0 8px; font-size:28px; letter-spacing:-.035em; }
+    h2 { margin:0; font-size:16px; }
+    h3 { margin:0; font-size:14px; }
+    p { margin:0; }
+    .eyebrow { color:var(--blue); font-size:11px; font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
+    .lede { max-width:800px; color:var(--muted); font-size:15px; }
+    .verdict { border-left:3px solid var(--red); padding:2px 0 2px 14px; min-width:260px; }
+    .verdict strong { display:block; color:var(--red); font-size:18px; }
+    .verdict span { color:var(--muted); }
+    .metrics { display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); border:1px solid var(--line); border-top:0; background:var(--card); }
+    .metric { padding:18px 20px; border-right:1px solid var(--line); }
+    .metric:last-child { border-right:0; }
+    .metric strong { display:block; font-size:24px; letter-spacing:-.04em; }
+    .metric span, small, .muted { color:var(--muted); }
+    .section { margin-top:22px; border:1px solid var(--line); background:var(--card); }
+    .section-head { padding:18px 20px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:20px; align-items:end; }
+    .section-head p { color:var(--muted); max-width:800px; }
+    .country-row { display:grid; grid-template-columns:220px 210px 300px minmax(300px,1fr); gap:22px; padding:18px 20px; border-bottom:1px solid var(--line); align-items:start; }
+    .country-row:last-child { border-bottom:0; }
+    .country-title { display:flex; gap:12px; align-items:flex-start; }
+    .country-title p { color:var(--muted); font-size:12px; margin-top:3px; }
+    .code { display:inline-grid; place-items:center; width:38px; height:28px; border:1px solid var(--line); background:#f9fafb; font:700 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .status-cell { display:flex; flex-direction:column; align-items:flex-start; gap:7px; }
+    .status { display:inline-flex; border:1px solid; padding:3px 7px; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .status.preview { color:var(--amber); background:var(--amber-bg); border-color:#ead49a; }
+    .status.blocked { color:var(--red); background:var(--red-bg); border-color:#e7b8b1; }
+    .status.candidate { color:var(--blue); background:#eef6fc; border-color:#b7cde0; }
+    .status-cell strong { font-size:12px; }
+    .numbers { display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; }
+    .numbers span { font-weight:700; }
+    .numbers small { display:block; font-weight:500; }
+    .rate { grid-column:1/-1; height:4px; background:#e9edf0; margin-top:4px; overflow:hidden; }
+    .rate i { display:block; height:100%; background:var(--blue); }
+    .numbers > small { grid-column:1/-1; }
+    .finding p { margin-bottom:8px; }
+    .sources { display:flex; flex-wrap:wrap; gap:5px; font-size:12px; }
+    .sources a { color:var(--blue); text-decoration:none; border-bottom:1px solid #b7cde0; }
+    .dot { color:#9aa3ab; }
+    .candidate-row { display:grid; grid-template-columns:240px 190px minmax(280px,1fr) minmax(320px,1.25fr); gap:22px; padding:18px 20px; border-bottom:1px solid var(--line); align-items:start; }
+    .candidate-row:last-child { border-bottom:0; }
+    .candidate-identity { display:flex; gap:12px; align-items:flex-start; }
+    .candidate-identity p { color:var(--muted); font:11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; margin-top:4px; overflow-wrap:anywhere; }
+    .candidate-state { display:flex; flex-direction:column; align-items:flex-start; gap:7px; }
+    .candidate-state code { color:var(--muted); font-size:11px; }
+    .candidate-row b { display:block; margin-bottom:6px; }
+    .candidate-row ul { margin:0 0 7px; padding-left:17px; }
+    .candidate-row li { margin:3px 0; }
+    .blocker-list { color:#6f2a25; }
+    .review-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .review-card { padding:20px; border-right:1px solid var(--line); }
+    .review-card:last-child { border-right:0; }
+    .review-title { display:flex; gap:12px; align-items:flex-start; margin-bottom:12px; }
+    .review-title p { color:var(--muted); font:11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .review-title .status { margin-left:auto; }
+    .review-evidence { display:grid; gap:3px; border-block:1px solid var(--line); padding:11px 0; margin:13px 0; }
+    .review-evidence span { color:var(--muted); }
+    .review-columns { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    .review-columns b { display:block; margin-bottom:5px; }
+    .review-columns ul { margin:0; padding-left:17px; }
+    .review-card footer { margin:14px 0 5px; padding-top:10px; border-top:1px solid var(--line); }
+    .rollout-group { border-bottom:1px solid var(--line); }
+    .rollout-group:last-child { border-bottom:0; }
+    .rollout-group summary { cursor:pointer; padding:16px 20px; display:flex; justify-content:space-between; gap:20px; align-items:center; }
+    .rollout-group summary span:first-child { display:flex; flex-direction:column; }
+    .rollout-group summary small { margin-top:2px; }
+    .rollout-count { color:var(--muted); font-size:12px; white-space:nowrap; }
+    .rollout-count strong { color:var(--ink); }
+    .rollout-group > p { color:var(--muted); padding:0 20px 12px; }
+    .jurisdiction-chips { display:flex; flex-wrap:wrap; gap:6px; padding:0 20px 14px; }
+    .jurisdiction-chip { display:inline-flex; gap:6px; align-items:center; border:1px solid var(--line); background:#fafbfc; padding:4px 7px; font-size:11px; }
+    .jurisdiction-chip code { color:var(--muted); }
+    .jurisdiction-chip.is-candidate { color:var(--blue); border-color:#b7cde0; background:#eef6fc; }
+    .inventory-source { display:inline-block; margin:0 20px 16px; color:var(--blue); font-size:12px; text-decoration:none; border-bottom:1px solid #b7cde0; }
+    .browser-evidence { display:grid; grid-template-columns:repeat(3,1fr); }
+    .browser-evidence > div { padding:18px 20px; border-right:1px solid var(--line); }
+    .browser-evidence > div:last-child { border-right:0; }
+    .browser-evidence b { display:block; margin-bottom:5px; }
+    .browser-evidence span { color:var(--muted); }
+    .gates { display:grid; grid-template-columns:repeat(4,1fr); }
+    .gate { padding:18px 20px; border-right:1px solid var(--line); }
+    .gate:last-child { border-right:0; }
+    .gate b { display:block; margin-bottom:5px; }
+    .gate span { color:var(--muted); }
+    footer { margin-top:18px; color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:20px; }
+    @media (max-width:1100px) { .country-row { grid-template-columns:180px 180px 1fr; } .finding { grid-column:1/-1; } .candidate-row { grid-template-columns:200px 180px 1fr; } .candidate-row > :last-child { grid-column:1/-1; } .metrics { grid-template-columns:repeat(3,1fr); } .metric { border-bottom:1px solid var(--line); } }
+    @media (max-width:720px) { main { width:calc(100% - 20px); margin-top:10px; } header { grid-template-columns:1fr; } .metrics,.gates,.browser-evidence,.review-grid { grid-template-columns:1fr; } .country-row,.candidate-row { grid-template-columns:1fr; } .finding,.candidate-row > :last-child { grid-column:auto; } .review-card { border-right:0; border-bottom:1px solid var(--line); } }
+    @media print { body { background:#fff; } main { width:100%; margin:0; } .country-row { break-inside:avoid; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <div class="eyebrow">Payroll statutory certification</div>
+        <h1>Global tax-pack readiness</h1>
+        <p class="lede">A source-led implementation report for the current payroll engine. Preview numbers below prove that calculation paths execute; only official expected-value fixtures, current credentials, independent review, and a separate publisher can make a pack runnable.</p>
+      </div>
+      <div class="verdict"><strong>0 packs certified</strong><span>All final payroll paths remain fail-closed.</span></div>
+    </header>
+    <section class="metrics" aria-label="Certification metrics">
+      <div class="metric"><strong>11</strong><span>seeded jurisdiction entries</span></div>
+      <div class="metric"><strong>8</strong><span>review-only previews</span></div>
+      <div class="metric"><strong>3</strong><span>blocked templates</span></div>
+      <div class="metric"><strong>7</strong><span>quarantined statutory adapters</span></div>
+      <div class="metric"><strong>44</strong><span>synthetic smoke scenarios</span></div>
+      <div class="metric"><strong>0</strong><span>runnable scenarios</span></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><div><h2>Quarantined statutory adapters</h2><p>These are exact, source-backed implementation candidates with immutable code and fixture digests. The preview registry has no payroll-posting path; certification and effective-dated pack binding are separate controls.</p></div><span class="status candidate">posting disabled</span></div>
+
+    <article class="candidate-row">
+      <div class="candidate-identity">
+        <span class="code">CA</span>
+        <div><h3>Canada / Ontario Payroll 2026 Wave 1</h3><p>CA_ON_2026_WAVE_1</p></div>
+      </div>
+      <div class="candidate-state">
+        <span class="status candidate">quarantined candidate</span>
+        <small>2026-01-01 to 2026-12-31</small>
+        <code>d12a1fd02482</code>
+      </div>
+      <div>
+        <b>Verified implementation scope</b>
+        <ul><li>ordinary periodic salary or wages with Ontario as the province of employment</li><li>CRA T4127 Option 1 federal and Ontario withholding, CPP, CPP2, and standard-rate EI</li><li>documented TD1/TD1ON, exact YTD caps, regular-remitter calendar, and PD7A liability metadata</li></ul>
+        <b>Executed golden evidence</b><ul><li>Monthly CAD 5,000: CPP 280.15, employee EI 81.50, employer EI 114.10, federal tax 444.86, Ontario tax 248.47, net pay 3,945.02</li><li>CPP2 and EI annual-maximum crossings are asserted to the cent with YTD context</li><li>55 adapter tests and official January/July source-version selection fixtures</li></ul>
+        <small>Fixture suite: services/__tests__/Canada2026OntarioPayrollAdapter.test.js</small>
+      </div>
+      <div>
+        <b>Still blocking payroll posting</b>
+        <ul class="blocker-list"><li>credentialed Canadian federal and Ontario tax-law, payroll-calculation, and independent-QA reviews are not recorded</li><li>Quebec and every province or territory other than Ontario require separate certified adapters</li><li>benefits, non-periodic pay, partial-year CPP, reduced-rate EI, non-regular remitters, corrections, and T4 filing remain excluded</li><li>the adapter is not bound to a published effective-dated jurisdiction pack</li></ul>
+        <div class="sources"><a href="https://www.canada.ca/content/dam/cra-arc/migration/cra-arc/tx/bsnss/tpcs/pyrll/t4032/2026/t4032-on-1-26e.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jan/t4127-jan-payroll-deductions-formulas-computer-programs.html" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jul/t4127-jul-payroll-deductions-formulas.html" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.canada.ca/en/revenue-agency/services/forms-publications/td1-personal-tax-credits-returns/td1-forms-pay-received-on-january-1-later.html" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/calculating-deductions/making-deductions/second-additional-cpp-contribution-rates-maximums.html" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/canada-pension-plan-cpp/cpp-contribution-rates-maximums-exemptions.html" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/employment-insurance-ei/ei-premium-rates-maximums.html" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/remitting-source-deductions/how-when-remit-due-dates.html" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/remitting-source-deductions/how-when-remit-overview.html" target="_blank" rel="noreferrer">Official source</a></div>
+      </div>
+    </article>
+    <article class="candidate-row">
+      <div class="candidate-identity">
+        <span class="code">GB</span>
+        <div><h3>United Kingdom PAYE 2026/27 Wave 1</h3><p>GB_PAYE_2026_WAVE_1</p></div>
+      </div>
+      <div class="candidate-state">
+        <span class="status candidate">quarantined candidate</span>
+        <small>2026-04-06 to 2027-04-05</small>
+        <code>ead1158a7f1a</code>
+      </div>
+      <div>
+        <b>Verified implementation scope</b>
+        <ul><li>regular weekly and monthly cumulative or week-1/month-1 PAYE</li><li>rest-of-UK, Scottish, and Welsh tax-code tables through D2</li><li>HMRC regulatory deduction cap, refunds, FPS and remittance metadata</li></ul>
+        <b>Executed golden evidence</b><ul><li>162 supported HMRC 2026/27 workbook rows independently replayed with zero mismatches</li><li>91 adapter tests cover cumulative, W1/M1, regional, K, BR, D0-D2, 0T and NT cases</li></ul>
+        <small>Fixture suite: services/__tests__/UnitedKingdomPaye2026Service.test.js</small>
+      </div>
+      <div>
+        <b>Still blocking payroll posting</b>
+        <ul class="blocker-list"><li>credentialed UK tax-law, payroll-calculation, and independent-QA reviews are not recorded</li><li>SD3, week 53+, irregular intervals, free-of-tax calculations, and quarterly remitters remain excluded</li><li>the adapter is not bound to a published effective-dated jurisdiction pack</li></ul>
+        <div class="sources"><a href="https://www.gov.uk/government/publications/payroll-technical-specifications-income-tax" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.gov.uk/government/publications/software-developers-payroll-test-data-2026-to-2027" target="_blank" rel="noreferrer">Official source</a></div>
+      </div>
+    </article>
+    <article class="candidate-row">
+      <div class="candidate-identity">
+        <span class="code">GH</span>
+        <div><h3>Ghana Payroll 2026 Wave 1</h3><p>GH_2026_WAVE_1</p></div>
+      </div>
+      <div class="candidate-state">
+        <span class="status candidate">quarantined candidate</span>
+        <small>2026-01-01 to 2026-12-31</small>
+        <code>6376daafcb16</code>
+      </div>
+      <div>
+        <b>Verified implementation scope</b>
+        <ul><li>resident and non-resident ordinary monthly PAYE below the guarded top-band conflict</li><li>SSNIT employee/employer amounts with Tier 1, Tier 2 and NHIA routing plus registered-scheme evidence</li><li>evidence-bound reliefs, concessionary bonus, junior overtime and Act 1094 vehicle/fuel benefits</li></ul>
+        <b>Executed golden evidence</b><ul><li>Monthly GHS 5,000 basic plus 500 allowance: PAYE 904.75, net pay 4,320.25</li><li>GHS 1,500 pension base: employee 82.50, employer 195.00, Tier 1 202.50, Tier 2 75.00, NHIA 37.50</li><li>51 adapter tests cover PAYE boundaries, pension min/max, bonus, overtime, benefits and liabilities</li></ul>
+        <small>Fixture suite: services/__tests__/GhanaPayroll2026Service.test.js</small>
+      </div>
+      <div>
+        <b>Still blocking payroll posting</b>
+        <ul class="blocker-list"><li>credentialed Ghana tax-law, payroll-calculation, and independent-QA reviews are not recorded</li><li>GRA top-band widths and labels conflict; resident monthly chargeable income above GHS 50,000 is rejected</li><li>SSNIT minimum Tier 1 allocation and fractional-pesewa rounding lack an unambiguous official rule</li><li>casual/temporary/seasonal/expatriate cases, cumulative true-ups, salary changes and holiday-adjusted due dates remain excluded</li><li>the adapter is not bound to a published effective-dated jurisdiction pack</li></ul>
+        <div class="sources"><a href="https://gra.gov.gh/domestic-tax/personal-tax-relief/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://gra.gov.gh/domestic-tax/tax-types/paye/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://gra.gov.gh/implementation-of-new-tax-laws-and-amendments/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://gra.gov.gh/wp-content/uploads/2020/09/Practice-Note-on-Gains-or-Profits-from-Employment.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://gra.gov.gh/wp-content/uploads/2023/04/INCOME-TAX-AMENDMENT-ACT-2023-ACT-1094.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://npra.gov.gh/assets/documents/Guidelines-for-the-payment-of-contributions.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.npra.gov.gh/regulations/act/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.ssnit.org.gh/become-an-employer/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.ssnit.org.gh/faqs/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.ssnit.org.gh/wp-content/uploads/2023/08/SSNIT-Omnibus.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.ssnit.org.gh/wp-content/uploads/2026/01/Public-Notice-Min-Max-Insurable.pdf" target="_blank" rel="noreferrer">Official source</a></div>
+      </div>
+    </article>
+    <article class="candidate-row">
+      <div class="candidate-identity">
+        <span class="code">KE</span>
+        <div><h3>Kenya Monthly Payroll 2026 Wave 1</h3><p>KE_2026_MONTHLY_STANDALONE</p></div>
+      </div>
+      <div class="candidate-state">
+        <span class="status candidate">quarantined candidate</span>
+        <small>2026-01-01 to 2026-12-31</small>
+        <code>e1e7d48b5b11</code>
+      </div>
+      <div>
+        <b>Verified implementation scope</b>
+        <ul><li>ordinary monthly resident/non-resident PAYE</li><li>AHL, SHIF, NSSF Year 3/4, contracted-out Tier II, aggregate pension cap, PWD, and NITA</li><li>exact component-level liability and remittance metadata</li></ul>
+        <b>Executed golden evidence</b><ul><li>Monthly KES 100,000: PAYE 19,308.35, employee statutory 29,558.35, employer statutory 7,550.00, net pay 70,441.65</li><li>40 adapter tests cover PAYE bands, NSSF years/ages, pension cap, PWD, NITA and liability metadata</li></ul>
+        <small>Fixture suite: services/__tests__/Kenya2026PayrollAdapter.test.js</small>
+      </div>
+      <div>
+        <b>Still blocking payroll posting</b>
+        <ul class="blocker-list"><li>credentialed Kenya tax-law, payroll-calculation, and independent-QA reviews are not recorded</li><li>benefit/reimbursement valuation, annual reconciliation, multiple employments, and prior-period corrections remain excluded</li><li>NITA statutory and operational due-date guidance conflicts and needs counsel sign-off</li><li>the adapter is not bound to a published effective-dated jurisdiction pack</li></ul>
+        <div class="sources"><a href="https://ecitizen.kra.go.ke/calculators/nssf-calculator" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://new.kenyalaw.org/akn/ke/act/1959/48/eng%402024-04-26" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://new.kenyalaw.org/akn/ke/act/1973/16/eng%402026-01-01" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://new.kenyalaw.org/akn/ke/act/2013/45/eng%402022-12-31" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://new.kenyalaw.org/akn/ke/act/2024/2/eng%402024-03-21" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://new.kenyalaw.org/akn/ke/act/ln/2010/36/eng%402022-12-31" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://new.kenyalaw.org/akn/ke/act/ln/2014/85" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://new.kenyalaw.org/akn/ke/act/ln/2024/49/eng%402025-02-28" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.kra.go.ke/images/publications/PAYE_Guide-2.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.kra.go.ke/individual/filing-paying/types-of-taxes/paye" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.kra.go.ke/individual/special-needs/people-with-disability/people-with-disability/129-getting-an-exemption-certificate" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.kra.go.ke/news-center/public-notices/2307-guidance-on-employer-obligations-in-applying-income-tax-deductions%2C-reliefs-and-exemptions" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.nita.go.ke/our-services/levy-inspectorate.html" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.nssf.or.ke/notice-to-employers-year-4-2026-nssf-contribution-rates" target="_blank" rel="noreferrer">Official source</a></div>
+      </div>
+    </article>
+    <article class="candidate-row">
+      <div class="candidate-identity">
+        <span class="code">NG</span>
+        <div><h3>Nigeria Payroll 2026 Wave 1</h3><p>NG_2026_WAVE_1</p></div>
+      </div>
+      <div class="candidate-state">
+        <span class="status candidate">quarantined candidate</span>
+        <small>2026-01-01 to 2026-12-31</small>
+        <code>4a268e604c6a</code>
+      </div>
+      <div>
+        <b>Verified implementation scope</b>
+        <ul><li>ordinary resident organised-private-sector employee with at least five employees and stable monthly terms</li><li>2026 JRB/Nigeria Tax Act cumulative PAYE delta with a pinned synthetic State/FCT preview route</li><li>PRA pension, NHF, evidenced OPSSHIP/NHIA and NSITF, ITF provision and liability metadata</li></ul>
+        <b>Executed golden evidence</b><ul><li>Monthly NGN 1,000,000 June payroll: PAYE 138,230.00, employee statutory deductions 239,730.00, net pay 760,270.00</li><li>Employer pension/NHIA/NSITF/ITF cost and provision total 150,900.00 using the visible minimum Form 5A fixture basis</li><li>56 adapter tests cover all PAYE band boundaries, cumulative YTD, contributions, evidence and fail-closed exclusions</li></ul>
+        <small>Fixture suite: services/__tests__/Nigeria2026PayrollAdapter.test.js</small>
+      </div>
+      <div>
+        <b>Still blocking payroll posting</b>
+        <ul class="blocker-list"><li>the review evidence is AI-generated and is not a licensed Nigerian tax-professional opinion</li><li>each State or FCT filing route, registration, form and local administrative overlay requires separate certification</li><li>variable pay, starters/leavers, corrections, benefits and other non-periodic cases lack a certified cumulative method</li><li>NHIA and NSITF due dates/risk rates plus the ITF Form 5A basis require employer evidence or Nigerian counsel</li><li>the declared kobo rounding sequence is not prescribed by the pinned national sources</li><li>the adapter is not bound to a published effective-dated jurisdiction pack</li></ul>
+        <div class="sources"><a href="https://fmbn.gov.ng/documents/National_Housing_Fund_Act.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://fmbn.gov.ng/products/nhf-scheme/legal-framework" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://itf.gov.ng/departments/revenue.html" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://nass.gov.ng/documents/download/11249" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://nsitf.gov.ng/publications/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://statehouse.gov.ng/new-tax-laws-will-commence-on-january-1-2026-as-planned/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.itf.gov.ng/ftp/ITF-ACT-2011.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.itf.gov.ng/ftp/ITF_Form_5A%282021%29.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.jrb.gov.ng/assets/2026-pit-guidelines-TJG3n9-T.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.nhia.gov.ng/faq/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.nhia.gov.ng/requirement-for-organized-private-sector/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.nhia.gov.ng/service/gifship/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.nhia.gov.ng/wp-content/uploads/2024/03/NHIA-Act-2022-Gazetted-Copy.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.pencom.gov.ng/personal-pension-plan-ppp/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.pencom.gov.ng/wp-content/uploads/2018/01/PRA_2014.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.pencom.gov.ng/wp-content/uploads/2025/05/CIRCULAR-ON-COMPLIANCE-WITH-PROVISIONS-OF-PRA-APPROVED.docx.pdf" target="_blank" rel="noreferrer">Official source</a></div>
+      </div>
+    </article>
+    <article class="candidate-row">
+      <div class="candidate-identity">
+        <span class="code">US</span>
+        <div><h3>United States Federal Payroll 2026 Wave 1</h3><p>US_FEDERAL_2026_WAVE1</p></div>
+      </div>
+      <div class="candidate-state">
+        <span class="status candidate">quarantined candidate</span>
+        <small>2026-01-01 to 2026-12-31</small>
+        <code>d9c1656f2dbe</code>
+      </div>
+      <div>
+        <b>Verified implementation scope</b>
+        <ul><li>2026 federal income-tax withholding for current and 2019-or-earlier W-4</li><li>exempt, NRA adjustment, supplemental flat methods, FICA, Additional Medicare, and FUTA</li><li>Form 941/940 component liability metadata</li></ul>
+        <b>Executed golden evidence</b><ul><li>Biweekly USD 2,500 single W-4: federal income tax 216.15, employee FICA 191.25, employer FICA 191.25, net FUTA 15.00</li><li>31 adapter tests cover current/old W-4, NRA, supplemental wages, FICA caps and FUTA</li></ul>
+        <small>Fixture suite: services/__tests__/USFederalPayrollAdapter2026.test.js</small>
+      </div>
+      <div>
+        <b>Still blocking payroll posting</b>
+        <ul class="blocker-list"><li>credentialed US federal tax-law, payroll-calculation, and independent-QA reviews are not recorded</li><li>all state, local, and SUTA determinations require separately certified effective-dated companion adapters</li><li>lock-in letters, aggregate supplemental method, and multi-day daily payroll remain excluded</li><li>the adapter is not bound to a published effective-dated jurisdiction pack</li></ul>
+        <div class="sources"><a href="https://www.irs.gov/instructions/i941" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.irs.gov/pub/irs-pdf/p15t.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.irs.gov/publications/p15" target="_blank" rel="noreferrer">Official source</a></div>
+      </div>
+    </article>
+    <article class="candidate-row">
+      <div class="candidate-identity">
+        <span class="code">ZA</span>
+        <div><h3>South Africa Payroll 2027 Year of Assessment Wave 1</h3><p>ZA_2027_WAVE_1</p></div>
+      </div>
+      <div class="candidate-state">
+        <span class="status candidate">quarantined candidate</span>
+        <small>2026-03-01 to 2027-02-28</small>
+        <code>11ddb2363873</code>
+      </div>
+      <div>
+        <b>Verified implementation scope</b>
+        <ul><li>ordinary monthly PAYE using the SARS A03 table and cumulative annual-equivalent PAYE using A04</li><li>all 1,635 published annual-table rows, age/rebate boundaries and medical scheme fee tax credits</li><li>UIF, SDL and EMP201 liability/remittance metadata with employer-registration evidence</li></ul>
+        <b>Executed golden evidence</b><ul><li>Monthly ZAR 18,600 less certified retirement deductions: PAYE 908.00, UIF 177.12 each side, SDL 175.00</li><li>Cumulative ZAR 110,000 over seven months: annual-equivalent 188,571, annual table tax 16,156, seven-month target 9,424.33</li><li>57 adapter tests plus all 1,635 exact contiguous SARS annual annexure rows</li></ul>
+        <small>Fixture suite: services/__tests__/SouthAfrica2027PayrollAdapter.test.js</small>
+      </div>
+      <div>
+        <b>Still blocking payroll posting</b>
+        <ul class="blocker-list"><li>credentialed South African tax-law, payroll-calculation, and independent-QA reviews are not recorded</li><li>bonuses, directors, fringe benefits, allowances, ETI, expatriates, AMTC/disability, UIF exclusions and SDL exemptions remain excluded</li><li>generic UIF/SDL fractional-cent rounding and the acknowledged manual-table versus statutory-program differences require professional sign-off</li><li>the adapter is not bound to a published effective-dated jurisdiction pack</li></ul>
+        <div class="sources"><a href="https://www.sars.gov.za/guide-for-employers-in-respect-of-employees-tax-2027/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.sars.gov.za/latest-news/unemployment-insurance-fund-ceiling-earnings/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.sars.gov.za/types-of-tax/pay-as-you-earn/completing-the-monthly-employer-declaration-emp201/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.sars.gov.za/types-of-tax/pay-as-you-earn/registering/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.sars.gov.za/types-of-tax/skills-development-levy/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.sars.gov.za/types-of-tax/unemployment-insurance-fund/" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.sars.gov.za/wp-content/uploads/Docs/PAYE/Tables/tables2026/PAYE-GEN-01-G01-A03-Monthly-Tax-Deduction-Tables-2027-External-Annexure.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.sars.gov.za/wp-content/uploads/Docs/PAYE/Tables/tables2026/PAYE-GEN-01-G01-A04-Annual-Tax-Deduction-Tables-2027-External-Annexure.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-GEN-01-G01-Guide-for-Employers-in-respect-of-Tax-Deduction-Tables-External-Guide.pdf" target="_blank" rel="noreferrer">Official source</a><span class="dot">&middot;</span><a href="https://www.sars.gov.za/wp-content/uploads/Ops/Guides/SDL-GEN-01-G01-Guide-for-Employers-in-respect-of-Skills-Development-Levy-External-Guide.pdf" target="_blank" rel="noreferrer">Official source</a></div>
+      </div>
+    </article>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><div><h2>Independent automated reviews</h2><p>Separate AI review agents checked Ghana and Nigeria against primary sources, executable fixtures, and independent arithmetic. The engineering approver automatically accepted passed gates for preview; unresolved legal gates remain blocked.</p></div><span class="status candidate">2 reviews recorded</span></div>
+      <div class="review-grid">
+    <article class="review-card">
+      <div class="review-title">
+        <span class="code">GH</span>
+        <div><h3>Ghana</h3><p>GH_2026_WAVE_1</p></div>
+        <span class="status candidate">preview approved</span>
+      </div>
+      <p>The calculation implementation is approved for guarded preview. Known statutory conflicts remain fail-closed.</p>
+      <div class="review-evidence"><b>Independent evidence</b><span>67/67 Ghana and candidate-registry tests passed; six official PDF digests revalidated; representative payroll independently reconciled.</span></div>
+      <div class="review-columns">
+        <div><b>Passed automatically</b><ul><li>official formula mapping</li><li>PAYE through guarded ceiling</li><li>SSNIT/NPRA narrow-scope arithmetic</li><li>bonus/overtime/vehicle cases</li><li>non-postable controls</li></ul></div>
+        <div><b>Still fail-closed</b><ul class="blocker-list"><li>mutable web-source snapshots</li><li>official rounding instruction</li><li>GRA top-band conflict</li><li>SSNIT minimum allocation conflict</li><li>trusted evidence resolution</li><li>licensed human sign-off</li></ul></div>
+      </div>
+      <footer><span>Codex independent Ghana statutory review agent</span><code>f37c566ec86fa8f3</code></footer>
+      <small>AI-generated technical/statutory review; not a licensed tax-professional opinion. Production approval: no.</small>
+    </article>
+    <article class="review-card">
+      <div class="review-title">
+        <span class="code">NG</span>
+        <div><h3>Nigeria</h3><p>NG_2026_WAVE_1</p></div>
+        <span class="status candidate">preview approved</span>
+      </div>
+      <p>The corrected calculation implementation is approved for guarded preview. Production routing and unresolved statutory interpretations remain fail-closed.</p>
+      <div class="review-evidence"><b>Independent evidence</b><span>72/72 Nigeria and candidate-registry tests passed after independent route-injection and ITF-base remediation; all band boundaries and synthetic payroll independently reconciled.</span></div>
+      <div class="review-columns">
+        <div><b>Passed automatically</b><ul><li>official federal formula mapping</li><li>PAYE band arithmetic</li><li>stable-pay cumulative delta</li><li>pension/NHF narrow-scope arithmetic</li><li>pinned synthetic State/FCT preview receipts</li><li>non-postable controls</li></ul></div>
+        <div><b>Still fail-closed</b><ul class="blocker-list"><li>production State/FCT route packs</li><li>ITF/NTA legal treatment</li><li>employer-specific NHIA/NSITF evidence</li><li>official rounding sequence</li><li>immutable source snapshots</li><li>licensed human sign-off</li></ul></div>
+      </div>
+      <footer><span>Codex independent Nigeria statutory review agent</span><code>37fcff0616f43274</code></footer>
+      <small>AI-generated technical/statutory review; not a licensed tax-professional opinion. Production approval: no.</small>
+    </article></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><div><h2>Country and subdivision rollout inventory</h2><p>Broad product labels are expanded into the actual national and subnational adapters required. Open a group to inspect every explicit jurisdiction; local and sector liabilities may add more.</p></div><span class="status blocked">126 entries &middot; 0 runnable</span></div>
+
+    <details class="rollout-group">
+      <summary>
+        <span><b>Remaining requested African country packs</b><small>2 explicit jurisdictions</small></span>
+        <span class="rollout-count"><strong>0</strong> candidates &middot; <strong>0</strong> runnable</span>
+      </summary>
+      <p>Cameroon and Mozambique remain governed dynamic-pack backlogs; their legacy previews are not certification evidence.</p>
+      <div class="jurisdiction-chips"><span class="jurisdiction-chip "><code>CM</code>Cameroon</span><span class="jurisdiction-chip "><code>MZ</code>Mozambique</span></div>
+      <a class="inventory-source" href="https://au.int/en/member_states/countryprofiles2" target="_blank" rel="noreferrer">Official jurisdiction inventory</a>
+    </details>
+    <details class="rollout-group">
+      <summary>
+        <span><b>European Union national payroll-tax systems</b><small>27 explicit jurisdictions</small></span>
+        <span class="rollout-count"><strong>0</strong> candidates &middot; <strong>0</strong> runnable</span>
+      </summary>
+      <p>Regional, municipal, church, sector and applicable social-security law must be layered where required.</p>
+      <div class="jurisdiction-chips"><span class="jurisdiction-chip "><code>AT</code>Austria</span><span class="jurisdiction-chip "><code>BE</code>Belgium</span><span class="jurisdiction-chip "><code>BG</code>Bulgaria</span><span class="jurisdiction-chip "><code>HR</code>Croatia</span><span class="jurisdiction-chip "><code>CY</code>Cyprus</span><span class="jurisdiction-chip "><code>CZ</code>Czechia</span><span class="jurisdiction-chip "><code>DK</code>Denmark</span><span class="jurisdiction-chip "><code>EE</code>Estonia</span><span class="jurisdiction-chip "><code>FI</code>Finland</span><span class="jurisdiction-chip "><code>FR</code>France</span><span class="jurisdiction-chip "><code>DE</code>Germany</span><span class="jurisdiction-chip "><code>GR</code>Greece</span><span class="jurisdiction-chip "><code>HU</code>Hungary</span><span class="jurisdiction-chip "><code>IE</code>Ireland</span><span class="jurisdiction-chip "><code>IT</code>Italy</span><span class="jurisdiction-chip "><code>LV</code>Latvia</span><span class="jurisdiction-chip "><code>LT</code>Lithuania</span><span class="jurisdiction-chip "><code>LU</code>Luxembourg</span><span class="jurisdiction-chip "><code>MT</code>Malta</span><span class="jurisdiction-chip "><code>NL</code>Netherlands</span><span class="jurisdiction-chip "><code>PL</code>Poland</span><span class="jurisdiction-chip "><code>PT</code>Portugal</span><span class="jurisdiction-chip "><code>RO</code>Romania</span><span class="jurisdiction-chip "><code>SK</code>Slovakia</span><span class="jurisdiction-chip "><code>SI</code>Slovenia</span><span class="jurisdiction-chip "><code>ES</code>Spain</span><span class="jurisdiction-chip "><code>SE</code>Sweden</span></div>
+      <a class="inventory-source" href="https://european-union.europa.eu/principles-countries-history/country-profiles_en" target="_blank" rel="noreferrer">Official jurisdiction inventory</a>
+    </details>
+    <details class="rollout-group">
+      <summary>
+        <span><b>United States state and District of Columbia companions</b><small>51 explicit jurisdictions</small></span>
+        <span class="rollout-count"><strong>0</strong> candidates &middot; <strong>0</strong> runnable</span>
+      </summary>
+      <p>Local withholding, SUTA, disability, paid-leave and reciprocity rules remain separate effective-dated liabilities.</p>
+      <div class="jurisdiction-chips"><span class="jurisdiction-chip "><code>US-AL</code>Alabama</span><span class="jurisdiction-chip "><code>US-AK</code>Alaska</span><span class="jurisdiction-chip "><code>US-AZ</code>Arizona</span><span class="jurisdiction-chip "><code>US-AR</code>Arkansas</span><span class="jurisdiction-chip "><code>US-CA</code>California</span><span class="jurisdiction-chip "><code>US-CO</code>Colorado</span><span class="jurisdiction-chip "><code>US-CT</code>Connecticut</span><span class="jurisdiction-chip "><code>US-DE</code>Delaware</span><span class="jurisdiction-chip "><code>US-DC</code>District of Columbia</span><span class="jurisdiction-chip "><code>US-FL</code>Florida</span><span class="jurisdiction-chip "><code>US-GA</code>Georgia</span><span class="jurisdiction-chip "><code>US-HI</code>Hawaii</span><span class="jurisdiction-chip "><code>US-ID</code>Idaho</span><span class="jurisdiction-chip "><code>US-IL</code>Illinois</span><span class="jurisdiction-chip "><code>US-IN</code>Indiana</span><span class="jurisdiction-chip "><code>US-IA</code>Iowa</span><span class="jurisdiction-chip "><code>US-KS</code>Kansas</span><span class="jurisdiction-chip "><code>US-KY</code>Kentucky</span><span class="jurisdiction-chip "><code>US-LA</code>Louisiana</span><span class="jurisdiction-chip "><code>US-ME</code>Maine</span><span class="jurisdiction-chip "><code>US-MD</code>Maryland</span><span class="jurisdiction-chip "><code>US-MA</code>Massachusetts</span><span class="jurisdiction-chip "><code>US-MI</code>Michigan</span><span class="jurisdiction-chip "><code>US-MN</code>Minnesota</span><span class="jurisdiction-chip "><code>US-MS</code>Mississippi</span><span class="jurisdiction-chip "><code>US-MO</code>Missouri</span><span class="jurisdiction-chip "><code>US-MT</code>Montana</span><span class="jurisdiction-chip "><code>US-NE</code>Nebraska</span><span class="jurisdiction-chip "><code>US-NV</code>Nevada</span><span class="jurisdiction-chip "><code>US-NH</code>New Hampshire</span><span class="jurisdiction-chip "><code>US-NJ</code>New Jersey</span><span class="jurisdiction-chip "><code>US-NM</code>New Mexico</span><span class="jurisdiction-chip "><code>US-NY</code>New York</span><span class="jurisdiction-chip "><code>US-NC</code>North Carolina</span><span class="jurisdiction-chip "><code>US-ND</code>North Dakota</span><span class="jurisdiction-chip "><code>US-OH</code>Ohio</span><span class="jurisdiction-chip "><code>US-OK</code>Oklahoma</span><span class="jurisdiction-chip "><code>US-OR</code>Oregon</span><span class="jurisdiction-chip "><code>US-PA</code>Pennsylvania</span><span class="jurisdiction-chip "><code>US-RI</code>Rhode Island</span><span class="jurisdiction-chip "><code>US-SC</code>South Carolina</span><span class="jurisdiction-chip "><code>US-SD</code>South Dakota</span><span class="jurisdiction-chip "><code>US-TN</code>Tennessee</span><span class="jurisdiction-chip "><code>US-TX</code>Texas</span><span class="jurisdiction-chip "><code>US-UT</code>Utah</span><span class="jurisdiction-chip "><code>US-VT</code>Vermont</span><span class="jurisdiction-chip "><code>US-VA</code>Virginia</span><span class="jurisdiction-chip "><code>US-WA</code>Washington</span><span class="jurisdiction-chip "><code>US-WV</code>West Virginia</span><span class="jurisdiction-chip "><code>US-WI</code>Wisconsin</span><span class="jurisdiction-chip "><code>US-WY</code>Wyoming</span></div>
+      <a class="inventory-source" href="https://www.usa.gov/states-and-territories" target="_blank" rel="noreferrer">Official jurisdiction inventory</a>
+    </details>
+    <details class="rollout-group">
+      <summary>
+        <span><b>Canadian province and territory companions</b><small>13 explicit jurisdictions</small></span>
+        <span class="rollout-count"><strong>1</strong> candidates &middot; <strong>0</strong> runnable</span>
+      </summary>
+      <p>Each entry requires the federal companion; Quebec also requires the separate Revenu Quebec, QPP and QPIP stack.</p>
+      <div class="jurisdiction-chips"><span class="jurisdiction-chip "><code>CA-AB</code>Alberta</span><span class="jurisdiction-chip "><code>CA-BC</code>British Columbia</span><span class="jurisdiction-chip "><code>CA-MB</code>Manitoba</span><span class="jurisdiction-chip "><code>CA-NB</code>New Brunswick</span><span class="jurisdiction-chip "><code>CA-NL</code>Newfoundland and Labrador</span><span class="jurisdiction-chip "><code>CA-NS</code>Nova Scotia</span><span class="jurisdiction-chip "><code>CA-NT</code>Northwest Territories</span><span class="jurisdiction-chip "><code>CA-NU</code>Nunavut</span><span class="jurisdiction-chip is-candidate"><code>CA-ON</code>Ontario</span><span class="jurisdiction-chip "><code>CA-PE</code>Prince Edward Island</span><span class="jurisdiction-chip "><code>CA-QC</code>Quebec</span><span class="jurisdiction-chip "><code>CA-SK</code>Saskatchewan</span><span class="jurisdiction-chip "><code>CA-YT</code>Yukon</span></div>
+      <a class="inventory-source" href="https://www.canada.ca/en/intergovernmental-affairs/services/provinces-territories.html" target="_blank" rel="noreferrer">Official jurisdiction inventory</a>
+    </details>
+    <details class="rollout-group">
+      <summary>
+        <span><b>Other sovereign states in the Americas</b><small>33 explicit jurisdictions</small></span>
+        <span class="rollout-count"><strong>0</strong> candidates &middot; <strong>0</strong> runnable</span>
+      </summary>
+      <p>Dependencies and territories must be added separately when an employer has payroll there.</p>
+      <div class="jurisdiction-chips"><span class="jurisdiction-chip "><code>AG</code>Antigua and Barbuda</span><span class="jurisdiction-chip "><code>AR</code>Argentina</span><span class="jurisdiction-chip "><code>BS</code>Bahamas</span><span class="jurisdiction-chip "><code>BB</code>Barbados</span><span class="jurisdiction-chip "><code>BZ</code>Belize</span><span class="jurisdiction-chip "><code>BO</code>Bolivia</span><span class="jurisdiction-chip "><code>BR</code>Brazil</span><span class="jurisdiction-chip "><code>CL</code>Chile</span><span class="jurisdiction-chip "><code>CO</code>Colombia</span><span class="jurisdiction-chip "><code>CR</code>Costa Rica</span><span class="jurisdiction-chip "><code>CU</code>Cuba</span><span class="jurisdiction-chip "><code>DM</code>Dominica</span><span class="jurisdiction-chip "><code>DO</code>Dominican Republic</span><span class="jurisdiction-chip "><code>EC</code>Ecuador</span><span class="jurisdiction-chip "><code>SV</code>El Salvador</span><span class="jurisdiction-chip "><code>GD</code>Grenada</span><span class="jurisdiction-chip "><code>GT</code>Guatemala</span><span class="jurisdiction-chip "><code>GY</code>Guyana</span><span class="jurisdiction-chip "><code>HT</code>Haiti</span><span class="jurisdiction-chip "><code>HN</code>Honduras</span><span class="jurisdiction-chip "><code>JM</code>Jamaica</span><span class="jurisdiction-chip "><code>MX</code>Mexico</span><span class="jurisdiction-chip "><code>NI</code>Nicaragua</span><span class="jurisdiction-chip "><code>PA</code>Panama</span><span class="jurisdiction-chip "><code>PY</code>Paraguay</span><span class="jurisdiction-chip "><code>PE</code>Peru</span><span class="jurisdiction-chip "><code>KN</code>Saint Kitts and Nevis</span><span class="jurisdiction-chip "><code>LC</code>Saint Lucia</span><span class="jurisdiction-chip "><code>VC</code>Saint Vincent and the Grenadines</span><span class="jurisdiction-chip "><code>SR</code>Suriname</span><span class="jurisdiction-chip "><code>TT</code>Trinidad and Tobago</span><span class="jurisdiction-chip "><code>UY</code>Uruguay</span><span class="jurisdiction-chip "><code>VE</code>Venezuela</span></div>
+      <a class="inventory-source" href="https://unstats.un.org/unsd/methodology/m49/" target="_blank" rel="noreferrer">Official jurisdiction inventory</a>
+    </details>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><div><h2>Release gates</h2><p>All four controls must pass against the same immutable content hash.</p></div><span class="status blocked">not release-ready</span></div>
+      <div class="gates">
+        <div class="gate"><b>Tax-law reviewer</b><span>Current primary law, scope, effective dates and legal interpretation. AI evidence assists but does not impersonate a licensed reviewer.</span></div>
+        <div class="gate"><b>Payroll-calculation reviewer</b><span>Bases, ordering, eligibility, proration, rounding and remittance mapping.</span></div>
+        <div class="gate"><b>Independent QA</b><span>Official zero, ordinary, YTD, high-income, boundary and employer-cost goldens.</span></div>
+        <div class="gate"><b>Separate publisher</b><span>Cannot be the author or any reviewer; publication rechecks current credentials.</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><div><h2>Browser payroll verification</h2><p>The live signed-in Payroll tenant was inspected on 2026-08-09. Browser evidence is recorded separately from calculation fixtures.</p></div><span class="status blocked">pay run not authorized</span></div>
+      <div class="browser-evidence">
+        <div><b>Session</b><span>The signed-in AIIN organization reached the Tax Rules screen successfully.</span></div>
+        <div><b>Authorization boundary</b><span>The screen returned “HR Admin access required” and no jurisdiction was available. The test did not bypass that control.</span></div>
+        <div><b>Payroll-run outcome</b><span>No statutory browser payroll was finalized because there are zero certified packs and this session cannot administer tax rules. Adapter goldens remain non-postable.</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><div><h2>Jurisdiction evidence</h2><p>Ordinary synthetic staff are shown for observability only. These values are deliberately labelled preview data and are not compliance assertions.</p></div><span>2026-08-09</span></div>
+
+      <article class="country-row" id="country-GB">
+        <div class="country-title">
+          <span class="code">GB</span>
+          <div><h3>United Kingdom</h3><p>GB-2026-27</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status preview">preview only</span>
+          <strong>Blocked for final payroll</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>£5,000.00</span>
+          <span><small>Preview income tax</small>£952.67</span>
+          <span><small>Employee statutory</small>£267.50</span>
+          <span><small>Employer statutory</small>£687.45</span>
+          <div class="rate"><i style="width:89.04%"></i></div>
+          <small>19.05% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>A quarantined 2026/27 HMRC adapter now matches all 162 supported official workbook rows. It remains blocked until credentialed review, pack binding, SD3 and irregular-period coverage are complete.</p>
+          <div class="sources"><a href="https://www.gov.uk/government/publications/software-developers-payroll-test-data-2026-to-2027" target="_blank" rel="noreferrer">HMRC 2026/27 developer test data</a><span class="dot">·</span><a href="https://www.gov.uk/guidance/rates-and-thresholds-for-employers-2026-to-2027" target="_blank" rel="noreferrer">HMRC employer rates 2026/27</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-US">
+        <div class="country-title">
+          <span class="code">US</span>
+          <div><h3>United States</h3><p>US-FEDERAL-2026</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status preview">preview only</span>
+          <strong>Federal preview only</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>US$5,000.00</span>
+          <span><small>Preview income tax</small>US$418.33</span>
+          <span><small>Employee statutory</small>US$382.50</span>
+          <span><small>Employer statutory</small>US$382.50</span>
+          <div class="rate"><i style="width:39.10%"></i></div>
+          <small>8.37% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>A quarantined federal adapter now covers modern and old W-4, exempt/NRA, supplemental withholding, FICA and FUTA. Every state, DC, local and SUTA determination still requires its own effective-dated companion.</p>
+          <div class="sources"><a href="https://www.irs.gov/publications/p15t" target="_blank" rel="noreferrer">IRS Publication 15-T (2026)</a><span class="dot">·</span><a href="https://www.irs.gov/publications/p15" target="_blank" rel="noreferrer">IRS Publication 15 (2026)</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-NG">
+        <div class="country-title">
+          <span class="code">NG</span>
+          <div><h3>Nigeria</h3><p>NG-2026-NTA</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status preview">preview only</span>
+          <strong>Blocked for final payroll</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>NGN 1,000,000.00</span>
+          <span><small>Preview income tax</small>NGN 148,100.00</span>
+          <span><small>Employee statutory</small>NGN 80,000.00</span>
+          <span><small>Employer statutory</small>NGN 100,000.00</span>
+          <div class="rate"><i style="width:69.21%"></i></div>
+          <small>14.81% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>A quarantined 2026 adapter now covers stable monthly cumulative PAYE, enacted reliefs, pension, NHF, evidenced OPSSHIP/NHIA and NSITF, ITF provision, State/FCT routing and liability metadata. Variable pay, State/FCT overlays, due-date evidence, ITF treatment and source-silent kobo rounding remain blocked.</p>
+          <div class="sources"><a href="https://nass.gov.ng/documents/download/11249" target="_blank" rel="noreferrer">Nigeria Tax Act 2025</a><span class="dot">·</span><a href="https://www.jrb.gov.ng/assets/2026-pit-guidelines-TJG3n9-T.pdf" target="_blank" rel="noreferrer">JRB 2026 PIT Guidelines</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-GH">
+        <div class="country-title">
+          <span class="code">GH</span>
+          <div><h3>Ghana</h3><p>GH-2026</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status preview">preview only</span>
+          <strong>Blocked for final payroll</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>GHS 10,000.00</span>
+          <span><small>Preview income tax</small>GHS 1,961.00</span>
+          <span><small>Employee statutory</small>GHS 550.00</span>
+          <span><small>Employer statutory</small>GHS 1,300.00</span>
+          <div class="rate"><i style="width:91.64%"></i></div>
+          <small>19.61% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>A quarantined 2026 adapter now covers ordinary PAYE, SSNIT Tier 1/Tier 2/NHIA routing, evidenced reliefs, bonus/overtime and prescribed vehicle/fuel benefits. Conflicting GRA top-band wording and SSNIT minimum rounding remain blocked.</p>
+          <div class="sources"><a href="https://gra.gov.gh/domestic-tax/tax-types/paye/" target="_blank" rel="noreferrer">Ghana Revenue Authority PAYE</a><span class="dot">·</span><a href="https://www.ssnit.org.gh/wp-content/uploads/2026/01/Public-Notice-Min-Max-Insurable.pdf" target="_blank" rel="noreferrer">SSNIT 2026 insurable earnings notice</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-KE">
+        <div class="country-title">
+          <span class="code">KE</span>
+          <div><h3>Kenya</h3><p>KE-2026-YEAR4</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status preview">preview only</span>
+          <strong>Blocked for final payroll</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>KES 100,000.00</span>
+          <span><small>Preview income tax</small>KES 19,308.33</span>
+          <span><small>Employee statutory</small>KES 10,250.00</span>
+          <span><small>Employer statutory</small>KES 7,500.00</span>
+          <div class="rate"><i style="width:90.23%"></i></div>
+          <small>19.31% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>A quarantined monthly adapter now covers the aggregate pension cap, PWD, NITA, pensionable earnings, age and contracted-out Tier II. Benefit valuation, annual/YTD reconciliation, a NITA timing conflict and credentialed review remain blocked.</p>
+          <div class="sources"><a href="https://www.kra.go.ke/individual/filing-paying/types-of-taxes/paye" target="_blank" rel="noreferrer">KRA PAYE</a><span class="dot">·</span><a href="https://new.kenyalaw.org/akn/ke/act/1973/16/eng@2026-01-01" target="_blank" rel="noreferrer">Kenya Income Tax Act</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-ZA">
+        <div class="country-title">
+          <span class="code">ZA</span>
+          <div><h3>South Africa</h3><p>ZA-2027</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status preview">preview only</span>
+          <strong>Blocked for final payroll</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>ZAR 50,000.00</span>
+          <span><small>Preview income tax</small>ZAR 10,699.58</span>
+          <span><small>Employee statutory</small>ZAR 177.12</span>
+          <span><small>Employer statutory</small>ZAR 177.12</span>
+          <div class="rate"><i style="width:100.00%"></i></div>
+          <small>21.40% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>A quarantined 2027 adapter now covers exact SARS monthly and cumulative PAYE, all 1,635 A04 rows, age/rebate boundaries, MTC, UIF, SDL and EMP201 metadata. Bonuses/directors, benefits, AMTC and credentialed review remain blocked.</p>
+          <div class="sources"><a href="https://www.sars.gov.za/wp-content/uploads/Ops/Guides/PAYE-GEN-01-G21-Guide-for-Employers-iro-Employees-Tax-for-2027-External-Guide.pdf" target="_blank" rel="noreferrer">SARS 2027 employer guide</a><span class="dot">·</span><a href="https://www.sars.gov.za/types-of-tax/skills-development-levy/" target="_blank" rel="noreferrer">SARS Skills Development Levy</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-CM">
+        <div class="country-title">
+          <span class="code">CM</span>
+          <div><h3>Cameroon</h3><p>CM-2026-PREVIEW</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status preview">preview only</span>
+          <strong>Dynamic-pack backlog</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>FCFA 100,000</span>
+          <span><small>Preview income tax</small>FCFA 2,654.67</span>
+          <span><small>Employee statutory</small>FCFA 6,450</span>
+          <span><small>Employer statutory</small>FCFA 15,450</span>
+          <div class="rate"><i style="width:12.41%"></i></div>
+          <small>2.65% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>The legacy preview remains non-certifying. A governed administrator can create or clone a blocked Cameroon draft and supply current DGI/CNPS sources, exact XAF rounding, IRPP/CAC, TDL, CFC/FNE, CRTV, benefits, fixtures and reviewers without a code deployment.</p>
+          <div class="sources"><a href="https://www.impots.cm/fr/document/tout-savoir-sur-lirpp" target="_blank" rel="noreferrer">Cameroon DGI IRPP</a><span class="dot">·</span><a href="https://www.impots.cm/sites/default/files/documents/CGI%202024%20version%20francaise.pdf" target="_blank" rel="noreferrer">Cameroon General Tax Code</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-MZ">
+        <div class="country-title">
+          <span class="code">MZ</span>
+          <div><h3>Mozambique</h3><p>MZ-2026-PREVIEW</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status preview">preview only</span>
+          <strong>Dynamic-pack backlog</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>MZN 50,000.00</span>
+          <span><small>Preview income tax</small>MZN 5,225.00</span>
+          <span><small>Employee statutory</small>MZN 1,500.00</span>
+          <span><small>Employer statutory</small>MZN 2,000.00</span>
+          <div class="rate"><i style="width:48.83%"></i></div>
+          <small>10.45% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>The legacy monthly table remains non-certifying. A governed administrator can create or clone a blocked Mozambique draft and supply current IRPS/INSS law, whole-metical rounding, annual reconciliation, 13th-month/holiday cases, fixtures and reviewers without a code deployment.</p>
+          <div class="sources"><a href="https://inm.gov.mz/pt-br/content/suplemento-n%C2%BA-1-de-291225-pag-2180-1-20-br-n%C2%BA-248-boletim-da-rep%C3%BAblica-i-serie" target="_blank" rel="noreferrer">Mozambique Law 11/2025 gazette</a><span class="dot">·</span><a href="https://www.at.gov.mz/por/Perguntas-Frequentes2/IRPS" target="_blank" rel="noreferrer">Mozambique Tax Authority IRPS</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-CA">
+        <div class="country-title">
+          <span class="code">CA</span>
+          <div><h3>Canada</h3><p>CA-2026-TEMPLATE</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status blocked">blocked</span>
+          <strong>Ontario candidate; Canada blocked</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>CA$5,000.00</span>
+          <span><small>Preview income tax</small>CA$0.00</span>
+          <span><small>Employee statutory</small>CA$0.00</span>
+          <span><small>Employer statutory</small>CA$0.00</span>
+          <div class="rate"><i style="width:0.00%"></i></div>
+          <small>0.00% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>A quarantined Ontario adapter now implements CRA January/July Option 1, TD1/TD1ON, CPP/CPP2, EI and regular-remitter PD7A metadata. Credentialed review, Quebec and every other province/territory, benefits, non-periodic pay and non-regular remitters remain blocked.</p>
+          <div class="sources"><a href="https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jan/t4127-jan-payroll-deductions-formulas-computer-programs.html" target="_blank" rel="noreferrer">CRA T4127 January 2026</a><span class="dot">·</span><a href="https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jul/t4127-jul-payroll-deductions-formulas.html" target="_blank" rel="noreferrer">CRA T4127 July 2026</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-EU">
+        <div class="country-title">
+          <span class="code">EU</span>
+          <div><h3>European Union</h3><p>EU-NOT-A-JURISDICTION</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status blocked">blocked</span>
+          <strong>Blocked</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>€5,000.00</span>
+          <span><small>Preview income tax</small>€0.00</span>
+          <span><small>Employee statutory</small>€0.00</span>
+          <span><small>Employer statutory</small>€0.00</span>
+          <div class="rate"><i style="width:0.00%"></i></div>
+          <small>0.00% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>The EU is not one income-tax jurisdiction. Twenty-seven national packs plus applicable regional/local/church rules and EU social-security applicable-law selection are required.</p>
+          <div class="sources"><a href="https://employment-social-affairs.ec.europa.eu/policies-and-activities/moving-working-europe/eu-social-security-coordination/which-rules-apply-you_en" target="_blank" rel="noreferrer">EU applicable social-security rules</a><span class="dot">·</span><a href="https://europa.eu/youreurope/citizens/work/taxes/income-taxes-abroad/index_en.htm" target="_blank" rel="noreferrer">EU cross-border income-tax overview</a></div>
+        </div>
+      </article>
+      <article class="country-row" id="country-OTHER">
+        <div class="country-title">
+          <span class="code">OTHER</span>
+          <div><h3>Other / Custom jurisdiction</h3><p>OTHER-TEMPLATE</p></div>
+        </div>
+        <div class="status-cell">
+          <span class="status blocked">blocked</span>
+          <strong>Blocked</strong>
+        </div>
+        <div class="numbers">
+          <span><small>Synthetic gross</small>5000</span>
+          <span><small>Preview income tax</small>0</span>
+          <span><small>Employee statutory</small>0</span>
+          <span><small>Employer statutory</small>0</span>
+          <div class="rate"><i style="width:0.00%"></i></div>
+          <small>0.00% preview tax-to-gross; not a statutory golden</small>
+        </div>
+        <div class="finding">
+          <p>A generic Americas or custom-country percentage is not a legal payroll adapter. Each sovereign, state/province and local liability must be separately sourced and certified.</p>
+          <div class="sources"><span class="muted">Country sources not yet registered</span></div>
+        </div>
+      </article>
+    </section>
+
+    <footer><span>These deterministic preview calculations are engineering smoke tests. They are not official expected-value fixtures and must not be used to certify a statutory pack.</span><span>Generated from payroll-tax-preview-matrix.json</span></footer>
+  </main>
+</body>
+</html>

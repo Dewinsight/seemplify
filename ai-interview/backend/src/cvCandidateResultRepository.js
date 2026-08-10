@@ -1,7 +1,9 @@
+const crypto = require('crypto');
 const {
   connectMongo,
   iso,
   mutateStore,
+  readStore,
   shouldUseMongo
 } = require('./store');
 const {
@@ -19,6 +21,11 @@ function copy(value) {
 
 function isDuplicateKey(error) {
   return Number(error?.code) === 11000;
+}
+
+function unwrap(result) {
+  if (result && Object.prototype.hasOwnProperty.call(result, 'value')) return result.value;
+  return result || null;
 }
 
 function ownedByActor(candidate, actorId) {
@@ -45,7 +52,10 @@ function committedIdentityFilter(publicId) {
 }
 
 function compareAndSwapFilter(candidate) {
-  const filter = { _id: candidate._id };
+  const filter = {
+    _id: candidate._id,
+    cvDeletionRequestedAt: { $exists: false }
+  };
   filter.cvProcessingRevision = Object.prototype.hasOwnProperty.call(
     candidate,
     'cvProcessingRevision'
@@ -62,6 +72,7 @@ function createCvCandidateResultRepository({
   useMongo = shouldUseMongo(),
   getDb = connectMongo,
   mutate = mutateStore,
+  read = readStore,
   now = () => new Date(),
   maxCommitAttempts = DEFAULT_MAX_COMMIT_ATTEMPTS
 } = {}) {
@@ -96,13 +107,15 @@ function createCvCandidateResultRepository({
 
   function findJsonTarget(candidates, processingJob, candidateEmail) {
     const committed = candidates.find((candidate) => (
-      hasProcessingIdentity(candidate, processingJob.publicId)
+      !candidate.cvDeletionRequestedAt
+      && hasProcessingIdentity(candidate, processingJob.publicId)
     ));
     if (committed) return { candidate: committed, committed: true };
     if (processingJob.mode === 'enrich') {
       return {
         candidate: candidates.find((candidate) => (
           candidate._id === processingJob.candidateId
+          && !candidate.cvDeletionRequestedAt
           && ownedByActor(candidate, processingJob.actorId)
         )) || null,
         committed: false
@@ -112,6 +125,7 @@ function createCvCandidateResultRepository({
       candidate: candidates.find((candidate) => (
         candidate.email === candidateEmail
         && candidate.jobId === processingJob.jobId
+        && !candidate.cvDeletionRequestedAt
         && ownedByActor(candidate, processingJob.actorId)
       )) || null,
       committed: false
@@ -149,14 +163,16 @@ function createCvCandidateResultRepository({
   }
 
   async function findMongoTarget(collection, processingJob, candidateEmail) {
-    const committed = await collection.findOne(
-      committedIdentityFilter(processingJob.publicId)
-    );
+    const committed = await collection.findOne({
+      ...committedIdentityFilter(processingJob.publicId),
+      cvDeletionRequestedAt: { $exists: false }
+    });
     if (committed) return { candidate: committed, committed: true };
     if (processingJob.mode === 'enrich') {
       return {
         candidate: await collection.findOne({
           _id: processingJob.candidateId,
+          cvDeletionRequestedAt: { $exists: false },
           ...mongoOwnership(processingJob.actorId)
         }),
         committed: false
@@ -166,6 +182,7 @@ function createCvCandidateResultRepository({
       candidate: await collection.findOne({
         email: candidateEmail,
         jobId: processingJob.jobId,
+        cvDeletionRequestedAt: { $exists: false },
         ...mongoOwnership(processingJob.actorId)
       }),
       committed: false
@@ -229,9 +246,10 @@ function createCvCandidateResultRepository({
       }
     }
 
-    const committed = await collection.findOne(
-      committedIdentityFilter(input.processingJob.publicId)
-    );
+    const committed = await collection.findOne({
+      ...committedIdentityFilter(input.processingJob.publicId),
+      cvDeletionRequestedAt: { $exists: false }
+    });
     if (committed) return { candidate: copy(committed), applied: false };
     const error = new Error('Candidate CV result could not be committed after concurrent updates');
     error.code = 'CV_CANDIDATE_COMMIT_CONFLICT';
@@ -243,13 +261,154 @@ function createCvCandidateResultRepository({
     return useMongo ? commitMongo(input) : commitJson(input);
   }
 
-  return { commit };
+  async function beginCandidateDeletion(candidateId, {
+    actorId,
+    allowAny = false
+  } = {}) {
+    const deletionToken = crypto.randomUUID();
+    const at = iso(operationTime());
+    if (!useMongo) {
+      return mutate((store) => {
+        store.candidates = Array.isArray(store.candidates) ? store.candidates : [];
+        const index = store.candidates.findIndex((item) => (
+          item._id === candidateId
+          && (allowAny || ownedByActor(item, actorId))
+        ));
+        if (index < 0) return null;
+        const candidate = store.candidates[index];
+        const tombstone = {
+          _id: candidate._id,
+          ...(candidate.jobId ? { jobId: candidate.jobId } : {}),
+          ...(candidate.createdBy ? { createdBy: candidate.createdBy } : {}),
+          cvDeletionRequestedAt: at,
+          cvDeletionToken: deletionToken,
+          cvProcessingRevision: Math.max(
+          0,
+          Number(candidate.cvProcessingRevision || 0)
+          ) + 1,
+          updatedAt: at
+        };
+        // Replace the profile atomically with a minimal deletion receipt. If the
+        // process stops before cleanup finishes, no candidate PII remains at rest.
+        store.candidates[index] = tombstone;
+        return { candidate: copy(tombstone), deletionToken };
+      });
+    }
+    const collection = (await getDb()).collection(COLLECTION_NAME);
+    const filter = { _id: candidateId };
+    if (!allowAny) Object.assign(filter, mongoOwnership(actorId));
+    const candidate = unwrap(await collection.findOneAndUpdate(filter, [{
+      $replaceWith: {
+        _id: '$_id',
+        jobId: '$jobId',
+        createdBy: '$createdBy',
+        cvDeletionRequestedAt: { $literal: at },
+        cvDeletionToken: { $literal: deletionToken },
+        cvProcessingRevision: {
+          $add: [{ $ifNull: ['$cvProcessingRevision', 0] }, 1]
+        },
+        updatedAt: { $literal: at }
+      }
+    }], { returnDocument: 'after' }));
+    return candidate ? { candidate: copy(candidate), deletionToken } : null;
+  }
+
+  async function listPendingCandidateDeletions({
+    limit = 100,
+    after = null
+  } = {}) {
+    const safeLimit = Math.max(1, Math.min(5_000, Math.floor(Number(limit) || 100)));
+    const descriptor = (candidate) => ({
+      candidateId: candidate._id,
+      deletionToken: candidate.cvDeletionToken,
+      requestedAt: candidate.cvDeletionRequestedAt
+    });
+    if (!useMongo) {
+      const store = await read();
+      return (store.candidates || [])
+        .filter((candidate) => (
+          candidate.cvDeletionRequestedAt
+          && candidate.cvDeletionToken
+          && (
+            !after?.requestedAt
+            || String(candidate.cvDeletionRequestedAt) > String(after.requestedAt)
+            || (
+              String(candidate.cvDeletionRequestedAt) === String(after.requestedAt)
+              && String(candidate._id) > String(after.candidateId || '')
+            )
+          )
+        ))
+        .sort((left, right) => (
+          String(left.cvDeletionRequestedAt).localeCompare(String(right.cvDeletionRequestedAt))
+          || String(left._id).localeCompare(String(right._id))
+        ))
+        .slice(0, safeLimit)
+        .map(descriptor);
+    }
+    const filter = {
+      cvDeletionRequestedAt: { $exists: true },
+      cvDeletionToken: { $type: 'string' }
+    };
+    if (after?.requestedAt && after?.candidateId) {
+      filter.$or = [
+        { cvDeletionRequestedAt: { $gt: after.requestedAt } },
+        {
+          cvDeletionRequestedAt: after.requestedAt,
+          _id: { $gt: after.candidateId }
+        }
+      ];
+    }
+    const candidates = await (await getDb()).collection(COLLECTION_NAME)
+      .find(filter, {
+        projection: {
+          _id: 1,
+          cvDeletionRequestedAt: 1,
+          cvDeletionToken: 1
+        }
+      })
+      .sort({ cvDeletionRequestedAt: 1, _id: 1 })
+      .limit(safeLimit)
+      .toArray();
+    return candidates.map(descriptor);
+  }
+
+  async function finishCandidateDeletion(candidateId, deletionToken) {
+    if (!useMongo) {
+      let deleted = false;
+      await mutate((store) => {
+        store.candidates = Array.isArray(store.candidates) ? store.candidates : [];
+        const index = store.candidates.findIndex((candidate) => (
+          candidate._id === candidateId
+          && candidate.cvDeletionToken === deletionToken
+        ));
+        if (index < 0) return;
+        store.candidates.splice(index, 1);
+        deleted = true;
+      });
+      return deleted;
+    }
+    const result = await (await getDb()).collection(COLLECTION_NAME).deleteOne({
+      _id: candidateId,
+      cvDeletionToken: deletionToken
+    });
+    return Number(result.deletedCount || 0) === 1;
+  }
+
+  return {
+    beginCandidateDeletion,
+    commit,
+    finishCandidateDeletion,
+    listPendingCandidateDeletions
+  };
 }
 
 const repository = createCvCandidateResultRepository();
 
 module.exports = {
   COLLECTION_NAME,
+  beginCandidateDeletion: repository.beginCandidateDeletion,
   commit: repository.commit,
-  createCvCandidateResultRepository
+  createCvCandidateResultRepository,
+  finishCandidateDeletion: repository.finishCandidateDeletion,
+  listPendingCandidateDeletions: repository.listPendingCandidateDeletions
 };

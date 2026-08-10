@@ -9,12 +9,23 @@ const activityNames = Object.freeze([
   'ai_interview.chat.introduction', 'ai_interview.chat.clarification', 'ai_interview.chat.acknowledgement',
   'ai_interview.question_generation', 'ai_interview.cv_parse', 'ai_interview.scoring',
   'performance.general', 'performance.okr', 'performance.review', 'performance.appraisal',
-  'performance.meeting', 'performance.calibration', 'performance.development'
+  'performance.meeting', 'performance.calibration', 'performance.development',
+  'performance.self_assessment.chat', 'performance.self_assessment.report',
+  'performance.self_assessment.coach', 'performance.document.analysis',
+  'performance.manager_review.assist', 'performance.review.bias',
+  'performance.development_plan.suggest', 'performance.okr.generate',
+  'performance.feedback.analyze', 'performance.team.insights',
+  'performance.meeting.analysis', 'performance.appraisal.chat',
+  'performance.calibration.insights'
 ]);
 
 const highReasoning = new Set([
   'job.description', 'matching.analysis', 'interview.analysis', 'ai_interview.scoring',
-  'performance.review', 'performance.appraisal', 'performance.calibration'
+  'performance.review', 'performance.appraisal', 'performance.calibration',
+  'performance.self_assessment.report', 'performance.document.analysis',
+  'performance.manager_review.assist', 'performance.review.bias',
+  'performance.team.insights', 'performance.meeting.analysis',
+  'performance.calibration.insights'
 ]);
 const lowReasoning = new Set([
   'assistant.title', 'ai_interview.chat.introduction',

@@ -204,6 +204,13 @@ class Parser {
     }
 
     if (token.type === 'identifier') {
+      if (token.value === 'true' || token.value === 'false' || token.value === 'null') {
+        this.consume();
+        return {
+          type: 'literal',
+          value: token.value === 'true' ? true : (token.value === 'false' ? false : null),
+        };
+      }
       return this.parseIdentifierOrCall();
     }
 

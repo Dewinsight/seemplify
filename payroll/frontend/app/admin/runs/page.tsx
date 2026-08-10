@@ -43,6 +43,11 @@ interface PayrollRun {
     };
     calculatedAt: string;
     paidAt?: string;
+    employerEntitySnapshot?: {
+        legalName?: string;
+        jurisdictionCode?: string;
+        currency?: string;
+    };
 }
 
 const statusConfig: Record<string, { icon: any; color: string; bg: string }> = {
@@ -168,6 +173,10 @@ export default function PayrollRunsPage() {
                                                     {(run.summary?.processedCount || 0)}/{(run.summary?.totalEmployees || 0)} processed
                                                 </span>
                                             </div>
+                                            <p className="mt-2 text-xs text-zinc-500">
+                                                {run.employerEntitySnapshot?.legalName || 'Legacy run — legal employer not recorded'}
+                                                {run.employerEntitySnapshot?.jurisdictionCode ? ` · ${run.employerEntitySnapshot.jurisdictionCode}` : ''}
+                                            </p>
                                         </div>
                                     </div>
 

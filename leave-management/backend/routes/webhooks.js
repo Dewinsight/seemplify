@@ -1,156 +1,123 @@
-/**
- * IDP Webhook Receiver
- * Handles real-time notifications from the Identity Provider
- *
- * Events handled:
- * - team.member.added: User added to a team
- * - team.member.removed: User removed from a team
- * - team.member.role_changed: User's team role changed
- * - team.manager.changed: Team's manager changed
- * - organization.member.added: User added to organization
- * - organization.member.removed: User removed from organization
- * - user.session.invalidate: Force logout requested
- */
+'use strict';
 
-const express = require('express')
-const router = express.Router()
-const crypto = require('crypto')
-const sessionStore = require('../services/sessionStore')
+const express = require('express');
+const sessionStore = require('../services/sessionStore');
+const { verifyIdpWebhook } = require('../services/idpWebhookSecurity');
+const {
+  claimIdpWebhookEvent,
+  markIdpWebhookProcessed,
+  markIdpWebhookFailed,
+} = require('../services/idpWebhookReceiptService');
 
-const WEBHOOK_SECRET = process.env.IDP_WEBHOOK_SECRET || 'your-webhook-secret-key'
+const router = express.Router();
 
-// Optional: WebSocket service for real-time frontend notifications
-let websocketService = null
+let websocketService = null;
 try {
-  websocketService = require('../services/websocketService')
-} catch (e) {
-  // WebSocket service not available, notifications will be session-only
+  websocketService = require('../services/websocketService');
+} catch {
+  // Session invalidation remains authoritative without WebSocket notices.
 }
 
-/**
- * Verify webhook signature from IDP
- */
 function verifyIdpSignature(req, res, next) {
-  const signature = req.headers['x-idp-signature']
-  const event = req.headers['x-idp-event']
-
-  if (!signature) {
-    console.warn('⚠️ Webhook received without signature')
-    return res.status(401).json({ error: 'Missing signature' })
+  const result = verifyIdpWebhook({
+    payload: req.body,
+    rawBody: req.rawBody,
+    eventHeader: req.headers['x-idp-event'],
+    deliveryTimestamp: req.headers['x-idp-delivery-timestamp'],
+    signature: req.headers['x-idp-signature-v2'],
+  });
+  if (!result.ok) {
+    return res.status(result.status).json({ error: result.error, code: result.code });
   }
-
-  const expectedSignature = crypto
-    .createHmac('sha256', WEBHOOK_SECRET)
-    .update(JSON.stringify(req.body))
-    .digest('hex')
-
-  if (signature !== expectedSignature) {
-    console.warn('⚠️ Webhook signature mismatch')
-    return res.status(401).json({ error: 'Invalid signature' })
-  }
-
-  req.webhookEvent = event
-  next()
+  return next();
 }
 
-/**
- * Handle IDP webhook events
- */
-router.post('/idp', verifyIdpSignature, async (req, res) => {
-  const { event, data, timestamp } = req.body
+function stableSubject(data = {}) {
+  return String(data.subject || data.userId || '').trim();
+}
 
-  console.log(`📨 Received IDP webhook: ${event}`, {
-    userId: data.userId,
+router.post('/idp', verifyIdpSignature, async (req, res) => {
+  let receiptClaim;
+  const { event, data: payloadData = {}, timestamp } = req.body;
+  const userId = stableSubject(payloadData);
+  const data = { ...payloadData, userId };
+
+  console.log(`Received IDP webhook: ${event}`, {
+    userId,
     teamId: data.teamId,
     action: data.action,
     timestamp,
-  })
+  });
 
   try {
-    switch (event) {
-      case 'team.member.removed':
-        // User removed from team - invalidate their sessions
-        await sessionStore.invalidateUserSessions(data.userId)
-        console.log(`🔒 Invalidated sessions for user ${data.userId} (removed from team)`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUserLogout(data.userId, 'You have been removed from a team')
-        }
-        break
-
-      case 'team.member.added':
-        // User added to team - update their session claims if they have active sessions
-        await sessionStore.updateUserTeamClaims(data.userId, data.team)
-        console.log(`🔄 Updated team claims for user ${data.userId} (added to team)`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUser(data.userId, 'team_added', {
-            teamName: data.team?.name,
-            message: `You have been added to team: ${data.team?.name}`,
-          })
-        }
-        break
-
-      case 'team.member.role_changed':
-        // Role changed - update session claims
-        await sessionStore.refreshUserClaims(data.userId)
-        console.log(`🔄 Refreshed claims for user ${data.userId} (role changed)`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUser(data.userId, 'role_changed', {
-            oldRole: data.oldRole,
-            newRole: data.newRole,
-            message: `Your role has changed from ${data.oldRole} to ${data.newRole}`,
-          })
-        }
-        break
-
-      case 'team.manager.changed':
-        // Manager changed - refresh claims for old and new manager
-        if (data.oldManagerId) {
-          await sessionStore.refreshUserClaims(data.oldManagerId)
-        }
-        if (data.newManagerId) {
-          await sessionStore.refreshUserClaims(data.newManagerId)
-        }
-        console.log(`🔄 Refreshed manager claims for team ${data.teamId}`)
-        break
-
-      case 'organization.member.removed':
-        // User removed from org - invalidate all sessions
-        await sessionStore.invalidateUserSessions(data.userId)
-        console.log(`🔒 Invalidated sessions for user ${data.userId} (removed from org)`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUserLogout(data.userId, 'You have been removed from the organization')
-        }
-        break
-
-      case 'organization.member.added':
-        // User added to org - update claims if session exists
-        await sessionStore.updateUserOrgClaims(data.userId, data.organization)
-        console.log(`🔄 Updated org claims for user ${data.userId}`)
-        break
-
-      case 'user.session.invalidate':
-        // Force logout requested by admin
-        await sessionStore.invalidateUserSessions(data.userId)
-        console.log(`🔒 Force logout for user ${data.userId}: ${data.reason}`)
-        // Notify frontend via WebSocket if available
-        if (websocketService) {
-          websocketService.notifyUserLogout(data.userId, data.reason || 'Session invalidated by administrator')
-        }
-        break
-
-      default:
-        console.log(`⚠️ Unknown webhook event: ${event}`)
+    receiptClaim = await claimIdpWebhookEvent(req.body);
+    if (receiptClaim.duplicate) {
+      return res.status(200).json({ received: true, event, eventId: req.body.eventId, duplicate: true });
+    }
+    if (!receiptClaim.claimed) {
+      res.set('Retry-After', '1');
+      return res.status(409).json({ error: 'Webhook event is already processing', retryable: true });
     }
 
-    res.status(200).json({ received: true, event })
-  } catch (error) {
-    console.error(`❌ Webhook processing error:`, error)
-    res.status(500).json({ error: 'Processing failed' })
-  }
-})
+    switch (event) {
+      case 'team.member.removed':
+        await sessionStore.invalidateUserSessions(userId);
+        websocketService?.notifyUserLogout(userId, 'You have been removed from a team');
+        break;
 
-module.exports = router
+      case 'team.member.added':
+        // Never grant from an asynchronously delivered payload. A delayed
+        // add may arrive after removal; invalidate and obtain authoritative
+        // claims through a fresh IdP login instead.
+        await sessionStore.invalidateUserSessions(userId);
+        break;
+
+      case 'team.member.role_changed':
+        // A demotion is authorization-sensitive. A fresh login is safer than
+        // retaining stale privileged claims during an IdP outage.
+        await sessionStore.invalidateUserSessions(userId);
+        websocketService?.notifyUserLogout(userId, 'Your team role has changed');
+        break;
+
+      case 'team.manager.changed':
+        if (data.oldManagerId) await sessionStore.invalidateUserSessions(data.oldManagerId);
+        if (data.newManagerId) await sessionStore.invalidateUserSessions(data.newManagerId);
+        break;
+
+      case 'organization.member.removed':
+      case 'organization.member.role_changed':
+      case 'organization.member.app_access_changed':
+      case 'organization.member.app_access_updated':
+        await sessionStore.invalidateUserSessions(userId);
+        websocketService?.notifyUserLogout(userId, 'Your organization access has changed');
+        break;
+
+      case 'organization.member.added':
+        await sessionStore.invalidateUserSessions(userId);
+        break;
+
+      case 'user.session.invalidate':
+        await sessionStore.invalidateUserSessions(userId);
+        websocketService?.notifyUserLogout(userId, data.reason || 'Session invalidated by administrator');
+        break;
+
+      default:
+        // Probe and forward-compatible events are authenticated, receipted and
+        // intentionally side-effect free.
+        console.log(`Unknown IDP event: ${event}`);
+    }
+
+    await markIdpWebhookProcessed(receiptClaim);
+    return res.status(200).json({ received: true, event, eventId: req.body.eventId });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    if (receiptClaim?.claimed) {
+      await markIdpWebhookFailed(receiptClaim, error).catch((receiptError) => {
+        console.error('Webhook receipt failure update failed:', receiptError);
+      });
+    }
+    return res.status(500).json({ error: 'Processing failed' });
+  }
+});
+
+module.exports = router;

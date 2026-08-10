@@ -11,6 +11,36 @@
  */
 
 const { getAzureOpenAIClient } = require('./azureOpenAIService');
+const {
+  PerformanceAIRuntimeError,
+  isPerformanceAIRuntimeError
+} = require('./aiGatewayService');
+
+function runtimeUnavailable(action) {
+  return new PerformanceAIRuntimeError(
+    `${action} is not available right now. Please check your AI settings and try again.`,
+    'AI_RUNTIME_UNAVAILABLE',
+    503,
+    { retryable: true }
+  );
+}
+
+function invalidResponse(action, error) {
+  return new PerformanceAIRuntimeError(
+    `${action} returned an invalid response. Please try again.`,
+    'AI_RESPONSE_INVALID',
+    502,
+    { retryable: true, cause: error }
+  );
+}
+
+function parseObjectResponse(content) {
+  const parsed = JSON.parse(String(content || ''));
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('The model response was not a JSON object.');
+  }
+  return parsed;
+}
 
 // Scoring dimensions for AI analysis
 const SCORING_DIMENSIONS = {
@@ -82,8 +112,7 @@ const analyzeTranscript = async (transcript, context = {}) => {
   const client = getAzureOpenAIClient();
 
   if (!client) {
-    console.warn('Azure OpenAI not configured, using mock analysis');
-    return getMockAnalysis(transcript, context);
+    throw runtimeUnavailable('Meeting transcript analysis');
   }
 
   try {
@@ -108,17 +137,17 @@ Context about the meeting:
 Provide your analysis in a structured JSON format.`;
 
     const response = await client.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Meeting Transcript:\n\n${transcript}` }
       ],
       temperature: 0.3,
+      operationKey: 'meeting.transcript.analysis',
       max_tokens: 2000,
       response_format: { type: 'json_object' }
     });
 
-    const analysis = JSON.parse(response.choices[0].message.content);
+    const analysis = parseObjectResponse(response.choices[0]?.message?.content);
 
     return {
       success: true,
@@ -135,7 +164,8 @@ Provide your analysis in a structured JSON format.`;
     };
   } catch (error) {
     console.error('Transcript analysis error:', error);
-    return getMockAnalysis(transcript, context);
+    if (isPerformanceAIRuntimeError(error)) throw error;
+    throw invalidResponse('Meeting transcript analysis', error);
   }
 };
 
@@ -146,8 +176,7 @@ const scoreEmployeePerformance = async (transcript, context = {}) => {
   const client = getAzureOpenAIClient();
 
   if (!client) {
-    console.warn('Azure OpenAI not configured, using mock scoring');
-    return getMockEmployeeScoring();
+    throw runtimeUnavailable('Employee meeting scoring');
   }
 
   try {
@@ -180,17 +209,17 @@ Context:
 Return your analysis as a structured JSON object with scores and evidence for each dimension.`;
 
     const response = await client.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Meeting Transcript:\n\n${transcript}` }
       ],
       temperature: 0.2,
+      operationKey: 'meeting.employee.scoring',
       max_tokens: 2000,
       response_format: { type: 'json_object' }
     });
 
-    const scoring = JSON.parse(response.choices[0].message.content);
+    const scoring = parseObjectResponse(response.choices[0]?.message?.content);
 
     // Calculate weighted overall score
     const scores = {};
@@ -210,7 +239,8 @@ Return your analysis as a structured JSON object with scores and evidence for ea
       }
     });
 
-    const overallScore = totalWeight > 0 ? (weightedTotal / totalWeight).toFixed(2) : 0;
+    if (totalWeight === 0) throw new Error('The employee score response contained no valid dimensions.');
+    const overallScore = (weightedTotal / totalWeight).toFixed(2);
 
     return {
       success: true,
@@ -224,7 +254,8 @@ Return your analysis as a structured JSON object with scores and evidence for ea
     };
   } catch (error) {
     console.error('Employee scoring error:', error);
-    return getMockEmployeeScoring();
+    if (isPerformanceAIRuntimeError(error)) throw error;
+    throw invalidResponse('Employee meeting scoring', error);
   }
 };
 
@@ -235,8 +266,7 @@ const scoreManagerEffectiveness = async (transcript, context = {}) => {
   const client = getAzureOpenAIClient();
 
   if (!client) {
-    console.warn('Azure OpenAI not configured, using mock manager scoring');
-    return getMockManagerScoring();
+    throw runtimeUnavailable('Manager meeting scoring');
   }
 
   try {
@@ -264,17 +294,17 @@ Consider:
 Return your analysis as a structured JSON object.`;
 
     const response = await client.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Meeting Transcript:\n\n${transcript}` }
       ],
       temperature: 0.2,
+      operationKey: 'meeting.manager.scoring',
       max_tokens: 2000,
       response_format: { type: 'json_object' }
     });
 
-    const scoring = JSON.parse(response.choices[0].message.content);
+    const scoring = parseObjectResponse(response.choices[0]?.message?.content);
 
     // Calculate weighted overall score
     const scores = {};
@@ -294,7 +324,8 @@ Return your analysis as a structured JSON object.`;
       }
     });
 
-    const overallScore = totalWeight > 0 ? (weightedTotal / totalWeight).toFixed(2) : 0;
+    if (totalWeight === 0) throw new Error('The manager score response contained no valid dimensions.');
+    const overallScore = (weightedTotal / totalWeight).toFixed(2);
 
     return {
       success: true,
@@ -307,7 +338,8 @@ Return your analysis as a structured JSON object.`;
     };
   } catch (error) {
     console.error('Manager scoring error:', error);
-    return getMockManagerScoring();
+    if (isPerformanceAIRuntimeError(error)) throw error;
+    throw invalidResponse('Manager meeting scoring', error);
   }
 };
 
@@ -318,18 +350,11 @@ const analyzeSentiment = async (transcript) => {
   const client = getAzureOpenAIClient();
 
   if (!client) {
-    return {
-      overall: 'neutral',
-      employeeSentiment: 'neutral',
-      managerSentiment: 'neutral',
-      sentimentProgression: ['neutral'],
-      emotionalIndicators: []
-    };
+    throw runtimeUnavailable('Meeting sentiment analysis');
   }
 
   try {
     const response = await client.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o',
       messages: [
         {
           role: 'system',
@@ -344,18 +369,16 @@ Return as JSON.`
         { role: 'user', content: transcript }
       ],
       temperature: 0.2,
+      operationKey: 'meeting.sentiment',
       max_tokens: 1000,
       response_format: { type: 'json_object' }
     });
 
-    return JSON.parse(response.choices[0].message.content);
+    return parseObjectResponse(response.choices[0]?.message?.content);
   } catch (error) {
     console.error('Sentiment analysis error:', error);
-    return {
-      overall: 'neutral',
-      employeeSentiment: 'neutral',
-      managerSentiment: 'neutral'
-    };
+    if (isPerformanceAIRuntimeError(error)) throw error;
+    throw invalidResponse('Meeting sentiment analysis', error);
   }
 };
 
@@ -366,12 +389,11 @@ const extractActionItems = async (transcript) => {
   const client = getAzureOpenAIClient();
 
   if (!client) {
-    return { actionItems: [], confidence: 'low' };
+    throw runtimeUnavailable('Meeting action-item extraction');
   }
 
   try {
     const response = await client.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o',
       messages: [
         {
           role: 'system',
@@ -386,18 +408,20 @@ Return as JSON array of action items.`
         { role: 'user', content: transcript }
       ],
       temperature: 0.2,
+      operationKey: 'meeting.action-items',
       max_tokens: 1000,
       response_format: { type: 'json_object' }
     });
 
-    const result = JSON.parse(response.choices[0].message.content);
+    const result = parseObjectResponse(response.choices[0]?.message?.content);
     return {
       actionItems: result.actionItems || result.action_items || [],
       confidence: 'high'
     };
   } catch (error) {
     console.error('Action item extraction error:', error);
-    return { actionItems: [], confidence: 'low' };
+    if (isPerformanceAIRuntimeError(error)) throw error;
+    throw invalidResponse('Meeting action-item extraction', error);
   }
 };
 
@@ -415,7 +439,7 @@ const analyzeTrends = async (meetings) => {
   const client = getAzureOpenAIClient();
 
   if (!client) {
-    return calculateBasicTrends(meetings);
+    throw runtimeUnavailable('Meeting trend analysis');
   }
 
   try {
@@ -430,7 +454,6 @@ const analyzeTrends = async (meetings) => {
     }));
 
     const response = await client.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o',
       messages: [
         {
           role: 'system',
@@ -446,14 +469,16 @@ Return as JSON.`
         { role: 'user', content: JSON.stringify(meetingSummaries) }
       ],
       temperature: 0.3,
+      operationKey: 'meeting.trends',
       max_tokens: 1500,
       response_format: { type: 'json_object' }
     });
 
-    return JSON.parse(response.choices[0].message.content);
+    return parseObjectResponse(response.choices[0]?.message?.content);
   } catch (error) {
     console.error('Trend analysis error:', error);
-    return calculateBasicTrends(meetings);
+    if (isPerformanceAIRuntimeError(error)) throw error;
+    throw invalidResponse('Meeting trend analysis', error);
   }
 };
 
@@ -464,25 +489,11 @@ const generateMeetingPrep = async (context) => {
   const client = getAzureOpenAIClient();
 
   if (!client) {
-    return {
-      suggestedTopics: [
-        'Review progress on current projects',
-        'Discuss any blockers or challenges',
-        'Career development check-in',
-        'Feedback exchange'
-      ],
-      questionsForEmployee: [
-        'What accomplishments are you most proud of since our last meeting?',
-        'What challenges are you facing?',
-        'How can I better support you?'
-      ],
-      previousActionItemsToReview: context.previousActionItems || []
-    };
+    throw runtimeUnavailable('Meeting preparation assistance');
   }
 
   try {
     const response = await client.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o',
       messages: [
         {
           role: 'system',
@@ -504,17 +515,16 @@ Return as JSON.`
         { role: 'user', content: 'Generate meeting preparation suggestions.' }
       ],
       temperature: 0.4,
+      operationKey: 'meeting.preparation',
       max_tokens: 1500,
       response_format: { type: 'json_object' }
     });
 
-    return JSON.parse(response.choices[0].message.content);
+    return parseObjectResponse(response.choices[0]?.message?.content);
   } catch (error) {
     console.error('Meeting prep generation error:', error);
-    return {
-      suggestedTopics: ['Review current work', 'Discuss challenges', 'Career development'],
-      questionsForEmployee: ['What are you working on?', 'How can I help?']
-    };
+    if (isPerformanceAIRuntimeError(error)) throw error;
+    throw invalidResponse('Meeting preparation assistance', error);
   }
 };
 
@@ -555,57 +565,6 @@ const calculateBasicTrends = (meetings) => {
     averageScore: scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2) : null,
     averageMood: moods.length > 0 ? (moods.reduce((a, b) => a + b, 0) / moods.length).toFixed(2) : null,
     meetingsAnalyzed: meetings.length
-  };
-};
-
-/**
- * Mock analysis for when AI is not available
- */
-const getMockAnalysis = (transcript, context) => {
-  return {
-    success: true,
-    summary: 'Meeting transcript analysis requires AI configuration. Please configure Azure OpenAI to enable full analysis.',
-    keyTopics: [],
-    actionItems: [],
-    sentiment: 'neutral',
-    engagementLevel: 'moderate',
-    concerns: [],
-    highlights: [],
-    careerDevelopment: [],
-    blockers: [],
-    note: 'AI analysis not available - mock data returned'
-  };
-};
-
-/**
- * Mock employee scoring
- */
-const getMockEmployeeScoring = () => {
-  return {
-    success: true,
-    dimensions: {},
-    overallScore: 0,
-    strengths: [],
-    areasForImprovement: [],
-    recommendations: [],
-    note: 'AI scoring not available - configure Azure OpenAI for automatic scoring',
-    scoredAt: new Date()
-  };
-};
-
-/**
- * Mock manager scoring
- */
-const getMockManagerScoring = () => {
-  return {
-    success: true,
-    dimensions: {},
-    overallScore: 0,
-    strengths: [],
-    developmentAreas: [],
-    coachingTips: [],
-    note: 'AI scoring not available - configure Azure OpenAI for automatic scoring',
-    scoredAt: new Date()
   };
 };
 

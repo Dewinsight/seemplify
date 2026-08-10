@@ -94,6 +94,8 @@ const UserSchema = new mongoose.Schema({
     name: String,
     organizationId: String,
     organizationName: String,
+    departmentId: String,
+    departmentName: String,
     parentTeamId: String,
     hierarchyPath: [String],
     role: String, // 'member', 'line_manager', 'team_lead'

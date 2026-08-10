@@ -10,6 +10,7 @@ const morgan = require('morgan');
 
 const connectDatabase = require('./config/database');
 const { initializeOIDC } = require('./config/oidc');
+const { InternalServiceNonce } = require('./models');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -20,6 +21,7 @@ const leaveTypeRoutes = require('./routes/leaveTypes');
 const auditLogRoutes = require('./routes/auditLogs');
 const hubRoutes = require('./routes/hub');
 const webhooksRouter = require('./routes/webhooks');
+const internalPayrollRoutes = require('./routes/internalPayroll');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -27,8 +29,10 @@ const { claimsRefreshMiddleware } = require('./middleware/claimsRefresh');
 
 // Import services
 const websocketService = require('./services/websocketService');
+const sessionStoreService = require('./services/sessionStore');
 const { initializeEmailService } = require('./services/emailService');
 const { startAttendanceIntegrationWorker } = require('./services/attendanceIntegrationService');
+const { assertInternalPayrollConfiguration } = require('./services/internalPayrollSecurity');
 
 const app = express();
 const PORT = process.env.PORT || 5002;
@@ -55,23 +59,42 @@ app.use(cors({
 // Request logging
 app.use(morgan('combined'));
 
-// Body parsing
-app.use(express.json());
+// Body parsing. Preserve the exact JSON bytes for timestamp-bound webhook and
+// internal-service verification; re-serializing an object is not a safe
+// signature boundary.
+app.use(express.json({
+  verify: (req, _res, buffer) => {
+    if (
+      req.originalUrl?.startsWith('/api/webhooks/idp')
+      || req.originalUrl?.startsWith('/api/internal/payroll/')
+    ) {
+      req.rawBody = Buffer.from(buffer);
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
+
+// Machine-to-machine payroll reads are authenticated by a signed raw request
+// and intentionally bypass browser sessions and user-claim middleware.
+app.use('/api/internal/payroll', internalPayrollRoutes);
 
 // Cookie parsing (required for OIDC flow)
 app.use(cookieParser());
 
-// Session configuration
+// Session configuration. Retain the exact store instance so signed IdP
+// revocations can delete serialized connect-mongo sessions immediately.
+const leaveSessionStore = MongoStore.create({
+  mongoUrl: process.env.MONGODB_URI,
+  collectionName: 'sessions',
+  ttl: 24 * 60 * 60,
+});
+sessionStoreService.initSessionStore(leaveSessionStore);
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'leave-management-session-secret',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI,
-    collectionName: 'sessions',
-    ttl: 24 * 60 * 60, // 1 day
-  }),
+  store: leaveSessionStore,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
@@ -111,8 +134,16 @@ app.use((req, res) => {
 // Initialize and start server
 const startServer = async () => {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      assertInternalPayrollConfiguration('production');
+    }
+
     // Connect to database
     await connectDatabase();
+
+    // Do not accept signed internal calls until Mongo has enforced the durable
+    // cross-instance nonce uniqueness and TTL indexes.
+    await InternalServiceNonce.init();
 
     // Initialize OIDC client
     await initializeOIDC();

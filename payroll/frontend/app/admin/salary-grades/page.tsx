@@ -35,7 +35,7 @@ interface SalaryGrade {
 
 export default function SalaryGradesPage() {
     const router = useRouter();
-    const { currencies } = usePayrollCurrencies();
+    const { paymentCurrencies: currencies } = usePayrollCurrencies();
     const [loading, setLoading] = useState(true);
     const [grades, setGrades] = useState<SalaryGrade[]>([]);
     const [showModal, setShowModal] = useState(false);
@@ -73,7 +73,7 @@ export default function SalaryGradesPage() {
 
     const openCreateModal = () => {
         setEditingGrade(null);
-        setFormData({ gradeCode: '', gradeName: '', gradeLevel: 1, currency: 'USD', minimum: 0, maximum: 0, department: '' });
+        setFormData({ gradeCode: '', gradeName: '', gradeLevel: 1, currency: currencies[0]?.code || 'USD', minimum: 0, maximum: 0, department: '' });
         setShowModal(true);
     };
 

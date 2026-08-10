@@ -299,7 +299,8 @@ export type CVProcessingState =
   | 'waiting_for_chatgpt'
   | 'processing'
   | 'completed'
-  | 'failed';
+  | 'failed'
+  | 'cancelled';
 
 export interface CVProcessingJobResponse {
   jobId: string;
@@ -314,6 +315,13 @@ export interface CVProcessingJobResponse {
   startedAt?: string | null;
   completedAt?: string | null;
   failedAt?: string | null;
+  cancelledAt?: string | null;
+  retryable?: boolean;
+  retryUntil?: string | null;
+  mode?: 'import' | 'enrich' | null;
+  targetJobId?: string | null;
+  requestFingerprint?: string | null;
+  fileName?: string;
   candidateId?: string | null;
   candidate?: AIInterviewCandidate;
   profile?: any;
@@ -516,25 +524,33 @@ class AIInterviewService {
     return data.candidate;
   }
 
-  async importCandidateCv(input: { jobId: string; file: File }): Promise<CVProcessingJobResponse> {
+  async importCandidateCv(input: {
+    jobId: string;
+    file: File;
+    idempotencyKey: string;
+  }): Promise<CVProcessingJobResponse> {
     const body = new FormData();
     body.set('jobId', input.jobId);
     body.set('cv', input.file);
     const response = await apiRequest('/api/candidates/import-cv', {
       method: 'POST',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Idempotency-Key': input.idempotencyKey },
       body
     });
     if (!response.ok) throw await parseError(response);
     return response.json();
   }
 
-  async enrichCandidateCv(input: { candidateId: string; file: File }): Promise<CVProcessingJobResponse> {
+  async enrichCandidateCv(input: {
+    candidateId: string;
+    file: File;
+    idempotencyKey: string;
+  }): Promise<CVProcessingJobResponse> {
     const body = new FormData();
     body.set('cv', input.file);
     const response = await apiRequest(`/api/candidates/${input.candidateId}/cv`, {
       method: 'POST',
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      headers: { 'Idempotency-Key': input.idempotencyKey },
       body
     });
     if (!response.ok) throw await parseError(response);
@@ -542,12 +558,46 @@ class AIInterviewService {
   }
 
   async getCvProcessingJob(job: Pick<CVProcessingJobResponse, 'jobId' | 'statusToken' | 'statusUrl'>): Promise<CVProcessingJobResponse> {
-    if (!job.statusToken) throw new Error('CV status token is missing.');
     const response = await apiRequest(job.statusUrl || `/api/cv-processing/jobs/${job.jobId}`, {
-      headers: { 'X-CV-Status-Token': job.statusToken }
+      headers: job.statusToken ? { 'X-CV-Status-Token': job.statusToken } : undefined
     });
     if (!response.ok) throw await parseError(response);
-    return { ...await response.json(), statusToken: job.statusToken, statusUrl: job.statusUrl };
+    const data = await response.json();
+    return {
+      ...data,
+      statusToken: job.statusToken || data.statusToken,
+      statusUrl: job.statusUrl || data.statusUrl
+    };
+  }
+
+  async listCvProcessingJobs(input?: {
+    states?: CVProcessingState[];
+    limit?: number;
+  }): Promise<CVProcessingJobResponse[]> {
+    const query = new URLSearchParams();
+    if (input?.states?.length) query.set('states', input.states.join(','));
+    if (input?.limit) query.set('limit', String(input.limit));
+    const response = await apiRequest(`/api/cv-processing/jobs${query.size ? `?${query}` : ''}`);
+    if (!response.ok) throw await parseError(response);
+    const data = await response.json();
+    return data.jobs || [];
+  }
+
+  async getCvProcessingHistory(jobId: string): Promise<{
+    job: CVProcessingJobResponse;
+    transitions: Array<Record<string, unknown>>;
+  }> {
+    const response = await apiRequest(`/api/cv-processing/jobs/${jobId}/history`);
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  }
+
+  async retryCvProcessingJob(jobId: string): Promise<CVProcessingJobResponse> {
+    const response = await apiRequest(`/api/cv-processing/jobs/${jobId}/retry`, {
+      method: 'POST'
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
   }
 
   async importCandidatesTable(input: { jobId: string; file: File }): Promise<{

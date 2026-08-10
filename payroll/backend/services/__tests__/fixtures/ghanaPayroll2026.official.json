@@ -1,0 +1,202 @@
+{
+  "lawBundle": "GH_GRA_2024_SSNIT_2026_WAVE1_V1",
+  "retrievedOn": "2026-08-09",
+  "sourceUrls": {
+    "GRA_PAYE_CURRENT": "https://gra.gov.gh/domestic-tax/tax-types/paye/",
+    "GRA_ACT_1111_IMPLEMENTATION": "https://gra.gov.gh/implementation-of-new-tax-laws-and-amendments/",
+    "GRA_PERSONAL_RELIEF": "https://gra.gov.gh/domestic-tax/personal-tax-relief/",
+    "GRA_EMPLOYMENT_PRACTICE_NOTE": "https://gra.gov.gh/wp-content/uploads/2020/09/Practice-Note-on-Gains-or-Profits-from-Employment.pdf",
+    "GRA_ACT_1094": "https://gra.gov.gh/wp-content/uploads/2023/04/INCOME-TAX-AMENDMENT-ACT-2023-ACT-1094.pdf",
+    "SSNIT_2026_MIN_MAX_NOTICE": "https://www.ssnit.org.gh/wp-content/uploads/2026/01/Public-Notice-Min-Max-Insurable.pdf",
+    "SSNIT_EMPLOYER_GUIDANCE": "https://www.ssnit.org.gh/become-an-employer/",
+    "SSNIT_FAQ": "https://www.ssnit.org.gh/faqs/",
+    "SSNIT_OMNIBUS": "https://www.ssnit.org.gh/wp-content/uploads/2023/08/SSNIT-Omnibus.pdf",
+    "NPRA_ACT_766": "https://www.npra.gov.gh/regulations/act/",
+    "NPRA_TIER2_PAYMENT_GUIDELINES": "https://npra.gov.gh/assets/documents/Guidelines-for-the-payment-of-contributions.pdf"
+  },
+  "residentPayeCases": [
+    {
+      "caseId": "GRA_PAYE_2024_MONTHLY_ROW_FIRST_490",
+      "sourceId": "GRA_PAYE_CURRENT",
+      "sourceLocator": "2024 monthly resident individual tax rate table, first row",
+      "chargeableIncome": "490.00",
+      "expectedTax": "0.00"
+    },
+    {
+      "caseId": "GRA_PAYE_2024_MONTHLY_CUMULATIVE_600",
+      "sourceId": "GRA_PAYE_CURRENT",
+      "sourceLocator": "2024 monthly table, cumulative amount after the 5% row",
+      "chargeableIncome": "600.00",
+      "expectedTax": "5.50"
+    },
+    {
+      "caseId": "GRA_PAYE_2024_MONTHLY_CUMULATIVE_730",
+      "sourceId": "GRA_PAYE_CURRENT",
+      "sourceLocator": "2024 monthly table, cumulative amount after the 10% row",
+      "chargeableIncome": "730.00",
+      "expectedTax": "18.50"
+    },
+    {
+      "caseId": "GRA_PAYE_2024_MONTHLY_CUMULATIVE_3896_67",
+      "sourceId": "GRA_PAYE_CURRENT",
+      "sourceLocator": "2024 monthly table, cumulative amount after the 17.5% row",
+      "chargeableIncome": "3896.67",
+      "expectedTax": "572.67"
+    },
+    {
+      "caseId": "GRA_PAYE_2024_MONTHLY_CUMULATIVE_19896_67",
+      "sourceId": "GRA_PAYE_CURRENT",
+      "sourceLocator": "2024 monthly table, cumulative amount after the 25% row",
+      "chargeableIncome": "19896.67",
+      "expectedTax": "4572.67"
+    },
+    {
+      "caseId": "DERIVED_GUARDED_VALUE_AT_PUBLISHED_TOP_THRESHOLD_50000",
+      "sourceId": "GRA_PAYE_CURRENT",
+      "sourceLocator": "derived from official rows but stopped at the published GHS 50,000 top-band label",
+      "chargeableIncome": "50000.00",
+      "expectedTax": "13603.67",
+      "classification": "independently_derived_with_official_conflict_guard"
+    }
+  ],
+  "pensionCases": [
+    {
+      "caseId": "SSNIT_OMNIBUS_KOFI_EDEM_GHS_1500",
+      "sourceId": "SSNIT_OMNIBUS",
+      "sourceLocator": "page 1 contribution table for Kofi Edem",
+      "basicSalary": "1500.00",
+      "expected": {
+        "employeeEconomic": "82.50",
+        "employerEconomic": "195.00",
+        "combinedEconomic": "277.50",
+        "firstTier": "202.50",
+        "secondTier": "75.00",
+        "nhiaTransfer": "37.50",
+        "ssnitRetained": "165.00"
+      }
+    },
+    {
+      "caseId": "SSNIT_2026_NOTICE_MINIMUM_587_80",
+      "sourceId": "SSNIT_2026_MIN_MAX_NOTICE",
+      "sourceLocator": "2026 minimum insurable earnings notice",
+      "basicSalary": "587.80",
+      "expectedStatus": "blocked_official_minimum_allocation_conflict",
+      "officialPublishedFirstTier": "79.40",
+      "rawFirstTierFormula": "79.353",
+      "difference": "0.047"
+    },
+    {
+      "caseId": "SSNIT_2026_NOTICE_MAXIMUM_69000",
+      "sourceId": "SSNIT_2026_MIN_MAX_NOTICE",
+      "sourceLocator": "2026 maximum insurable earnings and maximum contribution notice",
+      "basicSalary": "69000.00",
+      "expected": {
+        "employeeEconomic": "3795.00",
+        "employerEconomic": "8970.00",
+        "combinedEconomic": "12765.00",
+        "firstTier": "9315.00",
+        "secondTier": "3450.00",
+        "nhiaTransfer": "1725.00",
+        "ssnitRetained": "7590.00"
+      }
+    }
+  ],
+  "bonusCases": [
+    {
+      "caseId": "GRA_EMPLOYMENT_PRACTICE_NOTE_BONUS_EXAMPLE_1",
+      "sourceId": "GRA_EMPLOYMENT_PRACTICE_NOTE",
+      "sourceLocator": "section 4.11.2 example 1",
+      "annualBasicSalary": "100000.00",
+      "paidYtdBefore": "0.00",
+      "currentBonus": "14000.00",
+      "expected": {
+        "annualCap": "15000.00",
+        "concessionAmount": "14000.00",
+        "tax": "700.00",
+        "regularTaxableExcess": "0.00"
+      }
+    },
+    {
+      "caseId": "GRA_EMPLOYMENT_PRACTICE_NOTE_BONUS_EXAMPLE_2",
+      "sourceId": "GRA_EMPLOYMENT_PRACTICE_NOTE",
+      "sourceLocator": "section 4.11.2 example 2",
+      "annualBasicSalary": "120000.00",
+      "paidYtdBefore": "0.00",
+      "currentBonus": "20000.00",
+      "expected": {
+        "annualCap": "18000.00",
+        "concessionAmount": "18000.00",
+        "tax": "900.00",
+        "regularTaxableExcess": "2000.00"
+      }
+    }
+  ],
+  "overtimeCases": [
+    {
+      "caseId": "GRA_EMPLOYMENT_PRACTICE_NOTE_OVERTIME_EXAMPLE_I",
+      "sourceId": "GRA_EMPLOYMENT_PRACTICE_NOTE",
+      "sourceLocator": "section 4.11.1 illustration (i)",
+      "basicSalary": "700.00",
+      "annualQualifyingEmploymentIncome": "8400.00",
+      "overtime": "50.00",
+      "expectedTax": "2.50"
+    },
+    {
+      "caseId": "GRA_EMPLOYMENT_PRACTICE_NOTE_OVERTIME_EXAMPLE_II",
+      "sourceId": "GRA_EMPLOYMENT_PRACTICE_NOTE",
+      "sourceLocator": "section 4.11.1 illustration (ii)",
+      "basicSalary": "700.00",
+      "annualQualifyingEmploymentIncome": "8400.00",
+      "overtime": "500.00",
+      "expectedFivePercentBase": "350.00",
+      "expectedTenPercentBase": "150.00",
+      "expectedTax": "32.50"
+    }
+  ],
+  "vehicleBenefitCases": [
+    {
+      "caseId": "ACT_1094_DRIVER_VEHICLE_FUEL_UNCAPPED_DERIVED",
+      "sourceId": "GRA_ACT_1094",
+      "sourceLocator": "section 14 vehicle benefit table: 12.5%, cap GHS 1,500 monthly",
+      "type": "driver_vehicle_fuel",
+      "totalCashEmoluments": "8000.00",
+      "expectedTaxableValue": "1000.00",
+      "expectedCapApplied": false,
+      "classification": "independently_derived_from_statutory_row"
+    },
+    {
+      "caseId": "ACT_1094_DRIVER_VEHICLE_FUEL_CAPPED_DERIVED",
+      "sourceId": "GRA_ACT_1094",
+      "sourceLocator": "section 14 vehicle benefit table: 12.5%, cap GHS 1,500 monthly",
+      "type": "driver_vehicle_fuel",
+      "totalCashEmoluments": "20000.00",
+      "expectedTaxableValue": "1500.00",
+      "expectedCapApplied": true,
+      "classification": "independently_derived_from_statutory_row"
+    }
+  ],
+  "derivedMonthlyPayrollCases": [
+    {
+      "caseId": "DERIVED_RESIDENT_BASIC_5000_ALLOWANCE_500",
+      "classification": "independent_cross_component_golden",
+      "expected": {
+        "chargeableIncome": "5225.00",
+        "regularPaye": "904.75",
+        "employeePension": "275.00",
+        "employerPension": "650.00",
+        "netCashPay": "4320.25"
+      }
+    },
+    {
+      "caseId": "DERIVED_NONRESIDENT_BASIC_5000_ALLOWANCE_500",
+      "classification": "independent_cross_component_golden",
+      "expected": {
+        "chargeableIncome": "5225.00",
+        "regularPaye": "1306.25",
+        "employeePension": "275.00",
+        "employerPension": "650.00",
+        "netCashPay": "3918.75"
+      }
+    }
+  ]
+}

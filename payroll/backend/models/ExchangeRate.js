@@ -31,7 +31,10 @@ const ExchangeRateSchema = new Schema({
     rate: {
         type: Number,
         required: true,
-        min: 0
+        validate: {
+            validator: (value) => Number.isFinite(value) && value > 0,
+            message: 'Exchange rate must be a finite number greater than zero'
+        }
     },
 
     effectiveDate: {
@@ -63,7 +66,15 @@ const ExchangeRateSchema = new Schema({
     timestamps: true
 });
 
-// Compound index for lookups
+// A currency pair may have only one immutable value for an exact effective
+// instant. `source` is provenance, not a separate rate timeline. Keeping it
+// out of this key prevents manual, API, and import writers from publishing
+// ambiguous values concurrently for the same instant.
+ExchangeRateSchema.index(
+    { organizationId: 1, baseCurrency: 1, targetCurrency: 1, effectiveDate: 1 },
+    { unique: true, name: 'exchange_rate_pair_effective_instant_unique' }
+);
+// Compound index for as-of lookups.
 ExchangeRateSchema.index({ organizationId: 1, baseCurrency: 1, targetCurrency: 1, effectiveDate: -1 });
 
 function getActiveDateQuery(date) {
@@ -86,15 +97,9 @@ async function findPreferredRate(model, organizationId, baseCurrency, targetCurr
         ...getActiveDateQuery(date)
     };
 
-    let rate = await model.findOne({
-        ...query,
-        source: 'manual'
-    }).sort({ effectiveDate: -1 });
-
-    if (rate) {
-        return rate;
-    }
-
+    // Manual overrides are represented by their effective window. Selecting
+    // strictly by the latest instant keeps reads deterministic even while two
+    // writers are completing post-insert window reconciliation.
     return model.findOne(query).sort({ effectiveDate: -1 });
 }
 
@@ -107,7 +112,7 @@ ExchangeRateSchema.statics.getCurrentRate = async function (organizationId, base
 
     // Same currency = rate is 1
     if (normalizedBase === normalizedTarget) {
-        return { rate: 1, direct: true };
+        return { rate: 1, direct: true, exchangeRateId: null, rateLegs: [] };
     }
 
     // Try direct rate
@@ -120,7 +125,14 @@ ExchangeRateSchema.statics.getCurrentRate = async function (organizationId, base
     );
 
     if (rate) {
-        return { rate: rate.rate, direct: true, source: rate.source, effectiveDate: rate.effectiveDate };
+        return {
+            rate: rate.rate,
+            direct: true,
+            source: rate.source,
+            effectiveDate: rate.effectiveDate,
+            exchangeRateId: String(rate._id),
+            rateLegs: [{ exchangeRateId: String(rate._id), direction: 'direct' }]
+        };
     }
 
     // Try inverse rate
@@ -138,7 +150,9 @@ ExchangeRateSchema.statics.getCurrentRate = async function (organizationId, base
             direct: false,
             inverse: true,
             source: rate.source,
-            effectiveDate: rate.effectiveDate
+            effectiveDate: rate.effectiveDate,
+            exchangeRateId: String(rate._id),
+            rateLegs: [{ exchangeRateId: String(rate._id), direction: 'inverse' }]
         };
     }
 
@@ -192,7 +206,12 @@ ExchangeRateSchema.statics.getCurrentRate = async function (organizationId, base
             direct: false,
             via: pivotCurrency,
             source: [baseToPivot.source, pivotToTarget.source].filter(Boolean).join('+') || 'derived',
-            effectiveDate: effectiveDates.length > 0 ? new Date(Math.min(...effectiveDates)) : undefined
+            effectiveDate: effectiveDates.length > 0 ? new Date(Math.min(...effectiveDates)) : undefined,
+            exchangeRateId: null,
+            rateLegs: [
+                ...(baseToPivot.rateLegs || []),
+                ...(pivotToTarget.rateLegs || [])
+            ]
         };
     }
 
@@ -237,11 +256,11 @@ ExchangeRateSchema.statics.getActiveRates = async function (organizationId, base
         const targetCompare = String(a.targetCurrency || '').localeCompare(String(b.targetCurrency || ''));
         if (targetCompare !== 0) return targetCompare;
 
-        const sourcePriority = (rate) => rate.source === 'manual' ? 0 : 1;
-        const sourceCompare = sourcePriority(a) - sourcePriority(b);
-        if (sourceCompare !== 0) return sourceCompare;
+        const effectiveCompare = new Date(b.effectiveDate || 0).getTime()
+            - new Date(a.effectiveDate || 0).getTime();
+        if (effectiveCompare !== 0) return effectiveCompare;
 
-        return new Date(b.effectiveDate || 0).getTime() - new Date(a.effectiveDate || 0).getTime();
+        return String(a.source || '').localeCompare(String(b.source || ''));
     });
 };
 

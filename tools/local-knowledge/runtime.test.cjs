@@ -8,7 +8,7 @@ const { CONFIG } = require('./config.cjs');
 const { AQL } = require('./aql.cjs');
 const { createReplayGuard, signRequest, tenantDatabaseName, verifyRequest } = require('./auth.cjs');
 const {
-  BENCHMARK_CLEANUP_CONFIRMATION, blendRetrievalScore, chunkText, createKnowledgeRuntime, groundedMentions,
+  BENCHMARK_CLEANUP_CONFIRMATION, blendRetrievalScore, chunkText, createKnowledgeRuntime, extractGraph, groundedMentions,
   normalizeRawRerankerScore, purgeKnowledgeEvidence, rerank,
   selectDeclaredBindVars, upstreamResponseError, validateRetrieveInput, validateScanInput, validateTestCleanupInput, vectorIndexState, weightedReciprocalRankFusion,
 } = require('./runtime.cjs');
@@ -101,6 +101,35 @@ test('only transport, 429, and upstream 5xx failures are retryable', () => {
   const limited = upstreamResponseError('docling', { status: 429 }, 'busy');
   assert.deepEqual({ code: limited.code, status: limited.status, retryable: limited.retryable }, { code: 'DOCLING_UNAVAILABLE', status: 503, retryable: true });
   assert.equal(upstreamResponseError('chatgpt_graph', { status: 500 }, 'offline').retryable, true);
+});
+
+test('Experience knowledge graph calls use its v2 Local LLM service credential', async () => {
+  let captured;
+  const serviceSecret = 'experience-local-service-secret';
+  await extractGraph('Acme supports Beta.', {
+    jobId: 'job-service-auth',
+    gatewaySecret: serviceSecret,
+    config: { ...CONFIG, host: '127.0.0.1', limits: { ...CONFIG.limits, graphWindowCharacters: 1000 } },
+    fetchImpl: async (url, init) => {
+      captured = { url, init };
+      return new Response(JSON.stringify({ data: { entities: [], claims: [], relations: [] } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+  });
+  assert.equal(captured.url, 'http://127.0.0.1:11435/v1/complete');
+  assert.equal(captured.init.headers['x-seemplify-service'], 'experience-management');
+  assert.equal(captured.init.headers['x-seemplify-signature-version'], '2');
+  const body = captured.init.body;
+  const expected = crypto.createHmac('sha256', serviceSecret)
+    .update([
+      captured.init.headers['x-seemplify-timestamp'],
+      captured.init.headers['x-seemplify-nonce'],
+      'experience-management', 'POST', '/v1/complete', body
+    ].join('\n'))
+    .digest('base64url');
+  assert.equal(captured.init.headers['x-seemplify-signature'], expected);
 });
 
 test('Arango ingesting is treated as an in-progress vector training state', async () => {
@@ -236,12 +265,13 @@ test('status exposes a consistent ready and healthy contract', async () => {
     secrets: { 'arango-app': 'a', 'arango-provisioner': 'p', 'chatgpt-gateway': 'l', 'tei-api': 't', 'docling-api': 'd' },
     appClient: {},
     provisionerClient: { authorization: 'Basic test', request: async () => ({ result: [] }) },
+    gteClient: { status: () => ({ state: 'ready', ready: true, accepting: true, queue: { waiting: 0 } }) },
     fetchImpl: async () => ({ ok: true, status: 200 }),
   });
   const status = await runtime.status();
   assert.equal(status.ready, true);
   assert.equal(status.healthy, true);
-  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'docling', 'embedding', 'gteEmbedding', 'reranker', 'chatgpt']);
+  assert.deepEqual(Object.keys(status.services).sort(), ['arango', 'chatgpt', 'docling', 'gteEmbedding', 'reranker']);
 });
 
 test('index response exposes canonical relationshipCount and scoped receipt metadata', async () => {

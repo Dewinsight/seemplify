@@ -80,12 +80,34 @@ test('concurrent idempotent creation produces exactly one durable job identity',
   assert.equal(store.cvProcessingJobs.filter((job) => (
     job.organizationId === 'settings' && job.idempotencyKey === 'same-upload'
   )).length, 1);
+
+  const otherActor = await repository.createOrGet({
+    ...newJob('idem_other_actor', 'same-upload'),
+    actorId: 'user_other_recruiter'
+  });
+  assert.equal(otherActor.created, true);
+  assert.notEqual(otherActor.job.publicId, results[0].job.publicId);
 });
 
 test('Mongo repository uses unique upsert, guarded atomic updates, and a terminal TTL index', async () => {
   const calls = [];
   let persisted;
   const collection = {
+    listIndexes() {
+      calls.push({ method: 'listIndexes' });
+      return {
+        async toArray() {
+          return [{
+            name: 'cv_organization_idempotency_unique',
+            key: { organizationId: 1, idempotencyKey: 1 },
+            unique: true
+          }];
+        }
+      };
+    },
+    async dropIndex(name) {
+      calls.push({ method: 'dropIndex', name });
+    },
     async createIndexes(indexes) {
       calls.push({ method: 'createIndexes', indexes });
     },
@@ -137,8 +159,15 @@ test('Mongo repository uses unique upsert, guarded atomic updates, and a termina
   assert.ok(indexes.some((index) => (
     index.unique
     && index.key.organizationId === 1
+    && index.key.actorId === 1
     && index.key.idempotencyKey === 1
   )));
+  assert.ok(calls.findIndex((call) => call.method === 'createIndexes')
+    < calls.findIndex((call) => call.method === 'dropIndex'));
+  assert.equal(
+    calls.find((call) => call.method === 'dropIndex').name,
+    'cv_organization_idempotency_unique'
+  );
   assert.ok(indexes.some((index) => (
     index.expireAfterSeconds === 0 && index.key.expiresAt === 1
   )));
