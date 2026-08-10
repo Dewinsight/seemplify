@@ -260,6 +260,7 @@ async function installApiMock(page: Page, state: MockState) {
         }
         if (method === 'GET' && path === '/api/v1/exceptions/timesheets/timesheet-1/correction-route') return json(route, { routing: { fallbackLabel: 'Morgan Manager (Line manager)', reason: 'Employee line manager', recipients: [{ userId: 'manager-1', userName: 'Morgan Manager', roleLabel: 'Line manager' }] } });
         if (method === 'POST' && path === '/api/v1/exceptions/exception-1/correction-requests') { state.exceptionStatus = 'correction_requested'; return json(route, { routing: { fallbackLabel: 'Morgan Manager (Line manager)' } }); }
+        if (method === 'POST' && path === '/api/v1/exceptions/exception-1/resolve') { state.exceptionStatus = 'resolved'; return json(route, { exception: { _id: 'exception-1', status: 'resolved' } }); }
         if (method === 'POST' && path === '/api/v1/exceptions/exception-1/review') return json(route, { applied: { timesheetId: 'timesheet-1', version: 1, createdAdjustment: false } });
         if (method === 'POST' && path === '/api/v1/exceptions/exception-3/review') return json(route, { applied: { timesheetId: 'timesheet-1', version: 1, createdAdjustment: false } });
         if (method === 'POST' && path === '/api/v1/exceptions/timesheets/timesheet-1/correction-requests') { state.timesheetCorrectionRequested = true; return json(route, { routing: { fallbackLabel: 'Morgan Manager (Line manager)' } }); }
@@ -742,6 +743,51 @@ test('keeps employee and period context through timesheet review and exception d
     await page.getByRole('dialog').getByRole('button', { name: 'Approve and apply', exact: true }).click();
     await expect(page.getByText('The correction was approved and applied to timesheet version 1.')).toBeVisible();
     expect(mockState.calls).toContain('POST /api/v1/exceptions/exception-3/review');
+});
+
+test('management mode never falls back to employee timesheet controls without a review query', async ({ page, mockState }) => {
+    mockState.approvalConflict = true;
+    await page.addInitScript(() => localStorage.setItem('attendance-workspace:org-1', 'management'));
+    await authenticate(page);
+    await page.goto('/timesheets/timesheet-1');
+
+    await expect(page.getByRole('heading', { name: /Review Alex Morgan’s Week 32 timesheet/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Approve timesheet' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Submit for Approval' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Request a correction for this day' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Flag an issue for this day' }).first()).toBeVisible();
+});
+
+test('explains why an admin cannot approve their own attendance record', async ({ page, mockState: _mockState }) => {
+    await page.addInitScript(() => localStorage.setItem('attendance-workspace:org-1', 'management'));
+    await authenticate(page);
+    await page.goto('/timesheets/timesheet-1');
+
+    await expect(page.getByRole('heading', { name: 'Your timesheet in Management view' })).toBeVisible();
+    await expect(page.getByText(/Admins cannot approve their own timesheet or attendance corrections/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Submit for Approval' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Approve timesheet' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Switch to Employee view' })).toBeVisible();
+
+    await page.goto('/exceptions');
+    await expect(page.getByText('You cannot approve your own attendance exceptions')).toBeVisible();
+    await expect(page.getByText(/Admin access does not bypass this audit control/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Approve and apply' })).toHaveCount(0);
+});
+
+test('lets a manager accept an open exception without changing worked time', async ({ page, mockState }) => {
+    mockState.approvalConflict = true;
+    await page.addInitScript(() => localStorage.setItem('attendance-workspace:org-1', 'management'));
+    await authenticate(page);
+    await page.goto('/exceptions');
+
+    const openException = page.getByTestId('exception-row').filter({ hasText: 'Arrival was outside the configured grace period.' });
+    await openException.getByRole('button', { name: 'Accept exception' }).click();
+    await expect(page.getByRole('dialog')).toContainText('It does not create attendance, add hours or change clock times.');
+    await page.getByLabel('Decision reason').fill('The documented late arrival was reviewed and accepted.');
+    await page.getByRole('dialog').getByRole('button', { name: 'Accept exception' }).click();
+    await expect(page.getByText('The exception was accepted as reviewed. No worked time was added or changed.')).toBeVisible();
+    expect(mockState.calls).toContain('POST /api/v1/exceptions/exception-1/resolve');
 });
 
 test('lets an employee request a correction from the exact timesheet day', async ({ page, mockState }) => {

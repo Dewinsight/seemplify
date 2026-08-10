@@ -62,6 +62,13 @@ const AttendanceExceptionSchema = new Schema({
         replacementEntryIds: [{ type: Schema.Types.ObjectId, ref: 'TimeEntry' }],
         supersededEntryIds: [{ type: Schema.Types.ObjectId, ref: 'TimeEntry' }],
     },
+    resolution: {
+        outcome: { type: String, enum: ['accepted'] },
+        reviewedBy: String,
+        reviewedByName: String,
+        reviewedAt: Date,
+        note: String,
+    },
     auditLog: [{ action: String, actorId: String, actorName: String, at: { type: Date, default: Date.now }, details: String }],
 }, { timestamps: true });
 AttendanceExceptionSchema.index({ organizationId: 1, status: 1, occurrenceDate: -1 });

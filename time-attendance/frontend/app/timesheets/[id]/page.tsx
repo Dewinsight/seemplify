@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { approvalsApi, exceptionsApi, timesheetApi } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -73,8 +73,7 @@ const getWeekDatesFromWeekNumber = (weekNumber: number, year: number): { startDa
 export default function TimesheetDetailPage() {
     const { id } = useParams();
     const router = useRouter();
-    const searchParams = useSearchParams();
-    const { workspaceMode, canAccessManagement } = useAuth();
+    const { user, workspaceMode, setWorkspaceMode, canAccessManagement } = useAuth();
     const [timesheet, setTimesheet] = useState<any>(null);
     const [attendanceExceptions, setAttendanceExceptions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -86,7 +85,6 @@ export default function TimesheetDetailPage() {
     const [dayActionType, setDayActionType] = useState('absence');
     const [dayActionReason, setDayActionReason] = useState('');
     const [correctionReviewerLabel, setCorrectionReviewerLabel] = useState('your line manager, HR Manager or Attendance Admin');
-    const reviewMode = searchParams.get('review') === '1';
 
     const fetchCurrentTimesheet = useCallback(async () => {
         try {
@@ -321,7 +319,10 @@ export default function TimesheetDetailPage() {
     const storedDays = Number(timesheet.summary?.daysWorked ?? timesheet.daysWorked ?? 0);
     const daysWorked = storedDays > 0 || calculatedDays === 0 ? storedDays : calculatedDays;
     const daysOnLeave = Number(timesheet.summary?.daysOnLeave || 0);
-    const isReviewer = reviewMode && workspaceMode === 'management' && canAccessManagement;
+    const isManagementView = workspaceMode === 'management' && canAccessManagement;
+    const isOwnTimesheet = String(timesheet.userId || '') === String(user?.id || '');
+    const canReviewThisTimesheet = isManagementView && !isOwnTimesheet;
+    const awaitingDecision = ['submitted', 'pending'].includes(timesheet.status);
     const incompleteEntries = Number(timesheet.summary?.incompleteEntries || 0);
     const blockingExceptions = attendanceExceptions.filter(item => item.approvalBlocking && ['open', 'correction_requested'].includes(item.status));
     const canApprove = incompleteEntries === 0 && blockingExceptions.length === 0;
@@ -329,22 +330,30 @@ export default function TimesheetDetailPage() {
 
     return (
         <div className="timesheet-detail space-y-6">
-            {isReviewer && <section aria-labelledby="review-heading" className="rounded-xl border border-amber-500/30 bg-amber-500/[0.07] p-5">
+            {isManagementView && <section aria-labelledby="review-heading" className="rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)] p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Manager review</p>
-                        <h1 id="review-heading" className="mt-1 text-lg font-semibold text-white">Review {timesheet.userName || 'employee'}’s Week {timesheet.weekNumber} timesheet</h1>
-                        <p className="mt-1 text-sm text-zinc-400">{timesheet.userEmail}{timesheet.teamName ? ` · ${timesheet.teamName}` : ''}</p>
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300">Check the daily records and the exceptions tied to this exact period. Approve when the record is complete, request changes when the employee must correct it, or reject it with a recorded reason.</p>
+                        <h1 id="review-heading" className="text-lg font-semibold text-[var(--suite-ink)]">{isOwnTimesheet ? 'Your timesheet in Management view' : `Review ${timesheet.userName || 'employee'}’s Week ${timesheet.weekNumber} timesheet`}</h1>
+                        <p className="mt-1 text-sm text-[var(--suite-muted)]">{timesheet.userEmail}{timesheet.teamName ? ` · ${timesheet.teamName}` : ''}</p>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--suite-muted)]">{isOwnTimesheet
+                            ? 'Admins cannot approve their own timesheet or attendance corrections. A different line manager, HR Manager or Attendance Admin must review this record.'
+                            : awaitingDecision
+                                ? 'Review this employee’s daily records and period exceptions, then approve, request changes or reject with a recorded reason.'
+                                : ['approved', 'payroll_pending', 'payroll_exported', 'locked'].includes(timesheet.status)
+                                    ? 'This review is complete. The daily records, exceptions and decision history remain available for audit.'
+                                    : `This timesheet is ${String(timesheet.status || 'draft').replaceAll('_', ' ')}. You can inspect it and flag issues, but the employee must submit it before an approval decision is available.`}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <Link href={scopedExceptionHref()} className="rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800">View period exceptions ({attendanceExceptions.length})</Link>
-                        <button type="button" onClick={() => handleReviewDecision('revision')} disabled={submitting} className="rounded-lg border border-amber-600/50 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-amber-500/10 disabled:opacity-50">Request changes</button>
-                        <button type="button" onClick={() => handleReviewDecision('reject')} disabled={submitting} className="rounded-lg border border-red-500/40 px-3 py-2 text-sm font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50">Reject</button>
-                        <button type="button" onClick={() => handleReviewDecision('approve')} disabled={submitting || !canApprove} title={!canApprove ? 'Resolve the listed blockers before approval' : undefined} className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50">Approve timesheet</button>
+                        <Link href={scopedExceptionHref()} className="rounded-md border border-[var(--suite-line-strong)] px-3 py-2 text-sm font-medium text-[var(--suite-ink)] hover:bg-[var(--suite-surface-muted)]">Review period exceptions ({attendanceExceptions.length})</Link>
+                        {isOwnTimesheet && <button type="button" onClick={() => setWorkspaceMode('employee')} className="rounded-md border border-[var(--suite-line-strong)] px-3 py-2 text-sm font-medium text-[var(--suite-ink)] hover:bg-[var(--suite-surface-muted)]">Switch to Employee view</button>}
+                        {canReviewThisTimesheet && awaitingDecision && <>
+                            <button type="button" onClick={() => handleReviewDecision('revision')} disabled={submitting} className="rounded-md border border-amber-600/50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-500/10 disabled:opacity-50 dark:text-amber-200">Request changes</button>
+                            <button type="button" onClick={() => handleReviewDecision('reject')} disabled={submitting} className="rounded-md border border-red-500/40 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300">Reject</button>
+                            <button type="button" onClick={() => handleReviewDecision('approve')} disabled={submitting || !canApprove} title={!canApprove ? 'Resolve the listed blockers before approval' : undefined} className="rounded-md bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-teal-600 dark:hover:bg-teal-500">Approve timesheet</button>
+                        </>}
                     </div>
                 </div>
-                {!canApprove && <div className="mt-4 border-t border-amber-500/20 pt-4"><p className="text-sm font-semibold text-amber-200">What is blocking approval</p><ul className="mt-2 space-y-1 text-sm text-amber-100/80">{incompleteEntries > 0 && <li>{incompleteEntries} incomplete or unpaired attendance {incompleteEntries === 1 ? 'entry' : 'entries'} must be corrected.</li>}{blockingExceptions.map(issue => <li key={issue._id || issue.id}>{safeFormatDate(issue.occurrenceDate, 'EEE, MMM d')} · {String(issue.type).replaceAll('_', ' ')} · {String(issue.status).replaceAll('_', ' ')}</li>)}</ul></div>}
+                {canReviewThisTimesheet && awaitingDecision && !canApprove && <div className="mt-4 border-t border-amber-500/25 pt-4"><p className="text-sm font-semibold text-amber-800 dark:text-amber-200">What is blocking approval</p><ul className="mt-2 space-y-1 text-sm text-amber-800/80 dark:text-amber-100/80">{incompleteEntries > 0 && <li>{incompleteEntries} incomplete or unpaired attendance {incompleteEntries === 1 ? 'entry' : 'entries'} must be corrected.</li>}{blockingExceptions.map(issue => <li key={issue._id || issue.id}>{safeFormatDate(issue.occurrenceDate, 'EEE, MMM d')} · {String(issue.type).replaceAll('_', ' ')} · {String(issue.status).replaceAll('_', ' ')}</li>)}</ul></div>}
             </section>}
 
             {(actionMessage || actionError) && <div role={actionError ? 'alert' : 'status'} className={`rounded-lg border px-4 py-3 text-sm ${actionError ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>{actionError || actionMessage}</div>}
@@ -398,7 +407,7 @@ export default function TimesheetDetailPage() {
                         {exporting ? 'Exporting...' : 'Export Excel'}
                     </button>
 
-                    {!isReviewer && (!timesheet.status || ['draft', 'rejected', 'revision_requested', 'adjusted'].includes(timesheet.status)) && (
+                    {!isManagementView && (!timesheet.status || ['draft', 'rejected', 'revision_requested', 'adjusted'].includes(timesheet.status)) && (
                         <button
                             onClick={handleSubmit}
                             disabled={submitting}
@@ -409,7 +418,7 @@ export default function TimesheetDetailPage() {
                         </button>
                     )}
 
-                    {!isReviewer && (timesheet.status === 'submitted' || timesheet.status === 'pending') && (
+                    {!isManagementView && (timesheet.status === 'submitted' || timesheet.status === 'pending') && (
                         <button
                             onClick={handleRecall}
                             disabled={submitting}
@@ -637,10 +646,10 @@ export default function TimesheetDetailPage() {
                                             )}
 
                                             {!isWeekend && <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-zinc-800/70 pt-3 pl-[3.25rem]">
-                                                {isReviewer ? <>
+                                                {canReviewThisTimesheet ? <>
                                                     <button type="button" onClick={() => { setDayAction({ mode: 'manager', date: dateId }); setDayActionType(entry.status === 'absent' ? 'absence' : 'manual_review'); setDayActionReason(''); }} className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-300 hover:text-amber-200"><AlertTriangle className="h-3.5 w-3.5" />Flag an issue for this day</button>
                                                     {!!dayExceptions.length && <Link href={`${scopedExceptionHref()}&exceptionId=${encodeURIComponent(dayExceptions[0]._id)}`} className="text-xs font-medium text-teal-300 hover:underline">Review {dayExceptions.length} {dayExceptions.length === 1 ? 'exception' : 'exceptions'}</Link>}
-                                                </> : <button type="button" onClick={() => void openEmployeeCorrection(dateId, openDayException?._id)} className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-300 hover:text-teal-200"><PenLine className="h-3.5 w-3.5" />Request a correction for this day</button>}
+                                                </> : isManagementView ? <span className="text-xs text-zinc-500">A different authorised reviewer must decide your own record.</span> : <button type="button" onClick={() => void openEmployeeCorrection(dateId, openDayException?._id)} className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-300 hover:text-teal-200"><PenLine className="h-3.5 w-3.5" />Request a correction for this day</button>}
                                             </div>}
 
                                             {/* Manual Entry Note */}

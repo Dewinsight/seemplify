@@ -338,6 +338,7 @@ export const exceptionsApi = {
     requestTimesheetCorrection: async (timesheetId: string, data: any) => (await api.post(`/v1/exceptions/timesheets/${timesheetId}/correction-requests`, data)).data,
     flagTimesheetDay: async (timesheetId: string, data: any) => (await api.post(`/v1/exceptions/timesheets/${timesheetId}/flags`, data)).data,
     review: async (id: string, accepted: boolean, note = '') => (await api.post(`/v1/exceptions/${id}/review`, { accepted, note })).data,
+    resolve: async (id: string, note = '') => (await api.post(`/v1/exceptions/${id}/resolve`, { note })).data,
     getCorrectionRoute: async (timesheetId: string) => (await api.get(`/v1/exceptions/timesheets/${timesheetId}/correction-route`)).data,
 };
 

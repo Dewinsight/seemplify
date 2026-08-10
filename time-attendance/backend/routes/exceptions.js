@@ -191,6 +191,34 @@ async function notifyCorrectionRequested(req, exception, timesheet, routing) {
     }
 }
 
+function recordOpenExceptionResolution(exception, actor, note) {
+    if (exception.status !== 'open') {
+        return { status: 409, error: 'Only an open exception can be accepted as reviewed' };
+    }
+    const reviewedAt = new Date();
+    const reviewNote = String(note || '').trim().slice(0, 2000);
+    if (reviewNote.length < 3) {
+        return { status: 400, error: 'A decision reason of at least 3 characters is required' };
+    }
+    exception.status = 'resolved';
+    exception.resolution = {
+        outcome: 'accepted',
+        reviewedBy: actor.userId,
+        reviewedByName: actor.userName,
+        reviewedAt,
+        note: reviewNote,
+    };
+    if (!Array.isArray(exception.auditLog)) exception.auditLog = [];
+    exception.auditLog.push({
+        action: 'exception_accepted',
+        actorId: actor.userId,
+        actorName: actor.userName,
+        at: reviewedAt,
+        details: reviewNote,
+    });
+    return { exception };
+}
+
 async function applyCorrectionRequest(req, exception, timesheet) {
     const explanation = String(req.body.explanation || '').trim();
     if (!explanation) return { status: 400, error: 'An explanation is required' };
@@ -435,6 +463,40 @@ router.post('/:id/correction-requests', async (req, res) => {
     }
 });
 
+// A reviewer may accept an open exception as understood without inventing or
+// changing worked time. This closes the review flag and keeps the reason in the
+// audit trail. Correction requests use the separate review endpoint below.
+router.post('/:id/resolve', async (req, res) => {
+    try {
+        const exception = await AttendanceException.findOne({ _id: req.params.id, organizationId: req.organizationId });
+        if (!exception) return res.status(404).json({ error: 'Attendance exception not found' });
+        const timesheet = await Timesheet.findOne({ _id: exception.timesheetId, organizationId: req.organizationId });
+        if (!timesheet || !await canReviewTimesheet(req, timesheet)) return res.status(403).json({ error: 'A different authorised reviewer is required' });
+        const result = recordOpenExceptionResolution(exception, {
+            userId: req.user.id,
+            userName: req.user.name,
+            userEmail: req.user.email,
+        }, req.body.note);
+        if (result.error) return res.status(result.status).json({ error: result.error });
+        await exception.save();
+        await createNotification({
+            organizationId: req.organizationId,
+            userId: exception.userId,
+            userEmail: exception.userEmail,
+            type: 'general',
+            title: 'Attendance exception reviewed',
+            message: exception.resolution.note,
+            actionUrl: `/exceptions?timesheetId=${encodeURIComponent(String(exception.timesheetId))}&exceptionId=${encodeURIComponent(String(exception._id))}`,
+            priority: 'normal',
+            eventKey: `exception-resolved:${exception._id}:${exception.resolution.reviewedAt.toISOString()}`,
+        });
+        res.json({ exception: exceptionView(exception, timesheet) });
+    } catch (error) {
+        console.error('Resolve attendance exception error:', error);
+        res.status(500).json({ error: 'Failed to record the exception decision' });
+    }
+});
+
 router.post('/:id/review', async (req, res) => {
     try {
         const exception = await AttendanceException.findOne({ _id: req.params.id, organizationId: req.organizationId });
@@ -504,3 +566,4 @@ module.exports = router;
 module.exports.canManage = canManage;
 module.exports.canReviewTimesheet = canReviewTimesheet;
 module.exports.exceptionView = exceptionView;
+module.exports.recordOpenExceptionResolution = recordOpenExceptionResolution;

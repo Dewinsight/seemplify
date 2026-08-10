@@ -1,7 +1,7 @@
 const Timesheet = require('../models/Timesheet');
 const AttendanceException = require('../models/AttendanceException');
 const { approvalReadiness } = require('../routes/approvals');
-const { exceptionView } = require('../routes/exceptions');
+const { exceptionView, recordOpenExceptionResolution } = require('../routes/exceptions');
 const { isApprovalBlockingType } = require('../services/exceptionService');
 
 function reviewTimesheet() {
@@ -96,4 +96,47 @@ test('only structurally incomplete attendance types block approval by default', 
     expect(isApprovalBlockingType('leave_conflict')).toBe(true);
     expect(isApprovalBlockingType('late_arrival')).toBe(false);
     expect(isApprovalBlockingType('absence')).toBe(false);
+});
+
+test('an authorised reviewer can accept an open exception without changing worked time', () => {
+    const timesheet = reviewTimesheet();
+    const exception = new AttendanceException({
+        organizationId: 'org-1',
+        userId: 'employee-1',
+        timesheetId: timesheet._id,
+        timesheetVersion: 1,
+        occurrenceDate: new Date('2026-08-05T00:00:00.000Z'),
+        type: 'absence',
+        ruleKey: 'attendance.absence',
+        fingerprint: 'open-exception-resolution',
+        status: 'open',
+        approvalBlocking: true,
+    });
+
+    const result = recordOpenExceptionResolution(exception, {
+        userId: 'manager-1',
+        userName: 'Morgan Manager',
+    }, 'The scheduled absence was reviewed and accepted.');
+
+    expect(result.error).toBeUndefined();
+    expect(exception.status).toBe('resolved');
+    expect(exception.resolution).toEqual(expect.objectContaining({
+        outcome: 'accepted',
+        reviewedBy: 'manager-1',
+        reviewedByName: 'Morgan Manager',
+        note: 'The scheduled absence was reviewed and accepted.',
+    }));
+    expect(exception.auditLog.at(-1)).toEqual(expect.objectContaining({
+        action: 'exception_accepted',
+        actorId: 'manager-1',
+    }));
+    expect(approvalReadiness(timesheet, [exception]).canApprove).toBe(true);
+});
+
+test('a correction request cannot be silently accepted through the open-exception action', () => {
+    const exception = { status: 'correction_requested', auditLog: [] };
+    const result = recordOpenExceptionResolution(exception, { userId: 'manager-1', userName: 'Morgan Manager' }, 'Reviewed.');
+    expect(result).toEqual(expect.objectContaining({ status: 409 }));
+    expect(exception.status).toBe('correction_requested');
+    expect(exception.auditLog).toEqual([]);
 });
