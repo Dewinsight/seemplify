@@ -191,7 +191,14 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'POST' && path === '/api/v1/scheduling/requests/request-1/review') return json(route, { success: true });
 
         if (method === 'GET' && path === '/api/v1/exceptions') {
-            return json(route, { disclaimer: 'Exceptions are review flags only and never automatic decisions.', exceptions: [{ _id: 'exception-1', type: 'late_arrival', severity: 'medium', occurrenceDate: NOW, status: state.exceptionStatus, rule: { code: 'LATE-01' }, explanation: { message: 'Arrival was outside the configured grace period.' }, correctionRequest: state.exceptionStatus === 'correction_requested' ? { explanation: 'Train cancellation delayed arrival.' } : undefined }] });
+            return json(route, {
+                disclaimer: 'Exceptions are review flags only and never automatic decisions.',
+                exceptions: [
+                    { _id: 'exception-1', type: 'late_arrival', severity: 'medium', occurrenceDate: NOW, status: state.exceptionStatus, rule: { code: 'LATE-01' }, explanation: { message: 'Arrival was outside the configured grace period.' }, correctionRequest: state.exceptionStatus === 'correction_requested' ? { explanation: 'Train cancellation delayed arrival.' } : undefined },
+                    { _id: 'exception-2', type: 'insufficient_rest', severity: 'high', occurrenceDate: NOW, status: 'resolved', rule: { code: 'REST-01' }, explanation: { message: 'Rest between work sessions was below the configured minimum.' } },
+                    { _id: 'exception-3', type: 'absence', severity: 'medium', occurrenceDate: '2026-08-08T09:00:00.000Z', status: 'correction_requested', rule: { code: 'ABSENCE-01' }, explanation: { message: 'No attendance or approved leave was recorded.' }, correctionRequest: { explanation: 'Approved leave was not synced yet.' } },
+                ],
+            });
         }
         if (method === 'POST' && path === '/api/v1/exceptions/exception-1/correction-requests') { state.exceptionStatus = 'correction_requested'; return json(route, { success: true }); }
         if (method === 'POST' && path === '/api/v1/exceptions/exception-1/review') return json(route, { success: true });
@@ -344,12 +351,41 @@ test('acknowledges a shift and publishes manager schedule changes', async ({ pag
 });
 
 test('submits an explainable correction request', async ({ page, mockState }) => {
+    await page.addInitScript(() => localStorage.setItem('seemplify-theme', 'light'));
     await authenticate(page);
     await page.goto('/exceptions');
-    await page.getByRole('button', { name: 'Request correction' }).click();
-    await page.getByRole('textbox').fill('Train cancellation delayed my arrival.');
+
+    await expect(page.getByRole('tab', { name: 'All 3' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '9 August 2026' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '8 August 2026' })).toBeVisible();
+    await page.getByPlaceholder('Search exceptions').fill('rest');
+    await expect(page.getByRole('heading', { name: 'Insufficient Rest' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Late Arrival' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Clear search' }).click();
+
+    await page.getByRole('button', { name: 'Request correction', exact: true }).click();
+    await page.getByLabel('Employee explanation').fill('Train cancellation delayed my arrival.');
     await page.getByRole('button', { name: 'Submit request' }).click();
     await expect(page.getByText('Correction request submitted with a full audit trail.')).toBeVisible();
+    await expect(page.getByText('Correction awaiting review').first()).toBeVisible();
+    const explanation = page.getByTestId('employee-explanation').filter({ hasText: 'Train cancellation delayed arrival.' });
+    await expect(explanation).toBeVisible();
+    const hasReadableContrast = await explanation.evaluate(element => {
+        const parse = (value: string) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+        const luminance = (rgb: number[]) => {
+            const channels = rgb.map(value => {
+                const normalized = value / 255;
+                return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+            });
+            return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+        };
+        const paragraph = element.querySelector('p');
+        if (!paragraph) return false;
+        const foreground = luminance(parse(getComputedStyle(paragraph).color));
+        const background = luminance(parse(getComputedStyle(element).backgroundColor));
+        return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05) >= 4.5;
+    });
+    expect(hasReadableContrast).toBe(true);
     expect(mockState.exceptionStatus).toBe('correction_requested');
 });
 
