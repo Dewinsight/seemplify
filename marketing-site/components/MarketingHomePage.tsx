@@ -220,8 +220,10 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
         <section className="marketing-people-hero">
           <div className="marketing-container marketing-people-hero__layout">
             <div className="marketing-people-hero__copy">
-              <p className="marketing-section-kicker">AI-powered people operations</p>
-              <h1>Run the work around your people in one connected platform.</h1>
+              <p className="marketing-section-kicker"><span aria-hidden="true" /> AI-powered people operations</p>
+              <h1>
+                Run the work around your people in <span className="marketing-people-hero__connected">one connected platform.</span>
+              </h1>
               <p className="marketing-people-hero__lead">
                 Hire, onboard, manage time and leave, support performance and prepare payroll - with shared identity,
                 clear approvals and AI inside the workflows that need it.
@@ -250,10 +252,22 @@ export default function MarketingHomePage({ initialHostname }: { initialHostname
                 priority
                 sizes="(max-width: 920px) 100vw, 52vw"
               />
-              <figcaption>People work is connected when the context moves with the person.</figcaption>
+              <div className="marketing-people-hero__media-label" aria-hidden="true">
+                <span>One shared identity</span>
+                <strong>Context stays with the person</strong>
+              </div>
+              <figcaption>
+                <span><i aria-hidden="true" /> Connected people operations</span>
+                <strong>From first conversation to every working day.</strong>
+              </figcaption>
             </figure>
           </div>
           <div className="marketing-container marketing-people-hero__handoff">
+            <div className="marketing-people-hero__handoff-intro">
+              <span>One person. One record.</span>
+              <strong>The context moves. The work keeps flowing.</strong>
+              <p>No duplicate entry or piecing the story together between teams.</p>
+            </div>
             <SuiteHandoffGraphic />
           </div>
         </section>

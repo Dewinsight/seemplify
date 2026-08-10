@@ -2318,6 +2318,9 @@ a {
 }
 
 .marketing-section-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   margin-bottom: 18px;
   color: var(--marketing-brand);
   font-size: 14px;
@@ -2325,9 +2328,17 @@ a {
   letter-spacing: -0.01em;
 }
 
+.marketing-section-kicker > span {
+  width: 22px;
+  height: 2px;
+  flex: 0 0 auto;
+  background: currentColor;
+}
+
 .marketing-people-hero {
+  overflow: hidden;
   border-bottom: 1px solid var(--marketing-line);
-  padding-block: 48px 62px;
+  padding-block: 48px 48px;
 }
 
 .marketing-people-hero__layout {
@@ -2338,6 +2349,8 @@ a {
 }
 
 .marketing-people-hero__copy {
+  position: relative;
+  z-index: 1;
   padding-block: 34px;
 }
 
@@ -2345,6 +2358,31 @@ a {
   max-width: 650px;
   font-size: clamp(48px, 5.4vw, 76px);
   line-height: 0.98;
+}
+
+.marketing-people-hero__connected {
+  position: relative;
+  display: inline;
+  color: var(--marketing-brand);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.marketing-people-hero__connected::after {
+  position: absolute;
+  right: 0.02em;
+  bottom: -0.04em;
+  left: 0.02em;
+  height: 0.06em;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: currentColor;
+  content: '';
+  animation: marketing-connected-line 800ms 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes marketing-connected-line {
+  to { transform: scaleX(1); }
 }
 
 .marketing-people-hero__lead {
@@ -2389,6 +2427,7 @@ a {
   border: 1px solid var(--marketing-line-strong);
   border-radius: 12px;
   background: var(--marketing-surface-sunken);
+  box-shadow: 16px 16px 0 var(--marketing-brand-soft);
 }
 
 .marketing-people-hero__media img {
@@ -2397,6 +2436,42 @@ a {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: 58% center;
+  animation: marketing-hero-image-enter 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes marketing-hero-image-enter {
+  from { opacity: 0.78; transform: scale(1.025); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.marketing-people-hero__media-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  min-width: 230px;
+  gap: 5px;
+  border-right: 1px solid rgba(255, 255, 255, 0.22);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  background: #17151b;
+  color: #f7f5fa;
+  padding: 15px 18px 16px;
+}
+
+.marketing-people-hero__media-label span {
+  color: #a98eff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.marketing-people-hero__media-label strong {
+  font-family: var(--marketing-heading);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .marketing-people-hero__media figcaption {
@@ -2404,15 +2479,40 @@ a {
   right: 16px;
   bottom: 16px;
   left: 16px;
-  max-width: 390px;
+  display: grid;
+  max-width: 410px;
+  gap: 5px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
-  background: rgba(15, 14, 19, 0.84);
+  background: rgba(15, 14, 19, 0.9);
   color: #f7f5fa;
-  font-size: 13px;
-  line-height: 1.45;
-  padding: 12px 14px;
-  backdrop-filter: blur(10px);
+  padding: 15px 16px 16px;
+}
+
+.marketing-people-hero__media figcaption span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #c7b8ff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.marketing-people-hero__media figcaption i {
+  width: 7px;
+  height: 7px;
+  border: 2px solid #a98eff;
+  border-radius: 50%;
+}
+
+.marketing-people-hero__media figcaption strong {
+  font-family: var(--marketing-heading);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.35;
 }
 
 .marketing-theme-toggle:focus-visible {
@@ -2421,9 +2521,61 @@ a {
 }
 
 .marketing-people-hero__handoff {
-  margin-top: 26px;
-  border-top: 1px solid var(--marketing-line-strong);
-  padding-top: 6px;
+  --marketing-brand: #a98eff;
+  --marketing-line-strong: rgba(255, 255, 255, 0.22);
+  --marketing-muted: #a9a4b1;
+  --marketing-surface: #24212b;
+  position: relative;
+  display: grid;
+  align-items: center;
+  gap: clamp(28px, 4vw, 64px);
+  grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.8fr);
+  margin-top: 38px;
+  background: #17151b;
+  color: #f7f5fa;
+  padding-block: 28px;
+}
+
+.marketing-people-hero__handoff::before,
+.marketing-people-hero__handoff::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: max(calc((100vw - 1280px) / 2), 0px);
+  background: #17151b;
+  content: '';
+}
+
+.marketing-people-hero__handoff::before { right: 100%; }
+.marketing-people-hero__handoff::after { left: 100%; }
+
+.marketing-people-hero__handoff-intro {
+  display: grid;
+  gap: 7px;
+}
+
+.marketing-people-hero__handoff-intro > span {
+  color: #a98eff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.marketing-people-hero__handoff-intro strong {
+  max-width: 290px;
+  font-family: var(--marketing-heading);
+  font-size: clamp(19px, 2vw, 25px);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+}
+
+.marketing-people-hero__handoff-intro p {
+  max-width: 320px;
+  color: #a9a4b1;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .marketing-section {
@@ -3049,6 +3201,19 @@ a {
     min-height: min(70vw, 640px);
   }
 
+  .marketing-people-hero__handoff {
+    grid-template-columns: 1fr;
+  }
+
+  .marketing-people-hero__handoff-intro {
+    grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .marketing-people-hero__handoff-intro > span {
+    grid-column: 1 / -1;
+  }
+
   .marketing-suite-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3096,7 +3261,16 @@ a {
   }
 
   .marketing-people-hero__handoff {
-    margin-top: 18px;
+    margin-top: 28px;
+    padding-block: 26px;
+  }
+
+  .marketing-people-hero__handoff-intro {
+    grid-template-columns: 1fr;
+  }
+
+  .marketing-people-hero__handoff-intro > span {
+    grid-column: auto;
   }
 
   .marketing-heading-row,
@@ -3150,6 +3324,18 @@ a {
 
   .marketing-people-hero__media {
     min-height: 390px;
+    box-shadow: 9px 9px 0 var(--marketing-brand-soft);
+  }
+
+  .marketing-people-hero__media-label {
+    min-width: 0;
+    max-width: calc(100% - 24px);
+  }
+
+  .marketing-people-hero__media figcaption {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
   }
 
   .marketing-suite-grid,
