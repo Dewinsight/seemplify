@@ -182,6 +182,22 @@ export async function login(email: string, password: string) {
   return result
 }
 
+export async function requestCandidatePasswordReset(email: string) {
+  return candidateRequest<{ msg: string }>("/api/candidate-portal/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  }, false)
+}
+
+export async function resetCandidatePassword(token: string, password: string) {
+  const result = await candidateRequest<{ msg: string }>("/api/candidate-portal/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+  }, false)
+  clearAuth()
+  return result
+}
+
 export async function logout() {
   try {
     await candidateRequest<{ msg: string }>("/api/candidate-portal/auth/logout", { method: "POST" })

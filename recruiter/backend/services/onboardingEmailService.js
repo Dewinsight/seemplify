@@ -298,6 +298,49 @@ function envelopeDocumentCount(envelope = {}) {
   return `${count} document${count === 1 ? '' : 's'}`;
 }
 
+async function sendCandidatePasswordReset({ account, token, request, req }) {
+  if (!account?.email || !token) {
+    throw new Error('A candidate account and password reset token are required');
+  }
+
+  const context = { request: request || req };
+  const organizationName = isAkwaIbomContext(context)
+    ? 'Government of Akwa Ibom State'
+    : DEFAULT_ORGANIZATION_BRAND;
+  const resetUrl = candidatePortalUrl(`/reset-password/${encodeURIComponent(token)}`, context);
+  const name = candidateName(account.profile || account);
+  const title = 'Reset your candidate portal password';
+  const greeting = `Hello ${name},`;
+  const body = [
+    'We received a request to reset the password for your candidate portal account.',
+    'Use the secure link below within one hour to choose a new password.'
+  ];
+  const details = [
+    { label: 'Account', value: account.email },
+    { label: 'Link expires', value: 'In 1 hour' }
+  ];
+  const note = 'If you did not request this change, you can ignore this email. Your current password will continue to work.';
+
+  return emailService.sendEmail({
+    to: account.email,
+    subject: `Reset your ${organizationName} candidate portal password`,
+    organizationName,
+    text: renderTextEmail({ title, greeting, body, details, actionLabel: 'Reset password', actionUrl: resetUrl, note }),
+    html: renderTransitionEmail({
+      organizationName,
+      processLabel: 'Candidate portal',
+      preheader: 'Reset your candidate portal password within one hour.',
+      title,
+      greeting,
+      body,
+      details,
+      actionLabel: 'Reset password',
+      actionUrl: resetUrl,
+      note
+    })
+  });
+}
+
 async function sendCandidateInvite({ candidate, organization, portalPath, onboarding, request, req }) {
   const resolvedOrganization = await resolveOrganization(organization, { request, req, onboarding });
   const portalContext = { organization: resolvedOrganization || organization, request: request || req };
@@ -556,6 +599,7 @@ module.exports = {
   candidatePortalBaseUrl,
   candidatePortalUrl,
   isAkwaIbomContext,
+  sendCandidatePasswordReset,
   sendCandidateInvite,
   sendEnvelopeNotification,
   sendEnvelopeSignerNotification,

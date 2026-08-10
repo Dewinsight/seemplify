@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const express = require('express');
 const http = require('node:http');
 const mongoose = require('mongoose');
@@ -43,16 +44,18 @@ async function createBasePdf(title) {
   return Buffer.from(await pdfDoc.save());
 }
 
-function patchExternalServices(memoryFiles) {
+function patchExternalServices(memoryFiles, resetEmails) {
   const storageService = require('../services/onboardingStorageService');
   const pdfService = require('../services/onboardingPdfService');
-  const emailService = require('../services/onboardingEmailService');
+  const onboardingEmailService = require('../services/onboardingEmailService');
+  const emailService = require('../services/emailService');
 
   const original = {
     uploadBuffer: storageService.uploadBuffer,
     downloadPdfBuffer: pdfService.downloadPdfBuffer,
-    sendEnvelopeCompleted: emailService.sendEnvelopeCompleted,
-    sendEnvelopeSignerNotification: emailService.sendEnvelopeSignerNotification
+    sendEmail: emailService.sendEmail,
+    sendEnvelopeCompleted: onboardingEmailService.sendEnvelopeCompleted,
+    sendEnvelopeSignerNotification: onboardingEmailService.sendEnvelopeSignerNotification
   };
 
   let uploadCount = 0;
@@ -76,14 +79,19 @@ function patchExternalServices(memoryFiles) {
     if (!memoryFiles.has(url)) throw new Error(`Missing memory PDF ${url}`);
     return Buffer.from(memoryFiles.get(url));
   };
-  emailService.sendEnvelopeCompleted = async () => ({ skipped: true });
-  emailService.sendEnvelopeSignerNotification = async () => ({ skipped: true });
+  emailService.sendEmail = async (payload) => {
+    resetEmails.push(payload);
+    return { skipped: true };
+  };
+  onboardingEmailService.sendEnvelopeCompleted = async () => ({ skipped: true });
+  onboardingEmailService.sendEnvelopeSignerNotification = async () => ({ skipped: true });
 
   return () => {
     storageService.uploadBuffer = original.uploadBuffer;
     pdfService.downloadPdfBuffer = original.downloadPdfBuffer;
-    emailService.sendEnvelopeCompleted = original.sendEnvelopeCompleted;
-    emailService.sendEnvelopeSignerNotification = original.sendEnvelopeSignerNotification;
+    emailService.sendEmail = original.sendEmail;
+    onboardingEmailService.sendEnvelopeCompleted = original.sendEnvelopeCompleted;
+    onboardingEmailService.sendEnvelopeSignerNotification = original.sendEnvelopeSignerNotification;
   };
 }
 
@@ -322,7 +330,8 @@ async function main() {
   process.env.CANDIDATE_REFRESH_TTL = '30m';
 
   const memoryFiles = new Map();
-  const restoreServices = patchExternalServices(memoryFiles);
+  const resetEmails = [];
+  const restoreServices = patchExternalServices(memoryFiles, resetEmails);
   let mongoServer;
   let appServer;
 
@@ -338,11 +347,81 @@ async function main() {
     const app = await startApp();
     appServer = app.server;
 
-    const login = await request(app.baseUrl, '/api/candidate-portal/auth/login', {
+    const initialLogin = await request(app.baseUrl, '/api/candidate-portal/auth/login', {
       method: 'POST',
       body: { email: seeded.account.email, password: 'Password123!' }
     });
-    assert.equal(login.response.status, 200, `login failed: ${JSON.stringify(login.payload)}`);
+    assert.equal(initialLogin.response.status, 200, `initial login failed: ${JSON.stringify(initialLogin.payload)}`);
+
+    const unknownReset = await request(app.baseUrl, '/api/candidate-portal/auth/forgot-password', {
+      method: 'POST',
+      body: { email: 'missing-candidate@example.com' }
+    });
+    assert.equal(unknownReset.response.status, 200);
+    assert.equal(resetEmails.length, 0, 'unknown accounts must not trigger reset email delivery');
+
+    const forgotPassword = await request(app.baseUrl, '/api/candidate-portal/auth/forgot-password', {
+      method: 'POST',
+      body: { email: seeded.account.email }
+    });
+    assert.equal(forgotPassword.response.status, 200, `forgot password failed: ${JSON.stringify(forgotPassword.payload)}`);
+    assert.equal(forgotPassword.payload.msg, unknownReset.payload.msg, 'forgot-password responses must not reveal account existence');
+    assert.equal(resetEmails.length, 1, 'known candidate account should receive one reset email');
+    assert.equal(resetEmails[0].to, seeded.account.email);
+    assert.match(resetEmails[0].subject, /candidate portal password/i);
+    const resetLinkMatch = resetEmails[0].text.match(/https:\/\/candidate\.seemplifyai\.com\/reset-password\/([a-f0-9]{64})/);
+    assert.ok(resetLinkMatch, 'reset email should contain a branded candidate portal reset URL');
+    const resetToken = resetLinkMatch[1];
+
+    const repeatedForgotPassword = await request(app.baseUrl, '/api/candidate-portal/auth/forgot-password', {
+      method: 'POST',
+      body: { email: seeded.account.email }
+    });
+    assert.equal(repeatedForgotPassword.response.status, 200);
+    assert.equal(resetEmails.length, 1, 'reset email delivery should be throttled during the cooldown window');
+
+    const resetState = await CandidateAccount.findById(seeded.account._id)
+      .select('+resetPasswordTokenHash +resetPasswordExpiresAt +resetPasswordRequestedAt');
+    const expectedTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    assert.equal(resetState.resetPasswordTokenHash, expectedTokenHash, 'only the reset token hash should be stored');
+    assert.notEqual(resetState.resetPasswordTokenHash, resetToken, 'raw reset tokens must not be persisted');
+    assert.ok(resetState.resetPasswordExpiresAt > new Date(), 'reset token should have a future expiry');
+
+    const invalidReset = await request(app.baseUrl, '/api/candidate-portal/auth/reset-password', {
+      method: 'POST',
+      body: { token: 'invalid-token', password: 'UpdatedPassword123!' }
+    });
+    assert.equal(invalidReset.response.status, 400);
+
+    const passwordReset = await request(app.baseUrl, '/api/candidate-portal/auth/reset-password', {
+      method: 'POST',
+      body: { token: resetToken, password: 'UpdatedPassword123!' }
+    });
+    assert.equal(passwordReset.response.status, 200, `password reset failed: ${JSON.stringify(passwordReset.payload)}`);
+
+    const consumedResetState = await CandidateAccount.findById(seeded.account._id)
+      .select('+resetPasswordTokenHash +resetPasswordExpiresAt +resetPasswordRequestedAt');
+    assert.equal(consumedResetState.resetPasswordTokenHash, undefined, 'reset token must be cleared after use');
+    assert.equal(consumedResetState.resetPasswordExpiresAt, undefined, 'reset expiry must be cleared after use');
+    assert.equal(consumedResetState.refreshTokenVersion, 2, 'reset must invalidate existing candidate sessions');
+
+    const reusedReset = await request(app.baseUrl, '/api/candidate-portal/auth/reset-password', {
+      method: 'POST',
+      body: { token: resetToken, password: 'AnotherPassword123!' }
+    });
+    assert.equal(reusedReset.response.status, 400, 'reset token must be single-use');
+
+    const oldPasswordLogin = await request(app.baseUrl, '/api/candidate-portal/auth/login', {
+      method: 'POST',
+      body: { email: seeded.account.email, password: 'Password123!' }
+    });
+    assert.equal(oldPasswordLogin.response.status, 400, 'old password must stop working after reset');
+
+    const login = await request(app.baseUrl, '/api/candidate-portal/auth/login', {
+      method: 'POST',
+      body: { email: seeded.account.email, password: 'UpdatedPassword123!' }
+    });
+    assert.equal(login.response.status, 200, `login with reset password failed: ${JSON.stringify(login.payload)}`);
     assert.ok(login.payload.token, 'login should return a candidate token');
     const token = login.payload.token;
 
@@ -430,7 +509,7 @@ async function main() {
     assert.equal(finalTransition.payload.data.status, 'ready_to_provision');
     assert.equal(finalTransition.payload.data.nextAction.type, 'waiting');
 
-    console.log('Candidate portal integration verified: real auth, form submit, fill-only completion, ordered signing, PDF stamping, and HR-controlled provisioning readiness.');
+    console.log('Candidate portal integration verified: password recovery, real auth, form submit, fill-only completion, ordered signing, PDF stamping, and HR-controlled provisioning readiness.');
   } finally {
     await closeServer(appServer);
     await mongoose.disconnect();

@@ -30,6 +30,10 @@ const upload = multer({
   limits: { fileSize: 12 * 1024 * 1024 }
 });
 
+const CANDIDATE_PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+const CANDIDATE_PASSWORD_RESET_COOLDOWN_MS = 60 * 1000;
+const CANDIDATE_PASSWORD_RESET_RESPONSE = 'If a candidate account with that email exists, a password reset link has been sent.';
+
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
@@ -403,6 +407,83 @@ router.post('/auth/accept-invite', async (req, res) => {
   } catch (error) {
     console.error('Accept candidate invite failed:', error);
     res.status(500).json({ msg: 'Failed to accept invitation', error: error.message });
+  }
+});
+
+router.post('/auth/forgot-password', async (req, res) => {
+  const email = String(req.body?.email || '').toLowerCase().trim();
+  if (!email || !/\S+@\S+\.\S+/.test(email)) {
+    return res.status(400).json({ msg: 'A valid email address is required' });
+  }
+
+  try {
+    const account = await CandidateAccount.findOne({ email })
+      .select('+passwordHash +resetPasswordRequestedAt');
+
+    if (!account || !account.passwordHash || account.status === 'disabled') {
+      return res.json({ msg: CANDIDATE_PASSWORD_RESET_RESPONSE });
+    }
+
+    const lastRequestedAt = account.resetPasswordRequestedAt?.getTime() || 0;
+    if (Date.now() - lastRequestedAt < CANDIDATE_PASSWORD_RESET_COOLDOWN_MS) {
+      return res.json({ msg: CANDIDATE_PASSWORD_RESET_RESPONSE });
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    account.resetPasswordTokenHash = sha256(token);
+    account.resetPasswordExpiresAt = new Date(Date.now() + CANDIDATE_PASSWORD_RESET_TTL_MS);
+    account.resetPasswordRequestedAt = new Date();
+    await account.save();
+
+    try {
+      await onboardingEmailService.sendCandidatePasswordReset({
+        account,
+        token,
+        request: req
+      });
+    } catch (emailError) {
+      console.error('Candidate password reset email failed:', emailError);
+    }
+
+    return res.json({ msg: CANDIDATE_PASSWORD_RESET_RESPONSE });
+  } catch (error) {
+    console.error('Candidate forgot password failed:', error);
+    return res.status(500).json({ msg: 'Could not process the password reset request' });
+  }
+});
+
+router.post('/auth/reset-password', async (req, res) => {
+  const token = String(req.body?.token || '').trim();
+  const password = String(req.body?.password || '');
+
+  if (!token || password.length < 8 || password.length > 128) {
+    return res.status(400).json({ msg: 'A valid reset token and password between 8 and 128 characters are required' });
+  }
+
+  try {
+    const account = await CandidateAccount.findOne({
+      resetPasswordTokenHash: sha256(token),
+      resetPasswordExpiresAt: { $gt: new Date() },
+      status: { $ne: 'disabled' }
+    }).select('+passwordHash +resetPasswordTokenHash +resetPasswordExpiresAt +resetPasswordRequestedAt');
+
+    if (!account) {
+      return res.status(400).json({ msg: 'This password reset link is invalid or has expired' });
+    }
+
+    account.passwordHash = await bcrypt.hash(password, await bcrypt.genSalt(10));
+    account.resetPasswordTokenHash = undefined;
+    account.resetPasswordExpiresAt = undefined;
+    account.resetPasswordRequestedAt = undefined;
+    account.lastPasswordChangeAt = new Date();
+    account.refreshTokenVersion += 1;
+    account.status = 'active';
+    await account.save();
+
+    return res.json({ msg: 'Your candidate portal password has been reset successfully' });
+  } catch (error) {
+    console.error('Candidate reset password failed:', error);
+    return res.status(500).json({ msg: 'Could not reset the candidate portal password' });
   }
 });
 

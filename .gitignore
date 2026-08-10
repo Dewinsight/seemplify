@@ -20,6 +20,8 @@ secrets/
 !experience-management/frontend/src/components/journey-events/EventSourceCredentials.tsx
 !recruiter/frontend/app/public/ai-interview/\[token\]/
 !recruiter/frontend/app/public/ai-interview/\[token\]/page.tsx
+!recruiter/candidates/app/reset-password/\[token\]/
+!recruiter/candidates/app/reset-password/\[token\]/page.tsx
 !ai-interview/frontend/app/public/ai-interview/\[token\]/
 !ai-interview/frontend/app/public/ai-interview/\[token\]/page.tsx
 access/

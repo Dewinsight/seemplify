@@ -44,6 +44,19 @@ const CandidateAccountSchema = new mongoose.Schema({
   },
   lastLoginAt: Date,
   lastPasswordChangeAt: Date,
+  resetPasswordTokenHash: {
+    type: String,
+    select: false,
+    index: true
+  },
+  resetPasswordExpiresAt: {
+    type: Date,
+    select: false
+  },
+  resetPasswordRequestedAt: {
+    type: Date,
+    select: false
+  },
   refreshTokenVersion: {
     type: Number,
     default: 1

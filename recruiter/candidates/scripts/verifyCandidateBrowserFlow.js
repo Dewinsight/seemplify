@@ -75,6 +75,8 @@ function iso(daysFromNow) {
 
 function createMockState() {
   return {
+    forgotPasswordEmail: "",
+    resetPassword: null,
     formStatus: "draft",
     formValues: {},
     documents: {
@@ -336,6 +338,22 @@ function startMockApi(port, state) {
       const url = new URL(request.url, `http://127.0.0.1:${port}`)
       const record = createTransitionRecord(state)
 
+      if (url.pathname === "/api/candidate-portal/auth/forgot-password" && request.method === "POST") {
+        const payload = await readJson(request)
+        state.forgotPasswordEmail = payload.email || ""
+        state.requests.push(["forgotPassword", state.forgotPasswordEmail])
+        return sendJson(response, { msg: "If a candidate account with that email exists, a password reset link has been sent." })
+      }
+
+      if (url.pathname === "/api/candidate-portal/auth/reset-password" && request.method === "POST") {
+        const payload = await readJson(request)
+        assert.equal(payload.token, "mock-reset-token", "reset page should submit the URL token")
+        assert.equal(payload.password, "UpdatedPassword123!", "reset page should submit the new password")
+        state.resetPassword = payload.password
+        state.requests.push(["resetPassword", payload.token])
+        return sendJson(response, { msg: "Your candidate portal password has been reset successfully" })
+      }
+
       if (url.pathname === "/api/candidate-portal/me" && request.method === "GET") {
         return sendJson(response, {
           account: {
@@ -537,6 +555,21 @@ async function main() {
       if (message.type() === "error") pageErrors.push(message.text())
     })
 
+    await page.goto(`http://127.0.0.1:${appPort}/login`)
+    await page.getByRole("link", { name: "Forgot password?" }).click()
+    await page.waitForURL(/\/forgot-password$/)
+    await page.getByLabel("Email").fill("ava@example.com")
+    await page.getByRole("button", { name: "Send reset link" }).click()
+    await page.getByRole("heading", { name: "Check your email" }).waitFor()
+    assert.equal(state.forgotPasswordEmail, "ava@example.com", "forgot-password form should submit the candidate email")
+
+    await page.goto(`http://127.0.0.1:${appPort}/reset-password/mock-reset-token`)
+    await page.getByLabel("New password", { exact: true }).fill("UpdatedPassword123!")
+    await page.getByLabel("Confirm new password", { exact: true }).fill("UpdatedPassword123!")
+    await page.getByRole("button", { name: "Reset password" }).click()
+    await page.getByRole("heading", { name: "Password reset" }).waitFor()
+    assert.equal(state.resetPassword, "UpdatedPassword123!", "reset form should submit the new password")
+
     await page.addInitScript(() => {
       window.localStorage.setItem("seemplify_candidate_access_token", "mock-access-token")
       window.localStorage.setItem("seemplify_candidate_refresh_token", "mock-refresh-token")
@@ -600,13 +633,15 @@ async function main() {
     assert.notEqual(new URL(page.url()).pathname, "/dashboard", "Final document signing must land on completion, not dashboard")
 
     const requestNames = state.requests.map((entry) => entry[0])
+    assert.ok(requestNames.includes("forgotPassword"), "Forgot-password request should be made")
+    assert.ok(requestNames.includes("resetPassword"), "Password reset request should be made")
     assert.ok(requestNames.includes("submitForm"), "Form submit request should be made")
     assert.ok(requestNames.includes("completeDocument"), "Fill-only document completion request should be made")
     assert.ok(requestNames.includes("signDocument"), "Signature document request should be made")
     assert.deepEqual(state.documents, { bioDoc: "completed", agreementDoc: "completed" })
     assert.deepEqual(pageErrors, [], `Browser errors were reported:\n${pageErrors.join("\n")}`)
 
-    console.log("Candidate browser flow verified: dashboard -> form -> fill-only document -> signature document -> completion.")
+    console.log("Candidate browser flow verified: password recovery -> dashboard -> form -> fill-only document -> signature document -> completion.")
   } catch (error) {
     console.error(appOutput.join(""))
     throw error

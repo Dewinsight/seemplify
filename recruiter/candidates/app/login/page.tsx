@@ -45,25 +45,33 @@ export default function CandidateLoginPage() {
             <input
               className={`h-11 w-full rounded-md border border-slate-300 bg-white pl-10 pr-3 text-slate-950 outline-none transition focus:ring-2 ${brand.focusRingClass}`}
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
             />
           </div>
         </label>
-        <label className="block">
-          <span className="mb-2 block text-sm font-medium text-slate-700">Password</span>
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
+            <label htmlFor="candidate-password">Password</label>
+            <Link className={`font-medium hover:underline ${brand.accentTextClass}`} href="/forgot-password">
+              Forgot password?
+            </Link>
+          </div>
           <div className="relative">
             <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
             <input
+              id="candidate-password"
               className={`h-11 w-full rounded-md border border-slate-300 bg-white pl-10 pr-3 text-slate-950 outline-none transition focus:ring-2 ${brand.focusRingClass}`}
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
             />
           </div>
-        </label>
+        </div>
 
         <button
           className={`inline-flex h-11 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 ${brand.primaryButtonClass}`}
