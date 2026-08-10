@@ -10,6 +10,7 @@ import {
   requireTeamMember,
   requireTeamAdminOrManager
 } from '../middleware/permissions.js'
+import { requireAuthOrAPIToken } from '../middleware/apiAuth.js'
 import webhookService from '../services/webhookService.js'
 import { invalidateClaimsCache } from '../index.js'
 
@@ -41,7 +42,10 @@ async function findCrossDepartmentTeamMembership(organizationId, accountId, depa
  * GET /api/organizations/:orgId/teams
  */
 router.get('/organizations/:orgId/teams',
-  requireAuth,
+  // Payroll and other first-party services use the signed-in user's OAuth
+  // bearer token rather than the IDP browser session. Membership is still
+  // verified immediately below for the requested organization.
+  requireAuthOrAPIToken,
   requireOrganizationMember,
   async (req, res) => {
     try {
