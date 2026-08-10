@@ -183,7 +183,13 @@ describe('PayrollEmployerEntityService multi-jurisdiction controls', () => {
     expect(gbRun.activePeriodKey).toBe('monthly:2026:08');
     expect(PayrollRun.schema.indexes()).toContainEqual([
       { organizationId: 1, employerEntityId: 1, activePeriodKey: 1 },
-      expect.objectContaining({ unique: true, sparse: true }),
+      expect.objectContaining({
+        unique: true,
+        partialFilterExpression: {
+          employerEntityId: { $type: 'objectId' },
+          activePeriodKey: { $type: 'string' },
+        },
+      }),
     ]);
   });
 });

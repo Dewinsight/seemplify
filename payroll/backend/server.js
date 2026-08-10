@@ -23,6 +23,7 @@ const PayrollRun = require('./models/PayrollRun');
 const Payslip = require('./models/Payslip');
 const PayrollSequence = require('./models/PayrollSequence');
 const ExchangeRate = require('./models/ExchangeRate');
+const { consolidateExactInstantDuplicates } = require('./services/ExchangeRateIndexMigrationService');
 
 // Now we can safely import services that depend on models
 const MonthlyPayrollScheduler = require('./jobs/MonthlyPayrollScheduler');
@@ -175,8 +176,14 @@ async function migratePayrollIndexes() {
     }
   );
   await PayrollSequence.init();
-  // Fail readiness rather than serve nondeterministic FX history if an
-  // existing deployment contains duplicate exact-instant rates.
+  // Older deployments allowed multiple provenance rows at the same instant.
+  // Consolidate only calculation-identical rows before enforcing the new
+  // immutable timeline. Conflicting rates deliberately fail startup rather
+  // than silently restating a historical payroll conversion.
+  const exchangeRateMigration = await consolidateExactInstantDuplicates(ExchangeRate.collection);
+  if (exchangeRateMigration.removedCount > 0) {
+    console.log(`Consolidated ${exchangeRateMigration.removedCount} duplicate exchange-rate record(s)`);
+  }
   await ExchangeRate.init();
   await payrollSequenceMigrationService.seedCounters();
 }
