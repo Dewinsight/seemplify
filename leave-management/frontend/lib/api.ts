@@ -104,9 +104,16 @@ export const leaveRequestsApi = {
     return response.data;
   },
 
-  getCalendar: async (startDate: string, endDate: string, teamId?: string) => {
+  getCalendar: async (startDate: string, endDate: string) => {
     const response = await api.get('/leave-requests/calendar', {
-      params: { startDate, endDate, teamId },
+      params: { startDate, endDate },
+    });
+    return response.data;
+  },
+
+  getOrganizationCalendar: async (startDate: string, endDate: string) => {
+    const response = await api.get('/leave-requests/calendar/organization', {
+      params: { startDate, endDate },
     });
     return response.data;
   },

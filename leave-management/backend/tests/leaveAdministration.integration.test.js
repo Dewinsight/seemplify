@@ -4,6 +4,7 @@ const request = require('supertest');
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 
 const leaveBalanceRoutes = require('../routes/leaveBalances');
+const leaveRequestRoutes = require('../routes/leaveRequests');
 const leaveTypeRoutes = require('../routes/leaveTypes');
 const { errorHandler } = require('../middleware/errorHandler');
 const {
@@ -11,6 +12,7 @@ const {
   LeaveBalance,
   LeaveEntitlementAdjustment,
   LeavePolicy,
+  LeaveRequest,
 } = require('../models');
 
 jest.setTimeout(120_000);
@@ -31,12 +33,16 @@ describe('leave administration API', () => {
       LeaveBalance.init(),
       LeaveEntitlementAdjustment.init(),
       LeavePolicy.init(),
+      LeaveRequest.init(),
     ]);
 
     global.fetch = jest.fn(async (_url, options) => {
       const { organizationId } = JSON.parse(options.body);
       const memberships = organizationId === 'org-a'
-        ? [{ userId: 'account-a', idpSubject: 'employee-a', name: 'Employee A', email: 'a@example.com', role: 'staff', status: 'active', teamIds: ['team-a'] }]
+        ? [
+          { userId: 'account-a', idpSubject: 'employee-a', name: 'Employee A', email: 'a@example.com', role: 'staff', status: 'active', teamIds: ['team-a'] },
+          { userId: 'account-x', idpSubject: 'employee-x', name: 'Employee X', email: 'x@example.com', role: 'staff', status: 'active', teamIds: ['team-a'] },
+        ]
         : [{ userId: 'account-b', idpSubject: 'employee-b', name: 'Employee B', email: 'b@example.com', role: 'staff', status: 'active', teamIds: ['team-b'] }];
       return { ok: true, json: async () => ({ schemaVersion: '1.0', organizationId, memberships }) };
     });
@@ -60,6 +66,7 @@ describe('leave administration API', () => {
     });
     app.use('/api/leave-types', leaveTypeRoutes);
     app.use('/api/leave-balances', leaveBalanceRoutes);
+    app.use('/api/leave-requests', leaveRequestRoutes);
     app.use(errorHandler);
   });
 
@@ -161,10 +168,55 @@ describe('leave administration API', () => {
       .send({ year: 2026 });
 
     expect(response.status).toBe(200);
-    expect(response.body.results).toMatchObject({ created: 1, existing: 0, errors: [] });
+    expect(response.body.results).toMatchObject({ created: 2, existing: 0, errors: [] });
     const log = await AuditLog.findOne({ organizationId: 'org-a', action: 'leave_balances_initialized' });
     expect(log).toMatchObject({ performedBy: 'admin-org-a', resourceId: 'org-a:2026' });
-    expect(log.metadata).toMatchObject({ year: 2026, created: 1, existing: 0 });
+    expect(log.metadata).toMatchObject({ year: 2026, created: 2, existing: 0 });
+  });
+
+  test('keeps the employee calendar private and exposes workforce coverage only to administrators', async () => {
+    await LeaveRequest.create([
+      {
+        userId: 'employee-a', userEmail: 'a@example.com', userName: 'Employee A',
+        organizationId: 'org-a', organizationName: 'Organization A', teamId: 'team-a', teamName: 'Operations',
+        leaveType: 'annual', leaveTypeName: 'Annual Leave', startDate: '2026-08-10', endDate: '2026-08-12',
+        numberOfDays: 3, status: 'approved',
+      },
+      {
+        userId: 'employee-x', userEmail: 'x@example.com', userName: 'Employee X',
+        organizationId: 'org-a', organizationName: 'Organization A', teamId: 'team-a', teamName: 'Operations',
+        leaveType: 'sick', leaveTypeName: 'Sick Leave', startDate: '2026-08-11', endDate: '2026-08-11',
+        numberOfDays: 1, status: 'pending',
+      },
+    ]);
+
+    const personal = await request(app)
+      .get('/api/leave-requests/calendar?startDate=2026-08-01&endDate=2026-08-31')
+      .set('x-test-organization', 'org-a')
+      .set('x-test-user', 'employee');
+    expect(personal.status).toBe(200);
+    expect(personal.body.requests).toHaveLength(1);
+    expect(personal.body.requests[0].userId).toBe('employee-a');
+
+    const denied = await request(app)
+      .get('/api/leave-requests/calendar/organization?startDate=2026-08-01&endDate=2026-08-31')
+      .set('x-test-organization', 'org-a')
+      .set('x-test-user', 'employee');
+    expect(denied.status).toBe(403);
+
+    const management = await request(app)
+      .get('/api/leave-requests/calendar/organization?startDate=2026-08-01&endDate=2026-08-31')
+      .set('x-test-organization', 'org-a');
+    expect(management.status).toBe(200);
+    expect(management.body.requests).toHaveLength(2);
+    expect(management.body.summary).toMatchObject({
+      totalWorkforce: 2,
+      peopleOnApprovedLeave: 1,
+      workforcePercentOnLeaveInPeriod: 50,
+      pendingRequests: 1,
+      peakAwayCount: 1,
+      peakAwayPercent: 50,
+    });
   });
 
   test('rejects cross-organization targets and changes without a reason', async () => {

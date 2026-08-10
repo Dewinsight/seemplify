@@ -3,19 +3,21 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ClipboardCheck, History, Settings2, Users } from 'lucide-react';
+import { CalendarDays, ClipboardCheck, History, Settings2, Users } from 'lucide-react';
 
 import Layout from '@/components/Layout';
 import LeaveAuditPanel from '@/components/admin/LeaveAuditPanel';
 import LeaveTypesPanel from '@/components/admin/LeaveTypesPanel';
 import PeopleEntitlementsPanel from '@/components/admin/PeopleEntitlementsPanel';
+import WorkforceCalendarPanel from '@/components/admin/WorkforceCalendarPanel';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 
-type AdminTab = 'leave-types' | 'people' | 'audit';
+type AdminTab = 'leave-types' | 'people' | 'calendar' | 'audit';
 const tabs: Array<{ id: AdminTab; label: string; icon: typeof Settings2 }> = [
   { id: 'leave-types', label: 'Leave types', icon: Settings2 },
   { id: 'people', label: 'People', icon: Users },
+  { id: 'calendar', label: 'Workforce calendar', icon: CalendarDays },
   { id: 'audit', label: 'Audit history', icon: History },
 ];
 
@@ -47,6 +49,7 @@ export default function LeaveAdminPage() {
         <div className="border-b border-border" role="tablist" aria-label="Leave administration sections"><div className="flex gap-6 overflow-x-auto">{tabs.map((item) => <button key={item.id} role="tab" aria-selected={tab === item.id} onClick={() => selectTab(item.id)} className={cn('flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium', tab === item.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground')}><item.icon className="h-4 w-4" />{item.label}</button>)}</div></div>
         {tab === 'leave-types' && <LeaveTypesPanel />}
         {tab === 'people' && <PeopleEntitlementsPanel />}
+        {tab === 'calendar' && <WorkforceCalendarPanel />}
         {tab === 'audit' && <LeaveAuditPanel />}
       </div>
     </Layout>

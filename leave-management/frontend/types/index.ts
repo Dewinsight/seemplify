@@ -38,6 +38,7 @@ export interface LeaveRequest {
   organizationId: string;
   organizationName: string;
   teamId?: string;
+  teamIds?: string[];
   teamName?: string;
   teamHierarchyPath?: string[];
   leaveType: LeaveType;
@@ -225,6 +226,30 @@ export interface OrganizationAuditLog {
   performedAt: string;
   details?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface CalendarDailyCoverage {
+  date: string;
+  approvedAway: number;
+  pendingAway: number;
+  approvedAwayPercent: number;
+}
+
+export interface CalendarCoverageSummary {
+  totalWorkforce: number;
+  peopleOnApprovedLeave: number;
+  workforcePercentOnLeaveInPeriod: number;
+  approvedRequests?: number;
+  pendingRequests: number;
+  peakAwayCount: number;
+  peakAwayPercent: number;
+  peakDate: string | null;
+}
+
+export interface TeamCalendarCoverage extends CalendarCoverageSummary {
+  teamId: string;
+  teamName: string;
+  dailyCoverage: CalendarDailyCoverage[];
 }
 
 export interface Holiday {

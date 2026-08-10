@@ -49,7 +49,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       { name: 'Dashboard', href: '/dashboard', icon: Home, section: 'main' },
       { name: 'My Requests', href: '/leave-requests', icon: FileText, section: 'main' },
       { name: 'Approvals', href: '/approvals', icon: CheckSquare, section: 'main' },
-      { name: 'Calendar', href: '/calendar', icon: Calendar, section: 'main' },
+      { name: 'My Calendar', href: '/calendar', icon: Calendar, section: 'main' },
     ];
     const admin: NavItem[] = hasAdminAccess
       ? [{ name: 'Admin', href: '/admin', icon: Users, section: 'admin' }]

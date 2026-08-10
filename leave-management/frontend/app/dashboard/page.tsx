@@ -81,7 +81,7 @@ export default function DashboardPage() {
     { title: 'Request leave', copy: 'Submit time away with dates, reason, and the right approval route.', href: '/leave-requests/new', icon: FileText, meta: 'New request' },
     { title: 'My requests', copy: 'Review submitted leave, approval progress, and previous decisions.', href: '/leave-requests', icon: TrendingUp, meta: `${recentRequests.length} recent` },
     { title: 'Approvals', copy: 'Review requests assigned through your team or management role.', href: '/approvals', icon: CheckSquare, meta: `${pendingApprovals.length} pending` },
-    { title: 'Team calendar', copy: 'See approved absences together before planning coverage.', href: '/calendar', icon: Calendar, meta: 'Open calendar' },
+    { title: 'My calendar', copy: 'See your approved and pending leave requests by date.', href: '/calendar', icon: Calendar, meta: 'Open calendar' },
   ];
 
   return (

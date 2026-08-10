@@ -1,322 +1,92 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
+import { addMonths, endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+
 import Layout from '@/components/Layout';
-import { leaveRequestsApi, leavePoliciesApi } from '@/lib/api';
-import { LeaveRequest, Holiday, LeaveTypeDefinition } from '@/types';
-import { getLeaveTypeLabel, getLeaveTypeColor, cn } from '@/lib/utils';
-import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  eachDayOfInterval,
-  isSameMonth,
-  isSameDay,
-  addMonths,
-  subMonths,
-  isWeekend,
-  parseISO,
-} from 'date-fns';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import LeaveCalendarGrid, { requestsForDay } from '@/components/LeaveCalendarGrid';
 import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/context/AuthContext';
+import { leavePoliciesApi, leaveRequestsApi } from '@/lib/api';
+import { formatDateRange, getLeaveTypeLabel, getStatusColor, getStatusLabel } from '@/lib/utils';
+import { Holiday, LeaveRequest } from '@/types';
 
 export default function CalendarPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [month, setMonth] = useState(new Date());
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [selectedDay, setSelectedDay] = useState<Date | null>(new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeDefinition[]>([]);
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push('/login');
-    }
+    if (!authLoading && !isAuthenticated) router.push('/login');
   }, [authLoading, isAuthenticated, router]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!isAuthenticated) return;
-
+    if (!isAuthenticated) return;
+    const load = async () => {
+      setLoading(true);
+      setError(null);
       try {
-        setLoading(true);
-        const start = startOfMonth(currentMonth);
-        const end = endOfMonth(currentMonth);
-
-        const [leavesRes, holidaysRes, policyRes] = await Promise.all([
-          leaveRequestsApi.getCalendar(
-            format(start, 'yyyy-MM-dd'),
-            format(end, 'yyyy-MM-dd')
-          ),
-          leavePoliciesApi.getHolidays(currentMonth.getFullYear()),
-          leavePoliciesApi.get(),
+        const [calendarResponse, holidayResponse] = await Promise.all([
+          leaveRequestsApi.getCalendar(format(startOfMonth(month), 'yyyy-MM-dd'), format(endOfMonth(month), 'yyyy-MM-dd')),
+          leavePoliciesApi.getHolidays(month.getFullYear()),
         ]);
-
-        setLeaves(leavesRes.requests || []);
-        setHolidays(holidaysRes.holidays || []);
-        setLeaveTypes((policyRes.policy.leaveTypes || []).filter((item: LeaveTypeDefinition) => item.active));
-      } catch (err: any) {
-        setError(err.response?.data?.error || 'Failed to load calendar data');
+        setRequests(calendarResponse.requests || []);
+        setHolidays(holidayResponse.holidays || []);
+      } catch (requestError: any) {
+        setError(requestError.response?.data?.error || 'Unable to load your leave calendar.');
       } finally {
         setLoading(false);
       }
     };
+    void load();
+  }, [isAuthenticated, month]);
 
-    fetchData();
-  }, [isAuthenticated, currentMonth]);
+  const selectedRequests = selectedDay ? requestsForDay(requests, selectedDay) : [];
 
-  const days = eachDayOfInterval({
-    start: startOfMonth(currentMonth),
-    end: endOfMonth(currentMonth),
-  });
-
-  // Pad start with empty days for alignment
-  const startDay = startOfMonth(currentMonth).getDay();
-  const paddedDays = [...Array(startDay).fill(null), ...days];
-
-  const getLeavesForDay = (day: Date) => {
-    return leaves.filter(leave => {
-      const start = parseISO(leave.startDate);
-      const end = parseISO(leave.endDate);
-      return day >= start && day <= end;
-    });
-  };
-
-  const getHolidayForDay = (day: Date) => {
-    return holidays.find(holiday => {
-      const holidayDate = parseISO(holiday.date);
-      return isSameDay(day, holidayDate);
-    });
-  };
-
-  const isHoliday = (day: Date) => {
-    return holidays.some(holiday => {
-      const holidayDate = parseISO(holiday.date);
-      return isSameDay(day, holidayDate);
-    });
-  };
-
-  if (authLoading) {
-    return (
-      <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-pink-500"></div>
-        </div>
-      </Layout>
-    );
-  }
+  if (authLoading) return <Layout><div className="py-16 text-center text-sm text-muted-foreground">Loading your calendar…</div></Layout>;
 
   return (
     <Layout>
-      <div className="space-y-8">
-        {/* Header */}
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-indigo-500/20 rounded-2xl blur-3xl"></div>
-          <div className="relative bg-card dark:bg-zinc-900/80 backdrop-blur-xl rounded-2xl border border-border dark:border-zinc-700/50 p-8 shadow-2xl shadow-pink-500/10">
-            <h1 className="text-3xl font-semibold tracking-tight text-card-foreground">
-              Leave Calendar
-            </h1>
-            <p className="text-muted-foreground mt-2">View approved leaves for your organization</p>
-          </div>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><h1 className="text-2xl font-semibold tracking-tight">My leave calendar</h1><p className="mt-1 text-sm text-muted-foreground">Your approved and pending leave requests. Other employees’ requests are not shown here.</p></div>
+          <Link href="/leave-requests/new" className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">Request leave</Link>
         </div>
 
-        {/* Error message */}
-        {error && (
-          <Alert variant="danger">{error}</Alert>
+        {error && <Alert variant="danger">{error}</Alert>}
+
+        <div className="flex items-center justify-between border-y border-border py-3">
+          <Button variant="outline" size="sm" onClick={() => setMonth(subMonths(month, 1))}><ChevronLeft className="h-4 w-4" /> Previous</Button>
+          <div className="text-center"><h2 className="font-semibold">{format(month, 'MMMM yyyy')}</h2><p className="text-xs text-muted-foreground">{requests.length} active request{requests.length === 1 ? '' : 's'}</p></div>
+          <Button variant="outline" size="sm" onClick={() => setMonth(addMonths(month, 1))}>Next <ChevronRight className="h-4 w-4" /></Button>
+        </div>
+
+        {loading ? <div className="py-24 text-center text-sm text-muted-foreground">Loading calendar…</div> : (
+          <LeaveCalendarGrid month={month} requests={requests} holidays={holidays} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
         )}
 
-        {/* Calendar */}
-        <div className="bg-card dark:bg-zinc-900/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-border dark:border-zinc-700/50 overflow-hidden">
-          {/* Month navigation */}
-          <div className="flex items-center justify-between p-4 border-b border-border dark:border-zinc-700/50 bg-muted/50 dark:bg-zinc-900/60">
-            <button
-              onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-              className="p-2 hover:bg-accent dark:hover:bg-zinc-800/70 rounded-lg transition-colors text-muted-foreground dark:text-zinc-300"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-foreground dark:text-zinc-100">
-                {format(currentMonth, 'MMMM yyyy')}
-              </h2>
-              <Badge variant="outline" className="bg-pink-500/20 border-pink-500/30 text-pink-600 dark:text-pink-300">
-                {leaves.length} leave(s)
-              </Badge>
-            </div>
-            <button
-              onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-              className="p-2 hover:bg-accent dark:hover:bg-zinc-800/70 rounded-lg transition-colors text-muted-foreground dark:text-zinc-300"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div>
-
-          {/* Loading state */}
-          {loading ? (
-            <div className="flex items-center justify-center h-96">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-pink-500"></div>
-            </div>
-          ) : (
-            <>
-              {/* Day headers */}
-              <div className="grid grid-cols-7 bg-muted/30 dark:bg-zinc-800/60 border-b border-border dark:border-zinc-700/50">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="p-2 text-center text-sm font-semibold text-muted-foreground dark:text-zinc-400">
-                    {day}
-                  </div>
-                ))}
-              </div>
-
-              {/* Calendar grid */}
-              <div className="grid grid-cols-7">
-                {paddedDays.map((day, index) => {
-                  if (!day) {
-                    return <div key={`empty-${index}`} className="h-24 border-b border-r border-border dark:border-zinc-800/50 bg-muted/20 dark:bg-zinc-900/40" />;
-                  }
-
-                  const dayLeaves = getLeavesForDay(day);
-                  const holiday = getHolidayForDay(day);
-                  const isToday = isSameDay(day, new Date());
-                  const weekend = isWeekend(day);
-
-                  return (
-                    <div
-                      key={day.toISOString()}
-                      onClick={() => setSelectedDay(day)}
-                      className={cn(
-                        'h-24 border-b border-r border-border dark:border-zinc-800/50 p-2 cursor-pointer hover:bg-accent dark:hover:bg-zinc-800/40 transition-colors',
-                        weekend && 'bg-muted/30 dark:bg-zinc-800/30',
-                        holiday && 'bg-red-500/10',
-                        isToday && 'ring-2 ring-inset ring-purple-500/50'
-                      )}
-                    >
-                      <div className="flex justify-between items-start">
-                        <span
-                          className={cn(
-                            'text-sm font-semibold',
-                            !isSameMonth(day, currentMonth) && 'text-muted-foreground/50 dark:text-zinc-600',
-                            isToday && 'text-purple-600 dark:text-purple-400',
-                            weekend && 'text-muted-foreground dark:text-zinc-500',
-                            isSameMonth(day, currentMonth) && !isToday && !weekend && 'text-foreground dark:text-zinc-300'
-                          )}
-                        >
-                          {format(day, 'd')}
-                        </span>
-                        {holiday && (
-                          <span className="text-xs text-red-600 dark:text-red-400 font-semibold bg-red-500/20 px-1 rounded" title={holiday.name}>
-                            H
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Leave indicators */}
-                      <div className="mt-1 space-y-0.5 overflow-hidden">
-                        {dayLeaves.slice(0, 2).map((leave, idx) => (
-                          <div
-                            key={`${leave._id}-${idx}`}
-                            className={cn(
-                              'text-xs px-1 py-0.5 rounded truncate',
-                              getLeaveTypeColor(leave.leaveType)
-                            )}
-                            title={`${leave.userName} - ${getLeaveTypeLabel(leave.leaveType, leave.leaveTypeName)}`}
-                          >
-                            {leave.userName.split(' ')[0]}
-                          </div>
-                        ))}
-                        {dayLeaves.length > 2 && (
-                          <div className="text-xs text-muted-foreground dark:text-zinc-500 px-1">
-                            +{dayLeaves.length - 2} more
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Selected day details */}
         {selectedDay && (
-          <div className="bg-popover dark:bg-zinc-900/80 backdrop-blur-sm rounded-2xl shadow-lg border border-border dark:border-slate-200/50 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-foreground dark:text-slate-100">
-                {format(selectedDay, 'EEEE, MMMM d, yyyy')}
-              </h3>
-              <button
-                onClick={() => setSelectedDay(null)}
-                className="text-muted-foreground dark:text-slate-400 hover:text-foreground dark:hover:text-slate-200"
-              >
-                &times;
-              </button>
-            </div>
-
-            {getHolidayForDay(selectedDay) && (
-              <div className="mb-4 p-3 bg-red-500/10 rounded-lg text-red-700 dark:text-red-400">
-                <CalendarIcon className="h-4 w-4 inline mr-2" />
-                Holiday: {getHolidayForDay(selectedDay)?.name}
-              </div>
+          <section className="border border-border bg-card" aria-labelledby="selected-day-title">
+            <div className="border-b border-border px-4 py-3"><h2 id="selected-day-title" className="font-semibold">{format(selectedDay, 'EEEE, MMMM d, yyyy')}</h2></div>
+            {selectedRequests.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">You have no leave scheduled for this day.</p> : (
+              <div className="divide-y divide-border">{selectedRequests.map((request) => (
+                <Link key={request._id} href={`/leave-requests/${request._id}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-muted/30">
+                  <div><p className="text-sm font-medium">{getLeaveTypeLabel(request.leaveType, request.leaveTypeName)}</p><p className="mt-1 text-xs text-muted-foreground">{formatDateRange(request.startDate, request.endDate)} · {request.numberOfDays} day{request.numberOfDays === 1 ? '' : 's'}</p></div>
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${getStatusColor(request.status)}`}>{getStatusLabel(request.status)}</span>
+                </Link>
+              ))}</div>
             )}
-
-            {getLeavesForDay(selectedDay).length === 0 ? (
-              <p className="text-muted-foreground dark:text-slate-400">No leaves scheduled for this day</p>
-            ) : (
-              <div className="space-y-3">
-                {getLeavesForDay(selectedDay).map(leave => (
-                  <div
-                    key={leave._id}
-                    className="flex items-center justify-between p-3 bg-muted/50 dark:bg-slate-50/10 rounded-xl border border-border dark:border-slate-200/50"
-                  >
-                    <div>
-                      <p className="font-semibold text-foreground dark:text-slate-100">{leave.userName}</p>
-                      <span
-                        className={cn(
-                          'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
-                          getLeaveTypeColor(leave.leaveType)
-                        )}
-                      >
-                        {getLeaveTypeLabel(leave.leaveType, leave.leaveTypeName)}
-                      </span>
-                    </div>
-                    <div className="text-sm text-muted-foreground dark:text-slate-400">
-                      {leave.numberOfDays} day(s)
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          </section>
         )}
-
-        {/* Legend */}
-        <div className="bg-card dark:bg-zinc-900/90 backdrop-blur-xl rounded-xl shadow-lg border border-border dark:border-zinc-700/50 p-4">
-          <h3 className="text-sm font-semibold text-muted-foreground dark:text-zinc-300 mb-3">Legend</h3>
-          <div className="flex flex-wrap gap-4">
-            {leaveTypes.map((definition) => (
-              <div key={definition.key} className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    'w-3 h-3 rounded',
-                    getLeaveTypeColor(definition.key).replace('text-', 'bg-').split(' ')[0]
-                  )}
-                />
-                <span className="text-sm text-muted-foreground dark:text-zinc-400">{getLeaveTypeLabel(definition.key, definition.name)}</span>
-              </div>
-            ))}
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded bg-red-500/40" />
-              <span className="text-sm text-muted-foreground dark:text-zinc-400">Holiday</span>
-            </div>
-          </div>
-        </div>
       </div>
     </Layout>
   );

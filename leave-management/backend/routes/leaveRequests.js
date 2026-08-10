@@ -28,6 +28,8 @@ const {
 const emailService = require('../services/emailService');
 const { queueLeaveEvent } = require('../services/attendanceIntegrationService');
 const { normalizeLeaveTypeKey } = require('../services/leaveEntitlementService');
+const { fetchOrganizationRoster } = require('../services/rosterService');
+const { buildCalendarAnalytics, daysInRange } = require('../services/calendarAnalyticsService');
 
 // Apply auth and org middleware to all routes
 router.use(requireAuth);
@@ -283,9 +285,47 @@ router.get('/all',
   })
 );
 
-// Get calendar data (all approved leaves for the org)
+// Management calendar: organization requests plus workforce coverage analytics.
+router.get('/calendar/organization', requireLeavePermission('view_all_leaves'), asyncHandler(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  if (!startDate || !endDate) {
+    throw new AppError('startDate and endDate are required', 400, 'INVALID_PARAMS');
+  }
+  try {
+    daysInRange(startDate, endDate);
+  } catch (error) {
+    throw new AppError(error.message, 400, 'INVALID_DATE_RANGE');
+  }
+
+  const [rawRequests, roster] = await Promise.all([
+    LeaveRequest.find({
+      organizationId: req.organizationId,
+      status: { $in: ['pending', 'approved'] },
+      startDate: { $lte: new Date(endDate) },
+      endDate: { $gte: new Date(startDate) },
+    }).select('userId userName userEmail leaveType leaveTypeName startDate endDate numberOfDays status teamId teamName reason').sort({ startDate: 1 }).lean(),
+    fetchOrganizationRoster(req.organizationId),
+  ]);
+  const rosterByUserId = new Map(roster.map((member) => [String(member.userId), member]));
+  const requests = rawRequests.map((request) => {
+    const member = rosterByUserId.get(String(request.userId));
+    const teamIds = new Set(member?.teamIds || []);
+    for (const assignment of member?.teamAssignments || []) {
+      if (assignment?.teamId) teamIds.add(String(assignment.teamId));
+    }
+    if (request.teamId) teamIds.add(String(request.teamId));
+    return { ...request, teamIds: Array.from(teamIds) };
+  });
+
+  res.json({
+    requests,
+    ...buildCalendarAnalytics({ startDate, endDate, roster, requests }),
+  });
+}));
+
+// Personal calendar: only the signed-in employee's active leave requests.
 router.get('/calendar', asyncHandler(async (req, res) => {
-  const { startDate, endDate, teamId } = req.query;
+  const { startDate, endDate } = req.query;
 
   if (!startDate || !endDate) {
     throw new AppError('startDate and endDate are required', 400, 'INVALID_PARAMS');
@@ -293,17 +333,14 @@ router.get('/calendar', asyncHandler(async (req, res) => {
 
   const query = {
     organizationId: req.organizationId,
-    status: 'approved',
+    userId: req.user.id,
+    status: { $in: ['pending', 'approved'] },
     startDate: { $lte: new Date(endDate) },
     endDate: { $gte: new Date(startDate) },
   };
 
-  if (teamId) {
-    query.teamId = teamId;
-  }
-
   const requests = await LeaveRequest.find(query)
-    .select('userId userName leaveType leaveTypeName startDate endDate numberOfDays teamName')
+    .select('userId userName leaveType leaveTypeName startDate endDate numberOfDays status teamName')
     .sort({ startDate: 1 });
 
   res.json({ requests });

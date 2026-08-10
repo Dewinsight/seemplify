@@ -69,7 +69,7 @@ test('administrator adds days to one employee with a required audit reason', asy
   let currentBalance = balance();
   const adjustment = {
     _id: 'adjustment-1', organizationId: 'org-1', userId: 'employee-1', userName: 'Amina Bello', userEmail: 'amina@example.com', year: 2026,
-    leaveTypeKey: 'study', leaveTypeName: 'Study Leave', previousTotal: 8, newTotal: 10, delta: 2,
+    leaveTypeKey: 'study', leaveTypeName: 'Study Leave', operation: 'add', previousTotal: 8, newTotal: 10, delta: 2,
     reason: 'Approved examination period', actorId: 'admin-1', actorName: 'HR Admin', createdAt: '2026-08-10T10:00:00.000Z',
   };
   await page.route('**/api/**', async (route) => {
@@ -89,11 +89,11 @@ test('administrator adds days to one employee with a required audit reason', asy
   await page.goto('/admin?tab=people');
   await page.getByRole('button', { name: 'Manage leave' }).click();
   await page.getByRole('button', { name: 'Adjust' }).click();
-  await page.getByLabel('Days to add (use a negative number to remove)').fill('2');
+  await page.getByLabel('Days to add').fill('2');
   await page.getByLabel('Reason').fill('Approved examination period');
-  await page.getByRole('button', { name: 'Save adjustment' }).click();
-  await expect(page.getByText('Study Leave: 8 → 10 days')).toBeVisible();
-  expect(adjustmentPayload).toMatchObject({ year: 2026, delta: 2, reason: 'Approved examination period', expectedVersion: 2 });
+  await page.getByRole('button', { name: 'Add days' }).click();
+  await expect(page.getByText('Study Leave: Added 2 days · 8 → 10 days')).toBeVisible();
+  expect(adjustmentPayload).toMatchObject({ year: 2026, operation: 'add', delta: 2, reason: 'Approved examination period', expectedVersion: 2 });
 });
 
 test('employee requests a newly configured leave type', async ({ page }) => {
