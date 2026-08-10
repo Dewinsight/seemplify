@@ -7,6 +7,7 @@ import { addMonths, endOfMonth, format, startOfMonth, subMonths } from 'date-fns
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import Layout from '@/components/Layout';
+import CalendarViewSwitcher from '@/components/CalendarViewSwitcher';
 import LeaveCalendarGrid, { requestsForDay } from '@/components/LeaveCalendarGrid';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,7 @@ import { Holiday, LeaveRequest } from '@/types';
 
 export default function CalendarPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { currentOrganization, isAuthenticated, isLoading: authLoading } = useAuth();
   const [month, setMonth] = useState(new Date());
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -51,12 +52,19 @@ export default function CalendarPage() {
   }, [isAuthenticated, month]);
 
   const selectedRequests = selectedDay ? requestsForDay(requests, selectedDay) : [];
+  const leavePermissions = currentOrganization?.appPermissions?.['leave-management'] || [];
+  const canViewWorkforce = currentOrganization?.role === 'owner' ||
+    currentOrganization?.role === 'admin' ||
+    currentOrganization?.role === 'hr_manager' ||
+    leavePermissions.includes('*') ||
+    leavePermissions.includes('view_all_leaves');
 
   if (authLoading) return <Layout><div className="py-16 text-center text-sm text-muted-foreground">Loading your calendar…</div></Layout>;
 
   return (
     <Layout>
       <div className="space-y-6">
+        <CalendarViewSwitcher active="personal" showWorkforce={canViewWorkforce} />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><h1 className="text-2xl font-semibold tracking-tight">My leave calendar</h1><p className="mt-1 text-sm text-muted-foreground">Your approved and pending leave requests. Other employees’ requests are not shown here.</p></div>
           <Link href="/leave-requests/new" className="inline-flex h-10 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">Request leave</Link>

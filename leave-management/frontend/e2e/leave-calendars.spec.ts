@@ -38,6 +38,7 @@ test('personal calendar shows only the signed-in employee requests', async ({ pa
 
   await page.goto('/calendar');
   await expect(page.getByRole('heading', { name: 'My leave calendar' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Workforce calendar' })).toHaveCount(0);
   await expect(page.getByText('Other employees’ requests are not shown here.')).toBeVisible();
   await expect(page.getByText('Annual Leave').first()).toBeVisible();
   await expect(page.getByText('Chidi Okafor')).toHaveCount(0);
@@ -66,9 +67,15 @@ test('admin workforce calendar shows organization percentages and team coverage'
 
   await page.goto('/admin?tab=calendar');
   await expect(page.getByRole('heading', { name: 'Workforce calendar' })).toBeVisible();
+  const calendarViews = page.getByRole('navigation', { name: 'Calendar views' });
+  await expect(calendarViews).toBeVisible();
+  await expect(calendarViews.getByRole('link', { name: 'My calendar' })).toBeVisible();
   await expect(page.getByText('Active workforce').locator('..').getByText('4')).toBeVisible();
   await expect(page.getByText('1 (25%)').first()).toBeVisible();
   await expect(page.getByRole('cell', { name: 'Operations' })).toBeVisible();
   await page.getByRole('combobox').selectOption('team-a');
   await expect(page.getByText('2', { exact: true }).first()).toBeVisible();
+  await calendarViews.getByRole('link', { name: 'My calendar' }).click();
+  await expect(page.getByRole('heading', { name: 'My leave calendar' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Workforce calendar' })).toBeVisible();
 });

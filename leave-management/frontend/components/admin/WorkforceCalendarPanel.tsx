@@ -6,6 +6,7 @@ import { addMonths, endOfMonth, format, parseISO, startOfMonth, subMonths } from
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import LeaveCalendarGrid, { requestsForDay } from '@/components/LeaveCalendarGrid';
+import CalendarViewSwitcher from '@/components/CalendarViewSwitcher';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { leavePoliciesApi, leaveRequestsApi } from '@/lib/api';
@@ -79,6 +80,7 @@ export default function WorkforceCalendarPanel() {
 
   return (
     <section aria-labelledby="workforce-calendar-title" className="space-y-5">
+      <CalendarViewSwitcher active="workforce" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><h2 id="workforce-calendar-title" className="text-lg font-semibold">Workforce calendar</h2><p className="mt-1 text-sm text-muted-foreground">Organization and team leave coverage, based on the active workforce roster.</p></div>
         <label className="text-sm"><span className="mr-2 text-muted-foreground">Team</span><select value={teamId} onChange={(event) => setTeamId(event.target.value)} className="h-10 rounded-md border border-input bg-background px-3"><option value="">Entire organization</option>{teams.map((team) => <option key={team.teamId} value={team.teamId}>{team.teamName}</option>)}</select></label>
