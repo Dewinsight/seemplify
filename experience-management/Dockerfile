@@ -23,6 +23,9 @@ ENV NODE_ENV=production \
     RUNTIME_DIR=/app/runtime
 
 WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates bubblewrap \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=build --chown=node:node /app /app
 RUN chmod 0755 /app/scripts/dokploy-entrypoint.sh \
   && mkdir -p /app/runtime \
