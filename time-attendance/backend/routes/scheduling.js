@@ -8,6 +8,7 @@ const {
 } = require('../models');
 const { findShiftConflicts } = require('../services/schedulingService');
 const { createNotification } = require('../services/notificationService');
+const { reconcileOrganization } = require('../services/rosterReconciliationService');
 
 router.use(requireAuth, requireOrganization);
 
@@ -52,10 +53,9 @@ function visibleRosterQuery(req) {
     return query;
 }
 
-router.get('/roster', async (req, res) => {
-    if (!requireScheduler(req, res)) return;
+async function rosterResponse(req, synchronization = {}) {
     const roster = await EmployeeRoster.find(visibleRosterQuery(req))
-        .select('userId employeeId email name role teamIds teamAssignments managerId departmentId effectiveExitAt')
+        .select('userId employeeId email name role teamIds teamAssignments managerId departmentId effectiveExitAt lastReconciledAt')
         .sort({ name: 1, email: 1 })
         .lean();
 
@@ -82,7 +82,44 @@ router.get('/roster', async (req, res) => {
         departmentId: member.departmentId,
         effectiveExitAt: member.effectiveExitAt,
     }));
-    return res.json({ source: 'idp_sync', members, teams });
+    const lastReconciledAt = roster.reduce((latest, member) => {
+        if (!member.lastReconciledAt) return latest;
+        return !latest || new Date(member.lastReconciledAt) > new Date(latest) ? member.lastReconciledAt : latest;
+    }, null);
+    return {
+        source: 'idp_sync',
+        members,
+        teams,
+        synchronization: {
+            state: members.length ? 'ready' : 'empty',
+            lastReconciledAt,
+            ...synchronization,
+        },
+    };
+}
+
+router.get('/roster', async (req, res) => {
+    if (!requireScheduler(req, res)) return;
+    return res.json(await rosterResponse(req));
+});
+
+router.post('/roster/reconcile', async (req, res) => {
+    if (!requireScheduler(req, res)) return;
+    try {
+        const result = await reconcileOrganization(req.organizationId);
+        return res.json(await rosterResponse(req, {
+            state: 'reconciled',
+            reconciledAt: new Date(),
+            applied: result.applied,
+            deactivatedMissing: result.deactivatedMissing,
+        }));
+    } catch (error) {
+        console.error('Schedule roster reconciliation failed:', error);
+        return res.status(502).json({
+            error: 'The IDP organization roster could not be synchronized. Check the IDP service connection and try again.',
+            code: 'IDP_ROSTER_SYNC_FAILED',
+        });
+    }
 });
 
 router.get('/templates', async (req, res) => {
@@ -377,3 +414,4 @@ router.post('/requests/:id/review', async (req, res) => {
 
 module.exports = router;
 module.exports.rosterMemberIsEligible = rosterMemberIsEligible;
+module.exports.rosterResponse = rosterResponse;

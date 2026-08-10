@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle as CircleAlert,
   CalendarClock,
   Check,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Users,
@@ -28,18 +29,44 @@ type RosterMember = {
   effectiveExitAt?: string;
 };
 type RosterTeam = { teamId: string; name: string };
+type ShiftTemplate = {
+  _id: string;
+  name: string;
+  startTime?: string;
+  endTime?: string;
+  breakMinutes?: number;
+  workMode?: string;
+};
+
+function applyTemplateTimes(startValue: string, template: ShiftTemplate) {
+  if (!template.startTime || !template.endTime) return {};
+  const day = startValue.slice(0, 10);
+  const startAt = `${day}T${template.startTime}`;
+  let endAt = `${day}T${template.endTime}`;
+  if (new Date(endAt) <= new Date(startAt)) {
+    const nextDay = new Date(`${day}T12:00:00`);
+    nextDay.setDate(nextDay.getDate() + 1);
+    endAt = `${localInput(nextDay).slice(0, 10)}T${template.endTime}`;
+  }
+  return { startAt, endAt };
+}
 
 export default function SchedulePage() {
   const { user } = useAuth();
   const [shifts, setShifts] = useState<any[]>([]);
   const [openShifts, setOpenShifts] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
-  const [templates, setTemplates] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<ShiftTemplate[]>([]);
   const [rosterMembers, setRosterMembers] = useState<RosterMember[]>([]);
   const [rosterTeams, setRosterTeams] = useState<RosterTeam[]>([]);
   const [memberSearch, setMemberSearch] = useState("");
   const [message, setMessage] = useState("");
+  const [rosterError, setRosterError] = useState("");
+  const [rosterBusy, setRosterBusy] = useState(false);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
+  const [lastRosterSync, setLastRosterSync] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const automaticRosterSyncAttempted = useRef(false);
   const [form, setForm] = useState<any>({
     userId: "",
     teamId: "",
@@ -64,27 +91,59 @@ export default function SchedulePage() {
     }),
     [],
   );
-  const load = async () => {
-    const [mine, open, requestData, templateData, rosterData] =
-      await Promise.all([
+  const refreshRoster = useCallback(async (force = false) => {
+    if (!manager) return;
+    setRosterBusy(true);
+    setRosterError("");
+    try {
+      let rosterData = force
+        ? await schedulingApi.reconcileRoster()
+        : await schedulingApi.getRoster();
+      if (
+        !force &&
+        (rosterData.members || []).length === 0 &&
+        !automaticRosterSyncAttempted.current
+      ) {
+        automaticRosterSyncAttempted.current = true;
+        rosterData = await schedulingApi.reconcileRoster();
+      }
+      setRosterMembers(rosterData.members || []);
+      setRosterTeams(rosterData.teams || []);
+      setLastRosterSync(
+        rosterData.synchronization?.reconciledAt ||
+          rosterData.synchronization?.lastReconciledAt ||
+          null,
+      );
+    } catch (error: any) {
+      setRosterError(
+        error?.response?.data?.error ||
+          "The IDP roster could not be synchronized.",
+      );
+    } finally {
+      setRosterLoaded(true);
+      setRosterBusy(false);
+    }
+  }, [manager]);
+
+  const load = useCallback(async () => {
+    const rosterPromise = manager ? refreshRoster() : Promise.resolve();
+    const [mine, open, requestData, templateData] = await Promise.all([
         schedulingApi.getShifts(range),
         schedulingApi.getShifts({ ...range, open: true, status: "published" }),
         schedulingApi.getRequests(),
         schedulingApi.getTemplates(),
-        manager
-          ? schedulingApi.getRoster()
-          : Promise.resolve({ members: [], teams: [] }),
       ]);
     setShifts(mine.shifts || []);
     setOpenShifts(open.shifts || []);
     setRequests(requestData.requests || []);
     setTemplates(templateData.templates || []);
-    setRosterMembers(rosterData.members || []);
-    setRosterTeams(rosterData.teams || []);
-  };
+    await rosterPromise;
+  }, [manager, range, refreshRoster]);
+
   useEffect(() => {
+    if (!user) return;
     void load().catch(() => setMessage("Schedule could not be loaded."));
-  }, []);
+  }, [load, user]);
   const eligibleMembers = useMemo(() => {
     const start = new Date(form.startAt);
     const query = memberSearch.trim().toLowerCase();
@@ -104,6 +163,10 @@ export default function SchedulePage() {
       );
     });
   }, [form.startAt, form.teamId, memberSearch, rosterMembers]);
+  const invalidRange =
+    !form.startAt ||
+    !form.endAt ||
+    new Date(form.endAt) <= new Date(form.startAt);
   const createShift = async () => {
     setMessage("");
     try {
@@ -159,8 +222,8 @@ export default function SchedulePage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Schedule</h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h1 className="text-2xl font-semibold text-[var(--suite-ink)]">Schedule</h1>
+          <p className="mt-1 text-sm text-[var(--suite-muted)]">
             Published shifts, availability, open cover and schedule
             acknowledgements.
           </p>
@@ -185,19 +248,37 @@ export default function SchedulePage() {
         )}
       </div>
       {message && (
-        <div className="rounded-lg border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-sm text-teal-200">
+        <div role="status" className="rounded-lg border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-sm text-teal-800 dark:text-teal-200">
           {message}
         </div>
       )}
       {showCreate && (
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
-          <div>
-            <h2 className="text-sm font-semibold text-white">
-              Create a draft shift
-            </h2>
-            <p className="mt-1 text-xs text-zinc-500">
-              People and teams come from the active IDP organization roster.
-            </p>
+        <section className="rounded-lg border border-[var(--suite-line-strong)] bg-[var(--suite-surface)] p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--suite-ink)]">
+                Create a draft shift
+              </h2>
+              <p className="mt-1 text-xs text-[var(--suite-muted)]">
+                People and teams come from the active IDP organization roster.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {rosterLoaded && !rosterError && (
+                <span className="text-xs text-[var(--suite-muted)]">
+                  {rosterMembers.length} {rosterMembers.length === 1 ? "member" : "members"} · {rosterTeams.length} {rosterTeams.length === 1 ? "team" : "teams"}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => void refreshRoster(true)}
+                disabled={rosterBusy}
+                className="inline-flex items-center gap-1.5 rounded-md border border-[var(--suite-line-strong)] px-2.5 py-1.5 text-xs font-medium text-[var(--suite-ink)] hover:bg-[var(--suite-surface-muted)] disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${rosterBusy ? "animate-spin" : ""}`} />
+                Refresh roster
+              </button>
+            </div>
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <label className="space-y-1.5 text-xs font-medium text-zinc-400">
@@ -219,7 +300,8 @@ export default function SchedulePage() {
                         : form.userId,
                   });
                 }}
-                className="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100"
+                disabled={rosterBusy || rosterTeams.length === 0}
+                className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)] disabled:opacity-60"
               >
                 <option value="">All available teams</option>
                 {rosterTeams.map((team) => (
@@ -238,8 +320,8 @@ export default function SchedulePage() {
                   placeholder="Search name, email or employee number"
                   value={memberSearch}
                   onChange={(e) => setMemberSearch(e.target.value)}
-                  disabled={form.openShift}
-                  className="block w-full rounded-lg border border-zinc-700 bg-zinc-950 py-2.5 pl-9 pr-3 text-sm text-zinc-100 disabled:opacity-50"
+                  disabled={form.openShift || rosterBusy || rosterMembers.length === 0}
+                  className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] py-2.5 pl-9 pr-3 text-sm text-[var(--suite-ink)] disabled:opacity-50"
                 />
               </div>
             </label>
@@ -249,8 +331,8 @@ export default function SchedulePage() {
                 aria-label="Assign to"
                 value={form.userId}
                 onChange={(e) => setForm({ ...form, userId: e.target.value })}
-                disabled={form.openShift}
-                className="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100 disabled:opacity-50"
+                disabled={form.openShift || rosterBusy || rosterMembers.length === 0}
+                className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)] disabled:opacity-50"
               >
                 <option value="">Select an IDP member</option>
                 {eligibleMembers.map((member) => (
@@ -272,7 +354,7 @@ export default function SchedulePage() {
                 type="datetime-local"
                 value={form.startAt}
                 onChange={(e) => setForm({ ...form, startAt: e.target.value })}
-                className="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100"
+                className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]"
               />
             </label>
             <label className="space-y-1.5 text-xs font-medium text-zinc-400">
@@ -282,7 +364,7 @@ export default function SchedulePage() {
                 type="datetime-local"
                 value={form.endAt}
                 onChange={(e) => setForm({ ...form, endAt: e.target.value })}
-                className="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100"
+                className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]"
               />
             </label>
             <label className="space-y-1.5 text-xs font-medium text-zinc-400">
@@ -291,7 +373,7 @@ export default function SchedulePage() {
                 aria-label="Work mode"
                 value={form.workMode}
                 onChange={(e) => setForm({ ...form, workMode: e.target.value })}
-                className="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100"
+                className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]"
               >
                 <option value="office">Office</option>
                 <option value="remote">Remote</option>
@@ -304,10 +386,23 @@ export default function SchedulePage() {
               <select
                 aria-label="Shift template"
                 value={form.templateId || ""}
-                onChange={(e) =>
-                  setForm({ ...form, templateId: e.target.value || undefined })
-                }
-                className="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-sm text-zinc-100"
+                onChange={(e) => {
+                  const template = templates.find(
+                    (item) => item._id === e.target.value,
+                  );
+                  setForm({
+                    ...form,
+                    templateId: e.target.value || undefined,
+                    ...(template ? applyTemplateTimes(form.startAt, template) : {}),
+                    ...(template?.breakMinutes !== undefined
+                      ? { breakMinutes: template.breakMinutes }
+                      : {}),
+                    ...(template?.workMode
+                      ? { workMode: template.workMode }
+                      : {}),
+                  });
+                }}
+                className="block w-full rounded-md border border-[var(--suite-line-strong)] bg-[var(--suite-canvas)] px-3 py-2.5 text-sm text-[var(--suite-ink)]"
               >
                 <option value="">No template</option>
                 {templates.map((t) => (
@@ -338,16 +433,31 @@ export default function SchedulePage() {
               </span>
             </label>
           </div>
-          {!form.openShift && rosterMembers.length === 0 && (
-            <p className="mt-4 text-sm text-amber-300">
-              No active organization members are available. Check the IDP roster
-              synchronization before scheduling.
-            </p>
+          {rosterError && (
+            <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-sm text-red-800 dark:text-red-300">
+              <span>{rosterError}</span>
+              <button type="button" onClick={() => void refreshRoster(true)} className="font-semibold hover:underline">Try again</button>
+            </div>
+          )}
+          {!rosterError && rosterBusy && (
+            <p className="mt-4 text-sm text-[var(--suite-muted)]">Synchronizing active members and teams from IDP…</p>
+          )}
+          {!form.openShift && rosterLoaded && !rosterBusy && !rosterError && rosterMembers.length === 0 && (
+            <p className="mt-4 text-sm text-amber-800 dark:text-amber-300">IDP returned no active organization members with Time &amp; Attendance access. Confirm member status and application access in IDP, then refresh the roster.</p>
+          )}
+          {!form.openShift && rosterMembers.length > 0 && eligibleMembers.length === 0 && (
+            <p className="mt-4 text-sm text-amber-800 dark:text-amber-300">No members match the selected team, search, and shift date.</p>
+          )}
+          {lastRosterSync && (
+            <p className="mt-3 text-xs text-[var(--suite-subtle)]">Roster last synchronized {new Date(lastRosterSync).toLocaleString()}.</p>
+          )}
+          {invalidRange && (
+            <p className="mt-4 text-sm text-red-700 dark:text-red-300">Shift end must be after shift start.</p>
           )}
           <div className="mt-5 flex items-center gap-3">
             <button
               onClick={createShift}
-              disabled={!form.openShift && !form.userId}
+              disabled={invalidRange || rosterBusy || (!form.openShift && !form.userId)}
               className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Create draft

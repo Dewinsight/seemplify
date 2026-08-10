@@ -193,9 +193,19 @@ test('protects an open timesheet from partial submission and submits a closed pe
 
 test('acknowledges a published shift, reviews cover and publishes draft schedule data', async ({ page, request, diagnostics: _diagnostics }, testInfo) => {
     test.skip(!testInfo.project.name.startsWith('desktop'), 'Desktop live-flow coverage');
+    const mongoUri = process.env.LIVE_MONGODB_URI || 'mongodb://127.0.0.1:27017/time-attendance-live-e2e';
+    expect(mongoUri).toMatch(/live-e2e|ta-e2e/i);
+    const { EmployeeRoster } = require('../../backend/models');
+    const mongoose = EmployeeRoster.db.base;
+    await mongoose.connect(mongoUri);
+    await EmployeeRoster.deleteMany({ organizationId: 'org-live-e2e' });
+    await mongoose.disconnect();
+
     await authenticate(page);
+    const reconciliationResponse = page.waitForResponse(response => response.url().endsWith('/api/v1/scheduling/roster/reconcile'));
     await page.goto('/schedule');
     await expect(page.getByRole('heading', { name: 'Schedule' })).toBeVisible();
+    expect((await reconciliationResponse).status()).toBe(200);
 
     const acknowledgeResponse = page.waitForResponse(response => /\/api\/v1\/scheduling\/shifts\/[^/]+\/acknowledge$/.test(response.url()));
     await page.getByRole('button', { name: 'Acknowledge' }).click();
@@ -207,6 +217,7 @@ test('acknowledges a published shift, reviews cover and publishes draft schedule
     expect((await reviewResponse).status()).toBe(200);
 
     await page.getByRole('button', { name: 'New shift' }).click();
+    await expect(page.getByText('2 members · 1 team')).toBeVisible();
     await page.getByLabel('Team').selectOption({ label: 'Operations' });
     await page.getByLabel('Find a member').fill('Jamie');
     await page.getByLabel('Assign to').selectOption(REPORT_ID);

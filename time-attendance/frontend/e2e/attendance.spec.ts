@@ -14,6 +14,10 @@ type MockState = {
     notificationRead: boolean;
     exceptionStatus: string;
     shiftAcknowledged: boolean;
+    rosterSynced: boolean;
+    rosterSyncCount: number;
+    coverRequested: boolean;
+    requestReviewed: boolean;
     rulePacks: any[];
     locationEnabled: boolean;
     clockBodies: any[];
@@ -170,15 +174,22 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'POST' && path === '/api/attendance/team/employee-2/notify-clock-out') return json(route, { message: 'Reminder sent to Jamie Lee.' });
         if (method === 'GET' && path === '/api/attendance/team/export') return route.fulfill({ status: 200, headers: { ...corsHeaders(route), 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, body: 'mock workbook' });
 
-        if (method === 'GET' && path === '/api/v1/scheduling/templates') return json(route, { templates: [{ _id: 'template-1', name: 'Day shift' }] });
-        if (method === 'GET' && path === '/api/v1/scheduling/roster') return json(route, {
+        const roster = () => ({
             source: 'idp_sync',
-            teams: [{ teamId: 'team-1', name: 'Operations' }, { teamId: 'team-2', name: 'Finance' }],
-            members: [
+            teams: state.rosterSynced ? [{ teamId: 'team-1', name: 'Operations' }, { teamId: 'team-2', name: 'Finance' }] : [],
+            members: state.rosterSynced ? [
                 { userId: 'employee-2', employeeId: 'EMP-002', name: 'Jamie Lee', email: 'jamie@example.com', teamIds: ['team-1'] },
                 { userId: 'employee-3', employeeId: 'EMP-003', name: 'Morgan Reed', email: 'morgan@example.com', teamIds: ['team-2'] },
-            ],
+            ] : [],
+            synchronization: { state: state.rosterSynced ? 'ready' : 'empty', lastReconciledAt: state.rosterSynced ? NOW : null },
         });
+        if (method === 'GET' && path === '/api/v1/scheduling/templates') return json(route, { templates: [{ _id: 'template-1', name: 'Day shift', startTime: '09:00', endTime: '17:00', breakMinutes: 30, workMode: 'remote' }] });
+        if (method === 'GET' && path === '/api/v1/scheduling/roster') return json(route, roster());
+        if (method === 'POST' && path === '/api/v1/scheduling/roster/reconcile') {
+            state.rosterSynced = true;
+            state.rosterSyncCount += 1;
+            return json(route, { ...roster(), synchronization: { state: 'reconciled', reconciledAt: NOW, applied: 2 } });
+        }
         if (method === 'GET' && path === '/api/v1/scheduling/shifts') {
             if (url.searchParams.get('open') === 'true') return json(route, { shifts: [{ _id: 'shift-open', userId: null, startAt: TOMORROW, endAt: TOMORROW_END, workMode: 'office', status: 'published' }] });
             return json(route, { shifts: [{ _id: 'shift-1', userId: 'employee-1', startAt: TOMORROW, endAt: TOMORROW_END, workMode: 'remote', status: 'published', acknowledgement: { status: state.shiftAcknowledged ? 'accepted' : 'pending' } }] });
@@ -187,8 +198,8 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'POST' && path === '/api/v1/scheduling/publish') return json(route, { publishedCount: 2 });
         if (method === 'POST' && path === '/api/v1/scheduling/shifts/shift-1/acknowledge') { state.shiftAcknowledged = true; return json(route, { success: true }); }
         if (method === 'POST' && path === '/api/v1/scheduling/shifts') { state.shiftBodies.push(request.postDataJSON()); return json(route, { shift: { _id: 'shift-new' } }); }
-        if (method === 'POST' && path === '/api/v1/scheduling/requests') return json(route, { request: { _id: 'request-new' } });
-        if (method === 'POST' && path === '/api/v1/scheduling/requests/request-1/review') return json(route, { success: true });
+        if (method === 'POST' && path === '/api/v1/scheduling/requests') { state.coverRequested = true; return json(route, { request: { _id: 'request-new' } }); }
+        if (method === 'POST' && path === '/api/v1/scheduling/requests/request-1/review') { state.requestReviewed = true; return json(route, { success: true }); }
 
         if (method === 'GET' && path === '/api/v1/exceptions') {
             return json(route, {
@@ -257,6 +268,7 @@ const test = base.extend<{ mockState: MockState }>({
             calls: [], unhandled: [], browserErrors: [], clockedIn: false, onBreak: false,
             lockedClockOut: false,
             notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false, rulePacks: [rulePack],
+            rosterSynced: false, rosterSyncCount: 0, coverRequested: false, requestReviewed: false,
             locationEnabled: false, clockBodies: [], shiftBodies: [],
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
@@ -466,6 +478,9 @@ test('creates a draft shift from the synchronized IDP team roster', async ({ pag
     await page.goto('/schedule');
     await page.getByRole('button', { name: 'New shift' }).click();
     await expect(page.getByText('People and teams come from the active IDP organization roster.')).toBeVisible();
+    await expect(page.getByText('2 members · 2 teams')).toBeVisible();
+    expect(mockState.rosterSyncCount).toBe(1);
+    expect(mockState.calls).toContain('POST /api/v1/scheduling/roster/reconcile');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 
     await page.getByLabel('Team').selectOption('team-1');
@@ -473,11 +488,41 @@ test('creates a draft shift from the synchronized IDP team roster', async ({ pag
     await expect(page.getByLabel('Assign to').getByRole('option', { name: /Morgan Reed/ })).toHaveCount(0);
     await page.getByLabel('Find a member').fill('EMP-002');
     await page.getByLabel('Assign to').selectOption('employee-2');
+    await page.getByLabel('Shift template').selectOption('template-1');
+    await expect(page.getByLabel('Shift starts')).toHaveValue(/T09:00$/);
+    await expect(page.getByLabel('Shift ends')).toHaveValue(/T17:00$/);
+    await expect(page.getByLabel('Work mode')).toHaveValue('remote');
     await page.getByRole('button', { name: 'Create draft' }).click();
 
     await expect(page.getByText('Draft shift created.')).toBeVisible();
     expect(mockState.shiftBodies).toHaveLength(1);
-    expect(mockState.shiftBodies[0]).toMatchObject({ userId: 'employee-2', teamId: 'team-1', openShift: false });
+    expect(mockState.shiftBodies[0]).toMatchObject({ userId: 'employee-2', teamId: 'team-1', templateId: 'template-1', workMode: 'remote', breakMinutes: 30, openShift: false });
+});
+
+test('validates open shifts, cover requests and manager review actions', async ({ page, mockState }) => {
+    await authenticate(page);
+    await page.goto('/schedule');
+    await expect(page.getByRole('button', { name: 'Request cover' })).toBeVisible();
+    await page.getByRole('button', { name: 'Request cover' }).click();
+    await expect(page.getByText('Cover request sent for manager approval.')).toBeVisible();
+    expect(mockState.coverRequested).toBe(true);
+
+    await page.getByRole('button', { name: 'Approve' }).click();
+    expect(mockState.requestReviewed).toBe(true);
+
+    await page.getByRole('button', { name: 'New shift' }).click();
+    await expect(page.getByText('2 members · 2 teams')).toBeVisible();
+    await page.getByLabel('Shift ends').fill('2026-08-10T08:00');
+    await page.getByLabel('Shift starts').fill('2026-08-10T09:00');
+    await expect(page.getByText('Shift end must be after shift start.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create draft' })).toBeDisabled();
+
+    await page.getByLabel('Open shift').check();
+    await page.getByLabel('Shift ends').fill('2026-08-10T17:00');
+    await expect(page.getByLabel('Assign to')).toBeDisabled();
+    await page.getByRole('button', { name: 'Create draft' }).click();
+    await expect(page.getByText('Draft shift created.')).toBeVisible();
+    expect(mockState.shiftBodies.at(-1)).toMatchObject({ userId: null, openShift: true });
 });
 
 test('keeps timesheet detail and approval history compact in light mode', async ({ page, mockState: _mockState }) => {

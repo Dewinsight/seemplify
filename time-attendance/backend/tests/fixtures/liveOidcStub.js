@@ -60,6 +60,29 @@ const server = http.createServer((request, response) => {
         return json(response, 200, user);
     }
 
+    if (url.pathname === '/api/internal/v1/memberships/reconcile' && request.method === 'POST') {
+        const generatedAt = new Date().toISOString();
+        return json(response, 200, {
+            schemaVersion: '1.0',
+            organizationId: 'org-live-e2e',
+            generatedAt,
+            memberships: [
+                {
+                    userId: 'account-live-1', idpSubject: 'employee-live-1', status: 'active',
+                    email: 'alex.live@example.test', name: 'Alex Live', role: 'admin',
+                    teamIds: ['team-live-1'], teamAssignments: [{ teamId: 'team-live-1', name: 'Operations', managerId: 'employee-live-1' }],
+                    appAccess: { mode: 'all', appIds: [] }, jurisdiction: { countryCode: 'NG' },
+                },
+                {
+                    userId: 'account-live-2', idpSubject: 'employee-live-2', status: 'active',
+                    email: 'jamie.live@example.test', name: 'Jamie Live', role: 'employee', employeeId: 'EMP-LIVE-2',
+                    teamIds: ['team-live-1'], teamAssignments: [{ teamId: 'team-live-1', name: 'Operations', managerId: 'employee-live-1' }],
+                    managerId: 'employee-live-1', appAccess: { mode: 'all', appIds: [] }, jurisdiction: { countryCode: 'NG' },
+                },
+            ],
+        });
+    }
+
     if (url.pathname === '/authorize') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         return response.end('<main><h1>Live identity test sign-in</h1><p>The Time &amp; Attendance application reached the identity boundary.</p></main>');
