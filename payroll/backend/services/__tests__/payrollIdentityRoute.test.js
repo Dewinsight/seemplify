@@ -182,4 +182,18 @@ describe('payroll identity ownership routes', () => {
       });
     }
   });
+
+  test('loads teams from the IDP teams router instead of an unmounted organization path', async () => {
+    axios.get.mockResolvedValueOnce({ data: [] });
+
+    const response = await fetch(`${baseUrl}/api/payroll/idp/teams`);
+
+    expect(response.status).toBe(200);
+    expect(axios.get).toHaveBeenCalledWith(
+      'http://localhost:4000/api/teams/organizations/org-idp/teams',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer verified-session-token' },
+      })
+    );
+  });
 });

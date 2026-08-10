@@ -199,7 +199,9 @@ async function fetchIdpMemberPayrollSync(accessToken, organizationId, memberId) 
 
 async function fetchIdpOrgTeams(accessToken, organizationId) {
   const idpBaseUrl = getIdpBaseUrl();
-  const url = `${idpBaseUrl}/api/organizations/${organizationId}/teams`;
+  // The IDP teams router is mounted at /api/teams and retains its
+  // organization-scoped route prefix beneath that mount.
+  const url = `${idpBaseUrl}/api/teams/organizations/${organizationId}/teams`;
 
   const res = await axios.get(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
