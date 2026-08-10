@@ -280,6 +280,24 @@ function muiSelect(scope: Locator, label: string) {
   return scope.locator('label').filter({ hasText: label }).first().locator('..').getByRole('combobox');
 }
 
+async function switchPerformanceWorkspace(page: Page, workspace: 'Personal' | 'Manager' | 'Admin') {
+  if ((page.viewportSize()?.width || 0) >= 1536) {
+    const wideButton = page.getByRole('button', { name: workspace, exact: true });
+    await expect(wideButton).toBeVisible();
+    await wideButton.click();
+    return;
+  }
+
+  const wideButton = page.getByRole('button', { name: workspace, exact: true });
+  if (await wideButton.count() > 0 && await wideButton.first().isVisible()) {
+    await wideButton.first().click();
+    return;
+  }
+
+  await page.getByRole('button', { name: /^(Personal|Manager|Admin)$/ }).click();
+  await page.getByRole('menuitemradio', { name: new RegExp(`^${workspace}`) }).click();
+}
+
 async function installMockApi(page: Page, state: MockApiState) {
   await page.addInitScript(() => {
     localStorage.setItem('accessToken', 'playwright-access-token');
@@ -338,7 +356,7 @@ async function installMockApi(page: Page, state: MockApiState) {
     }
     if (method === 'GET' && path === '/user/context') {
       const role = state.hrAdminMode
-        ? { name: 'hr_admin', displayName: 'HR Administrator', isManager: false, isHRAdmin: true, isTeamLead: false }
+        ? { name: 'hr_admin', displayName: 'HR Administrator', isManager: true, isHRAdmin: true, isTeamLead: true }
         : state.managerMode
           ? { name: 'line_manager', displayName: 'Line Manager', isManager: true, isHRAdmin: false, isTeamLead: true }
           : { name: 'employee', displayName: 'Employee', isManager: false, isHRAdmin: false, isTeamLead: false };
@@ -350,6 +368,7 @@ async function installMockApi(page: Page, state: MockApiState) {
           organization: { id: 'org-1', name: 'Acme Ltd' },
           teams: state.managerMode ? [{ id: 'team-1', name: 'Customer Success', role: 'line_manager', isManager: true, organizationId: 'org-1' }] : [],
           currentTeam: state.managerMode ? { id: 'team-1', name: 'Customer Success' } : null,
+          managerData: state.managerMode ? { directReportCount: 1, pendingReviews: 2 } : null,
           stats: { myOkrs: state.goals.length, myReviews: 0, feedbackReceived: 0 },
           features: state.rolloutFeatures,
         },
@@ -522,6 +541,24 @@ async function installMockApi(page: Page, state: MockApiState) {
       return fulfill({ success: true, data: state.feedbackItems, count: state.feedbackItems.length });
     }
     if (method === 'GET' && path === '/feedback/requests') {
+      return fulfill({ success: true, data: [] });
+    }
+    if (method === 'GET' && path === '/appraisals/cycles') {
+      return fulfill({
+        success: true,
+        data: [{
+          _id: 'cycle-1',
+          name: '2026 Annual Review',
+          cycleType: 'annual',
+          periodStart: '2026-01-01T00:00:00.000Z',
+          periodEnd: '2026-12-31T23:59:59.999Z',
+          currentPhase: 'selfAssessment',
+          status: 'active',
+          phases: {},
+        }],
+      });
+    }
+    if (method === 'GET' && path === '/appraisals/team') {
       return fulfill({ success: true, data: [] });
     }
     if (method === 'GET' && path === '/appraisals/my') {
@@ -717,7 +754,9 @@ test('lets an authorised manager edit a team goal without losing recorded progre
   }];
   await installMockApi(page, state);
 
-  await page.goto('/okrs');
+  await page.goto('/dashboard');
+  await switchPerformanceWorkspace(page, 'Manager');
+  await page.getByRole('link', { name: 'Team OKRs', exact: true }).click();
   await page.getByRole('tab', { name: 'Upcoming' }).click();
   await page.getByRole('tab', { name: /Team & Department Goals/ }).click();
   await expect(page.getByText('Reduce customer response time')).toBeVisible();
@@ -759,7 +798,9 @@ test('initializes canonical goal periods for a manager when a new organization h
   state.goalPeriods = [];
   await installMockApi(page, state);
 
-  await page.goto('/okrs');
+  await page.goto('/dashboard');
+  await switchPerformanceWorkspace(page, 'Manager');
+  await page.getByRole('link', { name: 'Team OKRs', exact: true }).click();
   await page.getByRole('tab', { name: 'Upcoming' }).click();
   await expect(page.getByText(state.futurePeriod.name).first()).toBeVisible();
   expect(state.generatedGoalPeriodCalls).toBe(1);
@@ -940,6 +981,79 @@ test('hides organization features that are explicitly disabled', async ({ page }
   await expect(page.getByRole('button', { name: /unread notifications/ })).toHaveCount(0);
 });
 
+test('keeps an employee in a personal-only performance workspace', async ({ page }) => {
+  const state = createState();
+  await installMockApi(page, state);
+
+  await page.goto('/dashboard');
+
+  await expect(page.getByRole('heading', { name: 'Your performance work, in one place.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'My OKRs', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Manager', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Team', exact: true })).toHaveCount(0);
+});
+
+test('lets a line manager switch between personal and manager work without exposing admin tools', async ({ page }) => {
+  const state = createState();
+  state.managerMode = true;
+  await installMockApi(page, state);
+
+  await page.goto('/dashboard');
+  await expect(page.getByRole('button', { name: 'Personal', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+
+  await switchPerformanceWorkspace(page, 'Manager');
+  await expect(page.getByRole('heading', { name: 'Keep your team’s performance work moving.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Team', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Team OKRs', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Team Appraisals', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'My OKRs', exact: true })).toHaveCount(0);
+  expect(await page.getByRole('navigation').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Manager', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Keep your team’s performance work moving.' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Team Appraisals', exact: true }).click();
+  await expect(page.getByText('Manager appraisal queue')).toBeVisible();
+  await expect(page.getByText('Only direct-report appraisals and manager actions are shown in this workspace.')).toBeVisible();
+
+  await switchPerformanceWorkspace(page, 'Personal');
+  await page.getByRole('link', { name: 'My Appraisals', exact: true }).click();
+  await expect(page.getByText('Personal appraisals')).toBeVisible();
+  await expect(page.getByText('Only appraisals where you are the employee are shown in this workspace.')).toBeVisible();
+});
+
+test('shows admin separately and includes manager only when the HR admin also manages people', async ({ page }) => {
+  const adminState = createState();
+  adminState.hrAdminMode = true;
+  await installMockApi(page, adminState);
+
+  await page.goto('/dashboard');
+  await expect(page.getByRole('button', { name: 'Personal', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Personal', exact: true }).click();
+  await expect(page.getByRole('menuitemradio', { name: /^Admin/ })).toBeVisible();
+  await expect(page.getByRole('menuitemradio', { name: /^Manager/ })).toHaveCount(0);
+  await page.getByRole('menuitemradio', { name: /^Admin/ }).click();
+  await expect(page.getByRole('heading', { name: 'Run a clear and consistent performance process.' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Cycles', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Calibration', exact: true })).toBeVisible();
+
+  const combinedState = createState();
+  combinedState.hrAdminMode = true;
+  combinedState.managerMode = true;
+  const combinedPage = await page.context().newPage();
+  await installMockApi(combinedPage, combinedState);
+  await combinedPage.goto('/dashboard');
+  await expect(combinedPage.getByRole('button', { name: 'Admin', exact: true })).toBeVisible();
+  await combinedPage.getByRole('button', { name: 'Admin', exact: true }).click();
+  await expect(combinedPage.getByRole('menuitemradio', { name: /^Personal/ })).toBeVisible();
+  await expect(combinedPage.getByRole('menuitemradio', { name: /^Manager/ })).toBeVisible();
+  await expect(combinedPage.getByRole('menuitemradio', { name: /^Admin/ })).toBeVisible();
+  await combinedPage.close();
+});
+
 test('keeps the HR navigation on one line and renders page help as a compact utility row', async ({ page }) => {
   const state = createState();
   state.hrAdminMode = true;
@@ -947,12 +1061,13 @@ test('keeps the HR navigation on one line and renders page help as a compact uti
   await installMockApi(page, state);
 
   await page.goto('/dashboard');
+  await switchPerformanceWorkspace(page, 'Admin');
 
   const header = page.getByRole('navigation');
   const guide = page.getByTestId('page-guide-banner');
   const dashboardHeader = page.locator('.suite-dashboard-header');
   await expect(header).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Admin Panel' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Overview', exact: true })).toBeVisible();
   await expect(guide).toBeVisible();
   await expect(dashboardHeader).toBeVisible();
 
@@ -964,7 +1079,7 @@ test('keeps the HR navigation on one line and renders page help as a compact uti
   expect(dashboardHeaderBox!.y).toBeGreaterThanOrEqual(guideBox!.y + guideBox!.height);
   expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
-  for (const name of ['Dashboard', 'My OKRs', 'Appraisals', 'Cycles']) {
+  for (const name of ['Dashboard', 'Overview', 'Cycles', 'Calibration', 'Reports', 'Analytics']) {
     const item = page.getByRole('link', { name, exact: true });
     await expect(item).toBeVisible();
     expect(await item.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('nowrap');

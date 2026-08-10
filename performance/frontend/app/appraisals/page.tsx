@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useUserContext, useMyAppraisals, useTeamAppraisals, useAppraisalCycles } from '@/lib/hooks';
+import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import api from '@/lib/api';
 import {
   Box, Typography, Card, CardContent, Grid, Button, Chip, Alert,
-  Tabs, Tab, LinearProgress, Paper, List, ListItem, ListItemText,
+  LinearProgress, Paper, List, ListItem, ListItemText,
   ListItemAvatar, Avatar, ListItemSecondaryAction, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Stepper, Step, StepLabel, StepContent, Divider, CircularProgress,
@@ -97,14 +98,18 @@ export default function AppraisalsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const theme = useTheme();
+  const { workspace } = usePerformanceWorkspace();
   const { isManager, isHRAdmin, user, role } = useUserContext();
 
-  const [selectedTab, setSelectedTab] = useState(0);
+  const selectedTab = workspace === 'manager' && isManager ? 1 : 0;
   const [selectedCycleId, setSelectedCycleId] = useState<string>('');
   const [managerNotifications, setManagerNotifications] = useState<ManagerNotification[]>([]);
 
   const { appraisals: myAppraisals, isLoading: myLoading, mutate: mutateMyAppraisals } = useMyAppraisals({ cycleId: selectedCycleId || undefined });
-  const { appraisals: teamAppraisals, isLoading: teamLoading, mutate: mutateTeamAppraisals } = useTeamAppraisals({ cycleId: selectedCycleId || undefined });
+  const { appraisals: teamAppraisals, isLoading: teamLoading, mutate: mutateTeamAppraisals } = useTeamAppraisals({
+    cycleId: selectedCycleId || undefined,
+    enabled: selectedTab === 1,
+  });
   const { cycles, isLoading: cyclesLoading } = useAppraisalCycles();
 
   // Find active cycle
@@ -641,7 +646,9 @@ export default function AppraisalsPage() {
             Performance Appraisals
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Complete your self-assessment and review your team's performance
+            {selectedTab === 1
+              ? 'Review direct reports and complete the manager steps assigned to you.'
+              : 'Complete your own self-assessments, discussions, and acknowledgements.'}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
@@ -659,7 +666,7 @@ export default function AppraisalsPage() {
               ))}
             </Select>
           </FormControl>
-          {isHRAdmin && (
+          {workspace === 'admin' && isHRAdmin && (
             <Button
               variant="contained"
               startIcon={<Add />}
@@ -691,7 +698,7 @@ export default function AppraisalsPage() {
         </Alert>
       )}
 
-      {isManager && unreadManagerNotificationCount > 0 && (
+      {workspace === 'manager' && isManager && unreadManagerNotificationCount > 0 && (
         <Paper
           sx={{
             p: 2.5,
@@ -755,43 +762,24 @@ export default function AppraisalsPage() {
       {/* Cycle Summary */}
       {selectedCycleId && renderCycleSummary()}
 
-      {/* Tabs for Employee/Manager views */}
-      <Paper sx={{ mb: 3, p: 0.5, bgcolor: alpha(theme.palette.grey[500], 0.04) }}>
-        <Tabs
-          value={selectedTab}
-          onChange={(_, v) => setSelectedTab(v)}
-          sx={{
-            '& .MuiTab-root': {
-              minHeight: 48,
-              fontWeight: 600,
-            },
-          }}
+      <Paper sx={{ mb: 3, px: 2.25, py: 1.5, bgcolor: alpha(theme.palette.grey[500], 0.04), display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+        <Box>
+          <Typography variant="subtitle2" fontWeight={700}>
+            {selectedTab === 1 ? 'Manager appraisal queue' : 'Personal appraisals'}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {selectedTab === 1
+              ? 'Only direct-report appraisals and manager actions are shown in this workspace.'
+              : 'Only appraisals where you are the employee are shown in this workspace.'}
+          </Typography>
+        </Box>
+        <Badge
+          badgeContent={(selectedTab === 1 ? teamAppraisals : myAppraisals).filter((item: Appraisal) => item.status.includes('pending')).length}
+          color="warning"
+          sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}
         >
-          <Tab
-            label={
-              <Badge
-                badgeContent={myAppraisals.filter((a: Appraisal) => a.status.includes('pending')).length}
-                color="warning"
-                sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}
-              >
-                My Appraisals
-              </Badge>
-            }
-          />
-          {isManager && (
-            <Tab
-              label={
-                <Badge
-                  badgeContent={teamAppraisals.filter((a: Appraisal) => a.status.includes('pending')).length}
-                  color="warning"
-                  sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}
-                >
-                  Team Appraisals
-                </Badge>
-              }
-            />
-          )}
-        </Tabs>
+          <Chip size="small" label={selectedTab === 1 ? 'Manager view' : 'Personal view'} />
+        </Badge>
       </Paper>
 
       {/* My Appraisals */}

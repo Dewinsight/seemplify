@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { usePerformanceWorkspace, type PerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import { useThemeMode } from '@/context/ThemeContext';
 import {
   TrendingUp,
@@ -22,6 +23,10 @@ import {
   Sprout,
   ListChecks,
   ClipboardCheck,
+  UserRound,
+  BriefcaseBusiness,
+  ShieldCheck,
+  BarChart3,
 } from 'lucide-react';
 import { useUserContext, useCurrentTeam } from '@/lib/hooks';
 import { authApi } from '@/lib/api';
@@ -41,8 +46,15 @@ function cn(...classes: (string | boolean | undefined)[]) {
   return classes.filter(Boolean).join(' ');
 }
 
+const WORKSPACE_ICONS: Record<PerformanceWorkspace, React.ComponentType<{ className?: string }>> = {
+  personal: UserRound,
+  manager: BriefcaseBusiness,
+  admin: ShieldCheck,
+};
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user: authUser, currentOrganization: authCurrentOrg, switchOrganization, isLoading: authLoading } = useAuth();
   const {
     user,
@@ -56,11 +68,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     isError: contextError,
   } = useUserContext();
   const { currentTeam, availableTeams, mutate: mutateCurrentTeam } = useCurrentTeam();
+  const { workspace, availableWorkspaces, setWorkspace, isReady: workspaceReady } = usePerformanceWorkspace();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [growthDropdownOpen, setGrowthDropdownOpen] = useState(false);
+  const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
   const [switchingOrg, setSwitchingOrg] = useState(false);
   const [switchingTeam, setSwitchingTeam] = useState(false);
 
@@ -83,39 +97,58 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const rolloutVisibilityReady = !contextLoading && !contextError;
 
   const navigation: NavItem[] = useMemo(() => {
-    const main: NavItem[] = [
-      { name: 'Dashboard', href: '/dashboard', icon: TrendingUp, section: 'main' },
-      { name: 'My OKRs', href: '/okrs', icon: Target, section: 'main' },
-      ...(!rolloutVisibilityReady || features.canonicalAppraisals === false
-        ? []
-        : [{ name: 'Appraisals', href: '/appraisals', icon: FileText, section: 'main' as const }]),
-      ...(!rolloutVisibilityReady || features.continuousPerformance === false
-        ? []
-        : [
-          { name: 'Feedback', href: '/feedback', icon: MessageSquare, section: 'analytics' as const },
-          { name: '1:1s', href: '/one-on-ones', icon: CalendarDays, section: 'analytics' as const },
-          { name: 'Check-ins', href: '/check-ins', icon: ClipboardCheck, section: 'analytics' as const },
-          { name: 'Development', href: '/development', icon: Sprout, section: 'analytics' as const },
-        ]),
-      ...(isHRAdmin && rolloutVisibilityReady && features.canonicalAppraisals !== false
-        ? [{ name: 'Cycles', href: '/admin/appraisal-cycles', icon: Settings, section: 'main' as const }]
-        : []),
+    const dashboard: NavItem = { name: 'Dashboard', href: '/dashboard', icon: TrendingUp, section: 'main' };
+    const appraisalsEnabled = rolloutVisibilityReady && features.canonicalAppraisals !== false;
+    const continuousEnabled = rolloutVisibilityReady && features.continuousPerformance !== false;
+
+    if (workspace === 'admin' && isHRAdmin) {
+      return [
+        dashboard,
+        { name: 'Overview', href: '/admin', icon: ShieldCheck, section: 'main' },
+        ...(appraisalsEnabled ? [
+          { name: 'Cycles', href: '/admin/appraisal-cycles', icon: Settings, section: 'main' as const },
+          { name: 'Calibration', href: '/admin/calibration', icon: ClipboardCheck, section: 'main' as const },
+          { name: 'Reports', href: '/admin/reports', icon: BarChart3, section: 'main' as const },
+        ] : []),
+        { name: 'Analytics', href: '/analytics', icon: TrendingUp, section: 'main' },
+      ];
+    }
+
+    const growthItems: NavItem[] = continuousEnabled ? [
+      { name: 'Feedback', href: '/feedback', icon: MessageSquare, section: 'analytics' },
+      { name: '1:1s', href: '/one-on-ones', icon: CalendarDays, section: 'analytics' },
+      { name: 'Check-ins', href: '/check-ins', icon: ClipboardCheck, section: 'analytics' },
+      { name: 'Development', href: '/development', icon: Sprout, section: 'analytics' },
+    ] : [];
+
+    if (workspace === 'manager' && isManager) {
+      return [
+        dashboard,
+        { name: 'Team', href: '/team', icon: Users, section: 'main' },
+        { name: 'Team OKRs', href: '/okrs?view=team', icon: Target, section: 'main' },
+        ...(appraisalsEnabled ? [{ name: 'Team Appraisals', href: '/appraisals?view=team', icon: FileText, section: 'main' as const }] : []),
+        ...growthItems,
+      ];
+    }
+
+    return [
+      dashboard,
+      { name: 'My OKRs', href: '/okrs?view=my', icon: Target, section: 'main' },
+      ...(appraisalsEnabled ? [{ name: 'My Appraisals', href: '/appraisals?view=personal', icon: FileText, section: 'main' as const }] : []),
+      ...growthItems,
     ];
+  }, [features.canonicalAppraisals, features.continuousPerformance, isHRAdmin, isManager, rolloutVisibilityReady, workspace]);
 
-    const manager: NavItem[] = isManager
-      ? [
-        { name: 'My Team', href: '/team', icon: Users, section: 'manager' },
-      ]
-      : [];
+  const handleWorkspaceChange = (nextWorkspace: PerformanceWorkspace) => {
+    if (nextWorkspace === workspace) return;
+    setWorkspace(nextWorkspace);
+    setGrowthDropdownOpen(false);
+    setMobileOpen(false);
+    router.push('/dashboard');
+  };
 
-    const admin: NavItem[] = isHRAdmin
-      ? [
-        { name: 'Admin Panel', href: '/admin', icon: Settings, section: 'admin' },
-      ]
-      : [];
-
-    return [...main, ...manager, ...admin];
-  }, [features.canonicalAppraisals, features.continuousPerformance, isManager, isHRAdmin, rolloutVisibilityReady]);
+  const ActiveWorkspaceIcon = WORKSPACE_ICONS[workspace];
+  const activeWorkspaceLabel = availableWorkspaces.find((option) => option.value === workspace)?.label || 'Personal';
 
   // Handle organization switch
   const handleSwitchOrganization = async (orgId: string) => {
@@ -248,7 +281,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* Desktop Navigation */}
             <div className="hidden min-w-0 items-center gap-1 lg:flex" aria-label="Primary navigation">
               {navigation.filter(n => n.section === 'main').map((item) => {
-                const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`));
+                const itemPath = item.href.split('?')[0];
+                const active = pathname === itemPath || (itemPath !== '/dashboard' && pathname.startsWith(`${itemPath}/`));
                 return (
                   <Link
                     key={item.href}
@@ -325,26 +359,95 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Right Side Actions */}
             <div className="flex shrink-0 items-center gap-2">
+              {workspaceReady && availableWorkspaces.length > 1 && (
+                <div
+                  className={cn(
+                    'hidden items-center rounded-lg border p-0.5 2xl:flex',
+                    isDarkMode ? 'border-zinc-800 bg-zinc-900/60' : 'border-gray-200 bg-white'
+                  )}
+                  role="group"
+                  aria-label="Performance workspace"
+                >
+                  {availableWorkspaces.map((option) => {
+                    const Icon = WORKSPACE_ICONS[option.value];
+                    const active = workspace === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={active}
+                        title={option.description}
+                        onClick={() => handleWorkspaceChange(option.value)}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                          active
+                            ? 'bg-teal-700 text-white'
+                            : isDarkMode
+                              ? 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
+                              : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {workspaceReady && availableWorkspaces.length > 1 && (
+                <div className="relative hidden lg:block 2xl:hidden">
+                  <button
+                    type="button"
+                    aria-expanded={workspaceDropdownOpen}
+                    aria-haspopup="menu"
+                    onClick={() => setWorkspaceDropdownOpen((open) => !open)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold',
+                      isDarkMode ? 'border-zinc-800 bg-zinc-900/60 text-zinc-200' : 'border-gray-200 bg-white text-gray-700'
+                    )}
+                  >
+                    <ActiveWorkspaceIcon className="h-3.5 w-3.5" />
+                    {activeWorkspaceLabel}
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                  {workspaceDropdownOpen && (
+                    <>
+                      <button type="button" tabIndex={-1} aria-hidden="true" className="fixed inset-0 z-40 cursor-default" onClick={() => setWorkspaceDropdownOpen(false)} />
+                      <div className={cn('absolute right-0 top-11 z-50 w-64 overflow-hidden rounded-lg border py-1 shadow-lg', isDarkMode ? 'border-zinc-800 bg-zinc-950' : 'border-gray-200 bg-white')} role="menu">
+                        {availableWorkspaces.map((option) => {
+                          const Icon = WORKSPACE_ICONS[option.value];
+                          const active = option.value === workspace;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={active}
+                              onClick={() => {
+                                setWorkspaceDropdownOpen(false);
+                                handleWorkspaceChange(option.value);
+                              }}
+                              className={cn('flex w-full items-start gap-3 px-3 py-2.5 text-left', isDarkMode ? 'hover:bg-zinc-900' : 'hover:bg-gray-50')}
+                            >
+                              <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                              <span className="min-w-0">
+                                <span className="block text-sm font-semibold">{option.label}</span>
+                                <span className={cn('mt-0.5 block text-xs', isDarkMode ? 'text-zinc-500' : 'text-gray-500')}>{option.description}</span>
+                              </span>
+                              {active && <span className="ml-auto text-xs text-teal-600">Current</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               {rolloutVisibilityReady && features.notifications !== false && <ActionCentreBell />}
               <ThemePreferenceMenu />
 
-              {isHRAdmin && (
-                <Link
-                  href="/admin"
-                  className={cn(
-                    "hidden items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-sm font-semibold transition-colors xl:inline-flex",
-                    isDarkMode
-                      ? "bg-teal-600 text-white hover:bg-teal-500"
-                      : "bg-teal-700 text-white hover:bg-teal-600"
-                  )}
-                >
-                  <Settings className="h-4 w-4" />
-                  Admin Panel
-                </Link>
-              )}
-
               {/* Organization & Team Switcher */}
-              <div className="relative hidden xl:block">
+              <div className="relative hidden 2xl:block">
                 <button
                   onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
                   className={cn(
@@ -555,7 +658,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           <Sparkles className="h-4 w-4 inline mr-2" />
                           ChatGPT account
                         </Link>
-                        {isManager && (
+                        {workspace === 'manager' && isManager && (
                           <Link
                             href="/team"
                             className={cn(
@@ -568,7 +671,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             My Team
                           </Link>
                         )}
-                        {isHRAdmin && (
+                        {workspace === 'admin' && isHRAdmin && (
                           <Link
                             href="/admin"
                             className={cn(
@@ -655,6 +758,43 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
               <ThemePreferenceMenu mobile />
 
+              {workspaceReady && availableWorkspaces.length > 1 && (
+                <div className="mb-6">
+                  <p className={cn('mb-2 px-1 text-xs font-semibold', isDarkMode ? 'text-zinc-500' : 'text-gray-500')}>
+                    Workspace
+                  </p>
+                  <div className={cn('overflow-hidden rounded-lg border', isDarkMode ? 'border-zinc-800' : 'border-gray-200')}>
+                    {availableWorkspaces.map((option) => {
+                      const Icon = WORKSPACE_ICONS[option.value];
+                      const active = workspace === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => handleWorkspaceChange(option.value)}
+                          className={cn(
+                            'flex w-full items-start gap-3 border-b px-3 py-3 text-left last:border-b-0',
+                            isDarkMode ? 'border-zinc-800' : 'border-gray-200',
+                            active
+                              ? isDarkMode ? 'bg-teal-950/50 text-teal-200' : 'bg-teal-50 text-teal-900'
+                              : isDarkMode ? 'text-zinc-300 hover:bg-zinc-900' : 'text-gray-700 hover:bg-gray-50'
+                          )}
+                        >
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span>
+                            <span className="block text-sm font-semibold">{option.label}</span>
+                            <span className={cn('mt-0.5 block text-xs', isDarkMode ? 'text-zinc-500' : 'text-gray-500')}>
+                              {option.description}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Mobile Organization Switcher */}
               {showOrgSwitcher && (
                 <div className="mb-6">
@@ -720,7 +860,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   isDarkMode ? "text-zinc-500" : "text-gray-500"
                 )}>Navigation</div>
                 {navigation.map((item) => {
-                  const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`));
+                  const itemPath = item.href.split('?')[0];
+                  const active = pathname === itemPath || (itemPath !== '/dashboard' && pathname.startsWith(`${itemPath}/`));
                   return (
                     <Link
                       key={item.href}

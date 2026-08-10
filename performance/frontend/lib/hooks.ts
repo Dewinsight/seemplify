@@ -579,12 +579,14 @@ export function useMyAppraisals(filters?: { status?: string; cycleId?: string })
 /**
  * Get team appraisals (as manager)
  */
-export function useTeamAppraisals(filters?: { status?: string; cycleId?: string }) {
+export function useTeamAppraisals(filters?: { status?: string; cycleId?: string; enabled?: boolean }) {
   const queryParams = new URLSearchParams();
   if (filters?.status) queryParams.append('status', filters.status);
   if (filters?.cycleId) queryParams.append('cycleId', filters.cycleId);
 
-  const url = `/appraisals/team${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+  const url = filters?.enabled === false
+    ? null
+    : `/appraisals/team${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
   const { data, error, isLoading, mutate } = useSWR(url, fetcher);
 
   return {

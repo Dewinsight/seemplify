@@ -48,6 +48,7 @@ import {
 } from '@mui/icons-material';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import { useDirectReports, useUserContext } from '@/lib/hooks';
 
 type MetricType = 'percentage' | 'number' | 'currency' | 'boolean' | 'milestone';
@@ -314,6 +315,7 @@ function EmptyState({ title, description, action }: { title: string; description
 
 export default function OKRWorkspacePage() {
   const { user: authUser, currentOrganization: authOrganization } = useAuth();
+  const { workspace } = usePerformanceWorkspace();
   const { user, role, isManager, isHRAdmin, teams, isLoading: contextLoading } = useUserContext();
   const { directReports, managedTeams, isLoading: reportsLoading } = useDirectReports();
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -570,18 +572,25 @@ export default function OKRWorkspacePage() {
   );
 
   const views = useMemo(() => {
-    const items: Array<{ value: WorkspaceView; label: string; count?: number }> = [
-      { value: 'my', label: 'My Goals', count: myGoals.length },
-    ];
+    const items: Array<{ value: WorkspaceView; label: string; count?: number }> = [];
+    if (workspace === 'personal') {
+      items.push({ value: 'my', label: 'My Goals', count: myGoals.length });
+      return items;
+    }
     if (canManageGoalWorkspace) items.push({ value: 'team', label: 'Team & Department Goals', count: teamGoals.length });
     items.push({ value: 'alignment', label: 'Organization Alignment' });
     if (canManageGoalWorkspace || approvalGoals.length > 0) items.push({ value: 'approvals', label: 'Approvals', count: approvalGoals.length });
     return items;
-  }, [approvalGoals.length, canManageGoalWorkspace, myGoals.length, teamGoals.length]);
+  }, [approvalGoals.length, canManageGoalWorkspace, myGoals.length, teamGoals.length, workspace]);
 
   useEffect(() => {
-    if (!views.some((item) => item.value === view)) setView('my');
-  }, [view, views]);
+    const requestedView = new URLSearchParams(window.location.search).get('view') as WorkspaceView | null;
+    if (requestedView && views.some((item) => item.value === requestedView)) {
+      if (view !== requestedView) setView(requestedView);
+      return;
+    }
+    if (!views.some((item) => item.value === view)) setView(views[0]?.value || 'my');
+  }, [view, views, workspace]);
 
   const loadHierarchy = useCallback(async () => {
     setHierarchyLoading(true);
@@ -1137,7 +1146,11 @@ export default function OKRWorkspacePage() {
         <Box>
           <Typography variant="h4" fontWeight={700}>Goals</Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
-            Set direction, agree ownership, and keep progress current.
+            {workspace === 'personal'
+              ? 'Set your direction and keep your own progress current.'
+              : workspace === 'manager'
+                ? 'Assign, align, approve, and monitor goals for your team.'
+                : 'Set organization direction and monitor goal alignment.'}
           </Typography>
         </Box>
         <Stack direction="row" spacing={1} alignItems="center">

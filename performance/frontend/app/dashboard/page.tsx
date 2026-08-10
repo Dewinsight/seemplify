@@ -6,8 +6,9 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent }
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowRight, ChevronDown, Eye, FileText, Flag, LayoutGrid, Target, Users } from 'lucide-react';
+import { AlertCircle, ArrowRight, BarChart3, ChevronDown, ClipboardCheck, Eye, FileText, Flag, LayoutGrid, Settings, Target, Users } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { usePerformanceWorkspace } from '@/context/PerformanceWorkspaceContext';
 import { useCurrentTeam, useDashboardData, useUserContext } from '@/lib/hooks';
 import api, { authApi } from '@/lib/api';
 
@@ -28,6 +29,7 @@ interface TeamOption {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { workspace } = usePerformanceWorkspace();
   const { isAuthenticated, isLoading: authLoading, user: authUser, currentOrganization } = useAuth();
   const {
     user: contextUser,
@@ -55,7 +57,9 @@ export default function DashboardPage() {
   const organizationId = currentOrganization?.id || currentOrganization?._id?.toString() || currentOrganization;
   const orgTeams = (teams as TeamOption[]).filter((team) => team.organizationId === organizationId);
   const activeCurrentTeam = currentTeam || contextCurrentTeam;
-  const dashboardTeamFilter = selectedTeamView === 'current' ? activeCurrentTeam?.id : selectedTeamView;
+  const dashboardTeamFilter = workspace === 'personal'
+    ? undefined
+    : selectedTeamView === 'current' ? activeCurrentTeam?.id : selectedTeamView;
   const { dashboard, isLoading: dashboardLoading, isError } = useDashboardData(dashboardTeamFilter);
 
   useEffect(() => setMounted(true), []);
@@ -86,7 +90,7 @@ export default function DashboardPage() {
   }, [teamDropdownOpen]);
 
   useEffect(() => {
-    if (!isManager || features.canonicalAppraisals === false) {
+    if (workspace !== 'manager' || !isManager || features.canonicalAppraisals === false) {
       setManagerNotifications([]);
       setManagerNotificationLoading(false);
       return;
@@ -103,7 +107,7 @@ export default function DashboardPage() {
       }
     };
     loadManagerNotifications();
-  }, [features.canonicalAppraisals, isManager]);
+  }, [features.canonicalAppraisals, isManager, workspace]);
 
   const getTeamViewDisplay = () => {
     if (selectedTeamView === 'all') return 'All teams';
@@ -182,19 +186,50 @@ export default function DashboardPage() {
   const user = authUser || contextUser;
   const firstName = user?.name?.split(' ')?.[0] || 'there';
   const organizationName = organization?.name || currentOrganization?.name || 'your organization';
-  const showTeamSwitcher = orgTeams.length > 0;
-  const showManagementRail = isManager || isHRAdmin;
-  const primaryActions = [
-    { name: 'Set and update OKRs', href: '/okrs', icon: Target, copy: 'Create objectives, update progress, and keep outcomes connected to the work.', meta: `${data.totalOkrs || 0} active` },
+  const showTeamSwitcher = workspace !== 'personal' && orgTeams.length > 0;
+  const personalActions = [
+    { name: 'Set and update OKRs', href: '/okrs?view=my', icon: Target, copy: 'Create objectives, update progress, and keep outcomes connected to your work.', meta: `${data.totalOkrs || 0} active` },
     ...(features.canonicalAppraisals === false ? [] : [
-      { name: 'My appraisals', href: '/appraisals', icon: FileText, copy: 'Continue self-assessments, discussions, and reviews already assigned to you.', meta: `${data.upcomingDeadlines || 0} due soon` },
+      { name: 'My appraisals', href: '/appraisals?view=personal', icon: FileText, copy: 'Continue your self-assessments, discussions, and assigned reviews.', meta: `${data.upcomingDeadlines || 0} due soon` },
     ]),
   ];
-  const roleActions = [
-    ...(isManager ? [{ name: 'My team', href: '/team', icon: Users, copy: `Review direct reports, manager actions, goals${features.continuousPerformance === false ? '' : ', and development activity'}.`, meta: `${managerData?.directReportCount || 0} reports` }] : []),
-    ...(isHRAdmin && features.canonicalAppraisals !== false ? [{ name: 'Create appraisal cycle', href: '/admin/appraisal-cycles/new', icon: Flag, copy: 'Choose participants, set the timeline, and launch the next review cycle.', meta: 'HR administration' }] : []),
+  const managerActions = [
+    { name: 'Direct reports', href: '/team', icon: Users, copy: `Review your team, coaching activity${features.continuousPerformance === false ? '' : ', feedback, and development follow-ups'}.`, meta: `${managerData?.directReportCount || 0} reports` },
+    { name: 'Team goals', href: '/okrs?view=team', icon: Target, copy: 'Assign, approve, and monitor goals for the people who report to you.', meta: `${data.totalOkrs || 0} in view` },
+    ...(features.canonicalAppraisals === false ? [] : [
+      { name: 'Team appraisals', href: '/appraisals?view=team', icon: ClipboardCheck, copy: 'Complete manager assessments and move submitted appraisals forward.', meta: `${managerData?.pendingReviews || 0} pending` },
+    ]),
   ];
-  const actions = [...primaryActions, ...roleActions];
+  const adminActions = [
+    { name: 'Administration overview', href: '/admin', icon: Settings, copy: 'See cycle health, organization activity, and exceptions that need HR attention.', meta: 'Organization-wide' },
+    ...(features.canonicalAppraisals === false ? [] : [
+      { name: 'Create appraisal cycle', href: '/admin/appraisal-cycles/new', icon: Flag, copy: 'Choose participants, set the timeline, and launch the next review cycle.', meta: 'New cycle' },
+      { name: 'Calibration', href: '/admin/calibration', icon: ClipboardCheck, copy: 'Review rating distribution and complete fair, auditable calibration.', meta: 'HR workflow' },
+      { name: 'Performance reports', href: '/admin/reports', icon: BarChart3, copy: 'Monitor completion, progress, and organization-level outcomes.', meta: 'Reporting' },
+    ]),
+  ];
+  const actions = workspace === 'manager' && isManager
+    ? managerActions
+    : workspace === 'admin' && isHRAdmin
+      ? adminActions
+      : personalActions;
+  const workspaceHeading = workspace === 'manager' && isManager
+    ? {
+      kicker: 'Manager workspace',
+      title: 'Keep your team’s performance work moving.',
+      copy: `Review direct reports, goals, coaching, and manager assessments for ${organizationName}.`,
+    }
+    : workspace === 'admin' && isHRAdmin
+      ? {
+        kicker: 'Admin workspace',
+        title: 'Run a clear and consistent performance process.',
+        copy: `Manage cycles, calibration, reporting, and organization-wide performance settings for ${organizationName}.`,
+      }
+      : {
+        kicker: new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }),
+        title: 'Your performance work, in one place.',
+        copy: `Welcome back, ${firstName}. Keep your goals${features.canonicalAppraisals === false ? '' : ', appraisals'}, feedback, and development moving.`,
+      };
   const renderActionCard = ({ name, href, icon: Icon, copy, meta }: (typeof actions)[number], compact = false) => (
     <Link key={name} href={href} className={`suite-card${compact ? ' suite-role-card' : ''}`}>
       <div className="suite-card-top"><div className="suite-icon"><Icon className="h-5 w-5" /></div><ArrowRight className="h-4 w-4" style={{ color: 'var(--suite-subtle)' }} /></div>
@@ -207,11 +242,9 @@ export default function DashboardPage() {
     <div className="suite-dashboard">
       <header className="suite-dashboard-header">
         <div>
-          <p className="suite-kicker">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-          <h1 className="suite-dashboard-title">Performance work that stays close to the team.</h1>
-          <p className="suite-dashboard-copy">
-            Welcome back, {firstName}. Move goals{features.canonicalAppraisals === false ? '' : ', appraisals'}, and manager actions forward for {organizationName} without hunting through separate workflows.
-          </p>
+          <p className="suite-kicker">{workspaceHeading.kicker}</p>
+          <h1 className="suite-dashboard-title">{workspaceHeading.title}</h1>
+          <p className="suite-dashboard-copy">{workspaceHeading.copy}</p>
         </div>
         <div className="suite-context">
           <div className="suite-context-row">
@@ -222,7 +255,11 @@ export default function DashboardPage() {
             <a href={process.env.NEXT_PUBLIC_IDP_URL || 'https://auth.seemplifyai.com'} className="suite-button-secondary"><LayoutGrid className="h-4 w-4" /> App Hub</a>
           </div>
           <div className="mt-4 flex items-end justify-between gap-4 border-t pt-3" style={{ borderColor: 'var(--suite-line)' }}>
-            <div><p className="suite-label">Your role</p><p className="text-sm font-semibold">{roleDisplay || (isHRAdmin ? 'HR administrator' : isManager ? 'Manager' : 'Team member')}</p></div>
+            <div>
+              <p className="suite-label">Current view</p>
+              <p className="text-sm font-semibold">{workspace === 'admin' ? 'Admin' : workspace === 'manager' ? 'Manager' : 'Personal'}</p>
+              <p className="mt-0.5 text-xs" style={{ color: 'var(--suite-muted)' }}>{roleDisplay || (isHRAdmin ? 'HR administrator' : isManager ? 'Manager' : 'Team member')}</p>
+            </div>
             {showTeamSwitcher && (
               <button
                 ref={teamButtonRef}
@@ -256,7 +293,7 @@ export default function DashboardPage() {
         </>, document.body
       )}
 
-      {features.canonicalAppraisals !== false && isManager && managerNotifications.length > 0 && (
+      {workspace === 'manager' && features.canonicalAppraisals !== false && isManager && managerNotifications.length > 0 && (
         <div className="suite-notice mt-6">
           <div className="flex items-start gap-3"><AlertCircle className="mt-0.5 h-5 w-5" style={{ color: 'var(--suite-warning)' }} /><div><p className="text-sm font-semibold">Manager review ready</p><p className="mt-1 text-sm" style={{ color: 'var(--suite-muted)' }}>Review {managerNotifications[0]?.employee?.name || 'an employee'}&apos;s submitted appraisal.</p></div></div>
           <button onClick={() => handleOpenManagerNotification(managerNotifications[0])} className="suite-button">Start review <ArrowRight className="h-4 w-4" /></button>
@@ -265,26 +302,40 @@ export default function DashboardPage() {
 
       <section className="suite-section suite-metrics-section">
         <div className="suite-metrics">
-          <Link href="/okrs" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">OKR progress</p><p className="suite-metric-value">{data.okrProgress || 0}%</p><div className="suite-progress mt-3"><span style={{ width: `${Math.min(100, Number(data.okrProgress || 0))}%` }} /></div></Link>
-          <Link href="/okrs" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Active OKRs</p><p className="suite-metric-value">{data.totalOkrs || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>{data.completedOkrs || 0} completed</p></Link>
-          {features.canonicalAppraisals !== false && <Link href="/appraisals" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Upcoming deadlines</p><p className="suite-metric-value">{data.upcomingDeadlines || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Next 7 days</p></Link>}
-          {features.canonicalAppraisals !== false && isManager ? (
-            <Link href="/team/reviews" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Pending reviews</p><p className="suite-metric-value">{managerData?.pendingReviews || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Needs your attention</p></Link>
-          ) : features.continuousPerformance !== false && !isManager ? (
-            <Link href="/feedback" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Recent feedback</p><p className="suite-metric-value">{data.recentFeedback || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Shared with you</p></Link>
-          ) : null}
+          {workspace === 'manager' && isManager ? (
+            <>
+              <Link href="/team" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Direct reports</p><p className="suite-metric-value">{managerData?.directReportCount || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>People you manage</p></Link>
+              <Link href="/okrs?view=team" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Team OKR progress</p><p className="suite-metric-value">{data.okrProgress || 0}%</p><div className="suite-progress mt-3"><span style={{ width: `${Math.min(100, Number(data.okrProgress || 0))}%` }} /></div></Link>
+              {features.canonicalAppraisals !== false && <Link href="/appraisals?view=team" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Pending reviews</p><p className="suite-metric-value">{managerData?.pendingReviews || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Needs your attention</p></Link>}
+              {features.canonicalAppraisals !== false && <Link href="/appraisals?view=team" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Upcoming deadlines</p><p className="suite-metric-value">{data.upcomingDeadlines || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Next 7 days</p></Link>}
+            </>
+          ) : workspace === 'admin' && isHRAdmin ? (
+            <>
+              <Link href="/admin/appraisal-cycles" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Appraisal cycles</p><p className="suite-metric-value">Open</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Manage timelines and participants</p></Link>
+              <Link href="/admin/calibration" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Calibration</p><p className="suite-metric-value">Review</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Rating distribution and fairness</p></Link>
+              <Link href="/admin/reports" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Reporting</p><p className="suite-metric-value">Live</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Organization performance data</p></Link>
+              <Link href="/analytics" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Analytics</p><p className="suite-metric-value">Explore</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Trends and completion</p></Link>
+            </>
+          ) : (
+            <>
+              <Link href="/okrs?view=my" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">OKR progress</p><p className="suite-metric-value">{data.okrProgress || 0}%</p><div className="suite-progress mt-3"><span style={{ width: `${Math.min(100, Number(data.okrProgress || 0))}%` }} /></div></Link>
+              <Link href="/okrs?view=my" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Active OKRs</p><p className="suite-metric-value">{data.totalOkrs || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>{data.completedOkrs || 0} completed</p></Link>
+              {features.canonicalAppraisals !== false && <Link href="/appraisals?view=personal" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Upcoming deadlines</p><p className="suite-metric-value">{data.upcomingDeadlines || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Next 7 days</p></Link>}
+              {features.continuousPerformance !== false && <Link href="/feedback" className="suite-metric hover:bg-[var(--suite-surface-muted)]"><p className="suite-label">Recent feedback</p><p className="suite-metric-value">{data.recentFeedback || 0}</p><p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Shared with you</p></Link>}
+            </>
+          )}
         </div>
       </section>
 
       <section className="suite-section suite-workspace-section" aria-labelledby="performance-workspace-title">
         <div className="suite-section-heading"><div><h2 id="performance-workspace-title" className="suite-section-title">Performance workspace</h2><p className="suite-section-copy">Start with the action that needs to move today.</p></div></div>
-        <div className={`suite-workspace-layout${showManagementRail ? '' : ' suite-workspace-layout--single'}`}>
+        <div className="suite-workspace-layout suite-workspace-layout--single">
           <div className="suite-workspace-main">
             <div className="suite-primary-actions">
-              {primaryActions.map((action) => renderActionCard(action))}
+              {actions.map((action) => renderActionCard(action))}
             </div>
 
-            {features.canonicalAppraisals !== false && isManager && (
+            {workspace === 'manager' && features.canonicalAppraisals !== false && isManager && (
               <section className="suite-manager-block" aria-labelledby="manager-actions-title">
                 <div className="suite-section-heading"><div><h2 id="manager-actions-title" className="suite-section-title">Manager actions</h2><p className="suite-section-copy">Reviews and follow-ups routed directly to you.</p></div></div>
                 <div className="suite-panel overflow-hidden">
@@ -298,11 +349,6 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {showManagementRail && (
-            <aside className="suite-workspace-rail" aria-label="Role-specific performance tools">
-              {roleActions.map((action) => renderActionCard(action, true))}
-            </aside>
-          )}
         </div>
       </section>
     </div>
