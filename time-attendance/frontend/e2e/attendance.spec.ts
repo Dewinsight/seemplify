@@ -11,6 +11,7 @@ type MockState = {
     clockedIn: boolean;
     onBreak: boolean;
     lockedClockOut: boolean;
+    onLeave: boolean;
     notificationRead: boolean;
     exceptionStatus: string;
     shiftAcknowledged: boolean;
@@ -47,14 +48,20 @@ const timesheet = {
     daysWorked: 5,
     overtimeHours: 0,
     entries: [],
-    dailyEntries: [{
-        date: '2026-08-03T00:00:00.000Z', status: 'present', totalHours: 7.5, breakDuration: 30,
-        clockIn: '2026-08-03T08:00:00.000Z', clockOut: '2026-08-03T16:00:00.000Z',
-        clockInLocation: { latitude: 51.5074, longitude: -0.1278, accuracy: 18, verified: true, address: 'London office, Westminster' },
-        clockOutLocation: { latitude: 51.5074, longitude: -0.1278, accuracy: 22, verified: true, address: 'London office, Westminster' },
-        exceptions: [],
-    }],
-    summary: { totalHours: 37.5, daysWorked: 5, overtimeHours: 0 },
+    dailyEntries: [
+        {
+            date: '2026-08-03T00:00:00.000Z', status: 'present', totalHours: 7.5, breakDuration: 30,
+            clockIn: '2026-08-03T08:00:00.000Z', clockOut: '2026-08-03T16:00:00.000Z',
+            clockInLocation: { latitude: 51.5074, longitude: -0.1278, accuracy: 18, verified: true, address: 'London office, Westminster' },
+            clockOutLocation: { latitude: 51.5074, longitude: -0.1278, accuracy: 22, verified: true, address: 'London office, Westminster' },
+            exceptions: [],
+        },
+        {
+            date: '2026-08-04T00:00:00.000Z', status: 'leave', totalHours: 0, breakDuration: 0,
+            clockIn: null, clockOut: null, exceptions: [],
+        },
+    ],
+    summary: { totalHours: 37.5, daysWorked: 5, daysOnLeave: 1, overtimeHours: 0 },
     approvalWorkflow: { currentLevel: 0, levels: [] },
 };
 
@@ -120,6 +127,8 @@ async function installApiMock(page: Page, state: MockState) {
                 today: { timeWorked: { hours: 2, minutes: 120 }, formatted: '02:00', breakMinutes: 15 },
                 week: { totalHours: 37.5, daysWorked: 5, averageHoursPerDay: 7.5 },
                 currentTimesheet: { _id: 'timesheet-1', weekNumber: 32, status: 'draft' },
+                attendanceStatus: state.onLeave ? (state.clockedIn ? 'working_on_leave' : 'on_leave') : (state.clockedIn ? 'working' : 'off_clock'),
+                leave: state.onLeave ? { type: 'annual', typeName: 'Annual Leave', startAt: '2026-08-09T00:00:00.000Z', endAt: '2026-08-11T00:00:00.000Z', allDay: true } : null,
                 pendingApprovals: 1,
             });
         }
@@ -173,9 +182,10 @@ async function installApiMock(page: Page, state: MockState) {
                 team: [
                     { userId: 'employee-2', userName: 'Jamie Lee', userEmail: 'jamie@example.com', teamName: 'Operations', status: 'working', clockInAt: NOW, clockInLocation: { address: 'London office' }, workedMinutesToday: 120, lastActivity: NOW, lastActivityType: 'clock_in' },
                     { userId: 'employee-3', userName: 'Morgan Reed', userEmail: 'morgan@example.com', teamName: 'Operations', status: 'clocked_out', clockInAt: NOW, clockOutAt: TOMORROW, clockInLocation: { address: 'Client site' }, clockOutLocation: { address: 'Client site' }, workedMinutesToday: 480, lastActivity: TOMORROW, lastActivityType: 'clock_out' },
-                    { userId: 'employee-4', userName: 'Casey Patel', userEmail: 'casey@example.com', teamName: 'Operations', status: 'not_clocked_in', workedMinutesToday: 0 },
+                    { userId: 'employee-4', userName: 'Taylor Kim', userEmail: 'taylor@example.com', teamName: 'Operations', status: 'not_clocked_in', workedMinutesToday: 0 },
+                    { userId: 'employee-5', userName: 'Casey Patel', userEmail: 'casey@example.com', teamName: 'Operations', status: 'on_leave', leave: { startAt: '2026-08-09T00:00:00.000Z', endAt: '2026-08-11T00:00:00.000Z', allDay: true }, workedMinutesToday: 0 },
                 ],
-                summary: { total: 3, working: 1, onBreak: 0, clockedOut: 2, notClockedIn: 1 },
+                summary: { total: 4, working: 1, onBreak: 0, onLeave: 1, clockedOut: 2, notClockedIn: 1, leaveConflicts: 0 },
             });
         }
         if (method === 'POST' && path === '/api/attendance/team/employee-2/notify-clock-out') return json(route, { message: 'Reminder sent to Jamie Lee.' });
@@ -273,7 +283,7 @@ const test = base.extend<{ mockState: MockState }>({
     mockState: async ({ page }, use) => {
         const state: MockState = {
             calls: [], unhandled: [], browserErrors: [], clockedIn: false, onBreak: false,
-            lockedClockOut: false,
+            lockedClockOut: false, onLeave: false,
             notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false, rulePacks: [rulePack],
             rosterSynced: false, rosterSyncCount: 0, coverRequested: false, requestReviewed: false,
             approvalConflict: false,
@@ -341,6 +351,26 @@ test('allows an employee to clock out when the current timesheet is protected', 
     await page.getByRole('button', { name: 'Clock Out' }).click();
     await expect(page.getByRole('button', { name: 'Clock In' })).toBeVisible();
     expect(mockState.calls).toContain('POST /api/clock/out');
+});
+
+test('surfaces approved leave across the employee, team and timesheet experience', async ({ page, mockState }) => {
+    mockState.onLeave = true;
+    await authenticate(page);
+
+    await page.goto('/dashboard');
+    await expect(page.getByText('You are on approved leave today')).toBeVisible();
+    await expect(page.getByText(/You will not be marked absent/)).toBeVisible();
+
+    await page.goto('/team');
+    const leaveRow = page.locator('tbody tr').filter({ hasText: 'Casey Patel' });
+    await expect(leaveRow).toContainText('On Leave');
+    await expect(leaveRow).toContainText('Approved leave');
+
+    await page.goto('/timesheets/timesheet-1');
+    await expect(page.getByText('Leave days').locator('..')).toContainText('1');
+    const leaveDay = page.locator('[data-day-status="leave"]');
+    await expect(leaveDay).toContainText('On leave');
+    await expect(leaveDay).toContainText('No clock entry is required');
 });
 
 test('covers the employee attendance, timesheet, scheduling, exception and presence workspaces', async ({ page, mockState: _mockState }) => {

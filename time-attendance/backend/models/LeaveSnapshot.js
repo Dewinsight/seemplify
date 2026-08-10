@@ -6,6 +6,7 @@ const LeaveSnapshotSchema = new Schema({
     externalLeaveId: { type: String, required: true },
     userId: { type: String, required: true, index: true },
     type: String,
+    typeName: { type: String, trim: true, maxlength: 80 },
     status: { type: String, enum: ['approved', 'cancelled'], required: true },
     startAt: { type: Date, required: true },
     endAt: { type: Date, required: true },

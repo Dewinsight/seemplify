@@ -24,7 +24,9 @@ type TeamMember = {
     userName: string;
     userEmail?: string | null;
     teamName?: string | null;
-    status: 'working' | 'on_break' | 'clocked_out' | 'not_clocked_in';
+    status: 'working' | 'on_break' | 'on_leave' | 'clocked_out' | 'not_clocked_in';
+    leave?: { startAt: string; endAt: string; allDay: boolean } | null;
+    leaveConflict?: boolean;
     clockInAt?: string | null;
     clockOutAt?: string | null;
     clockInLocation?: any;
@@ -40,6 +42,8 @@ type TeamSummary = {
     onBreak: number;
     clockedOut: number;
     notClockedIn?: number;
+    onLeave?: number;
+    leaveConflicts?: number;
 };
 
 type TeamStatusFilter = 'all' | TeamMember['status'];
@@ -50,6 +54,8 @@ const EMPTY_SUMMARY: TeamSummary = {
     onBreak: 0,
     clockedOut: 0,
     notClockedIn: 0,
+    onLeave: 0,
+    leaveConflicts: 0,
 };
 
 export default function TeamPage() {
@@ -113,6 +119,7 @@ export default function TeamPage() {
                 member.userEmail,
                 member.teamName,
                 member.status,
+                member.status === 'on_leave' ? 'on leave approved leave' : null,
             ]
                 .filter(Boolean)
                 .some((value) => String(value).toLowerCase().includes(q));
@@ -143,6 +150,15 @@ export default function TeamPage() {
             [location.area, location.city, location.state].filter(Boolean).join(', ') ||
             '--'
         );
+    };
+
+    const formatLeaveRange = (leave?: TeamMember['leave']) => {
+        if (!leave?.startAt || !leave?.endAt) return 'Approved leave';
+        const start = new Date(leave.startAt);
+        const end = new Date(leave.endAt);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 'Approved leave';
+        if (format(start, 'yyyy-MM-dd') === format(end, 'yyyy-MM-dd')) return format(start, 'MMM d');
+        return `${format(start, 'MMM d')}–${format(end, 'MMM d')}`;
     };
 
     const canSendClockOutReminder = (member: TeamMember) => {
@@ -209,6 +225,8 @@ export default function TeamPage() {
                 return 'border-emerald-600/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
             case 'on_break':
                 return 'border-amber-600/25 bg-amber-500/10 text-amber-700 dark:text-amber-300';
+            case 'on_leave':
+                return 'border-teal-600/25 bg-teal-500/10 text-teal-700 dark:text-teal-300';
             case 'clocked_out':
                 return 'border-[var(--suite-line-strong)] bg-[var(--suite-surface-muted)] text-[var(--suite-muted)]';
             case 'not_clocked_in':
@@ -223,6 +241,8 @@ export default function TeamPage() {
                 return 'Working';
             case 'on_break':
                 return 'On Break';
+            case 'on_leave':
+                return 'On Leave';
             case 'clocked_out':
                 return 'Clocked Out';
             case 'not_clocked_in':
@@ -366,6 +386,7 @@ export default function TeamPage() {
                             { key: 'all', label: 'All', count: summary.total },
                             { key: 'working', label: 'Working', count: summary.working },
                             { key: 'on_break', label: 'On break', count: summary.onBreak },
+                            { key: 'on_leave', label: 'On leave', count: summary.onLeave || 0 },
                             { key: 'clocked_out', label: 'Clocked out', count: clockedOutOnlyCount },
                             { key: 'not_clocked_in', label: 'Not clocked in', count: notClockedInCount },
                         ].map((filterItem) => {
@@ -447,7 +468,8 @@ export default function TeamPage() {
                                     className={cn(
                                         'cursor-pointer transition-colors hover:bg-[var(--suite-surface-muted)]',
                                         member.status === 'working' && 'bg-emerald-500/[0.025]',
-                                        member.status === 'on_break' && 'bg-amber-500/[0.025]'
+                                        member.status === 'on_break' && 'bg-amber-500/[0.025]',
+                                        member.status === 'on_leave' && 'bg-teal-500/[0.025]'
                                     )}
                                     onClick={() => router.push(`/team/${member.userId}`)}
                                 >
@@ -466,17 +488,27 @@ export default function TeamPage() {
                                         <span className="block truncate" title={member.teamName || undefined}>{member.teamName || '--'}</span>
                                     </td>
                                     <td className="px-4 py-4">
-                                        <span className={cn('inline-flex whitespace-nowrap rounded-md border px-2 py-1 text-xs font-medium', getStatusStyles(member.status))}>
-                                            {getStatusLabel(member.status)}
-                                        </span>
+                                        <div className="space-y-1">
+                                            <span className={cn('inline-flex whitespace-nowrap rounded-md border px-2 py-1 text-xs font-medium', getStatusStyles(member.status))}>
+                                                {getStatusLabel(member.status)}
+                                            </span>
+                                            {member.leaveConflict && <p className="text-[11px] text-amber-700 dark:text-amber-300">Leave conflict</p>}
+                                        </div>
                                     </td>
                                     <td className="px-4 py-4 text-xs tabular-nums text-[var(--suite-muted)]">
-                                        <div className="grid grid-cols-[24px_1fr] gap-x-2 gap-y-1">
-                                            <span className="text-[var(--suite-subtle)]">In</span>
-                                            <span className="whitespace-nowrap">{formatTime(member.clockInAt)}</span>
-                                            <span className="text-[var(--suite-subtle)]">Out</span>
-                                            <span className="whitespace-nowrap">{formatTime(member.clockOutAt)}</span>
-                                        </div>
+                                        {member.status === 'on_leave' ? (
+                                            <div>
+                                                <span className="font-medium text-[var(--suite-ink)]">Approved leave</span>
+                                                <span className="mt-1 block text-[var(--suite-subtle)]">{formatLeaveRange(member.leave)}</span>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-[24px_1fr] gap-x-2 gap-y-1">
+                                                <span className="text-[var(--suite-subtle)]">In</span>
+                                                <span className="whitespace-nowrap">{formatTime(member.clockInAt)}</span>
+                                                <span className="text-[var(--suite-subtle)]">Out</span>
+                                                <span className="whitespace-nowrap">{formatTime(member.clockOutAt)}</span>
+                                            </div>
+                                        )}
                                     </td>
                                     <td className="px-4 py-4 text-xs text-[var(--suite-muted)]">
                                         <div className="space-y-1.5">

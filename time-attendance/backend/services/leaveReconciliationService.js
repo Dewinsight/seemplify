@@ -44,7 +44,7 @@ async function reconcileOrganizationLeaves(organizationId) {
         await processLifecycleEvent('leave', {
             eventId: `leave-reconcile-missing:${organizationId}:${leave.externalLeaveId}:${snapshot.generatedAt}`,
             event: 'leave.cancelled', organizationId, subjectId: leave.userId, occurredAt: snapshot.generatedAt,
-            data: { leaveId: leave.externalLeaveId, organizationId, userId: leave.userId, leaveType: leave.type, startAt: leave.startAt, endAt: leave.endAt },
+            data: { leaveId: leave.externalLeaveId, organizationId, userId: leave.userId, leaveType: leave.type, leaveTypeName: leave.typeName, startAt: leave.startAt, endAt: leave.endAt },
         }, 'leave.cancelled');
     }
     await processLifecycleEvent('leave', {

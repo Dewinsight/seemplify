@@ -11,6 +11,8 @@ const COLORS = {
     successLight: 'FFECFDF5',
     warning: 'FFD97706',
     warningLight: 'FFFFFBEB',
+    leave: 'FF0F766E',
+    leaveLight: 'FFF0FDFA',
     neutral: 'FF334155',
     neutralLight: 'FFF8FAFC',
 };
@@ -61,6 +63,8 @@ function getStatusColors(status) {
             return { bg: COLORS.successLight, fg: COLORS.success };
         case 'on_break':
             return { bg: COLORS.warningLight, fg: COLORS.warning };
+        case 'on_leave':
+            return { bg: COLORS.leaveLight, fg: COLORS.leave };
         case 'clocked_out':
             return { bg: COLORS.neutralLight, fg: COLORS.neutral };
         case 'not_clocked_in':
@@ -163,11 +167,12 @@ async function generateTeamAttendanceTableExcel(payload) {
     subtitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORS.brandLight } };
     sheet.getRow(2).height = 20;
 
-    const metricHeaders = ['Total', 'Working', 'On Break', 'Clocked Out', 'Not Clocked In'];
+    const metricHeaders = ['Total', 'Working', 'On Break', 'On Leave', 'Clocked Out', 'Not Clocked In'];
     const metricValues = [
         summary?.total || 0,
         summary?.working || 0,
         summary?.onBreak || 0,
+        summary?.onLeave || 0,
         Math.max(0, (summary?.clockedOut || 0) - (summary?.notClockedIn || 0)),
         summary?.notClockedIn || 0,
     ];

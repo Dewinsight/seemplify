@@ -17,7 +17,8 @@ import {
     CheckCircle2,
     XCircle,
     MapPin,
-    PenLine
+    PenLine,
+    CalendarDays
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +36,15 @@ const safeParseDate = (dateValue: any): Date | null => {
 const safeFormatDate = (dateValue: any, formatStr: string, fallback = '--'): string => {
     const date = safeParseDate(dateValue);
     return date ? format(date, formatStr) : fallback;
+};
+
+const getDayStatusLabel = (entry: any): string => {
+    if (entry?.status === 'leave') return 'On leave';
+    if (entry?.status === 'holiday') return 'Public holiday';
+    if (entry?.status === 'weekend') return 'Non-working day';
+    if (entry?.status === 'partial') return 'Partially worked';
+    if (entry?.status === 'present' || entry?.clockIn) return 'Present';
+    return 'Absent';
 };
 
 // Calculate week dates from weekNumber and year
@@ -200,6 +210,7 @@ export default function TimesheetDetailPage() {
     const calculatedDays = dailyEntries.filter((entry: any) => Number(entry.totalHours || 0) > 0 || entry.clockIn).length;
     const storedDays = Number(timesheet.summary?.daysWorked ?? timesheet.daysWorked ?? 0);
     const daysWorked = storedDays > 0 || calculatedDays === 0 ? storedDays : calculatedDays;
+    const daysOnLeave = Number(timesheet.summary?.daysOnLeave || 0);
 
     return (
         <div className="timesheet-detail space-y-6">
@@ -277,9 +288,10 @@ export default function TimesheetDetailPage() {
                 </div>
             </div>
 
-            <dl className="timesheet-summary grid overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 sm:grid-cols-3">
+            <dl className="timesheet-summary grid overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="border-b border-zinc-800 px-5 py-4 sm:border-b-0"><dt className="flex items-center gap-2 text-sm text-zinc-500"><Clock className="h-4 w-4" />Total worked</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{formatDuration(totalHours * 60)}</dd></div>
                 <div className="border-b border-zinc-800 px-5 py-4 sm:border-b-0"><dt className="flex items-center gap-2 text-sm text-zinc-500"><CheckCircle2 className="h-4 w-4" />Days worked</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{daysWorked}<span className="ml-1 text-sm font-normal text-zinc-500">of {timesheet.expectedWorkDays || 5}</span></dd></div>
+                <div className="border-b border-zinc-800 px-5 py-4 sm:border-b-0"><dt className="flex items-center gap-2 text-sm text-zinc-500"><CalendarDays className="h-4 w-4" />Leave days</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{daysOnLeave}</dd></div>
                 <div className="px-5 py-4"><dt className="flex items-center gap-2 text-sm text-zinc-500"><FileText className="h-4 w-4" />Period days</dt><dd className="mt-2 text-xl font-semibold tabular-nums text-white">{dailyEntries.length}</dd></div>
             </dl>
 
@@ -301,13 +313,14 @@ export default function TimesheetDetailPage() {
                                     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
                                     return (
-                                        <div key={index} className="timesheet-day p-4 transition-colors">
+                                        <div key={index} data-day-status={entry.status} className={cn('timesheet-day p-4 transition-colors', entry.status === 'leave' && 'bg-teal-500/[0.04]')}>
                                             <div className="flex items-center justify-between mb-3">
                                                 <div className="flex items-center gap-3">
                                                     <div className={cn(
                                                         "timesheet-date",
                                                         "w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs font-medium border relative",
-                                                        isWeekend ? "bg-zinc-900/60 border-zinc-800 text-zinc-500" : "bg-zinc-800 border-zinc-700 text-zinc-300"
+                                                        entry.status === 'leave' ? "border-teal-500/30 bg-teal-500/10 text-teal-300" :
+                                                            isWeekend ? "bg-zinc-900/60 border-zinc-800 text-zinc-500" : "bg-zinc-800 border-zinc-700 text-zinc-300"
                                                     )}>
                                                         <span>{format(date, 'EEE')}</span>
                                                         <span className="font-bold">{format(date, 'd')}</span>
@@ -331,6 +344,7 @@ export default function TimesheetDetailPage() {
                                                                         exc.type === 'manual_entry' ? "bg-amber-500/20 text-amber-400" :
                                                                         exc.type === 'no_clock_out' ? "bg-red-500/20 text-red-400" :
                                                                         exc.type === 'late_arrival' ? "bg-orange-500/20 text-orange-400" :
+                                                                        exc.type === 'leave_conflict' ? "bg-amber-500/20 text-amber-300" :
                                                                         "bg-zinc-700 text-zinc-400"
                                                                     )}
                                                                     title={exc.description}
@@ -338,11 +352,12 @@ export default function TimesheetDetailPage() {
                                                                     {exc.type === 'manual_entry' ? 'Manual' :
                                                                      exc.type === 'no_clock_out' ? 'Missing Out' :
                                                                      exc.type === 'late_arrival' ? 'Late' :
+                                                                     exc.type === 'leave_conflict' ? 'Leave conflict' :
                                                                      exc.type}
                                                                 </span>
                                                             ))}
                                                         </div>
-                                                        <div className="text-xs text-zinc-500">{entry.clockIn ? 'Present' : 'Absent/Off'}</div>
+                                                        <div className={cn('text-xs', entry.status === 'leave' ? 'font-medium text-teal-300' : 'text-zinc-500')}>{getDayStatusLabel(entry)}</div>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
@@ -353,7 +368,9 @@ export default function TimesheetDetailPage() {
                                             </div>
 
                                             {/* Detailed timeline bar if needed, or simple text for now */}
-                                            <div className="flex flex-wrap gap-x-5 gap-y-2 pl-[3.25rem] text-xs text-zinc-400">
+                                            {entry.status === 'leave' && !entry.clockIn ? (
+                                                <div className="pl-[3.25rem] text-xs text-zinc-400">Approved leave is synced from Leave Management. No clock entry is required.</div>
+                                            ) : <div className="flex flex-wrap gap-x-5 gap-y-2 pl-[3.25rem] text-xs text-zinc-400">
                                                 <div className="flex items-center gap-1.5">
                                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
                                                     In: <span className="text-white font-mono">{safeFormatDate(entry.clockIn, 'HH:mm', '--:--')}</span>
@@ -366,7 +383,7 @@ export default function TimesheetDetailPage() {
                                                     <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
                                                     Breaks: <span className="text-white font-mono">{entry.breakDuration}m</span>
                                                 </div>
-                                            </div>
+                                            </div>}
 
                                             {/* Location Display */}
                                             {(entry.clockInLocation?.latitude || entry.clockOutLocation?.latitude) && (

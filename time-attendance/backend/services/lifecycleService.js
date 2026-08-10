@@ -165,6 +165,7 @@ async function applyLeaveEvent(envelope) {
         { $set: {
             userId: envelope.subjectId,
             type: data.leaveType,
+            typeName: data.leaveTypeName || null,
             status: cancelled ? 'cancelled' : 'approved',
             startAt: data.startAt,
             endAt: data.endAt,

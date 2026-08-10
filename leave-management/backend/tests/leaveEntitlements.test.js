@@ -9,8 +9,29 @@ const {
   synchronizeEntitlements,
 } = require('../services/leaveEntitlementService');
 const { fetchOrganizationRoster } = require('../services/rosterService');
+const { buildLeaveData, buildPerformanceLeaveData } = require('../services/attendanceIntegrationService');
 
 describe('dynamic leave entitlement contracts', () => {
+  test('shares a privacy-safe leave label with attendance without sharing the reason', () => {
+    const data = buildLeaveData({
+      _id: { toString: () => 'leave-1' },
+      organizationId: 'org-1',
+      userId: 'employee-1',
+      leaveType: 'study',
+      leaveTypeName: 'Study Leave',
+      startDate: new Date('2026-08-10T00:00:00Z'),
+      endDate: new Date('2026-08-12T00:00:00Z'),
+      timezone: 'Europe/London',
+      status: 'approved',
+      updatedAt: new Date('2026-08-01T12:00:00Z'),
+      reason: 'Private examination details',
+    });
+
+    expect(data).toMatchObject({ leaveType: 'study', leaveTypeName: 'Study Leave' });
+    expect(data).not.toHaveProperty('reason');
+    expect(buildPerformanceLeaveData(data)).not.toHaveProperty('leaveTypeName');
+  });
+
   test('seeds migration-safe defaults from legacy policy values', () => {
     const defaults = getDefaultLeaveTypes({ annualLeaveDays: 30, sickLeaveDays: 12 });
     expect(defaults.find((item) => item.key === 'annual').defaultDays).toBe(30);

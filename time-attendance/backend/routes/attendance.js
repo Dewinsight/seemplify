@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, isHRAdmin, isLineManager, isDepartmentHead, getDepartmentHeadScope } = require('../middleware/auth');
-const { TimeEntry, Timesheet, AttendancePolicy } = require('../models');
+const { TimeEntry, Timesheet, AttendancePolicy, EmployeeRoster, LeaveSnapshot } = require('../models');
 const emailService = require('../services/emailService');
 const { generateTeamAttendanceTableExcel } = require('../services/teamAttendanceTableExportService');
-const { startOfDay, endOfDay, startOfWeek, endOfWeek, subDays, format } = require('date-fns');
+const { startOfWeek, endOfWeek, subDays, format } = require('date-fns');
+const { localDayBounds } = require('../services/timeCalculationService');
 
 const MANAGER_ROLES = ['line_manager', 'team_lead'];
 
@@ -17,6 +18,17 @@ router.get('/dashboard', async (req, res) => {
     try {
         const userId = req.user.id;
         const organizationId = req.organizationId;
+        const now = new Date();
+
+        const policy = await AttendancePolicy.findOne({ organizationId }).lean();
+        const todayBounds = localDayBounds(now, policy?.timezone || 'UTC');
+        const currentLeave = await LeaveSnapshot.findOne({
+            organizationId,
+            userId,
+            status: 'approved',
+            startAt: { $lte: todayBounds.end },
+            endAt: { $gte: todayBounds.start },
+        }).sort({ startAt: 1 }).lean();
 
         // Get clock status
         const clockStatus = await TimeEntry.getCurrentStatus(userId, organizationId);
@@ -75,6 +87,10 @@ router.get('/dashboard', async (req, res) => {
                 weekNumber: currentTimesheet.weekNumber,
                 summary: currentTimesheet.summary,
             } : null,
+            attendanceStatus: currentLeave
+                ? (clockStatus.isClockedIn ? 'working_on_leave' : 'on_leave')
+                : (clockStatus.isClockedIn ? 'working' : 'off_clock'),
+            leave: currentLeave ? buildLeaveWindow(currentLeave, { includeTypeName: true }) : null,
             pendingApprovals: pendingApprovalsCount,
         });
     } catch (error) {
@@ -228,14 +244,13 @@ router.get('/team/:userId', async (req, res) => {
             return res.status(403).json({ error: 'Access denied to this team member' });
         }
 
-        const todayStart = startOfDay(new Date());
-        const todayEnd = endOfDay(new Date());
-
-        const [todayEntries, recentEntries, latestTimesheet] = await Promise.all([
+        const policy = await AttendancePolicy.findOne({ organizationId }).lean();
+        const todayBounds = localDayBounds(new Date(), policy?.timezone || 'UTC');
+        const [todayEntries, recentEntries, latestTimesheet, currentLeave] = await Promise.all([
             TimeEntry.find({
                 organizationId,
                 userId: targetUserId,
-                timestamp: { $gte: todayStart, $lte: todayEnd },
+                timestamp: { $gte: todayBounds.start, $lte: todayBounds.end },
             }).sort({ timestamp: 1 }).lean(),
             TimeEntry.find({
                 organizationId,
@@ -245,6 +260,13 @@ router.get('/team/:userId', async (req, res) => {
                 organizationId,
                 userId: targetUserId,
             }).sort({ startDate: -1 }).lean(),
+            LeaveSnapshot.findOne({
+                organizationId,
+                userId: targetUserId,
+                status: 'approved',
+                startAt: { $lte: todayBounds.end },
+                endAt: { $gte: todayBounds.start },
+            }).sort({ startAt: 1 }).lean(),
         ]);
 
         const managerTeam = getManagedTeams(req, organizationId).find(team =>
@@ -263,6 +285,7 @@ router.get('/team/:userId', async (req, res) => {
             todayEntries,
             latestEntry: recentEntries[0] || null,
             latestTimesheet,
+            currentLeave,
         });
 
         const todaySummary = calculateTodayMemberStats(todayEntries);
@@ -327,6 +350,7 @@ router.get('/summary', async (req, res) => {
         let regularHours = 0;
         let overtimeHours = 0;
         let daysWorked = 0;
+        let daysOnLeave = 0;
         let lateDays = 0;
 
         for (const ts of timesheets) {
@@ -335,6 +359,7 @@ router.get('/summary', async (req, res) => {
                 regularHours += ts.summary.regularHours || 0;
                 overtimeHours += ts.summary.overtimeHours || 0;
                 daysWorked += ts.summary.daysWorked || 0;
+                daysOnLeave += ts.summary.daysOnLeave || 0;
                 lateDays += ts.summary.lateDays || 0;
             }
         }
@@ -346,6 +371,7 @@ router.get('/summary', async (req, res) => {
                 regularHours: parseFloat(regularHours.toFixed(2)),
                 overtimeHours: parseFloat(overtimeHours.toFixed(2)),
                 daysWorked,
+                daysOnLeave,
                 lateDays,
                 timesheetCount: timesheets.length,
             },
@@ -386,6 +412,8 @@ function buildEmptyTeamSummary() {
         onBreak: 0,
         clockedOut: 0,
         notClockedIn: 0,
+        onLeave: 0,
+        leaveConflicts: 0,
     };
 }
 
@@ -396,11 +424,13 @@ function buildTeamSummary(rows) {
         onBreak: rows.filter(row => row.status === 'on_break').length,
         clockedOut: rows.filter(row => row.status === 'clocked_out' || row.status === 'not_clocked_in').length,
         notClockedIn: rows.filter(row => row.status === 'not_clocked_in').length,
+        onLeave: rows.filter(row => row.status === 'on_leave').length,
+        leaveConflicts: rows.filter(row => row.leaveConflict).length,
     };
 }
 
 function filterTeamRows(rows, { statusFilter = 'all', searchQuery = '' } = {}) {
-    const allowedStatuses = new Set(['working', 'on_break', 'clocked_out', 'not_clocked_in']);
+    const allowedStatuses = new Set(['working', 'on_break', 'clocked_out', 'not_clocked_in', 'on_leave']);
     const normalizedStatus = String(statusFilter || 'all').toLowerCase();
     const normalizedQuery = String(searchQuery || '').trim().toLowerCase();
 
@@ -416,7 +446,7 @@ function filterTeamRows(rows, { statusFilter = 'all', searchQuery = '' } = {}) {
             row.userName,
             row.userEmail,
             row.teamName,
-            row.status,
+            row.status === 'on_leave' ? 'on leave' : row.status,
         ]
             .filter(Boolean)
             .join(' ')
@@ -461,10 +491,33 @@ async function getTeamAttendanceRows(req, selectedTeamId = null) {
         : 'All Managed Teams';
 
     const memberSeed = getManagedUserSeed(scopedTeams);
+    if (isHRAdmin(req)) {
+        const rosterQuery = {
+            organizationId,
+            status: { $in: ['active', 'scheduled_exit'] },
+        };
+        if (selectedTeamId) rosterQuery.teamIds = selectedTeamId;
+        const rosterMembers = await EmployeeRoster.find(rosterQuery)
+            .select('userId name email teamIds teamAssignments')
+            .limit(5000)
+            .lean();
+        for (const member of rosterMembers) {
+            const teamAssignment = (member.teamAssignments || []).find(item => !selectedTeamId || String(item.teamId) === selectedTeamId);
+            memberSeed.set(String(member.userId), {
+                userId: String(member.userId),
+                userName: member.name || null,
+                userEmail: member.email || null,
+                teamId: teamAssignment?.teamId || member.teamIds?.[0] || null,
+                teamName: teamAssignment?.name || null,
+            });
+        }
+    }
     let targetUserIds = Array.from(memberSeed.keys());
 
-    const todayStart = startOfDay(new Date());
-    const todayEnd = endOfDay(new Date());
+    const policy = await AttendancePolicy.findOne({ organizationId }).lean();
+    const todayBounds = localDayBounds(new Date(), policy?.timezone || 'UTC');
+    const todayStart = todayBounds.start;
+    const todayEnd = todayBounds.end;
     const todayQuery = {
         organizationId,
         timestamp: { $gte: todayStart, $lte: todayEnd },
@@ -510,9 +563,10 @@ async function getTeamAttendanceRows(req, selectedTeamId = null) {
         };
     }
 
-    const [latestEntryMap, latestTimesheetMap] = await Promise.all([
+    const [latestEntryMap, latestTimesheetMap, currentLeaveMap] = await Promise.all([
         getLatestEntryMap(organizationId, targetUserIds),
         getLatestTimesheetMap(organizationId, targetUserIds),
+        getCurrentLeaveMap(organizationId, targetUserIds, todayStart, todayEnd),
     ]);
 
     const entriesByUser = getEntriesByUser(todayEntries);
@@ -522,6 +576,7 @@ async function getTeamAttendanceRows(req, selectedTeamId = null) {
         entriesByUser,
         latestEntryMap,
         latestTimesheetMap,
+        currentLeaveMap,
     });
 
     return {
@@ -657,7 +712,7 @@ async function getLatestTimesheetMap(organizationId, userIds) {
     return new Map(latestTimesheets.map(item => [item._id, item.timesheet]));
 }
 
-function buildTeamRows({ targetUserIds, memberSeed, entriesByUser, latestEntryMap, latestTimesheetMap }) {
+function buildTeamRows({ targetUserIds, memberSeed, entriesByUser, latestEntryMap, latestTimesheetMap, currentLeaveMap }) {
     const rows = targetUserIds.map(userId => {
         const todayEntries = entriesByUser.get(userId) || [];
         return buildTeamMemberRow({
@@ -666,14 +721,16 @@ function buildTeamRows({ targetUserIds, memberSeed, entriesByUser, latestEntryMa
             todayEntries,
             latestEntry: latestEntryMap.get(userId) || null,
             latestTimesheet: latestTimesheetMap.get(userId) || null,
+            currentLeave: currentLeaveMap?.get(userId) || null,
         });
     });
 
     const statusOrder = {
         working: 0,
         on_break: 1,
-        clocked_out: 2,
-        not_clocked_in: 3,
+        on_leave: 2,
+        clocked_out: 3,
+        not_clocked_in: 4,
     };
 
     return rows.sort((a, b) => {
@@ -684,7 +741,7 @@ function buildTeamRows({ targetUserIds, memberSeed, entriesByUser, latestEntryMa
     });
 }
 
-function buildTeamMemberRow({ userId, seed, todayEntries, latestEntry, latestTimesheet }) {
+function buildTeamMemberRow({ userId, seed, todayEntries, latestEntry, latestTimesheet, currentLeave = null }) {
     const todayStats = calculateTodayMemberStats(todayEntries || []);
     const latestReference = latestEntry || todayStats.lastEntryToday || null;
 
@@ -712,13 +769,18 @@ function buildTeamMemberRow({ userId, seed, todayEntries, latestEntry, latestTim
         latestTimesheet?.teamName ||
         null;
 
+    const liveStatus = deriveStatusFromEntry(latestReference);
+    const hasLiveAttendance = liveStatus === 'working' || liveStatus === 'on_break';
+
     return {
         userId,
         userName,
         userEmail,
         teamId,
         teamName,
-        status: deriveStatusFromEntry(latestReference),
+        status: currentLeave && !hasLiveAttendance ? 'on_leave' : liveStatus,
+        leave: currentLeave ? buildLeaveWindow(currentLeave) : null,
+        leaveConflict: Boolean(currentLeave && hasLiveAttendance),
         clockInAt: todayStats.latestClockIn?.timestamp || null,
         clockOutAt: todayStats.latestClockOut?.timestamp || null,
         clockInLocation: todayStats.latestClockIn?.location || null,
@@ -729,6 +791,32 @@ function buildTeamMemberRow({ userId, seed, todayEntries, latestEntry, latestTim
         hasActiveSession: Boolean(todayStats.activeClockIn),
         lastActivity: latestReference?.timestamp || null,
         lastActivityType: latestReference?.entryType || null,
+    };
+}
+
+async function getCurrentLeaveMap(organizationId, userIds, start, end) {
+    if (!userIds.length) return new Map();
+    const leaves = await LeaveSnapshot.find({
+        organizationId,
+        userId: { $in: userIds },
+        status: 'approved',
+        startAt: { $lte: end },
+        endAt: { $gte: start },
+    }).sort({ startAt: 1 }).lean();
+    const result = new Map();
+    for (const leave of leaves) {
+        if (!result.has(String(leave.userId))) result.set(String(leave.userId), leave);
+    }
+    return result;
+}
+
+function buildLeaveWindow(leave, { includeTypeName = false } = {}) {
+    if (!leave) return null;
+    return {
+        startAt: leave.startAt,
+        endAt: leave.endAt,
+        allDay: leave.allDay !== false,
+        ...(includeTypeName ? { type: leave.type || null, typeName: leave.typeName || null } : {}),
     };
 }
 
@@ -906,3 +994,4 @@ function formatDuration(minutes) {
 }
 
 module.exports = router;
+module.exports._test = { buildLeaveWindow, buildTeamMemberRow, buildTeamSummary };

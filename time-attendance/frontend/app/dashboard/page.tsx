@@ -45,6 +45,13 @@ export default function Dashboard() {
     const totalHours = Number(dashboardData?.week?.totalHours || 0);
     const progress = Math.min(100, Math.round((totalHours / 40) * 100));
     const clockedIn = Boolean(dashboardData?.clock?.isClockedIn);
+    const onLeave = Boolean(dashboardData?.leave);
+    const currentStatusLabel = onLeave && !clockedIn ? 'On leave' : clockedIn ? 'Clocked in' : 'Not clocked in';
+    const formatLeaveDate = (value?: string) => {
+        if (!value) return '';
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    };
 
     return (
         <div className="suite-dashboard">
@@ -64,7 +71,7 @@ export default function Dashboard() {
                             <div className="suite-context-mark"><Clock className="h-5 w-5" /></div>
                             <div className="min-w-0">
                                 <p className="suite-label">Current status</p>
-                                <p className="truncate text-base font-semibold">{clockedIn ? 'Clocked in' : 'Not clocked in'}</p>
+                                <p className="truncate text-base font-semibold">{currentStatusLabel}</p>
                             </div>
                         </div>
                         <a href={getIdpUrl()} className="suite-button-secondary">
@@ -90,6 +97,25 @@ export default function Dashboard() {
                         </div>
                     </div>
                     <Link href="/approvals" className="suite-button">Review approvals <ArrowRight className="h-4 w-4" /></Link>
+                </div>
+            )}
+
+            {onLeave && (
+                <div className="suite-notice mt-6">
+                    <div className="flex items-start gap-3">
+                        <Calendar className="mt-0.5 h-5 w-5 shrink-0" style={{ color: 'var(--suite-accent)' }} />
+                        <div>
+                            <p className="text-sm font-semibold">
+                                {clockedIn ? 'Attendance recorded during approved leave' : 'You are on approved leave today'}
+                            </p>
+                            <p className="mt-0.5 text-sm" style={{ color: 'var(--suite-muted)' }}>
+                                {dashboardData.leave.typeName || 'Approved leave'} from {formatLeaveDate(dashboardData.leave.startAt)} to {formatLeaveDate(dashboardData.leave.endAt)}.
+                                {clockedIn
+                                    ? ' The overlap will remain visible for review.'
+                                    : ' You will not be marked absent. Clock in only if you are working today.'}
+                            </p>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -169,7 +195,7 @@ export default function Dashboard() {
                                     <p className="text-sm font-semibold">Clock state</p>
                                     <p className="mt-1 text-xs" style={{ color: 'var(--suite-muted)' }}>Synced across the App Hub and attendance</p>
                                 </div>
-                                <span className="suite-status">{clockedIn ? 'Working' : 'Off clock'}</span>
+                                <span className="suite-status">{onLeave && !clockedIn ? 'On leave' : clockedIn ? 'Working' : 'Off clock'}</span>
                             </div>
                         </div>
                     </div>

@@ -37,6 +37,7 @@ function buildLeaveData(request) {
     organizationId: request.organizationId,
     userId: request.userId,
     leaveType: request.leaveType,
+    leaveTypeName: request.leaveTypeName || null,
     startAt: request.startDate,
     endAt: request.endDate,
     allDay: true,

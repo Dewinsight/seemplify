@@ -26,7 +26,9 @@ type TeamMemberDetail = {
     userName: string;
     userEmail?: string | null;
     teamName?: string | null;
-    status: 'working' | 'on_break' | 'clocked_out' | 'not_clocked_in';
+    status: 'working' | 'on_break' | 'on_leave' | 'clocked_out' | 'not_clocked_in';
+    leave?: { startAt: string; endAt: string; allDay: boolean } | null;
+    leaveConflict?: boolean;
     clockInAt?: string | null;
     clockOutAt?: string | null;
     clockInLocation?: any;
@@ -109,6 +111,8 @@ export default function MemberDetailPage() {
                 return 'bg-emerald-500/10 text-emerald-400';
             case 'on_break':
                 return 'bg-amber-500/10 text-amber-400';
+            case 'on_leave':
+                return 'bg-teal-500/10 text-teal-300';
             case 'clocked_out':
                 return 'bg-zinc-700/30 text-zinc-300';
             default:
@@ -122,6 +126,8 @@ export default function MemberDetailPage() {
                 return 'Working';
             case 'on_break':
                 return 'On Break';
+            case 'on_leave':
+                return 'On Leave';
             case 'clocked_out':
                 return 'Clocked Out';
             default:
@@ -180,7 +186,8 @@ export default function MemberDetailPage() {
                             <div className={cn(
                                 'absolute bottom-0 right-0 w-6 h-6 rounded-full border-4 border-zinc-900',
                                 memberData?.status === 'working' ? 'bg-emerald-500' :
-                                    memberData?.status === 'on_break' ? 'bg-amber-500' : 'bg-zinc-600'
+                                    memberData?.status === 'on_break' ? 'bg-amber-500' :
+                                        memberData?.status === 'on_leave' ? 'bg-teal-500' : 'bg-zinc-600'
                             )} />
                         </div>
 
@@ -203,6 +210,15 @@ export default function MemberDetailPage() {
                                     {statusText}
                                 </div>
                             </div>
+                            {memberData?.leave && (
+                                <p className="mt-3 flex items-center gap-2 text-sm text-teal-300">
+                                    <Calendar className="h-4 w-4" />
+                                    Approved leave from {formatDateOnly(memberData.leave.startAt)} to {formatDateOnly(memberData.leave.endAt)}
+                                </p>
+                            )}
+                            {memberData?.leaveConflict && (
+                                <p className="mt-2 text-sm text-amber-300">Attendance has been recorded during approved leave and needs review.</p>
+                            )}
                         </div>
                     </div>
 
@@ -215,7 +231,7 @@ export default function MemberDetailPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-5">
                     <div className="flex items-center gap-2 text-zinc-500 mb-2">
                         <Clock className="h-4 w-4" />
@@ -234,6 +250,17 @@ export default function MemberDetailPage() {
                     </div>
                     <div className="text-2xl font-bold text-white">
                         {summary?.summary?.daysWorked || 0}
+                        <span className="text-sm font-normal text-zinc-500 ml-1">days</span>
+                    </div>
+                </div>
+
+                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-5">
+                    <div className="flex items-center gap-2 text-teal-400/80 mb-2">
+                        <Calendar className="h-4 w-4" />
+                        <span className="text-xs font-medium uppercase tracking-wider">Leave Days</span>
+                    </div>
+                    <div className="text-2xl font-bold text-white">
+                        {summary?.summary?.daysOnLeave || 0}
                         <span className="text-sm font-normal text-zinc-500 ml-1">days</span>
                     </div>
                 </div>
@@ -268,7 +295,9 @@ export default function MemberDetailPage() {
                 </div>
 
                 {todayEntries.length === 0 ? (
-                    <div className="p-8 text-center text-zinc-500">No activity recorded today.</div>
+                    <div className="p-8 text-center text-zinc-500">
+                        {memberData?.status === 'on_leave' ? 'Approved leave - no clock activity is required today.' : 'No activity recorded today.'}
+                    </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full min-w-[900px]">

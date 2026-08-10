@@ -109,6 +109,36 @@ describe('timeCalculationService', () => {
         expect(enabled.dailyEntries[0].exceptions.map(item => item.type)).toContain('geofence_failure');
     });
 
+    test('treats approved leave as an explained attendance state rather than an absence', () => {
+        const result = calculatePeriod([], {
+            start: new Date('2026-08-10T00:00:00Z'),
+            end: new Date('2026-08-10T23:59:59Z'),
+        }, policy, {
+            leaves: [{ startAt: '2026-08-10T00:00:00Z', endAt: '2026-08-10T23:59:59Z' }],
+        });
+
+        expect(result.dailyEntries[0].status).toBe('leave');
+        expect(result.dailyEntries[0].exceptions.map(item => item.type)).not.toContain('absence');
+        expect(result.summary).toMatchObject({ daysOnLeave: 1, daysAbsent: 0, daysWorked: 0 });
+    });
+
+    test('keeps real clocked time on a leave day and flags the overlap for review', () => {
+        const result = calculatePeriod([
+            entry('clock_in', '2026-08-10T09:00:00Z'),
+            entry('clock_out', '2026-08-10T12:00:00Z'),
+        ], {
+            start: new Date('2026-08-10T00:00:00Z'),
+            end: new Date('2026-08-10T23:59:59Z'),
+        }, policy, {
+            leaves: [{ startAt: '2026-08-10T00:00:00Z', endAt: '2026-08-10T23:59:59Z' }],
+        });
+
+        expect(result.dailyEntries[0].status).toBe('present');
+        expect(result.dailyEntries[0].totalHours).toBe(3);
+        expect(result.dailyEntries[0].exceptions.map(item => item.type)).toContain('leave_conflict');
+        expect(result.summary).toMatchObject({ daysOnLeave: 0, daysAbsent: 0, daysWorked: 1 });
+    });
+
     test('builds configured fortnightly and semi-monthly periods', () => {
         const fortnight = getPeriodBounds(new Date('2026-08-05T12:00:00Z'), 'fortnightly', 'UTC');
         expect(fortnight.start.toISOString()).toBe('2026-08-03T00:00:00.000Z');
