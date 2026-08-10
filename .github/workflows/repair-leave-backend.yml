@@ -1,0 +1,112 @@
+name: Diagnose or Repair Leave Backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Diagnose the service or force a safe restart
+        required: true
+        default: diagnose
+        type: choice
+        options:
+          - diagnose
+          - restart
+
+permissions:
+  contents: read
+
+jobs:
+  leave-backend:
+    name: ${{ inputs.action }} leave-backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure VM access
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          key="${SSH_PRIVATE_KEY:-${VM_SSH_KEY:-}}"
+          if [ -z "$key" ]; then
+            echo "Missing SSH_PRIVATE_KEY or VM_SSH_KEY secret." >&2
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$key" > ~/.ssh/id_vm
+          chmod 600 ~/.ssh/id_vm
+          ssh-keyscan -H 4.180.153.209 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Inspect or restart production service
+        env:
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_vm -o BatchMode=yes seemplify@4.180.153.209 "bash -s -- '$ACTION'" <<'REMOTE'
+          set -u
+          action="${1:-diagnose}"
+
+          echo "=== Matching Docker services ==="
+          docker service ls --format '{{.ID}} {{.Name}} {{.Replicas}} {{.Image}}' \
+            | grep -E 'leave-backend($|[-_])|leave-backend ' \
+            | grep -v -E 'dev|development' || true
+
+          service_name="$(docker service ls --format '{{.Name}}' \
+            | grep -E 'leave-backend($|[-_])|leave-backend' \
+            | grep -v -E 'dev|development' \
+            | head -1)"
+
+          if [ -n "$service_name" ]; then
+            echo "=== Service tasks: $service_name ==="
+            docker service ps --no-trunc "$service_name" || true
+          fi
+
+          echo "=== Matching containers ==="
+          docker ps -a --format '{{.ID}} {{.Names}} {{.Status}} {{.Image}}' \
+            | grep 'leave-backend' \
+            | grep -v -E 'dev|development' || true
+
+          container_id="$(docker ps -aq --filter name=leave-backend \
+            | while read -r id; do
+                name="$(docker inspect --format '{{.Name}}' "$id" 2>/dev/null | sed 's#^/##')"
+                case "$name" in *dev*|*development*) ;; *) echo "$id"; break ;; esac
+              done)"
+
+          if [ -n "$container_id" ]; then
+            echo "=== Container state ==="
+            docker inspect --format 'name={{.Name}} status={{.State.Status}} running={{.State.Running}} restarting={{.State.Restarting}} exit={{.State.ExitCode}} error={{json .State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} image={{.Config.Image}} networks={{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' "$container_id" || true
+            echo "=== Container logs (last 200 lines) ==="
+            docker logs --tail 200 "$container_id" 2>&1 || true
+          else
+            echo "No production leave-backend container exists."
+          fi
+
+          if [ "$action" = restart ]; then
+            if [ -n "$service_name" ]; then
+              echo "=== Forcing service restart: $service_name ==="
+              docker service update --force "$service_name"
+            elif [ -n "$container_id" ]; then
+              echo "=== Restarting container: $container_id ==="
+              docker restart "$container_id"
+            else
+              echo "Nothing can be restarted because no production service or container was found." >&2
+              exit 1
+            fi
+          fi
+          REMOTE
+
+      - name: Verify public health after restart
+        if: inputs.action == 'restart'
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 18); do
+            code="$(curl -sS -o /tmp/health.txt -w '%{http_code}' --max-time 10 https://api-leave.seemplifyai.com/health || true)"
+            echo "attempt=$attempt status=$code"
+            if [ "$code" = 200 ]; then
+              cat /tmp/health.txt
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Leave backend did not become healthy after restart." >&2
+          exit 1
