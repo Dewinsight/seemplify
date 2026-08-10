@@ -227,5 +227,9 @@ function EmployeeCell({ item }: { item: any }) {
 }
 
 function PeriodCell({ item }: { item: any }) {
-    return <div><p className="text-sm font-medium text-zinc-200">Week {item.weekNumber}</p><p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500"><CalendarDays className="h-3.5 w-3.5" />{safeFormatDate(item.startDate, 'MMM d')} – {safeFormatDate(item.endDate, 'MMM d, yyyy')}</p></div>;
+    const levels = item.approvalWorkflow?.levels || [];
+    const currentIndex = Number(item.approvalWorkflow?.currentLevel || 0);
+    const multiStage = item.approvalWorkflow?.mode === 'multi' || levels.length > 1;
+    const activeLevel = levels[currentIndex];
+    return <div><p className="text-sm font-medium text-zinc-200">Week {item.weekNumber}</p><p className="mt-1 flex items-center gap-1.5 text-xs text-zinc-500"><CalendarDays className="h-3.5 w-3.5" />{safeFormatDate(item.startDate, 'MMM d')} – {safeFormatDate(item.endDate, 'MMM d, yyyy')}</p>{activeLevel && <p className="mt-1 text-xs text-zinc-400">{multiStage ? `Stage ${currentIndex + 1} of ${levels.length}` : 'One approval'} · {activeLevel.name}</p>}</div>;
 }

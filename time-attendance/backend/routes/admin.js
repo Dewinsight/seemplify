@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth, requireOrganization, requireHRAdmin } = require('../middleware/auth');
 const { AttendancePolicy } = require('../models');
+const { normalizeApprovalSettings } = require('../services/approvalConfigurationService');
 
 function sanitizePolicyUpdate(input = {}) {
     const allowed = [
@@ -30,6 +31,9 @@ function sanitizePolicyUpdate(input = {}) {
     if (output.overtime?.dailyLimitMinutes !== undefined && output.overtime.dailyLimitHours === undefined) {
         output.overtime.dailyLimitHours = Number(output.overtime.dailyLimitMinutes) / 60;
         delete output.overtime.dailyLimitMinutes;
+    }
+    if (output.timesheetSettings) {
+        output.timesheetSettings = normalizeApprovalSettings(output.timesheetSettings);
     }
     return output;
 }

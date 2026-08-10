@@ -26,6 +26,7 @@ type MockState = {
     locationEnabled: boolean;
     clockBodies: any[];
     shiftBodies: any[];
+    policyBodies: any[];
 };
 
 const organization = { id: 'org-1', name: 'Seemplify Test Org', role: 'admin' };
@@ -90,6 +91,7 @@ const policy = {
     overtime: { enabled: true, dailyThreshold: 8, weeklyThreshold: 40, requireApproval: true },
     timesheetSettings: {
         periodType: 'weekly', autoSubmit: false, autoApprove: false, submissionDeadline: 2, approvalDeadline: 3,
+        approvalMode: 'single',
         approvalLevels: [{ name: 'Line manager', approverType: 'line_manager' }],
     },
     notifications: { managerReports: { enabled: true, frequency: 'weekly', sendHourUtc: 9, includeExcel: true } },
@@ -276,7 +278,7 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'PUT' && path === '/api/v1/notifications/preferences/me') return json(route, { success: true });
 
         if (method === 'GET' && path === '/api/admin/attendance-policy') return json(route, { policy });
-        if (method === 'PUT' && path === '/api/admin/attendance-policy') return json(route, { policy });
+        if (method === 'PUT' && path === '/api/admin/attendance-policy') { state.policyBodies.push(request.postDataJSON()); return json(route, { policy: request.postDataJSON() }); }
         if (method === 'GET' && path === '/api/admin/access-policy') return json(route, { policy: { roles: attendanceRoles, assignments: [] }, editablePermissions: ['management.view', 'team.view', 'timesheets.approve', 'corrections.review', 'reports.view', 'policy.view', 'policy.manage'] });
         if (method === 'PUT' && path === '/api/admin/access-policy') return json(route, { policy: { roles: attendanceRoles, assignments: [] } });
         if (method === 'GET' && path === '/api/admin/access-policy/people') return json(route, { people: [{ userId: 'employee-2', name: 'Jamie Lee', email: 'jamie@example.com', roleKeys: [] }] });
@@ -324,7 +326,7 @@ const test = base.extend<{ mockState: MockState }>({
             rosterSynced: false, rosterSyncCount: 0, coverRequested: false, requestReviewed: false,
             approvalConflict: false,
             timesheetCorrectionRequested: false, managerExceptionFlagged: false,
-            locationEnabled: false, clockBodies: [], shiftBodies: [],
+            locationEnabled: false, clockBodies: [], shiftBodies: [], policyBodies: [],
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
         page.on('console', message => {
@@ -537,6 +539,33 @@ test('separates employee and management workspaces and exposes seeded attendance
     await lineManagerAssignment.click();
     await expect(lineManagerAssignment).toBeChecked();
     expect(mockState.calls).toContain('PUT /api/admin/access-policy/people/employee-2');
+});
+
+test('defaults to one line-manager approval and makes multiple stages optional', async ({ page, mockState }) => {
+    await authenticate(page);
+    await page.goto('/admin/settings');
+
+    const approvalProcess = page.getByLabel('Approval process');
+    await expect(approvalProcess).toHaveValue('single');
+    await expect(page.getByText("The employee's line manager approves once.")).toBeVisible();
+    await expect(page.getByText(/not an additional required stage/)).toBeVisible();
+
+    await approvalProcess.selectOption('multi');
+    await expect(page.getByLabel('Approval stage 1', { exact: true })).toHaveValue('line_manager');
+    await expect(page.getByLabel('Approval stage 2', { exact: true })).toHaveValue('hr');
+    await page.getByRole('button', { name: 'Add stage' }).click();
+    await expect(page.getByLabel('Approval stage 3', { exact: true })).toHaveValue('hr');
+    page.once('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name: 'Save Changes' }).click();
+
+    expect(mockState.policyBodies.at(-1)?.timesheetSettings).toMatchObject({
+        approvalMode: 'multi',
+        approvalLevels: [
+            { approverType: 'line_manager' },
+            { approverType: 'hr' },
+            { approverType: 'hr' },
+        ],
+    });
 });
 
 test('keeps the team attendance workspace readable at wide and standard desktop widths', async ({ page, mockState: _mockState }) => {

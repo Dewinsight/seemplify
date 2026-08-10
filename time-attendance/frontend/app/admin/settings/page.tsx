@@ -77,6 +77,8 @@ export default function SettingsPage() {
                         autoApprove: data.policy.timesheetSettings?.autoApprove === true,
                         submissionDeadline: data.policy.timesheetSettings?.submissionDeadline ?? 2,
                         approvalDeadline: data.policy.timesheetSettings?.approvalDeadline ?? 3,
+                        approvalMode: data.policy.timesheetSettings?.approvalMode
+                            || (data.policy.timesheetSettings?.approvalLevels?.length > 1 ? 'multi' : 'single'),
                         approvalLevels: data.policy.timesheetSettings?.approvalLevels?.length
                             ? data.policy.timesheetSettings.approvalLevels
                             : [{ name: 'Line manager', approverType: 'line_manager' }],
@@ -135,6 +137,64 @@ export default function SettingsPage() {
         setPolicy({
             ...policy,
             workSchedule: { ...policy.workSchedule, workDays: newDays }
+        });
+    };
+
+    const setApprovalMode = (approvalMode: 'single' | 'multi') => {
+        const currentLevels = policy.timesheetSettings.approvalLevels || [];
+        const approvalLevels = approvalMode === 'single'
+            ? [{ name: 'Line manager', approverType: 'line_manager' }]
+            : currentLevels.length >= 2
+                ? currentLevels
+                : [
+                    { name: 'Line manager', approverType: 'line_manager' },
+                    { name: 'HR Manager / Attendance Admin', approverType: 'hr' },
+                ];
+        setPolicy({
+            ...policy,
+            timesheetSettings: { ...policy.timesheetSettings, approvalMode, approvalLevels },
+        });
+    };
+
+    const updateApprovalLevel = (index: number, approverType: string) => {
+        const names: Record<string, string> = {
+            line_manager: 'Line manager',
+            department_head: 'Department head',
+            hr: 'HR Manager / Attendance Admin',
+        };
+        setPolicy({
+            ...policy,
+            timesheetSettings: {
+                ...policy.timesheetSettings,
+                approvalLevels: policy.timesheetSettings.approvalLevels.map((level: any, levelIndex: number) => levelIndex === index
+                    ? { ...level, approverType, name: names[approverType] || level.name }
+                    : level),
+            },
+        });
+    };
+
+    const addApprovalLevel = () => {
+        if (policy.timesheetSettings.approvalLevels.length >= 10) return;
+        setPolicy({
+            ...policy,
+            timesheetSettings: {
+                ...policy.timesheetSettings,
+                approvalLevels: [
+                    ...policy.timesheetSettings.approvalLevels,
+                    { name: 'HR Manager / Attendance Admin', approverType: 'hr' },
+                ],
+            },
+        });
+    };
+
+    const removeApprovalLevel = (index: number) => {
+        if (policy.timesheetSettings.approvalLevels.length <= 2) return;
+        setPolicy({
+            ...policy,
+            timesheetSettings: {
+                ...policy.timesheetSettings,
+                approvalLevels: policy.timesheetSettings.approvalLevels.filter((_: any, levelIndex: number) => levelIndex !== index),
+            },
         });
     };
 
@@ -343,6 +403,46 @@ export default function SettingsPage() {
                         <label className="flex min-h-10 items-center gap-3 self-end text-sm text-zinc-300">
                             <input type="checkbox" checked={policy.timesheetSettings.autoApprove} onChange={(e) => setPolicy({ ...policy, timesheetSettings: { ...policy.timesheetSettings, autoApprove: e.target.checked } })} className="h-4 w-4 accent-teal-500" /> Auto-approve valid submissions
                         </label>
+                    </div>
+                    <div className="mt-6 border-t border-zinc-800 pt-5">
+                        <label className="block max-w-sm text-sm font-medium text-zinc-300">Approval process
+                            <select
+                                aria-label="Approval process"
+                                value={policy.timesheetSettings.approvalMode}
+                                onChange={(event) => setApprovalMode(event.target.value as 'single' | 'multi')}
+                                className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-white"
+                            >
+                                <option value="single">One approval — line manager</option>
+                                <option value="multi">Multiple approval stages</option>
+                            </select>
+                        </label>
+                        {policy.timesheetSettings.approvalMode === 'single' ? (
+                            <div className="mt-4 border-l-2 border-teal-600 pl-4">
+                                <p className="text-sm font-medium text-white">The employee&apos;s line manager approves once.</p>
+                                <p className="mt-1 text-sm text-zinc-400">HR Managers and Attendance Admins can still approve as an audited backup or override. They are not an additional required stage.</p>
+                            </div>
+                        ) : (
+                            <div className="mt-5 max-w-2xl">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div><p className="text-sm font-medium text-white">Approval stages</p><p className="mt-1 text-sm text-zinc-400">Each stage must approve before the timesheet is complete.</p></div>
+                                    <button type="button" onClick={addApprovalLevel} disabled={policy.timesheetSettings.approvalLevels.length >= 10} className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"><Plus className="h-4 w-4" />Add stage</button>
+                                </div>
+                                <div className="mt-4 divide-y divide-zinc-800 rounded-lg border border-zinc-800">
+                                    {policy.timesheetSettings.approvalLevels.map((level: any, index: number) => (
+                                        <div key={`${index}-${level.approverType}`} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
+                                            <span className="w-16 shrink-0 text-sm font-medium text-zinc-300">Stage {index + 1}</span>
+                                            <select aria-label={`Approval stage ${index + 1}`} value={level.approverType} onChange={(event) => updateApprovalLevel(index, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-white">
+                                                <option value="line_manager">Line manager</option>
+                                                <option value="department_head">Department head</option>
+                                                <option value="hr">HR Manager / Attendance Admin</option>
+                                                {level.approverType === 'explicit' && <option value="explicit">Named approver</option>}
+                                            </select>
+                                            <button type="button" aria-label={`Remove approval stage ${index + 1}`} onClick={() => removeApprovalLevel(index)} disabled={policy.timesheetSettings.approvalLevels.length <= 2} className="inline-flex h-10 items-center justify-center rounded-lg px-3 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"><Trash2 className="h-4 w-4" /></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </section>
 

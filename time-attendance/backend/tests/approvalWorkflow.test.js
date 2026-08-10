@@ -10,6 +10,7 @@ function submittedTimesheet() {
         endDate: new Date('2026-08-07T23:59:59.999Z'),
         status: 'submitted',
         approvalWorkflow: {
+            mode: 'multi',
             currentLevel: 0,
             levels: [
                 { order: 0, name: 'Manager', approverType: 'line_manager', approverId: 'manager-1' },
@@ -44,6 +45,16 @@ test('delegation is active only inside its configured window', () => {
     const policy = { timesheetSettings: { approvalDelegations: [{ fromUserId: 'manager-1', toUserId: 'delegate-1', startsAt: '2026-08-01', endsAt: '2026-08-31' }] } };
     expect(hasActiveDelegation(policy, 'manager-1', 'delegate-1', new Date('2026-08-15'))).toBe(true);
     expect(hasActiveDelegation(policy, 'manager-1', 'delegate-1', new Date('2026-09-01'))).toBe(false);
+});
+
+test('the normal one-approval workflow completes after the line manager decision', () => {
+    const timesheet = submittedTimesheet();
+    timesheet.approvalWorkflow.mode = 'single';
+    timesheet.approvalWorkflow.levels = [timesheet.approvalWorkflow.levels[0]];
+    const result = advanceApproval(timesheet, { userId: 'manager-1', userName: 'Manager' }, 'Approved once');
+    expect(result.completed).toBe(true);
+    expect(timesheet.status).toBe('payroll_pending');
+    expect(timesheet.approvalWorkflow.completedAt).toBeInstanceOf(Date);
 });
 
 test('configured attendance roles control organization and direct-report approval scope', () => {

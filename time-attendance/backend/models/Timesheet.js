@@ -225,6 +225,7 @@ const TimesheetSchema = new Schema({
     },
 
     approvalWorkflow: {
+        mode: { type: String, enum: ['single', 'multi'], default: 'single' },
         currentLevel: { type: Number, default: 0 },
         levels: { type: [ApprovalLevelSnapshotSchema], default: () => [] },
         completedAt: Date,

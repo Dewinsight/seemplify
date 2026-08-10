@@ -1,5 +1,6 @@
 const { AttendancePolicy, Timesheet, EmployeeRoster } = require('../models');
 const { refreshTimesheetEntries } = require('../routes/timesheets');
+const { buildApprovalWorkflow } = require('./approvalConfigurationService');
 
 function completeWorkflowAsSystem(timesheet, at) {
     for (const level of timesheet.approvalWorkflow?.levels || []) {
@@ -14,26 +15,17 @@ function completeWorkflowAsSystem(timesheet, at) {
 
 async function snapshotApprovalWorkflow(timesheet, policy) {
     const roster = await EmployeeRoster.findOne({ organizationId: timesheet.organizationId, userId: timesheet.userId }).lean();
-    const configured = policy.timesheetSettings?.approvalLevels?.length
-        ? policy.timesheetSettings.approvalLevels
-        : [{ name: 'Line manager', approverType: 'line_manager' }];
-    const levels = configured.map((level, order) => ({
-        order,
-        name: level.name || `Approval level ${order + 1}`,
-        approverType: level.approverType || 'line_manager',
-        approverId: level.approverType === 'line_manager' ? roster?.managerId : level.approverId,
-        approverName: level.approverName,
-        approverEmail: level.approverEmail,
-        status: 'pending',
-    }));
-    timesheet.approvalWorkflow = { currentLevel: 0, levels };
-    const first = levels[0];
-    timesheet.assignedApprover = {
-        userId: first.approverId,
-        userName: first.approverName || first.name,
-        userEmail: first.approverEmail,
-        assignedAt: new Date(),
-    };
+    const manager = roster?.managerId
+        ? await EmployeeRoster.findOne({ organizationId: timesheet.organizationId, userId: roster.managerId, status: 'active' }).select('userId name email').lean()
+        : null;
+    const approval = buildApprovalWorkflow(policy.timesheetSettings, {
+        managerId: roster?.managerId,
+        managerName: manager?.name,
+        managerEmail: manager?.email,
+        teamId: roster?.teamIds?.[0],
+    });
+    timesheet.approvalWorkflow = approval.workflow;
+    timesheet.assignedApprover = approval.assignedApprover;
 }
 
 async function runTimesheetAutomation(now = new Date()) {

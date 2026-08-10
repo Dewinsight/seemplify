@@ -184,6 +184,11 @@ const AttendancePolicySchema = new Schema({
             type: Number,
             default: 3  // Days after submission
         },
+        approvalMode: {
+            type: String,
+            enum: ['single', 'multi'],
+            default: 'single',
+        },
         approvalLevels: {
             type: [ApprovalLevelSchema],
             default: () => [{ name: 'Line manager', approverType: 'line_manager' }],

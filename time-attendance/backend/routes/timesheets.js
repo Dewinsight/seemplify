@@ -8,6 +8,7 @@ const { calculatePeriod, canRecalculateTimesheet } = require('../services/timeCa
 const { createNotification } = require('../services/notificationService');
 const { syncTimesheetExceptions } = require('../services/exceptionService');
 const { resolveCalculationPolicy } = require('../services/rulePackService');
+const { buildApprovalWorkflow } = require('../services/approvalConfigurationService');
 
 // Apply auth middleware
 router.use(requireAuth);
@@ -235,29 +236,14 @@ router.post('/:id/submit', async (req, res) => {
             };
         }
 
-        const configuredLevels = policy.timesheetSettings?.approvalLevels?.length
-            ? policy.timesheetSettings.approvalLevels
-            : [{ name: 'Line manager', approverType: 'line_manager' }];
-        timesheet.approvalWorkflow = {
-            currentLevel: 0,
-            levels: configuredLevels.map((level, order) => ({
-                order,
-                name: level.name || `Approval level ${order + 1}`,
-                approverType: level.approverType || 'line_manager',
-                approverId: level.approverType === 'line_manager' ? userTeam?.managerId : level.approverId,
-                approverName: level.approverType === 'line_manager' ? userTeam?.managerName : level.approverName,
-                approverEmail: level.approverType === 'line_manager' ? userTeam?.managerEmail : level.approverEmail,
-                status: 'pending',
-            })),
-        };
-        const firstLevel = timesheet.approvalWorkflow.levels[0];
-        timesheet.assignedApprover = {
-            userId: firstLevel.approverId,
-            userName: firstLevel.approverName || firstLevel.name,
-            userEmail: firstLevel.approverEmail,
+        const approval = buildApprovalWorkflow(policy.timesheetSettings, {
+            managerId: userTeam?.managerId,
+            managerName: userTeam?.managerName,
+            managerEmail: userTeam?.managerEmail,
             teamId: userTeam?.id,
-            assignedAt: new Date(),
-        };
+        });
+        timesheet.approvalWorkflow = approval.workflow;
+        timesheet.assignedApprover = approval.assignedApprover;
 
         timesheet.status = 'submitted';
         timesheet.submittedAt = new Date();
