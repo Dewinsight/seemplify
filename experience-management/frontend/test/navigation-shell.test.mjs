@@ -33,3 +33,15 @@ test('verified-account continuation uses the SPA router instead of a raw interna
   assert.match(verification, /<Link\s+to=\{destination\}>/);
   assert.doesNotMatch(verification, /<a\s+href=\{destination\}>/);
 });
+
+test('theme menu remains visible outside the sticky header', () => {
+  const shell = read('components', 'AppShell.tsx');
+  const themeMenu = read('components', 'ThemePreferenceMenu.tsx');
+
+  const stickyHeader = shell.match(/<header className="([^"]*sticky top-0[^"]*)">/)?.[1] || '';
+  assert.ok(stickyHeader, 'authenticated sticky header should be present');
+  assert.doesNotMatch(stickyHeader, /\boverflow-hidden\b/);
+  for (const label of ['System', 'Light', 'Dark']) {
+    assert.match(themeMenu, new RegExp(`label: '${label}'`));
+  }
+});

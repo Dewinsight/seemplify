@@ -342,7 +342,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="relative flex h-full w-[278px] flex-col overflow-hidden border-r bg-card shadow-panel"><button aria-label="Close navigation" className="absolute right-3 top-5 rounded-md p-1.5 text-muted-foreground hover:bg-muted" onClick={() => setMobileOpen(false)}><X className="h-4 w-4" /></button><SidebarContent selectorId="active-space-mobile" close={() => setMobileOpen(false)} runtimeState={runtimeState} runtimeLabel={runtimeLabel} session={session} switching={switching} onSwitch={switchSpace} /></aside>
     </div>}
     <div className="min-w-0 md:pl-[248px]">
-      <header className="sticky top-0 z-20 flex h-16 min-w-0 items-center justify-between gap-2 overflow-hidden border-b bg-background/95 px-4 backdrop-blur sm:gap-3 sm:px-6">
+      <header className="sticky top-0 z-20 flex h-16 min-w-0 items-center justify-between gap-2 border-b bg-background/95 px-4 backdrop-blur sm:gap-3 sm:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3"><Button className="shrink-0 md:hidden" variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></Button><div className="min-w-0 truncate text-sm font-semibold" title={title}>{title}</div></div>
         <div className="flex shrink-0 items-center gap-2">
           <ThemePreferenceMenu />
