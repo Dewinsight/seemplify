@@ -66,6 +66,12 @@ router.post('/reconcile', async (req, res) => {
     return memberData(member.account, organization, member, {
       status: member.status,
       teamIds: activeTeams.map(team => team._id.toString()),
+      teamAssignments: activeTeams.map(team => ({
+        teamId: team._id.toString(),
+        name: team.name,
+        departmentId: team.department?.toString?.() || null,
+        managerId: team.manager?.toString?.() || null,
+      })),
       managerId: directTeam?.manager?.toString?.() || null,
       departmentId: member.department?.toString?.() || directTeam?.department?.toString?.() || null,
       effectiveExitAt: scheduledByAccount.get(accountId) || null,

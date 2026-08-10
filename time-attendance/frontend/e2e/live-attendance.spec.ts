@@ -2,6 +2,7 @@ import { expect, test as base, type APIRequestContext, type Page } from '@playwr
 
 const API_ORIGIN = process.env.LIVE_API_ORIGIN || 'http://127.0.0.1:5110';
 const TOKEN = 'live-e2e-token';
+const REPORT_ID = 'employee-live-2';
 
 type BrowserDiagnostics = {
     errors: string[];
@@ -161,10 +162,20 @@ test('acknowledges a published shift, reviews cover and publishes draft schedule
     await page.getByRole('button', { name: 'Approve' }).click();
     expect((await reviewResponse).status()).toBe(200);
 
+    await page.getByRole('button', { name: 'New shift' }).click();
+    await page.getByLabel('Team').selectOption({ label: 'Operations' });
+    await page.getByLabel('Find a member').fill('Jamie');
+    await page.getByLabel('Assign to').selectOption(REPORT_ID);
+    const createResponse = page.waitForResponse(response => response.url().endsWith('/api/v1/scheduling/shifts') && response.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Create draft' }).click();
+    expect((await createResponse).status()).toBe(201);
+    await expect(page.getByText('Draft shift created.')).toBeVisible();
+    await expect(page.getByText('Jamie Live').first()).toBeVisible();
+
     const publishResponse = page.waitForResponse(response => response.url().endsWith('/api/v1/scheduling/publish'));
     await page.getByRole('button', { name: 'Publish drafts' }).click();
     expect((await publishResponse).status()).toBe(200);
-    await expect(page.getByText(/1 shift published\./)).toBeVisible();
+    await expect(page.getByText(/2 shifts published\./)).toBeVisible();
 
     const shiftsResponse = await request.get(`${API_ORIGIN}/api/v1/scheduling/shifts`, { headers: apiHeaders() });
     const shifts = (await shiftsResponse.json()).shifts as any[];

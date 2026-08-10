@@ -106,6 +106,7 @@ async function applyIdpLifecycle(envelope) {
                 status,
                 role: data.role,
                 teamIds: data.teamIds || (data.teamId ? [data.teamId] : []),
+                teamAssignments: data.teamAssignments || [],
                 managerId: data.managerId,
                 departmentId: data.departmentId,
                 jurisdiction: data.jurisdiction,

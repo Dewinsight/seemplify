@@ -32,6 +32,59 @@ function requireScheduler(req, res) {
     return true;
 }
 
+function rosterMemberIsEligible(roster, at) {
+    if (!roster || roster.status === 'inactive') return false;
+    if (roster.appAccess?.mode === 'selected' && !(roster.appAccess.appIds || []).includes('time-attendance')) return false;
+    return !roster.effectiveExitAt || new Date(at) < new Date(roster.effectiveExitAt);
+}
+
+function visibleRosterQuery(req) {
+    const query = {
+        organizationId: req.organizationId,
+        status: { $in: ['active', 'scheduled_exit'] },
+        $or: [
+            { 'appAccess.mode': { $exists: false } },
+            { 'appAccess.mode': 'all' },
+            { 'appAccess.mode': 'selected', 'appAccess.appIds': 'time-attendance' },
+        ],
+    };
+    if (!isHRAdmin(req)) query.userId = { $in: [...managedUserIds(req)] };
+    return query;
+}
+
+router.get('/roster', async (req, res) => {
+    if (!requireScheduler(req, res)) return;
+    const roster = await EmployeeRoster.find(visibleRosterQuery(req))
+        .select('userId employeeId email name role teamIds teamAssignments managerId departmentId effectiveExitAt')
+        .sort({ name: 1, email: 1 })
+        .lean();
+
+    const teamNames = new Map();
+    for (const team of req.user.teams || []) {
+        if (team.organizationId === req.organizationId && team.id) teamNames.set(String(team.id), team.name || 'Unnamed team');
+    }
+    for (const member of roster) {
+        for (const team of member.teamAssignments || []) {
+            if (team.teamId && team.name) teamNames.set(String(team.teamId), team.name);
+        }
+    }
+    const teamIds = new Set(roster.flatMap(member => member.teamIds || []).map(String));
+    const teams = [...teamIds].map(teamId => ({ teamId, name: teamNames.get(teamId) || 'Unnamed IDP team' }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+    const members = roster.map(member => ({
+        userId: member.userId,
+        employeeId: member.employeeId,
+        name: member.name || member.email || 'Unnamed member',
+        email: member.email,
+        role: member.role,
+        teamIds: member.teamIds || [],
+        managerId: member.managerId,
+        departmentId: member.departmentId,
+        effectiveExitAt: member.effectiveExitAt,
+    }));
+    return res.json({ source: 'idp_sync', members, teams });
+});
+
 router.get('/templates', async (req, res) => {
     const templates = await ShiftTemplate.find({ organizationId: req.organizationId, isActive: { $ne: false } }).sort({ name: 1 });
     res.json({ templates });
@@ -79,17 +132,47 @@ router.get('/shifts', async (req, res) => {
     if (requestedUserId && requestedUserId !== req.user.id) {
         if (!canManage(req, requestedUserId)) return res.status(403).json({ error: 'Access denied' });
         query.userId = requestedUserId;
-    } else if (!isHRAdmin(req) && !isLineManager(req) && !isDepartmentHead(req) && req.query.open !== 'true') {
-        query.userId = req.user.id;
     } else if (requestedUserId) {
         query.userId = requestedUserId;
+    } else if (req.query.open !== 'true' && !isHRAdmin(req)) {
+        query.userId = (isLineManager(req) || isDepartmentHead(req))
+            ? { $in: [...managedUserIds(req)] }
+            : req.user.id;
     }
     if (req.query.start) query.endAt = { $gte: new Date(req.query.start) };
     if (req.query.end) query.startAt = { $lte: new Date(req.query.end) };
     if (req.query.status) query.status = req.query.status;
     if (req.query.open === 'true') query.openShift = true;
-    const shifts = await Shift.find(query).sort({ startAt: 1 }).limit(1000).populate('templateId');
-    return res.json({ shifts });
+    const shiftDocuments = await Shift.find(query).sort({ startAt: 1 }).limit(1000).populate('templateId');
+    const shifts = shiftDocuments.map(shift => shift.toObject());
+    const userIds = [...new Set(shifts.map(shift => shift.userId).filter(Boolean).map(String))];
+    const teamIds = [...new Set(shifts.map(shift => shift.teamId).filter(Boolean).map(String))];
+    const roster = (userIds.length || teamIds.length)
+        ? await EmployeeRoster.find({
+            organizationId: req.organizationId,
+            $or: [
+                ...(userIds.length ? [{ userId: { $in: userIds } }] : []),
+                ...(teamIds.length ? [{ teamIds: { $in: teamIds } }] : []),
+            ],
+        }).select('userId employeeId email name teamAssignments').lean()
+        : [];
+    const membersById = new Map(roster.map(member => [String(member.userId), member]));
+    const teamNames = new Map();
+    for (const member of roster) {
+        for (const team of member.teamAssignments || []) {
+            if (team.teamId && team.name) teamNames.set(String(team.teamId), team.name);
+        }
+    }
+    return res.json({
+        shifts: shifts.map(shift => {
+            const member = shift.userId ? membersById.get(String(shift.userId)) : null;
+            return {
+                ...shift,
+                assignee: member ? { userId: member.userId, name: member.name || member.email || 'Unnamed member', email: member.email, employeeId: member.employeeId } : null,
+                team: shift.teamId ? { teamId: shift.teamId, name: teamNames.get(String(shift.teamId)) || null } : null,
+            };
+        }),
+    });
 });
 
 router.post('/shifts', async (req, res) => {
@@ -99,13 +182,34 @@ router.post('/shifts', async (req, res) => {
     if (Number.isNaN(shiftStart.getTime())) return res.status(400).json({ error: 'A valid shift start is required' });
     if (req.body.userId) {
         const roster = await EmployeeRoster.findOne({ organizationId: req.organizationId, userId: req.body.userId }).lean();
-        if (roster?.status === 'inactive' || (roster?.effectiveExitAt && shiftStart >= new Date(roster.effectiveExitAt))) {
+        if (!roster) {
+            return res.status(409).json({
+                error: 'This person is not in the active IDP organization roster',
+                code: 'ROSTER_MEMBER_NOT_FOUND',
+            });
+        }
+        if (!rosterMemberIsEligible(roster, shiftStart)) {
             return res.status(409).json({
                 error: 'This employee is not attendance-eligible at the shift start time',
                 code: 'EMPLOYEE_NOT_ELIGIBLE',
                 effectiveExitAt: roster.effectiveExitAt,
             });
         }
+        if (req.body.teamId && !(roster.teamIds || []).map(String).includes(String(req.body.teamId))) {
+            return res.status(409).json({ error: 'The selected employee is not an active member of that IDP team', code: 'TEAM_MEMBERSHIP_MISMATCH' });
+        }
+    } else if (!req.body.openShift) {
+        return res.status(400).json({ error: 'Select an IDP organization member or create an open shift', code: 'SHIFT_ASSIGNEE_REQUIRED' });
+    } else if (req.body.teamId) {
+        if (!isHRAdmin(req)) {
+            const allowedTeams = new Set([
+                ...(req.user.teams || []).filter(team => team.organizationId === req.organizationId && ['line_manager', 'team_lead'].includes(team.role)).map(team => String(team.id)),
+                ...getDepartmentHeadScope(req).scopedTeams.map(team => String(team.id)),
+            ]);
+            if (!allowedTeams.has(String(req.body.teamId))) return res.status(403).json({ error: 'The selected team is outside your management scope' });
+        }
+        const teamExists = await EmployeeRoster.exists({ organizationId: req.organizationId, status: { $in: ['active', 'scheduled_exit'] }, teamIds: String(req.body.teamId) });
+        if (!teamExists) return res.status(409).json({ error: 'This team is not in the active IDP organization roster', code: 'ROSTER_TEAM_NOT_FOUND' });
     }
     const policy = await AttendancePolicy.getOrCreateDefault(req.organizationId, req.organizationName, req.user.id);
     const conflict = await findShiftConflicts({
@@ -149,8 +253,13 @@ router.patch('/shifts/:id', async (req, res) => {
     const next = { startAt: req.body.startAt || shift.startAt, endAt: req.body.endAt || shift.endAt, userId: req.body.userId ?? shift.userId };
     if (next.userId) {
         const roster = await EmployeeRoster.findOne({ organizationId: req.organizationId, userId: next.userId }).lean();
-        if (roster?.status === 'inactive' || (roster?.effectiveExitAt && new Date(next.startAt) >= new Date(roster.effectiveExitAt))) {
+        if (!roster) return res.status(409).json({ error: 'This person is not in the active IDP organization roster', code: 'ROSTER_MEMBER_NOT_FOUND' });
+        if (!rosterMemberIsEligible(roster, next.startAt)) {
             return res.status(409).json({ error: 'This employee is not attendance-eligible at the shift start time', code: 'EMPLOYEE_NOT_ELIGIBLE' });
+        }
+        const nextTeamId = req.body.teamId ?? shift.teamId;
+        if (nextTeamId && !(roster.teamIds || []).map(String).includes(String(nextTeamId))) {
+            return res.status(409).json({ error: 'The selected employee is not an active member of that IDP team', code: 'TEAM_MEMBERSHIP_MISMATCH' });
         }
     }
     const conflict = await findShiftConflicts({ organizationId: req.organizationId, ...next, excludeShiftId: shift._id, minimumRestMinutes: Number(req.body.minimumRestMinutes || 0) });
@@ -267,3 +376,4 @@ router.post('/requests/:id/review', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.rosterMemberIsEligible = rosterMemberIsEligible;

@@ -11,6 +11,13 @@ const EmployeeRosterSchema = new Schema({
     status: { type: String, enum: ['active', 'inactive', 'scheduled_exit'], default: 'active', index: true },
     role: String,
     teamIds: [String],
+    teamAssignments: [{
+        _id: false,
+        teamId: { type: String, required: true },
+        name: String,
+        departmentId: String,
+        managerId: String,
+    }],
     managerId: String,
     departmentId: String,
     jurisdiction: {

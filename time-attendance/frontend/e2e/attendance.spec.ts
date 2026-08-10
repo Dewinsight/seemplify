@@ -17,6 +17,7 @@ type MockState = {
     rulePacks: any[];
     locationEnabled: boolean;
     clockBodies: any[];
+    shiftBodies: any[];
 };
 
 const organization = { id: 'org-1', name: 'Seemplify Test Org', role: 'admin' };
@@ -170,6 +171,14 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'GET' && path === '/api/attendance/team/export') return route.fulfill({ status: 200, headers: { ...corsHeaders(route), 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, body: 'mock workbook' });
 
         if (method === 'GET' && path === '/api/v1/scheduling/templates') return json(route, { templates: [{ _id: 'template-1', name: 'Day shift' }] });
+        if (method === 'GET' && path === '/api/v1/scheduling/roster') return json(route, {
+            source: 'idp_sync',
+            teams: [{ teamId: 'team-1', name: 'Operations' }, { teamId: 'team-2', name: 'Finance' }],
+            members: [
+                { userId: 'employee-2', employeeId: 'EMP-002', name: 'Jamie Lee', email: 'jamie@example.com', teamIds: ['team-1'] },
+                { userId: 'employee-3', employeeId: 'EMP-003', name: 'Morgan Reed', email: 'morgan@example.com', teamIds: ['team-2'] },
+            ],
+        });
         if (method === 'GET' && path === '/api/v1/scheduling/shifts') {
             if (url.searchParams.get('open') === 'true') return json(route, { shifts: [{ _id: 'shift-open', userId: null, startAt: TOMORROW, endAt: TOMORROW_END, workMode: 'office', status: 'published' }] });
             return json(route, { shifts: [{ _id: 'shift-1', userId: 'employee-1', startAt: TOMORROW, endAt: TOMORROW_END, workMode: 'remote', status: 'published', acknowledgement: { status: state.shiftAcknowledged ? 'accepted' : 'pending' } }] });
@@ -177,7 +186,7 @@ async function installApiMock(page: Page, state: MockState) {
         if (method === 'GET' && path === '/api/v1/scheduling/requests') return json(route, { requests: [{ _id: 'request-1', type: 'cover', status: 'pending' }] });
         if (method === 'POST' && path === '/api/v1/scheduling/publish') return json(route, { publishedCount: 2 });
         if (method === 'POST' && path === '/api/v1/scheduling/shifts/shift-1/acknowledge') { state.shiftAcknowledged = true; return json(route, { success: true }); }
-        if (method === 'POST' && path === '/api/v1/scheduling/shifts') return json(route, { shift: { _id: 'shift-new' } });
+        if (method === 'POST' && path === '/api/v1/scheduling/shifts') { state.shiftBodies.push(request.postDataJSON()); return json(route, { shift: { _id: 'shift-new' } }); }
         if (method === 'POST' && path === '/api/v1/scheduling/requests') return json(route, { request: { _id: 'request-new' } });
         if (method === 'POST' && path === '/api/v1/scheduling/requests/request-1/review') return json(route, { success: true });
 
@@ -241,7 +250,7 @@ const test = base.extend<{ mockState: MockState }>({
             calls: [], unhandled: [], browserErrors: [], clockedIn: false, onBreak: false,
             lockedClockOut: false,
             notificationRead: false, exceptionStatus: 'open', shiftAcknowledged: false, rulePacks: [rulePack],
-            locationEnabled: false, clockBodies: [],
+            locationEnabled: false, clockBodies: [], shiftBodies: [],
         };
         page.on('pageerror', error => state.browserErrors.push(`pageerror: ${error.message}`));
         page.on('console', message => {
@@ -414,6 +423,25 @@ test('keeps the team attendance workspace readable at wide and standard desktop 
         }));
         expect(pageWidth.document).toBeLessThanOrEqual(pageWidth.viewport);
     }
+});
+
+test('creates a draft shift from the synchronized IDP team roster', async ({ page, mockState }) => {
+    await authenticate(page);
+    await page.goto('/schedule');
+    await page.getByRole('button', { name: 'New shift' }).click();
+    await expect(page.getByText('People and teams come from the active IDP organization roster.')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+
+    await page.getByLabel('Team').selectOption('team-1');
+    await expect(page.getByLabel('Assign to').getByRole('option', { name: /Jamie Lee/ })).toHaveCount(1);
+    await expect(page.getByLabel('Assign to').getByRole('option', { name: /Morgan Reed/ })).toHaveCount(0);
+    await page.getByLabel('Find a member').fill('EMP-002');
+    await page.getByLabel('Assign to').selectOption('employee-2');
+    await page.getByRole('button', { name: 'Create draft' }).click();
+
+    await expect(page.getByText('Draft shift created.')).toBeVisible();
+    expect(mockState.shiftBodies).toHaveLength(1);
+    expect(mockState.shiftBodies[0]).toMatchObject({ userId: 'employee-2', teamId: 'team-1', openShift: false });
 });
 
 test('keeps timesheet detail and approval history compact in light mode', async ({ page, mockState: _mockState }) => {

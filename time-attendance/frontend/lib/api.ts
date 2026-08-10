@@ -306,6 +306,7 @@ export const approvalsApi = {
 };
 
 export const schedulingApi = {
+    getRoster: async () => (await api.get('/v1/scheduling/roster')).data,
     getTemplates: async () => (await api.get('/v1/scheduling/templates')).data,
     createTemplate: async (data: any) => (await api.post('/v1/scheduling/templates', data)).data,
     getShifts: async (params?: any) => (await api.get('/v1/scheduling/shifts', { params })).data,
